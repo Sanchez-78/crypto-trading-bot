@@ -12,7 +12,13 @@ def get_candles(symbol="BTCUSDT", interval="15", limit=100):
             "category": "linear"
         }
 
-        r = requests.get(BASE_URL, params=params)
+        r = requests.get(BASE_URL, params=params, timeout=10)
+
+        # ❗ ochrana proti prázdné odpovědi
+        if r.status_code != 200 or not r.text:
+            print("❌ Empty response:", r.status_code)
+            return []
+
         data = r.json()
 
         if "result" not in data:
