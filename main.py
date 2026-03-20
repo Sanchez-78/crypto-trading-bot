@@ -84,7 +84,7 @@ def run_pipeline():
                     "result": None,
                     "profit": None,
                     "age": 0,
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                     "evaluated": False,
                     "mode": "learning"
                 }
