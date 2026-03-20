@@ -1,7 +1,7 @@
 import random
 import numpy as np
 from collections import deque
-from src.services.firebase_client import save_weights, load_weights
+
 
 
 ACTIONS = ["BUY", "SELL", "HOLD"]

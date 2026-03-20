@@ -1,4 +1,3 @@
-from src.services.dqn_agent import DQNAgent
 from src.services.model import predict_signal
 from src.services.reward_system import compute_reward
 
@@ -6,8 +5,7 @@ from src.services.reward_system import compute_reward
 class MetaAgent:
 
     def __init__(self):
-        self.dqn = DQNAgent()
-
+        
         self.weights = {
             "dqn": 1.0,
             "strategy": 1.0,
