@@ -2,6 +2,11 @@ import requests
 
 BASE_URL = "https://api.bybit.com/v5/market/kline"
 
+HEADERS = {
+    "User-Agent": "Mozilla/5.0",
+    "Accept": "application/json"
+}
+
 
 def get_candles(symbol="BTCUSDT", interval="15", limit=100):
     try:
@@ -12,11 +17,15 @@ def get_candles(symbol="BTCUSDT", interval="15", limit=100):
             "category": "linear"
         }
 
-        r = requests.get(BASE_URL, params=params, timeout=10)
+        r = requests.get(
+            BASE_URL,
+            params=params,
+            headers=HEADERS,
+            timeout=10
+        )
 
-        # ❗ ochrana proti prázdné odpovědi
-        if r.status_code != 200 or not r.text:
-            print("❌ Empty response:", r.status_code)
+        if r.status_code != 200:
+            print(f"❌ HTTP {r.status_code}")
             return []
 
         data = r.json()
