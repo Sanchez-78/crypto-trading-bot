@@ -2,13 +2,12 @@ import os
 import json
 import firebase_admin
 from firebase_admin import credentials, firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 db = None
 
 
-# -------------------------------
-# INIT
-# -------------------------------
+# ---------------- INIT ----------------
 
 def init_firebase():
     global db
@@ -45,9 +44,7 @@ def get_db():
     return db
 
 
-# -------------------------------
-# SIGNALS
-# -------------------------------
+# ---------------- SIGNALS ----------------
 
 def save_signal(signal: dict):
     try:
@@ -57,7 +54,6 @@ def save_signal(signal: dict):
             return
 
         db.collection("signals").add(signal)
-
         print(f"✅ Saved: {signal['symbol']} {signal['signal']}")
 
     except Exception as e:
@@ -85,7 +81,7 @@ def load_open_signals():
             return []
 
         docs = db.collection("signals") \
-            .where("evaluated", "==", False) \
+            .where(filter=FieldFilter("evaluated", "==", False)) \
             .stream()
 
         return [(d.id, d.to_dict()) for d in docs]
@@ -107,9 +103,7 @@ def update_signal(doc_id, data: dict):
         print("❌ Update signal error:", e)
 
 
-# -------------------------------
-# 🔥 LEARNING DATA
-# -------------------------------
+# ---------------- LEARNING ----------------
 
 def load_recent_trades(limit=100):
     try:
@@ -118,7 +112,7 @@ def load_recent_trades(limit=100):
             return []
 
         docs = db.collection("signals") \
-            .where("evaluated", "==", True) \
+            .where(filter=FieldFilter("evaluated", "==", True)) \
             .limit(limit) \
             .stream()
 
@@ -129,9 +123,7 @@ def load_recent_trades(limit=100):
         return []
 
 
-# -------------------------------
-# 📊 PERFORMANCE
-# -------------------------------
+# ---------------- PERFORMANCE ----------------
 
 def get_performance():
     try:
@@ -148,10 +140,8 @@ def get_performance():
         total = len(wins) + len(losses)
         winrate = len(wins) / total if total > 0 else 0
 
-        avg_profit = 0
         profits = [s.get("profit", 0) for s in signals if s.get("profit") is not None]
-        if profits:
-            avg_profit = sum(profits) / len(profits)
+        avg_profit = sum(profits) / len(profits) if profits else 0
 
         return {
             "winrate": round(winrate, 3),
@@ -164,9 +154,7 @@ def get_performance():
         return {}
 
 
-# -------------------------------
-# 👤 USERS (READY FOR FUTURE)
-# -------------------------------
+# ---------------- USERS ----------------
 
 def create_or_update_user(user_id, data: dict):
     try:
@@ -187,7 +175,6 @@ def get_user(user_id):
             return None
 
         doc = db.collection("users").document(user_id).get()
-
         return doc.to_dict() if doc.exists else None
 
     except Exception as e:
@@ -215,8 +202,9 @@ def find_user_by_customer(customer_id):
             return None
 
         docs = db.collection("users") \
-            .where("stripe_customer_id", "==", customer_id) \
-            .limit(1).stream()
+            .where(filter=FieldFilter("stripe_customer_id", "==", customer_id)) \
+            .limit(1) \
+            .stream()
 
         for d in docs:
             return d.id, d.to_dict()
@@ -228,9 +216,7 @@ def find_user_by_customer(customer_id):
         return None
 
 
-# -------------------------------
-# 🧠 META (AI STATE)
-# -------------------------------
+# ---------------- META ----------------
 
 def save_meta_state(data: dict):
     try:
@@ -251,7 +237,6 @@ def load_meta_state():
             return {}
 
         doc = db.collection("meta").document("state").get()
-
         return doc.to_dict() if doc.exists else {}
 
     except Exception as e:

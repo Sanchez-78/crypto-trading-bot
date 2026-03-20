@@ -1,6 +1,7 @@
 from datetime import datetime
 from src.services.firebase_client import get_db, update_signal
 from src.services.market_data import get_all_prices
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 HOLD_CYCLES = 3
 
@@ -13,8 +14,8 @@ def evaluate_signals(symbol):
     prices = get_all_prices()
 
     docs = db.collection("signals") \
-        .where("symbol", "==", symbol) \
-        .where("evaluated", "==", False) \
+        .where(filter=FieldFilter("symbol", "==", symbol)) \
+        .where(filter=FieldFilter("evaluated", "==", False)) \
         .stream()
 
     for d in docs:
