@@ -1,123 +1,54 @@
-from datetime import datetime, UTC, timedelta
-
-from google.cloud.firestore_v1.base_query import FieldFilter
-
-from src.services.firebase_client import db, update_signal
-from src.services.learning import update_model_weights
-from src.services.binance_client import fetch_candles
-from src.services.firebase_client import get_db
-
-db = get_db()
-if db is None:
-    return
+from datetime import datetime
+from src.services.firebase_client import get_db, update_signal
 
 
-EVAL_DELAY_HOURS = 1
-
-
-# =========================
-# 🧠 NORMALIZE TIMESTAMP
-# =========================
-def normalize_timestamp(ts):
-    if ts is None:
-        return None
-
-    # string → datetime
-    if isinstance(ts, str):
-        try:
-            return datetime.fromisoformat(ts).replace(tzinfo=UTC)
-        except Exception:
-            return None
-
-    # Firestore timestamp → datetime
+def evaluate_signals(symbol):
     try:
-        return ts.replace(tzinfo=UTC)
-    except Exception:
-        return None
+        db = get_db()
+        if db is None:
+            print("❌ No DB")
+            return
 
+        docs = db.collection("signals") \
+            .where("symbol", "==", symbol) \
+            .where("evaluated", "==", False) \
+            .stream()
 
-# =========================
-# 🧪 EVALUATE SIGNALS
-# =========================
-def evaluate_signals(symbol, timeframe="1h"):
-    print(f"\n🧪 Running evaluation for {symbol}...")
+        signals = [(d.id, d.to_dict()) for d in docs]
 
-    try:
-        cutoff = datetime.now(UTC) - timedelta(hours=EVAL_DELAY_HOURS)
+        print(f"🔎 Found {len(signals)} signals for {symbol}")
 
-        query = (
-            db.collection("signals")
-            .where(filter=FieldFilter("symbol", "==", symbol))
-            .where(filter=FieldFilter("evaluated", "==", False))
-        )
-
-        docs = list(query.stream())
-
-        print(f"🔎 Found {len(docs)} signals")
-
-        for doc in docs:
-            data = doc.to_dict()
-            doc_id = doc.id
-
+        for doc_id, signal in signals:
             try:
-                # =========================
-                # ⏱️ TIMESTAMP FIX
-                # =========================
-                timestamp = normalize_timestamp(data.get("timestamp"))
+                price = signal.get("price")
+                action = signal.get("signal")
 
-                if not timestamp or timestamp > cutoff:
+                if not price or not action:
                     continue
 
-                entry_price = data.get("price")
-                signal = data.get("signal")
+                # ❗ fake evaluation (zatím)
+                current_price = price * 0.995  # simulace pohybu
 
-                if not entry_price or not signal:
-                    continue
+                profit = 0
 
-                # =========================
-                # 📈 LIVE PRICE
-                # =========================
-                candles = fetch_candles(symbol, "15m")
-
-                if candles:
-                    current_price = candles[-1]["close"]
-                else:
-                    current_price = entry_price
-
-                # =========================
-                # 💰 PROFIT (SAFE)
-                # =========================
-                profit = 0.0
-
-                if signal == "BUY":
-                    profit = (current_price - entry_price) / entry_price
-
-                elif signal == "SELL":
-                    profit = (entry_price - current_price) / entry_price
-
-                # HOLD → 0
+                if action == "BUY":
+                    profit = (current_price - price) / price
+                elif action == "SELL":
+                    profit = (price - current_price) / price
 
                 result = "WIN" if profit > 0 else "LOSS"
 
-                print(f"{signal} → {result} | 💰 {round(profit, 4)}")
+                print(f"{action} → {result} | 💰 {round(profit, 4)}")
 
-                # =========================
-                # 💾 UPDATE SIGNAL
-                # =========================
                 update_signal(doc_id, {
                     "evaluated": True,
-                    "profit": profit,
+                    "profit": float(profit),
                     "result": result,
-                    "evaluated_at": datetime.now(UTC).isoformat()
+                    "evaluated_at": datetime.utcnow().isoformat()
                 })
 
-                # =========================
-                # 🧠 LEARNING
-                # =========================
-                update_model_weights(data.get("features", {}), profit)
-
             except Exception as e:
-                print("❌ Eval error:", e)
+                print("❌ Eval signal error:", e)
 
     except Exception as e:
-        print("❌ Load signals error:", e)
+        print("❌ Evaluator error:", e)
