@@ -1,6 +1,6 @@
 import time
 import traceback
-from datetime import datetime
+from datetime import datetime, UTC  # 🔥 FIX
 
 from src.services.firebase_client import (
     init_firebase,
@@ -20,6 +20,8 @@ LEARNING_ONLY = True
 last_prices = {}
 
 
+# ---------------- FEATURES ----------------
+
 def build_features(symbol, price):
     prev_price = last_prices.get(symbol)
 
@@ -38,6 +40,8 @@ def build_features(symbol, price):
     }
 
 
+# ---------------- PIPELINE ----------------
+
 def run_pipeline():
     print("\n=== START PIPELINE ===")
 
@@ -50,6 +54,7 @@ def run_pipeline():
 
         prices = get_all_prices()
 
+        # 🔥 nikdy nezastavuj pipeline
         if not prices:
             print("⚠️ fallback prices")
             prices = {
@@ -66,15 +71,18 @@ def run_pipeline():
 
                 features = build_features(symbol, price)
 
+                # 🔥 SAFE CALL
                 result = meta_agent.decide(features)
 
                 if not result or not isinstance(result, tuple):
+                    print("⚠️ MetaAgent invalid:", result)
                     action, confidence = "HOLD", 0.0
                 else:
                     action, confidence = result
 
                 print(f"{symbol} | {action} | {confidence:.2f}")
 
+                # 🔥 FIXED TIMESTAMP (UTC + clean format)
                 signal = {
                     "symbol": symbol,
                     "signal": action,
@@ -84,7 +92,7 @@ def run_pipeline():
                     "result": None,
                     "profit": None,
                     "age": 0,
-                    "timestamp": datetime.now(UTC).isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(timespec="seconds"),
                     "evaluated": False,
                     "mode": "learning"
                 }
@@ -105,6 +113,8 @@ def run_pipeline():
         print("❌ PIPELINE ERROR:", e)
         traceback.print_exc()
 
+
+# ---------------- LOOP ----------------
 
 if __name__ == "__main__":
     print("🔥 BOT STARTED")
