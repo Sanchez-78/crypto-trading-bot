@@ -17,11 +17,18 @@ from src.services.evaluator import evaluate_signals
 symbols = ["BTCUSDT", "ETHUSDT", "ADAUSDT"]
 meta_agent = MetaAgent()
 
+LEARNING_ONLY = True  # 🔥 KLÍČOVÉ
+
 MAX_OPEN_TRADES = 5
-MAX_DAILY_DRAWDOWN = -0.03
+MAX_DAILY_DRAWDOWN = -0.05
 
 last_prices = {}
+kill_switch_active_until = 0
 
+
+# -------------------------------
+# CONFIDENCE
+# -------------------------------
 
 def dynamic_confidence_threshold(signals):
     if len(signals) < 50:
@@ -31,28 +38,17 @@ def dynamic_confidence_threshold(signals):
     return 0.65
 
 
+# -------------------------------
+# POSITION SIZE
+# -------------------------------
+
 def compute_position_size(confidence):
     return round(confidence, 3)
 
 
-def should_trade(action, confidence, open_trades, features):
-    if action == "HOLD":
-        return False
-
-    if features["volatility"] == 0:
-        print("🚫 Low volatility")
-        return False
-
-    if len(open_trades) >= MAX_OPEN_TRADES:
-        print("🚫 Too many open trades")
-        return False
-
-    return True
-
-
-def bootstrap_mode(total_signals):
-    return total_signals < 50
-
+# -------------------------------
+# FEATURES
+# -------------------------------
 
 def build_features(symbol, price):
     prev_price = last_prices.get(symbol)
@@ -72,25 +68,37 @@ def build_features(symbol, price):
     }
 
 
-# ✅ FIXED KILL SWITCH
+# -------------------------------
+# KILL SWITCH (rolling window)
+# -------------------------------
+
 def check_kill_switch(signals):
-    total = 0
-    count = 0
+    global kill_switch_active_until
 
-    for s in signals:
-        if s.get("evaluated") and s.get("profit") is not None:
-            total += s["profit"]
-            count += 1
+    if time.time() < kill_switch_active_until:
+        return True
 
-    if count < 10:
+    recent = [
+        s for s in signals
+        if s.get("evaluated") and s.get("profit") is not None
+    ][-20:]
+
+    if len(recent) < 10:
         return False
 
-    if total < MAX_DAILY_DRAWDOWN:
-        print(f"🛑 KILL SWITCH ACTIVE | pnl={round(total,4)}")
+    total = sum(s["profit"] for s in recent)
+
+    if total < -0.05:
+        kill_switch_active_until = time.time() + 3600
+        print(f"🛑 KILL SWITCH ACTIVE | recent pnl={round(total,4)}")
         return True
 
     return False
 
+
+# -------------------------------
+# PIPELINE
+# -------------------------------
 
 def run_pipeline():
     print("\n=== START PIPELINE ===")
@@ -101,13 +109,11 @@ def run_pipeline():
         all_signals = load_all_signals()
         open_signals = load_open_signals()
 
-        if check_kill_switch(all_signals):
-            return
+        kill = check_kill_switch(all_signals)
 
         MIN_CONFIDENCE = dynamic_confidence_threshold(all_signals)
 
         prices = get_all_prices()
-
         if not prices:
             print("❌ No prices")
             return
@@ -127,13 +133,7 @@ def run_pipeline():
 
                 print(f"{symbol} | {action} | conf={confidence:.2f}")
 
-                if not bootstrap_mode(len(all_signals)):
-                    if confidence < MIN_CONFIDENCE:
-                        continue
-
-                    if not should_trade(action, confidence, open_signals, features):
-                        continue
-
+                # 🔥 ALWAYS CREATE SIGNAL (learning)
                 signal = {
                     "symbol": symbol,
                     "signal": action,
@@ -145,10 +145,21 @@ def run_pipeline():
                     "profit": None,
                     "age": 0,
                     "timestamp": datetime.utcnow().isoformat(),
-                    "evaluated": False
+                    "evaluated": False,
+                    "mode": "learning"
                 }
 
-                save_signal(signal)
+                # 🔥 LEARNING MODE
+                if LEARNING_ONLY:
+                    save_signal(signal)
+                    continue
+
+                # 🔥 TRADING MODE (disabled now)
+                if not kill:
+                    if confidence < MIN_CONFIDENCE:
+                        continue
+
+                    save_signal(signal)
 
             except Exception as e:
                 print(f"❌ {symbol} error:", e)
