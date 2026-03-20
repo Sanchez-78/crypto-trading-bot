@@ -11,10 +11,10 @@ class MetaAgent:
             if not price:
                 return "HOLD", 0.0
 
-            # 🔥 TF DATA
-            m15 = features.get("m15_trend")
-            h1 = features.get("h1_trend")
-            h4 = features.get("h4_trend")
+            # 🔥 SAFE TF LOAD (fix NoneType bug)
+            m15 = features.get("m15_trend", 0)
+            h1 = features.get("h1_trend", 0)
+            h4 = features.get("h4_trend", 0)
 
             m15_vol = features.get("m15_volatility", 0)
             h1_vol = features.get("h1_volatility", 0)
@@ -79,7 +79,7 @@ class MetaAgent:
         self.bias += avg_profit * 2
         self.bias = max(-0.3, min(self.bias, 0.3))
 
-        # 🔥 PATTERN LEARNING
+        # ---------------- PATTERN LEARNING ----------------
         for t in trades:
             features = t.get("features", {})
             action = t.get("signal")
@@ -88,9 +88,10 @@ class MetaAgent:
             if not features or not action or not result:
                 continue
 
-            m15 = features.get("m15_trend")
-            h1 = features.get("h1_trend")
-            h4 = features.get("h4_trend")
+            # 🔥 SAFE LOAD (fix crash)
+            m15 = features.get("m15_trend", 0)
+            h1 = features.get("h1_trend", 0)
+            h4 = features.get("h4_trend", 0)
 
             vol = (
                 features.get("m15_volatility", 0)
@@ -109,6 +110,7 @@ class MetaAgent:
             else:
                 self.patterns[key] -= 0.02
 
+            # clamp
             self.patterns[key] = max(-0.3, min(self.patterns[key], 0.3))
 
         print(
