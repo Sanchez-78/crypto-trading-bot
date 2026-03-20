@@ -2,7 +2,15 @@ class MetaAgent:
     def __init__(self):
         self.bias = 0.0
         self.patterns = {}
-        print("🧠 MetaAgent ready (multi-tf + pattern + reward)")
+
+        # 🔥 progress tracking
+        self.last_stats = {
+            "winrate": 0,
+            "avg_profit": 0,
+            "patterns": 0
+        }
+
+        print("🧠 MetaAgent ready (multi-tf + pattern + reward + progress)")
 
     # ---------------- DECISION ----------------
     def decide(self, features):
@@ -74,7 +82,7 @@ class MetaAgent:
         profits = [t.get("profit", 0) for t in trades if t.get("profit") is not None]
         avg_profit = sum(profits) / len(profits) if profits else 0
 
-        # 🔥 GLOBAL LEARNING (WINRATE + PROFIT)
+        # 🔥 GLOBAL LEARNING
         self.bias = (winrate - 0.5) * 0.5
         self.bias += avg_profit * 2
         self.bias = max(-0.3, min(self.bias, 0.3))
@@ -85,14 +93,13 @@ class MetaAgent:
             action = t.get("signal")
             result = t.get("result")
 
-            # 🔥 FIX: neignoruj valid data
             if not features or not action:
                 continue
 
             if result not in ["WIN", "LOSS"]:
                 continue
 
-            # 🔥 SAFE LOAD (fix NoneType)
+            # 🔥 SAFE LOAD
             m15 = features.get("m15_trend", 0)
             h1 = features.get("h1_trend", 0)
             h4 = features.get("h4_trend", 0)
@@ -109,7 +116,7 @@ class MetaAgent:
             if key not in self.patterns:
                 self.patterns[key] = 0.0
 
-            # 🔥 BONUS: PROFIT-BASED LEARNING
+            # 🔥 PROFIT-BASED LEARNING
             profit = t.get("profit", 0)
 
             if result == "WIN":
@@ -117,7 +124,6 @@ class MetaAgent:
             else:
                 self.patterns[key] -= 0.02 + abs(profit) * 2
 
-            # 🔒 CLAMP
             self.patterns[key] = max(-0.3, min(self.patterns[key], 0.3))
 
         print(
@@ -125,3 +131,77 @@ class MetaAgent:
             f"bias={round(self.bias,3)} "
             f"patterns={len(self.patterns)}"
         )
+
+        # 🔥 PROGRESS OUTPUT
+        self.print_progress(winrate, avg_profit)
+
+    # ---------------- PROGRESS ----------------
+    def print_progress(self, winrate, avg_profit):
+        prev = self.last_stats
+
+        def trend(new, old):
+            if new > old:
+                return "↑"
+            elif new < old:
+                return "↓"
+            return "="
+
+        # 🔥 SCORE
+        score = (
+            winrate * 50 +
+            max(min(avg_profit * 1000, 25), -25) +
+            min(len(self.patterns), 25)
+        )
+
+        score = max(0, min(int(score), 100))
+
+        print("\n📊 PROGRESS:")
+        print(f"winrate: {round(winrate,3)} {trend(winrate, prev['winrate'])}")
+        print(f"avg_profit: {round(avg_profit,5)} {trend(avg_profit, prev['avg_profit'])}")
+        print(f"patterns: {len(self.patterns)} {trend(len(self.patterns), prev['patterns'])}")
+        print(f"bias: {round(self.bias,3)}")
+
+        print(f"score: {self.color_score(score)}/100")
+        print(self.progress_bar(score))
+
+        self.last_stats = {
+            "winrate": winrate,
+            "avg_profit": avg_profit,
+            "patterns": len(self.patterns)
+        }
+
+    # ---------------- COLOR SCORE ----------------
+    def color_score(self, score):
+        if score < 30:
+            return f"\033[91m{score}\033[0m"  # red
+        elif score < 50:
+            return f"\033[93m{score}\033[0m"  # yellow
+        elif score < 70:
+            return f"\033[94m{score}\033[0m"  # blue
+        else:
+            return f"\033[92m{score}\033[0m"  # green
+
+    # ---------------- PROGRESS BAR ----------------
+    def progress_bar(self, score):
+        total = 20
+        filled = int(score / 100 * total)
+
+        if score < 30:
+            color = "\033[91m"  # red
+        elif score < 50:
+            color = "\033[93m"  # yellow
+        elif score < 70:
+            color = "\033[94m"  # blue
+        else:
+            color = "\033[92m"  # green
+
+        reset = "\033[0m"
+
+        bar = ""
+        for i in range(total):
+            if i < filled:
+                bar += f"{color}█{reset}"
+            else:
+                bar += "-"
+
+        return f"[{bar}] {score}%"
