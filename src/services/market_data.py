@@ -3,21 +3,10 @@ import requests
 BASE_URL = "https://api.coingecko.com/api/v3/simple/price"
 
 
-def get_price(symbol="BTCUSDT"):
+def get_all_prices():
     try:
-        mapping = {
-            "BTCUSDT": "bitcoin",
-            "ETHUSDT": "ethereum",
-            "ADAUSDT": "cardano"
-        }
-
-        coin_id = mapping.get(symbol)
-
-        if not coin_id:
-            return None
-
         params = {
-            "ids": coin_id,
+            "ids": "bitcoin,ethereum,cardano",
             "vs_currencies": "usd"
         }
 
@@ -25,21 +14,16 @@ def get_price(symbol="BTCUSDT"):
 
         if r.status_code != 200:
             print("❌ HTTP error:", r.status_code)
-            return None
+            return {}
 
         data = r.json()
 
-        if coin_id not in data:
-            print("❌ Invalid data:", data)
-            return None
-
-        price = data[coin_id]["usd"]
-
-        if not price or price == 0:
-            return None
-
-        return float(price)
+        return {
+            "BTCUSDT": float(data["bitcoin"]["usd"]),
+            "ETHUSDT": float(data["ethereum"]["usd"]),
+            "ADAUSDT": float(data["cardano"]["usd"])
+        }
 
     except Exception as e:
         print("❌ Price error:", e)
-        return None
+        return {}

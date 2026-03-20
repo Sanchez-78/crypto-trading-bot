@@ -9,7 +9,7 @@ from src.services.firebase_client import (
     load_open_signals
 )
 
-from src.services.market_data import get_price
+from src.services.market_data import get_all_prices
 from src.services.meta_agent import MetaAgent
 from src.services.evaluator import evaluate_signals
 
@@ -48,14 +48,14 @@ def bootstrap_mode(total_signals):
 
 
 # -------------------------------
-# SIMPLE FEATURE GENERATOR (fallback)
+# FEATURE BUILDER (fallback)
 # -------------------------------
 
 def build_features(price):
     return {
         "price": price,
-        "trend": "BULL",          # placeholder
-        "volatility": "NORMAL",   # placeholder
+        "trend": "BULL",
+        "volatility": "NORMAL",
         "regime": "SIMPLIFIED"
     }
 
@@ -67,7 +67,7 @@ def build_features(price):
 def run_pipeline():
     print("\n=== START PIPELINE ===")
 
-    # 🔥 vždy init
+    # 🔥 Firebase init vždy
     init_firebase()
 
     try:
@@ -77,15 +77,18 @@ def run_pipeline():
         print(f"📂 Loaded all signals: {len(all_signals)}")
         print(f"📂 Open trades: {len(open_signals)}")
 
+        # 🔥 JEDEN REQUEST (fix 429)
+        prices = get_all_prices()
+
+        if not prices:
+            print("❌ No prices from API")
+            return
+
         for symbol in symbols:
             print(f"\n🔍 {symbol}")
 
             try:
-                # -------------------------------
-                # GET PRICE (NO BLOCK)
-                # -------------------------------
-
-                price = get_price(symbol)
+                price = prices.get(symbol)
 
                 if not price:
                     print("⚠️ No price data")
@@ -104,7 +107,7 @@ def run_pipeline():
                 print(f"🤖 FINAL: {action} ({confidence})")
 
                 # -------------------------------
-                # BOOTSTRAP
+                # BOOTSTRAP / FILTER
                 # -------------------------------
 
                 if bootstrap_mode(len(all_signals)):
