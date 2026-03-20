@@ -23,10 +23,6 @@ MAX_DAILY_DRAWDOWN = -0.03
 last_prices = {}
 
 
-# -------------------------------
-# DYNAMIC CONFIDENCE
-# -------------------------------
-
 def dynamic_confidence_threshold(signals):
     if len(signals) < 50:
         return 0.55
@@ -35,17 +31,9 @@ def dynamic_confidence_threshold(signals):
     return 0.65
 
 
-# -------------------------------
-# POSITION SIZING
-# -------------------------------
-
 def compute_position_size(confidence):
-    return round(1.0 * confidence, 3)
+    return round(confidence, 3)
 
-
-# -------------------------------
-# RISK MANAGEMENT
-# -------------------------------
 
 def should_trade(action, confidence, open_trades, features):
     if action == "HOLD":
@@ -66,10 +54,6 @@ def bootstrap_mode(total_signals):
     return total_signals < 50
 
 
-# -------------------------------
-# FEATURES
-# -------------------------------
-
 def build_features(symbol, price):
     prev_price = last_prices.get(symbol)
 
@@ -88,26 +72,25 @@ def build_features(symbol, price):
     }
 
 
-# -------------------------------
-# KILL SWITCH
-# -------------------------------
-
+# ✅ FIXED KILL SWITCH
 def check_kill_switch(signals):
     total = 0
+    count = 0
+
     for s in signals:
-        if s.get("evaluated") and s.get("profit"):
+        if s.get("evaluated") and s.get("profit") is not None:
             total += s["profit"]
+            count += 1
+
+    if count < 10:
+        return False
 
     if total < MAX_DAILY_DRAWDOWN:
-        print("🛑 KILL SWITCH ACTIVE")
+        print(f"🛑 KILL SWITCH ACTIVE | pnl={round(total,4)}")
         return True
 
     return False
 
-
-# -------------------------------
-# PIPELINE
-# -------------------------------
 
 def run_pipeline():
     print("\n=== START PIPELINE ===")
@@ -122,8 +105,6 @@ def run_pipeline():
             return
 
         MIN_CONFIDENCE = dynamic_confidence_threshold(all_signals)
-
-        print(f"📂 Signals: {len(all_signals)} | Open: {len(open_signals)}")
 
         prices = get_all_prices()
 
@@ -141,7 +122,6 @@ def run_pipeline():
 
                 action, confidence = meta_agent.decide(features)
 
-                # 🔥 trend boost
                 if features["trend"] == 1:
                     confidence += 0.05
 
@@ -149,7 +129,6 @@ def run_pipeline():
 
                 if not bootstrap_mode(len(all_signals)):
                     if confidence < MIN_CONFIDENCE:
-                        print("🚫 Low confidence")
                         continue
 
                     if not should_trade(action, confidence, open_signals, features):
@@ -168,8 +147,6 @@ def run_pipeline():
                     "timestamp": datetime.utcnow().isoformat(),
                     "evaluated": False
                 }
-
-                print(f"🚀 {symbol} {action} @ {price}")
 
                 save_signal(signal)
 

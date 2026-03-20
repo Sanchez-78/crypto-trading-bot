@@ -47,7 +47,7 @@ def get_db():
 
 
 # -------------------------------
-# USERS (STRIPE INTEGRATION)
+# USERS
 # -------------------------------
 
 def create_or_update_user(user_id, data: dict):
@@ -102,7 +102,7 @@ def find_user_by_customer(customer_id):
             return None
 
         docs = db.collection("users") \
-            .where(filter=("stripe_customer_id", "==", customer_id)) \
+            .where("stripe_customer_id", "==", customer_id) \
             .limit(1).stream()
 
         for d in docs:
@@ -152,7 +152,7 @@ def load_open_signals():
             return []
 
         docs = db.collection("signals") \
-            .where(filter=("evaluated", "==", False)) \
+            .where("evaluated", "==", False) \
             .stream()
 
         return [(d.id, d.to_dict()) for d in docs]
@@ -175,27 +175,36 @@ def update_signal(doc_id, data: dict):
 
 
 # -------------------------------
-# PAYWALL LOGIC (CRITICAL)
+# PERFORMANCE (HIGH IMPACT)
 # -------------------------------
 
-def filter_signals_for_user(signals, user_id):
-    plan = get_user_plan(user_id)
+def get_performance():
+    try:
+        db = get_db()
+        if not db:
+            return {}
 
-    if plan == "FREE":
-        # pouze 1 signal + delay simulace
-        return signals[:1]
+        docs = db.collection("signals").stream()
+        signals = [d.to_dict() for d in docs]
 
-    if plan == "PRO":
-        return signals[:10]
+        wins = [s for s in signals if s.get("result") == "WIN"]
+        losses = [s for s in signals if s.get("result") == "LOSS"]
 
-    if plan == "PREMIUM":
-        return signals
+        total = len(wins) + len(losses)
+        winrate = len(wins) / total if total > 0 else 0
 
-    return []
+        return {
+            "winrate": round(winrate, 3),
+            "total_trades": total
+        }
+
+    except Exception as e:
+        print("❌ Performance error:", e)
+        return {}
 
 
 # -------------------------------
-# META / AI WEIGHTS
+# META (AI WEIGHTS)
 # -------------------------------
 
 def save_weights(weights: dict):
@@ -221,56 +230,11 @@ def load_weights():
         doc = db.collection("meta").document("weights").get()
 
         if doc.exists:
-            return doc.to_dict() or {}
+            data = doc.to_dict()
+            return data if isinstance(data, dict) else {}
 
         return {}
 
     except Exception as e:
         print("❌ Load weights error:", e)
-        return {}
-
-
-# -------------------------------
-# ANALYTICS (HIGH IMPACT)
-# -------------------------------
-
-def log_trade_outcome(signal):
-    try:
-        db = get_db()
-        if not db:
-            return
-
-        db.collection("analytics").add({
-            "symbol": signal.get("symbol"),
-            "result": signal.get("result"),
-            "profit": signal.get("profit"),
-            "confidence": signal.get("confidence"),
-            "timestamp": signal.get("timestamp")
-        })
-
-    except Exception as e:
-        print("❌ Analytics error:", e)
-
-def get_performance():
-    try:
-        db = get_db()
-        if not db:
-            return {}
-
-        docs = db.collection("signals").stream()
-        signals = [d.to_dict() for d in docs]
-
-        wins = [s for s in signals if s.get("result") == "WIN"]
-        losses = [s for s in signals if s.get("result") == "LOSS"]
-
-        total = len(wins) + len(losses)
-        winrate = len(wins) / total if total > 0 else 0
-
-        return {
-            "winrate": round(winrate, 3),
-            "total_trades": total
-        }
-
-    except Exception as e:
-        print("❌ Performance error:", e)
         return {}

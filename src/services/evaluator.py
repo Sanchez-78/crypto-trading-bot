@@ -14,19 +14,16 @@ def evaluate_signals(symbol):
         prices = get_all_prices()
 
         docs = db.collection("signals") \
-            .where(filter=("symbol", "==", symbol)) \
-            .where(filter=("evaluated", "==", False)) \
+            .where("symbol", "==", symbol) \
+            .where("evaluated", "==", False) \
             .stream()
 
         signals = [(d.id, d.to_dict()) for d in docs]
-
-        print(f"🔎 {symbol}: {len(signals)} signals")
 
         for doc_id, signal in signals:
             try:
                 age = signal.get("age", 0)
 
-                # ⏳ WAIT (important)
                 if age < HOLD_CYCLES:
                     update_signal(doc_id, {"age": age + 1})
                     continue
@@ -44,8 +41,6 @@ def evaluate_signals(symbol):
                     profit = (price - current_price) / price
 
                 result = "WIN" if profit > 0 else "LOSS"
-
-                print(f"{action} → {result} | {round(profit, 4)}")
 
                 update_signal(doc_id, {
                     "evaluated": True,
