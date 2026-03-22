@@ -54,3 +54,6 @@ def load_config():
     _last_load = time.time()
 
     return _last_config
+
+def get_db():
+    return db
