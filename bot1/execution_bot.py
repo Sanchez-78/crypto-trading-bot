@@ -20,12 +20,22 @@ def get_market_features():
 
 
 # =========================
+# 🧠 REGIME DETECTION
+# =========================
+def detect_regime(features):
+    if features["volatility"] > 0.7:
+        return "VOLATILE"
+    if features["trend"] == "UP":
+        return "TREND"
+    return "RANGE"
+
+
+# =========================
 # 📈 TREND STRATEGY
 # =========================
 def trend_strategy(features):
     if features["trend"] == "UP":
         return "BUY", random.uniform(0.5, 1.0)
-
     return "HOLD", random.uniform(0.0, 0.5)
 
 
@@ -35,27 +45,38 @@ def trend_strategy(features):
 def reversal_strategy(features):
     if features["volatility"] > 0.7:
         return "BUY", random.uniform(0.5, 1.0)
-
     return "HOLD", random.uniform(0.0, 0.5)
 
 
 # =========================
-# 🧠 BANDIT SELECTION
+# 🧠 CONTEXTUAL BANDIT (FEATURE AWARE)
 # =========================
-def select_strategy_bandit(strategies, config):
+def select_strategy_contextual(strategies, regime, features, config):
     scores = config.get("bandit_scores", {})
     epsilon = config.get("epsilon", 0.1)
+
+    vol = features["volatility"]
+    trend = features["trend"]
+
+    if vol > 0.7:
+        vol_bucket = "HIGH"
+    elif vol > 0.3:
+        vol_bucket = "MID"
+    else:
+        vol_bucket = "LOW"
+
+    feature_key = f"{trend}_{vol_bucket}"
 
     # exploration
     if random.random() < epsilon:
         return random.choice(list(strategies.keys()))
 
-    # exploitation
     best = None
     best_score = -999
 
     for name in strategies.keys():
-        score = scores.get(name, 0)
+        key = f"{regime}_{name}_{feature_key}"
+        score = scores.get(key, 0)
 
         if score > best_score:
             best_score = score
@@ -73,25 +94,27 @@ def generate_signal(features, config):
         "REVERSAL": reversal_strategy
     }
 
-    chosen = select_strategy_bandit(strategies, config)
+    regime = detect_regime(features)
+
+    chosen = select_strategy_contextual(strategies, regime, features, config)
 
     signal, confidence = strategies[chosen](features)
 
-    return signal, confidence, chosen
+    return signal, confidence, chosen, regime
 
 
 # =========================
 # 🚀 MAIN LOOP
 # =========================
 def run_execution():
-    print("🟢 Execution started (Bandit mode)")
+    print("🟢 Execution started (Contextual + Feature Bandit)")
 
     while True:
         config = load_config() or {}
 
         features = get_market_features()
 
-        signal, confidence, strategy = generate_signal(features, config)
+        signal, confidence, strategy, regime = generate_signal(features, config)
 
         # =========================
         # 🟢 OPEN SIGNAL
@@ -102,6 +125,7 @@ def run_execution():
                 "signal": "BUY",
                 "price": features["price"],
                 "strategy": strategy,
+                "regime": regime,
                 "confidence": confidence,
                 "features": features,
                 "evaluated": False,
@@ -112,7 +136,7 @@ def run_execution():
 
             save_signal(signal_data)
 
-            print(f"✅ BUY {round(confidence, 2)} | strat: {strategy}")
+            print(f"✅ BUY {round(confidence, 2)} | {strategy} | {regime}")
 
         # =========================
         # 🔒 CLOSE TRADES (mock)
@@ -129,7 +153,4 @@ def run_execution():
                 close_trade(t["id"], current_price)
                 print(f"🔒 Closed {t['id']} PnL: {round(change,4)}")
 
-        # =========================
-        # ⏳ SLOW DOWN
-        # =========================
         time.sleep(60)
