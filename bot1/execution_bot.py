@@ -4,7 +4,7 @@ import sys, os
 
 sys.path.append(os.getcwd())
 
-from src.services.firebase_client import save_trade, load_config
+from src.services.firebase_client import save_signal, load_config
 from bot1.trade_manager import get_open_trades, close_trade
 
 
@@ -17,16 +17,6 @@ def get_market_features():
         "trend": random.choice(["UP", "DOWN"]),
         "volatility": random.random()
     }
-
-
-# =========================
-# ⚖️ STRATEGY WEIGHT
-# =========================
-def apply_strategy_weight(strategy, confidence, config):
-    weights = config.get("strategy_weights", {})
-    weight = weights.get(strategy, 0.5)
-
-    return confidence * weight
 
 
 # =========================
@@ -43,11 +33,35 @@ def trend_strategy(features):
 # 🔄 REVERSAL STRATEGY
 # =========================
 def reversal_strategy(features):
-    # vysoká volatilita → možný obrat
     if features["volatility"] > 0.7:
         return "BUY", random.uniform(0.5, 1.0)
 
     return "HOLD", random.uniform(0.0, 0.5)
+
+
+# =========================
+# 🧠 BANDIT SELECTION
+# =========================
+def select_strategy_bandit(strategies, config):
+    scores = config.get("bandit_scores", {})
+    epsilon = config.get("epsilon", 0.1)
+
+    # exploration
+    if random.random() < epsilon:
+        return random.choice(list(strategies.keys()))
+
+    # exploitation
+    best = None
+    best_score = -999
+
+    for name in strategies.keys():
+        score = scores.get(name, 0)
+
+        if score > best_score:
+            best_score = score
+            best = name
+
+    return best or random.choice(list(strategies.keys()))
 
 
 # =========================
@@ -59,29 +73,18 @@ def generate_signal(features, config):
         "REVERSAL": reversal_strategy
     }
 
-    best_signal = "HOLD"
-    best_conf = 0
-    best_strategy = None
+    chosen = select_strategy_bandit(strategies, config)
 
-    for name, strat_fn in strategies.items():
-        signal, confidence = strat_fn(features)
+    signal, confidence = strategies[chosen](features)
 
-        # aplikace váhy
-        confidence = apply_strategy_weight(name, confidence, config)
-
-        if confidence > best_conf:
-            best_conf = confidence
-            best_signal = signal
-            best_strategy = name
-
-    return best_signal, best_conf, best_strategy
+    return signal, confidence, chosen
 
 
 # =========================
 # 🚀 MAIN LOOP
 # =========================
 def run_execution():
-    print("🟢 Execution started")
+    print("🟢 Execution started (Bandit mode)")
 
     while True:
         config = load_config() or {}
@@ -91,25 +94,28 @@ def run_execution():
         signal, confidence, strategy = generate_signal(features, config)
 
         # =========================
-        # 🟢 OPEN TRADE
+        # 🟢 OPEN SIGNAL
         # =========================
         if signal == "BUY":
-            trade = {
+            signal_data = {
                 "symbol": "BTCUSDT",
-                "entry_price": features["price"],
-                "exit_price": None,
-                "status": "OPEN",
+                "signal": "BUY",
+                "price": features["price"],
                 "strategy": strategy,
                 "confidence": confidence,
-                "features": features,  # 🔥 důležité pro learning
+                "features": features,
+                "evaluated": False,
+                "age": 0,
+                "config_version": config.get("version", 0),
                 "timestamp": time.time()
             }
 
-            save_trade(trade)
+            save_signal(signal_data)
+
             print(f"✅ BUY {round(confidence, 2)} | strat: {strategy}")
 
         # =========================
-        # 🔒 CLOSE TRADES
+        # 🔒 CLOSE TRADES (mock)
         # =========================
         open_trades = get_open_trades()
 
@@ -123,4 +129,7 @@ def run_execution():
                 close_trade(t["id"], current_price)
                 print(f"🔒 Closed {t['id']} PnL: {round(change,4)}")
 
-        time.sleep(30)
+        # =========================
+        # ⏳ SLOW DOWN
+        # =========================
+        time.sleep(60)
