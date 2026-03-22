@@ -1,62 +1,126 @@
-import os
-import json
-import firebase_admin
-from firebase_admin import credentials, firestore
+import time
+import random
+import sys, os
 
-# INIT
-if not firebase_admin._apps:
-    firebase_json = os.environ.get("FIREBASE_KEY")
+sys.path.append(os.getcwd())
 
-    if not firebase_json:
-        raise ValueError("FIREBASE_KEY missing")
-
-    cred = credentials.Certificate(json.loads(firebase_json))
-    firebase_admin.initialize_app(cred)
-
-db = firestore.client()
+from src.services.firebase_client import save_trade, load_config
+from bot1.trade_manager import get_open_trades, close_trade
 
 
-def save_trade(trade):
-    import random
-    if random.random() > 0.3:
-        return
-
-    db.collection("trades").add(trade)
-
-
-def load_recent_trades(limit=50):
-    docs = db.collection("trades") \
-        .order_by("timestamp", direction=firestore.Query.DESCENDING) \
-        .limit(limit) \
-        .stream()
-
-    return [d.to_dict() for d in docs]
+# =========================
+# 📊 MARKET FEATURES (mock)
+# =========================
+def get_market_features():
+    return {
+        "price": 50000 + random.randint(-500, 500),
+        "trend": random.choice(["UP", "DOWN"]),
+        "volatility": random.random()
+    }
 
 
-def save_config(config):
-    db.collection("config").document("latest").set(config)
+# =========================
+# ⚖️ STRATEGY WEIGHT
+# =========================
+def apply_strategy_weight(strategy, confidence, config):
+    weights = config.get("strategy_weights", {})
+    weight = weights.get(strategy, 0.5)
+
+    return confidence * weight
 
 
-_last_config = None
-_last_load = 0
+# =========================
+# 📈 TREND STRATEGY
+# =========================
+def trend_strategy(features):
+    if features["trend"] == "UP":
+        return "BUY", random.uniform(0.5, 1.0)
+
+    return "HOLD", random.uniform(0.0, 0.5)
 
 
-def load_config():
-    global _last_config, _last_load
-    import time
+# =========================
+# 🔄 REVERSAL STRATEGY
+# =========================
+def reversal_strategy(features):
+    # vysoká volatilita → možný obrat
+    if features["volatility"] > 0.7:
+        return "BUY", random.uniform(0.5, 1.0)
 
-    if time.time() - _last_load < 60:
-        return _last_config or {}
+    return "HOLD", random.uniform(0.0, 0.5)
 
-    doc = db.collection("config").document("latest").get()
 
-    _last_config = doc.to_dict() if doc.exists else {}
-    _last_load = time.time()
+# =========================
+# 🧠 SIGNAL GENERATOR
+# =========================
+def generate_signal(features, config):
+    strategies = {
+        "TREND": trend_strategy,
+        "REVERSAL": reversal_strategy
+    }
 
-    return _last_config
+    best_signal = "HOLD"
+    best_conf = 0
+    best_strategy = None
 
-def get_db():
-    return db
+    for name, strat_fn in strategies.items():
+        signal, confidence = strat_fn(features)
 
-def update_signal(doc_id, data):
-    db.collection("signals").document(doc_id).update(data)
+        # aplikace váhy
+        confidence = apply_strategy_weight(name, confidence, config)
+
+        if confidence > best_conf:
+            best_conf = confidence
+            best_signal = signal
+            best_strategy = name
+
+    return best_signal, best_conf, best_strategy
+
+
+# =========================
+# 🚀 MAIN LOOP
+# =========================
+def run_execution():
+    print("🟢 Execution started")
+
+    while True:
+        config = load_config() or {}
+
+        features = get_market_features()
+
+        signal, confidence, strategy = generate_signal(features, config)
+
+        # =========================
+        # 🟢 OPEN TRADE
+        # =========================
+        if signal == "BUY":
+            trade = {
+                "symbol": "BTCUSDT",
+                "entry_price": features["price"],
+                "exit_price": None,
+                "status": "OPEN",
+                "strategy": strategy,
+                "confidence": confidence,
+                "features": features,  # 🔥 důležité pro learning
+                "timestamp": time.time()
+            }
+
+            save_trade(trade)
+            print(f"✅ BUY {round(confidence, 2)} | strat: {strategy}")
+
+        # =========================
+        # 🔒 CLOSE TRADES
+        # =========================
+        open_trades = get_open_trades()
+
+        for t in open_trades:
+            entry = t["entry_price"]
+            current_price = features["price"]
+
+            change = (current_price - entry) / entry
+
+            if change > 0.01 or change < -0.01:
+                close_trade(t["id"], current_price)
+                print(f"🔒 Closed {t['id']} PnL: {round(change,4)}")
+
+        time.sleep(30)
