@@ -18,7 +18,7 @@ def get_market_features():
         "price": 50000 + random.randint(-500, 500),
         "trend": random.choice(["UP", "DOWN"]),
         "volatility": random.random(),
-        "atr_m15": random.uniform(0.0005, 0.002)  # 🔥 důležité pro risk
+        "atr_m15": random.uniform(0.0005, 0.002)
     }
 
 
@@ -84,7 +84,7 @@ def select_strategy(strategies, regime, features, config):
 
 
 # =========================
-# 📊 MOCK METRICS (napojíš na Firebase)
+# 📊 MOCK METRICS
 # =========================
 def load_metrics():
     return {
@@ -97,7 +97,7 @@ def load_metrics():
 # 🚀 MAIN
 # =========================
 def run_execution():
-    print("🟢 Execution started (FULL SYSTEM)")
+    print("🟢 Execution started (FULL SYSTEM + BONUS)")
 
     risk_manager = RiskManager()
     risk_engine = RiskEngine()
@@ -134,6 +134,31 @@ def run_execution():
         drawdown = metrics["drawdown"]
 
         # =========================
+        # 🧠 BONUS RISK LAYER
+        # =========================
+
+        # 1. Confidence scaling
+        confidence_adj = confidence ** 2
+
+        # 2. Regime-based risk
+        if regime == "TREND":
+            risk_engine.max_risk_per_trade = 0.03
+        elif regime == "VOLATILE":
+            risk_engine.max_risk_per_trade = 0.01
+        else:
+            risk_engine.max_risk_per_trade = 0.02
+
+        # 3. Drawdown adaptive risk
+        if drawdown > 0.1:
+            risk_engine.max_risk_per_trade *= 0.5
+
+        # 4. HARD STOP
+        if drawdown > 0.2:
+            print("💀 HARD STOP TRADING")
+            time.sleep(300)
+            continue
+
+        # =========================
         # 🚨 KILL SWITCH
         # =========================
         if not risk_engine.should_trade(drawdown, {"cooldown": 0}):
@@ -158,7 +183,7 @@ def run_execution():
         # =========================
         # 🧠 EDGE
         # =========================
-        edge = risk_engine.compute_edge(confidence, winrate)
+        edge = risk_engine.compute_edge(confidence_adj, winrate)
 
         # =========================
         # 💰 POSITION SIZE
@@ -190,13 +215,12 @@ def run_execution():
             symbol="BTCUSDT",
             action="BUY",
             price=features["price"],
-            confidence=confidence,
+            confidence=confidence_adj,
             size=size,
             sl=sl,
             tp=tp
         )
 
-        # Firebase = logging only
         save_signal({
             **trade,
             "strategy": chosen,
@@ -206,7 +230,7 @@ def run_execution():
             "timestamp": time.time()
         })
 
-        print(f"✅ OPEN {trade['id']} size={round(size,2)}")
+        print(f"✅ OPEN {trade['id']} size={round(size,2)} edge={round(edge,2)}")
 
         # =========================
         # 🔄 UPDATE PORTFOLIO
@@ -219,3 +243,7 @@ def run_execution():
             print(f"🔒 CLOSED {t['id']} {result} PnL={round(pnl,4)}")
 
         time.sleep(60)
+
+
+if __name__ == "__main__":
+    run_execution()
