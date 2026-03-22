@@ -10,9 +10,6 @@ from src.services.risk_engine import RiskEngine
 from src.services.portfolio_manager import PortfolioManager
 
 
-# =========================
-# 📊 MARKET FEATURES (mock)
-# =========================
 def get_market_features():
     return {
         "price": 50000 + random.randint(-500, 500),
@@ -22,9 +19,6 @@ def get_market_features():
     }
 
 
-# =========================
-# 🧠 REGIME
-# =========================
 def detect_regime(f):
     if f["volatility"] > 0.7:
         return "VOLATILE"
@@ -33,24 +27,18 @@ def detect_regime(f):
     return "RANGE"
 
 
-# =========================
-# 📈 STRATEGIES
-# =========================
 def trend_strategy(f):
     if f["trend"] == "UP":
         return "BUY", random.uniform(0.5, 1.0)
-    return "HOLD", random.uniform(0.0, 0.5)
+    return "HOLD", 0
 
 
 def reversal_strategy(f):
     if f["volatility"] > 0.7:
         return "BUY", random.uniform(0.5, 1.0)
-    return "HOLD", random.uniform(0.0, 0.5)
+    return "HOLD", 0
 
 
-# =========================
-# 🧠 BANDIT
-# =========================
 def select_strategy(strategies, regime, features, config):
     scores = config.get("bandit_scores", {})
     epsilon = config.get("epsilon", 0.1)
@@ -58,13 +46,7 @@ def select_strategy(strategies, regime, features, config):
     vol = features["volatility"]
     trend = features["trend"]
 
-    if vol > 0.7:
-        vol_bucket = "HIGH"
-    elif vol > 0.3:
-        vol_bucket = "MID"
-    else:
-        vol_bucket = "LOW"
-
+    vol_bucket = "HIGH" if vol > 0.7 else "MID" if vol > 0.3 else "LOW"
     feature_key = f"{trend}_{vol_bucket}"
 
     if random.random() < epsilon:
@@ -83,9 +65,6 @@ def select_strategy(strategies, regime, features, config):
     return best or random.choice(list(strategies.keys()))
 
 
-# =========================
-# 📊 MOCK METRICS
-# =========================
 def load_metrics():
     return {
         "performance": {"winrate": 0.55},
@@ -93,12 +72,7 @@ def load_metrics():
     }
 
 
-# =========================
-# 🚀 MAIN
-# =========================
 def run_execution():
-    print("🟢 Execution started (FULL SYSTEM + BONUS)")
-
     risk_manager = RiskManager()
     risk_engine = RiskEngine()
     portfolio = PortfolioManager()
@@ -119,28 +93,19 @@ def run_execution():
 
         signal, confidence = strategies[chosen](features)
 
-        # =========================
-        # ❌ ONLY BUY
-        # =========================
         if signal != "BUY":
             time.sleep(60)
             continue
 
-        # =========================
-        # 📊 METRICS
-        # =========================
         metrics = load_metrics()
         winrate = metrics["performance"]["winrate"]
         drawdown = metrics["drawdown"]
 
-        # =========================
-        # 🧠 BONUS RISK LAYER
-        # =========================
+        # 🔥 CONFIDENCE CALIBRATION
+        cal = config.get("confidence_calibration", {})
+        confidence_adj = cal.get(round(confidence, 1), confidence)
 
-        # 1. Confidence scaling
-        confidence_adj = confidence ** 2
-
-        # 2. Regime-based risk
+        # 🔥 BONUS RISK LAYER
         if regime == "TREND":
             risk_engine.max_risk_per_trade = 0.03
         elif regime == "VOLATILE":
@@ -148,46 +113,26 @@ def run_execution():
         else:
             risk_engine.max_risk_per_trade = 0.02
 
-        # 3. Drawdown adaptive risk
         if drawdown > 0.1:
             risk_engine.max_risk_per_trade *= 0.5
 
-        # 4. HARD STOP
         if drawdown > 0.2:
-            print("💀 HARD STOP TRADING")
+            print("💀 HARD STOP")
             time.sleep(300)
             continue
 
-        # =========================
-        # 🚨 KILL SWITCH
-        # =========================
         if not risk_engine.should_trade(drawdown, {"cooldown": 0}):
-            print("🛑 Trading paused")
             time.sleep(60)
             continue
 
-        # =========================
-        # 📉 SL / TP (ATR)
-        # =========================
-        sl, tp = risk_manager.compute(
-            features,
-            features["price"],
-            signal
-        )
+        sl, tp = risk_manager.compute(features, features["price"], signal)
 
         if sl is None:
-            print("❌ No ATR → skip")
             time.sleep(60)
             continue
 
-        # =========================
-        # 🧠 EDGE
-        # =========================
         edge = risk_engine.compute_edge(confidence_adj, winrate)
 
-        # =========================
-        # 💰 POSITION SIZE
-        # =========================
         size = risk_engine.position_size(
             balance,
             features["price"],
@@ -195,22 +140,12 @@ def run_execution():
             edge
         )
 
-        if size <= 0:
-            print("❌ Size = 0")
+        if size <= 0 or not portfolio.can_open(balance):
             time.sleep(60)
             continue
 
-        # =========================
-        # 📊 PORTFOLIO LIMIT
-        # =========================
-        if not portfolio.can_open(balance):
-            print("⚠️ Max exposure reached")
-            time.sleep(60)
-            continue
+        vol_bucket = "HIGH" if features["volatility"] > 0.7 else "MID" if features["volatility"] > 0.3 else "LOW"
 
-        # =========================
-        # 🟢 OPEN TRADE
-        # =========================
         trade, _ = portfolio.open_trade(
             symbol="BTCUSDT",
             action="BUY",
@@ -227,20 +162,19 @@ def run_execution():
             "regime": regime,
             "features": features,
             "edge": edge,
+            "meta": {
+                "feature_bucket": f"{features['trend']}_{vol_bucket}",
+                "confidence_raw": confidence,
+                "confidence_used": confidence_adj
+            },
             "timestamp": time.time()
         })
 
-        print(f"✅ OPEN {trade['id']} size={round(size,2)} edge={round(edge,2)}")
-
-        # =========================
-        # 🔄 UPDATE PORTFOLIO
-        # =========================
         prices = {"BTCUSDT": features["price"]}
-
         closed = portfolio.update_trades(prices)
 
         for t, pnl, result in closed:
-            print(f"🔒 CLOSED {t['id']} {result} PnL={round(pnl,4)}")
+            print(f"🔒 CLOSED {t['id']} {result} {round(pnl,4)}")
 
         time.sleep(60)
 
