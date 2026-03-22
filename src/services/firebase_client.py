@@ -57,3 +57,6 @@ def load_config():
 
 def get_db():
     return db
+
+def update_signal(doc_id, data):
+    db.collection("signals").document(doc_id).update(data)
