@@ -1,0 +1,6 @@
+PRICE_TICK = "price_tick"
+SIGNAL_CREATED = "signal_created"
+TRADE_OPENED = "trade_opened"
+TRADE_CLOSED = "trade_closed"
+EVALUATION_DONE = "evaluation_done"
+CONFIG_UPDATED = "config_updated"
