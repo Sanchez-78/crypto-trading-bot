@@ -307,3 +307,32 @@ def mark_signal_evaluated(doc_id: str, update: dict) -> None:
 
     except Exception as e:
         print("❌ Mark evaluated error:", e)
+
+def load_old_trades(limit=200):
+    db = get_db()
+
+    docs = (
+        db.collection("signals")
+        .where("evaluated", "==", True)
+        .order_by("timestamp")
+        .limit(limit)
+        .stream()
+    )
+
+    trades = []
+    for d in docs:
+        data = d.to_dict()
+        data["id"] = d.id
+        trades.append(data)
+
+    return trades
+
+
+def delete_trade(doc_id):
+    db = get_db()
+    db.collection("signals").document(doc_id).delete()
+
+
+def save_compressed(trade):
+    db = get_db()
+    db.collection("signals_compressed").add(trade)
