@@ -11,43 +11,41 @@ class SelfEvolvingSystem:
         }
 
     # =========================
-    # 🧠 EVOLVE
+    # 🧠 EVOLVE (NOW RETURNS SUGGESTIONS)
     # =========================
     def evolve(self, performance):
         winrate = performance.get("winrate", 0)
         profit = performance.get("profit", 0)
+        confidence_quality = performance.get("confidence_quality", 0.5)
 
         print("🧬 Evolving with:", performance)
+
+        update = {}
 
         # =========================
         # 📈 GOOD PERFORMANCE
         # =========================
-        if winrate > 50 and profit > 0:
-            self.params["risk_multiplier"] *= 1.05
-            self.params["confidence_boost"] *= 1.02
-            self.params["exploration"] *= 0.95
+        if winrate > 50 and profit > 0 and confidence_quality > 0.6:
+            update["risk_multiplier"] = 1.05
+            update["confidence_boost"] = 1.02
+            update["exploration"] = 0.95
 
         # =========================
         # 📉 BAD PERFORMANCE
         # =========================
         else:
-            self.params["risk_multiplier"] *= 0.9
-            self.params["confidence_boost"] *= 0.95
-            self.params["exploration"] *= 1.05
+            update["risk_multiplier"] = 0.9
+            update["confidence_boost"] = 0.95
+            update["exploration"] = 1.05
 
         # =========================
-        # 🎲 MUTATION
+        # 🎲 MUTATION (proposal only)
         # =========================
         if random.random() < 0.1:
             key = random.choice(list(self.params.keys()))
-            self.params[key] *= random.uniform(0.9, 1.1)
-            print(f"🧬 Mutation on {key}")
+            update[key] = random.uniform(0.9, 1.1)
+            print(f"🧬 Mutation suggestion on {key}")
 
-        # clamp
-        self.params["risk_multiplier"] = max(0.5, min(2.0, self.params["risk_multiplier"]))
-        self.params["confidence_boost"] = max(0.5, min(2.0, self.params["confidence_boost"]))
-        self.params["exploration"] = max(0.01, min(0.5, self.params["exploration"]))
+        print("🧬 Suggested params:", update)
 
-        print("🧬 Params:", self.params)
-
-        return self.params
+        return update

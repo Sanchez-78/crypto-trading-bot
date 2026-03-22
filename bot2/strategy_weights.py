@@ -1,5 +1,5 @@
 from collections import defaultdict
-from src.services.firebase_client import load_all_signals, save_weights
+from src.services.firebase_client import load_all_signals
 
 
 class StrategyWeights:
@@ -16,6 +16,7 @@ class StrategyWeights:
             strategy = s.get("strategy")
             result = s.get("result")
 
+            # ❗ ochrana (důležité)
             if not strategy or result not in ["WIN", "LOSS"]:
                 continue
 
@@ -31,11 +32,8 @@ class StrategyWeights:
                 continue
 
             winrate = data["win"] / total
-
-            # 🔥 FIXED LOGIC
             weight = 0.5 + winrate
 
-            # fallback při málo datech
             if total < 5:
                 weight = 1.0
 
@@ -43,7 +41,4 @@ class StrategyWeights:
 
         print("🧠 Strategy weights:", dict(self.weights))
 
-        save_weights({"strategy": dict(self.weights)})
-
-    def get(self):
-        return self.weights
+        return dict(self.weights)

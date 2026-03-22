@@ -4,7 +4,15 @@ class PortfolioManager:
         self.trade_history = []
 
     def open_trade(self, s, a, p, c):
-        t = {"symbol": s, "action": a, "entry": p, "confidence": c}
+        t = {
+            "symbol": s,
+            "action": a,
+            "entry": p,
+            "confidence": c,
+            "self_eval": {
+                "predicted": c
+            }
+        }
         self.open_trades.append(t)
         return t, "OPEN"
 
@@ -21,6 +29,11 @@ class PortfolioManager:
                 result = "WIN" if change > 0 else "LOSS"
                 t["profit"] = change
                 t["result"] = result
+
+                # 🧠 META DATA
+                t["self_eval"]["error"] = abs(
+                    t["self_eval"]["predicted"] - (1 if result == "WIN" else 0)
+                )
 
                 self.trade_history.append(t)
                 self.open_trades.remove(t)
