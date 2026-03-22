@@ -19,6 +19,9 @@ class MetaAgent:
         self.total_trades = 0
         self.wins = 0
 
+        # 🔥 stabilita
+        self.alpha = 0.01  # EMA rychlost
+
     # ─────────────────────────────
     # 🎯 DECISION ENGINE
     # ─────────────────────────────
@@ -41,11 +44,13 @@ class MetaAgent:
         elif regime == "BEAR":
             conf += 0.1
 
-        # 🔥 cluster pattern bonus
+        # 🔥 cluster pattern
         key = self.cluster.build(f, action)
 
         if key in self.patterns:
-            conf += self.patterns[key]
+            stats = self.cluster_stats.get(key, {"count": 1, "profit": 0})
+            avg = stats["profit"] / max(stats["count"], 1)
+            conf += avg
 
         # 🔥 bias
         conf += self.bias
@@ -54,7 +59,7 @@ class MetaAgent:
         return action, conf
 
     # ─────────────────────────────
-    # ⚡ EVENT LEARNING
+    # ⚡ EVENT LEARNING (FIXED)
     # ─────────────────────────────
     def learn_from_trade(self, trade):
         profit = trade.get("profit", 0)
@@ -62,13 +67,23 @@ class MetaAgent:
 
         self.total_trades += 1
 
-        if result == "WIN":
-            self.wins += 1
-            self.bias += 0.01
-        else:
-            self.bias -= 0.01
+        # 🔥 win jako 0/1 (FIX)
+        win = 1 if result == "WIN" else 0
 
-        self.bias = max(-0.5, min(self.bias, 0.5))
+        if win:
+            self.wins += 1
+
+        # 🔥 bias update (jemnější + damping)
+        step = 0.003
+
+        if win:
+            self.bias += step
+        else:
+            self.bias -= step
+
+        # damping
+        self.bias *= 0.995
+        self.bias = max(-0.3, min(self.bias, 0.3))
 
         # 🔥 CLUSTER LEARNING
         f = trade.get("features", {})
@@ -90,71 +105,32 @@ class MetaAgent:
         self.cluster_stats[key]["count"] += 1
         self.cluster_stats[key]["profit"] += profit
 
-        # 📊 EMA stats
-        winrate = self.wins / max(self.total_trades, 1)
-
+        # 🔥 EMA STATS (FIX)
         self.last_stats["winrate"] = (
-            self.last_stats["winrate"] * 0.99 + winrate * 0.01
+            self.last_stats["winrate"] * (1 - self.alpha) + win * self.alpha
         )
 
         self.last_stats["avg_profit"] = (
-            self.last_stats["avg_profit"] * 0.99 + profit * 0.01
+            self.last_stats["avg_profit"] * (1 - self.alpha) + profit * self.alpha
         )
 
+        # clamp
+        self.last_stats["winrate"] = max(0, min(1, self.last_stats["winrate"]))
+
         self.last_stats["patterns"] = len(self.patterns)
-
-    # ─────────────────────────────
-    # 🧠 FALLBACK: RAW
-    # ─────────────────────────────
-    def learn_from_history(self, trades):
-        if not trades:
-            return
-
-        wins = [t for t in trades if t.get("result") == "WIN"]
-        total = len(trades)
-
-        if total == 0:
-            return
-
-        winrate = len(wins) / total
-        avg_profit = sum(t.get("profit", 0) for t in trades) / total
-
-        self.bias += (winrate - 0.5) * 0.1
-
-        self.last_stats["winrate"] = winrate
-        self.last_stats["avg_profit"] = avg_profit
-        self.last_stats["patterns"] = len(self.patterns)
-
-    # ─────────────────────────────
-    # 🧠 FALLBACK: COMPRESSED
-    # ─────────────────────────────
-    def learn_from_compressed(self, trades):
-        if not trades:
-            return
-
-        for t in trades:
-            f = t.get("f", {})
-            action = t.get("signal")
-            profit = t.get("profit", 0)
-
-            fake_features = {
-                "market_regime": f.get("r", "R"),
-                "trend_strength": f.get("t", 0),
-                "vol_10": f.get("v", 0),
-            }
-
-            key = self.cluster.build(fake_features, action)
-
-            if key not in self.patterns:
-                self.patterns[key] = 0
-
-            self.patterns[key] += profit
-            self.patterns[key] = max(-1, min(self.patterns[key], 1))
 
     # ─────────────────────────────
     # 📊 PROGRESS
     # ─────────────────────────────
     def get_progress(self):
+        # 🔥 early phase ochrana
+        if self.total_trades < 30:
+            return {
+                "score": 0,
+                "status": "learning...",
+                "trades": self.total_trades,
+            }
+
         score = int(self.last_stats["winrate"] * 100)
 
         return {
@@ -178,4 +154,5 @@ class MetaAgent:
 
         print("\n🔥 TOP CLUSTERS:")
         for k, v in top:
-            print(f"{k} | count={v['count']} profit={round(v['profit'],4)}")
+            avg = v["profit"] / max(v["count"], 1)
+            print(f"{k} | count={v['count']} avg={round(avg,4)}")
