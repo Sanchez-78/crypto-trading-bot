@@ -1,19 +1,11 @@
-import subprocess
-import time
+import sys
+import os
 
 print("🚀 Starting BOT SYSTEM...")
 
-# spustí Bot2 (Brain)
-brain = subprocess.Popen(["python", "bot2/main.py"])
+ROOT = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(ROOT)
 
-# malá pauza
-time.sleep(2)
+from bot2.main import main
 
-# spustí Bot1 (Execution)
-execution = subprocess.Popen(["python", "bot1/run.py"])
-
-print("🧠 Brain + 🟢 Execution running")
-
-# drží proces naživu
-while True:
-    time.sleep(60)
+main()

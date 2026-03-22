@@ -1,126 +1,121 @@
-import time
-import random
-import sys, os
+import firebase_admin
+from firebase_admin import credentials, firestore
+import os
 
-sys.path.append(os.getcwd())
-
-from src.services.firebase_client import save_trade, load_config
-from bot1.trade_manager import get_open_trades, close_trade
+_db = None
 
 
 # =========================
-# 📊 MARKET FEATURES (mock)
+# 🔌 INIT FIREBASE
 # =========================
-def get_market_features():
-    return {
-        "price": 50000 + random.randint(-500, 500),
-        "trend": random.choice(["UP", "DOWN"]),
-        "volatility": random.random()
-    }
+def init_firebase():
+    global _db
+
+    if _db is not None:
+        return _db
+
+    try:
+        if not firebase_admin._apps:
+            cred_path = os.getenv("FIREBASE_CREDENTIALS", "firebase_key.json")
+
+            if not os.path.exists(cred_path):
+                print("❌ Firebase credentials not found")
+                return None
+
+            cred = credentials.Certificate(cred_path)
+            firebase_admin.initialize_app(cred)
+
+        _db = firestore.client()
+        print("🔥 Firebase connected")
+
+    except Exception as e:
+        print(f"❌ Firebase init error: {e}")
+        _db = None
+
+    return _db
 
 
-# =========================
-# ⚖️ STRATEGY WEIGHT
-# =========================
-def apply_strategy_weight(strategy, confidence, config):
-    weights = config.get("strategy_weights", {})
-    weight = weights.get(strategy, 0.5)
-
-    return confidence * weight
-
-
-# =========================
-# 📈 TREND STRATEGY
-# =========================
-def trend_strategy(features):
-    if features["trend"] == "UP":
-        return "BUY", random.uniform(0.5, 1.0)
-
-    return "HOLD", random.uniform(0.0, 0.5)
-
-
-# =========================
-# 🔄 REVERSAL STRATEGY
-# =========================
-def reversal_strategy(features):
-    # vysoká volatilita → možný obrat
-    if features["volatility"] > 0.7:
-        return "BUY", random.uniform(0.5, 1.0)
-
-    return "HOLD", random.uniform(0.0, 0.5)
+def get_db():
+    if _db is None:
+        return init_firebase()
+    return _db
 
 
 # =========================
-# 🧠 SIGNAL GENERATOR
+# 📡 SIGNALS
 # =========================
-def generate_signal(features, config):
-    strategies = {
-        "TREND": trend_strategy,
-        "REVERSAL": reversal_strategy
-    }
+def save_signal(signal):
+    db = get_db()
+    if not db:
+        return
 
-    best_signal = "HOLD"
-    best_conf = 0
-    best_strategy = None
+    db.collection("signals").add(signal)
 
-    for name, strat_fn in strategies.items():
-        signal, confidence = strat_fn(features)
 
-        # aplikace váhy
-        confidence = apply_strategy_weight(name, confidence, config)
+def update_signal(doc_id, data):
+    db = get_db()
+    if not db:
+        return
 
-        if confidence > best_conf:
-            best_conf = confidence
-            best_signal = signal
-            best_strategy = name
+    db.collection("signals").document(doc_id).update(data)
 
-    return best_signal, best_conf, best_strategy
+
+def load_signals(evaluated=None, limit=100):
+    db = get_db()
+    if not db:
+        return []
+
+    query = db.collection("signals")
+
+    if evaluated is not None:
+        query = query.where("evaluated", "==", evaluated)
+
+    docs = query.limit(limit).stream()
+
+    return [{**d.to_dict(), "id": d.id} for d in docs]
 
 
 # =========================
-# 🚀 MAIN LOOP
+# ⚙️ CONFIG
 # =========================
-def run_execution():
-    print("🟢 Execution started")
+def save_config(config):
+    db = get_db()
+    if not db:
+        return
 
-    while True:
-        config = load_config() or {}
+    db.collection("config").document("main").set(config)
 
-        features = get_market_features()
 
-        signal, confidence, strategy = generate_signal(features, config)
+def load_config():
+    db = get_db()
+    if not db:
+        return {}
 
-        # =========================
-        # 🟢 OPEN TRADE
-        # =========================
-        if signal == "BUY":
-            trade = {
-                "symbol": "BTCUSDT",
-                "entry_price": features["price"],
-                "exit_price": None,
-                "status": "OPEN",
-                "strategy": strategy,
-                "confidence": confidence,
-                "features": features,  # 🔥 důležité pro learning
-                "timestamp": time.time()
-            }
+    doc = db.collection("config").document("main").get()
 
-            save_trade(trade)
-            print(f"✅ BUY {round(confidence, 2)} | strat: {strategy}")
+    if doc.exists:
+        return doc.to_dict()
 
-        # =========================
-        # 🔒 CLOSE TRADES
-        # =========================
-        open_trades = get_open_trades()
+    return {}
 
-        for t in open_trades:
-            entry = t["entry_price"]
-            current_price = features["price"]
 
-            change = (current_price - entry) / entry
+# =========================
+# 📊 METRICS
+# =========================
+def save_metrics(metrics):
+    db = get_db()
+    if not db:
+        return
 
-            if change > 0.01 or change < -0.01:
-                close_trade(t["id"], current_price)
-                print(f"🔒 Closed {t['id']} PnL: {round(change,4)}")
+    db.collection("metrics").document("latest").set(metrics)
 
-        time.sleep(30)
+
+# =========================
+# 💰 TRADES (OPTIONAL)
+# =========================
+def save_trade(trade):
+    db = get_db()
+    if not db:
+        return
+
+    db.collection("trades").add(trade)

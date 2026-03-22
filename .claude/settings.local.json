@@ -6,7 +6,8 @@
       "mcp__Desktop_Commander__read_file",
       "mcp__Desktop_Commander__read_multiple_files",
       "Bash(find C:ProjectsCryptoMaster_appsrc -type f -name *)",
-      "Bash(\"C:\\\\Projects\\\\CryptoMaster_app\\\\src\\\\screens\\\\DashboardScreen.js\")"
+      "Bash(\"C:\\\\Projects\\\\CryptoMaster_app\\\\src\\\\screens\\\\DashboardScreen.js\")",
+      "Bash(wc -l ./src/services/*.py)"
     ]
   }
 }
