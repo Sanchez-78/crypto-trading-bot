@@ -1,91 +1,52 @@
-import sys
-import os
+import time
+import sys, os
 
 sys.path.append(os.getcwd())
-sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-import time
-from datetime import datetime
-
-from bot2.strategy_weights import StrategyWeights
-from bot2.self_evolving import SelfEvolvingSystem
-from bot2.stabilizer import Stabilizer
-
-from src.services.firebase_client import (
-    load_recent_trades,
-    save_config,
-    save_metrics,
-    save_trade_batch
-)
-
-
-def compute_performance(trades):
-    if not trades:
-        return {"winrate": 0, "profit": 0, "confidence_quality": 0}
-
-    wins = sum(1 for t in trades if t.get("result") == "WIN")
-    losses = sum(1 for t in trades if t.get("result") == "LOSS")
-
-    total = wins + losses
-    winrate = (wins / total) * 100 if total > 0 else 0
-
-    profits = [t.get("profit", 0) for t in trades]
-    total_profit = sum(profits)
-
-    errors = [t.get("self_eval", {}).get("error", 0) for t in trades]
-    confidence_quality = 1 - (sum(errors) / len(errors)) if errors else 0.5
-
-    return {
-        "winrate": winrate,
-        "profit": total_profit,
-        "confidence_quality": confidence_quality
-    }
+from src.services.firebase_client import get_db
+from src.services.evaluator import calculate_performance  # tvůj evaluator
 
 
 def run_brain():
     print("🧠 Brain started...")
 
-    stabilizer = Stabilizer()
-    evolver = SelfEvolvingSystem()
-    weights_engine = StrategyWeights()
+    db = get_db()
 
     while True:
-        try:
-            trades = load_recent_trades(limit=100)
+        # =========================
+        # 📥 LOAD EVALUATED SIGNALS
+        # =========================
+        docs = db.collection("signals") \
+            .where("evaluated", "==", True) \
+            .limit(100) \
+            .stream()
 
-            if not trades:
-                print("⚠️ No trades yet...")
-                time.sleep(10)
-                continue
+        trades = [d.to_dict() for d in docs]
 
-            perf = compute_performance(trades)
-            weights = weights_engine.update()
-            evo = evolver.evolve(perf)
-
-            stabilizer.update(trades)
-            stab = stabilizer.get_state()
-
-            config = {
-                "weights": weights,
-                "confidence_bias": 0,
-                "confidence_scale": 1,
-                "min_conf": stab["min_conf"],
-                "cooldown": stab["cooldown"],
-                "risk_multiplier": evo.get("risk_multiplier", 1),
-                "trust": 1,
-                "timestamp": datetime.utcnow().isoformat()
-            }
-
-            save_config(config)
-            save_metrics({"performance": perf})
-
-            print("✅ Brain updated config")
-
-            time.sleep(30)
-
-        except Exception as e:
-            print("❌ ERROR:", e)
+        if not trades:
+            print("⚠️ No evaluated signals yet...")
             time.sleep(10)
+            continue
+
+        # =========================
+        # 📊 PERFORMANCE
+        # =========================
+        perf = calculate_performance(trades)
+
+        print("📊 PERF:", perf)
+
+        # =========================
+        # 🧠 ADAPTACE
+        # =========================
+        config = {
+            "min_conf": 0.6 if perf["winrate"] > 0.5 else 0.7
+        }
+
+        db.collection("config").document("latest").set(config)
+
+        print("⚙️ Updated config:", config)
+
+        time.sleep(30)
 
 
 if __name__ == "__main__":

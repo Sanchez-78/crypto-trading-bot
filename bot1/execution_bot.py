@@ -1,80 +1,71 @@
 import time
-from shared.strategy_selector import StrategySelector
-from shared.volatility_filter import VolatilityFilter
-from shared.profit_optimizer import ProfitOptimizer
-from shared.position_manager import compute_position_size
+import random
+import sys, os
 
-from src.services.firebase_client import load_config, save_trade
+sys.path.append(os.getcwd())
+
+from src.services.firebase_client import save_trade, load_config
+from bot1.trade_manager import get_open_trades, close_trade
 
 
-class ExecutionBot:
+def get_market_features():
+    return {
+        "price": 50000 + random.randint(-500, 500),
+        "trend": random.choice(["UP", "DOWN"]),
+        "volatility": random.random()
+    }
 
-    def __init__(self):
-        self.selector = StrategySelector()
-        self.vol_filter = VolatilityFilter()
-        self.optimizer = ProfitOptimizer()
 
-    def compute_signal(self, features, config):
-        score = 0
+def generate_signal(features, config):
+    confidence = random.random()
 
-        for k, w in config.get("weights", {}).items():
-            score += features.get(k, 0) * w
+    if confidence > config.get("min_conf", 0.5):
+        return "BUY", confidence
 
-        conf = score
-        conf *= config.get("confidence_scale", 1)
-        conf += config.get("confidence_bias", 0)
+    return "HOLD", confidence
 
-        return max(0, min(1, conf))
 
-    def run(self, market):
-        print("🟢 Execution started")
+def run_execution():
+    print("🟢 Execution started")
 
-        while True:
-            try:
-                config = load_config()
-                if not config:
-                    time.sleep(5)
-                    continue
+    while True:
+        config = load_config() or {}
 
-                features = market.get_features()
-                price = features["price"]
+        features = get_market_features()
 
-                if not self.vol_filter.allow(features):
-                    continue
+        signal, confidence = generate_signal(features, config)
 
-                strategy = self.selector.select(features)
-                confidence = self.compute_signal(features, config)
+        # =========================
+        # 🟢 OPEN TRADE
+        # =========================
+        if signal == "BUY":
+            trade = {
+                "symbol": "BTCUSDT",
+                "entry_price": features["price"],
+                "exit_price": None,
+                "status": "OPEN",
+                "strategy": "TREND",
+                "confidence": confidence,
+                "timestamp": time.time()
+            }
 
-                signal = "BUY" if confidence > 0.5 else "SELL"
+            save_trade(trade)
+            print(f"✅ BUY {round(confidence, 2)}")
 
-                if self.optimizer.block(signal, confidence, features):
-                    continue
+        # =========================
+        # 🔒 CLOSE TRADES
+        # =========================
+        open_trades = get_open_trades()
 
-                size = compute_position_size(
-                    confidence,
-                    trust=config.get("trust", 1)
-                )
+        for t in open_trades:
+            entry = t["entry_price"]
+            current_price = features["price"]
 
-                trade = {
-                    "symbol": features["symbol"],
-                    "signal": signal,
-                    "confidence": confidence,
-                    "strategy": strategy,
-                    "price": price,
-                    "size": size,
-                    "timestamp": datetime.utcnow().isoformat(),
-                    "status": "OPEN",
-                    "self_eval": {
-                        "predicted": confidence
-                    }
-                }
+            change = (current_price - entry) / entry
 
-                save_trade(trade)
+            # TP / SL
+            if change > 0.01 or change < -0.01:
+                close_trade(t["id"], current_price)
+                print(f"🔒 Closed {t['id']} PnL: {round(change,4)}")
 
-                print(f"✅ {signal} {confidence:.2f}")
-
-                time.sleep(5)
-
-            except Exception as e:
-                print("❌ ERROR:", e)
-                time.sleep(5)
+        time.sleep(10)

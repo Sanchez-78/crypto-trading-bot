@@ -48,3 +48,22 @@ def evaluate_signals(symbol):
             "result": result,
             "evaluated_at": datetime.utcnow().isoformat()
         })
+
+
+# =========================
+# 📊 PERFORMANCE PRO BOT2
+# =========================
+def calculate_performance(trades):
+    if not trades:
+        return {"winrate": 0, "avg_pnl": 0}
+
+    wins = [t for t in trades if t.get("result") == "WIN"]
+
+    winrate = len(wins) / len(trades)
+
+    avg_pnl = sum(t.get("profit", 0) for t in trades) / len(trades)
+
+    return {
+        "winrate": winrate,
+        "avg_pnl": avg_pnl
+    }
