@@ -6,6 +6,9 @@ from google.cloud.firestore_v1.base_query import FieldFilter
 HOLD_CYCLES = 3
 
 
+# =========================
+# 🔄 EVALUACE SIGNALŮ
+# =========================
 def evaluate_signals(symbol):
     db = get_db()
     if db is None:
@@ -24,6 +27,7 @@ def evaluate_signals(symbol):
 
         age = signal.get("age", 0)
 
+        # ⏳ čekání (simulace držení trade)
         if age < HOLD_CYCLES:
             update_signal(doc_id, {"age": age + 1})
             continue
@@ -33,6 +37,7 @@ def evaluate_signals(symbol):
 
         current_price = prices.get(symbol, price)
 
+        # 📊 výpočet profitu
         if action == "BUY":
             profit = (current_price - price) / price
         elif action == "SELL":
