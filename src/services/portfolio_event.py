@@ -36,11 +36,19 @@ def handle_signal(data):
         symbol="BTCUSDT",
         action="BUY",
         price=features["price"],
-        confidence=confidence,
         size=size,
         sl=sl,
-        tp=tp
+        tp=tp,
+        confidence=confidence
     )
+
+    if not trade:
+        return
+
+    # 🔥 KLÍČOVÝ FIX — PROPAGACE METADATA
+    trade["strategy"] = data.get("strategy")
+    trade["regime"] = data.get("regime")
+    trade["meta"] = data.get("meta", {})
 
     event_bus.publish(TRADE_OPENED, trade)
 

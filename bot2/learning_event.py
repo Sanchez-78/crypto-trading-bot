@@ -8,14 +8,24 @@ learner = LearningEngine()
 
 
 def on_evaluation(trade):
-    learner.update_bandit([trade])
-    learner.calibrate_confidence([trade])
-    learner.update_strategy_blame([trade])
-    learner.update_regime_perf([trade])
+    try:
+        # 🔥 ochrana proti rozbitým datům
+        if "regime" not in trade:
+            return
 
-    config = learner.export_config()
+        learner.update_bandit([trade])
+        learner.calibrate_confidence([trade])
+        learner.update_strategy_blame([trade])
+        learner.update_regime_perf([trade])
 
-    event_bus.publish(CONFIG_UPDATED, config)
+        config = learner.export_config()
+
+        event_bus.publish(CONFIG_UPDATED, config)
+
+        print("🧠 Learning updated")
+
+    except Exception as e:
+        print(f"❌ Learning error: {e}")
 
 
 event_bus.subscribe(EVALUATION_DONE, on_evaluation)

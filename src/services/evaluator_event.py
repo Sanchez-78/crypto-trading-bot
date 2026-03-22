@@ -11,6 +11,16 @@ def evaluate_trade(data):
         "result": data["result"]
     }
 
+    # 🔥 SAFE GUARDS (aby nikdy nespadl learning)
+    if "regime" not in trade:
+        trade["regime"] = "UNKNOWN"
+
+    if "strategy" not in trade:
+        trade["strategy"] = "UNKNOWN"
+
+    if "meta" not in trade:
+        trade["meta"] = {}
+
     event_bus.publish(EVALUATION_DONE, trade)
 
 
