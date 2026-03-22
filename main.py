@@ -1,149 +1,69 @@
 import time
-import traceback
-from datetime import datetime, UTC
-
-from src.services.market_data import get_all_prices
 from src.services.meta_agent import MetaAgent
-from src.services.firebase_client import (
-    init_firebase,
-    save_signal,
-    load_recent_trades,
-    save_meta_state,
-)
-from src.services.trade_filter import TradeFilter
-from src.services.portfolio_manager import PortfolioManager
 from src.services.feature_engine import FeatureEngine
+from src.services.portfolio_manager import PortfolioManager
+from src.services.firebase_client import (
+    load_recent_trades,
+    load_compressed_trades,
+    get_collection_count,
+)
 from src.services.auto_cleaner import run_cleanup
 
-SYMBOLS = ["BTCUSDT", "ETHUSDT", "ADAUSDT", "SOLUSDT", "XRPUSDT"]
-LOOP_DELAY = 10
-
 agent = MetaAgent()
-trade_filter = TradeFilter()
-portfolio = PortfolioManager()
-feature_engine = FeatureEngine()
+fe = FeatureEngine()
+pf = PortfolioManager()
 
-loop_count = 0
-
-
-def render_progress(progress):
-    score = progress["score"]
-    filled = int(score / 5)
-    bar = "█" * filled + "-" * (20 - filled)
-
-    if score < 30:
-        color = "\033[91m"
-        emoji = "🔴"
-    elif score < 60:
-        color = "\033[93m"
-        emoji = "🟡"
-    else:
-        color = "\033[92m"
-        emoji = "🟢"
-
-    print("\n📊 PROGRESS:")
-    print(progress)
-    print(f"{emoji} {color}[{bar}] {score}%\033[0m")
+loop = 0
 
 
-def run_pipeline():
-    global loop_count
-    loop_count += 1
+def db_bar():
+    raw = get_collection_count("signals")
+    comp = get_collection_count("signals_compressed")
 
-    print("\n=== PIPELINE ===")
+    total = raw + comp
+    max_cap = 10000
 
-    init_firebase()
-    trade_filter.reset()
+    pct = min(int((total / max_cap) * 100), 100)
+    bar = "█" * (pct // 5) + "-" * (20 - pct // 5)
 
-    prices = get_all_prices()
-    if not prices:
-        prices = {
-            "BTCUSDT": 60000,
-            "ETHUSDT": 3000,
-            "ADAUSDT": 0.5,
-            "SOLUSDT": 150,
-            "XRPUSDT": 0.6,
-        }
+    print(f"💾 [{bar}] {pct}% RAW={raw} COMP={comp}")
 
-    # ─── UPDATE TRADES ─────────────────
-    closed_trades = portfolio.update_trades(prices)
 
-    print(f"Closed trades: {len(closed_trades)}")
+def run():
+    global loop
+    loop += 1
 
-    for trade, profit, result in closed_trades:
-        save_signal({
-            "symbol": trade["symbol"],
-            "signal": trade["action"],
-            "confidence": trade["confidence"],
-            "features": trade.get("features", {}),
-            "profit": profit,
-            "result": result,
-            "evaluated": True,
-            "timestamp": datetime.now(UTC).isoformat(timespec="seconds"),
-        })
+    import random
+    prices = {"BTCUSDT": 100 + random.random()}
 
-    # ─── NEW TRADES ───────────────────
-    for symbol in SYMBOLS:
-        try:
-            price = prices.get(symbol)
-            if not price:
-                continue
+    closed = pf.update_trades(prices)
 
-            feature_engine.update(symbol, price)
-            features = feature_engine.build(symbol)
+    for t, p, r in closed:
+        t["signal"] = t["action"]
 
-            print(
-                f"{symbol} | regime={features['market_regime']} "
-                f"| trend={round(features['trend_strength'],5)} "
-                f"| vol={round(features['vol_10'],5)}"
-            )
+    for s, price in prices.items():
+        fe.update(s, price)
+        f = fe.build(s)
 
-            action, confidence = agent.decide(features)
+        a, c = agent.decide(f)
+        t, _ = pf.open_trade(s, a, price, c)
+        t["features"] = f
 
-            trade, _ = portfolio.open_trade(symbol, action, price, confidence)
+    raw = pf.trade_history[-200:]
+    comp = load_compressed_trades(500)
 
-            if trade:
-                trade["features"] = features
+    agent.learn_from_history(raw)
+    agent.learn_from_compressed(comp)
 
-        except Exception as e:
-            print(f"❌ {symbol}:", e)
-            traceback.print_exc()
+    print(agent.get_progress())
 
-    # ─── LEARNING ─────────────────────
-    trades = load_recent_trades(1000)
-    print(f"Trades loaded: {len(trades)}")
+    pf.print_status()
+    db_bar()
 
-    agent.learn_from_history(trades)
-
-    # ─── PROGRESS ─────────────────────
-    progress = agent.get_progress()
-    render_progress(progress)
-
-    # ─── SAVE META ────────────────────
-    save_meta_state({
-        "progress": progress,
-        "balance": portfolio.balance,
-        "patterns": len(agent.patterns),
-        "updated_at": datetime.now(UTC).isoformat(timespec="seconds"),
-    })
-
-    portfolio.print_status()
-
-    # 🔥 AUTO CLEAN
-    if loop_count % 20 == 0:
+    if loop % 20 == 0:
         run_cleanup()
 
-    print("=============================\n")
 
-
-if __name__ == "__main__":
-    print("🔥 BOT STARTED (AUTO CLEAN ENABLED)")
-
-    while True:
-        try:
-            run_pipeline()
-        except Exception as e:
-            print("❌ PIPELINE ERROR:", e)
-            traceback.print_exc()
-
-        time.sleep(LOOP_DELAY)
+while True:
+    run()
+    time.sleep(2)

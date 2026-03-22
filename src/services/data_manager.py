@@ -1,46 +1,33 @@
-class DataManager:
+class PortfolioManager:
     def __init__(self):
-        self.pattern_cache = {}
+        self.open_trades = []
+        self.trade_history = []
 
-    # 🔥 COMPRESS TRADE
-    def compress_trade(self, trade):
-        f = trade.get("features", {})
+    def open_trade(self, s, a, p, c):
+        t = {"symbol": s, "action": a, "entry": p, "confidence": c}
+        self.open_trades.append(t)
+        return t, "OPEN"
 
-        return {
-            "symbol": trade.get("symbol"),
-            "signal": trade.get("signal"),
-            "profit": round(trade.get("profit", 0), 5),
-            "result": trade.get("result"),
+    def update_trades(self, prices):
+        closed = []
 
-            "f": {
-                "t": round(f.get("trend_strength", 0), 4),
-                "v": round(f.get("vol_10", 0), 4),
-                "m": round(f.get("momentum", 0), 4),
-                "r": f.get("market_regime", "R")[0],
-            },
+        for t in list(self.open_trades):
+            p = prices[t["symbol"]]
+            entry = t["entry"]
 
-            "ts": trade.get("timestamp"),
-        }
+            change = (p - entry) / entry if t["action"] == "BUY" else (entry - p) / entry
 
-    # 🔥 SMART DELETE
-    def should_delete(self, trade):
-        f = trade.get("features", {})
+            if abs(change) > 0.001:
+                result = "WIN" if change > 0 else "LOSS"
+                t["profit"] = change
+                t["result"] = result
 
-        key = (
-            round(f.get("trend_strength", 0), 2),
-            round(f.get("vol_10", 0), 2),
-            trade.get("signal"),
-        )
+                self.trade_history.append(t)
+                self.open_trades.remove(t)
 
-        count = self.pattern_cache.get(key, 0)
-        self.pattern_cache[key] = count + 1
+                closed.append((t, change, result))
 
-        # příliš mnoho stejných patternů
-        if count > 30:
-            return True
+        return closed
 
-        # low value trades
-        if abs(trade.get("profit", 0)) < 0.0002:
-            return True
-
-        return False
+    def print_status(self):
+        print(f"Open: {len(self.open_trades)} Closed: {len(self.trade_history)}")
