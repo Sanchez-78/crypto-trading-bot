@@ -36,6 +36,13 @@ def main():
 
     print("📡 Event system running...\n")
 
+    if not db:
+        print("❌ DB NOT READY")
+    else:
+        print("✅ DB READY")
+
+    ...
+
     while True:
         try:
             market_data = generate_market_data()
