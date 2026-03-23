@@ -37,6 +37,9 @@ jobs:
             echo "mode=signals" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Debug files
+        run: ls -la && pwd
+
       - name: Run
         env:
           FIREBASE_CREDENTIALS: ${{ secrets.FIREBASE_CREDENTIALS }}
