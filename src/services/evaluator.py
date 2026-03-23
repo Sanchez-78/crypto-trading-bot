@@ -9,17 +9,15 @@ def on_trade(trade):
     profit = random.uniform(-0.02, 0.03)
     result = "WIN" if profit > 0 else "LOSS"
 
-    trade["evaluation"] = {
-        "profit": profit,
-        "result": result
-    }
+    # 🔥 sjednocený model (žádné trade["evaluation"])
+    trade["profit"] = profit
+    trade["result"] = result
+    trade["status"] = "CLOSED"
+    trade["exit_price"] = random.uniform(100, 50000)
 
     print("📊 EVALUATION:", trade)
 
-    # 🔥 publish evaluation
     event_bus.publish(EVALUATION_DONE, trade)
-
-    # 🔥 close trade (pro portfolio)
     event_bus.publish(TRADE_CLOSED, trade)
 
 

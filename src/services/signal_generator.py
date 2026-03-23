@@ -1,6 +1,7 @@
 from src.core.event_bus import event_bus
 from src.core.events import PRICE_TICK, SIGNAL_CREATED
 import random
+import time
 
 
 def generate_signal(market_data):
@@ -14,12 +15,13 @@ def generate_signal(market_data):
             "action": action,
             "confidence": random.uniform(0.5, 1.0),
 
-            # 🔥 FIX: přidány features
             "features": {
                 "trend": data["trend"],
                 "volatility": data["volatility"],
                 "price": data["price"]
-            }
+            },
+
+            "timestamp": time.time()
         }
 
         signals.append(signal)
