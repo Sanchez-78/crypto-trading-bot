@@ -1,58 +1,71 @@
-from src.core.event_bus import event_bus
-from src.core.events import PRICE_TICK
+# =========================
+# IMPORTS
+# =========================
+print("🚀 BOOTING BOT...")
 
 from src.services.firebase_client import init_firebase
 
-# 🔥 PIPELINE IMPORTY
+# 🔥 INIT FIREBASE
+db = init_firebase()
+
+if not db:
+    print("⚠️ DB NOT READY (bot poběží bez ukládání)")
+else:
+    print("✅ DB READY")
+
+
+# =========================
+# LOAD SERVICES (EVENT PIPELINE)
+# =========================
 import src.services.signal_generator
 import src.services.trade_executor
 import src.services.evaluator
 import src.services.portfolio_event
-import bot2.learning_event
+import bot2.learning_event  # 🔥 důležité!
+
+print("🔥 ALL SERVICES LOADED")
+
+
+# =========================
+# SIMULACE MARKETU
+# =========================
+from src.core.event_bus import event_bus
+from src.core.events import PRICE_TICK
 
 import time
 import random
 
 
 def generate_market_data():
-    symbols = ["BTC", "ETH", "ADA"]
-
-    data = {}
-
-    for s in symbols:
-        data[s] = {
-            "price": random.uniform(100, 50000),
+    return {
+        "BTC": {
             "trend": random.choice(["UP", "DOWN"]),
-            "volatility": random.uniform(0.01, 0.05)
+            "volatility": random.uniform(0.01, 0.05),
+            "price": random.uniform(20000, 50000)
+        },
+        "ETH": {
+            "trend": random.choice(["UP", "DOWN"]),
+            "volatility": random.uniform(0.01, 0.05),
+            "price": random.uniform(1000, 4000)
         }
+    }
 
-    return data
 
+# =========================
+# MAIN LOOP
+# =========================
+print("📈 START MARKET LOOP")
 
-def main():
-    print("🔥 MAIN STARTED")
+while True:
+    try:
+        market_data = generate_market_data()
 
-    init_firebase()
+        print("\n📈 TICK:", market_data)
 
-    print("📡 Event system running...\n")
+        event_bus.publish(PRICE_TICK, market_data)
 
-    if not db:
-        print("❌ DB NOT READY")
-    else:
-        print("✅ DB READY")
+        time.sleep(5)  # 🔥 kontrola rychlosti (důležité kvůli writes)
 
-    ...
-
-    while True:
-        try:
-            market_data = generate_market_data()
-
-            print("📈 TICK:", market_data)
-
-            event_bus.publish(PRICE_TICK, market_data)
-
-            time.sleep(1)
-
-        except Exception as e:
-            print("❌ MAIN LOOP ERROR:", e)
-            time.sleep(5)
+    except Exception as e:
+        print("❌ MAIN LOOP ERROR:", e)
+        time.sleep(2)
