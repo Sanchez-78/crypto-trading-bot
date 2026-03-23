@@ -16,10 +16,10 @@ def init_firebase():
     global db
 
     try:
-        key_json = os.getenv("FIREBASE_KEY")
+        key_json = os.getenv("FIREBASE_KEY") or os.getenv("FIREBASE_CREDENTIALS")
 
         if not key_json:
-            print("❌ FIREBASE_KEY missing")
+            print("❌ FIREBASE_KEY / FIREBASE_CREDENTIALS missing")
             return
 
         key_dict = json.loads(key_json)
