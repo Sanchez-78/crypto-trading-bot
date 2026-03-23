@@ -82,6 +82,7 @@ def handle_signal(data):
     open_trades[symbol] = trade
 
     print(f"📈 OPEN {symbol} size={size:.2f}")
+    print("📊 OPEN TRADES:", open_trades)
 
     save_signal({
         "symbol": symbol,
