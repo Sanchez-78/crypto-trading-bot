@@ -1,142 +1,98 @@
 from src.core.event_bus import event_bus
 from src.core.events import SIGNAL_CREATED, TRADE_OPENED, TRADE_CLOSED, PRICE_TICK
+from src.services.risk_manager import risk_manager
 
-# =========================
-# STATE
-# =========================
 open_trades = {}
 
-print("📊 Portfolio service initialized")
+# PARAMS
+TP = 0.004
+SL = -0.003
+TRAIL = 0.002
+PYRAMID_THRESHOLD = 0.002
 
 
-# =========================
-# OPEN TRADE
-# =========================
 def handle_signal(data):
-    try:
-        symbol = data["symbol"]
-        price = data["features"]["price"]
+    symbol = data["symbol"]
+    price = data["features"]["price"]
+    confidence = data.get("confidence", 0.5)
 
-        print(f"\n📥 SIGNAL RECEIVED: {symbol}")
+    if symbol in open_trades:
+        return
 
-        # pokud už máme trade → skip
-        if symbol in open_trades:
-            print(f"⚠️ Trade already open for {symbol}, skipping")
-            return
+    if risk_manager.is_drawdown_exceeded():
+        print("🛑 RISK BLOCK - drawdown exceeded")
+        return
 
-        trade = {
-            "symbol": symbol,
-            "entry_price": price,
-            "steps": 0,
-            "max_pnl": 0,
-            "min_pnl": 0,
-            "strategy": data.get("strategy"),
-            "regime": data.get("regime"),
-            "confidence": data.get("confidence")
-        }
+    size = risk_manager.get_position_size(confidence)
 
-        open_trades[symbol] = trade
+    trade = {
+        "symbol": symbol,
+        "entry_price": price,
+        "size": size,
+        "max_pnl": 0,
+        "pyramids": 0
+    }
 
-        print(f"📈 OPEN {symbol}")
-        print(f"   entry: {price:.4f}")
-        print(f"   strategy: {trade['strategy']}")
-        print(f"   regime: {trade['regime']}")
-        print(f"   confidence: {trade['confidence']:.2f}")
+    open_trades[symbol] = trade
 
-        event_bus.publish(TRADE_OPENED, trade)
+    print(f"📈 OPEN {symbol} size={size:.2f}")
 
-    except Exception as e:
-        print(f"❌ handle_signal error: {e}")
+    event_bus.publish(TRADE_OPENED, trade)
 
 
-# =========================
-# TRACK & CLOSE TRADE
-# =========================
 def on_price(data):
-    try:
-        if not open_trades:
-            print("⚪ No open trades")
-            return
+    for symbol, trade in list(open_trades.items()):
+        if symbol not in data:
+            continue
 
-        print(f"\n🔄 PRICE UPDATE for open trades ({len(open_trades)})")
+        current = data[symbol]["price"]
+        entry = trade["entry_price"]
 
-        for symbol, trade in list(open_trades.items()):
+        pnl = (current - entry) / entry
 
-            if symbol not in data:
-                print(f"⚠️ No price for {symbol}")
-                continue
+        trade["max_pnl"] = max(trade["max_pnl"], pnl)
 
-            trade["steps"] += 1
+        # =====================
+        # PYRAMIDING
+        # =====================
+        if pnl > PYRAMID_THRESHOLD and trade["pyramids"] < 2:
+            trade["pyramids"] += 1
+            trade["size"] *= 1.5
+            print(f"📈 PYRAMID {symbol} x{trade['pyramids']}")
 
-            current_price = data[symbol]["price"]
-            entry = trade["entry_price"]
+        # =====================
+        # TRAILING STOP
+        # =====================
+        if trade["max_pnl"] - pnl > TRAIL:
+            reason = "TRAILING_STOP"
 
-            pnl = (current_price - entry) / entry
+        # =====================
+        # TP / SL
+        # =====================
+        elif pnl >= TP:
+            reason = "TAKE_PROFIT"
 
-            # track extremes
-            trade["max_pnl"] = max(trade["max_pnl"], pnl)
-            trade["min_pnl"] = min(trade["min_pnl"], pnl)
+        elif pnl <= SL:
+            reason = "STOP_LOSS"
 
-            print(f"⏳ {symbol}")
-            print(f"   step: {trade['steps']}")
-            print(f"   price: {current_price:.4f}")
-            print(f"   pnl: {pnl:.5f}")
-            print(f"   max: {trade['max_pnl']:.5f}")
-            print(f"   min: {trade['min_pnl']:.5f}")
+        else:
+            continue
 
-            # =========================
-            # CLOSE CONDITIONS (DEBUG)
-            # =========================
-            reason = None
+        result = "WIN" if pnl > 0 else "LOSS"
 
-            if trade["steps"] >= 5:
-                reason = "TIME_EXIT"
+        print(f"❌ CLOSE {symbol} {reason} pnl={pnl:.4f}")
 
-            elif pnl > 0.002:
-                reason = "TAKE_PROFIT"
+        risk_manager.update_balance(pnl)
 
-            elif pnl < -0.002:
-                reason = "STOP_LOSS"
+        event_bus.publish(TRADE_CLOSED, {
+            "trade": trade,
+            "pnl": pnl,
+            "result": result,
+            "reason": reason
+        })
 
-            # =========================
-            # CLOSE TRADE
-            # =========================
-            if reason:
-                result = "WIN" if pnl > 0 else "LOSS"
-
-                print(f"\n❌ CLOSE {symbol}")
-                print(f"   reason: {reason}")
-                print(f"   pnl: {pnl:.5f}")
-                print(f"   duration: {trade['steps']} ticks")
-
-                event_bus.publish(TRADE_CLOSED, {
-                    "trade": trade,
-                    "pnl": pnl,
-                    "result": result,
-                    "reason": reason
-                })
-
-                del open_trades[symbol]
-
-    except Exception as e:
-        print(f"❌ on_price error: {e}")
+        del open_trades[symbol]
 
 
-# =========================
-# DEBUG STATE MONITOR
-# =========================
-def debug_state():
-    print("\n📊 CURRENT PORTFOLIO STATE")
-    print(f"Open trades: {len(open_trades)}")
-
-    for symbol, t in open_trades.items():
-        print(f" - {symbol}: entry={t['entry_price']} steps={t['steps']}")
-
-
-# =========================
-# SUBSCRIPTIONS (FIXED)
-# =========================
 event_bus.subscribe(SIGNAL_CREATED, handle_signal)
 event_bus.subscribe(PRICE_TICK, on_price)
-
-print("✅ Portfolio event subscriptions ready")

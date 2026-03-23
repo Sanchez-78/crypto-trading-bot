@@ -1,5 +1,45 @@
 from src.core.event_bus import event_bus
 from src.core.events import EVALUATION_DONE
+from src.services.firebase_client import buffered_metrics_update
+
+history = []
+counter = 0
+
+
+def on_eval(trade):
+    global counter
+
+    history.append(trade)
+    counter += 1
+
+    wins = sum(1 for t in history if t["evaluation"]["result"] == "WIN")
+    total = len(history)
+
+    winrate = wins / total if total else 0
+
+    # PRINT vždy
+    print(f"📊 Trades={total} Winrate={winrate:.2f}")
+
+    # 🔥 FIREBASE jen každých 20 obchodů
+    if counter % 10 != 0:
+        return
+
+    profits = [t["evaluation"]["profit"] for t in history]
+    avg_profit = sum(profits) / total if total else 0
+
+    metrics = {
+        "trades": total,
+        "winrate": winrate,
+        "avg_profit": avg_profit
+    }
+
+    print("📡 BATCH SAVE TO FIREBASE")
+
+    buffered_metrics_update(metrics)
+
+
+event_bus.subscribe(EVALUATION_DONE, on_eval)from src.core.event_bus import event_bus
+from src.core.events import EVALUATION_DONE
 from src.services.firebase_client import save_metrics
 
 history = []

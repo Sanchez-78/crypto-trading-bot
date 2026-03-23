@@ -1,28 +1,27 @@
 class RiskManager:
-
     def __init__(self):
-        # multipliers (laditelné)
-        self.sl_mult = 1.5
-        self.tp_mult = 2.5
+        self.balance = 1000
+        self.max_risk_per_trade = 0.01
+        self.max_drawdown = 0.2
 
-    def compute(self, features, price, signal):
-        atr = features.get("atr_m15", 0)
+        self.equity_peak = self.balance
 
-        if atr == 0:
-            return None, None
+    def get_position_size(self, confidence):
+        risk = self.balance * self.max_risk_per_trade
 
-        # absolutní ATR (denormalizace)
-        atr_abs = atr * price
+        # confidence scaling
+        size = risk * (0.5 + confidence)
 
-        if signal == "BUY":
-            stop_loss = price - atr_abs * self.sl_mult
-            take_profit = price + atr_abs * self.tp_mult
+        return size
 
-        elif signal == "SELL":
-            stop_loss = price + atr_abs * self.sl_mult
-            take_profit = price - atr_abs * self.tp_mult
+    def update_balance(self, pnl):
+        self.balance += self.balance * pnl
 
-        else:
-            return None, None
+        self.equity_peak = max(self.equity_peak, self.balance)
 
-        return stop_loss, take_profit
+    def is_drawdown_exceeded(self):
+        dd = (self.equity_peak - self.balance) / self.equity_peak
+        return dd > self.max_drawdown
+
+
+risk_manager = RiskManager()
