@@ -10,7 +10,7 @@ def handle_signal(data):
     symbol = data["symbol"]
     price = data["features"]["price"]
 
-    # už otevřený trade? skip
+    # už máme trade → neotevírej další
     if symbol in open_trades:
         return
 
@@ -31,22 +31,22 @@ def handle_signal(data):
 
 
 # =========================
-# CLOSE TRADE (FIX!)
+# CLOSE TRADE (FIX)
 # =========================
 def on_price(data):
     for symbol, trade in list(open_trades.items()):
         if symbol not in data:
             continue
 
-        trade["steps"] += 1  # 🔥 počítáme čas
+        trade["steps"] += 1
 
         current_price = data[symbol]["price"]
         entry = trade["entry_price"]
 
         pnl = (current_price - entry) / entry
 
-        # 🔥 ZAVŘI po 5 tickech nebo při zisku/ztrátě
-        if trade["steps"] >= 5 or abs(pnl) > 0.001:
+        # 🔥 ZAVŘI vždy po 5 tickech (garance!)
+        if trade["steps"] >= 5:
 
             result = "WIN" if pnl > 0 else "LOSS"
 
