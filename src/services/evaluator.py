@@ -4,8 +4,9 @@ import random
 
 
 def on_trade(trade):
-    profit = random.uniform(-0.02, 0.03)
+    print("🔥 EVALUATOR TRIGGERED")
 
+    profit = random.uniform(-0.02, 0.03)
     result = "WIN" if profit > 0 else "LOSS"
 
     trade["evaluation"] = {
@@ -20,4 +21,4 @@ def on_trade(trade):
 
 event_bus.subscribe(TRADE_EXECUTED, on_trade)
 
-print("📊 Evaluator READY")
+print("📊 Evaluator READY (subscribed to TRADE_EXECUTED)")

@@ -4,6 +4,8 @@ import random
 
 
 def on_signal(signal):
+    print("🔥 TRADE EXECUTOR TRIGGERED")
+
     trade = {
         "symbol": signal["symbol"],
         "action": signal["action"],
@@ -18,4 +20,4 @@ def on_signal(signal):
 
 event_bus.subscribe(SIGNAL_CREATED, on_signal)
 
-print("💰 Trade Executor READY")
+print("💰 Trade Executor READY (subscribed to SIGNAL_CREATED)")

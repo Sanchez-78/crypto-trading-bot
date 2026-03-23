@@ -21,6 +21,8 @@ def generate_signal(market_data):
 
 
 def on_price_tick(market_data):
+    print("🔥 SIGNAL GENERATOR TRIGGERED")
+
     signals = generate_signal(market_data)
 
     for s in signals:
@@ -30,4 +32,4 @@ def on_price_tick(market_data):
 
 event_bus.subscribe(PRICE_TICK, on_price_tick)
 
-print("📡 Signal Generator READY")
+print("📡 Signal Generator READY (subscribed to PRICE_TICK)")
