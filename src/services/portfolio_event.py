@@ -4,13 +4,42 @@ from src.services.risk_manager import risk_manager
 from src.services.auto_control import auto_control
 
 open_trades = {}
-
-TP = 0.004
-SL = -0.003
-TRAIL = 0.002
-PYRAMID_THRESHOLD = 0.002
+loss_streak = 0
 
 
+# =========================
+# FILTERY
+# =========================
+def should_trade(features, confidence):
+    vol = features["volatility"]
+
+    # ❌ low volatility (žádný pohyb)
+    if vol < 0.2:
+        print("🚫 FILTER: LOW VOL")
+        return False
+
+    # ❌ chaos
+    if vol > 0.9:
+        print("🚫 FILTER: HIGH VOL")
+        return False
+
+    # ❌ low confidence
+    if confidence < 0.55:
+        print("🚫 FILTER: LOW CONFIDENCE")
+        return False
+
+    # ❌ loss streak protection
+    global loss_streak
+    if loss_streak >= 3:
+        print("🛑 FILTER: LOSS STREAK")
+        return False
+
+    return True
+
+
+# =========================
+# SIGNAL
+# =========================
 def handle_signal(data):
     symbol = data["symbol"]
     price = data["features"]["price"]
@@ -21,6 +50,9 @@ def handle_signal(data):
         return
 
     if symbol in open_trades:
+        return
+
+    if not should_trade(data["features"], confidence):
         return
 
     if risk_manager.is_drawdown_exceeded():
@@ -34,7 +66,8 @@ def handle_signal(data):
         "entry_price": price,
         "size": size,
         "max_pnl": 0,
-        "pyramids": 0
+        "pyramids": 0,
+        "confidence": confidence
     }
 
     open_trades[symbol] = trade
@@ -44,7 +77,12 @@ def handle_signal(data):
     event_bus.publish(TRADE_OPENED, trade)
 
 
+# =========================
+# PRICE UPDATE
+# =========================
 def on_price(data):
+    global loss_streak
+
     for symbol, trade in list(open_trades.items()):
         if symbol not in data:
             continue
@@ -55,13 +93,27 @@ def on_price(data):
         pnl = (current - entry) / entry
         trade["max_pnl"] = max(trade["max_pnl"], pnl)
 
-        # PYRAMID
+        # =========================
+        # DYNAMIC TP/SL
+        # =========================
+        vol = data[symbol]["volatility"]
+
+        TP = 0.002 + vol * 0.004
+        SL = -TP * 0.75
+        TRAIL = TP * 0.5
+        PYRAMID_THRESHOLD = TP * 0.5
+
+        # =========================
+        # PYRAMIDING
+        # =========================
         if pnl > PYRAMID_THRESHOLD and trade["pyramids"] < 2:
             trade["pyramids"] += 1
             trade["size"] *= 1.5
             print(f"📈 PYRAMID {symbol}")
 
-        # TRAILING
+        # =========================
+        # EXIT LOGIC
+        # =========================
         if trade["max_pnl"] - pnl > TRAIL:
             reason = "TRAIL"
 
@@ -77,6 +129,14 @@ def on_price(data):
         result = "WIN" if pnl > 0 else "LOSS"
 
         print(f"❌ CLOSE {symbol} {reason} pnl={pnl:.4f}")
+
+        # =========================
+        # LOSS STREAK UPDATE
+        # =========================
+        if result == "LOSS":
+            loss_streak += 1
+        else:
+            loss_streak = 0
 
         risk_manager.update_balance(pnl)
 
