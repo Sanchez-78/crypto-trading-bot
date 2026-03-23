@@ -7,10 +7,7 @@ def generate_signal(market_data):
     signals = []
 
     for symbol, data in market_data.items():
-        if data["trend"] == "UP":
-            action = "BUY"
-        else:
-            action = "SELL"
+        action = "BUY" if data["trend"] == "UP" else "SELL"
 
         signal = {
             "symbol": symbol,

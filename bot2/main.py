@@ -1,12 +1,12 @@
 from src.core.event_bus import event_bus
 from src.core.events import PRICE_TICK
-import src.services.signal_generator
-import src.services.trade_executor
-import src.services.evaluator
 
 from src.services.firebase_client import init_firebase
 
-# 🔥 MUSÍ BÝT (spustí subscribery)
+# 🔥 SUBSCRIBERS (MUSÍ SE NAČÍST)
+import src.services.signal_generator
+import src.services.trade_executor
+import src.services.evaluator
 import src.services.portfolio_event
 import bot2.learning_event
 
@@ -20,14 +20,9 @@ def generate_market_data():
     data = {}
 
     for s in symbols:
-        price = random.uniform(100, 50000)
-
-        # 🔥 FIX: TREND vždy existuje
-        trend = random.choice(["UP", "DOWN"])
-
         data[s] = {
-            "price": price,
-            "trend": trend,
+            "price": random.uniform(100, 50000),
+            "trend": random.choice(["UP", "DOWN"]),
             "volatility": random.uniform(0.01, 0.05)
         }
 
