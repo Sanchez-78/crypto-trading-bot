@@ -9,7 +9,8 @@
       "Bash(\"C:\\\\Projects\\\\CryptoMaster_app\\\\src\\\\screens\\\\DashboardScreen.js\")",
       "Bash(wc -l ./src/services/*.py)",
       "mcp__Desktop_Commander__start_search",
-      "mcp__Desktop_Commander__get_file_info"
+      "mcp__Desktop_Commander__get_file_info",
+      "Bash(xargs grep:*)"
     ]
   }
 }

@@ -76,7 +76,53 @@ def write_last_trade(trade):
 
 
 # =========================
-# TRADE HISTORY (OPTIONAL)
+# SIGNAL SAVE
+# =========================
+def save_signal(signal):
+    global db
+
+    if db is None:
+        print("❌ save_signal: DB NOT READY")
+        return None
+
+    try:
+        ref = db.collection("signals").add({
+            **signal,
+            "evaluated": signal.get("evaluated", False),
+            "timestamp": signal.get("timestamp", time.time()),
+        })
+        doc_id = ref[1].id
+        print(f"📡 signal saved: {doc_id}")
+        return doc_id
+    except Exception as e:
+        print("❌ save_signal ERROR:", e)
+        return None
+
+
+# =========================
+# SIGNAL UPDATE (evaluator)
+# =========================
+def update_signal(doc_id, data):
+    global db
+
+    if db is None:
+        return
+
+    try:
+        db.collection("signals").document(doc_id).update(data)
+    except Exception as e:
+        print("❌ update_signal ERROR:", e)
+
+
+# =========================
+# GET DB (pro evaluator)
+# =========================
+def get_db():
+    return db
+
+
+# =========================
+# TRADE HISTORY
 # =========================
 def log_trade(trade):
     global db
