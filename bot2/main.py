@@ -1,11 +1,9 @@
-# bot2/main.py
-
 from src.core.event_bus import event_bus
 from src.core.events import PRICE_TICK
 
 from src.services.firebase_client import init_firebase
 
-# 🔥 důležité – importy spouští subscribery
+# 🔥 MUSÍ BÝT (spustí subscribery)
 import src.services.portfolio_event
 import bot2.learning_event
 
@@ -13,9 +11,6 @@ import time
 import random
 
 
-# =========================
-# MOCK DATA (nebo real feed)
-# =========================
 def generate_market_data():
     symbols = ["BTC", "ETH", "ADA"]
 
@@ -23,23 +18,22 @@ def generate_market_data():
 
     for s in symbols:
         price = random.uniform(100, 50000)
-        vol = random.uniform(0.1, 1.0)
+
+        # 🔥 FIX: TREND vždy existuje
+        trend = random.choice(["UP", "DOWN"])
 
         data[s] = {
             "price": price,
-            "volatility": vol
+            "trend": trend,
+            "volatility": random.uniform(0.01, 0.05)
         }
 
     return data
 
 
-# =========================
-# MAIN LOOP
-# =========================
 def main():
     print("🔥 MAIN STARTED")
 
-    # Firebase init
     init_firebase()
 
     print("📡 Event system running...\n")
@@ -48,7 +42,8 @@ def main():
         try:
             market_data = generate_market_data()
 
-            # publish prices
+            print("📈 TICK:", market_data)
+
             event_bus.publish(PRICE_TICK, market_data)
 
             time.sleep(1)
