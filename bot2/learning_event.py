@@ -1,92 +1,161 @@
-from src.core.event_bus import event_bus
-from src.core.events import EVALUATION_DONE
-from src.services.firebase_client import buffered_metrics_update
+import firebase_admin
+from firebase_admin import credentials, firestore
+import os
+import json
+import time
 
-history = []
-counter = 0
+# =========================
+# GLOBALS
+# =========================
+db = None
+
+last_write_time = 0
+last_metrics = None
+trade_counter = 0
+
+# LIMIT CONFIG
+MIN_TIME_INTERVAL = 10     # max 1 write / 10s
+BATCH_SIZE = 10            # každých 10 trade
+CHANGE_THRESHOLD = 0.01    # změna winrate
 
 
-def on_eval(trade):
-    global counter
+# =========================
+# INIT FIREBASE
+# =========================
+def init_firebase():
+    global db
 
-    history.append(trade)
-    counter += 1
+    print("\n🔥 INIT FIREBASE START")
 
-    wins = sum(1 for t in history if t["evaluation"]["result"] == "WIN")
-    total = len(history)
+    try:
+        if not firebase_admin._apps:
+            firebase_env = os.environ.get("FIREBASE_CREDENTIALS")
 
-    winrate = wins / total if total else 0
+            if firebase_env:
+                print("🔍 Using ENV credentials")
 
-    # PRINT vždy
-    print(f"📊 Trades={total} Winrate={winrate:.2f}")
+                try:
+                    cred_dict = json.loads(firebase_env)
+                    cred = credentials.Certificate(cred_dict)
 
-    # 🔥 FIREBASE jen každých 20 obchodů
-    if counter % 10 != 0:
+                    print(f"👉 PROJECT: {cred.project_id}")
+
+                    firebase_admin.initialize_app(cred)
+                    print("✅ Firebase initialized")
+
+                except Exception as e:
+                    print(f"❌ JSON ERROR: {e}")
+                    return None
+            else:
+                print("❌ NO FIREBASE_CREDENTIALS")
+                return None
+
+        db = firestore.client()
+        print("🔥 Firestore READY")
+
+        # TEST WRITE
+        try:
+            db.collection("debug").add({
+                "status": "init_ok",
+                "ts": time.time()
+            })
+            print("🔥 TEST WRITE OK")
+        except Exception as e:
+            print(f"❌ TEST WRITE FAILED: {e}")
+
+        return db
+
+    except Exception as e:
+        print(f"❌ INIT ERROR: {e}")
+        return None
+
+
+db = init_firebase()
+
+
+# =========================
+# SMART WRITE DECISION
+# =========================
+def should_write(metrics):
+    global last_write_time, last_metrics, trade_counter
+
+    now = time.time()
+
+    # 1️⃣ batch trigger
+    if trade_counter % BATCH_SIZE == 0:
+        print("📦 BATCH TRIGGER")
+        return True
+
+    # 2️⃣ time fallback
+    if now - last_write_time > MIN_TIME_INTERVAL:
+        print("⏱ TIME TRIGGER")
+        return True
+
+    # 3️⃣ change detection
+    if last_metrics:
+        old = last_metrics.get("winrate", 0)
+        new = metrics.get("winrate", 0)
+
+        if abs(new - old) > CHANGE_THRESHOLD:
+            print("📈 CHANGE TRIGGER")
+            return True
+
+    return False
+
+
+# =========================
+# MAIN METRICS WRITE
+# =========================
+def smart_write(metrics):
+    global last_write_time, last_metrics, trade_counter
+
+    trade_counter += 1
+
+    print(f"📡 WRITE CHECK (trade #{trade_counter})")
+
+    if not db:
+        print("❌ DB NOT READY")
         return
 
-    profits = [t["evaluation"]["profit"] for t in history]
-    avg_profit = sum(profits) / total if total else 0
+    if not should_write(metrics):
+        print("⏳ SKIP WRITE")
+        return
 
-    metrics = {
-        "trades": total,
-        "winrate": winrate,
-        "avg_profit": avg_profit
-    }
+    try:
+        payload = {
+            **metrics,
+            "timestamp": time.time()
+        }
 
-    print("📡 BATCH SAVE TO FIREBASE")
+        print("📡 WRITING METRICS:", payload)
 
-    buffered_metrics_update(metrics)
+        db.collection("metrics").document("latest").set(payload)
 
+        last_write_time = time.time()
+        last_metrics = metrics
 
-event_bus.subscribe(EVALUATION_DONE, on_eval)from src.core.event_bus import event_bus
-from src.core.events import EVALUATION_DONE
-from src.services.firebase_client import save_metrics
+        print("🔥 FIREBASE WRITE OK")
 
-history = []
-
-
-def on_eval(trade):
-    print("\n🧠 LEARNING TRIGGERED")
-
-    history.append(trade)
-
-    wins = sum(1 for t in history if t["evaluation"]["result"] == "WIN")
-    total = len(history)
-
-    winrate = wins / total if total else 0
-
-    profits = [t["evaluation"]["profit"] for t in history]
-    avg_profit = sum(profits) / total if total else 0
-
-    print("===================================")
-    print(f"📊 TOTAL TRADES: {total}")
-    print(f"🎯 WINRATE: {winrate:.2f}")
-    print(f"💰 AVG PROFIT: {avg_profit:.5f}")
-
-    # PROGRESS (zlepšuje se?)
-    if total > 10:
-        first_half = history[:total//2]
-        second_half = history[total//2:]
-
-        w1 = sum(1 for t in first_half if t["evaluation"]["result"] == "WIN") / len(first_half)
-        w2 = sum(1 for t in second_half if t["evaluation"]["result"] == "WIN") / len(second_half)
-
-        trend = "IMPROVING 📈" if w2 > w1 else "WORSENING 📉"
-
-        print(f"📈 PROGRESS: {trend}")
-
-    print("===================================\n")
-
-    # FIREBASE
-    metrics = {
-        "trades": total,
-        "winrate": winrate,
-        "avg_profit": avg_profit
-    }
-
-    print("📡 CALLING SAVE_METRICS")
-
-    save_metrics(metrics)
+    except Exception as e:
+        print("❌ FIREBASE ERROR:", e)
 
 
-event_bus.subscribe(EVALUATION_DONE, on_eval)
+# =========================
+# TRADE LOGGING (OPTIONAL)
+# =========================
+def log_trade(trade):
+    if not db:
+        return
+
+    try:
+        db.collection("trades").add({
+            "symbol": trade.get("symbol"),
+            "pnl": trade.get("evaluation", {}).get("profit"),
+            "result": trade.get("evaluation", {}).get("result"),
+            "timestamp": time.time()
+        })
+
+        print("📝 TRADE LOGGED")
+
+    except Exception as e:
+        print("❌ TRADE LOG ERROR:", e)
