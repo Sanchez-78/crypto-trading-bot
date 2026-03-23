@@ -15,7 +15,6 @@ risk_manager = RiskManager()
 risk_engine = RiskEngine()
 guard = TradeGuard()
 
-
 SYMBOL = "BTCUSDT"
 BALANCE = 10000
 
@@ -29,7 +28,7 @@ def handle_signal(data):
         confidence = data["confidence"]
 
         # =========================
-        # ❗ TRADE GATING (KLÍČ)
+        # ❗ TRADE GATING
         # =========================
         if not guard.cooldown_ok(SYMBOL):
             return
@@ -41,7 +40,7 @@ def handle_signal(data):
             return
 
         # =========================
-        # 📊 RISK MANAGEMENT
+        # 📊 RISK
         # =========================
         sl, tp = risk_manager.compute(features, features["price"], "BUY")
 
@@ -78,14 +77,20 @@ def handle_signal(data):
             return
 
         # =========================
-        # 🔥 PROPAGACE METADATA (KRITICKÉ)
+        # 🔥 METADATA
         # =========================
         trade["strategy"] = data.get("strategy")
         trade["regime"] = data.get("regime")
         trade["meta"] = data.get("meta", {})
 
         # =========================
-        # 🛑 MARK TRADE (cooldown)
+        # 💣 BONUS: REAL CONFIDENCE
+        # =========================
+        # místo raw confidence používáme edge-weighted confidence
+        trade["confidence_used"] = confidence * edge
+
+        # =========================
+        # 🛑 COOLDOWN MARK
         # =========================
         guard.mark_trade(SYMBOL)
 
