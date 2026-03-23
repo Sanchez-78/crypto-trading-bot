@@ -12,46 +12,28 @@ history = []
 
 
 def on_evaluation(trade):
-    try:
-        # =========================
-        # fallbacky
-        # =========================
-        trade["confidence_used"] = trade.get("confidence_used", trade.get("confidence", 0.5))
-        trade["regime"] = trade.get("regime", "UNKNOWN")
-        trade["strategy"] = trade.get("strategy", "UNKNOWN")
+    history.append(trade)
 
-        history.append(trade)
+    learner.update_bandit([trade])
+    learner.calibrate_confidence([trade])
 
-        # =========================
-        # LEARNING
-        # =========================
-        learner.update_bandit([trade])
-        learner.calibrate_confidence([trade])
-        learner.update_strategy_blame([trade])
-        learner.update_regime_perf([trade])
+    config = learner.export_config()
+    event_bus.publish(CONFIG_UPDATED, config)
 
-        config = learner.export_config()
-        event_bus.publish(CONFIG_UPDATED, config)
+    metrics = metrics_engine.compute(history[-100:])
 
-        # =========================
-        # METRICS
-        # =========================
-        metrics = metrics_engine.compute(history[-100:])
+    # =========================
+    # LEARNING PROGRESS DEBUG
+    # =========================
+    trend = metrics["learning"]["trend"]
+    winrate = metrics["performance"]["winrate"]
 
-        print("📊 METRICS READY")
+    print("\n📊 ===== BOT STATUS =====")
+    print(f"Trades: {metrics['performance']['trades']}")
+    print(f"Winrate: {winrate:.2f}")
+    print(f"Trend: {trend}")
+    print("========================\n")
 
-        # 🔥 KLÍČOVÉ
-        save_metrics(metrics)
-
-        # =========================
-        # LOG
-        # =========================
-        perf = metrics["performance"]
-
-        print(f"🧠 WR={perf['winrate']:.2f} | Trades={perf['trades']}")
-
-    except Exception as e:
-        print(f"❌ Learning error: {e}")
-
+    save_metrics(metrics)
 
 event_bus.subscribe(EVALUATION_DONE, on_evaluation)

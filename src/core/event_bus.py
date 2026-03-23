@@ -1,22 +1,23 @@
-from collections import defaultdict
-
-
 class EventBus:
+
     def __init__(self):
-        self.listeners = defaultdict(list)
+        self.subscribers = {}
 
-    def subscribe(self, event_type, handler):
-        self.listeners[event_type].append(handler)
+    def subscribe(self, event, handler):
+        self.subscribers.setdefault(event, []).append(handler)
 
-    def publish(self, event_type, data=None):
-        if event_type not in self.listeners:
+    def publish(self, event, data):
+        print(f"\n📡 EVENT: {event}")
+
+        if event not in self.subscribers:
+            print(f"⚠️ No subscribers for {event}")
             return
 
-        for handler in self.listeners[event_type]:
+        for handler in self.subscribers[event]:
             try:
                 handler(data)
             except Exception as e:
-                print(f"❌ Event error [{event_type}]: {e}")
+                print(f"❌ Event error [{event}]: {e}")
 
 
 event_bus = EventBus()
