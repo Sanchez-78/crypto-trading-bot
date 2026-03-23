@@ -1,9 +1,10 @@
 import sys
 import os
+import time
 from threading import Thread
 
 # =========================
-# 🔥 FIX PATH (KRITICKÉ)
+# FIX PATH
 # =========================
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(ROOT)
@@ -11,7 +12,7 @@ sys.path.append(ROOT)
 print("🚀 EVENT DRIVEN SYSTEM STARTED")
 
 # =========================
-# 🔥 IMPORTY = registrace eventů
+# IMPORT EVENT HANDLERS
 # =========================
 import bot1.execution_event
 import src.services.portfolio_event
@@ -19,20 +20,18 @@ import src.services.evaluator_event
 import bot2.learning_event
 import src.services.config_event
 
+# =========================
+# IMPORT PRICE FEED
+# =========================
 from src.services.price_feed import price_feed
 
+# =========================
+# SPUŠTĚNÍ FEEDU V THREADU
+# =========================
+Thread(target=price_feed, daemon=True).start()
 
 # =========================
-# 🚀 MAIN
+# Hlavní smyčka
 # =========================
-def main():
-    # price feed (později websocket)
-    Thread(target=price_feed, daemon=True).start()
-
-    # drží proces
-    while True:
-        pass
-
-
-if __name__ == "__main__":
-    main()
+while True:
+    time.sleep(1)  # lepší než "pass", dává šanci threadům běžet
