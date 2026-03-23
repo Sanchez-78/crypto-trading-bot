@@ -12,7 +12,14 @@ def generate_signal(market_data):
         signal = {
             "symbol": symbol,
             "action": action,
-            "confidence": random.uniform(0.5, 1.0)
+            "confidence": random.uniform(0.5, 1.0),
+
+            # 🔥 FIX: přidány features
+            "features": {
+                "trend": data["trend"],
+                "volatility": data["volatility"],
+                "price": data["price"]
+            }
         }
 
         signals.append(signal)
