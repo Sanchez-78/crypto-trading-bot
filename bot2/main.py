@@ -1,5 +1,8 @@
 from src.core.event_bus import event_bus
 from src.core.events import PRICE_TICK
+import src.services.signal_generator
+import src.services.trade_executor
+import src.services.evaluator
 
 from src.services.firebase_client import init_firebase
 
