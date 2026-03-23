@@ -15,35 +15,36 @@ risk_manager = RiskManager()
 risk_engine = RiskEngine()
 guard = TradeGuard()
 
-SYMBOL = "BTCUSDT"
-BALANCE = 10000
+BALANCE = 10000  # můžeš per-symbol později dynamicky
 
 
 # =========================
-# 📈 HANDLE SIGNAL
+# HANDLE SIGNAL
 # =========================
 def handle_signal(data):
     try:
         features = data["features"]
         confidence = data["confidence"]
+        symbol = data.get("symbol")
+        if not symbol:
+            return  # safety
 
         # =========================
         # ❗ TRADE GATING
         # =========================
-        if not guard.cooldown_ok(SYMBOL):
+        if not guard.cooldown_ok(symbol):
             return
 
-        if guard.is_duplicate(features):
+        if guard.is_duplicate(symbol, features):
             return
 
         if not portfolio.can_open(BALANCE):
             return
 
         # =========================
-        # 📊 RISK
+        # RISK MANAGEMENT
         # =========================
         sl, tp = risk_manager.compute(features, features["price"], "BUY")
-
         if sl is None:
             return
 
@@ -60,10 +61,10 @@ def handle_signal(data):
             return
 
         # =========================
-        # 🚀 OPEN TRADE
+        # OPEN TRADE
         # =========================
         trade, reason = portfolio.open_trade(
-            symbol=SYMBOL,
+            symbol=symbol,
             action="BUY",
             price=features["price"],
             size=size,
@@ -77,25 +78,21 @@ def handle_signal(data):
             return
 
         # =========================
-        # 🔥 METADATA
+        # METADATA
         # =========================
         trade["strategy"] = data.get("strategy")
         trade["regime"] = data.get("regime")
         trade["meta"] = data.get("meta", {})
 
-        # =========================
-        # 💣 BONUS: REAL CONFIDENCE
-        # =========================
-        # místo raw confidence používáme edge-weighted confidence
         trade["confidence_used"] = confidence * edge
 
         # =========================
-        # 🛑 COOLDOWN MARK
+        # MARK TRADE
         # =========================
-        guard.mark_trade(SYMBOL)
+        guard.mark_trade(symbol)
 
         # =========================
-        # 📡 EVENT
+        # PUBLISH
         # =========================
         event_bus.publish(TRADE_OPENED, trade)
 
@@ -104,24 +101,19 @@ def handle_signal(data):
 
 
 # =========================
-# 🔄 PRICE UPDATE
+# PRICE UPDATE
 # =========================
 def on_price_update(data):
     try:
-        price = data["price"]
-
-        prices = {
-            SYMBOL: price
-        }
-
-        closed = portfolio.update_trades(prices)
-
-        for t, pnl, result in closed:
-            event_bus.publish(TRADE_CLOSED, {
-                "trade": t,
-                "pnl": pnl,
-                "result": result
-            })
+        # data = {"BTCUSDT":price, "ADAUSDT":price, "ETHUSDT":price, ...}
+        for symbol, price in data.items():
+            closed = portfolio.update_trades({symbol: price})
+            for t, pnl, result in closed:
+                event_bus.publish(TRADE_CLOSED, {
+                    "trade": t,
+                    "pnl": pnl,
+                    "result": result
+                })
 
     except Exception as e:
         print(f"❌ price update error: {e}")
