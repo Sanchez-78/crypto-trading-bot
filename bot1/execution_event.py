@@ -2,39 +2,66 @@ from src.core.event_bus import event_bus
 from src.core.events import PRICE_TICK, SIGNAL_CREATED
 
 
+# =========================
+# SIGNAL GENERATION
+# =========================
 def on_price_tick(data):
-    features = data
+    try:
+        # data = {
+        #   "BTCUSDT": {"price":..., "trend":..., "volatility":...},
+        #   ...
+        # }
 
-    # jednoduchá strategie (napojíš bandit později)
-    if features["trend"] != "UP":
-        return
+        for symbol, f in data.items():
 
-    signal = "BUY"
-    confidence = 0.7
+            # =========================
+            # VALIDACE (hlavní fix!)
+            # =========================
+            if "price" not in f or "trend" not in f or "volatility" not in f:
+                print(f"⚠️ Missing fields for {symbol}: {f}")
+                continue
 
-    # 🔥 REGIME DETEKCE
-    if features["volatility"] > 0.7:
-        regime = "VOLATILE"
-    elif features["trend"] == "UP":
-        regime = "TREND"
-    else:
-        regime = "RANGE"
+            features = {
+                "price": f["price"],
+                "trend": f["trend"],
+                "volatility": f["volatility"]
+            }
 
-    # 🔥 FEATURE BUCKET
-    vol = features["volatility"]
-    vol_bucket = "HIGH" if vol > 0.7 else "MID" if vol > 0.3 else "LOW"
+            # =========================
+            # SIMPLE STRATEGY (TREND)
+            # =========================
+            if features["trend"] == "UP":
+                signal = "BUY"
+                confidence = 0.6 + features["volatility"]
+                regime = "TREND"
+            else:
+                signal = "HOLD"
+                confidence = 0.5
+                regime = "RANGE"
 
-    event_bus.publish(SIGNAL_CREATED, {
-        "signal": signal,
-        "confidence": confidence,
-        "features": features,
-        "strategy": "TREND",
-        "regime": regime,
-        "meta": {
-            "feature_bucket": f"{features['trend']}_{vol_bucket}",
-            "confidence_raw": confidence
-        }
-    })
+            # =========================
+            # DEBUG
+            # =========================
+            print(f"🔹 SIGNAL: {symbol} {signal} | price={features['price']:.2f} | trend={features['trend']} | vol={features['volatility']:.4f}")
+
+            # =========================
+            # EVENT → další pipeline
+            # =========================
+            event_bus.publish(SIGNAL_CREATED, {
+                "symbol": symbol,
+                "signal": signal,
+                "features": features,
+                "confidence": confidence,
+                "strategy": "TREND",
+                "regime": regime,
+                "meta": {}
+            })
+
+    except Exception as e:
+        print(f"❌ execution error: {e}")
 
 
+# =========================
+# SUBSCRIBE
+# =========================
 event_bus.subscribe(PRICE_TICK, on_price_tick)

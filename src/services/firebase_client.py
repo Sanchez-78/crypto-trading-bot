@@ -1,121 +1,88 @@
 import firebase_admin
 from firebase_admin import credentials, firestore
 import os
-
-_db = None
+import json
 
 
 # =========================
-# 🔌 INIT FIREBASE
+# INIT FIREBASE
 # =========================
 def init_firebase():
-    global _db
-
-    if _db is not None:
-        return _db
-
     try:
         if not firebase_admin._apps:
-            cred_path = os.getenv("FIREBASE_CREDENTIALS", "firebase_key.json")
+            # 🔥 varianta 1: JSON file
+            if os.path.exists("firebase_key.json"):
+                cred = credentials.Certificate("firebase_key.json")
+                firebase_admin.initialize_app(cred)
+                print("🔥 Firebase initialized (file)")
 
-            if not os.path.exists(cred_path):
-                print("❌ Firebase credentials not found")
-                return None
+            # 🔥 varianta 2: ENV variable (Railway)
+            else:
+                firebase_json = os.environ.get("FIREBASE_CREDENTIALS")
 
-            cred = credentials.Certificate(cred_path)
-            firebase_admin.initialize_app(cred)
+                if firebase_json:
+                    cred_dict = json.loads(firebase_json)
+                    cred = credentials.Certificate(cred_dict)
+                    firebase_admin.initialize_app(cred)
+                    print("🔥 Firebase initialized (ENV)")
 
-        _db = firestore.client()
-        print("🔥 Firebase connected")
+                else:
+                    print("⚠️ Firebase credentials not found")
+
+        return firestore.client()
 
     except Exception as e:
         print(f"❌ Firebase init error: {e}")
-        _db = None
-
-    return _db
+        return None
 
 
-def get_db():
-    if _db is None:
-        return init_firebase()
-    return _db
+db = init_firebase()
 
 
 # =========================
-# 📡 SIGNALS
-# =========================
-def save_signal(signal):
-    db = get_db()
-    if not db:
-        return
-
-    db.collection("signals").add(signal)
-
-
-def update_signal(doc_id, data):
-    db = get_db()
-    if not db:
-        return
-
-    db.collection("signals").document(doc_id).update(data)
-
-
-def load_signals(evaluated=None, limit=100):
-    db = get_db()
-    if not db:
-        return []
-
-    query = db.collection("signals")
-
-    if evaluated is not None:
-        query = query.where("evaluated", "==", evaluated)
-
-    docs = query.limit(limit).stream()
-
-    return [{**d.to_dict(), "id": d.id} for d in docs]
-
-
-# =========================
-# ⚙️ CONFIG
-# =========================
-def save_config(config):
-    db = get_db()
-    if not db:
-        return
-
-    db.collection("config").document("main").set(config)
-
-
-def load_config():
-    db = get_db()
-    if not db:
-        return {}
-
-    doc = db.collection("config").document("main").get()
-
-    if doc.exists:
-        return doc.to_dict()
-
-    return {}
-
-
-# =========================
-# 📊 METRICS
+# SAVE METRICS
 # =========================
 def save_metrics(metrics):
-    db = get_db()
-    if not db:
-        return
+    try:
+        if not db:
+            print("⚠️ Firebase not initialized → metrics skipped")
+            return
 
-    db.collection("metrics").document("latest").set(metrics)
+        db.collection("metrics").document("latest").set(metrics)
+
+        print("🔥 FIREBASE WRITE: metrics/latest")
+
+    except Exception as e:
+        print(f"❌ Firebase write error: {e}")
 
 
 # =========================
-# 💰 TRADES (OPTIONAL)
+# SAVE SIGNAL (volitelné)
+# =========================
+def save_signal(signal):
+    try:
+        if not db:
+            return
+
+        db.collection("signals").add(signal)
+
+        print("🔥 FIREBASE WRITE: signal")
+
+    except Exception as e:
+        print(f"❌ Firebase signal error: {e}")
+
+
+# =========================
+# SAVE TRADE (volitelné)
 # =========================
 def save_trade(trade):
-    db = get_db()
-    if not db:
-        return
+    try:
+        if not db:
+            return
 
-    db.collection("trades").add(trade)
+        db.collection("trades").add(trade)
+
+        print("🔥 FIREBASE WRITE: trade")
+
+    except Exception as e:
+        print(f"❌ Firebase trade error: {e}")
