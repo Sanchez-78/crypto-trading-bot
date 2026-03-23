@@ -19,6 +19,10 @@ stats = {
     "last_trade": None
 }
 
+# 🔥 WRITE CONTROL
+last_write_time = 0
+WRITE_INTERVAL = 30  # sekund (≈ max 2880 zápisů/den)
+
 
 # =========================
 # UPDATE LEARNING
@@ -33,28 +37,23 @@ def update_learning(trade):
 
     stats["winrate"] = stats["wins"] / stats["trades"]
 
-    # průměrný profit
     stats["avg_profit"] = (
         (stats["avg_profit"] * (stats["trades"] - 1) + trade["profit"])
         / stats["trades"]
     )
 
-    # equity simulace
     stats["equity"] += stats["equity"] * trade["profit"]
 
-    # learning score (0–1)
     stats["learning_score"] = (
         stats["winrate"] * 0.7 +
         min(stats["trades"] / 50, 1) * 0.3
     )
 
-    # READY LOGIKA
     stats["ready"] = (
         stats["trades"] > 20 and
         stats["winrate"] > 0.55
     )
 
-    # poslední trade (pro appku)
     stats["last_trade"] = {
         "symbol": trade["symbol"],
         "result": trade["result"],
@@ -63,44 +62,49 @@ def update_learning(trade):
 
 
 # =========================
-# PRINT STATUS (LAIK FRIENDLY)
+# PRINT STATUS
 # =========================
 def print_status():
     print("\n🧠 ===== BOT STATUS =====")
     print(f"Trades: {stats['trades']}")
-    print(f"Wins: {stats['wins']} | Losses: {stats['losses']}")
     print(f"Winrate: {round(stats['winrate'] * 100, 2)} %")
-    print(f"Avg profit: {round(stats['avg_profit'], 4)}")
     print(f"Equity: {round(stats['equity'], 2)}")
-    print(f"Learning score: {round(stats['learning_score'], 2)}")
-
-    if stats["last_trade"]:
-        lt = stats["last_trade"]
-        print(f"Last trade: {lt['symbol']} | {lt['result']} | {round(lt['profit'], 4)}")
 
     if stats["ready"]:
-        print("🚀 BOT JE NAUČEN A PŘIPRAVEN OBCHODOVAT")
+        print("🚀 READY")
     else:
-        print("📚 BOT SE STÁLE UČÍ")
+        print("📚 LEARNING")
 
     print("========================\n")
 
 
 # =========================
-# FIREBASE SAVE (SAFE)
+# 🔥 SMART FIREBASE WRITE
 # =========================
 def save_to_firebase():
-    global db
+    global db, last_write_time
 
     if not db:
-        print("⚠️ DB not ready — skipping write")
+        print("⚠️ DB not ready")
+        return
+
+    now = time.time()
+
+    # 🔥 LIMIT WRITE RATE
+    if now - last_write_time < WRITE_INTERVAL:
+        print("⏳ Skip Firebase write (rate limit)")
         return
 
     try:
         db.collection("bot_stats").document("latest").set({
             **stats,
-            "timestamp": time.time()
+            "timestamp": now
         })
+
+        last_write_time = now
+
+        print("☁️ Firebase write OK")
+
     except Exception as e:
         print("❌ Firebase write error:", e)
 
@@ -111,13 +115,10 @@ def save_to_firebase():
 def on_evaluation(trade):
     print("🧠 LEARNING TRIGGERED")
 
-    # safety (když by přišla špatná data)
     if not isinstance(trade, dict):
-        print("⚠️ invalid trade data:", trade)
         return
 
     if "result" not in trade or "profit" not in trade:
-        print("⚠️ incomplete trade:", trade)
         return
 
     update_learning(trade)
