@@ -1,9 +1,12 @@
+import time
+
 from src.core.event_bus import event_bus
 from src.core.events import SIGNAL_CREATED, TRADE_OPENED, TRADE_CLOSED, PRICE_TICK
 
 from src.services.risk_manager import risk_manager
 from src.services.auto_control import auto_control
 from src.services.portfolio_risk import portfolio_risk
+from src.services.firebase_client import save_signal
 
 open_trades = {}
 loss_streak = 0
@@ -15,7 +18,7 @@ loss_streak = 0
 def should_trade(features, confidence):
     vol = features["volatility"]
 
-    if vol < 0.2:
+    if vol < 0.01:
         print("🚫 LOW VOL")
         return False
 
@@ -79,6 +82,18 @@ def handle_signal(data):
     open_trades[symbol] = trade
 
     print(f"📈 OPEN {symbol} size={size:.2f}")
+
+    save_signal({
+        "symbol": symbol,
+        "signal": data.get("signal", "BUY"),
+        "confidence": confidence,
+        "strategy": data.get("strategy", "TREND"),
+        "regime": data.get("regime", "UNKNOWN"),
+        "price": price,
+        "size": size,
+        "evaluated": False,
+        "timestamp": time.time(),
+    })
 
     event_bus.publish(TRADE_OPENED, trade)
 
