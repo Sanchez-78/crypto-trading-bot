@@ -1,11 +1,10 @@
 from src.core.event_bus import event_bus
 from src.core.events import SIGNAL_CREATED, TRADE_EXECUTED, TRADE_OPENED
 
-import random
 import uuid
 import time
 
-# 🔥 IMPORT LEARNING STATUS
+# 🔥 learning control
 from bot2.learning_event import is_ready, AUTO_TRADE_ENABLED
 
 
@@ -31,8 +30,10 @@ def on_signal(signal):
             return
 
     # =========================
-    # CREATE TRADE
+    # REAL ENTRY PRICE
     # =========================
+    entry_price = signal["features"]["price"]
+
     trade = {
         "id": str(uuid.uuid4()),
 
@@ -40,7 +41,7 @@ def on_signal(signal):
         "action": signal["action"],
         "confidence": signal["confidence"],
 
-        "entry_price": random.uniform(100, 50000),
+        "entry_price": entry_price,
         "exit_price": None,
 
         "status": "OPEN",
@@ -60,4 +61,4 @@ def on_signal(signal):
 
 event_bus.subscribe(SIGNAL_CREATED, on_signal)
 
-print("💰 Trade Executor READY (AUTO MODE)")
+print("💰 Trade Executor READY (REAL DATA MODE)")
