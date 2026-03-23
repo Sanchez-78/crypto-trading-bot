@@ -6,9 +6,6 @@ import json
 db = None
 
 
-# =========================
-# INIT FIREBASE (FULL DEBUG)
-# =========================
 def init_firebase():
     global db
 
@@ -16,79 +13,53 @@ def init_firebase():
 
     try:
         if not firebase_admin._apps:
-
-            # =========================
-            # ENV VAR
-            # =========================
             firebase_env = os.environ.get("FIREBASE_CREDENTIALS")
 
             if firebase_env:
-                print("🔍 Using FIREBASE_CREDENTIALS ENV")
+                print("🔍 Using ENV credentials")
 
                 try:
                     cred_dict = json.loads(firebase_env)
                     cred = credentials.Certificate(cred_dict)
                     firebase_admin.initialize_app(cred)
-                    print("✅ Firebase initialized from ENV")
-
+                    print("✅ Firebase initialized")
                 except Exception as e:
-                    print(f"❌ ENV JSON ERROR: {e}")
+                    print(f"❌ JSON ERROR: {e}")
                     return None
-
-            # =========================
-            # FILE
-            # =========================
-            elif os.path.exists("firebase_key.json"):
-                print("🔍 Using firebase_key.json file")
-
-                try:
-                    cred = credentials.Certificate("firebase_key.json")
-                    firebase_admin.initialize_app(cred)
-                    print("✅ Firebase initialized from FILE")
-
-                except Exception as e:
-                    print(f"❌ FILE ERROR: {e}")
-                    return None
-
             else:
-                print("❌ NO FIREBASE CREDENTIALS FOUND")
+                print("❌ NO FIREBASE_CREDENTIALS")
                 return None
 
         db = firestore.client()
-        print("🔥 Firestore client READY")
+        print("🔥 Firestore READY")
 
-        # =========================
-        # TEST WRITE
-        # =========================
-        try:
-            db.collection("debug").add({"test": "ok"})
-            print("🔥 TEST WRITE SUCCESS")
-        except Exception as e:
-            print(f"❌ TEST WRITE FAILED: {e}")
+        # test write
+        db.collection("debug").add({"ping": "ok"})
+        print("🔥 TEST WRITE OK")
 
         return db
 
     except Exception as e:
-        print(f"❌ INIT FAILED: {e}")
+        print(f"❌ INIT ERROR: {e}")
         return None
 
 
 db = init_firebase()
 
 
-# =========================
-# SAFE WRITE
-# =========================
 def save_metrics(metrics):
-    print("📡 TRY SAVE METRICS")
+    print("📡 SAVE METRICS CALLED")
 
     if not db:
         print("❌ DB NOT READY")
         return
 
     try:
+        print("📡 WRITING:", metrics)
+
         db.collection("metrics").document("latest").set(metrics)
+
         print("🔥 FIREBASE WRITE OK")
 
     except Exception as e:
-        print(f"❌ FIREBASE WRITE ERROR: {e}")
+        print(f"❌ WRITE ERROR: {e}")
