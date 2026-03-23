@@ -10,11 +10,17 @@ import bot2.learning_event
 
 from src.services.price_feed import price_feed
 
-init_firebase()
 
-print("🚀 SYSTEM START")
+def main():
+    init_firebase()
 
-Thread(target=price_feed,daemon=True).start()
+    print("🚀 SYSTEM START")
 
-while True:
-    time.sleep(1)
+    Thread(target=price_feed, daemon=True).start()
+
+    while True:
+        time.sleep(1)
+
+
+if __name__ == "__main__":
+    main()
