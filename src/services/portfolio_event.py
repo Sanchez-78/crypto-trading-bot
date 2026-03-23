@@ -1,37 +1,35 @@
 from src.core.event_bus import event_bus
 from src.core.events import SIGNAL_CREATED, TRADE_OPENED, TRADE_CLOSED, PRICE_TICK
+
 from src.services.risk_manager import risk_manager
 from src.services.auto_control import auto_control
+from src.services.portfolio_risk import portfolio_risk
 
 open_trades = {}
 loss_streak = 0
 
 
 # =========================
-# FILTERY
+# FILTER
 # =========================
 def should_trade(features, confidence):
     vol = features["volatility"]
 
-    # ❌ low volatility (žádný pohyb)
     if vol < 0.2:
-        print("🚫 FILTER: LOW VOL")
+        print("🚫 LOW VOL")
         return False
 
-    # ❌ chaos
     if vol > 0.9:
-        print("🚫 FILTER: HIGH VOL")
+        print("🚫 HIGH VOL")
         return False
 
-    # ❌ low confidence
     if confidence < 0.55:
-        print("🚫 FILTER: LOW CONFIDENCE")
+        print("🚫 LOW CONF")
         return False
 
-    # ❌ loss streak protection
     global loss_streak
     if loss_streak >= 3:
-        print("🛑 FILTER: LOSS STREAK")
+        print("🛑 LOSS STREAK")
         return False
 
     return True
@@ -45,8 +43,9 @@ def handle_signal(data):
     price = data["features"]["price"]
     confidence = data.get("confidence", 0.5)
 
+    # AUTO CONTROL
     if not auto_control.trading_enabled:
-        print("🛑 BLOCKED BY AUTO CONTROL")
+        print("🛑 AUTO BLOCK")
         return
 
     if symbol in open_trades:
@@ -55,11 +54,18 @@ def handle_signal(data):
     if not should_trade(data["features"], confidence):
         return
 
-    if risk_manager.is_drawdown_exceeded():
+    # GLOBAL RISK
+    if not risk_manager.can_trade():
         print("🛑 RISK BLOCK")
         return
 
     size = risk_manager.get_position_size(confidence)
+
+    # 🔥 PORTFOLIO CHECK
+    if not portfolio_risk.can_open_trade(
+        symbol, size, open_trades, risk_manager.balance
+    ):
+        return
 
     trade = {
         "symbol": symbol,
@@ -93,36 +99,27 @@ def on_price(data):
         pnl = (current - entry) / entry
         trade["max_pnl"] = max(trade["max_pnl"], pnl)
 
-        # =========================
-        # DYNAMIC TP/SL
-        # =========================
         vol = data[symbol]["volatility"]
 
+        # dynamic risk
         TP = 0.002 + vol * 0.004
         SL = -TP * 0.75
         TRAIL = TP * 0.5
         PYRAMID_THRESHOLD = TP * 0.5
 
-        # =========================
-        # PYRAMIDING
-        # =========================
+        # pyramid
         if pnl > PYRAMID_THRESHOLD and trade["pyramids"] < 2:
             trade["pyramids"] += 1
             trade["size"] *= 1.5
             print(f"📈 PYRAMID {symbol}")
 
-        # =========================
-        # EXIT LOGIC
-        # =========================
+        # exit
         if trade["max_pnl"] - pnl > TRAIL:
             reason = "TRAIL"
-
         elif pnl >= TP:
             reason = "TP"
-
         elif pnl <= SL:
             reason = "SL"
-
         else:
             continue
 
@@ -130,9 +127,7 @@ def on_price(data):
 
         print(f"❌ CLOSE {symbol} {reason} pnl={pnl:.4f}")
 
-        # =========================
-        # LOSS STREAK UPDATE
-        # =========================
+        # loss tracking
         if result == "LOSS":
             loss_streak += 1
         else:
