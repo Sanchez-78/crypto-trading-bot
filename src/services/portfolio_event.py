@@ -1,10 +1,10 @@
 from src.core.event_bus import event_bus
 from src.core.events import SIGNAL_CREATED, TRADE_OPENED, TRADE_CLOSED, PRICE_TICK
 from src.services.risk_manager import risk_manager
+from src.services.auto_control import auto_control
 
 open_trades = {}
 
-# PARAMS
 TP = 0.004
 SL = -0.003
 TRAIL = 0.002
@@ -16,11 +16,15 @@ def handle_signal(data):
     price = data["features"]["price"]
     confidence = data.get("confidence", 0.5)
 
+    if not auto_control.trading_enabled:
+        print("🛑 BLOCKED BY AUTO CONTROL")
+        return
+
     if symbol in open_trades:
         return
 
     if risk_manager.is_drawdown_exceeded():
-        print("🛑 RISK BLOCK - drawdown exceeded")
+        print("🛑 RISK BLOCK")
         return
 
     size = risk_manager.get_position_size(confidence)
@@ -49,31 +53,23 @@ def on_price(data):
         entry = trade["entry_price"]
 
         pnl = (current - entry) / entry
-
         trade["max_pnl"] = max(trade["max_pnl"], pnl)
 
-        # =====================
-        # PYRAMIDING
-        # =====================
+        # PYRAMID
         if pnl > PYRAMID_THRESHOLD and trade["pyramids"] < 2:
             trade["pyramids"] += 1
             trade["size"] *= 1.5
-            print(f"📈 PYRAMID {symbol} x{trade['pyramids']}")
+            print(f"📈 PYRAMID {symbol}")
 
-        # =====================
-        # TRAILING STOP
-        # =====================
+        # TRAILING
         if trade["max_pnl"] - pnl > TRAIL:
-            reason = "TRAILING_STOP"
+            reason = "TRAIL"
 
-        # =====================
-        # TP / SL
-        # =====================
         elif pnl >= TP:
-            reason = "TAKE_PROFIT"
+            reason = "TP"
 
         elif pnl <= SL:
-            reason = "STOP_LOSS"
+            reason = "SL"
 
         else:
             continue
