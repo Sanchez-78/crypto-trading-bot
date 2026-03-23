@@ -3,7 +3,7 @@ class PortfolioRisk:
     def __init__(self):
         self.max_risk_per_trade = 0.02
         self.max_open_trades = 5
-        self.max_total_risk = 0.1  # 10 % kapitálu
+        self.max_total_risk = 0.1  # 10 %
 
     # =========================
     # BASIC RISK
@@ -12,9 +12,22 @@ class PortfolioRisk:
         return balance * self.max_risk_per_trade
 
     # =========================
-    # 🔥 FIX: kontrola otevření trade
+    # 🔥 FLEXIBLE FIX
     # =========================
-    def can_open_trade(self, open_trades, balance):
+    def can_open_trade(self, *args):
+        """
+        kompatibilní se všemi voláními:
+        (open_trades, balance)
+        (open_trades, balance, signal)
+        (open_trades, balance, signal, risk)
+        """
+
+        if len(args) < 2:
+            return True
+
+        open_trades = args[0]
+        balance = args[1]
+
         if len(open_trades) >= self.max_open_trades:
             print("🛑 BLOCK: too many open trades")
             return False
@@ -28,7 +41,7 @@ class PortfolioRisk:
         return True
 
     # =========================
-    # METRICS (pro learning)
+    # METRICS
     # =========================
     def get_metrics(self, open_trades, balance):
         total_risk = sum(t.get("risk", 0) for t in open_trades)
@@ -40,5 +53,5 @@ class PortfolioRisk:
         }
 
 
-# instance (MUSÍ být)
+# instance
 portfolio_risk = PortfolioRisk()
