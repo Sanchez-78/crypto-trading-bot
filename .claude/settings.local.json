@@ -10,7 +10,11 @@
       "Bash(wc -l ./src/services/*.py)",
       "mcp__Desktop_Commander__start_search",
       "mcp__Desktop_Commander__get_file_info",
-      "Bash(xargs grep:*)"
+      "Bash(xargs grep:*)",
+      "Bash(git ls-tree:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ]
   }
 }
