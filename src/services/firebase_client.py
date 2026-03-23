@@ -34,9 +34,12 @@ db = init()
 
 
 def save_metrics(metrics):
+    print("🔥 TRY FIREBASE WRITE")
+
     if not db:
-        print("❌ NO DB")
+        print("❌ DB NOT READY")
         return
 
-    db.collection("metrics").document("latest").set(metrics)
-    print("🔥 FIREBASE WRITE")
+    db.collection("test").add(metrics)
+
+    print("🔥 FIREBASE OK")

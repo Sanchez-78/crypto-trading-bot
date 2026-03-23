@@ -1,77 +1,53 @@
 from src.core.event_bus import event_bus
-from src.core.events import SIGNAL_CREATED, TRADE_OPENED, PRICE_TICK, TRADE_CLOSED
-from src.services.portfolio_manager import PortfolioManager
-from src.services.risk_manager import RiskManager
-from src.services.risk_engine import RiskEngine
-from src.services.trade_guard import TradeGuard
+from src.core.events import SIGNAL_CREATED, TRADE_OPENED, TRADE_CLOSED
 
-portfolio = PortfolioManager()
-risk_manager = RiskManager()
-risk_engine = RiskEngine()
-guard = TradeGuard()
-
-BALANCE = 10000  # můžeš dynamicky
+open_trades = {}
 
 def handle_signal(data):
-    try:
-        features = data["features"]
-        confidence = data["confidence"]
-        symbol = data.get("symbol")
-        if not symbol:
-            return
+    symbol = data["symbol"]
+    price = data["features"]["price"]
 
-        if not guard.cooldown_ok(symbol):
-            return
-        if guard.is_duplicate(symbol, features):
-            return
-        if not portfolio.can_open(BALANCE):
-            return
+    # 🔥 vždy otevři trade (DEBUG MODE)
+    trade = {
+        "symbol": symbol,
+        "entry_price": price,
+        "timestamp": 0,
+        "strategy": data.get("strategy"),
+        "regime": data.get("regime"),
+        "confidence": data.get("confidence")
+    }
 
-        sl, tp = risk_manager.compute(features, features["price"], "BUY")
-        if sl is None:
-            return
-        edge = risk_engine.compute_edge(confidence, 0.55)
-        size = risk_engine.position_size(BALANCE, features["price"], sl, edge)
-        if size <= 0:
-            return
+    open_trades[symbol] = trade
 
-        trade, reason = portfolio.open_trade(
-            symbol=symbol,
-            action="BUY",
-            price=features["price"],
-            size=size,
-            sl=sl,
-            tp=tp,
-            confidence=confidence
-        )
-        if not trade:
-            print(f"⚠️ Trade skipped: {reason}")
-            return
+    print(f"📈 OPEN {symbol} @ {price}")
 
-        trade["strategy"] = data.get("strategy")
-        trade["regime"] = data.get("regime")
-        trade["meta"] = data.get("meta", {})
-        trade["confidence_used"] = confidence * edge
+    event_bus.publish(TRADE_OPENED, trade)
 
-        guard.mark_trade(symbol)
-        event_bus.publish(TRADE_OPENED, trade)
 
-    except Exception as e:
-        print(f"❌ handle_signal error: {e}")
+def on_price(data):
+    for symbol, trade in list(open_trades.items()):
+        if symbol not in data:
+            continue
 
-def on_price_update(data):
-    try:
-        for symbol, price_data in data.items():
-            price = price_data["price"]
-            closed = portfolio.update_trades({symbol: price})
-            for t, pnl, result in closed:
-                event_bus.publish(TRADE_CLOSED, {
-                    "trade": t,
-                    "pnl": pnl,
-                    "result": result
-                })
-    except Exception as e:
-        print(f"❌ price update error: {e}")
+        current_price = data[symbol]["price"]
+        entry = trade["entry_price"]
+
+        pnl = (current_price - entry) / entry
+
+        # 🔥 zavři rychle (DEBUG)
+        if abs(pnl) > 0.001:
+            result = "WIN" if pnl > 0 else "LOSS"
+
+            print(f"❌ CLOSE {symbol} pnl={pnl:.4f}")
+
+            event_bus.publish(TRADE_CLOSED, {
+                "trade": trade,
+                "pnl": pnl,
+                "result": result
+            })
+
+            del open_trades[symbol]
+
 
 event_bus.subscribe(SIGNAL_CREATED, handle_signal)
-event_bus.subscribe(PRICE_TICK, on_price_update)
+event_bus.subscribe("price_tick", on_price)
