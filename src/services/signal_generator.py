@@ -32,4 +32,4 @@ def on_price_tick(market_data):
 
 event_bus.subscribe(PRICE_TICK, on_price_tick)
 
-print("📡 Signal Generator READY (subscribed to PRICE_TICK)")
+print("📡 Signal Generator READY")

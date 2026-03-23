@@ -1,5 +1,5 @@
 from src.core.event_bus import event_bus
-from src.core.events import SIGNAL_CREATED, TRADE_EXECUTED
+from src.core.events import SIGNAL_CREATED, TRADE_EXECUTED, TRADE_OPENED
 import random
 
 
@@ -15,9 +15,11 @@ def on_signal(signal):
 
     print("💰 TRADE EXECUTED:", trade)
 
+    # 🔥 publish BOTH (kompatibilita)
     event_bus.publish(TRADE_EXECUTED, trade)
+    event_bus.publish(TRADE_OPENED, trade)
 
 
 event_bus.subscribe(SIGNAL_CREATED, on_signal)
 
-print("💰 Trade Executor READY (subscribed to SIGNAL_CREATED)")
+print("💰 Trade Executor READY")

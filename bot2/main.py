@@ -3,7 +3,7 @@ from src.core.events import PRICE_TICK
 
 from src.services.firebase_client import init_firebase
 
-# 🔥 KLÍČOVÉ IMPORTY (pipeline)
+# 🔥 PIPELINE IMPORTY
 import src.services.signal_generator
 import src.services.trade_executor
 import src.services.evaluator

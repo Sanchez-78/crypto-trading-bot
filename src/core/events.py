@@ -15,7 +15,7 @@ SIGNAL_CREATED = "signal_created"
 # =========================
 TRADE_EXECUTED = "trade_executed"
 
-# 🔥 DOPLNĚNÍ (FIX)
+# 🔥 FIX PRO PORTFOLIO
 TRADE_OPENED = "trade_opened"
 TRADE_CLOSED = "trade_closed"
 
