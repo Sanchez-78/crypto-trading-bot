@@ -2,7 +2,10 @@ import time
 import requests
 from config import CANDLE_LIMIT
 
-BASE_URL = "https://api.binance.com/api/v3/klines"
+BASE_URLS = [
+    "https://api.binance.com/api/v3/klines",
+    "https://api.binance.us/api/v3/klines",
+]
 
 
 def fetch_candles(symbol: str, interval: str) -> list[dict]:
@@ -14,7 +17,11 @@ def fetch_candles(symbol: str, interval: str) -> list[dict]:
         "limit": CANDLE_LIMIT,
     }
 
-    data = _safe_request(BASE_URL, params)
+    data = None
+    for url in BASE_URLS:
+        data = _safe_request(url, params)
+        if data:
+            break
 
     if not data:
         return []
