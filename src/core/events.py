@@ -1,6 +1,13 @@
+# src/core/events.py
+
+# MARKET
 PRICE_TICK = "price_tick"
+
+# SIGNAL
 SIGNAL_CREATED = "signal_created"
-TRADE_OPENED = "trade_opened"
-TRADE_CLOSED = "trade_closed"
+
+# TRADE
+TRADE_EXECUTED = "trade_executed"
+
+# EVALUATION
 EVALUATION_DONE = "evaluation_done"
-CONFIG_UPDATED = "config_updated"
