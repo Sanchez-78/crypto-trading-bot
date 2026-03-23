@@ -1,61 +1,42 @@
-import requests
-import time
+# =========================
+# MAIN ENTRYPOINT
+# =========================
 
-from src.core.event_bus import event_bus
-from src.core.events import PRICE_TICK
+def main():
+    print("🚀 BOOTING BOT (REAL DATA MODE)...")
 
-SYMBOLS = ["BTCUSDT", "ETHUSDT"]
+    from src.services.firebase_client import init_firebase
 
-BINANCE_URL = "https://api.binance.com/api/v3/ticker/price"
+    # 🔥 INIT FIREBASE
+    db = init_firebase()
 
+    if not db:
+        print("⚠️ DB NOT READY (běží bez ukládání)")
+    else:
+        print("✅ DB READY")
 
-def fetch_prices():
-    data = requests.get(BINANCE_URL).json()
+    # =========================
+    # LOAD SERVICES
+    # =========================
+    import src.services.signal_generator
+    import src.services.trade_executor
+    import src.services.evaluator
+    import src.services.portfolio_event
+    import bot2.learning_event
 
-    prices = {}
-    for item in data:
-        if item["symbol"] in SYMBOLS:
-            prices[item["symbol"]] = float(item["price"])
+    print("🔥 ALL SERVICES LOADED")
 
-    return prices
+    # =========================
+    # START REAL MARKET DATA
+    # =========================
+    import src.services.market_data_service as market_data
 
-
-def build_market_data(prices, prev_prices):
-    market = {}
-
-    for symbol, price in prices.items():
-        prev = prev_prices.get(symbol, price)
-
-        trend = "UP" if price > prev else "DOWN"
-        volatility = abs(price - prev) / prev if prev != 0 else 0
-
-        market[symbol.replace("USDT", "")] = {
-            "price": price,
-            "trend": trend,
-            "volatility": volatility
-        }
-
-    return market
+    print("🌐 STARTING REAL MARKET FEED...")
+    market_data.run()
 
 
-def run():
-    print("🌐 MARKET DATA SERVICE STARTED")
-
-    prev_prices = {}
-
-    while True:
-        try:
-            prices = fetch_prices()
-            market_data = build_market_data(prices, prev_prices)
-
-            print("📡 REAL MARKET:", market_data)
-
-            event_bus.publish(PRICE_TICK, market_data)
-
-            prev_prices = prices
-
-            time.sleep(5)
-
-        except Exception as e:
-            print("❌ Market data error:", e)
-            time.sleep(2)
+# =========================
+# LOCAL RUN (optional)
+# =========================
+if __name__ == "__main__":
+    main()
