@@ -2,26 +2,29 @@ from src.core.event_bus import event_bus
 from src.core.events import TRADE_CLOSED, EVALUATION_DONE
 
 
-def evaluate_trade(data):
-    trade = data["trade"]
-    pnl = data["pnl"]
+def on_trade_closed(data):
+    try:
+        trade = data["trade"]
+        pnl = data["pnl"]
+        result = data["result"]
 
-    trade["evaluation"] = {
-        "profit": pnl,
-        "result": data["result"]
-    }
+        # =========================
+        # EVALUATION
+        # =========================
+        trade["evaluation"] = {
+            "profit": pnl,
+            "result": result
+        }
 
-    # 🔥 SAFE GUARDS (aby nikdy nespadl learning)
-    if "regime" not in trade:
-        trade["regime"] = "UNKNOWN"
+        print(f"📊 EVALUATED: {trade['symbol']} pnl={pnl:.4f}")
 
-    if "strategy" not in trade:
-        trade["strategy"] = "UNKNOWN"
+        # =========================
+        # 🔥 POSÍLÁME DO LEARNING
+        # =========================
+        event_bus.publish(EVALUATION_DONE, trade)
 
-    if "meta" not in trade:
-        trade["meta"] = {}
-
-    event_bus.publish(EVALUATION_DONE, trade)
+    except Exception as e:
+        print(f"❌ evaluator error: {e}")
 
 
-event_bus.subscribe(TRADE_CLOSED, evaluate_trade)
+event_bus.subscribe(TRADE_CLOSED, on_trade_closed)

@@ -3,33 +3,37 @@ from firebase_admin import credentials, firestore
 import os
 import json
 
+db = None
 
-# =========================
-# INIT FIREBASE
-# =========================
 def init_firebase():
+    global db
+
     try:
         if not firebase_admin._apps:
-            # 🔥 varianta 1: JSON file
-            if os.path.exists("firebase_key.json"):
+
+            # 🔥 ENV (Railway)
+            firebase_json = os.environ.get("FIREBASE_CREDENTIALS")
+
+            if firebase_json:
+                cred_dict = json.loads(firebase_json)
+                cred = credentials.Certificate(cred_dict)
+                firebase_admin.initialize_app(cred)
+                print("🔥 Firebase initialized (ENV)")
+
+            # 🔥 LOCAL FILE
+            elif os.path.exists("firebase_key.json"):
                 cred = credentials.Certificate("firebase_key.json")
                 firebase_admin.initialize_app(cred)
-                print("🔥 Firebase initialized (file)")
+                print("🔥 Firebase initialized (FILE)")
 
-            # 🔥 varianta 2: ENV variable (Railway)
             else:
-                firebase_json = os.environ.get("FIREBASE_CREDENTIALS")
+                print("❌ Firebase credentials NOT FOUND")
+                return None
 
-                if firebase_json:
-                    cred_dict = json.loads(firebase_json)
-                    cred = credentials.Certificate(cred_dict)
-                    firebase_admin.initialize_app(cred)
-                    print("🔥 Firebase initialized (ENV)")
+        db = firestore.client()
+        print("🔥 Firestore client ready")
 
-                else:
-                    print("⚠️ Firebase credentials not found")
-
-        return firestore.client()
+        return db
 
     except Exception as e:
         print(f"❌ Firebase init error: {e}")
@@ -40,12 +44,13 @@ db = init_firebase()
 
 
 # =========================
-# SAVE METRICS
+# WRITE FUNCTIONS
 # =========================
+
 def save_metrics(metrics):
     try:
         if not db:
-            print("⚠️ Firebase not initialized → metrics skipped")
+            print("❌ Firebase NOT READY → metrics skipped")
             return
 
         db.collection("metrics").document("latest").set(metrics)
@@ -56,28 +61,10 @@ def save_metrics(metrics):
         print(f"❌ Firebase write error: {e}")
 
 
-# =========================
-# SAVE SIGNAL (volitelné)
-# =========================
-def save_signal(signal):
-    try:
-        if not db:
-            return
-
-        db.collection("signals").add(signal)
-
-        print("🔥 FIREBASE WRITE: signal")
-
-    except Exception as e:
-        print(f"❌ Firebase signal error: {e}")
-
-
-# =========================
-# SAVE TRADE (volitelné)
-# =========================
 def save_trade(trade):
     try:
         if not db:
+            print("❌ Firebase NOT READY → trade skipped")
             return
 
         db.collection("trades").add(trade)
