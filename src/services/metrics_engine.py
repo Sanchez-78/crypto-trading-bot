@@ -1,6 +1,5 @@
 import numpy as np
 
-
 class MetricsEngine:
 
     def compute(self, trades):
@@ -9,55 +8,28 @@ class MetricsEngine:
 
         profits = [t["evaluation"]["profit"] for t in trades]
         wins = [p for p in profits if p > 0]
-        losses = [p for p in profits if p <= 0]
 
-        # =========================
-        # 📊 BASIC
-        # =========================
-        winrate = len(wins) / len(profits)
+        # -------------------------
+        # Performance
+        # -------------------------
+        winrate = len(wins)/len(profits)
         avg_profit = np.mean(profits)
+        profit_factor = (sum([p for p in profits if p>0])/abs(sum([p for p in profits if p<0]))) if any([p<0 for p in profits]) else np.mean(profits)
+        expectancy = (winrate * np.mean(wins or [0])) + ((1-winrate) * np.mean([p for p in profits if p<0] or [0]))
 
-        profit_factor = (
-            abs(sum(wins) / sum(losses)) if losses else 999
-        )
-
-        expectancy = (winrate * np.mean(wins or [0])) + \
-                     ((1 - winrate) * np.mean(losses or [0]))
-
-        # =========================
-        # 📉 DRAWDOWN
-        # =========================
+        # -------------------------
+        # Risk
+        # -------------------------
         equity = np.cumsum(profits)
         peak = np.maximum.accumulate(equity)
-        drawdown = (equity - peak)
+        drawdown = equity - peak
         max_dd = np.min(drawdown)
 
-        # =========================
-        # 🔥 LOSS STREAK
-        # =========================
-        max_streak = 0
-        current = 0
-
-        for p in profits:
-            if p <= 0:
-                current += 1
-                max_streak = max(max_streak, current)
-            else:
-                current = 0
-
-        # =========================
-        # 🧠 LEARNING PROGRESS
-        # =========================
-        mid = len(profits) // 2
-
-        first_half = profits[:mid]
-        second_half = profits[mid:]
-
-        def avg(x):
-            return np.mean(x) if x else 0
-
-        improvement = avg(second_half) - avg(first_half)
-
+        # -------------------------
+        # Learning trend
+        # -------------------------
+        mid = len(profits)//2
+        improvement = np.mean(profits[mid:]) - np.mean(profits[:mid])
         if improvement > 0.001:
             trend = "IMPROVING"
         elif improvement < -0.001:
@@ -65,69 +37,37 @@ class MetricsEngine:
         else:
             trend = "STABLE"
 
-        # =========================
-        # 🎯 STRATEGY PERFORMANCE
-        # =========================
+        # -------------------------
+        # Strategy & Regime
+        # -------------------------
         strategy_perf = {}
-
         for t in trades:
-            s = t.get("strategy", "UNKNOWN")
-            p = t["evaluation"]["profit"]
+            s = t.get("strategy","UNKNOWN")
+            strategy_perf.setdefault(s, []).append(t["evaluation"]["profit"])
+        strategy_stats = {s: {"winrate":sum(1 for x in v if x>0)/len(v),
+                              "avg_profit":np.mean(v),
+                              "trades":len(v)} for s,v in strategy_perf.items()}
 
-            strategy_perf.setdefault(s, []).append(p)
-
-        strategy_stats = {
-            s: {
-                "winrate": sum(1 for x in v if x > 0) / len(v),
-                "avg_profit": np.mean(v),
-                "trades": len(v)
-            }
-            for s, v in strategy_perf.items()
-        }
-
-        # =========================
-        # 🌊 REGIME PERFORMANCE
-        # =========================
         regime_perf = {}
-
         for t in trades:
-            r = t.get("regime", "UNKNOWN")
+            r = t.get("regime","UNKNOWN")
+            regime_perf.setdefault(r, []).append(t["evaluation"]["profit"])
+        regime_stats = {r: {"winrate":sum(1 for x in v if x>0)/len(v),
+                            "avg_profit":np.mean(v),
+                            "trades":len(v)} for r,v in regime_perf.items()}
+
+        # -------------------------
+        # Confidence calibration
+        # -------------------------
+        conf_bins = {"low":[],"mid":[],"high":[]}
+        for t in trades:
+            c = t.get("confidence_used",0)
             p = t["evaluation"]["profit"]
+            if c<0.4: conf_bins["low"].append(p)
+            elif c<0.7: conf_bins["mid"].append(p)
+            else: conf_bins["high"].append(p)
+        conf_stats = {k: np.mean(v) if v else 0 for k,v in conf_bins.items()}
 
-            regime_perf.setdefault(r, []).append(p)
-
-        regime_stats = {
-            r: {
-                "winrate": sum(1 for x in v if x > 0) / len(v),
-                "avg_profit": np.mean(v),
-                "trades": len(v)
-            }
-            for r, v in regime_perf.items()
-        }
-
-        # =========================
-        # 🧠 CONFIDENCE CALIBRATION
-        # =========================
-        conf_bins = {"low": [], "mid": [], "high": []}
-
-        for t in trades:
-            c = t.get("confidence_used", 0)
-
-            if c < 0.4:
-                conf_bins["low"].append(t["evaluation"]["profit"])
-            elif c < 0.7:
-                conf_bins["mid"].append(t["evaluation"]["profit"])
-            else:
-                conf_bins["high"].append(t["evaluation"]["profit"])
-
-        conf_stats = {
-            k: np.mean(v) if v else 0
-            for k, v in conf_bins.items()
-        }
-
-        # =========================
-        # FINAL OUTPUT
-        # =========================
         return {
             "performance": {
                 "winrate": winrate,
@@ -138,7 +78,7 @@ class MetricsEngine:
             },
             "risk": {
                 "max_drawdown": max_dd,
-                "max_loss_streak": max_streak
+                "max_loss_streak": self.max_loss_streak(profits)
             },
             "learning": {
                 "improvement": improvement,
@@ -148,3 +88,14 @@ class MetricsEngine:
             "regime": regime_stats,
             "confidence": conf_stats
         }
+
+    def max_loss_streak(self, profits):
+        max_streak = 0
+        current = 0
+        for p in profits:
+            if p<=0:
+                current +=1
+                max_streak = max(max_streak,current)
+            else:
+                current = 0
+        return max_streak
