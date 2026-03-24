@@ -4,15 +4,11 @@ from src.services.firebase_client import save_bot_stats
 
 import time
 
-# =========================
-# CONFIG
-# =========================
-AUTO_TRADE_ENABLED = True
-WRITE_INTERVAL = 30  # sekundy
+print("🧠 LEARNING MODULE LOADED")
 
-# =========================
-# GLOBAL STATS
-# =========================
+AUTO_TRADE_ENABLED = True
+WRITE_INTERVAL = 0  # DEBUG
+
 stats = {
     "trades": 0,
     "wins": 0,
@@ -28,9 +24,6 @@ stats = {
 last_write_time = 0
 
 
-# =========================
-# UPDATE LEARNING
-# =========================
 def update_learning(trade):
     stats["trades"] += 1
 
@@ -41,73 +34,32 @@ def update_learning(trade):
 
     stats["winrate"] = stats["wins"] / stats["trades"]
 
-    # průměrný profit
     stats["avg_profit"] = (
         (stats["avg_profit"] * (stats["trades"] - 1) + trade["profit"])
         / stats["trades"]
     )
 
-    # equity simulace
     stats["equity"] += stats["equity"] * trade["profit"]
 
-    # learning score (0–1)
     stats["learning_score"] = (
         stats["winrate"] * 0.7 +
         min(stats["trades"] / 50, 1) * 0.3
     )
 
-    # =========================
-    # READY LOGIKA
-    # =========================
     stats["ready"] = (
-        stats["trades"] > 20 and
-        stats["winrate"] > 0.55
+        stats["trades"] > 5 and
+        stats["winrate"] > 0.5
     )
 
-    # =========================
-    # KILL SWITCH 🔥
-    # =========================
-    if stats["trades"] > 30 and stats["winrate"] < 0.45:
-        stats["ready"] = False
-        print("🛑 BOT DISABLED (bad performance)")
-
-    # =========================
-    # LAST TRADE
-    # =========================
-    stats["last_trade"] = {
-        "symbol": trade["symbol"],
-        "result": trade["result"],
-        "profit": trade["profit"]
-    }
+    stats["last_trade"] = trade
 
 
-# =========================
-# STATUS PRINT
-# =========================
 def print_status():
     print("\n🧠 ===== BOT STATUS =====")
-    print(f"Trades: {stats['trades']}")
-    print(f"Wins: {stats['wins']} | Losses: {stats['losses']}")
-    print(f"Winrate: {round(stats['winrate'] * 100, 2)} %")
-    print(f"Avg profit: {round(stats['avg_profit'], 4)}")
-    print(f"Equity: {round(stats['equity'], 2)}")
-    print(f"Learning score: {round(stats['learning_score'], 2)}")
-
-    if stats["last_trade"]:
-        lt = stats["last_trade"]
-        print(f"Last trade: {lt['symbol']} | {lt['result']} | {round(lt['profit'], 4)}")
-
-    if stats["ready"]:
-        print("🚀 BOT JE NAUČEN A PŘIPRAVEN OBCHODOVAT")
-    else:
-        print("📚 BOT SE STÁLE UČÍ / NEOBCHODUJE")
-
+    print(stats)
     print("========================\n")
 
 
-# =========================
-# FIREBASE SAVE (LOW WRITE)
-# =========================
 def save_to_firebase():
     global last_write_time
 
@@ -119,39 +71,21 @@ def save_to_firebase():
 
     ok = save_bot_stats(stats)
 
+    print("☁️ SAVE RESULT:", ok)
+
     if ok:
         last_write_time = now
 
 
-# =========================
-# EXTERNAL ACCESS
-# =========================
-def is_ready():
-    return stats["ready"]
-
-
-def get_status():
-    return {
-        "ready": stats["ready"],
-        "winrate": stats["winrate"],
-        "trades": stats["trades"],
-        "learning_score": stats["learning_score"]
-    }
-
-
-# =========================
-# MAIN EVENT
-# =========================
 def on_evaluation(trade):
-    print("🧠 LEARNING TRIGGERED")
+    print("🧠 LEARNING TRIGGERED:", trade)
 
-    # safety
     if not isinstance(trade, dict):
-        print("⚠️ invalid trade:", trade)
+        print("❌ invalid trade")
         return
 
     if "result" not in trade or "profit" not in trade:
-        print("⚠️ incomplete trade:", trade)
+        print("❌ missing fields")
         return
 
     update_learning(trade)
