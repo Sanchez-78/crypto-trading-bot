@@ -1,44 +1,83 @@
 from src.core.event_bus import event_bus
 from src.core.events import PRICE_TICK, SIGNAL_CREATED
+from src.services.firebase_client import save_signal
+
 import random
-import time
+
+print("📡 Signal Generator READY")
+
+MIN_CONFIDENCE = 0.55
+FORCE_SIGNAL_EVERY = 5
+
+tick_counter = 0
+last_price = None
 
 
-def generate_signal(market_data):
-    signals = []
+def generate_signal(price):
+    global last_price
 
-    for symbol, data in market_data.items():
-        action = "BUY" if data["trend"] == "UP" else "SELL"
+    if last_price is None:
+        last_price = price
+        return None
 
-        signal = {
-            "symbol": symbol,
-            "action": action,
-            "confidence": random.uniform(0.5, 1.0),
+    change = (price - last_price) / last_price
 
-            "features": {
-                "trend": data["trend"],
-                "volatility": data["volatility"],
-                "price": data["price"]
-            },
+    if change > 0.001:
+        action = "BUY"
+        confidence = min(0.6 + change * 10, 0.9)
 
-            "timestamp": time.time()
+    elif change < -0.001:
+        action = "SELL"
+        confidence = min(0.6 + abs(change) * 10, 0.9)
+
+    else:
+        action = None
+        confidence = 0
+
+    last_price = price
+
+    if not action:
+        return None
+
+    return {
+        "symbol": "BTC",
+        "action": action,
+        "confidence": confidence,
+        "price": price
+    }
+
+
+def on_price_tick(data):
+    global tick_counter
+
+    tick_counter += 1
+
+    price = data.get("price") if isinstance(data, dict) else data
+
+    print("📡 PRICE:", price)
+
+    signal = generate_signal(price)
+
+    if signal and signal["confidence"] >= MIN_CONFIDENCE:
+        print("🚀 SIGNAL:", signal)
+
+        save_signal(signal)
+        event_bus.publish(SIGNAL_CREATED, signal)
+        return
+
+    # fallback
+    if tick_counter % FORCE_SIGNAL_EVERY == 0:
+        fallback_signal = {
+            "symbol": "BTC",
+            "action": random.choice(["BUY", "SELL"]),
+            "confidence": 0.55,
+            "price": price
         }
 
-        signals.append(signal)
+        print("⚠️ FALLBACK SIGNAL:", fallback_signal)
 
-    return signals
-
-
-def on_price_tick(market_data):
-    print("🔥 SIGNAL GENERATOR TRIGGERED")
-
-    signals = generate_signal(market_data)
-
-    for s in signals:
-        print("📡 SIGNAL:", s)
-        event_bus.publish(SIGNAL_CREATED, s)
+        save_signal(fallback_signal)
+        event_bus.publish(SIGNAL_CREATED, fallback_signal)
 
 
 event_bus.subscribe(PRICE_TICK, on_price_tick)
-
-print("📡 Signal Generator READY")
