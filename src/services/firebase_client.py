@@ -1,42 +1,90 @@
+import os
+import json
+import time
+import firebase_admin
+from firebase_admin import credentials, firestore
+
+db = None
+_last_write = 0
+WRITE_INTERVAL = 0  # debug
+
+
 # =========================
-# MAIN ENTRYPOINT
+# INIT FIREBASE
 # =========================
+def init_firebase():
+    global db
 
-def main():
-    print("🚀 BOOTING BOT (REAL DATA MODE)...")
+    print("🔥 INIT FIREBASE CALLED")
 
-    from src.services.firebase_client import init_firebase
+    try:
+        if firebase_admin._apps:
+            db = firestore.client()
+            print("🔥 Firebase already initialized")
+            return db
 
-    # 🔥 INIT FIREBASE
-    db = init_firebase()
+        firebase_json = os.getenv("FIREBASE_KEY")
+
+        if not firebase_json:
+            print("❌ FIREBASE_KEY missing")
+            return None
+
+        firebase_json = firebase_json.replace('\\n', '\n')
+        cred_dict = json.loads(firebase_json)
+
+        cred = credentials.Certificate(cred_dict)
+        firebase_admin.initialize_app(cred)
+
+        db = firestore.client()
+
+        print("🔥 Firebase initialized OK")
+        return db
+
+    except Exception as e:
+        print("❌ Firebase init error:", e)
+        db = None
+        return None
+
+
+# =========================
+# SAFE WRITE
+# =========================
+def safe_set(collection, doc, data):
+    global db, _last_write
 
     if not db:
-        print("⚠️ DB NOT READY (běží bez ukládání)")
-    else:
-        print("✅ DB READY")
+        print("⚠️ DB not ready")
+        return False
 
-    # =========================
-    # LOAD SERVICES
-    # =========================
-    import src.services.signal_generator
-    import src.services.trade_executor
-    import src.services.evaluator
-    import src.services.portfolio_event
-    import bot2.learning_event
+    now = time.time()
 
-    print("🔥 ALL SERVICES LOADED")
+    if now - _last_write < WRITE_INTERVAL:
+        print("⏳ skip write")
+        return False
 
-    # =========================
-    # START REAL MARKET DATA
-    # =========================
-    import src.services.market_data_service as market_data
+    try:
+        db.collection(collection).document(doc).set(data)
+        _last_write = now
 
-    print("🌐 STARTING REAL MARKET FEED...")
-    market_data.run()
+        print(f"☁️ WRITE OK → {collection}/{doc}")
+        return True
+
+    except Exception as e:
+        print("❌ Firebase write error:", e)
+        return False
 
 
 # =========================
-# LOCAL RUN (optional)
+# SAVE BOT STATS
 # =========================
-if __name__ == "__main__":
-    main()
+def save_bot_stats(stats):
+    print("☁️ SAVE BOT STATS")
+
+    return safe_set(
+        "bot_stats",
+        "latest",
+        {
+            **stats,
+            "timestamp": time.time()
+        }
+    )
