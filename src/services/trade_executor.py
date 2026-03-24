@@ -1,64 +1,34 @@
 from src.core.event_bus import event_bus
-from src.core.events import SIGNAL_CREATED, TRADE_EXECUTED, TRADE_OPENED
+from src.core.events import SIGNAL_CREATED, TRADE_EXECUTED
+from src.services.firebase_client import save_trade
+from bot2.learning_event import is_ready
 
-import uuid
-import time
-
-# 🔥 learning control
-from bot2.learning_event import is_ready, AUTO_TRADE_ENABLED
-
-
-# =========================
-# CONFIG
-# =========================
-MIN_CONFIDENCE = 0.6
+print("💰 Trade Executor READY")
 
 
 def on_signal(signal):
-    print("🔥 TRADE EXECUTOR TRIGGERED")
+    print("💰 TRADE EXECUTOR TRIGGERED")
 
-    # =========================
-    # AUTO TRADE CONTROL
-    # =========================
-    if AUTO_TRADE_ENABLED:
-        if not is_ready():
-            print("⛔ SKIP: bot not ready")
-            return
+    # 🔥 DOČASNĚ POVOL TRADING (learning mode)
+    if not is_ready():
+        print("⚠️ FORCE TRADE (learning mode)")
 
-        if signal["confidence"] < MIN_CONFIDENCE:
-            print("⛔ SKIP: low confidence")
-            return
-
-    # =========================
-    # REAL ENTRY PRICE
-    # =========================
-    entry_price = signal["features"]["price"]
+    # 🔥 FIX: features safe
+    features = signal.get("features", {})
 
     trade = {
-        "id": str(uuid.uuid4()),
-
-        "symbol": signal["symbol"],
-        "action": signal["action"],
-        "confidence": signal["confidence"],
-
-        "entry_price": entry_price,
-        "exit_price": None,
-
-        "status": "OPEN",
-        "risk": 0.01,
-
-        "result": None,
-        "profit": 0,
-
-        "timestamp": time.time()
+        "symbol": signal.get("symbol"),
+        "action": signal.get("action"),
+        "price": signal.get("price"),
+        "confidence": signal.get("confidence"),
+        "features": features
     }
 
     print("💰 TRADE EXECUTED:", trade)
 
+    save_trade(trade)
+
     event_bus.publish(TRADE_EXECUTED, trade)
-    event_bus.publish(TRADE_OPENED, trade)
 
 
 event_bus.subscribe(SIGNAL_CREATED, on_signal)
-
-print("💰 Trade Executor READY (REAL DATA MODE)")

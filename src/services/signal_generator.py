@@ -52,9 +52,19 @@ def on_price_tick(data):
 
     tick_counter += 1
 
-    price = data.get("price") if isinstance(data, dict) else data
+    print("📡 RAW DATA:", data)
+
+    # 🔥 FIX: správné parsování multi-symbol dat
+    if isinstance(data, dict) and "BTC" in data:
+        price = data["BTC"].get("price")
+    else:
+        price = None
 
     print("📡 PRICE:", price)
+
+    if price is None:
+        print("❌ No valid price")
+        return
 
     signal = generate_signal(price)
 

@@ -1,38 +1,30 @@
 from src.core.event_bus import event_bus
-from src.core.events import TRADE_EXECUTED, EVALUATION_DONE, TRADE_CLOSED
+from src.core.events import TRADE_EXECUTED, EVALUATION_DONE
 
 import random
-import time
 
-
-def simulate_exit_price(entry_price):
-    return entry_price * (1 + random.uniform(-0.01, 0.01))
+print("📊 Evaluator READY")
 
 
 def on_trade(trade):
-    print("🔥 EVALUATOR TRIGGERED:", trade)
+    print("📊 EVALUATING TRADE")
 
-    time.sleep(1)
+    # 🔥 fake evaluation (zatím)
+    result = random.choice(["WIN", "LOSS"])
+    profit = random.uniform(-0.01, 0.02)
 
-    exit_price = simulate_exit_price(trade["entry_price"])
+    evaluation = {
+        "symbol": trade.get("symbol"),
+        "action": trade.get("action"),
+        "price": trade.get("price"),
+        "result": result,
+        "profit": profit,
+        "features": trade.get("features", {})  # 🔥 FIX
+    }
 
-    if trade["action"] == "BUY":
-        profit = (exit_price - trade["entry_price"]) / trade["entry_price"]
-    else:
-        profit = (trade["entry_price"] - exit_price) / trade["entry_price"]
+    print("📊 EVALUATION:", evaluation)
 
-    result = "WIN" if profit > 0 else "LOSS"
-
-    trade["profit"] = profit
-    trade["result"] = result
-    trade["status"] = "CLOSED"
-    trade["exit_price"] = exit_price
-
-    print("📊 EVALUATION RESULT:", trade)
-    print("📊 SENDING TO LEARNING")
-
-    event_bus.publish(EVALUATION_DONE, trade)
-    event_bus.publish(TRADE_CLOSED, trade)
+    event_bus.publish(EVALUATION_DONE, evaluation)
 
 
 event_bus.subscribe(TRADE_EXECUTED, on_trade)
