@@ -10,12 +10,9 @@ def generate_signal(data):
     price = data.get("price")
 
     if price is None:
-        print("❌ Missing price in data:", data)
+        print("❌ Missing price")
         return
 
-    # =========================
-    # FEATURES
-    # =========================
     features = {
         "ema_short": data.get("ema_short"),
         "ema_long": data.get("ema_long"),
@@ -23,13 +20,10 @@ def generate_signal(data):
         "volatility": data.get("volatility")
     }
 
-    # =========================
-    # AI DECISION (bandit)
-    # =========================
     action = select_action(features)
 
     signal = {
-        "symbol": data.get("symbol", "BTCUSDT"),
+        "symbol": data.get("symbol"),
         "action": action,
         "confidence": 0.6,
         "price": price,
@@ -41,7 +35,4 @@ def generate_signal(data):
     event_bus.publish(SIGNAL_CREATED, signal)
 
 
-# =========================
-# EVENT SUBSCRIBE
-# =========================
 event_bus.subscribe(PRICE_TICK, generate_signal)

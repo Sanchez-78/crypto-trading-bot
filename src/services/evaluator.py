@@ -7,28 +7,22 @@ print("📊 EVALUATOR READY")
 
 
 def evaluate_trade(trade):
-    print("📊 EVALUATING TRADE:", trade)
+    print("📊 EVALUATING:", trade)
 
     profit = trade.get("profit", 0)
     action = trade.get("action")
     features = trade.get("features", {})
 
-    # =========================
-    # REWARD (CORE LEARNING)
-    # =========================
-    reward = profit  # můžeš později vylepšit
+    # 🔥 REWARD
+    reward = profit
 
-    # =========================
-    # UPDATE MODEL
-    # =========================
+    # 🧠 LEARNING UPDATE
     update(features, action, reward)
 
     result = {
         "symbol": trade.get("symbol"),
         "profit": profit,
-        "result": "WIN" if profit > 0 else "LOSS",
-        "action": action,
-        "features": features
+        "result": "WIN" if profit > 0 else "LOSS"
     }
 
     print("📊 RESULT:", result)
@@ -36,7 +30,4 @@ def evaluate_trade(trade):
     event_bus.publish(EVALUATION_DONE, result)
 
 
-# =========================
-# EVENT SUBSCRIBE
-# =========================
 event_bus.subscribe(TRADE_CLOSED, evaluate_trade)

@@ -1,36 +1,39 @@
 import time
 import traceback
+import random
 
 print("🚨 MAIN START")
 
 # =========================
-# IMPORTS (SAFE DEBUG)
+# IMPORTS
 # =========================
-try:
-    from src.services.firebase_client import init_firebase
-    print("✅ firebase_client OK")
-except Exception as e:
-    print("❌ firebase import failed:", e)
+from src.services.firebase_client import init_firebase
+from src.services.learning_event import get_metrics, is_ready
 
-try:
-    from src.services.learning_event import get_metrics, is_ready
-    print("✅ learning_event OK")
-except Exception as e:
-    print("❌ learning_event import failed:", e)
-
-try:
-    from src.services.signal_generator import generate_signal
-    print("✅ signal_generator OK")
-except Exception as e:
-    print("❌ signal_generator import failed:", e)
-
-try:
-    from src.services.evaluator import evaluate_trade
-    print("✅ evaluator OK")
-except Exception as e:
-    print("❌ evaluator import failed:", e)
+from src.core.event_bus import event_bus
+from src.core.events import PRICE_TICK
 
 print("🚨 IMPORTS DONE")
+
+
+# =========================
+# FAKE MARKET (DEBUG FEED)
+# =========================
+def fake_market_tick():
+    price = random.uniform(30000, 35000)
+
+    data = {
+        "symbol": "BTCUSDT",
+        "price": price,
+        "ema_short": price * random.uniform(0.99, 1.01),
+        "ema_long": price * random.uniform(0.99, 1.01),
+        "rsi": random.uniform(10, 90),
+        "volatility": random.uniform(0.001, 0.01)
+    }
+
+    print("📈 MARKET TICK:", round(price, 2))
+
+    event_bus.publish(PRICE_TICK, data)
 
 
 # =========================
@@ -40,9 +43,6 @@ def main():
     print("🚀 BOT STARTING...")
 
     try:
-        # =========================
-        # INIT FIREBASE
-        # =========================
         db = init_firebase()
 
         if db:
@@ -57,6 +57,10 @@ def main():
         # =========================
         while True:
             try:
+                # 🔥 GENERATE DATA
+                fake_market_tick()
+
+                # 📊 LEARNING STATUS
                 metrics = get_metrics()
 
                 if metrics:
@@ -72,7 +76,7 @@ def main():
 
                     print("============================\n")
 
-                time.sleep(10)
+                time.sleep(2)
 
             except Exception as loop_error:
                 print("❌ LOOP ERROR:", loop_error)
