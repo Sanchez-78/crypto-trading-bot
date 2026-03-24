@@ -4,13 +4,13 @@ from src.services.firebase_client import save_bot_stats, load_bot_stats
 
 import time
 
-print("🧠 LEARNING MODULE LOADED")
+print("🧠 LEARNING MODULE (PRO) LOADED")
 
 # =========================
 # CONFIG
 # =========================
 START_EQUITY = 1000
-MIN_TRADES_READY = 20
+MIN_TRADES_READY = 30
 MIN_WINRATE_READY = 0.55
 
 # =========================
@@ -20,17 +20,29 @@ stats = {
     "trades": 0,
     "wins": 0,
     "losses": 0,
+
     "winrate": 0.0,
     "win_loss_ratio": 0.0,
     "profit_factor": 0.0,
-    "avg_profit": 0.0,
+
+    "total_profit": 0.0,
+    "total_loss": 0.0,
+
     "equity": START_EQUITY,
+    "peak_equity": START_EQUITY,
+    "drawdown": 0.0,
+
+    "win_streak": 0,
+    "loss_streak": 0,
+    "max_win_streak": 0,
+    "max_loss_streak": 0,
+
     "learning_score": 0.0,
     "ready": False,
+
     "last_trade": None,
     "updated_at": None
 }
-
 
 # =========================
 # LOAD HISTORY
@@ -43,76 +55,76 @@ def load_history():
         return
 
     print("📊 RESTORED FROM DB")
-
-    stats.update({
-        "trades": data.get("trades", 0),
-        "wins": data.get("wins", 0),
-        "losses": data.get("losses", 0),
-        "winrate": data.get("winrate", 0.0),
-        "win_loss_ratio": data.get("win_loss_ratio", 0.0),
-        "profit_factor": data.get("profit_factor", 0.0),
-        "avg_profit": data.get("avg_profit", 0.0),
-        "equity": data.get("equity", START_EQUITY),
-        "learning_score": data.get("learning_score", 0.0),
-        "ready": data.get("ready", False),
-        "last_trade": data.get("last_trade"),
-        "updated_at": data.get("updated_at")
-    })
+    stats.update(data)
 
 
 # =========================
 # UPDATE LEARNING
 # =========================
 def update_learning(trade):
+    profit = trade.get("profit", 0)
+
     stats["trades"] += 1
 
+    # =========================
+    # WIN / LOSS
+    # =========================
     if trade["result"] == "WIN":
         stats["wins"] += 1
+        stats["win_streak"] += 1
+        stats["loss_streak"] = 0
+        stats["max_win_streak"] = max(stats["max_win_streak"], stats["win_streak"])
+        stats["total_profit"] += profit
     else:
         stats["losses"] += 1
+        stats["loss_streak"] += 1
+        stats["win_streak"] = 0
+        stats["max_loss_streak"] = max(stats["max_loss_streak"], stats["loss_streak"])
+        stats["total_loss"] += abs(profit)
 
     # =========================
-    # CORE METRICS
+    # METRICS
     # =========================
     stats["winrate"] = stats["wins"] / stats["trades"]
 
-    # avg profit
-    stats["avg_profit"] = (
-        (stats["avg_profit"] * (stats["trades"] - 1) + trade["profit"])
-        / stats["trades"]
-    )
-
-    # equity growth
-    stats["equity"] += stats["equity"] * trade["profit"]
-
-    # =========================
-    # ADVANCED METRICS
-    # =========================
     stats["win_loss_ratio"] = (
         stats["wins"] / stats["losses"]
         if stats["losses"] > 0 else stats["wins"]
     )
 
+    # 🔥 SPRÁVNÝ PROFIT FACTOR
     stats["profit_factor"] = (
-        (stats["avg_profit"] * stats["wins"]) /
-        abs(stats["avg_profit"] * stats["losses"])
-        if stats["losses"] > 0 else 1
+        stats["total_profit"] / stats["total_loss"]
+        if stats["total_loss"] > 0 else stats["total_profit"]
+    )
+
+    # =========================
+    # EQUITY + DRAWDOWN
+    # =========================
+    stats["equity"] += stats["equity"] * profit
+
+    stats["peak_equity"] = max(stats["peak_equity"], stats["equity"])
+
+    stats["drawdown"] = (
+        (stats["peak_equity"] - stats["equity"]) / stats["peak_equity"]
     )
 
     # =========================
     # LEARNING SCORE
     # =========================
     stats["learning_score"] = (
-        stats["winrate"] * 0.6 +
-        min(stats["trades"] / 100, 1) * 0.4
+        stats["winrate"] * 0.5 +
+        min(stats["trades"] / 100, 1) * 0.3 +
+        min(stats["profit_factor"] / 2, 1) * 0.2
     )
 
     # =========================
-    # READY LOGIC
+    # READY
     # =========================
     stats["ready"] = (
         stats["trades"] >= MIN_TRADES_READY and
-        stats["winrate"] >= MIN_WINRATE_READY
+        stats["winrate"] >= MIN_WINRATE_READY and
+        stats["profit_factor"] > 1.1
     )
 
     stats["last_trade"] = trade
@@ -124,18 +136,13 @@ def update_learning(trade):
 # =========================
 def progress_bar():
     progress = min(stats["trades"] / 100, 1)
-
     bars = int(progress * 20)
-    empty = 20 - bars
-
-    bar = "🟩" * bars + "⬜" * empty
-    percent = int(progress * 100)
-
-    print(f"📊 PROGRESS: [{bar}] {percent}%")
+    bar = "🟩" * bars + "⬜" * (20 - bars)
+    print(f"📊 {bar} {int(progress*100)}%")
 
 
 # =========================
-# PRINT STATUS
+# PRINT
 # =========================
 def print_status():
     print("\n🧠 ===== BOT STATUS =====")
@@ -148,20 +155,25 @@ def print_status():
     print(f"Profit Factor: {round(stats['profit_factor'], 2)}")
 
     print(f"Equity: {round(stats['equity'], 2)}")
+    print(f"Drawdown: {round(stats['drawdown'], 2)}")
+
+    print(f"Win streak: {stats['win_streak']} (max {stats['max_win_streak']})")
+    print(f"Loss streak: {stats['loss_streak']} (max {stats['max_loss_streak']})")
+
     print(f"Learning Score: {round(stats['learning_score'], 2)}")
 
     progress_bar()
 
     if stats["ready"]:
-        print("🚀 BOT READY FOR TRADING")
+        print("🚀 BOT READY (EDGE DETECTED)")
     else:
-        print("📚 BOT IS STILL LEARNING")
+        print("📚 LEARNING...")
 
     print("========================\n")
 
 
 # =========================
-# EVENT HANDLER
+# EVENT
 # =========================
 def on_evaluation(trade):
     print("🧠 LEARNING:", trade)
@@ -177,29 +189,14 @@ event_bus.subscribe(EVALUATION_DONE, on_evaluation)
 
 
 # =========================
-# EXPORTS (API / APP)
+# API
 # =========================
 def is_ready():
     return stats["ready"]
 
 
 def get_status():
-    progress = min(stats["trades"] / 100, 1)
-
-    return {
-        "trades": stats["trades"],
-        "wins": stats["wins"],
-        "losses": stats["losses"],
-        "winrate": stats["winrate"],
-        "win_loss_ratio": stats["win_loss_ratio"],
-        "profit_factor": stats["profit_factor"],
-        "equity": stats["equity"],
-        "learning_score": stats["learning_score"],
-        "progress": progress,
-        "ready": stats["ready"],
-        "last_trade": stats["last_trade"],
-        "updated_at": stats["updated_at"]
-    }
+    return stats
 
 
 # =========================
