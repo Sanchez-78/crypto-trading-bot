@@ -1,12 +1,15 @@
 import os
 import json
 import time
+import base64
 import firebase_admin
 from firebase_admin import credentials, firestore
 
 db = None
 _last_write = 0
-WRITE_INTERVAL = 0  # debug
+
+# 🔥 nastav později na 30 (limit writes)
+WRITE_INTERVAL = 0
 
 
 # =========================
@@ -18,26 +21,64 @@ def init_firebase():
     print("🔥 INIT FIREBASE CALLED")
 
     try:
+        # už inicializováno
         if firebase_admin._apps:
             db = firestore.client()
             print("🔥 Firebase already initialized")
             return db
 
-        firebase_json = os.getenv("FIREBASE_KEY")
+        # =========================
+        # 1️⃣ BASE64 (NEJLEPŠÍ VARIANTA)
+        # =========================
+        firebase_b64 = os.getenv("FIREBASE_KEY_BASE64")
 
-        if not firebase_json:
-            print("❌ FIREBASE_KEY missing")
-            return None
+        if firebase_b64:
+            print("🔑 Using BASE64 key")
 
-        firebase_json = firebase_json.replace('\\n', '\n')
-        cred_dict = json.loads(firebase_json)
+            try:
+                decoded = base64.b64decode(firebase_b64).decode("utf-8")
+                cred_dict = json.loads(decoded)
 
+            except Exception as e:
+                print("❌ BASE64 decode error:", e)
+                return None
+
+        else:
+            # =========================
+            # 2️⃣ RAW JSON (fallback)
+            # =========================
+            firebase_json = os.getenv("FIREBASE_KEY")
+
+            if not firebase_json:
+                print("❌ FIREBASE_KEY missing")
+                return None
+
+            try:
+                # pokus 1
+                cred_dict = json.loads(firebase_json)
+
+            except Exception:
+                try:
+                    # pokus 2 (fix newline)
+                    firebase_json_fixed = firebase_json.replace('\\n', '\n')
+                    cred_dict = json.loads(firebase_json_fixed)
+
+                except Exception as e:
+                    print("❌ JSON parse failed:", e)
+                    print("📛 KEY PREVIEW:", firebase_json[:120])
+                    return None
+
+        # =========================
+        # INIT APP
+        # =========================
         cred = credentials.Certificate(cred_dict)
         firebase_admin.initialize_app(cred)
 
         db = firestore.client()
 
         print("🔥 Firebase initialized OK")
+        print("🔥 DB OBJECT:", db)
+
         return db
 
     except Exception as e:
@@ -52,14 +93,16 @@ def init_firebase():
 def safe_set(collection, doc, data):
     global db, _last_write
 
+    print(f"☁️ TRY WRITE → {collection}/{doc}")
+
     if not db:
-        print("⚠️ DB not ready")
+        print("⚠️ DB not ready — skip write")
         return False
 
     now = time.time()
 
     if now - _last_write < WRITE_INTERVAL:
-        print("⏳ skip write")
+        print("⏳ Skip write (rate limit)")
         return False
 
     try:
@@ -78,7 +121,7 @@ def safe_set(collection, doc, data):
 # SAVE BOT STATS
 # =========================
 def save_bot_stats(stats):
-    print("☁️ SAVE BOT STATS")
+    print("☁️ SAVE BOT STATS:", stats)
 
     return safe_set(
         "bot_stats",
