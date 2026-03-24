@@ -1,20 +1,13 @@
 from src.core.event_bus import event_bus
 from src.core.events import EVALUATION_DONE
-from src.services.firebase_client import save_bot_stats
+from src.services.firebase_client import save_bot_stats, load_bot_stats
 
 import time
 
 print("🧠 LEARNING MODULE LOADED")
 
-# =========================
-# CONFIG
-# =========================
 AUTO_TRADE_ENABLED = True
-WRITE_INTERVAL = 0  # 🔥 debug (později dej 30)
 
-# =========================
-# GLOBAL STATS
-# =========================
 stats = {
     "trades": 0,
     "wins": 0,
@@ -27,11 +20,34 @@ stats = {
     "last_trade": None
 }
 
-last_write_time = 0
+
+# =========================
+# LOAD HISTORY
+# =========================
+def load_history():
+    data = load_bot_stats()
+
+    if not data:
+        print("📭 starting fresh")
+        return
+
+    print("📊 RESTORED FROM DB")
+
+    stats.update({
+        "trades": data.get("trades", 0),
+        "wins": data.get("wins", 0),
+        "losses": data.get("losses", 0),
+        "winrate": data.get("winrate", 0),
+        "avg_profit": data.get("avg_profit", 0),
+        "equity": data.get("equity", 1000),
+        "learning_score": data.get("learning_score", 0),
+        "ready": data.get("ready", False),
+        "last_trade": data.get("last_trade")
+    })
 
 
 # =========================
-# UPDATE LEARNING
+# UPDATE
 # =========================
 def update_learning(trade):
     stats["trades"] += 1
@@ -43,126 +59,59 @@ def update_learning(trade):
 
     stats["winrate"] = stats["wins"] / stats["trades"]
 
-    # průměrný profit
     stats["avg_profit"] = (
         (stats["avg_profit"] * (stats["trades"] - 1) + trade["profit"])
         / stats["trades"]
     )
 
-    # equity simulace
     stats["equity"] += stats["equity"] * trade["profit"]
 
-    # learning score
     stats["learning_score"] = (
         stats["winrate"] * 0.7 +
         min(stats["trades"] / 50, 1) * 0.3
     )
 
-    # =========================
-    # READY LOGIKA
-    # =========================
-    stats["ready"] = (
-        stats["trades"] > 5 and
-        stats["winrate"] > 0.5
-    )
+    stats["ready"] = stats["trades"] > 5 and stats["winrate"] > 0.5
 
-    # =========================
-    # KILL SWITCH
-    # =========================
-    if stats["trades"] > 20 and stats["winrate"] < 0.45:
-        stats["ready"] = False
-        print("🛑 BOT DISABLED (bad performance)")
-
-    # =========================
-    # LAST TRADE
-    # =========================
-    stats["last_trade"] = {
-        "symbol": trade.get("symbol"),
-        "result": trade.get("result"),
-        "profit": trade.get("profit")
-    }
+    stats["last_trade"] = trade
 
 
 # =========================
-# STATUS PRINT
+# PROGRESS BAR
 # =========================
-def print_status():
-    print("\n🧠 ===== BOT STATUS =====")
-    print(f"Trades: {stats['trades']}")
-    print(f"Wins: {stats['wins']} | Losses: {stats['losses']}")
-    print(f"Winrate: {round(stats['winrate'] * 100, 2)} %")
-    print(f"Avg profit: {round(stats['avg_profit'], 4)}")
-    print(f"Equity: {round(stats['equity'], 2)}")
-    print(f"Learning score: {round(stats['learning_score'], 2)}")
-
-    if stats["last_trade"]:
-        lt = stats["last_trade"]
-        print(f"Last trade: {lt['symbol']} | {lt['result']} | {round(lt['profit'], 4)}")
-
-    if stats["ready"]:
-        print("🚀 BOT JE NAUČEN A PŘIPRAVEN OBCHODOVAT")
-    else:
-        print("📚 BOT SE STÁLE UČÍ / NEOBCHODUJE")
-
-    print("========================\n")
+def progress_bar():
+    p = min(stats["trades"] / 50, 1)
+    bars = int(p * 20)
+    print("📊", "🟩" * bars + "⬜" * (20 - bars), f"{int(p*100)}%")
 
 
 # =========================
-# FIREBASE SAVE
+# EVENT
 # =========================
-def save_to_firebase():
-    global last_write_time
+def on_evaluation(trade):
+    print("🧠 LEARNING:", trade)
 
-    now = time.time()
+    update_learning(trade)
 
-    if now - last_write_time < WRITE_INTERVAL:
-        print("⏳ Skip Firebase write")
-        return
+    print("📈 WINRATE:", round(stats["winrate"], 2))
+    progress_bar()
 
-    ok = save_bot_stats(stats)
+    save_bot_stats(stats)
 
-    print("☁️ SAVE RESULT:", ok)
 
-    if ok:
-        last_write_time = now
+event_bus.subscribe(EVALUATION_DONE, on_evaluation)
 
 
 # =========================
-# EXTERNAL ACCESS (FIX BUG)
+# EXPORTS
 # =========================
 def is_ready():
     return stats["ready"]
 
 
 def get_status():
-    return {
-        "ready": stats["ready"],
-        "winrate": stats["winrate"],
-        "trades": stats["trades"],
-        "learning_score": stats["learning_score"]
-    }
+    return stats
 
 
-# =========================
-# EVENT HANDLER
-# =========================
-def on_evaluation(trade):
-    print("🧠 LEARNING TRIGGERED:", trade)
-
-    if not isinstance(trade, dict):
-        print("❌ invalid trade")
-        return
-
-    if "result" not in trade or "profit" not in trade:
-        print("❌ missing fields")
-        return
-
-    update_learning(trade)
-    print_status()
-    save_to_firebase()
-
-
-# =========================
-# SUBSCRIBE
-# =========================
-event_bus.subscribe(EVALUATION_DONE, on_evaluation)
+# LOAD HISTORY ON START
+load_history()

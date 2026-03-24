@@ -7,13 +7,11 @@ from firebase_admin import credentials, firestore
 
 db = None
 _last_write = 0
-
-# 🔥 nastav později na 30 (limit writes)
-WRITE_INTERVAL = 0
+WRITE_INTERVAL = 5  # debug
 
 
 # =========================
-# INIT FIREBASE
+# INIT
 # =========================
 def init_firebase():
     global db
@@ -21,113 +19,111 @@ def init_firebase():
     print("🔥 INIT FIREBASE CALLED")
 
     try:
-        # už inicializováno
         if firebase_admin._apps:
             db = firestore.client()
-            print("🔥 Firebase already initialized")
             return db
 
-        # =========================
-        # 1️⃣ BASE64 (NEJLEPŠÍ VARIANTA)
-        # =========================
         firebase_b64 = os.getenv("FIREBASE_KEY_BASE64")
 
         if firebase_b64:
-            print("🔑 Using BASE64 key")
-
-            try:
-                decoded = base64.b64decode(firebase_b64).decode("utf-8")
-                cred_dict = json.loads(decoded)
-
-            except Exception as e:
-                print("❌ BASE64 decode error:", e)
-                return None
-
+            decoded = base64.b64decode(firebase_b64).decode("utf-8")
+            cred_dict = json.loads(decoded)
         else:
-            # =========================
-            # 2️⃣ RAW JSON (fallback)
-            # =========================
             firebase_json = os.getenv("FIREBASE_KEY")
+            firebase_json = firebase_json.replace('\\n', '\n')
+            cred_dict = json.loads(firebase_json)
 
-            if not firebase_json:
-                print("❌ FIREBASE_KEY missing")
-                return None
-
-            try:
-                # pokus 1
-                cred_dict = json.loads(firebase_json)
-
-            except Exception:
-                try:
-                    # pokus 2 (fix newline)
-                    firebase_json_fixed = firebase_json.replace('\\n', '\n')
-                    cred_dict = json.loads(firebase_json_fixed)
-
-                except Exception as e:
-                    print("❌ JSON parse failed:", e)
-                    print("📛 KEY PREVIEW:", firebase_json[:120])
-                    return None
-
-        # =========================
-        # INIT APP
-        # =========================
         cred = credentials.Certificate(cred_dict)
         firebase_admin.initialize_app(cred)
 
         db = firestore.client()
 
         print("🔥 Firebase initialized OK")
-        print("🔥 DB OBJECT:", db)
-
         return db
 
     except Exception as e:
         print("❌ Firebase init error:", e)
-        db = None
         return None
 
 
 # =========================
-# SAFE WRITE
+# CORE WRITE
 # =========================
 def safe_set(collection, doc, data):
     global db, _last_write
 
-    print(f"☁️ TRY WRITE → {collection}/{doc}")
-
     if not db:
-        print("⚠️ DB not ready — skip write")
+        print("⚠️ DB not ready")
         return False
 
     now = time.time()
 
     if now - _last_write < WRITE_INTERVAL:
-        print("⏳ Skip write (rate limit)")
         return False
 
     try:
         db.collection(collection).document(doc).set(data)
         _last_write = now
-
         print(f"☁️ WRITE OK → {collection}/{doc}")
         return True
 
     except Exception as e:
-        print("❌ Firebase write error:", e)
+        print("❌ write error:", e)
+        return False
+
+
+def safe_add(collection, data):
+    global db
+
+    if not db:
+        return False
+
+    try:
+        db.collection(collection).add(data)
+        return True
+    except Exception as e:
+        print("❌ add error:", e)
         return False
 
 
 # =========================
-# SAVE BOT STATS
+# BOT STATS
 # =========================
 def save_bot_stats(stats):
-    print("☁️ SAVE BOT STATS:", stats)
+    return safe_set("bot_stats", "latest", {
+        **stats,
+        "timestamp": time.time()
+    })
 
-    return safe_set(
-        "bot_stats",
-        "latest",
-        {
-            **stats,
-            "timestamp": time.time()
-        }
-    )
+
+def load_bot_stats():
+    global db
+
+    if not db:
+        return None
+
+    try:
+        doc = db.collection("bot_stats").document("latest").get()
+        return doc.to_dict() if doc.exists else None
+    except:
+        return None
+
+
+# =========================
+# SIGNALS
+# =========================
+def save_signal(signal):
+    return safe_add("signals", {
+        **signal,
+        "timestamp": time.time()
+    })
+
+
+# =========================
+# TRADES
+# =========================
+def save_trade(trade):
+    return safe_add("trades", {
+        **trade,
+        "timestamp": time.time()
+    })
