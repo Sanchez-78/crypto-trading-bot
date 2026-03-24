@@ -1,26 +1,49 @@
+print("🧠 LOADING EVENT BUS...")
+
 class EventBus:
     def __init__(self):
-        self.subscribers = {}
+        self.listeners = {}
+        print("🧠 EventBus created")
 
-    def subscribe(self, event, fn):
-        if event not in self.subscribers:
-            self.subscribers[event] = []
+    # =========================
+    # SUBSCRIBE
+    # =========================
+    def subscribe(self, event_type, handler):
+        if event_type not in self.listeners:
+            self.listeners[event_type] = []
 
-        self.subscribers[event].append(fn)
-        print(f"✅ SUBSCRIBED: {event} -> {fn.__name__}")
+        self.listeners[event_type].append(handler)
 
-    def publish(self, event, data):
-        print(f"📤 EVENT: {event}")
+        print(f"🔗 Subscribed to {event_type}: {handler.__name__}")
 
-        if event not in self.subscribers:
-            print(f"⚠️ No subscribers for {event}")
+    # =========================
+    # PUBLISH
+    # =========================
+    def publish(self, event_type, data):
+        if event_type not in self.listeners:
+            print(f"⚠️ No listeners for {event_type}")
             return
 
-        for fn in self.subscribers[event]:
+        print(f"📣 EVENT: {event_type}")
+
+        for handler in self.listeners[event_type]:
             try:
-                fn(data)
+                handler(data)
             except Exception as e:
-                print(f"❌ Event error [{event}]:", e)
+                print(f"❌ Handler error in {handler.__name__}: {e}")
+
+    # =========================
+    # DEBUG
+    # =========================
+    def debug_listeners(self):
+        print("🧠 CURRENT LISTENERS:")
+        for event, handlers in self.listeners.items():
+            print(f"{event}: {[h.__name__ for h in handlers]}")
 
 
+# =========================
+# 🔥 GLOBAL INSTANCE (KRITICKÉ)
+# =========================
 event_bus = EventBus()
+
+print("🧠 EVENT BUS INITIALIZED:", event_bus)
