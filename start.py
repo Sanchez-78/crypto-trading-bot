@@ -1,11 +1,33 @@
 import sys
 import os
+import traceback
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(ROOT)
+print("🚀 START.PY BOOTING...")
 
-print("🚀 Starting multi-symbol event-driven BOT SYSTEM")
+# =========================
+# FIX PYTHON PATH
+# =========================
+sys.path.append(os.getcwd())
 
-from bot2.main import main
+print("📁 ROOT FILES:", os.listdir())
 
-main()
+if os.path.exists("src"):
+    print("📁 SRC:", os.listdir("src"))
+
+if os.path.exists("src/services"):
+    print("📁 SERVICES:", os.listdir("src/services"))
+
+# =========================
+# SAFE START
+# =========================
+try:
+    print("🚨 IMPORTING MAIN...")
+    from bot2.main import main
+
+    print("🚨 STARTING MAIN...")
+    main()
+
+except Exception as e:
+    print("💥 CRASH DETECTED:")
+    print(e)
+    traceback.print_exc()
