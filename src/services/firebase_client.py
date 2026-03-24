@@ -1,13 +1,19 @@
-import os
-import json
-import time
-import base64
 import firebase_admin
 from firebase_admin import credentials, firestore
 
+import os
+import json
+import time
+
+print("🔥 FIREBASE CLIENT LOADING...")
+
 db = None
-_last_write = 0
-WRITE_INTERVAL = 5  # debug
+last_write = 0
+
+# =========================
+# CONFIG
+# =========================
+WRITE_INTERVAL = 5  # sec (anti-spam)
 
 
 # =========================
@@ -16,114 +22,152 @@ WRITE_INTERVAL = 5  # debug
 def init_firebase():
     global db
 
-    print("🔥 INIT FIREBASE CALLED")
-
     try:
+        print("🔥 INIT FIREBASE CALLED")
+
         if firebase_admin._apps:
             db = firestore.client()
+            print("🔥 Firebase reused")
             return db
 
-        firebase_b64 = os.getenv("FIREBASE_KEY_BASE64")
+        # =========================
+        # ENV (BASE64 JSON)
+        # =========================
+        firebase_key = os.getenv("FIREBASE_KEY")
 
-        if firebase_b64:
-            decoded = base64.b64decode(firebase_b64).decode("utf-8")
-            cred_dict = json.loads(decoded)
+        if firebase_key:
+            print("🔥 Using ENV key")
+
+            decoded = json.loads(firebase_key)
+            cred = credentials.Certificate(decoded)
+
         else:
-            firebase_json = os.getenv("FIREBASE_KEY")
-            firebase_json = firebase_json.replace('\\n', '\n')
-            cred_dict = json.loads(firebase_json)
+            print("🔥 Using local file")
 
-        cred = credentials.Certificate(cred_dict)
+            cred = credentials.Certificate("firebase_key.json")
+
         firebase_admin.initialize_app(cred)
 
         db = firestore.client()
 
         print("🔥 Firebase initialized OK")
+
         return db
 
     except Exception as e:
         print("❌ Firebase init error:", e)
+        db = None
         return None
 
 
 # =========================
-# CORE WRITE
+# SAFE WRITE
 # =========================
-def safe_set(collection, doc, data):
-    global db, _last_write
+def safe_write(collection, doc, data):
+    global db, last_write
 
     if not db:
-        print("⚠️ DB not ready")
-        return False
+        print("❌ DB not ready")
+        return
 
     now = time.time()
 
-    if now - _last_write < WRITE_INTERVAL:
-        return False
+    if now - last_write < WRITE_INTERVAL:
+        return
 
     try:
         db.collection(collection).document(doc).set(data)
-        _last_write = now
+        last_write = now
         print(f"☁️ WRITE OK → {collection}/{doc}")
-        return True
-
     except Exception as e:
-        print("❌ write error:", e)
-        return False
-
-
-def safe_add(collection, data):
-    global db
-
-    if not db:
-        return False
-
-    try:
-        db.collection(collection).add(data)
-        return True
-    except Exception as e:
-        print("❌ add error:", e)
-        return False
+        print("❌ Firebase write error:", e)
 
 
 # =========================
 # BOT STATS
 # =========================
-def save_bot_stats(stats):
-    return safe_set("bot_stats", "latest", {
-        **stats,
-        "timestamp": time.time()
-    })
+def save_bot_stats(data):
+    safe_write("bot_stats", "latest", data)
 
 
 def load_bot_stats():
     global db
 
-    if not db:
-        return None
-
     try:
         doc = db.collection("bot_stats").document("latest").get()
         return doc.to_dict() if doc.exists else None
-    except:
+    except Exception as e:
+        print("❌ Load bot stats error:", e)
         return None
 
 
 # =========================
-# SIGNALS
+# PORTFOLIO
+# =========================
+def save_portfolio(data):
+    safe_write("portfolio", "latest", data)
+
+
+def load_portfolio():
+    global db
+
+    try:
+        doc = db.collection("portfolio").document("latest").get()
+        return doc.to_dict() if doc.exists else None
+    except Exception as e:
+        print("❌ Load portfolio error:", e)
+        return None
+
+
+# =========================
+# SIGNALS (light logging)
 # =========================
 def save_signal(signal):
-    return safe_add("signals", {
-        **signal,
-        "timestamp": time.time()
-    })
+    global db
+
+    if not db:
+        return
+
+    try:
+        db.collection("signals").add({
+            "symbol": signal.get("symbol"),
+            "action": signal.get("action"),
+            "confidence": signal.get("confidence"),
+            "price": signal.get("price"),
+            "time": time.time()
+        })
+    except Exception as e:
+        print("❌ Signal save error:", e)
 
 
 # =========================
-# TRADES
+# TRADES (light logging)
 # =========================
 def save_trade(trade):
-    return safe_add("trades", {
-        **trade,
-        "timestamp": time.time()
+    global db
+
+    if not db:
+        return
+
+    try:
+        db.collection("trades").add({
+            "symbol": trade.get("symbol"),
+            "action": trade.get("action"),
+            "price": trade.get("price"),
+            "confidence": trade.get("confidence"),
+            "time": time.time()
+        })
+    except Exception as e:
+        print("❌ Trade save error:", e)
+
+
+# =========================
+# DEBUG TEST
+# =========================
+def test_write():
+    print("🧪 TEST FIREBASE WRITE...")
+
+    safe_write("bot_stats", "latest", {
+        "test": True,
+        "time": time.time()
     })
