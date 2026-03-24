@@ -1,19 +1,11 @@
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-import os
-import json
 import time
 
 print("🔥 FIREBASE CLIENT LOADING...")
 
 db = None
-last_write = 0
-
-# =========================
-# CONFIG
-# =========================
-WRITE_INTERVAL = 5  # sec (anti-spam)
 
 
 # =========================
@@ -30,21 +22,8 @@ def init_firebase():
             print("🔥 Firebase reused")
             return db
 
-        # =========================
-        # ENV (BASE64 JSON)
-        # =========================
-        firebase_key = os.getenv("FIREBASE_KEY")
-
-        if firebase_key:
-            print("🔥 Using ENV key")
-
-            decoded = json.loads(firebase_key)
-            cred = credentials.Certificate(decoded)
-
-        else:
-            print("🔥 Using local file")
-
-            cred = credentials.Certificate("firebase_key.json")
+        # 🔥 PŮVODNÍ VERZE – jen file
+        cred = credentials.Certificate("firebase_key.json")
 
         firebase_admin.initialize_app(cred)
 
@@ -61,33 +40,20 @@ def init_firebase():
 
 
 # =========================
-# SAFE WRITE
+# BOT STATS
 # =========================
-def safe_write(collection, doc, data):
-    global db, last_write
+def save_bot_stats(data):
+    global db
 
     if not db:
         print("❌ DB not ready")
         return
 
-    now = time.time()
-
-    if now - last_write < WRITE_INTERVAL:
-        return
-
     try:
-        db.collection(collection).document(doc).set(data)
-        last_write = now
-        print(f"☁️ WRITE OK → {collection}/{doc}")
+        db.collection("bot_stats").document("latest").set(data)
+        print("☁️ WRITE OK → bot_stats/latest")
     except Exception as e:
-        print("❌ Firebase write error:", e)
-
-
-# =========================
-# BOT STATS
-# =========================
-def save_bot_stats(data):
-    safe_write("bot_stats", "latest", data)
+        print("❌ Write error:", e)
 
 
 def load_bot_stats():
@@ -97,7 +63,7 @@ def load_bot_stats():
         doc = db.collection("bot_stats").document("latest").get()
         return doc.to_dict() if doc.exists else None
     except Exception as e:
-        print("❌ Load bot stats error:", e)
+        print("❌ Load error:", e)
         return None
 
 
@@ -105,7 +71,17 @@ def load_bot_stats():
 # PORTFOLIO
 # =========================
 def save_portfolio(data):
-    safe_write("portfolio", "latest", data)
+    global db
+
+    if not db:
+        print("❌ DB not ready")
+        return
+
+    try:
+        db.collection("portfolio").document("latest").set(data)
+        print("☁️ WRITE OK → portfolio/latest")
+    except Exception as e:
+        print("❌ Portfolio write error:", e)
 
 
 def load_portfolio():
@@ -115,12 +91,12 @@ def load_portfolio():
         doc = db.collection("portfolio").document("latest").get()
         return doc.to_dict() if doc.exists else None
     except Exception as e:
-        print("❌ Load portfolio error:", e)
+        print("❌ Portfolio load error:", e)
         return None
 
 
 # =========================
-# SIGNALS (light logging)
+# SIGNALS
 # =========================
 def save_signal(signal):
     global db
@@ -141,7 +117,7 @@ def save_signal(signal):
 
 
 # =========================
-# TRADES (light logging)
+# TRADES
 # =========================
 def save_trade(trade):
     global db
@@ -159,15 +135,3 @@ def save_trade(trade):
         })
     except Exception as e:
         print("❌ Trade save error:", e)
-
-
-# =========================
-# DEBUG TEST
-# =========================
-def test_write():
-    print("🧪 TEST FIREBASE WRITE...")
-
-    safe_write("bot_stats", "latest", {
-        "test": True,
-        "time": time.time()
-    })
