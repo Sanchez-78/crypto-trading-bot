@@ -1,30 +1,42 @@
 from src.core.event_bus import event_bus
-from src.core.events import TRADE_EXECUTED, EVALUATION_DONE
+from src.core.events import TRADE_CLOSED, EVALUATION_DONE
 
-import random
+from src.services.learning_event import update
 
-print("📊 Evaluator READY")
+print("📊 EVALUATOR READY")
 
 
-def on_trade(trade):
-    print("📊 EVALUATING TRADE")
+def evaluate_trade(trade):
+    print("📊 EVALUATING TRADE:", trade)
 
-    # 🔥 fake evaluation (zatím)
-    result = random.choice(["WIN", "LOSS"])
-    profit = random.uniform(-0.01, 0.02)
+    profit = trade.get("profit", 0)
+    action = trade.get("action")
+    features = trade.get("features", {})
 
-    evaluation = {
+    # =========================
+    # REWARD (CORE LEARNING)
+    # =========================
+    reward = profit  # můžeš později vylepšit
+
+    # =========================
+    # UPDATE MODEL
+    # =========================
+    update(features, action, reward)
+
+    result = {
         "symbol": trade.get("symbol"),
-        "action": trade.get("action"),
-        "price": trade.get("price"),
-        "result": result,
         "profit": profit,
-        "features": trade.get("features", {})  # 🔥 FIX
+        "result": "WIN" if profit > 0 else "LOSS",
+        "action": action,
+        "features": features
     }
 
-    print("📊 EVALUATION:", evaluation)
+    print("📊 RESULT:", result)
 
-    event_bus.publish(EVALUATION_DONE, evaluation)
+    event_bus.publish(EVALUATION_DONE, result)
 
 
-event_bus.subscribe(TRADE_EXECUTED, on_trade)
+# =========================
+# EVENT SUBSCRIBE
+# =========================
+event_bus.subscribe(TRADE_CLOSED, evaluate_trade)

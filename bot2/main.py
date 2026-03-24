@@ -1,72 +1,35 @@
+from src.services.firebase_client import init_firebase
+from src.services.learning_event import get_metrics, is_ready
+
+# INIT FIREBASE
+init_firebase()
+
+print("🚀 BOT STARTED")
+
 # =========================
-# MAIN ENTRYPOINT
+# MAIN LOOP (příklad)
 # =========================
+import time
 
-def main():
-    print("🚀 BOOTING BOT (REAL DATA MODE + DEBUG)...")
-
-    # =========================
-    # FIREBASE INIT
-    # =========================
-    from src.services.firebase_client import init_firebase, save_bot_stats
-
-    db = init_firebase()
-
-    if db:
-        print("✅ DB READY")
-
-        # 🔥 TEST WRITE (klíčové!)
-        print("🧪 TEST FIREBASE WRITE...")
-        save_bot_stats({
-            "test": True,
-            "time": "startup"
-        })
-
-    else:
-        print("❌ DB NOT READY")
-
-    # =========================
-    # LOAD SERVICES
-    # =========================
-    print("🔄 LOADING SERVICES...")
-
+while True:
     try:
-        import src.services.signal_generator
-        print("✅ signal_generator loaded")
+        metrics = get_metrics()
 
-        import src.services.trade_executor
-        print("✅ trade_executor loaded")
+        if metrics:
+            print("\n🧠 ===== LEARNING STATUS =====")
+            print(f"Trades: {metrics.get('trades')}")
+            print(f"Winrate: {round(metrics.get('winrate', 0)*100, 2)}%")
+            print(f"Epsilon: {round(metrics.get('epsilon', 0), 4)}")
 
-        import src.services.evaluator
-        print("✅ evaluator loaded")
+            if is_ready():
+                print("🚀 BOT READY FOR TRADING")
+            else:
+                print("📚 BOT LEARNING...")
 
-        import src.services.portfolio_event
-        print("✅ portfolio_event loaded")
+            print("============================\n")
 
-        import bot2.learning_event
-        print("✅ learning_event loaded")
+        time.sleep(10)
 
     except Exception as e:
-        print("❌ SERVICE LOAD ERROR:", e)
-        return
-
-    print("🔥 ALL SERVICES LOADED")
-
-    # =========================
-    # START MARKET DATA
-    # =========================
-    print("🌐 STARTING REAL MARKET FEED...")
-
-    try:
-        import src.services.market_data_service as market_data
-        market_data.run()
-
-    except Exception as e:
-        print("❌ MARKET DATA ERROR:", e)
-
-
-# =========================
-# LOCAL RUN
-# =========================
-if __name__ == "__main__":
-    main()
+        print("❌ MAIN LOOP ERROR:", e)
+        time.sleep(5)
