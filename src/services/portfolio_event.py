@@ -1,165 +1,151 @@
+from src.core.event_bus import event_bus
+from src.core.events import SIGNAL_CREATED, TRADE_EXECUTED, TRADE_CLOSED
+from src.services.firebase_client import save_portfolio
+
 import time
 
-from src.core.event_bus import event_bus
-from src.core.events import SIGNAL_CREATED, TRADE_OPENED, TRADE_CLOSED, PRICE_TICK
+print("📊 Portfolio Service READY")
 
-from src.services.risk_manager import risk_manager
-from src.services.auto_control import auto_control
-from src.services.portfolio_risk import portfolio_risk
-from src.services.firebase_client import save_signal
-
-open_trades = {}
-loss_streak = 0
+# =========================
+# STATE
+# =========================
+portfolio = {
+    "open_position": None,
+    "balance": 1000,
+    "equity": 1000,
+    "total_trades": 0,
+    "wins": 0,
+    "losses": 0,
+    "last_update": None
+}
 
 
 # =========================
-# FILTER
+# HELPERS
 # =========================
-def should_trade(features, confidence):
-    vol = features["volatility"]
+def safe_price(obj):
+    price = obj.get("price") if isinstance(obj, dict) else None
 
-    if vol < 0.01:
-        print("🚫 LOW VOL")
-        return False
+    if price is None:
+        print("❌ Missing price:", obj)
+        return None
 
-    if vol > 0.9:
-        print("🚫 HIGH VOL")
-        return False
-
-    if confidence < 0.55:
-        print("🚫 LOW CONF")
-        return False
-
-    global loss_streak
-    if loss_streak >= 3:
-        print("🛑 LOSS STREAK")
-        return False
-
-    return True
+    return price
 
 
 # =========================
-# SIGNAL
+# SIGNAL HANDLER (optional)
 # =========================
-def handle_signal(data):
-    symbol = data["symbol"]
-    price = data["features"]["price"]
-    confidence = data.get("confidence", 0.5)
+def on_signal(signal):
+    print("📡 PORTFOLIO SIGNAL RECEIVED")
 
-    # AUTO CONTROL
-    if not auto_control.trading_enabled:
-        print("🛑 AUTO BLOCK")
+    price = safe_price(signal)
+    if price is None:
         return
 
-    if symbol in open_trades:
+    # pouze log (neotevírá pozici)
+    print(f"📊 SIGNAL {signal.get('action')} @ {price}")
+
+
+# =========================
+# TRADE EXECUTED
+# =========================
+def on_trade(trade):
+    print("📊 PORTFOLIO TRADE")
+
+    price = safe_price(trade)
+    if price is None:
         return
 
-    if not should_trade(data["features"], confidence):
+    action = trade.get("action")
+
+    # =========================
+    # OPEN POSITION
+    # =========================
+    if portfolio["open_position"] is None:
+        portfolio["open_position"] = {
+            "symbol": trade.get("symbol"),
+            "action": action,
+            "entry_price": price,
+            "size": 1,
+            "opened_at": time.time()
+        }
+
+        print("📈 OPEN POSITION:", portfolio["open_position"])
+        save()
         return
 
-    # GLOBAL RISK
-    if not risk_manager.can_trade():
-        print("🛑 RISK BLOCK")
-        return
+    # =========================
+    # CLOSE POSITION (opposite)
+    # =========================
+    current = portfolio["open_position"]
 
-    size = risk_manager.get_position_size(confidence)
+    if current["action"] != action:
+        entry = current["entry_price"]
 
-    # 🔥 PORTFOLIO CHECK
-    if not portfolio_risk.can_open_trade(
-        symbol, size, open_trades, risk_manager.balance
-    ):
-        return
+        if current["action"] == "BUY":
+            profit = (price - entry) / entry
+        else:
+            profit = (entry - price) / entry
 
-    trade = {
-        "symbol": symbol,
-        "entry_price": price,
-        "size": size,
-        "max_pnl": 0,
-        "pyramids": 0,
-        "confidence": confidence
+        portfolio["balance"] += portfolio["balance"] * profit
+        portfolio["equity"] = portfolio["balance"]
+
+        portfolio["total_trades"] += 1
+
+        if profit > 0:
+            portfolio["wins"] += 1
+        else:
+            portfolio["losses"] += 1
+
+        closed_trade = {
+            "symbol": current["symbol"],
+            "entry": entry,
+            "exit": price,
+            "profit": profit,
+            "result": "WIN" if profit > 0 else "LOSS"
+        }
+
+        print("📉 CLOSED TRADE:", closed_trade)
+
+        # reset position
+        portfolio["open_position"] = None
+
+        event_bus.publish(TRADE_CLOSED, closed_trade)
+
+        save()
+
+
+# =========================
+# SAVE
+# =========================
+def save():
+    portfolio["last_update"] = time.time()
+
+    save_portfolio(portfolio)
+
+
+# =========================
+# METRICS FOR APP
+# =========================
+def get_portfolio():
+    return {
+        "balance": portfolio["balance"],
+        "equity": portfolio["equity"],
+        "open_position": portfolio["open_position"],
+        "total_trades": portfolio["total_trades"],
+        "wins": portfolio["wins"],
+        "losses": portfolio["losses"],
+        "winrate": (
+            portfolio["wins"] / portfolio["total_trades"]
+            if portfolio["total_trades"] > 0 else 0
+        ),
+        "last_update": portfolio["last_update"]
     }
 
-    open_trades[symbol] = trade
-
-    print(f"📈 OPEN {symbol} size={size:.2f}")
-    print("📊 OPEN TRADES:", open_trades)
-
-    save_signal({
-        "symbol": symbol,
-        "signal": data.get("signal", "BUY"),
-        "confidence": confidence,
-        "strategy": data.get("strategy", "TREND"),
-        "regime": data.get("regime", "UNKNOWN"),
-        "price": price,
-        "size": size,
-        "evaluated": False,
-        "timestamp": time.time(),
-    })
-
-    event_bus.publish(TRADE_OPENED, trade)
-
 
 # =========================
-# PRICE UPDATE
+# SUBSCRIBE
 # =========================
-def on_price(data):
-    global loss_streak
-
-    for symbol, trade in list(open_trades.items()):
-        if symbol not in data:
-            continue
-
-        current = data[symbol]["price"]
-        entry = trade["entry_price"]
-
-        pnl = (current - entry) / entry
-        trade["max_pnl"] = max(trade["max_pnl"], pnl)
-
-        vol = data[symbol]["volatility"]
-
-        # dynamic risk
-        TP = 0.002 + vol * 0.004
-        SL = -TP * 0.75
-        TRAIL = TP * 0.5
-        PYRAMID_THRESHOLD = TP * 0.5
-
-        # pyramid
-        if pnl > PYRAMID_THRESHOLD and trade["pyramids"] < 2:
-            trade["pyramids"] += 1
-            trade["size"] *= 1.5
-            print(f"📈 PYRAMID {symbol}")
-
-        # exit
-        if trade["max_pnl"] - pnl > TRAIL:
-            reason = "TRAIL"
-        elif pnl >= TP:
-            reason = "TP"
-        elif pnl <= SL:
-            reason = "SL"
-        else:
-            continue
-
-        result = "WIN" if pnl > 0 else "LOSS"
-
-        print(f"❌ CLOSE {symbol} {reason} pnl={pnl:.4f}")
-
-        # loss tracking
-        if result == "LOSS":
-            loss_streak += 1
-        else:
-            loss_streak = 0
-
-        risk_manager.update_balance(pnl)
-
-        event_bus.publish(TRADE_CLOSED, {
-            "trade": trade,
-            "pnl": pnl,
-            "result": result,
-            "reason": reason
-        })
-
-        del open_trades[symbol]
-
-
-event_bus.subscribe(SIGNAL_CREATED, handle_signal)
-event_bus.subscribe(PRICE_TICK, on_price)
+event_bus.subscribe(SIGNAL_CREATED, on_signal)
+event_bus.subscribe(TRADE_EXECUTED, on_trade)
