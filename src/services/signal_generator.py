@@ -2,92 +2,117 @@ from src.core.event_bus import event_bus
 from src.core.events import PRICE_TICK, SIGNAL_CREATED
 from src.services.firebase_client import save_signal
 
-import random
+print("📡 Signal Generator (SMART) READY")
 
-print("📡 Signal Generator READY")
+prices = []
 
-MIN_CONFIDENCE = 0.55
-FORCE_SIGNAL_EVERY = 5
-
-tick_counter = 0
-last_price = None
+EMA_SHORT = 5
+EMA_LONG = 14
+RSI_PERIOD = 14
 
 
-def generate_signal(price):
-    global last_price
+# =========================
+# INDICATORS
+# =========================
+def ema(data, period):
+    if len(data) < period:
+        return None
+    k = 2 / (period + 1)
+    ema_val = data[0]
+    for price in data[1:]:
+        ema_val = price * k + ema_val * (1 - k)
+    return ema_val
 
-    if last_price is None:
-        last_price = price
+
+def rsi(data, period=14):
+    if len(data) < period + 1:
         return None
 
-    change = (price - last_price) / last_price
+    gains = []
+    losses = []
 
-    if change > 0.001:
+    for i in range(1, len(data)):
+        diff = data[i] - data[i - 1]
+        if diff >= 0:
+            gains.append(diff)
+        else:
+            losses.append(abs(diff))
+
+    avg_gain = sum(gains[-period:]) / period if gains else 0
+    avg_loss = sum(losses[-period:]) / period if losses else 0
+
+    if avg_loss == 0:
+        return 100
+
+    rs = avg_gain / avg_loss
+    return 100 - (100 / (1 + rs))
+
+
+# =========================
+# SIGNAL LOGIC
+# =========================
+def generate_signal(price):
+    prices.append(price)
+
+    if len(prices) < EMA_LONG:
+        return None
+
+    ema_s = ema(prices[-EMA_LONG:], EMA_SHORT)
+    ema_l = ema(prices[-EMA_LONG:], EMA_LONG)
+    rsi_val = rsi(prices, RSI_PERIOD)
+
+    if not ema_s or not ema_l or not rsi_val:
+        return None
+
+    # =========================
+    # STRATEGY
+    # =========================
+    if ema_s > ema_l and rsi_val < 70:
         action = "BUY"
-        confidence = min(0.6 + change * 10, 0.9)
+        confidence = 0.6 + (ema_s - ema_l) / ema_l
 
-    elif change < -0.001:
+    elif ema_s < ema_l and rsi_val > 30:
         action = "SELL"
-        confidence = min(0.6 + abs(change) * 10, 0.9)
+        confidence = 0.6 + (ema_l - ema_s) / ema_l
 
     else:
-        action = None
-        confidence = 0
-
-    last_price = price
-
-    if not action:
         return None
+
+    confidence = min(max(confidence, 0.55), 0.9)
 
     return {
         "symbol": "BTC",
         "action": action,
         "confidence": confidence,
-        "price": price
+        "price": price,
+        "features": {
+            "ema_short": ema_s,
+            "ema_long": ema_l,
+            "rsi": rsi_val
+        }
     }
 
 
+# =========================
+# EVENT
+# =========================
 def on_price_tick(data):
-    global tick_counter
+    print("📡 RAW:", data)
 
-    tick_counter += 1
-
-    print("📡 RAW DATA:", data)
-
-    # 🔥 FIX: správné parsování multi-symbol dat
     if isinstance(data, dict) and "BTC" in data:
         price = data["BTC"].get("price")
     else:
-        price = None
+        return
 
     print("📡 PRICE:", price)
 
-    if price is None:
-        print("❌ No valid price")
-        return
-
     signal = generate_signal(price)
 
-    if signal and signal["confidence"] >= MIN_CONFIDENCE:
-        print("🚀 SIGNAL:", signal)
+    if signal:
+        print("🚀 SMART SIGNAL:", signal)
 
         save_signal(signal)
         event_bus.publish(SIGNAL_CREATED, signal)
-        return
-
-    # fallback
-    if tick_counter % FORCE_SIGNAL_EVERY == 0:
-        fallback_signal = {
-            "symbol": "BTC",
-            "action": random.choice(["BUY", "SELL"]),
-            "confidence": 0.55,
-            "price": price
-        }
-
-        print("⚠️ FALLBACK SIGNAL:", fallback_signal)
-
-        save_signal(fallback_signal)
-        event_bus.publish(SIGNAL_CREATED, fallback_signal)
 
 
 event_bus.subscribe(PRICE_TICK, on_price_tick)
