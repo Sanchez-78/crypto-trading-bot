@@ -2,6 +2,7 @@ import time
 
 print("🚀 Starting multi-symbol event-driven BOT SYSTEM")
 
+
 # =========================
 # FIREBASE
 # =========================
@@ -15,34 +16,63 @@ except Exception as e:
 
 
 # =========================
-# LOAD CORE
+# LOAD SERVICES
 # =========================
 print("⚙️ Loading services...")
 
-# MARKET (REALISTIC SIMULATION)
 from src.services.market_data import start_market_stream
 
-# SIGNAL (SMART)
 import src.services.signal_generator
-
-# TRADE
 import src.services.trade_executor
-
-# PORTFOLIO
 import src.services.portfolio_manager
 from src.services.portfolio_manager import process_portfolio
 
-# EVALUATION
 import src.services.evaluator
+import src.services.performance_tracker
 
-# LEARNING (bandit + scoring)
 import src.services.learning_event
 from src.services.learning_event import get_metrics
 
-# PERFORMANCE
-import src.services.performance_tracker
-
 print("✅ ALL SERVICES READY\n")
+
+
+# =========================
+# STATUS PRINT
+# =========================
+def print_bot_status(metrics):
+    print("\n🤖 BOT STATUS")
+
+    trades = metrics.get("trades", 0)
+    winrate = metrics.get("winrate", 0)
+
+    if trades < 5:
+        print("🟡 WARMUP (sbírá data)")
+    elif winrate < 0.4:
+        print("🔴 LEARNING (slabá strategie)")
+    else:
+        print("🟢 READY (profitabilní)")
+
+    print(f"Trades: {trades}")
+    print(f"Winrate: {winrate:.2f}")
+
+
+def print_progress(metrics):
+    trades = metrics.get("trades", 0)
+
+    progress = min(trades / 100, 1.0)
+    bars = int(progress * 20)
+
+    print("\n🧠 Learning Progress:")
+    print("[" + "█" * bars + "-" * (20 - bars) + f"] {int(progress * 100)}%")
+
+
+def print_performance(metrics):
+    print("\n💰 PERFORMANCE")
+
+    print(f"Profit: {metrics.get('profit', 0):.4f}")
+    print(f"Wins: {metrics.get('wins', 0)}")
+    print(f"Losses: {metrics.get('losses', 0)}")
+    print(f"Loss streak: {metrics.get('loss_streak', 0)}")
 
 
 # =========================
@@ -53,36 +83,41 @@ def main():
 
     tick = 0
 
-    # start market stream (thread / async style)
+    # start market stream (thread)
     start_market_stream()
 
     while True:
         try:
             # =========================
-            # PORTFOLIO (close trades)
+            # PROCESS PORTFOLIO
             # =========================
             process_portfolio()
 
             tick += 1
 
             # =========================
-            # LEARNING METRICS
+            # PRINT METRICS
             # =========================
             if tick % 10 == 0:
                 metrics = get_metrics()
 
-                print("\n📊 LEARNING STATUS")
-                print(f"Trades: {metrics['trades']}")
-                print(f"Winrate: {metrics['winrate']:.2f}")
-                print(f"Epsilon: {metrics['epsilon']:.4f}")
+                print("\n============================")
 
-                # progress bar
-                progress = int(metrics["progress"] * 20)
-                print("🧠 [" + "█" * progress + "-" * (20 - progress) + "]")
+                print_bot_status(metrics)
+                print_progress(metrics)
+                print_performance(metrics)
 
-                # Firebase log
+                print("\n============================\n")
+
+                # =========================
+                # FIREBASE SAVE
+                # =========================
                 if db:
-                    save_bot_stats(metrics)
+                    try:
+                        save_bot_stats(metrics)
+                        print("☁️ Stats saved to Firebase")
+                    except Exception as e:
+                        print("⚠️ Firebase save error:", e)
 
             time.sleep(1)
 
