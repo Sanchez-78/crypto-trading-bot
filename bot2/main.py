@@ -25,11 +25,11 @@ import src.services.evaluator
 import src.services.performance_tracker
 
 import src.services.learning_event
-from src.services.learning_event import get_metrics, bootstrap_learning
+from src.services.learning_event import get_metrics, init_learning
 
 
 print("⚙️ Bootstrapping learning from DB...")
-bootstrap_learning()
+init_learning()
 
 print("✅ SYSTEM READY\n")
 
