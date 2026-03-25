@@ -9,7 +9,7 @@ db = None
 
 
 # =========================
-# INIT FIREBASE
+# INIT
 # =========================
 def init_firebase():
     global db
@@ -18,56 +18,54 @@ def init_firebase():
         return firestore.client()
 
     try:
-        print("🔥 INIT FIREBASE CALLED")
-
         firebase_base64 = os.getenv("FIREBASE_KEY_BASE64")
-        firebase_json = os.getenv("FIREBASE_CREDENTIALS")
 
-        # =========================
-        # BASE64 (Railway)
-        # =========================
-        if firebase_base64:
-            print("🔐 Using BASE64 ENV")
+        if not firebase_base64:
+            print("⚠️ No Firebase ENV → running without DB")
+            return None
 
-            decoded = base64.b64decode(firebase_base64)
-            cred_dict = json.loads(decoded)
+        decoded = base64.b64decode(firebase_base64)
+        cred_dict = json.loads(decoded)
 
-            cred = credentials.Certificate(cred_dict)
-
-        # =========================
-        # JSON ENV
-        # =========================
-        elif firebase_json:
-            print("🔐 Using JSON ENV")
-
-            cred_dict = json.loads(firebase_json)
-            cred = credentials.Certificate(cred_dict)
-
-        else:
-            print("⚠️ No Firebase ENV → running WITHOUT DB")
-            return None  # ❗ žádný crash
-
+        cred = credentials.Certificate(cred_dict)
         firebase_admin.initialize_app(cred)
 
         db = firestore.client()
+        print("🔥 Firebase ready")
 
-        print("🔥 Firebase initialized OK")
         return db
 
     except Exception as e:
-        print("❌ Firebase init error:", e)
+        print("❌ Firebase error:", e)
         return None
 
 
 # =========================
-# GET DB SAFE
+# LOAD HISTORY (LOW READ)
 # =========================
-def get_db():
-    return db
+def load_trade_history(limit=50):
+    global db
+
+    if db is None:
+        return []
+
+    try:
+        docs = (
+            db.collection("trades")
+            .order_by("timestamp", direction=firestore.Query.DESCENDING)
+            .limit(limit)
+            .stream()
+        )
+
+        return [d.to_dict() for d in docs]
+
+    except Exception as e:
+        print("❌ load error:", e)
+        return []
 
 
 # =========================
-# SAVE TRADE
+# SAVE TRADE (FILTERED)
 # =========================
 def save_trade(trade, result):
     global db
@@ -76,84 +74,44 @@ def save_trade(trade, result):
         return
 
     try:
-        data = {
+        profit = result.get("profit", 0)
+
+        # 🔥 filtr (šetří writes)
+        if abs(profit) < 0.001:
+            return
+
+        db.collection("trades").add({
             "symbol": trade.get("symbol"),
             "action": trade.get("action"),
-            "price": trade.get("price"),
-            "confidence": trade.get("confidence"),
-            "features": trade.get("features", {}),
+            "features": trade.get("features"),
             "result": result.get("result"),
-            "profit": result.get("profit"),
+            "profit": profit,
             "timestamp": time.time()
-        }
-
-        db.collection("trades").add(data)
+        })
 
     except Exception as e:
-        print("❌ Firebase save_trade error:", e)
+        print("❌ save_trade error:", e)
 
 
 # =========================
-# SAVE BOT STATS (bonus)
+# SAVE STATS (THROTTLED)
 # =========================
+_last_stats_save = 0
+
+
 def save_bot_stats(stats):
-    global db
+    global db, _last_stats_save
 
     if db is None:
         return
 
+    # 🔥 max 1× za 30s
+    if time.time() - _last_stats_save < 30:
+        return
+
     try:
         db.collection("bot_stats").document("latest").set(stats)
+        _last_stats_save = time.time()
 
     except Exception as e:
-        print("❌ Firebase save_bot_stats error:", e)
-
-
-# =========================
-# LOAD TRADE HISTORY 🔥
-# =========================
-def load_trade_history(limit=200):
-    global db
-
-    if db is None:
-        print("⚠️ DB not ready → no history")
-        return []
-
-    try:
-        docs = (
-            db.collection("trades")
-            .order_by("timestamp")
-            .limit(limit)
-            .stream()
-        )
-
-        trades = [doc.to_dict() for doc in docs]
-
-        print(f"📥 Loaded {len(trades)} trades from Firebase")
-        return trades
-
-    except Exception as e:
-        print("❌ Firebase load error:", e)
-        return []
-
-
-# =========================
-# LOAD BOT STATS (bonus)
-# =========================
-def load_bot_stats():
-    global db
-
-    if db is None:
-        return None
-
-    try:
-        doc = db.collection("bot_stats").document("latest").get()
-
-        if doc.exists:
-            return doc.to_dict()
-
-        return None
-
-    except Exception as e:
-        print("❌ Firebase load_bot_stats error:", e)
-        return None
+        print("❌ stats error:", e)

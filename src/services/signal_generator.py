@@ -1,6 +1,6 @@
 from src.core.event_bus import subscribe, publish
+from src.services.realtime_decision_engine import evaluate_signal
 
-# jednoduchá paměť
 last_prices = {}
 
 
@@ -14,14 +14,16 @@ def on_price_tick(data):
             return
 
         prev_price = last_prices.get(symbol)
-
         last_prices[symbol] = price
 
         if prev_price is None:
             return
 
-        # jednoduchá logika
+        # LOGIKA
         action = "BUY" if price > prev_price else "SELL"
+
+        if not action:
+            return  # 🔥 žádný DB call
 
         signal = {
             "symbol": symbol,
@@ -33,6 +35,13 @@ def on_price_tick(data):
                 "trend": data.get("trend")
             }
         }
+
+        # 🔥 DECISION ENGINE
+        signal = evaluate_signal(signal)
+
+        if signal is None:
+            print("❌ Rejected by DB")
+            return
 
         print(f"📡 SIGNAL: {signal}")
 
