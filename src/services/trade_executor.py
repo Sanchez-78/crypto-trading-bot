@@ -1,34 +1,60 @@
 from src.core.event_bus import event_bus
 from src.core.events import SIGNAL_CREATED, TRADE_EXECUTED
-from src.services.firebase_client import save_trade
+
 from src.services.learning_event import is_ready
 
-print("💰 Trade Executor READY")
+print("💰 TRADE EXECUTOR READY")
 
 
-def on_signal(signal):
+def handle_signal(signal):
     print("💰 TRADE EXECUTOR TRIGGERED")
 
-    # 🔥 DOČASNĚ POVOL TRADING (learning mode)
-    if not is_ready():
-        print("⚠️ FORCE TRADE (learning mode)")
+    try:
+        # =========================
+        # SAFE DATA EXTRACTION
+        # =========================
+        symbol = signal.get("symbol")
+        action = signal.get("action")
+        price = signal.get("price")
+        confidence = signal.get("confidence", 0)
+        features = signal.get("features", {})
 
-    # 🔥 FIX: features safe
-    features = signal.get("features", {})
+        # ❌ FIX: missing price
+        if price is None:
+            print("❌ Missing price in signal:", signal)
+            return
 
-    trade = {
-        "symbol": signal.get("symbol"),
-        "action": signal.get("action"),
-        "price": signal.get("price"),
-        "confidence": signal.get("confidence"),
-        "features": features
-    }
+        # =========================
+        # LEARNING MODE LOGIC
+        # =========================
+        if not is_ready():
+            print("📚 FORCE TRADE (learning mode)")
+        else:
+            print("🚀 REAL TRADE MODE")
 
-    print("💰 TRADE EXECUTED:", trade)
+        # =========================
+        # SIMULATED TRADE
+        # =========================
+        trade = {
+            "symbol": symbol,
+            "action": action,
+            "price": price,
+            "confidence": confidence,
+            "features": features,
+        }
 
-    save_trade(trade)
+        print("💰 TRADE EXECUTED:", trade)
 
-    event_bus.publish(TRADE_EXECUTED, trade)
+        # =========================
+        # 🔥 BONUS: PUBLISH EVENT
+        # =========================
+        event_bus.publish(TRADE_EXECUTED, trade)
+
+    except Exception as e:
+        print("❌ Handler error in handle_signal:", e)
 
 
-event_bus.subscribe(SIGNAL_CREATED, on_signal)
+# =========================
+# SUBSCRIBE
+# =========================
+event_bus.subscribe(SIGNAL_CREATED, handle_signal)
