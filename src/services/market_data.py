@@ -1,34 +1,43 @@
-from src.core.event_bus import event_bus
-from src.core.events import PRICE_TICK
-
 import random
-import threading
 import time
+from config import SYMBOLS
+from src.core.event_bus import publish
 
-print("📡 MARKET STREAM READY")
+
+def get_fake_price(symbol):
+    base = {
+        "BTCUSDT": 30000,
+        "ETHUSDT": 2000,
+        "ADAUSDT": 0.5
+    }.get(symbol, 100)
+
+    return base + random.uniform(-100, 100)
 
 
-def market_loop():
-    price = 30000
+def get_trend():
+    return random.choice(["UP", "DOWN"])
 
-    while True:
-        price += random.uniform(-50, 50)
 
-        data = {
-            "symbol": "BTCUSDT",
-            "price": round(price, 2),
-            "trend": "UP" if random.random() > 0.5 else "DOWN",
-            "volatility": random.random()
-        }
-
-        print("📈 MARKET:", data)
-
-        event_bus.publish(PRICE_TICK, data)
-
-        time.sleep(1)
+def get_volatility():
+    return random.uniform(0.0005, 0.01)
 
 
 def start_market_stream():
-    thread = threading.Thread(target=market_loop)
-    thread.daemon = True
-    thread.start()
+    print("📡 MARKET STREAM STARTED (MULTI-ASSET)")
+
+    while True:
+        for symbol in SYMBOLS:
+            price = get_fake_price(symbol)
+
+            data = {
+                "symbol": symbol,
+                "price": price,
+                "trend": get_trend(),
+                "volatility": get_volatility()
+            }
+
+            print(f"📈 MARKET: {data}")
+
+            publish("price_tick", data)
+
+        time.sleep(1)

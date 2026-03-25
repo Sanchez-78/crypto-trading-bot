@@ -1,84 +1,88 @@
 from src.core.event_bus import subscribe, publish
+from config import MAX_LOSS_STREAK, MIN_CONFIDENCE, MIN_VOLATILITY
 
-# =========================
-# RISK MANAGEMENT
-# =========================
-loss_streak = 0
-MAX_LOSS_STREAK = 3
-MIN_CONFIDENCE = 0.55
+# per-symbol tracking
+loss_streaks = {}
+active_trades = {}
+MAX_ACTIVE_TRADES = 3
 
 
-# =========================
-# EVENT: SIGNAL CREATED
-# =========================
 @subscribe("signal_created")
 def handle_signal(signal):
-    global loss_streak
-
     try:
         print("⚡ TRADE EXECUTOR TRIGGERED")
 
         if not signal:
-            print("⚠️ Empty signal")
             return
 
-        # =========================
-        # RISK FILTERS
-        # =========================
-
+        symbol = signal.get("symbol")
         confidence = signal.get("confidence", 0.5)
+        volatility = signal.get("features", {}).get("volatility", 0)
 
+        # init symbol state
+        if symbol not in loss_streaks:
+            loss_streaks[symbol] = 0
+
+        # =========================
+        # GLOBAL PORTFOLIO LIMIT
+        # =========================
+        if len(active_trades) >= MAX_ACTIVE_TRADES:
+            print("🛑 MAX ACTIVE TRADES REACHED")
+            return
+
+        # =========================
+        # FILTERS
+        # =========================
         if confidence < MIN_CONFIDENCE:
-            print(f"⚠️ Low confidence ({confidence:.2f}) → skip")
+            print(f"⚠️ Low confidence {symbol}")
             return
 
-        if loss_streak >= MAX_LOSS_STREAK:
-            print(f"🛑 SKIP TRADE (loss streak: {loss_streak})")
+        if volatility < MIN_VOLATILITY:
+            print(f"⚠️ Low volatility {symbol}")
             return
 
-        # =========================
-        # VALIDACE
-        # =========================
+        if loss_streaks[symbol] >= MAX_LOSS_STREAK:
+            print(f"🛑 SKIP {symbol} (loss streak)")
+            return
+
         price = signal.get("price")
         if price is None:
-            print("❌ Missing price in signal")
             return
 
-        symbol = signal.get("symbol", "UNKNOWN")
-        action = signal.get("action", "HOLD")
-
         # =========================
-        # EXECUTION (SIMULACE)
+        # EXECUTE
         # =========================
         trade = {
             "symbol": symbol,
-            "action": action,
+            "action": signal.get("action"),
             "price": price,
             "confidence": confidence,
             "features": signal.get("features", {})
         }
 
+        active_trades[symbol] = trade
+
         print(f"🚀 TRADE EXECUTED: {trade}")
 
-        # =========================
-        # FAKE RESULT (SIMULACE)
-        # =========================
         result = simulate_trade_result(trade)
 
         print(f"📊 RESULT: {result}")
 
         # =========================
-        # LOSS STREAK UPDATE
+        # UPDATE LOSS STREAK
         # =========================
-        if result.get("result") == "WIN":
-            loss_streak = 0
+        if result["result"] == "WIN":
+            loss_streaks[symbol] = 0
         else:
-            loss_streak += 1
+            loss_streaks[symbol] += 1
 
-        print(f"📉 Loss streak: {loss_streak}")
+        print(f"📉 {symbol} loss streak: {loss_streaks[symbol]}")
+
+        # remove active trade
+        active_trades.pop(symbol, None)
 
         # =========================
-        # EVENTY
+        # EVENTS
         # =========================
         publish("trade_executed", {
             "trade": trade,
@@ -95,24 +99,21 @@ def handle_signal(signal):
 
 
 # =========================
-# SIMULACE TRADE
+# SIMULATION (IMPROVED)
 # =========================
 def simulate_trade_result(trade):
-    """
-    Jednoduchá simulace výsledku.
-    Později nahradíš real tradingem nebo backtest logikou.
-    """
-
     import random
 
-    # můžeš vylepšit podle trendu / RSI
-    win_probability = 0.5 + (trade["confidence"] - 0.5)
+    confidence = trade["confidence"]
 
-    is_win = random.random() < win_probability
+    # edge podle confidence
+    win_prob = 0.45 + (confidence * 0.4)
 
-    profit = random.uniform(0.001, 0.01)
+    is_win = random.random() < win_prob
+
+    base_profit = random.uniform(0.002, 0.01)
 
     return {
         "result": "WIN" if is_win else "LOSS",
-        "profit": profit if is_win else -profit
+        "profit": base_profit if is_win else -base_profit
     }
