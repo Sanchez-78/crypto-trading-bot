@@ -1,65 +1,86 @@
-from src.core.event_bus import event_bus
-from src.core.events import EVALUATION_DONE
+from src.core.event_bus import subscribe
+from src.services.firebase_client import load_trade_history, save_bot_stats
+from src.services.decision_engine import load_memory, update_memory
 
-from src.services.firebase_client import load_trade_history
+trades_count = 0
+wins = 0
+losses = 0
+ready = False
 
-print("🧠 LEARNING SYSTEM READY")
-
-metrics = {
-    "trades": 0,
-    "wins": 0,
-    "losses": 0,
-    "profit": 0.0,
-    "loss_streak": 0,
-}
 
 # =========================
-# 🔥 BOOTSTRAP FROM DB
+# INIT LEARNING
 # =========================
-def bootstrap_learning():
+def init_learning():
+    global trades_count, wins, losses, ready
+
+    print("🧠 LOADING TRADE HISTORY...")
+
     history = load_trade_history()
 
-    for trade in history:
-        metrics["trades"] += 1
-        metrics["profit"] += trade.get("profit", 0)
+    load_memory(history)
 
-        if trade.get("result") == "WIN":
-            metrics["wins"] += 1
-        else:
-            metrics["losses"] += 1
+    trades_count = len(history)
+    wins = sum(1 for t in history if t.get("result") == "WIN")
+    losses = sum(1 for t in history if t.get("result") == "LOSS")
 
-    print(f"🧠 Bootstrapped: {metrics['trades']} trades")
+    print(f"🧠 Bootstrapped: {trades_count} trades")
+    print(f"📊 Winrate: {wins}/{trades_count}")
+
+    ready = True
 
 
 # =========================
-# UPDATE FROM LIVE
+# EVENT: TRADE EXECUTED
 # =========================
-def on_evaluation(result):
-    metrics["trades"] += 1
-    metrics["profit"] += result.get("profit", 0)
+@subscribe("trade_executed")
+def on_trade(data):
+    global trades_count, wins, losses
 
-    if result["result"] == "WIN":
-        metrics["wins"] += 1
-        metrics["loss_streak"] = 0
+    trade = data.get("trade", {})
+    result = data.get("result", {})
+
+    if not trade or not result:
+        return
+
+    trades_count += 1
+
+    if result.get("result") == "WIN":
+        wins += 1
     else:
-        metrics["losses"] += 1
-        metrics["loss_streak"] += 1
+        losses += 1
+
+    # 🔥 update memory
+    update_memory(trade, result)
+
+    # 📊 stats
+    winrate = wins / trades_count if trades_count > 0 else 0
+
+    print(f"📈 PERFORMANCE → Trades: {trades_count}, Winrate: {winrate:.2%}")
+
+    # 💾 save do Firebase
+    save_bot_stats({
+        "trades": trades_count,
+        "wins": wins,
+        "losses": losses,
+        "winrate": winrate
+    })
+
+
+# =========================
+# READY FLAG
+# =========================
+def is_ready():
+    return ready
 
 
 # =========================
 # METRICS
 # =========================
 def get_metrics():
-    trades = metrics["trades"]
-    winrate = metrics["wins"] / trades if trades else 0
-
-    progress = min((winrate * trades) / 100, 1.0)
-
     return {
-        **metrics,
-        "winrate": winrate,
-        "progress": progress
+        "trades": trades_count,
+        "wins": wins,
+        "losses": losses,
+        "winrate": (wins / trades_count if trades_count else 0)
     }
-
-
-event_bus.subscribe(EVALUATION_DONE, on_evaluation)

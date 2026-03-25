@@ -1,102 +1,122 @@
-from src.core.event_bus import event_bus
-from src.core.events import PRICE_TICK, SIGNAL_CREATED
+from src.core.event_bus import subscribe, publish
+from src.services.decision_engine import evaluate_signal
+import random
 
-print("📊 SIGNAL GENERATOR (SMART) READY")
-
-price_history = []
-MAX_HISTORY = 50
-
-
-def ema(prices, period):
-    if len(prices) < period:
-        return None
-    return sum(prices[-period:]) / period
+last_price = {}
+history = {}
 
 
-def rsi(prices, period=14):
-    if len(prices) < period + 1:
+# =========================
+# HELPER: EMA
+# =========================
+def ema(values, period):
+    if len(values) < period:
         return None
 
-    gains, losses = [], []
+    k = 2 / (period + 1)
+    ema_val = values[0]
 
-    for i in range(-period, 0):
-        diff = prices[i] - prices[i - 1]
-        if diff >= 0:
+    for v in values[1:]:
+        ema_val = v * k + ema_val * (1 - k)
+
+    return ema_val
+
+
+# =========================
+# HELPER: RSI
+# =========================
+def rsi(values, period=14):
+    if len(values) < period + 1:
+        return None
+
+    gains = []
+    losses = []
+
+    for i in range(1, len(values)):
+        diff = values[i] - values[i - 1]
+        if diff > 0:
             gains.append(diff)
         else:
             losses.append(abs(diff))
 
-    avg_gain = sum(gains) / period if gains else 0.0001
-    avg_loss = sum(losses) / period if losses else 0.0001
+    avg_gain = sum(gains[-period:]) / period if gains else 0
+    avg_loss = sum(losses[-period:]) / period if losses else 0
+
+    if avg_loss == 0:
+        return 100
 
     rs = avg_gain / avg_loss
     return 100 - (100 / (1 + rs))
 
 
+# =========================
+# EVENT: PRICE TICK
+# =========================
+@subscribe("price_tick")
 def on_price_tick(data):
-    try:
-        price = data.get("price")
-        if price is None:
-            return
+    symbol = data.get("symbol")
+    price = data.get("price")
 
-        price_history.append(price)
-        if len(price_history) > MAX_HISTORY:
-            price_history.pop(0)
+    if not symbol or price is None:
+        return
 
-        ema_short = ema(price_history, 5)
-        ema_long = ema(price_history, 15)
-        rsi_val = rsi(price_history)
+    # uložit historii
+    if symbol not in history:
+        history[symbol] = []
 
-        if ema_short is None or ema_long is None or rsi_val is None:
-            return
+    history[symbol].append(price)
 
-        # =========================
-        # 🎯 SCORING SYSTEM
-        # =========================
-        score = 0
+    if len(history[symbol]) > 100:
+        history[symbol] = history[symbol][-100:]
 
-        if ema_short > ema_long:
-            score += 1
-        else:
-            score -= 1
+    prices = history[symbol]
 
-        if rsi_val < 30:
-            score += 1
-        elif rsi_val > 70:
-            score -= 1
+    # =========================
+    # FEATURES
+    # =========================
+    ema_short = ema(prices, 5)
+    ema_long = ema(prices, 20)
+    rsi_val = rsi(prices)
 
-        # =========================
-        # 🚫 FILTER (NO RANDOM!)
-        # =========================
-        if score >= 1 and rsi_val < 65:
-            action = "BUY"
-        elif score <= -1 and rsi_val > 35:
-            action = "SELL"
-        else:
-            return  # ❗ žádný trade
+    if ema_short is None or ema_long is None or rsi_val is None:
+        return
 
-        confidence = min(0.5 + abs(score) * 0.25, 0.9)
+    features = {
+        "ema_short": ema_short,
+        "ema_long": ema_long,
+        "rsi": rsi_val
+    }
 
-        signal = {
-            "symbol": data.get("symbol", "BTCUSDT"),
-            "action": action,
-            "price": price,
-            "confidence": confidence,
-            "features": {
-                "ema_short": ema_short,
-                "ema_long": ema_long,
-                "rsi": rsi_val,
-                "score": score,
-                "volatility": data.get("volatility", 0)
-            }
-        }
+    # =========================
+    # SIGNAL LOGIC
+    # =========================
+    action = None
 
-        print("🧠 SMART SIGNAL:", signal)
+    if ema_short > ema_long and rsi_val < 70:
+        action = "BUY"
+    elif ema_short < ema_long and rsi_val > 30:
+        action = "SELL"
 
-        event_bus.publish(SIGNAL_CREATED, signal)
+    if not action:
+        return
 
-    except Exception as e:
-        print("❌ Signal error:", e)
+    signal = {
+        "symbol": symbol,
+        "action": action,
+        "confidence": 0.6,
+        "price": price,
+        "features": features
+    }
 
+    # =========================
+    # 🧠 DECISION ENGINE
+    # =========================
+    signal = evaluate_signal(signal)
 
-event_bus.subscribe(PRICE_TICK, on_price_tick)
+    if signal is None:
+        print("❌ Signal rejected by decision engine")
+        return
+
+    print(f"🚀 SIGNAL: {signal}")
+
+    publish("signal_created", signal)
