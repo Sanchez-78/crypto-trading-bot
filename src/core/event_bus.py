@@ -46,4 +46,18 @@ class EventBus:
 # =========================
 event_bus = EventBus()
 
+
+# =========================
+# DECORATOR SUPPORT
+# =========================
+def subscribe(event_name):
+    def decorator(func):
+        event_bus.subscribe(event_name, func)
+        return func
+    return decorator
+
+
+def publish(event_name, data=None):
+    event_bus.publish(event_name, data)
+
 print("🧠 EVENT BUS INITIALIZED:", event_bus)
