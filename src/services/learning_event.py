@@ -1,105 +1,62 @@
-import random
-import math
-from collections import defaultdict
+from src.core.event_bus import event_bus
+from src.core.events import EVALUATION_DONE
 
-print("🧠 CONTEXTUAL BANDIT LOADED")
+print("🧠 LEARNING SYSTEM READY")
 
-# =========================
-# CONFIG
-# =========================
-ACTIONS = ["BUY", "SELL", "HOLD"]
+metrics = {
+    "trades": 0,
+    "wins": 0,
+    "losses": 0,
+    "profit": 0.0,
+    "loss_streak": 0,
+    "penalty": 0,
+}
 
-epsilon = 0.2  # exploration
-decay = 0.9995
-min_epsilon = 0.05
-
-# Q-table: context → action → value
-Q = defaultdict(lambda: {a: 0.0 for a in ACTIONS})
-N = defaultdict(lambda: {a: 0 for a in ACTIONS})
-
-total_trades = 0
-wins = 0
-losses = 0
+# adaptive threshold
+MIN_CONFIDENCE = 0.5
 
 
-# =========================
-# CONTEXT DISCRETIZATION
-# =========================
-def get_context(features):
-    if not features:
-        return "unknown"
+def on_evaluation(result):
+    global MIN_CONFIDENCE
 
-    rsi = int(features.get("rsi", 50) // 10)  # 0-10 bucket
-    ema = 1 if features.get("ema_short", 0) > features.get("ema_long", 0) else 0
-    vol = int(features.get("volatility", 0) * 1000)
+    try:
+        metrics["trades"] += 1
+        metrics["profit"] += result.get("profit", 0)
 
-    return f"r{rsi}_e{ema}_v{vol}"
+        if result["result"] == "WIN":
+            metrics["wins"] += 1
+            metrics["loss_streak"] = 0
 
+            # reward → sníží restrikci
+            MIN_CONFIDENCE = max(0.5, MIN_CONFIDENCE - 0.01)
 
-# =========================
-# ACTION SELECTION
-# =========================
-def select_action(features):
-    global epsilon
+        else:
+            metrics["losses"] += 1
+            metrics["loss_streak"] += 1
+            metrics["penalty"] += 1
 
-    context = get_context(features)
+            # penalizace → zpřísní strategii
+            MIN_CONFIDENCE = min(0.9, MIN_CONFIDENCE + 0.02)
 
-    # explore
-    if random.random() < epsilon:
-        action = random.choice(ACTIONS)
-        return action
+        print(f"🧠 Updated MIN_CONFIDENCE: {MIN_CONFIDENCE:.2f}")
 
-    # exploit
-    q_vals = Q[context]
-    action = max(q_vals, key=q_vals.get)
-
-    return action
+    except Exception as e:
+        print("❌ Learning error:", e)
 
 
-# =========================
-# UPDATE (LEARNING)
-# =========================
-def update(features, action, reward):
-    global epsilon, total_trades, wins, losses
-
-    context = get_context(features)
-
-    N[context][action] += 1
-    n = N[context][action]
-
-    # incremental mean
-    Q[context][action] += (reward - Q[context][action]) / n
-
-    # stats
-    total_trades += 1
-    if reward > 0:
-        wins += 1
-    else:
-        losses += 1
-
-    # decay exploration
-    epsilon = max(min_epsilon, epsilon * decay)
-
-
-# =========================
-# METRICS
-# =========================
 def get_metrics():
-    if total_trades == 0:
-        return {}
+    trades = metrics["trades"]
+    winrate = metrics["wins"] / trades if trades > 0 else 0
 
-    winrate = wins / total_trades
+    # 🔥 KVALITNÍ PROGRESS (ne jen trades)
+    progress = min((winrate * trades) / 100, 1.0)
 
     return {
-        "trades": total_trades,
+        **metrics,
         "winrate": winrate,
-        "epsilon": epsilon
+        "progress": progress,
+        "epsilon": 1 - winrate
     }
 
 
-# =========================
-# READY CHECK
-# =========================
-def is_ready():
-    m = get_metrics()
-    return m.get("trades", 0) > 50 and m.get("winrate", 0) > 0.55
+event_bus.subscribe(EVALUATION_DONE, on_evaluation)

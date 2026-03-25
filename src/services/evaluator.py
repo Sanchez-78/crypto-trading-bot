@@ -1,38 +1,34 @@
 from src.core.event_bus import event_bus
 from src.core.events import TRADE_EXECUTED, EVALUATION_DONE
 
-from src.services.learning_event import update
-
 import random
 
 print("📊 EVALUATOR READY")
 
 
-def evaluate_trade(trade):
-    print("📊 EVALUATING:", trade)
+def on_trade(trade):
+    try:
+        price = trade.get("price")
 
-    # =========================
-    # SIMULATED RESULT
-    # =========================
-    profit = random.uniform(-1, 1)
+        if price is None:
+            print("❌ Missing price in trade")
+            return
 
-    action = trade.get("action")
-    features = trade.get("features", {})
+        # simulace výsledku
+        profit = random.uniform(-0.01, 0.02)
 
-    reward = profit
+        result = {
+            "symbol": trade["symbol"],
+            "profit": profit,
+            "result": "WIN" if profit > 0 else "LOSS"
+        }
 
-    update(features, action, reward)
+        print("📊 RESULT:", result)
 
-    result = {
-        "symbol": trade.get("symbol"),
-        "profit": profit,
-        "result": "WIN" if profit > 0 else "LOSS"
-    }
+        event_bus.publish(EVALUATION_DONE, result)
 
-    print("📊 RESULT:", result)
-
-    event_bus.publish(EVALUATION_DONE, result)
+    except Exception as e:
+        print("❌ Evaluation error:", e)
 
 
-# 🔥 FIX: poslouchá TRADE_EXECUTED
-event_bus.subscribe(TRADE_EXECUTED, evaluate_trade)
+event_bus.subscribe(TRADE_EXECUTED, on_trade)

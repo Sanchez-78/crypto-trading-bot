@@ -1,34 +1,23 @@
 from src.core.event_bus import event_bus
 from src.core.events import PRICE_TICK, SIGNAL_CREATED
 
-import random
+print("📊 SIGNAL GENERATOR (SMART) READY")
 
-print("📊 SIGNAL GENERATOR READY")
-
-# =========================
-# STORAGE
-# =========================
 price_history = []
-
 MAX_HISTORY = 50
 
 
-# =========================
-# HELPERS
-# =========================
-def safe_ema(prices, period):
+def ema(prices, period):
     if len(prices) < period:
         return None
-
     return sum(prices[-period:]) / period
 
 
-def safe_rsi(prices, period=14):
+def rsi(prices, period=14):
     if len(prices) < period + 1:
         return None
 
-    gains = []
-    losses = []
+    gains, losses = [], []
 
     for i in range(-period, 0):
         diff = prices[i] - prices[i - 1]
@@ -44,49 +33,49 @@ def safe_rsi(prices, period=14):
     return 100 - (100 / (1 + rs))
 
 
-# =========================
-# MAIN SIGNAL LOGIC
-# =========================
 def on_price_tick(data):
     try:
         price = data.get("price")
-
-        # 🔥 HARD GUARD
         if price is None:
-            print("❌ Missing price in market data:", data)
             return
 
-        # =========================
-        # STORE PRICE
-        # =========================
         price_history.append(price)
-
         if len(price_history) > MAX_HISTORY:
             price_history.pop(0)
 
-        # =========================
-        # COMPUTE FEATURES
-        # =========================
-        ema_short = safe_ema(price_history, 5)
-        ema_long = safe_ema(price_history, 15)
-        rsi = safe_rsi(price_history)
+        ema_short = ema(price_history, 5)
+        ema_long = ema(price_history, 15)
+        rsi_val = rsi(price_history)
 
-        # 🔥 WAIT UNTIL READY
-        if ema_short is None or ema_long is None or rsi is None:
-            print("⏳ Waiting for indicators...")
+        if ema_short is None or ema_long is None or rsi_val is None:
             return
 
         # =========================
-        # STRATEGY
+        # 🎯 SCORING SYSTEM
         # =========================
-        if ema_short > ema_long and rsi < 70:
+        score = 0
+
+        if ema_short > ema_long:
+            score += 1
+        else:
+            score -= 1
+
+        if rsi_val < 30:
+            score += 1
+        elif rsi_val > 70:
+            score -= 1
+
+        # =========================
+        # 🚫 FILTER (NO RANDOM!)
+        # =========================
+        if score >= 1 and rsi_val < 65:
             action = "BUY"
-        elif ema_short < ema_long and rsi > 30:
+        elif score <= -1 and rsi_val > 35:
             action = "SELL"
         else:
-            action = random.choice(["BUY", "SELL"])
+            return  # ❗ žádný trade
 
-        confidence = 0.6 + random.random() * 0.2
+        confidence = min(0.5 + abs(score) * 0.25, 0.9)
 
         signal = {
             "symbol": data.get("symbol", "BTCUSDT"),
@@ -96,7 +85,8 @@ def on_price_tick(data):
             "features": {
                 "ema_short": ema_short,
                 "ema_long": ema_long,
-                "rsi": rsi,
+                "rsi": rsi_val,
+                "score": score,
                 "volatility": data.get("volatility", 0)
             }
         }
@@ -106,10 +96,7 @@ def on_price_tick(data):
         event_bus.publish(SIGNAL_CREATED, signal)
 
     except Exception as e:
-        print("❌ Handler error in generate_signal:", e)
+        print("❌ Signal error:", e)
 
 
-# =========================
-# SUBSCRIBE
-# =========================
 event_bus.subscribe(PRICE_TICK, on_price_tick)
