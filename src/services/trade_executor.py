@@ -1,36 +1,118 @@
-from src.core.event_bus import event_bus
-from src.core.events import SIGNAL_CREATED, TRADE_EXECUTED
+from src.core.event_bus import subscribe, publish
 
-from src.services.learning_event import get_metrics
+# =========================
+# RISK MANAGEMENT
+# =========================
+loss_streak = 0
+MAX_LOSS_STREAK = 3
+MIN_CONFIDENCE = 0.55
 
-print("💰 TRADE EXECUTOR READY")
 
+# =========================
+# EVENT: SIGNAL CREATED
+# =========================
+@subscribe("signal_created")
+def handle_signal(signal):
+    global loss_streak
 
-def on_signal(signal):
     try:
-        metrics = get_metrics()
+        print("⚡ TRADE EXECUTOR TRIGGERED")
 
-        # 🔥 dynamický threshold
-        min_conf = 0.5 + (metrics["loss_streak"] * 0.05)
-
-        if signal["confidence"] < min_conf:
-            print(f"⛔ Trade skipped (low confidence {signal['confidence']:.2f} < {min_conf:.2f})")
+        if not signal:
+            print("⚠️ Empty signal")
             return
 
+        # =========================
+        # RISK FILTERS
+        # =========================
+
+        confidence = signal.get("confidence", 0.5)
+
+        if confidence < MIN_CONFIDENCE:
+            print(f"⚠️ Low confidence ({confidence:.2f}) → skip")
+            return
+
+        if loss_streak >= MAX_LOSS_STREAK:
+            print(f"🛑 SKIP TRADE (loss streak: {loss_streak})")
+            return
+
+        # =========================
+        # VALIDACE
+        # =========================
+        price = signal.get("price")
+        if price is None:
+            print("❌ Missing price in signal")
+            return
+
+        symbol = signal.get("symbol", "UNKNOWN")
+        action = signal.get("action", "HOLD")
+
+        # =========================
+        # EXECUTION (SIMULACE)
+        # =========================
         trade = {
-            "symbol": signal["symbol"],
-            "action": signal["action"],
-            "price": signal["price"],
-            "confidence": signal["confidence"],
+            "symbol": symbol,
+            "action": action,
+            "price": price,
+            "confidence": confidence,
             "features": signal.get("features", {})
         }
 
-        print("💰 TRADE EXECUTED:", trade)
+        print(f"🚀 TRADE EXECUTED: {trade}")
 
-        event_bus.publish(TRADE_EXECUTED, trade)
+        # =========================
+        # FAKE RESULT (SIMULACE)
+        # =========================
+        result = simulate_trade_result(trade)
+
+        print(f"📊 RESULT: {result}")
+
+        # =========================
+        # LOSS STREAK UPDATE
+        # =========================
+        if result.get("result") == "WIN":
+            loss_streak = 0
+        else:
+            loss_streak += 1
+
+        print(f"📉 Loss streak: {loss_streak}")
+
+        # =========================
+        # EVENTY
+        # =========================
+        publish("trade_executed", {
+            "trade": trade,
+            "result": result
+        })
+
+        publish("evaluation_done", {
+            "trade": trade,
+            "result": result
+        })
 
     except Exception as e:
         print("❌ Trade error:", e)
 
 
-event_bus.subscribe(SIGNAL_CREATED, on_signal)
+# =========================
+# SIMULACE TRADE
+# =========================
+def simulate_trade_result(trade):
+    """
+    Jednoduchá simulace výsledku.
+    Později nahradíš real tradingem nebo backtest logikou.
+    """
+
+    import random
+
+    # můžeš vylepšit podle trendu / RSI
+    win_probability = 0.5 + (trade["confidence"] - 0.5)
+
+    is_win = random.random() < win_probability
+
+    profit = random.uniform(0.001, 0.01)
+
+    return {
+        "result": "WIN" if is_win else "LOSS",
+        "profit": profit if is_win else -profit
+    }
