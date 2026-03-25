@@ -1,123 +1,71 @@
-from src.core.event_bus import subscribe
-from src.services.firebase_client import load_trade_history, save_bot_stats
-from src.services.decision_engine import load_memory, update_memory
+# src/services/learning_event.py
 
-trades_count = 0
-wins = 0
-losses = 0
-total_profit = 0.0
-
-ready = False
-
-
-# =========================
-# INIT LEARNING
-# =========================
-def init_learning():
-    global trades_count, wins, losses, total_profit, ready
-
-    print("🧠 LOADING TRADE HISTORY...")
-
-    try:
-        history = load_trade_history()
-    except Exception as e:
-        print("❌ Failed to load history:", e)
-        history = []
-
-    # 🧠 load decision memory
-    try:
-        load_memory(history)
-        print(f"🧠 Decision memory loaded: {len(history)} trades")
-    except Exception as e:
-        print("❌ Memory load error:", e)
-
-    trades_count = len(history)
-    wins = sum(1 for t in history if t.get("result") == "WIN")
-    losses = sum(1 for t in history if t.get("result") == "LOSS")
-    total_profit = sum(t.get("profit", 0) for t in history)
-
-    print(f"📊 Bootstrapped: {trades_count} trades")
-    print(f"📊 Wins: {wins}, Losses: {losses}")
-    print(f"📊 Winrate: {(wins / trades_count if trades_count else 0):.2%}")
-    print(f"💰 Total profit: {total_profit:.4f}")
-
-    ready = True
+METRICS = {
+    "trades": 0,
+    "wins": 0,
+    "losses": 0,
+    "profit": 0.0,
+    "last_results": [],
+    "confidence_avg": 0.0,
+    "learning_score": 0.0
+}
 
 
-# =========================
-# EVENT: TRADE EXECUTED
-# =========================
-@subscribe("trade_executed")
-def on_trade(data):
-    global trades_count, wins, losses, total_profit
+def update_metrics(trade, result):
+    global METRICS
 
-    try:
-        trade = data.get("trade", {})
-        result = data.get("result", {})
+    METRICS["trades"] += 1
 
-        if not trade or not result:
-            print("⚠️ Invalid trade event")
-            return
+    profit = result.get("profit", 0)
+    METRICS["profit"] += profit
 
-        trades_count += 1
+    if result.get("result") == "WIN":
+        METRICS["wins"] += 1
+    else:
+        METRICS["losses"] += 1
 
-        outcome = result.get("result")
-        profit = result.get("profit", 0)
+    # sliding window
+    METRICS["last_results"].append(result.get("result"))
+    if len(METRICS["last_results"]) > 50:
+        METRICS["last_results"] = METRICS["last_results"][-50:]
 
-        if outcome == "WIN":
-            wins += 1
-        else:
-            losses += 1
+    # confidence tracking
+    conf = trade.get("confidence", 0.5)
+    METRICS["confidence_avg"] = (
+        METRICS["confidence_avg"] * 0.9 + conf * 0.1
+    )
 
-        total_profit += profit
+    # learning score (kombinace winrate + profit + stabilita)
+    winrate = get_winrate()
+    stability = METRICS["last_results"].count("WIN") / max(1, len(METRICS["last_results"]))
 
-        # 🧠 update decision memory
-        try:
-            update_memory(trade, result)
-        except Exception as e:
-            print("⚠️ Memory update error:", e)
-
-        # 📊 metrics
-        winrate = wins / trades_count if trades_count else 0
-        avg_profit = total_profit / trades_count if trades_count else 0
-
-        print(f"📈 PERFORMANCE → Trades: {trades_count}")
-        print(f"📊 Winrate: {winrate:.2%}")
-        print(f"💰 Profit: {total_profit:.4f} | Avg: {avg_profit:.4f}")
-
-        # 💾 save stats
-        try:
-            save_bot_stats({
-                "trades": trades_count,
-                "wins": wins,
-                "losses": losses,
-                "winrate": winrate,
-                "profit": total_profit,
-                "avg_profit": avg_profit
-            })
-        except Exception as e:
-            print("⚠️ Failed to save stats:", e)
-
-    except Exception as e:
-        print("❌ Learning error:", e)
+    METRICS["learning_score"] = (winrate * 0.5) + (stability * 0.3) + (min(METRICS["profit"], 1) * 0.2)
 
 
-# =========================
-# READY FLAG
-# =========================
+def get_winrate():
+    t = METRICS["trades"]
+    return METRICS["wins"] / t if t > 0 else 0
+
+
 def is_ready():
-    return ready
+    if METRICS["trades"] < 30:
+        return False
+
+    if get_winrate() < 0.55:
+        return False
+
+    if METRICS["profit"] <= 0:
+        return False
+
+    return True
 
 
-# =========================
-# METRICS
-# =========================
 def get_metrics():
     return {
-        "trades": trades_count,
-        "wins": wins,
-        "losses": losses,
-        "winrate": (wins / trades_count if trades_count else 0),
-        "profit": total_profit,
-        "avg_profit": (total_profit / trades_count if trades_count else 0)
+        "trades": METRICS["trades"],
+        "winrate": round(get_winrate(), 3),
+        "profit": round(METRICS["profit"], 4),
+        "confidence": round(METRICS["confidence_avg"], 3),
+        "learning_score": round(METRICS["learning_score"], 3),
+        "ready": is_ready()
     }
