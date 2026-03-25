@@ -1,98 +1,89 @@
 import time
-import traceback
-import random
 
-print("🚨 MAIN START")
+print("🚀 Starting multi-symbol event-driven BOT SYSTEM")
 
 # =========================
-# CORE
+# INIT FIREBASE (optional)
 # =========================
-from src.core.event_bus import event_bus
-from src.core.events import PRICE_TICK
-
-# =========================
-# SERVICES (KRITICKÉ !!!)
-# =========================
-import src.services.signal_generator   # 👈 registruje PRICE_TICK
-import src.services.trade_executor     # 👈 registruje SIGNAL_CREATED
-import src.services.evaluator          # 👈 registruje TRADE_CLOSED
-import src.services.portfolio_manager  # (pokud máš)
-import src.services.performance_tracker
-
-# =========================
-# LEARNING + DB
-# =========================
-from src.services.learning_event import get_metrics, is_ready
-from src.services.firebase_client import init_firebase
-
-print("🚨 SERVICES LOADED")
+try:
+    from src.services.firebase_client import init_firebase
+    db = init_firebase()
+    print("🔥 Firebase initialized")
+except Exception as e:
+    print("⚠️ Firebase disabled:", e)
+    db = None
 
 
 # =========================
-# FAKE MARKET (nech zatím)
+# LOAD CORE SERVICES
 # =========================
-def fake_market_tick():
-    price = random.uniform(30000, 35000)
+print("⚙️ Loading services...")
 
-    data = {
-        "symbol": "BTCUSDT",
-        "price": price,
-        "ema_short": price * random.uniform(0.99, 1.01),
-        "ema_long": price * random.uniform(0.99, 1.01),
-        "rsi": random.uniform(10, 90),
-        "volatility": random.uniform(0.001, 0.01)
-    }
+# 🔥 MARKET DATA
+from src.services.market_data import fake_market_tick
 
-    print(f"📈 MARKET TICK: {round(price, 2)}")
+# 🔥 SIGNAL
+import src.services.signal_generator
 
-    event_bus.publish(PRICE_TICK, data)
+# 🔥 TRADE
+import src.services.trade_executor
+
+# 🔥 PORTFOLIO
+import src.services.portfolio_manager
+from src.services.portfolio_manager import process_portfolio
+
+# 🔥 EVALUATION
+import src.services.evaluator
+
+# 🔥 LEARNING
+import src.services.learning_event
+
+# 🔥 PERFORMANCE TRACKING (bonus)
+try:
+    import src.services.performance_tracker
+except:
+    pass
+
+print("✅ ALL SERVICES LOADED")
 
 
 # =========================
-# MAIN
+# MAIN LOOP
 # =========================
 def main():
-    print("🚀 BOT STARTING...")
+    print("🟢 BOT RUNNING...\n")
 
-    try:
-        db = init_firebase()
+    tick_count = 0
 
-        if db:
-            print("🔥 DB READY")
-        else:
-            print("⚠️ DB NOT READY")
+    while True:
+        try:
+            # =========================
+            # MARKET TICK
+            # =========================
+            fake_market_tick()
 
-        print("🧠 LEARNING SYSTEM ACTIVE")
+            # =========================
+            # PORTFOLIO UPDATE
+            # =========================
+            process_portfolio()
 
-        # 🔥 DEBUG: ověř listeners
-        event_bus.debug_listeners()
+            tick_count += 1
 
-        while True:
-            try:
-                fake_market_tick()
+            # =========================
+            # DEBUG INFO (každých 10 ticků)
+            # =========================
+            if tick_count % 10 == 0:
+                print(f"\n📊 TICKS: {tick_count}")
 
-                metrics = get_metrics()
+            time.sleep(1)
 
-                if metrics:
-                    print("\n🧠 ===== LEARNING =====")
-                    print(f"Trades: {metrics.get('trades')}")
-                    print(f"Winrate: {round(metrics.get('winrate', 0)*100, 2)}%")
-                    print(f"Epsilon: {metrics.get('epsilon')}")
+        except Exception as e:
+            print("❌ MAIN LOOP ERROR:", e)
+            time.sleep(2)
 
-                    if is_ready():
-                        print("🚀 READY")
-                    else:
-                        print("📚 LEARNING...")
 
-                    print("======================\n")
-
-                time.sleep(2)
-
-            except Exception as e:
-                print("❌ LOOP ERROR:", e)
-                traceback.print_exc()
-                time.sleep(5)
-
-    except Exception as e:
-        print("💥 MAIN CRASH:", e)
-        traceback.print_exc()
+# =========================
+# ENTRYPOINT
+# =========================
+if __name__ == "__main__":
+    main()
