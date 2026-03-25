@@ -1,66 +1,60 @@
 from src.core.event_bus import event_bus
-from src.core.events import SIGNAL_CREATED, TRADE_OPENED, TRADE_CLOSED, PRICE_TICK
+from src.core.events import TRADE_EXECUTED, TRADE_CLOSED
 
-open_trades = {}
+import random
 
-print("📊 Portfolio initialized")
+print("📦 PORTFOLIO MANAGER READY")
+
+portfolio = {
+    "open_trades": [],
+    "closed_trades": [],
+    "balance": 10000
+}
 
 
-def handle_signal(data):
-    symbol = data["symbol"]
-    price = data["features"]["price"]
+def on_trade_executed(trade):
+    print("📦 ADDING TRADE TO PORTFOLIO")
 
-    print(f"\n📥 SIGNAL {symbol}")
-
-    if symbol in open_trades:
+    if not isinstance(trade, dict):
+        print("❌ Invalid trade:", trade)
         return
 
-    trade = {
-        "symbol": symbol,
-        "entry_price": price,
-        "steps": 0,
-        "strategy": data.get("strategy"),
-        "regime": data.get("regime")
-    }
+    price = trade.get("price")
 
-    open_trades[symbol] = trade
-
-    print(f"📈 OPEN {symbol} @ {price}")
-
-    event_bus.publish(TRADE_OPENED, trade)
-
-
-def on_price(data):
-    if not open_trades:
+    if price is None:
+        print("❌ Missing price in trade:", trade)
         return
 
-    for symbol, trade in list(open_trades.items()):
-        if symbol not in data:
-            continue
-
-        trade["steps"] += 1
-
-        current = data[symbol]["price"]
-        entry = trade["entry_price"]
-
-        pnl = (current - entry) / entry
-
-        print(f"⏳ {symbol} step={trade['steps']} pnl={pnl:.5f}")
-
-        # DEBUG CLOSE
-        if trade["steps"] >= 5:
-            result = "WIN" if pnl > 0 else "LOSS"
-
-            print(f"❌ CLOSE {symbol} pnl={pnl:.5f}")
-
-            event_bus.publish(TRADE_CLOSED, {
-                "trade": trade,
-                "pnl": pnl,
-                "result": result
-            })
-
-            del open_trades[symbol]
+    portfolio["open_trades"].append(trade)
 
 
-event_bus.subscribe(SIGNAL_CREATED, handle_signal)
-event_bus.subscribe(PRICE_TICK, on_price)
+def close_trade(trade):
+    # =========================
+    # SIMULACE PROFITU
+    # =========================
+    profit = random.uniform(-1, 1)
+
+    trade["profit"] = profit
+    trade["status"] = "CLOSED"
+
+    portfolio["open_trades"].remove(trade)
+    portfolio["closed_trades"].append(trade)
+
+    print("📦 TRADE CLOSED:", trade)
+
+    # 🔥 EVENT → evaluator
+    event_bus.publish(TRADE_CLOSED, trade)
+
+
+def process_portfolio():
+    # zavíráme všechny otevřené trady (simple simulace)
+    for trade in portfolio["open_trades"][:]:
+        close_trade(trade)
+
+
+# =========================
+# SUBSCRIBE
+# =========================
+event_bus.subscribe(TRADE_EXECUTED, on_trade_executed)
+
+# 🔁 pravidelné zavírání (hookneš v main loopu)

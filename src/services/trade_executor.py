@@ -9,50 +9,50 @@ print("💰 TRADE EXECUTOR READY")
 def handle_signal(signal):
     print("💰 TRADE EXECUTOR TRIGGERED")
 
-    try:
-        # =========================
-        # SAFE DATA EXTRACTION (ONLY .get !!!)
-        # =========================
-        symbol = signal.get("symbol")
-        action = signal.get("action")
-        price = signal.get("price")
-        confidence = signal.get("confidence", 0)
-        features = signal.get("features", {})
+    # =========================
+    # VALIDACE
+    # =========================
+    if not isinstance(signal, dict):
+        print("❌ Invalid signal:", signal)
+        return
 
-        # 🔥 HARD CHECK
-        if price is None:
-            print("❌ Missing price in signal:", signal)
-            return
+    symbol = signal.get("symbol")
+    action = signal.get("action")
+    price = signal.get("price")
+    confidence = signal.get("confidence", 0)
+    features = signal.get("features", {})
 
-        # =========================
-        # MODE
-        # =========================
-        if not is_ready():
-            print("📚 FORCE TRADE (learning mode)")
-        else:
-            print("🚀 REAL TRADE MODE")
+    if price is None:
+        print("❌ Missing price in signal:", signal)
+        return
 
-        # =========================
-        # TRADE
-        # =========================
-        trade = {
-            "symbol": symbol,
-            "action": action,
-            "price": price,
-            "confidence": confidence,
-            "features": features,
-        }
+    # =========================
+    # MODE
+    # =========================
+    if not is_ready():
+        print("📚 FORCE TRADE (learning mode)")
+    else:
+        print("🚀 REAL TRADE MODE")
 
-        print("💰 TRADE EXECUTED:", trade)
+    # =========================
+    # TRADE OBJECT
+    # =========================
+    trade = {
+        "symbol": symbol,
+        "action": action,
+        "price": price,
+        "confidence": confidence,
+        "features": features,
+        "status": "OPEN"
+    }
 
-        # =========================
-        # 🔥 EVENT
-        # =========================
-        event_bus.publish(TRADE_EXECUTED, trade)
+    print("💰 TRADE EXECUTED:", trade)
 
-    except Exception as e:
-        print("❌ Handler error in handle_signal:", e)
-        print("❌ SIGNAL DATA:", signal)
+    # =========================
+    # EVENT
+    # =========================
+    event_bus.publish(TRADE_EXECUTED, trade)
 
 
+# ✅ JEDINÝ HANDLER
 event_bus.subscribe(SIGNAL_CREATED, handle_signal)
