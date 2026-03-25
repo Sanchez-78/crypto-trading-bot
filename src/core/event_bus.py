@@ -1,63 +1,32 @@
-print("🧠 LOADING EVENT BUS...")
-
-class EventBus:
-    def __init__(self):
-        self.listeners = {}
-        print("🧠 EventBus created")
-
-    # =========================
-    # SUBSCRIBE
-    # =========================
-    def subscribe(self, event_type, handler):
-        if event_type not in self.listeners:
-            self.listeners[event_type] = []
-
-        self.listeners[event_type].append(handler)
-
-        print(f"🔗 Subscribed to {event_type}: {handler.__name__}")
-
-    # =========================
-    # PUBLISH
-    # =========================
-    def publish(self, event_type, data):
-        if event_type not in self.listeners:
-            print(f"⚠️ No listeners for {event_type}")
-            return
-
-        print(f"📣 EVENT: {event_type}")
-
-        for handler in self.listeners[event_type]:
-            try:
-                handler(data)
-            except Exception as e:
-                print(f"❌ Handler error in {handler.__name__}: {e}")
-
-    # =========================
-    # DEBUG
-    # =========================
-    def debug_listeners(self):
-        print("🧠 CURRENT LISTENERS:")
-        for event, handlers in self.listeners.items():
-            print(f"{event}: {[h.__name__ for h in handlers]}")
-
-
 # =========================
-# 🔥 GLOBAL INSTANCE (KRITICKÉ)
+# SIMPLE EVENT BUS (STABLE)
 # =========================
-event_bus = EventBus()
+
+_subscribers = {}
 
 
-# =========================
-# DECORATOR SUPPORT
-# =========================
-def subscribe(event_name):
-    def decorator(func):
-        event_bus.subscribe(event_name, func)
-        return func
-    return decorator
+def subscribe(event_name, handler):
+    if event_name not in _subscribers:
+        _subscribers[event_name] = []
+
+    _subscribers[event_name].append(handler)
+    print(f"🔗 Subscribed to {event_name}: {handler.__name__}")
 
 
 def publish(event_name, data=None):
-    event_bus.publish(event_name, data)
+    handlers = _subscribers.get(event_name, [])
 
-print("🧠 EVENT BUS INITIALIZED:", event_bus)
+    if not handlers:
+        print(f"⚠️ No listeners for {event_name}")
+        return
+
+    for h in handlers:
+        try:
+            h(data)
+        except Exception as e:
+            print(f"❌ Handler error in {event_name}:", e)
+
+
+# OPTIONAL (debug)
+def get_subscribers():
+    return _subscribers
