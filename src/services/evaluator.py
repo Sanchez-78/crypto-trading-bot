@@ -3,6 +3,8 @@ from src.core.events import TRADE_EXECUTED, EVALUATION_DONE
 
 import random
 
+from src.services.firebase_client import save_trade
+
 print("📊 EVALUATOR READY")
 
 
@@ -11,10 +13,8 @@ def on_trade(trade):
         price = trade.get("price")
 
         if price is None:
-            print("❌ Missing price in trade")
             return
 
-        # simulace výsledku
         profit = random.uniform(-0.01, 0.02)
 
         result = {
@@ -24,6 +24,9 @@ def on_trade(trade):
         }
 
         print("📊 RESULT:", result)
+
+        # 🔥 SAVE TO FIREBASE
+        save_trade(trade, result)
 
         event_bus.publish(EVALUATION_DONE, result)
 

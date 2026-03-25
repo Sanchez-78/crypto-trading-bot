@@ -1,6 +1,8 @@
 from src.core.event_bus import event_bus
 from src.core.events import EVALUATION_DONE
 
+from src.services.firebase_client import load_trade_history
+
 print("🧠 LEARNING SYSTEM READY")
 
 metrics = {
@@ -9,53 +11,54 @@ metrics = {
     "losses": 0,
     "profit": 0.0,
     "loss_streak": 0,
-    "penalty": 0,
 }
 
-# adaptive threshold
-MIN_CONFIDENCE = 0.5
+# =========================
+# 🔥 BOOTSTRAP FROM DB
+# =========================
+def bootstrap_learning():
+    history = load_trade_history()
 
-
-def on_evaluation(result):
-    global MIN_CONFIDENCE
-
-    try:
+    for trade in history:
         metrics["trades"] += 1
-        metrics["profit"] += result.get("profit", 0)
+        metrics["profit"] += trade.get("profit", 0)
 
-        if result["result"] == "WIN":
+        if trade.get("result") == "WIN":
             metrics["wins"] += 1
-            metrics["loss_streak"] = 0
-
-            # reward → sníží restrikci
-            MIN_CONFIDENCE = max(0.5, MIN_CONFIDENCE - 0.01)
-
         else:
             metrics["losses"] += 1
-            metrics["loss_streak"] += 1
-            metrics["penalty"] += 1
 
-            # penalizace → zpřísní strategii
-            MIN_CONFIDENCE = min(0.9, MIN_CONFIDENCE + 0.02)
-
-        print(f"🧠 Updated MIN_CONFIDENCE: {MIN_CONFIDENCE:.2f}")
-
-    except Exception as e:
-        print("❌ Learning error:", e)
+    print(f"🧠 Bootstrapped: {metrics['trades']} trades")
 
 
+# =========================
+# UPDATE FROM LIVE
+# =========================
+def on_evaluation(result):
+    metrics["trades"] += 1
+    metrics["profit"] += result.get("profit", 0)
+
+    if result["result"] == "WIN":
+        metrics["wins"] += 1
+        metrics["loss_streak"] = 0
+    else:
+        metrics["losses"] += 1
+        metrics["loss_streak"] += 1
+
+
+# =========================
+# METRICS
+# =========================
 def get_metrics():
     trades = metrics["trades"]
-    winrate = metrics["wins"] / trades if trades > 0 else 0
+    winrate = metrics["wins"] / trades if trades else 0
 
-    # 🔥 KVALITNÍ PROGRESS (ne jen trades)
     progress = min((winrate * trades) / 100, 1.0)
 
     return {
         **metrics,
         "winrate": winrate,
-        "progress": progress,
-        "epsilon": 1 - winrate
+        "progress": progress
     }
 
 
