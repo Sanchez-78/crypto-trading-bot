@@ -1,7 +1,7 @@
 from src.core.event_bus import event_bus
 from src.core.events import SIGNAL_CREATED, TRADE_EXECUTED
 from src.services.firebase_client import save_trade
-from bot2.learning_event import is_ready
+from src.services.learning_event import is_ready
 
 print("💰 Trade Executor READY")
 
