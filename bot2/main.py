@@ -5,19 +5,30 @@ import random
 print("🚨 MAIN START")
 
 # =========================
-# IMPORTS
+# CORE
 # =========================
-from src.services.firebase_client import init_firebase
-from src.services.learning_event import get_metrics, is_ready
-
 from src.core.event_bus import event_bus
 from src.core.events import PRICE_TICK
 
-print("🚨 IMPORTS DONE")
+# =========================
+# SERVICES (KRITICKÉ !!!)
+# =========================
+import src.services.signal_generator   # 👈 registruje PRICE_TICK
+import src.services.trade_executor     # 👈 registruje SIGNAL_CREATED
+import src.services.evaluator          # 👈 registruje TRADE_CLOSED
+import src.services.portfolio_manager  # (pokud máš)
+
+# =========================
+# LEARNING + DB
+# =========================
+from src.services.learning_event import get_metrics, is_ready
+from src.services.firebase_client import init_firebase
+
+print("🚨 SERVICES LOADED")
 
 
 # =========================
-# FAKE MARKET (DEBUG FEED)
+# FAKE MARKET (nech zatím)
 # =========================
 def fake_market_tick():
     price = random.uniform(30000, 35000)
@@ -31,13 +42,13 @@ def fake_market_tick():
         "volatility": random.uniform(0.001, 0.01)
     }
 
-    print("📈 MARKET TICK:", round(price, 2))
+    print(f"📈 MARKET TICK: {round(price, 2)}")
 
     event_bus.publish(PRICE_TICK, data)
 
 
 # =========================
-# MAIN FUNCTION
+# MAIN
 # =========================
 def main():
     print("🚀 BOT STARTING...")
@@ -52,34 +63,32 @@ def main():
 
         print("🧠 LEARNING SYSTEM ACTIVE")
 
-        # =========================
-        # MAIN LOOP
-        # =========================
+        # 🔥 DEBUG: ověř listeners
+        event_bus.debug_listeners()
+
         while True:
             try:
-                # 🔥 GENERATE DATA
                 fake_market_tick()
 
-                # 📊 LEARNING STATUS
                 metrics = get_metrics()
 
                 if metrics:
-                    print("\n🧠 ===== LEARNING STATUS =====")
+                    print("\n🧠 ===== LEARNING =====")
                     print(f"Trades: {metrics.get('trades')}")
                     print(f"Winrate: {round(metrics.get('winrate', 0)*100, 2)}%")
-                    print(f"Epsilon: {round(metrics.get('epsilon', 0), 4)}")
+                    print(f"Epsilon: {metrics.get('epsilon')}")
 
                     if is_ready():
-                        print("🚀 BOT READY FOR TRADING")
+                        print("🚀 READY")
                     else:
-                        print("📚 BOT LEARNING...")
+                        print("📚 LEARNING...")
 
-                    print("============================\n")
+                    print("======================\n")
 
                 time.sleep(2)
 
-            except Exception as loop_error:
-                print("❌ LOOP ERROR:", loop_error)
+            except Exception as e:
+                print("❌ LOOP ERROR:", e)
                 traceback.print_exc()
                 time.sleep(5)
 
