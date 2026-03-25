@@ -11,7 +11,7 @@ def handle_signal(signal):
 
     try:
         # =========================
-        # SAFE DATA EXTRACTION
+        # SAFE DATA EXTRACTION (ONLY .get !!!)
         # =========================
         symbol = signal.get("symbol")
         action = signal.get("action")
@@ -19,13 +19,13 @@ def handle_signal(signal):
         confidence = signal.get("confidence", 0)
         features = signal.get("features", {})
 
-        # ❌ FIX: missing price
+        # 🔥 HARD CHECK
         if price is None:
             print("❌ Missing price in signal:", signal)
             return
 
         # =========================
-        # LEARNING MODE LOGIC
+        # MODE
         # =========================
         if not is_ready():
             print("📚 FORCE TRADE (learning mode)")
@@ -33,7 +33,7 @@ def handle_signal(signal):
             print("🚀 REAL TRADE MODE")
 
         # =========================
-        # SIMULATED TRADE
+        # TRADE
         # =========================
         trade = {
             "symbol": symbol,
@@ -46,15 +46,13 @@ def handle_signal(signal):
         print("💰 TRADE EXECUTED:", trade)
 
         # =========================
-        # 🔥 BONUS: PUBLISH EVENT
+        # 🔥 EVENT
         # =========================
         event_bus.publish(TRADE_EXECUTED, trade)
 
     except Exception as e:
         print("❌ Handler error in handle_signal:", e)
+        print("❌ SIGNAL DATA:", signal)
 
 
-# =========================
-# SUBSCRIBE
-# =========================
 event_bus.subscribe(SIGNAL_CREATED, handle_signal)

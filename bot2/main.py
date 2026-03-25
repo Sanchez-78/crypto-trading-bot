@@ -17,6 +17,7 @@ import src.services.signal_generator   # 👈 registruje PRICE_TICK
 import src.services.trade_executor     # 👈 registruje SIGNAL_CREATED
 import src.services.evaluator          # 👈 registruje TRADE_CLOSED
 import src.services.portfolio_manager  # (pokud máš)
+import src.services.performance_tracker
 
 # =========================
 # LEARNING + DB
