@@ -3,77 +3,86 @@ import time
 print("🚀 Starting multi-symbol event-driven BOT SYSTEM")
 
 # =========================
-# INIT FIREBASE (optional)
+# FIREBASE
 # =========================
 try:
-    from src.services.firebase_client import init_firebase
+    from src.services.firebase_client import init_firebase, save_bot_stats
     db = init_firebase()
-    print("🔥 Firebase initialized")
+    print("🔥 Firebase initialized OK")
 except Exception as e:
-    print("⚠️ Firebase disabled:", e)
+    print("⚠️ Firebase OFF:", e)
     db = None
 
 
 # =========================
-# LOAD CORE SERVICES
+# LOAD CORE
 # =========================
 print("⚙️ Loading services...")
 
-# 🔥 MARKET DATA
-from src.services.market_data import fake_market_tick
+# MARKET (REALISTIC SIMULATION)
+from src.services.market_data import start_market_stream
 
-# 🔥 SIGNAL
+# SIGNAL (SMART)
 import src.services.signal_generator
 
-# 🔥 TRADE
+# TRADE
 import src.services.trade_executor
 
-# 🔥 PORTFOLIO
+# PORTFOLIO
 import src.services.portfolio_manager
 from src.services.portfolio_manager import process_portfolio
 
-# 🔥 EVALUATION
+# EVALUATION
 import src.services.evaluator
 
-# 🔥 LEARNING
+# LEARNING (bandit + scoring)
 import src.services.learning_event
+from src.services.learning_event import get_metrics
 
-# 🔥 PERFORMANCE TRACKING (bonus)
-try:
-    import src.services.performance_tracker
-except:
-    pass
+# PERFORMANCE
+import src.services.performance_tracker
 
-print("✅ ALL SERVICES LOADED")
+print("✅ ALL SERVICES READY\n")
 
 
 # =========================
 # MAIN LOOP
 # =========================
 def main():
-    print("🟢 BOT RUNNING...\n")
+    print("🟢 BOT RUNNING (REAL DATA MODE)\n")
 
-    tick_count = 0
+    tick = 0
+
+    # start market stream (thread / async style)
+    start_market_stream()
 
     while True:
         try:
             # =========================
-            # MARKET TICK
-            # =========================
-            fake_market_tick()
-
-            # =========================
-            # PORTFOLIO UPDATE
+            # PORTFOLIO (close trades)
             # =========================
             process_portfolio()
 
-            tick_count += 1
+            tick += 1
 
             # =========================
-            # DEBUG INFO (každých 10 ticků)
+            # LEARNING METRICS
             # =========================
-            if tick_count % 10 == 0:
-                print(f"\n📊 TICKS: {tick_count}")
+            if tick % 10 == 0:
+                metrics = get_metrics()
+
+                print("\n📊 LEARNING STATUS")
+                print(f"Trades: {metrics['trades']}")
+                print(f"Winrate: {metrics['winrate']:.2f}")
+                print(f"Epsilon: {metrics['epsilon']:.4f}")
+
+                # progress bar
+                progress = int(metrics["progress"] * 20)
+                print("🧠 [" + "█" * progress + "-" * (20 - progress) + "]")
+
+                # Firebase log
+                if db:
+                    save_bot_stats(metrics)
 
             time.sleep(1)
 
@@ -83,7 +92,7 @@ def main():
 
 
 # =========================
-# ENTRYPOINT
+# ENTRY
 # =========================
 if __name__ == "__main__":
     main()

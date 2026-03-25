@@ -1,58 +1,34 @@
-import requests
+from src.core.event_bus import event_bus
+from src.core.events import PRICE_TICK
+
+import random
+import threading
 import time
 
-_cache = None
-_last_fetch = 0
-CACHE_TTL = 30
+print("📡 MARKET STREAM READY")
 
 
-def get_all_prices():
-    global _cache, _last_fetch
+def market_loop():
+    price = 30000
 
-    if _cache and time.time() - _last_fetch < CACHE_TTL:
-        return _cache
+    while True:
+        price += random.uniform(-50, 50)
 
-    try:
-        url = "https://api.coingecko.com/api/v3/simple/price"
-        params = {
-            "ids": "bitcoin,ethereum,cardano,solana,ripple",
-            "vs_currencies": "usd"
+        data = {
+            "symbol": "BTCUSDT",
+            "price": round(price, 2),
+            "trend": "UP" if random.random() > 0.5 else "DOWN",
+            "volatility": random.random()
         }
 
-        r = requests.get(url, params=params, timeout=10)
+        print("📈 MARKET:", data)
 
-        if r.status_code == 200:
-            data = r.json()
+        event_bus.publish(PRICE_TICK, data)
 
-            _cache = {
-                "BTCUSDT": float(data.get("bitcoin",  {}).get("usd", 0)),
-                "ETHUSDT": float(data.get("ethereum", {}).get("usd", 0)),
-                "ADAUSDT": float(data.get("cardano",  {}).get("usd", 0)),
-                "SOLUSDT": float(data.get("solana",   {}).get("usd", 0)),
-                "XRPUSDT": float(data.get("ripple",   {}).get("usd", 0)),
-            }
+        time.sleep(1)
 
-            # Vyfiltruj nuly
-            _cache = {k: v for k, v in _cache.items() if v > 0}
-            _last_fetch = time.time()
-            return _cache
 
-        if r.status_code == 429:
-            print("⚠️ Rate limit, backing off...")
-            time.sleep(3)
-
-    except Exception as e:
-        print("⚠️ Market data error:", e)
-
-    if _cache:
-        print("⚠️ Using cached prices")
-        return _cache
-
-    print("⚠️ Using fallback prices")
-    return {
-        "BTCUSDT": 60000,
-        "ETHUSDT": 3000,
-        "ADAUSDT": 0.5,
-        "SOLUSDT": 150,
-        "XRPUSDT": 0.55,
-    }
+def start_market_stream():
+    thread = threading.Thread(target=market_loop)
+    thread.daemon = True
+    thread.start()
