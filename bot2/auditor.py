@@ -102,9 +102,9 @@ def run_audit():
         _min_confidence = base
 
     # ── Anti-collapse: filter pass-rate < 2% → lower min_conf ───────────────
-    gen = _m.get("signals_generated", 0)
-    flt = _m.get("signals_filtered",  0)
-    blk = _m.get("blocked", 0)
+    gen = m.get("signals_generated", 0)
+    flt = m.get("signals_filtered",  0)
+    blk = m.get("blocked", 0)
     if gen > 50:
         passed_rt = max(0, gen - flt - blk) / gen
         if passed_rt < 0.02 and base > 0.50:
