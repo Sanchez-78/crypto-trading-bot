@@ -8,7 +8,7 @@ Strategy (research-backed):
   RANGING regime     → mean-reversion on BB extremes + RSI divergence
   HIGH_VOL / QUIET   → skip (too noisy / no edge)
 
-Signal score ≥ 2 required before passing to decision engine.
+Signal score ≥ 3 required before passing to decision engine.
 Debounce prevents repeat signals in same direction.
 """
 
@@ -186,7 +186,7 @@ def on_price(data):
         macd_l, macd_s, bb_lo, bb_hi, adx_v, reg
     )
 
-    if score < 2:
+    if score < 3:
         track_filtered()
         return
 
@@ -196,7 +196,7 @@ def on_price(data):
         return
     _last_act[s] = action
 
-    # ── Confidence: score/5 (max possible = 5+) ───────────────────────────────
+    # ── Confidence: score/5  (score ≥ 3 required, max = 5+) ──────────────────
     confidence = min(score / 5.0, 1.0)
     vol_pct    = atr_v / p if p else 0
 

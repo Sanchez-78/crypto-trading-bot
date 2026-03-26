@@ -382,7 +382,7 @@ def print_status():
           f"{g(str(exe), C.GRN)} provedeno")
     print(f"    {g('Efektivita', C.GRY)}    "
           f"{g(f'{eff:.1f}%', eff_col)}  "
-          f"{g('TP: 2.0xATR  /  SL: 1.5xATR  (RR ~1.33:1)', C.GRY)}")
+          f"{g('TP: 3.0xATR  /  SL: 1.5xATR  (RR 2:1)  score≥3', C.GRY)}")
 
     # ── Last signals ──────────────────────────────────────────────────────────
     if ls:

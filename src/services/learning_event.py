@@ -9,7 +9,8 @@ METRICS = {
     "signals_filtered": 0,
     "signals_executed": 0,
     "blocked": 0,
-    "regimes": {"TREND": 0, "CHOP": 0, "HIGH_VOL": 0},
+    "regimes": {"BULL_TREND": 0, "BEAR_TREND": 0, "RANGING": 0,
+                "QUIET_RANGE": 0, "HIGH_VOL": 0},
     # Extended performance metrics
     "gross_wins":      0.0,
     "gross_losses":    0.0,

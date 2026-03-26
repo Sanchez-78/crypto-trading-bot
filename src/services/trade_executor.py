@@ -1,13 +1,18 @@
 """
-Trade executor with ATR-based Take Profit / Stop Loss.
+Trade executor with ATR-based TP/SL and trailing stop.
 
-Risk management (research-backed):
-  TP = 2.0× ATR  (target)
-  SL = 1.5× ATR  (stop)   → RR ≈ 1.33:1
-  Timeout = 20 ticks per symbol (~2 min at 6s/tick)
+Risk management:
+  TP  = 3.0× ATR   (RR 2:1 — breakeven WR = 33%, was 1.33:1)
+  SL  = 1.5× ATR
+  Timeout = 60 ticks per symbol (~6 min at 2s/tick × 3 symbols)
+
+Trailing stop:
+  At 50% of TP → SL moves to break-even (0%)
+  At 80% of TP → SL locks in 40% of TP distance as minimum profit
 
 Position sizing: confidence-scaled, capped at 10% of unit.
 One open position per symbol at a time.
+Firebase batch flush: every 20 trades OR every 5 minutes.
 """
 
 from src.core.event_bus import subscribe
@@ -15,16 +20,25 @@ from src.services.learning_event import update_metrics
 from src.services.firebase_client import save_batch
 import time
 
-BATCH      = []
-_positions = {}  # symbol -> position dict
+BATCH       = []
+_positions  = {}        # symbol -> position dict
+_last_flush = [0.0]     # mutable so on_price can update it
 
-TP_ATR_MULT = 2.0
+TP_ATR_MULT = 3.0       # RR 2:1  (SL=1.5 → TP=3.0)
 SL_ATR_MULT = 1.5
-MAX_TICKS   = 20
+MAX_TICKS   = 60        # ~6 min per position
+FLUSH_EVERY = 300       # seconds — time-based batch flush
 
 
 def get_open_positions():
     return dict(_positions)
+
+
+def _flush():
+    if BATCH:
+        save_batch(BATCH)
+        BATCH.clear()
+    _last_flush[0] = time.time()
 
 
 def handle_signal(signal):
@@ -40,17 +54,22 @@ def handle_signal(signal):
     sl_move = atr * SL_ATR_MULT / entry
 
     _positions[sym] = {
-        "action":  signal["action"],
-        "entry":   entry,
-        "size":    size,
-        "tp_move": tp_move,
-        "sl_move": sl_move,
-        "signal":  signal,
-        "ticks":   0,
+        "action":   signal["action"],
+        "entry":    entry,
+        "size":     size,
+        "tp_move":  tp_move,
+        "sl_move":  sl_move,
+        "trail_sl": -sl_move,   # current SL floor as fraction of entry move
+        "signal":   signal,
+        "ticks":    0,
     }
 
 
 def on_price(data):
+    # Time-based flush — save unsent trades every FLUSH_EVERY seconds
+    if time.time() - _last_flush[0] >= FLUSH_EVERY and BATCH:
+        _flush()
+
     sym = data["symbol"]
     if sym not in _positions:
         return
@@ -64,10 +83,20 @@ def on_price(data):
     if pos["action"] == "SELL":
         move *= -1
 
-    if move >= pos["tp_move"]:
+    # ── Trailing stop ─────────────────────────────────────────────────────────
+    tp = pos["tp_move"]
+    if move >= tp * 0.5:
+        # 50% to TP → move SL to break-even
+        pos["trail_sl"] = max(pos["trail_sl"], 0.0)
+    if move >= tp * 0.8:
+        # 80% to TP → lock in 40% of TP distance as guaranteed profit
+        pos["trail_sl"] = max(pos["trail_sl"], tp * 0.4)
+
+    # ── Exit conditions ───────────────────────────────────────────────────────
+    if move >= tp:
         reason = "TP"
-    elif move <= -pos["sl_move"]:
-        reason = "SL"
+    elif move <= pos["trail_sl"]:
+        reason = "SL" if move < 0 else "trail"
     elif pos["ticks"] >= MAX_TICKS:
         reason = "timeout"
     else:
@@ -94,8 +123,7 @@ def on_price(data):
 
     BATCH.append(trade)
     if len(BATCH) >= 20:
-        save_batch(BATCH)
-        BATCH.clear()
+        _flush()
 
     del _positions[sym]
 
