@@ -5,9 +5,13 @@ from src.services.firebase_client import init_firebase, daily_budget_report, loa
 from src.services.learning_event import get_metrics, bootstrap_from_history
 from src.services.trade_executor import get_open_positions
 from src.services.signal_generator import warmup
+from bot2.auditor import run_audit
 
 import src.services.signal_generator
 import src.services.trade_executor
+
+_last_audit = 0
+AUDIT_INTERVAL = 30   # seconds
 
 _start_time = time.time()
 SYMBOLS     = ["BTCUSDT", "ETHUSDT", "ADAUSDT"]
@@ -351,6 +355,19 @@ def print_status():
           f"{cbar(conf, 1.0, lo=0.3, hi=0.6)}  "
           f"{g(conf_note, conf_col)}")
 
+    # ── Auditor status ────────────────────────────────────────────────────────
+    from bot2.auditor import get_min_confidence, is_in_cooldown
+    min_conf   = get_min_confidence()
+    in_cd      = is_in_cooldown()
+    aconf_col  = C.GRN if min_conf <= 0.55 else (C.YLW if min_conf <= 0.65 else C.RED)
+    cd_tag     = g("  ⏸ COOLDOWN – čekám na stabilizaci", C.RED + C.BLD) if in_cd else g("  aktivní", C.GRN)
+    print(section("", "AUDITOR  (ochrana strategie)"))
+    print(f"    {g('Min. jistota signálu', C.GRY)}  "
+          f"{g(f'{min_conf*100:.0f}%', aconf_col + C.BLD)}"
+          f"{cd_tag}")
+    print(f"    {g('Popis', C.GRY)}               "
+          f"{g('sleduje loss streak → zvysuje práh + zastaví obchodování', C.GRY)}")
+
     # ── Strategy / Signals ────────────────────────────────────────────────────
     print(section("", "STRATEGIE  (ADX + EMA + MACD + BB + RSI)"))
 
@@ -428,6 +445,12 @@ def main():
 
     while True:
         time.sleep(10)
+
+        global _last_audit
+        if time.time() - _last_audit >= AUDIT_INTERVAL:
+            run_audit()
+            _last_audit = time.time()
+
         print_status()
 
 

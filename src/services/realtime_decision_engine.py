@@ -11,6 +11,11 @@ from src.services.firebase_client import load_history
 from src.services.learning_event import track_blocked, track_regime
 import math, time
 
+# Lazy import to avoid circular dependency at module load time
+def _auditor():
+    from bot2.auditor import get_min_confidence, is_in_cooldown
+    return get_min_confidence, is_in_cooldown
+
 
 def _decay(ts):
     return math.exp(-(time.time() - ts) / 3600)
@@ -29,6 +34,21 @@ def _sim(f1, f2):
 
 
 def evaluate_signal(signal):
+    # ── Auditor gates (cooldown + dynamic confidence threshold) ───────────────
+    try:
+        get_min_conf, in_cooldown = _auditor()
+        if in_cooldown():
+            track_blocked()
+            print("    ⏸ signal zamítnut – auditor cooldown")
+            return None
+        min_conf = get_min_conf()
+    except Exception:
+        min_conf = 0.60   # fallback if auditor not yet initialised
+
+    if signal.get("confidence", 0) < min_conf:
+        track_blocked()
+        return None
+
     history = load_history()
     f       = signal["features"]
     reg     = signal.get("regime", "RANGING")
