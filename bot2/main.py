@@ -11,138 +11,253 @@ import src.services.trade_executor
 
 _start_time = time.time()
 SYMBOLS     = ["BTCUSDT", "ETHUSDT", "ADAUSDT"]
+W           = 60   # output width
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
+# ── ANSI palette ──────────────────────────────────────────────────────────────
 
-def bar(value, max_val=1.0, width=12):
-    filled = int(width * min(max(value / max_val, 0.0), 1.0))
-    return "█" * filled + "░" * (width - filled)
+class C:
+    GRN = "\033[92m"   # bright green
+    RED = "\033[91m"   # bright red
+    YLW = "\033[93m"   # yellow
+    CYN = "\033[96m"   # bright cyan
+    BLU = "\033[94m"   # blue
+    MGT = "\033[95m"   # magenta
+    WHT = "\033[97m"   # bright white
+    GRY = "\033[90m"   # dark grey
+    BLD = "\033[1m"    # bold
+    DIM = "\033[2m"    # dim
+    RST = "\033[0m"    # reset
+
+
+def g(text, color):
+    return f"{color}{text}{C.RST}"
+
+
+# ── Bars ──────────────────────────────────────────────────────────────────────
+
+def cbar(val, total=1.0, w=16, lo=0.45, hi=0.60):
+    """Color-coded progress bar: red / yellow / green."""
+    r = min(max(val / total if total else 0, 0.0), 1.0)
+    f = int(w * r)
+    col = C.GRN if r >= hi else (C.YLW if r >= lo else C.RED)
+    return col + "█" * f + C.GRY + "░" * (w - f) + C.RST
+
+
+def blue_bar(val, total, w=20):
+    """Blue progress bar (calibration / confidence)."""
+    r = min(max(val / total if total else 0, 0.0), 1.0)
+    f = int(w * r)
+    col = C.CYN if r >= 0.8 else C.BLU
+    return col + "█" * f + C.GRY + "░" * (w - f) + C.RST
+
+
+def pnl_bar(profit, scale=0.001, w=12):
+    """Profit bar centered: green right / red left."""
+    r = min(abs(profit) / scale, 1.0)
+    f = int(w * r)
+    col = C.GRN if profit >= 0 else C.RED
+    sign = "▶" if profit >= 0 else "◀"
+    return col + sign + "█" * f + "░" * (w - f) + C.RST
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def sep(char="─"):
+    return g(char * (W - 4), C.GRY)
+
+
+def section(icon, title):
+    line = f"  {icon}  {g(title, C.BLD + C.WHT)}"
+    return f"\n{line}\n  {sep()}"
 
 
 def price_arrow(curr, prev):
-    if curr > prev * 1.0001: return "▲"
-    if curr < prev * 0.9999: return "▼"
-    return "─"
+    if curr > prev * 1.0001: return g("▲", C.GRN)
+    if curr < prev * 0.9999: return g("▼", C.RED)
+    return g("─", C.GRY)
 
 
 def uptime():
-    secs = int(time.time() - _start_time)
-    h, r = divmod(secs, 3600)
+    s = int(time.time() - _start_time)
+    h, r = divmod(s, 3600)
     m, s = divmod(r, 60)
     return f"{h}h {m}m {s}s"
 
 
+def since_fmt(secs):
+    if secs is None or secs <= 0: return "–"
+    if secs < 60:   return f"{int(secs)}s"
+    if secs < 3600: return f"{int(secs/60)}m {int(secs%60)}s"
+    return f"{int(secs/3600)}h {int((secs%3600)/60)}m"
+
+
 def regime_label(regimes):
     total = sum(regimes.values())
-    if total == 0:
-        return "čekám na data"
+    if not total: return g("čekám na data", C.GRY)
     dominant = max(regimes, key=regimes.get)
     pct = regimes[dominant] / total * 100
-    icons = {
-        "BULL_TREND": "📈 BULL TREND – silný vzestup",
-        "BEAR_TREND": "📉 BEAR TREND – silný pokles",
-        "RANGING":    "↔️  RANGING – boční pohyb",
-        "QUIET_RANGE":"😴 QUIET – žádný pohyb",
-        "HIGH_VOL":   "⚡ VOLATILNÍ – velké výkyvy",
-        "TREND":      "📈 TREND",
-        "CHOP":       "↔️  CHOP – boční",
+    info = {
+        "BULL_TREND":  (C.GRN, "📈 BULL TREND  silný vzestup"),
+        "BEAR_TREND":  (C.RED, "📉 BEAR TREND  silný pokles"),
+        "RANGING":     (C.YLW, "↔️  RANGING     boční pohyb"),
+        "QUIET_RANGE": (C.GRY, "😴 QUIET        bez pohybu"),
+        "HIGH_VOL":    (C.MGT, "⚡ VOLATILNÍ   velké výkyvy"),
+        "TREND":       (C.GRN, "📈 TREND"),
+        "CHOP":        (C.YLW, "↔️  CHOP        boční"),
     }
-    return f"{icons.get(dominant, dominant)} ({pct:.0f}%)"
+    col, label = info.get(dominant, (C.WHT, dominant))
+    return g(f"{label}  ({pct:.0f}%)", col)
 
 
-def progress_bar(t, target=50):
-    pct = min(t / target, 1.0)
-    return f"[{bar(pct, 1.0, 20)}] {t}/{target}"
-
-
-# ── Status print ─────────────────────────────────────────────────────────────
+# ── Main print ────────────────────────────────────────────────────────────────
 
 def print_status():
-    m    = get_metrics()
-    lp   = m.get("last_prices", {})
-    ls   = m.get("last_signals", {})
-    ss   = m.get("sym_stats", {})
-    ops  = get_open_positions()
-    t    = m["trades"]
-    wr   = m["winrate"]
-    SEP  = "─" * 54
+    m   = get_metrics()
+    lp  = m.get("last_prices", {})
+    ls  = m.get("last_signals", {})
+    ss  = m.get("sym_stats", {})
+    ops = get_open_positions()
+    t   = m["trades"]
+    wr  = m["winrate"]
 
-    print(f"\n{'═'*54}")
-    print(f"  🤖  CRYPTOMASTER  │  běží {uptime()}")
-    print(f"{'═'*54}")
+    # ── Header ────────────────────────────────────────────────────────────────
+    if m["ready"]:
+        status_tag = g(" ✅ AKTIVNÍ ", C.BLD + C.GRN)
+    else:
+        status_tag = g(" 🔄 TRÉNINK ", C.YLW)
 
-    # ── Live prices ──────────────────────────────────────────
-    print(f"\n  💰  ŽIVÉ CENY  (Binance, každé 2 s)")
-    print(f"  {SEP}")
+    print(f"\n{g('═'*W, C.CYN)}")
+    print(g(f"  🤖  CRYPTOMASTER  │  {uptime()}  │{status_tag}", C.BLD + C.CYN))
+    print(g("═" * W, C.CYN))
+
+    # ── Live prices ───────────────────────────────────────────────────────────
+    print(section("💰", "ŽIVÉ CENY  (Binance · každé 2 s)"))
     for sym in SYMBOLS:
         short = sym.replace("USDT", "")
-        if sym in lp:
-            curr, prev = lp[sym]
-            arr  = price_arrow(curr, prev)
-            pct  = (curr - prev) / prev * 100 if prev else 0
-            sign = "+" if pct >= 0 else ""
-            pos_flag = " 🔄 OPEN" if sym in ops else ""
-            print(f"    {short:<4}  ${curr:>14,.4f}   {arr}  {sign}{pct:.3f}%{pos_flag}")
-        else:
-            print(f"    {short:<4}  čekám na první tick...")
+        if sym not in lp:
+            print(f"    {g(short, C.WHT):<4}  {g('čekám...', C.GRY)}")
+            continue
+        curr, prev = lp[sym]
+        arr  = price_arrow(curr, prev)
+        pct  = (curr - prev) / prev * 100 if prev else 0
+        pcol = C.GRN if pct > 0 else (C.RED if pct < 0 else C.GRY)
+        open_tag = g("  ● OPEN", C.YLW + C.BLD) if sym in ops else ""
+        print(f"    {g(short, C.WHT + C.BLD):<4}  "
+              f"{g(f'${curr:>14,.4f}', C.WHT)}   "
+              f"{arr}  {g(f'{pct:+.3f}%', pcol)}"
+              f"{open_tag}")
 
-    # ── Open positions ────────────────────────────────────────
+    # ── Open positions ────────────────────────────────────────────────────────
     if ops:
-        print(f"\n  🔄  OTEVŘENÉ POZICE  (čekají na TP/SL)")
-        print(f"  {SEP}")
+        print(section("🔄", "OTEVŘENÉ POZICE"))
         for sym, pos in ops.items():
             short = sym.replace("USDT", "")
             curr  = lp.get(sym, (pos["entry"], pos["entry"]))[0]
             move  = (curr - pos["entry"]) / pos["entry"]
-            if pos["action"] == "SELL":
-                move *= -1
+            if pos["action"] == "SELL": move *= -1
             pnl  = move * pos["size"]
-            icon = "📈" if move > 0 else "📉"
-            tp   = pos["tp_move"] * 100
-            sl   = pos["sl_move"] * 100
-            print(f"    {short:<4}  {pos['action']}  "
-                  f"${pos['entry']:,.4f}→${curr:,.4f}  "
-                  f"{icon} {pnl:+.6f}  "
-                  f"[TP:{tp:.2f}%  SL:{sl:.2f}%]")
+            pcol = C.GRN if pnl >= 0 else C.RED
+            act  = g(pos["action"], C.GRN if pos["action"] == "BUY" else C.RED)
+            print(f"    {g(short, C.WHT + C.BLD):<4}  {act}  "
+                  f"{g(f'${pos[\"entry\"]:,.4f}', C.GRY)}→"
+                  f"{g(f'${curr:,.4f}', C.WHT)}  "
+                  f"{g(f'{pnl:+.6f}', pcol)}  "
+                  f"{g(f'TP:{pos[\"tp_move\"]*100:.2f}%  SL:{pos[\"sl_move\"]*100:.2f}%', C.GRY)}")
 
-    # ── Trading performance ───────────────────────────────────
-    print(f"\n  📈  VÝSLEDKY OBCHODOVÁNÍ")
-    print(f"  {SEP}")
+    # ── Trading performance ───────────────────────────────────────────────────
+    print(section("📈", "VÝSLEDKY OBCHODOVÁNÍ"))
     if t == 0:
-        print("    Žádné uzavřené obchody. Robot se zahřívá (50 ticků warmup).")
+        print(f"    {g('Žádné uzavřené obchody – zahřívám se...', C.GRY)}")
     else:
-        print(f"    Celkem uzavřeno :  {t}")
-        print(f"    ✅ Výhry         :  {m['wins']}    ❌ Prohry: {m['losses']}")
-        print(f"    Winrate          :  {wr*100:.1f}%   [{bar(wr)}]")
-        print(f"    Celkový zisk     : {m['profit']:+.6f} USDT")
-        print(f"    Max. drawdown    :  {m['drawdown']:.6f}")
-        if m["win_streak"] >= 2:
-            print(f"    Série            : 🔥 {m['win_streak']}× výhra v řadě!")
-        elif m["loss_streak"] >= 2:
-            print(f"    Série            : 💔 {m['loss_streak']}× prohra v řadě")
+        # Win / loss counts
+        w_pct = wr * 100
+        print(f"    {g('Obchody', C.GRY)}    {g(str(t), C.WHT + C.BLD)}  "
+              f"({g(f'✅ {m[\"wins\"]}', C.GRN)}  "
+              f"{g(f'❌ {m[\"losses\"]}', C.RED)})")
 
-    # ── Per-symbol breakdown ──────────────────────────────────
+        wr_col = C.GRN if wr >= 0.55 else (C.YLW if wr >= 0.45 else C.RED)
+        print(f"    {g('Winrate', C.GRY)}     "
+              f"{g(f'{w_pct:.1f}%', wr_col + C.BLD)}  "
+              f"{cbar(wr, 1.0, 18, 0.45, 0.55)}  "
+              f"{g('▶ cíl 55%', C.GRY)}")
+
+        pcol = C.GRN if m["profit"] >= 0 else C.RED
+        print(f"    {g('Zisk', C.GRY)}        "
+              f"{g(f'{m[\"profit\"]:+.8f}', pcol + C.BLD)}  "
+              f"{pnl_bar(m['profit'])}")
+
+        ddcol = C.GRN if m["drawdown"] < 0.001 else (C.YLW if m["drawdown"] < 0.005 else C.RED)
+        print(f"    {g('Drawdown', C.GRY)}    "
+              f"{g(f'{m[\"drawdown\"]:.8f}', ddcol)}  "
+              f"{g('(pokles od vrcholu)', C.GRY)}")
+
+        # Streak
+        if m["win_streak"] >= 2:
+            print(f"    {g('Série', C.GRY)}       "
+                  f"{g(f'🔥 {m[\"win_streak\"]}× výhra v řadě!', C.GRN + C.BLD)}")
+        elif m["loss_streak"] >= 2:
+            print(f"    {g('Série', C.GRY)}       "
+                  f"{g(f'💔 {m[\"loss_streak\"]}× prohra v řadě', C.RED)}")
+
+        # Advanced metrics
+        pf   = m.get("profit_factor", 1.0)
+        exp  = m.get("expectancy",    0.0)
+        since = m.get("since_last")
+        pf_col = C.GRN if pf >= 1.5 else (C.YLW if pf >= 1.0 else C.RED)
+
+        print(f"    {g('─'*40, C.GRY)}")
+        print(f"    {g('Profit Factor', C.GRY)}  "
+              f"{g(f'{pf:.2f}×', pf_col + C.BLD)}  "
+              f"{g('(zisk ÷ ztráta, cíl > 1.5)', C.GRY)}")
+        exp_col = C.GRN if exp > 0 else C.RED
+        print(f"    {g('Expectancy', C.GRY)}     "
+              f"{g(f'{exp:+.8f}', exp_col)}  "
+              f"{g('(průměrný výnos / obchod)', C.GRY)}")
+        if m.get("best_trade"):
+            print(f"    {g('Nejlepší', C.GRY)}      "
+                  f"{g(f'+{m[\"best_trade\"]:.8f}', C.GRN)}  "
+                  f"{g('Nejhorší', C.GRY)}  "
+                  f"{g(f'{m[\"worst_trade\"]:.8f}', C.RED)}")
+        if since is not None:
+            print(f"    {g('Poslední obchod', C.GRY)}  "
+                  f"{g(since_fmt(since), C.WHT)} {g('zpět', C.GRY)}")
+
+    # ── Per-symbol breakdown ──────────────────────────────────────────────────
     if ss:
-        print(f"\n  📊  VÝSLEDKY PO MĚNÁCH")
-        print(f"  {SEP}")
-        print(f"    {'Měna':<5} {'Obchody':>8} {'Výhry':>6} {'WR':>7} {'Zisk':>12}  {'Stav'}")
-        print(f"    {'─'*5} {'─'*8} {'─'*6} {'─'*7} {'─'*12}  {'─'*8}")
+        print(section("📊", "VÝSLEDKY PO MĚNÁCH"))
+        hdr = (f"    {g('Měna', C.GRY):<5}  "
+               f"{g('Obch', C.GRY):>5}  "
+               f"{g('WR', C.GRY):>6}  "
+               f"{g('Bar (winrate)', C.GRY):<28}  "
+               f"{g('Zisk', C.GRY):>12}")
+        print(hdr)
+        print(f"    {g('─'*52, C.GRY)}")
         for sym in SYMBOLS:
             short = sym.replace("USDT", "")
             s = ss.get(sym)
             if not s:
-                print(f"    {short:<5} {'–':>8}")
+                print(f"    {g(short, C.GRY):<5}  {g('–', C.GRY)}")
                 continue
-            swr  = s["winrate"]
-            icon = "✅" if swr >= 0.55 else ("⚠️" if swr >= 0.45 else "❌")
-            print(f"    {short:<5} {s['trades']:>8} {s['wins']:>6} "
-                  f"{swr*100:>6.1f}%  {s['profit']:>+11.6f}  {icon}")
+            swr   = s["winrate"]
+            wcol  = C.GRN if swr >= 0.55 else (C.YLW if swr >= 0.45 else C.RED)
+            pcol  = C.GRN if s["profit"] >= 0 else C.RED
+            icon  = g("✅", C.GRN) if swr >= 0.55 else (g("⚠️", C.YLW) if swr >= 0.45 else g("❌", C.RED))
+            print(f"    {g(short, C.WHT + C.BLD):<5}  "
+                  f"{g(str(s['trades']), C.WHT):>5}  "
+                  f"{g(f'{swr*100:.0f}%', wcol + C.BLD):>6}  "
+                  f"{cbar(swr, 1.0, 16, 0.45, 0.55)}  "
+                  f"{g(f'{s[\"profit\"]:+.8f}', pcol):>12}  {icon}")
 
-    # ── Learning progress ─────────────────────────────────────
-    print(f"\n  🧠  UČENÍ  –  JAK ROBOT ROSTE")
-    print(f"  {SEP}")
-    print(f"    Kalibrační progres : {progress_bar(t)}")
+    # ── Learning ──────────────────────────────────────────────────────────────
+    print(section("🧠", "UČENÍ  –  JAK ROBOT ROSTE"))
+
+    cal_pct = min(t / 50, 1.0)
+    cal_col = C.GRN if t >= 50 else C.BLU
+    print(f"    {g('Kalibrace', C.GRY)}    "
+          f"{g(f'{t}/50', cal_col + C.BLD)}  "
+          f"{blue_bar(t, 50, 20)}  "
+          f"{g(f'{cal_pct*100:.0f}%', cal_col)}")
 
     rc    = m.get("recent_count", 0)
     rwr   = m.get("recent_winrate", 0.0)
@@ -150,63 +265,74 @@ def print_status():
     conf  = m["confidence_avg"]
 
     if t < 10:
-        print("    Robot sbírá data. Po 50 obchodech se plně kalibruje.")
-        print("    Každý obchod učí rozlišovat dobré a špatné vzory trhu.")
+        print(f"    {g('Sbírám první data – potřebuji 50 obchodů pro plnou kalibraci.', C.GRY)}")
     else:
-        print(f"    Trend učení         : {trend}")
+        tcol = C.GRN if "ZLEPŠUJE" in trend else (C.RED if "ZHORŠUJE" in trend else C.YLW)
+        print(f"    {g('Trend učení', C.GRY)}   {g(trend, tcol + C.BLD)}")
         delta = rwr - wr
-        print(f"    Posledních {rc:>2} obch. : {rwr*100:.1f}%  (celkový průměr {wr*100:.1f}%)")
-        if abs(delta) >= 0.02:
-            direction = "lepší" if delta > 0 else "horší"
-            print(f"      → Robot je nyní o {abs(delta)*100:.1f}% {direction} než svůj celkový průměr.")
+        dcol  = C.GRN if delta > 0 else C.RED
+        print(f"    {g(f'Posledních {rc}', C.GRY)}   "
+              f"{g(f'{rwr*100:.1f}%', C.WHT)}  vs  průměr {g(f'{wr*100:.1f}%', C.WHT)}  "
+              f"{g(f'({delta:+.1%})', dcol)}")
 
-    conf_note = (
-        "nízká – hledám silné vzory" if conf < 0.3 else
-        "střední – robot vidí příležitosti" if conf < 0.6 else
-        "vysoká – jasné signály ✅"
-    )
-    print(f"    Průměrná jistota    : [{bar(conf)}] {conf*100:.1f}%  ({conf_note})")
+    conf_col  = C.GRN if conf >= 0.6 else (C.YLW if conf >= 0.3 else C.RED)
+    conf_note = "vysoká ✅" if conf >= 0.6 else ("střední" if conf >= 0.3 else "nízká")
+    print(f"    {g('Jistota', C.GRY)}       "
+          f"{g(f'{conf*100:.1f}%', conf_col + C.BLD)}  "
+          f"{cbar(conf, 1.0, 14, 0.3, 0.6)}  "
+          f"{g(conf_note, conf_col)}")
 
-    # ── Strategy info ─────────────────────────────────────────
-    print(f"\n  ⚙️   STRATEGIE  (multi-indikátor, ADX + EMA + MACD + BB + RSI)")
-    print(f"  {SEP}")
-    print(f"    Režim trhu   : {regime_label(m['regimes'])}")
+    # ── Strategy / Signals ────────────────────────────────────────────────────
+    print(section("⚙️ ", "STRATEGIE  (ADX + EMA + MACD + BB + RSI)"))
+
     gen = m["signals_generated"]
     exe = m["signals_executed"]
     blk = m["blocked"]
     flt = m["signals_filtered"]
     eff = exe / gen * 100 if gen else 0
-    print(f"    Signály      : {gen} zachyceno → {gen-flt} po filtru → {blk} blokováno AI → {exe} provedeno")
-    print(f"    Efektivita   : {eff:.1f}%  (kolik prošlo celým filtrem)")
-    print(f"    TP:SL ratio  : 2.0×ATR TP  /  1.5×ATR SL  (RR ≈ 1.33:1)")
 
-    # ── Last decisions ────────────────────────────────────────
+    print(f"    {g('Režim trhu', C.GRY)}   {regime_label(m['regimes'])}")
+    print(f"    {g('Signály', C.GRY)}       "
+          f"{g(str(gen), C.WHT)} zachyceno  "
+          f"{g('→', C.GRY)} {g(str(gen-flt), C.WHT)} po filtru  "
+          f"{g('→', C.GRY)} {g(str(blk), C.RED)} blokováno  "
+          f"{g('→', C.GRY)} {g(str(exe), C.GRN)} provedeno")
+    eff_col = C.GRN if eff > 5 else C.YLW
+    print(f"    {g('Efektivita', C.GRY)}    "
+          f"{g(f'{eff:.1f}%', eff_col)}  "
+          f"{g('TP: 2.0×ATR  /  SL: 1.5×ATR  (RR ≈ 1.33:1)', C.GRY)}")
+
+    # ── Last signals ──────────────────────────────────────────────────────────
     if ls:
-        print(f"\n  ⚡  POSLEDNÍ ROZHODNUTÍ")
-        print(f"  {SEP}")
+        print(section("⚡", "POSLEDNÍ ROZHODNUTÍ"))
         for sym in SYMBOLS:
             short = sym.replace("USDT", "")
-            if sym in ls:
-                sig = ls[sym]
-                act = "🟢 KUPUJ" if sig["action"] == "BUY" else "🔴 PRODEJ"
-                res = {"WIN": "  → ✅ VÝHRA", "LOSS": "  → ❌ PROHRA"}.get(sig.get("result"), "")
-                print(f"    {short:<4}  {act}  ${sig['price']:,.4f}  "
-                      f"jistota {sig['confidence']*100:.0f}%{res}")
-            else:
-                print(f"    {short:<4}  ⚪ žádný signál")
+            if sym not in ls:
+                print(f"    {g(short, C.WHT + C.BLD):<4}  {g('⚪ žádný signál', C.GRY)}")
+                continue
+            sig  = ls[sym]
+            is_buy = sig["action"] == "BUY"
+            act  = g("🟢 KUPUJ ", C.GRN + C.BLD) if is_buy else g("🔴 PRODEJ", C.RED + C.BLD)
+            res  = sig.get("result")
+            rtag = (g("  → ✅ VÝHRA",  C.GRN) if res == "WIN"
+                    else g("  → ❌ PROHRA", C.RED) if res == "LOSS" else "")
+            print(f"    {g(short, C.WHT + C.BLD):<4}  {act}  "
+                  f"{g(f'${sig[\"price\"]:,.4f}', C.WHT)}  "
+                  f"{g(f'conf:{sig[\"confidence\"]*100:.0f}%', C.GRY)}"
+                  f"{rtag}")
 
-    # ── Status ────────────────────────────────────────────────
-    print(f"\n  {SEP}")
+    # ── Footer / status ───────────────────────────────────────────────────────
+    print(f"\n  {sep('─')}")
     if m["ready"]:
-        print("  🎯  STAV: ✅ AKTIVNÍ – robot je kalibrovaný a obchoduje!")
+        print(f"  {g('🎯  STAV:', C.BLD)}  {g('✅ AKTIVNÍ  –  robot je kalibrovaný a obchoduje!', C.GRN + C.BLD)}")
     else:
         needs = []
-        if t < 50:            needs.append(f"obchody {t}/50")
-        if wr <= 0.55:        needs.append(f"winrate {wr*100:.0f}%→55%")
-        if m["profit"] <= 0:  needs.append("zisk > 0")
-        print(f"  🎯  STAV: 🔄 TRÉNINK  ({',  '.join(needs)})")
-        print("        Robot automaticky zlepšuje parametry na živých datech.")
-    print(f"{'═'*54}\n")
+        if t < 50:           needs.append(g(f"obchody {t}/50", C.YLW))
+        if wr <= 0.55:       needs.append(g(f"winrate {wr*100:.0f}%→55%", C.YLW))
+        if m["profit"] <= 0: needs.append(g("zisk > 0", C.YLW))
+        print(f"  {g('🎯  STAV:', C.BLD)}  {g('🔄 TRÉNINK', C.YLW + C.BLD)}  "
+              f"{g('(', C.GRY)}{',  '.join(needs)}{g(')', C.GRY)}")
+    print(g("═" * W, C.CYN) + "\n")
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
@@ -214,11 +340,7 @@ def print_status():
 def main():
     init_firebase()
     daily_budget_report()
-
-    # Restore historical state so bot doesn't start from zero after restart
     bootstrap_from_history(load_history())
-
-    # Pre-warm price indicators from Binance klines (skip 5-min tick warmup)
     warmup()
 
     t = threading.Thread(target=start)
