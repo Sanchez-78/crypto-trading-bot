@@ -2,7 +2,7 @@ import sys
 import time
 from config import SYMBOLS, INTERVAL
 
-from src.services.firebase_client import init_firebase, save_signal, get_db
+from src.services.firebase_client import init_firebase, save_signal, save_metrics
 from src.services.binance_client import fetch_candles
 from src.services.feature_extractor import extract_features
 from src.services.evaluator import evaluate_signals
@@ -81,21 +81,14 @@ def run_signals():
 
 
 def _write_run_status(saved_signals, prices):
-    """Zapíše základní info o posledním běhu do metrics/latest (merge)."""
-    db = get_db()
-    if db is None:
-        return
-    try:
-        prices_map = {s["symbol"]: s["price"] for s in saved_signals}
-        db.collection("metrics").document("latest").set({
-            "last_run":      time.time(),
-            "signals_saved": len(saved_signals),
-            "prices":        prices_map,
-            "timestamp":     time.time(),
-        }, merge=True)
-        print(f"\n📊 metrics updated ({len(saved_signals)} signals)")
-    except Exception as e:
-        print(f"⚠️ metrics write error: {e}")
+    """Zapíše základní info o posledním běhu do metrics/latest."""
+    prices_map = {s["symbol"]: s["price"] for s in saved_signals}
+    save_metrics({
+        "last_run":      time.time(),
+        "signals_saved": len(saved_signals),
+        "prices":        prices_map,
+    })
+    print(f"\n📊 metrics updated ({len(saved_signals)} signals)")
 
 
 def run_evaluate():

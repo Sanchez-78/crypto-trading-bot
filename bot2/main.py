@@ -1,7 +1,7 @@
 import threading, time
 
 from src.services.market_stream import start
-from src.services.firebase_client import init_firebase
+from src.services.firebase_client import init_firebase, daily_budget_report
 from src.services.learning_event import get_metrics
 from src.services.trade_executor import get_open_positions
 
@@ -212,6 +212,7 @@ def print_status():
 
 def main():
     init_firebase()
+    daily_budget_report()
 
     t = threading.Thread(target=start)
     t.daemon = True
