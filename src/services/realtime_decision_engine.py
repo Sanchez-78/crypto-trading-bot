@@ -3,15 +3,21 @@ Historical pattern filter.
 
 Compares incoming signal features against last 100 trades
 (same symbol, same action direction).
-Rejects if weighted winrate of similar past trades < 45%.
+Rejects if weighted winrate of similar past trades < block_thr.
 Time-decays older trades (half-life = 1 hour).
+
+Modes:
+  normal:      block_thr = 0.45
+  poor symbol: block_thr = 0.55  (sym WR < 40% over ≥ 10 trades)
+  exploration: block_thr = 0.35  (no trades in last 15 min)
+  fallback:    block_thr = 0.30  (filter_pass_rate < 1%)
 """
 
-from src.services.firebase_client import load_history
-from src.services.learning_event import track_blocked, track_regime
+from src.services.firebase_client  import load_history
+from src.services.learning_event   import track_blocked, track_regime
 import math, time
 
-# Lazy import to avoid circular dependency at module load time
+
 def _auditor():
     from bot2.auditor import get_min_confidence, is_in_cooldown
     return get_min_confidence, is_in_cooldown
@@ -34,16 +40,12 @@ def _sim(f1, f2):
 
 
 def evaluate_signal(signal):
-    # ── Auditor gates (cooldown + dynamic confidence threshold) ───────────────
+    # ── Auditor: confidence gate only (no hard cooldown block) ───────────────
     try:
-        get_min_conf, in_cooldown = _auditor()
-        if in_cooldown():
-            track_blocked()
-            print("    ⏸ signal zamítnut – auditor cooldown")
-            return None
+        get_min_conf, _ = _auditor()
         min_conf = get_min_conf()
     except Exception:
-        min_conf = 0.60   # fallback if auditor not yet initialised
+        min_conf = 0.55
 
     if signal.get("confidence", 0) < min_conf:
         track_blocked()
@@ -75,14 +77,34 @@ def evaluate_signal(signal):
     wins = sum(x[1] for x in similar if x[0]["result"] == "WIN")
     wr   = wins / w
 
-    # Adaptive threshold: stricter for symbols with poor recent performance
+    # ── Adaptive block threshold ──────────────────────────────────────────────
     from src.services.learning_event import get_metrics as _gm
-    _ss = _gm().get("sym_stats", {}).get(signal["symbol"], {})
-    block_thr = 0.55 if (_ss.get("trades", 0) >= 10 and _ss.get("winrate", 0.5) < 0.40) else 0.45
+    _m  = _gm()
+    _ss = _m.get("sym_stats", {}).get(signal["symbol"], {})
+
+    # Exploration mode: no trades for 15 min → very lenient
+    since = _m.get("since_last")
+    if since and since > 900:
+        block_thr = 0.35
+
+    # Fallback: filter rate near zero → lower threshold
+    elif _m.get("signals_generated", 0) > 50:
+        gen     = _m["signals_generated"]
+        passed  = max(0, gen - _m.get("signals_filtered", 0) - _m.get("blocked", 0))
+        pass_rt = passed / gen
+        if pass_rt < 0.01:
+            block_thr = 0.30
+        elif _ss.get("trades", 0) >= 10 and _ss.get("winrate", 0.5) < 0.40:
+            block_thr = 0.55
+        else:
+            block_thr = 0.45
+    elif _ss.get("trades", 0) >= 10 and _ss.get("winrate", 0.5) < 0.40:
+        block_thr = 0.55
+    else:
+        block_thr = 0.45
 
     verdict = "✅" if wr >= block_thr else "🚫"
-    thr_tag = f"(thr:{block_thr:.0%})" if block_thr != 0.45 else ""
-    print(f"    🧠 {len(similar)} vzorů  WR:{wr:.0%}  {reg}  {verdict} {thr_tag}")
+    print(f"    🧠 {len(similar)} vzorů  WR:{wr:.0%}  {reg}  {verdict}  thr:{block_thr:.0%}")
 
     if wr < block_thr:
         track_blocked()

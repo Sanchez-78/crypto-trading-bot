@@ -1,90 +1,118 @@
 """
 Auditor – periodic strategy reviewer.
 
-Runs every 30 s in the main loop.
-Reads live metrics, updates Stabilizer, and exposes two values
-that realtime_decision_engine reads before every signal:
+NO hard stop. Instead:
+  - loss_streak ≥ 3 → position size × 0.5
+  - loss_streak ≥ 5 → position size × 0.25 (defensive)
+  - loss_streak ≥ 4 AND grew this session → cooldown 1 cycle (~30s)
+  - no trades 15 min → lower min_conf (exploration mode)
 
-    get_min_confidence() → float  (0.50 – 0.75)
-    is_in_cooldown()     → bool   (blocks all trading when True)
-
-Also logs a short audit report so the user can see what it decided.
+Parameters:
+  min_conf base: 0.55
+  no-trade: -0.05
+  loss streak: +0.02/loss (up to 0.70)
 """
 
-from bot2.stabilizer     import Stabilizer
+from bot2.stabilizer       import Stabilizer
 from bot2.strategy_weights import StrategyWeights
 from src.services.learning_event import get_metrics
-
-# ── Singleton state ───────────────────────────────────────────────────────────
 
 _stab    = Stabilizer()
 _weights = StrategyWeights()
 
-_min_confidence  = 0.6
-_cooldown        = 0       # ticks remaining
+_min_confidence     = 0.55
+_position_size_mult = 1.0
+_cooldown           = 0
+_prev_loss_streak   = -1   # -1 = unset (skip bootstrap)
+_initialized        = False
+_cached_weights     = {}
 
 
-# ── Public API (read by realtime_decision_engine) ─────────────────────────────
+# ── Public API ────────────────────────────────────────────────────────────────
 
 def get_min_confidence() -> float:
     return _min_confidence
 
-
 def is_in_cooldown() -> bool:
     return _cooldown > 0
+
+def get_position_size_mult() -> float:
+    return _position_size_mult
+
+def get_strategy_weights() -> dict:
+    return dict(_cached_weights) if _cached_weights else {}
 
 
 # ── Main audit cycle ──────────────────────────────────────────────────────────
 
 def run_audit():
-    global _min_confidence, _cooldown
+    global _min_confidence, _position_size_mult, _cooldown
+    global _prev_loss_streak, _initialized, _cached_weights
 
     m = get_metrics()
 
-    # Decrement cooldown counter each audit cycle (every 30 s)
     if _cooldown > 0:
         _cooldown -= 1
 
     loss_streak = m.get("loss_streak", 0)
     rwr         = m.get("recent_winrate", 0.0)
-    rc          = m.get("recent_count", 0)
-    t           = m.get("trades", 0)
+    rc          = m.get("recent_count",  0)
+    t           = m.get("trades",        0)
+    since       = m.get("since_last")
 
-    # ── Cooldown: 3+ losses in a row → pause 3 cycles (~90 s) ────────────────
-    if loss_streak >= 3 and _cooldown == 0:
-        _cooldown = 3
-        print(f"  🛑 AUDITOR: {loss_streak}x prohra v řadě → cooldown {_cooldown} cyklů")
+    # ── First run: snapshot bootstrap state, no cooldown ─────────────────────
+    if not _initialized:
+        _prev_loss_streak = loss_streak
+        _initialized = True
+        print(f"  🔍 AUDITOR init: bootstrap streak={loss_streak}  (no cooldown)")
+        return
 
-    # ── Dynamic min_confidence based on recent winrate ────────────────────────
-    if rc >= 10:
-        if rwr < 0.30:
-            new_conf = 0.75     # very bad  → demand high confidence
-        elif rwr < 0.45:
-            new_conf = 0.65     # below avg → tighten
-        elif rwr > 0.60:
-            new_conf = 0.50     # good      → relax
-        else:
-            new_conf = 0.60     # normal
+    # ── Cooldown: only if streak GREW in this session AND hit ≥ 4 ────────────
+    if loss_streak > _prev_loss_streak and loss_streak >= 4 and _cooldown == 0:
+        _cooldown = 1
+        print(f"  ⚠️  AUDITOR: streak {loss_streak}x → cooldown 1 cyklus")
+
+    _prev_loss_streak = loss_streak
+
+    # ── Position size (no hard block — just scale down) ───────────────────────
+    if loss_streak >= 5:
+        _position_size_mult = 0.25
+    elif loss_streak >= 3:
+        _position_size_mult = 0.50
     else:
-        new_conf = 0.60         # not enough data → default
+        _position_size_mult = 1.0
 
-    if abs(new_conf - _min_confidence) >= 0.05:
-        print(f"  🧠 AUDITOR: min_confidence  {_min_confidence:.2f} → {new_conf:.2f}"
-              f"  (posledních {rc} obchodů  WR:{rwr:.0%})")
-        _min_confidence = new_conf
+    # ── Dynamic min_confidence ────────────────────────────────────────────────
+    if rc >= 5:
+        if   rwr < 0.30: base = 0.70
+        elif rwr < 0.45: base = 0.62
+        elif rwr > 0.60: base = 0.50
+        else:            base = 0.55
+    else:
+        base = 0.55
 
-    # ── Strategy weights (refresh every audit cycle) ──────────────────────────
+    # Exploration mode: no trades for 15 min → lower threshold
+    if since and since > 900:
+        base = max(0.45, base - 0.05)
+
+    if abs(base - _min_confidence) >= 0.02:
+        since_s = f"  since:{since:.0f}s" if since else ""
+        print(f"  🧠 AUDITOR: min_conf {_min_confidence:.2f}→{base:.2f}"
+              f"  WR:{rwr:.0%}  streak:{loss_streak}{since_s}")
+        _min_confidence = base
+
+    # ── Strategy weights ──────────────────────────────────────────────────────
     if t >= 10:
         try:
-            weights = _weights.update()
-            if weights:
-                best = max(weights, key=weights.get)
-                print(f"  📊 AUDITOR: nejlepší strategie → {best}  "
-                      f"(váha {weights[best]:.2f})")
-        except Exception as e:
-            pass   # Firebase unavailable → skip silently
+            w = _weights.update()
+            if w:
+                _cached_weights = w
+                best = max(w, key=w.get)
+                print(f"  📊 AUDITOR: best={best}  w={w[best]:.2f}")
+        except Exception:
+            pass
 
-    # Status line
-    cd_tag = f"  ⏸ cooldown {_cooldown}" if _cooldown > 0 else ""
-    print(f"  🔍 AUDITOR: min_conf={_min_confidence:.2f}  "
-          f"loss_streak={loss_streak}  recent_WR={rwr:.0%}{cd_tag}")
+    cd_tag   = f"  ⏸{_cooldown}" if _cooldown   > 0   else ""
+    sz_tag   = f"  sz×{_position_size_mult:.2f}" if _position_size_mult < 1.0 else ""
+    print(f"  🔍 AUDITOR: conf={_min_confidence:.2f}  streak={loss_streak}"
+          f"  WR:{rwr:.0%}{cd_tag}{sz_tag}")

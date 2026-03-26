@@ -1,44 +1,42 @@
 from collections import defaultdict
-from src.services.firebase_client import load_all_signals
+from src.services.firebase_client import load_history
+
+# Default weights — always returned so weights are never empty
+_DEFAULTS = {
+    "BULL_TREND":  1.0,
+    "BEAR_TREND":  1.0,
+    "RANGING":     1.0,
+    "QUIET_RANGE": 1.0,
+    "HIGH_VOL":    1.0,
+}
 
 
 class StrategyWeights:
 
     def __init__(self):
-        self.weights = defaultdict(lambda: 1.0)
+        self.weights = dict(_DEFAULTS)
 
     def update(self):
-        signals = load_all_signals()
+        trades = load_history()
+        perf   = defaultdict(lambda: {"win": 0, "loss": 0})
 
-        performance = defaultdict(lambda: {"win": 0, "loss": 0})
-
-        for s in signals:
-            strategy = s.get("strategy")
-            result = s.get("result")
-
-            # ❗ ochrana (důležité)
-            if not strategy or result not in ["WIN", "LOSS"]:
+        for t in trades:
+            # strategy field was stored as regime in _slim_trade
+            strat  = t.get("strategy") or t.get("regime")
+            result = t.get("result")
+            if not strat or result not in ("WIN", "LOSS"):
                 continue
+            perf[strat]["win" if result == "WIN" else "loss"] += 1
 
-            if result == "WIN":
-                performance[strategy]["win"] += 1
-            else:
-                performance[strategy]["loss"] += 1
-
-        for strat, data in performance.items():
+        updated = dict(_DEFAULTS)
+        for strat, data in perf.items():
             total = data["win"] + data["loss"]
-
-            if total == 0:
-                continue
-
-            winrate = data["win"] / total
-            weight = 0.5 + winrate
-
             if total < 5:
-                weight = 1.0
+                updated[strat] = 1.0
+                continue
+            wr = data["win"] / total
+            updated[strat] = round(0.5 + wr, 3)
 
-            self.weights[strat] = weight
-
-        print("🧠 Strategy weights:", dict(self.weights))
-
+        self.weights = updated
+        print("🧠 Strategy weights:", {k: f"{v:.2f}" for k, v in self.weights.items()})
         return dict(self.weights)

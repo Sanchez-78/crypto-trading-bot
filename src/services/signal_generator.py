@@ -1,26 +1,34 @@
 """
-Professional multi-indicator signal generator.
+Multi-indicator signal generator.
 
-Strategy (research-backed):
-  BULL_TREND regime  → trend-following BUY
-    confirm: EMA10>EMA50, price>EMA200, RSI 45-70, MACD cross above zero, ADX>25
-  BEAR_TREND regime  → trend-following SELL (mirror)
-  RANGING regime     → mean-reversion on BB extremes + RSI divergence
-  HIGH_VOL / QUIET   → skip (too noisy / no edge)
+Regime-aware logic:
+  BULL_TREND / BEAR_TREND  → trend-following (EMA × ADX × MACD)
+  RANGING                  → mean-reversion  (RSI extremes + BB)
+  QUIET_RANGE              → mean-reversion, strict score ≥ 3
+  HIGH_VOL                 → skip (too noisy)
 
-Signal score ≥ 3 required before passing to decision engine.
-Debounce prevents repeat signals in same direction.
+Score thresholds:
+  trending:        ≥ 3
+  ranging/quiet:   ≥ 2   (RSI extreme + BB already gives ≥ 3)
+  fallback mode:   ≥ 2   (no trades ≥ 15 min)
+
+Side balance:  if >60% one side in last 10 signals → penalise score −1
+Time debounce: 30 s per symbol (regardless of direction)
 """
 
-from src.core.event_bus import subscribe, publish
+from src.core.event_bus       import subscribe, publish
 from src.services.learning_event import track_generated, track_filtered
-import math
+import math, time
 
 prices     = {}   # symbol -> list[float], capped at 600
-_macd_vals = {}   # symbol -> list[float]  (MACD line history for signal EMA)
-_last_act  = {}   # symbol -> last action  (debounce)
+_macd_vals = {}   # symbol -> list[float]
+_last_ts   = {}   # symbol -> float (last signal timestamp, time-based debounce)
+_side_hist = {}   # symbol -> deque[action], last 10 actions
 
-MIN_TICKS = 50    # warm-up ticks before generating any signals
+MIN_TICKS    = 50
+DEBOUNCE_S   = 30    # seconds between signals per symbol
+SIDE_WINDOW  = 10    # signals to track for side balance
+SIDE_MAX_PCT = 0.60  # penalise if > 60% one side
 
 
 # ── Indicators ────────────────────────────────────────────────────────────────
@@ -57,19 +65,15 @@ def _atr(series, n=14):
 
 
 def _adx(series, n=14):
-    """ADX approximation from single-price stream (no OHLCV)."""
     if len(series) < n * 2:
         return 20.0, 50.0, 50.0
-
     ups   = [max(series[i] - series[i-1], 0) for i in range(1, len(series))]
     downs = [max(series[i-1] - series[i], 0) for i in range(1, len(series))]
     trs   = [abs(series[i] - series[i-1])    for i in range(1, len(series))]
-
-    tr_s = _ema(trs[-n*3:],   n) or 1e-9
-    di_p = 100 * _ema(ups[-n*3:],   n) / tr_s
-    di_m = 100 * _ema(downs[-n*3:], n) / tr_s
-    adx  = 100 * abs(di_p - di_m) / ((di_p + di_m) or 1e-9)
-
+    tr_s  = _ema(trs[-n*3:],   n) or 1e-9
+    di_p  = 100 * _ema(ups[-n*3:],   n) / tr_s
+    di_m  = 100 * _ema(downs[-n*3:], n) / tr_s
+    adx   = 100 * abs(di_p - di_m) / ((di_p + di_m) or 1e-9)
     return adx, di_p, di_m
 
 
@@ -78,8 +82,6 @@ def _adx(series, n=14):
 def _regime(series, adx, di_p, di_m, atr_val):
     curr    = series[-1]
     atr_pct = atr_val / curr if curr else 0
-
-    # BB width for range detection
     bb_lo, bb_mid, bb_hi = _bb(series)
     bb_w = (bb_hi - bb_lo) / bb_mid if bb_mid else 0
 
@@ -90,16 +92,10 @@ def _regime(series, adx, di_p, di_m, atr_val):
     return "RANGING"
 
 
-# ── Signal score (triple-confirmation system) ─────────────────────────────────
+# ── Score (regime-aware) ──────────────────────────────────────────────────────
 
 def _score(action, curr, e10, e50, e200, rsi_v,
            macd_l, macd_s, bb_lo, bb_hi, adx_v, regime):
-    """
-    Return (score, reasons).
-    Each confirming condition adds 1 point.
-    BB mean-reversion adds 2 (strong signal).
-    Minimum score 2 required.
-    """
     sc = 0
     reasons = []
 
@@ -111,6 +107,7 @@ def _score(action, curr, e10, e50, e200, rsi_v,
         elif macd_l > macd_s:                      sc += 1; reasons.append("MACD↑")
         if regime == "BULL_TREND":                  sc += 1; reasons.append("ADX↑")
         if curr <= bb_lo * 1.003 and rsi_v < 35:   sc += 2; reasons.append("BB↩L")
+        elif curr <= bb_lo * 1.005 and rsi_v < 40: sc += 1; reasons.append("BBlo")
     else:
         if e10 < e50:                              sc += 1; reasons.append("EMA↓")
         if curr < e200:                            sc += 1; reasons.append("HTF↓")
@@ -119,8 +116,39 @@ def _score(action, curr, e10, e50, e200, rsi_v,
         elif macd_l < macd_s:                      sc += 1; reasons.append("MACD↓")
         if regime == "BEAR_TREND":                  sc += 1; reasons.append("ADX↓")
         if curr >= bb_hi * 0.997 and rsi_v > 65:   sc += 2; reasons.append("BB↩H")
+        elif curr >= bb_hi * 0.995 and rsi_v > 60: sc += 1; reasons.append("BBhi")
 
     return sc, reasons
+
+
+# ── Side balance ──────────────────────────────────────────────────────────────
+
+def _side_penalty(s, action):
+    """Return score penalty (0 or 1) if one side dominates last SIDE_WINDOW signals."""
+    hist = _side_hist.setdefault(s, [])
+    if len(hist) < SIDE_WINDOW:
+        return 0
+    dominant_cnt = max(hist.count("BUY"), hist.count("SELL"))
+    if dominant_cnt / SIDE_WINDOW > SIDE_MAX_PCT:
+        dominant = "BUY" if hist.count("BUY") > hist.count("SELL") else "SELL"
+        return 1 if action == dominant else 0
+    return 0
+
+
+def _record_side(s, action):
+    hist = _side_hist.setdefault(s, [])
+    hist.append(action)
+    if len(hist) > SIDE_WINDOW:
+        hist.pop(0)
+
+
+# ── Exploration mode ──────────────────────────────────────────────────────────
+
+def _is_exploration():
+    """True if no signal was accepted from any symbol in last 15 min."""
+    if not _last_ts:
+        return False
+    return all(time.time() - ts > 900 for ts in _last_ts.values())
 
 
 # ── Main handler ──────────────────────────────────────────────────────────────
@@ -133,7 +161,7 @@ def on_price(data):
         hist.pop(0)
 
     if len(hist) < MIN_TICKS:
-        return  # silent warm-up
+        return
 
     track_generated()
 
@@ -159,31 +187,44 @@ def on_price(data):
     reg = _regime(hist, adx_v, di_p, di_m, atr_v)
 
     # ── Regime gate ───────────────────────────────────────────────────────────
-    if reg in ("HIGH_VOL", "QUIET_RANGE"):
+    if reg == "HIGH_VOL":
         track_filtered()
         return
 
-    # ── Direction from EMA crossover ──────────────────────────────────────────
-    if e10 > e50:
-        action = "BUY"
-    elif e10 < e50:
-        action = "SELL"
+    # ── Direction — regime-aware ───────────────────────────────────────────────
+    if reg in ("RANGING", "QUIET_RANGE"):
+        # Mean-reversion: RSI extremes only
+        if   rsi_v < 30: action = "BUY"
+        elif rsi_v > 70: action = "SELL"
+        else:
+            # Looser trigger in exploration mode
+            if _is_exploration():
+                if   rsi_v < 40: action = "BUY"
+                elif rsi_v > 60: action = "SELL"
+                else:
+                    track_filtered(); return
+            else:
+                track_filtered(); return
     else:
-        track_filtered()
-        return
+        # Trend-following: EMA crossover
+        if   e10 > e50: action = "BUY"
+        elif e10 < e50: action = "SELL"
+        else:
+            track_filtered(); return
 
-    # Regime-direction alignment: in a strong trend, only trade with the trend
-    if reg == "BULL_TREND" and action != "BUY":
-        track_filtered()
-        return
-    if reg == "BEAR_TREND" and action != "SELL":
-        track_filtered()
-        return
+        # Trend-direction alignment
+        if reg == "BULL_TREND" and action != "BUY":
+            track_filtered(); return
+        if reg == "BEAR_TREND" and action != "SELL":
+            track_filtered(); return
 
-    # ── EMA spread filter: prevent weak/stale crossovers ──────────────────────
-    # Require EMA10-EMA50 gap > 20% of ATR to confirm trend has strength
-    ema_spread = abs(e10 - e50)
-    if ema_spread < atr_v * 0.2:
+        # EMA spread filter (trend only — not RANGING)
+        ema_spread = abs(e10 - e50)
+        if ema_spread < atr_v * 0.2:
+            track_filtered(); return
+
+    # ── Time-based debounce (30 s per symbol) ─────────────────────────────────
+    if time.time() - _last_ts.get(s, 0) < DEBOUNCE_S:
         track_filtered()
         return
 
@@ -193,19 +234,46 @@ def on_price(data):
         macd_l, macd_s, bb_lo, bb_hi, adx_v, reg
     )
 
-    if score < 3:
+    # Side-balance penalty
+    score -= _side_penalty(s, action)
+
+    # Threshold: 2 in ranging, 2 in exploration, 3 normally
+    exploration = _is_exploration()
+    min_score   = 2 if (reg in ("RANGING", "QUIET_RANGE") or exploration) else 3
+
+    if score < min_score:
         track_filtered()
         return
 
-    # ── Debounce ──────────────────────────────────────────────────────────────
-    if _last_act.get(s) == action:
-        track_filtered()
-        return
-    _last_act[s] = action
+    # ── Filter guard: never drop below 1% pass-rate ───────────────────────────
+    from src.services.learning_event import get_metrics as _gm
+    _m  = _gm()
+    gen = _m.get("signals_generated", 0)
+    flt = _m.get("signals_filtered",  0)
+    blk = _m.get("blocked", 0)
+    if gen > 50:
+        passed   = max(0, gen - flt - blk)
+        pass_pct = passed / gen
+        if pass_pct < 0.01 and score < 2:
+            # Auto-lower threshold to prevent total filter collapse
+            track_filtered()
+            return
 
-    # ── Confidence: score/5  (score ≥ 3 required, max = 5+) ──────────────────
-    confidence = min(score / 5.0, 1.0)
+    # ── Confidence: regime-weighted ───────────────────────────────────────────
+    try:
+        from bot2.auditor import get_strategy_weights
+        w = get_strategy_weights()
+        regime_w = w.get(reg, 1.0)
+    except Exception:
+        regime_w = 1.0
+
+    base_conf  = min(score / 5.0, 1.0)
+    confidence = min(base_conf * regime_w, 1.0)
     vol_pct    = atr_v / p if p else 0
+
+    # ── Record + emit ─────────────────────────────────────────────────────────
+    _last_ts[s] = time.time()
+    _record_side(s, action)
 
     signal = {
         "symbol":     s,
@@ -225,8 +293,9 @@ def on_price(data):
 
     short = s.replace("USDT", "")
     icon  = "🟢" if action == "BUY" else "🔴"
+    expl  = "  [EXPLORE]" if exploration else ""
     print(f"  {icon} {short} ${p:,.4f} | "
-          f"score:{score} [{','.join(reasons)}] | {reg} | conf:{confidence:.0%}")
+          f"score:{score} [{','.join(reasons)}] | {reg} | conf:{confidence:.0%}{expl}")
 
     from src.services.realtime_decision_engine import evaluate_signal
     result = evaluate_signal(signal)
@@ -238,11 +307,6 @@ def on_price(data):
 
 
 def warmup(symbols=("BTCUSDT", "ETHUSDT", "ADAUSDT"), candles=80):
-    """
-    Pre-fill price history from Binance 1-minute klines so indicators
-    are ready immediately on startup (no 50-tick / ~5-min wait).
-    Uses closing prices of last `candles` 1-minute candles per symbol.
-    """
     import requests
     print("🌡️  Indicator warmup from Binance klines...")
     for s in symbols:
@@ -255,7 +319,7 @@ def warmup(symbols=("BTCUSDT", "ETHUSDT", "ADAUSDT"), candles=80):
             closes = [float(c[4]) for c in r.json()]
             if closes:
                 prices[s]     = closes
-                _macd_vals[s] = []   # will rebuild from ticks
+                _macd_vals[s] = []
                 short = s.replace("USDT", "")
                 print(f"   {short}: {len(closes)} svíček načteno  "
                       f"(poslední: ${closes[-1]:,.4f})")
