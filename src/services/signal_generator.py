@@ -16,7 +16,7 @@ Side balance:  if >60% one side in last 10 signals → penalise score −1
 Time debounce: 30 s per symbol (regardless of direction)
 """
 
-from src.core.event_bus       import subscribe, publish
+from src.core.event_bus       import subscribe_once, publish
 from src.services.learning_event import track_generated, track_filtered
 import math, time
 
@@ -108,6 +108,10 @@ def _score(action, curr, e10, e50, e200, rsi_v,
         if regime == "BULL_TREND":                  sc += 1; reasons.append("ADX↑")
         if curr <= bb_lo * 1.003 and rsi_v < 35:   sc += 2; reasons.append("BB↩L")
         elif curr <= bb_lo * 1.005 and rsi_v < 40: sc += 1; reasons.append("BBlo")
+        # Mean-reversion bonus for ranging (ensures score ≥ 2 in RANGING + RSI extreme)
+        if regime in ("RANGING", "QUIET_RANGE"):
+            if   rsi_v < 30: sc += 2; reasons.append("MR↓↓")
+            elif rsi_v < 42: sc += 1; reasons.append("MR↓")
     else:
         if e10 < e50:                              sc += 1; reasons.append("EMA↓")
         if curr < e200:                            sc += 1; reasons.append("HTF↓")
@@ -117,6 +121,10 @@ def _score(action, curr, e10, e50, e200, rsi_v,
         if regime == "BEAR_TREND":                  sc += 1; reasons.append("ADX↓")
         if curr >= bb_hi * 0.997 and rsi_v > 65:   sc += 2; reasons.append("BB↩H")
         elif curr >= bb_hi * 0.995 and rsi_v > 60: sc += 1; reasons.append("BBhi")
+        # Mean-reversion bonus for ranging
+        if regime in ("RANGING", "QUIET_RANGE"):
+            if   rsi_v > 70: sc += 2; reasons.append("MR↑↑")
+            elif rsi_v > 58: sc += 1; reasons.append("MR↑")
 
     return sc, reasons
 
@@ -145,9 +153,9 @@ def _record_side(s, action):
 # ── Exploration mode ──────────────────────────────────────────────────────────
 
 def _is_exploration():
-    """True if no signal was accepted from any symbol in last 15 min."""
+    """True if no signal accepted in last 15 min, OR no signals ever sent (startup)."""
     if not _last_ts:
-        return False
+        return True   # startup: no signals yet → exploration from the start
     return all(time.time() - ts > 900 for ts in _last_ts.values())
 
 
@@ -245,31 +253,42 @@ def on_price(data):
         track_filtered()
         return
 
-    # ── Filter guard: never drop below 1% pass-rate ───────────────────────────
+    # ── Filter guard: anti-collapse (pass-rate < 2% → force pass score ≥ 1) ──
     from src.services.learning_event import get_metrics as _gm
     _m  = _gm()
     gen = _m.get("signals_generated", 0)
     flt = _m.get("signals_filtered",  0)
     blk = _m.get("blocked", 0)
+    _collapsed = False
     if gen > 50:
         passed   = max(0, gen - flt - blk)
         pass_pct = passed / gen
-        if pass_pct < 0.01 and score < 2:
-            # Auto-lower threshold to prevent total filter collapse
-            track_filtered()
-            return
+        if pass_pct < 0.02:
+            _collapsed = True   # collapse: pass anything with score ≥ 1
 
-    # ── Confidence: regime-weighted ───────────────────────────────────────────
+    if not _collapsed and score < min_score:
+        track_filtered()
+        return
+
+    # ── Confidence: indicator-weighted ────────────────────────────────────────
+    # Weights per signal reason prefix — adjust which indicators to trust more
+    _IND_W = {"EMA": 1.0, "HTF": 0.9, "MAC": 1.0, "RSI": 0.8,
+              "ADX": 0.7, "BB":  1.2, "MR":  1.1}
+
+    def _ind_conf(sc, rsns):
+        if not rsns:
+            return min(sc / 5.0, 1.0)
+        w_sum = sum(_IND_W.get(r[:3], 1.0) for r in rsns)
+        return min((sc / 5.0) * (w_sum / len(rsns)), 1.0)
+
     try:
         from bot2.auditor import get_strategy_weights
-        w = get_strategy_weights()
-        regime_w = w.get(reg, 1.0)
+        regime_w = get_strategy_weights().get(reg, 1.0)
     except Exception:
         regime_w = 1.0
 
-    base_conf  = min(score / 5.0, 1.0)
-    confidence = min(base_conf * regime_w, 1.0)
-    vol_pct    = atr_v / p if p else 0
+    confidence = min(_ind_conf(score, reasons) * regime_w, 1.0)
+    vol_pct = atr_v / p if p else 0
 
     # ── Record + emit ─────────────────────────────────────────────────────────
     _last_ts[s] = time.time()
@@ -327,4 +346,4 @@ def warmup(symbols=("BTCUSDT", "ETHUSDT", "ADAUSDT"), candles=80):
             print(f"   ⚠️ warmup {s}: {e}")
 
 
-subscribe("price_tick", on_price)
+subscribe_once("price_tick", on_price)

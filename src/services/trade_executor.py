@@ -18,7 +18,7 @@ Position sizing:
 Firebase batch flush: every 20 trades OR every 5 minutes.
 """
 
-from src.core.event_bus          import subscribe
+from src.core.event_bus          import subscribe_once
 from src.services.learning_event import update_metrics
 from src.services.firebase_client import save_batch
 import time
@@ -150,5 +150,5 @@ def on_price(data):
     del _positions[sym]
 
 
-subscribe("signal_created", handle_signal)
-subscribe("price_tick",     on_price)
+subscribe_once("signal_created", handle_signal)
+subscribe_once("price_tick",     on_price)

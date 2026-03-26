@@ -76,7 +76,7 @@ def run_audit():
 
     # ── Position size (no hard block — just scale down) ───────────────────────
     if loss_streak >= 5:
-        _position_size_mult = 0.25
+        _position_size_mult = 0.30
     elif loss_streak >= 3:
         _position_size_mult = 0.50
     else:
@@ -100,6 +100,24 @@ def run_audit():
         print(f"  🧠 AUDITOR: min_conf {_min_confidence:.2f}→{base:.2f}"
               f"  WR:{rwr:.0%}  streak:{loss_streak}{since_s}")
         _min_confidence = base
+
+    # ── Anti-collapse: filter pass-rate < 2% → lower min_conf ───────────────
+    gen = _m.get("signals_generated", 0)
+    flt = _m.get("signals_filtered",  0)
+    blk = _m.get("blocked", 0)
+    if gen > 50:
+        passed_rt = max(0, gen - flt - blk) / gen
+        if passed_rt < 0.02 and base > 0.50:
+            base = max(0.45, base - 0.05)
+            print(f"  ⚠️  FILTER COLLAPSE: pass={passed_rt:.1%} → min_conf={base:.2f}")
+
+    # ── Deadlock: signals generated but no trades for 20 min → hard reset ────
+    if since and since > 1200 and gen > 50:
+        if _min_confidence > 0.50 or _cooldown > 0:
+            _min_confidence = 0.50
+            _cooldown       = 0
+            base            = 0.50
+            print(f"  🔓 DEADLOCK RESET: {since/60:.0f}min no trades → conf=0.50  cooldown=0")
 
     # ── Strategy weights ──────────────────────────────────────────────────────
     if t >= 10:
