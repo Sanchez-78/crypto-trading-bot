@@ -1,5 +1,6 @@
 import requests, time
 from src.core.event_bus import publish
+from src.services.learning_event import track_price
 
 SYMBOLS = ["BTCUSDT", "ETHUSDT", "ADAUSDT"]
 
@@ -15,6 +16,7 @@ def start():
                     timeout=2
                 )
                 p = float(r.json()["price"])
+                track_price(s, p)
                 publish("price_tick", {"symbol": s, "price": p})
             except:
                 pass

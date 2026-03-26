@@ -4,10 +4,15 @@ import os, json, base64, time
 
 db = None
 
+# Cache TTL = 600s (10 min) to stay under 50k reads/day limit
+# 100 docs × 144 fetches/day = 14,400 reads/day
 CACHE = {
     "history": [],
     "last_fetch": 0
 }
+CACHE_TTL = 600
+HISTORY_LIMIT = 100
+
 
 def init_firebase():
     global db
@@ -31,13 +36,13 @@ def init_firebase():
     return db
 
 
-def load_history(limit=200):
+def load_history(limit=HISTORY_LIMIT):
     global CACHE, db
 
     if db is None:
         return []
 
-    if time.time() - CACHE["last_fetch"] < 60:
+    if time.time() - CACHE["last_fetch"] < CACHE_TTL:
         return CACHE["history"]
 
     try:
@@ -51,7 +56,7 @@ def load_history(limit=200):
         CACHE["history"] = [d.to_dict() for d in docs]
         CACHE["last_fetch"] = time.time()
 
-        print(f"📥 Loaded {len(CACHE['history'])} trades")
+        print(f"📥 Loaded {len(CACHE['history'])} trades from Firebase")
 
     except Exception as e:
         print("❌ load_history:", e)
@@ -66,6 +71,6 @@ def save_batch(batch):
     try:
         for item in batch:
             db.collection("trades").add(item)
-        print(f"💾 Saved {len(batch)} trades")
+        print(f"💾 Saved {len(batch)} trades to Firebase")
     except Exception as e:
         print("❌ save_batch:", e)

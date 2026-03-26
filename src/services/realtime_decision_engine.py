@@ -37,6 +37,8 @@ def evaluate_signal(signal):
     for t in history:
         if t["symbol"] != signal["symbol"]:
             continue
+        if t.get("action") != signal["action"]:
+            continue
         sim = similarity(f, t.get("features", {}))
         if sim > 0.6:
             similar.append((t, sim * decay(t["timestamp"])))
@@ -51,9 +53,11 @@ def evaluate_signal(signal):
     wr = wins / w if w else 0
     avg_p = profit / w if w else 0
 
-    print(f"🧠 WR={wr:.2f} PnL={avg_p:.4f} regime={regime}")
+    verdict = "✅ OK" if wr >= 0.45 else "🚫 BLK"
+    print(f"    🧠 vzory:{len(similar)} WR:{wr:.0%} PnL:{avg_p:.5f} {regime} {verdict}")
 
-    if wr < 0.45 or avg_p < 0:
+    # Block only if winrate is clearly bad (avoid blocking on tiny avg_p noise)
+    if wr < 0.45:
         track_blocked()
         return None
 
