@@ -32,7 +32,7 @@ SL_ATR_MULT = 1.3       # was 1.5
 MIN_SL_PCT  = 0.0015    # 0.15% minimum SL
 MIN_TP_PCT  = 0.0030    # 0.30% minimum TP
 MAX_TICKS   = 60
-FLUSH_EVERY = 300
+FLUSH_EVERY = 60
 
 
 def get_open_positions():

@@ -323,11 +323,31 @@ def save_last_trade(trade):
         print(f"❌ save_last_trade: {e}")
 
 
-def save_metrics_full(metrics):
+def _build_open_positions(positions):
+    """Serialise open_positions dict for Firestore (no nested objects)."""
+    if not positions:
+        return {}
+    out = {}
+    for sym, pos in positions.items():
+        entry  = pos.get("entry", 0)
+        tp_pct = round(pos.get("tp_move", 0) * 100, 3)
+        sl_pct = round(pos.get("sl_move", 0) * 100, 3)
+        out[sym] = {
+            "action":   pos.get("action"),
+            "entry":    round(float(entry), 4),
+            "tp_pct":   tp_pct,
+            "sl_pct":   sl_pct,
+            "ticks":    pos.get("ticks", 0),
+            "size":     round(float(pos.get("size", 0)), 4),
+        }
+    return out
+
+
+def save_metrics_full(metrics, open_positions=None):
     """
     Write full nested metrics to metrics/latest.
-    Called every 30 s from bot2/main.py.
-    App reads: performance, health, learning, equity, system, sym_stats.
+    Called every 10 s from bot2/main.py.
+    App reads: performance, health, learning, equity, system, sym_stats, open_positions.
     """
     if db is None:
         return
@@ -435,6 +455,7 @@ def save_metrics_full(metrics):
             "sym_stats":    metrics.get("sym_stats", {}),
             "last_prices":  prices_clean,
             "last_signals": metrics.get("last_signals", {}),
+            "open_positions": _build_open_positions(open_positions),
             "timestamp":    time.time(),
         }
         db.collection("metrics").document("latest").set(data, merge=False)
@@ -463,17 +484,19 @@ def daily_budget_report():
     Estimate daily Firebase operation counts (call once at startup).
 
     Reads:
-      load_history:   100 docs × (86400 / 600)  = 14 400 reads/day
+      load_history:   100 docs × (86400 / 600)  = 14 400 reads/day   (cached 10 min)
       load_weights:     1 doc  × (86400 / 300)  =    288 reads/day
-      load_all_signals: 200 docs × (86400 / 900) = 19 200 reads/day  ← only if retrainer runs
     Writes:
-      save_batch (20 trades/batch): depends on signal rate
-        conservative 1 batch/h → 24 batches × 20 = 480 writes/day
-        aggressive   5 batch/h → 120 batches × 20 = 2 400 writes/day
+      save_metrics_full  every 10 s              =  8 640 writes/day
+      save_batch         every 60 s              =  1 440 writes/day
+      save_last_trade    per trade (est. 200/d)  =    200 writes/day
+      total estimate                             ~ 10 280 writes/day
     Limit: 50 000 reads · 20 000 writes/day
     """
     print("📊 Firebase daily budget:")
-    print("   Reads : load_history  ≤ 14 400/day")
+    print("   Reads : load_history  ≤ 14 400/day  (cached 10 min)")
     print("           load_weights  ≤    288/day")
-    print("   Writes: trades (est.) ≤  2 400/day (conservative)")
-    print("   Limit : 50 000 reads · 20 000 writes/day  ✅")
+    print("   Writes: metrics/latest every 10s  =  8 640/day")
+    print("           save_batch    every 60s   =  1 440/day")
+    print("           save_last_trade (est.)    =    200/day")
+    print("   Total : ~10 280 writes/day  (limit 20 000)  ✅")

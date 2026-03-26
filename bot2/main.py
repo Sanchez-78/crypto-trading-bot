@@ -10,8 +10,10 @@ from bot2.auditor import run_audit
 import src.services.signal_generator
 import src.services.trade_executor
 
-_last_audit = 0
-AUDIT_INTERVAL = 30   # seconds
+_last_audit   = 0
+_last_metrics = 0
+AUDIT_INTERVAL   = 30    # seconds
+METRICS_INTERVAL = 10    # save metrics/latest every 10 s (was 30 s)
 
 _start_time = time.time()
 SYMBOLS     = ["BTCUSDT", "ETHUSDT", "ADAUSDT"]
@@ -448,11 +450,16 @@ def main():
     while True:
         time.sleep(10)
 
-        global _last_audit
-        if time.time() - _last_audit >= AUDIT_INTERVAL:
+        global _last_audit, _last_metrics
+        now = time.time()
+
+        if now - _last_audit >= AUDIT_INTERVAL:
             run_audit()
-            save_metrics_full(get_metrics())
-            _last_audit = time.time()
+            _last_audit = now
+
+        if now - _last_metrics >= METRICS_INTERVAL:
+            save_metrics_full(get_metrics(), get_open_positions())
+            _last_metrics = now
 
         print_status()
 
