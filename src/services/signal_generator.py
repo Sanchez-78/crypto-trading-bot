@@ -230,4 +230,30 @@ def on_price(data):
         track_filtered()
 
 
+def warmup(symbols=("BTCUSDT", "ETHUSDT", "ADAUSDT"), candles=80):
+    """
+    Pre-fill price history from Binance 1-minute klines so indicators
+    are ready immediately on startup (no 50-tick / ~5-min wait).
+    Uses closing prices of last `candles` 1-minute candles per symbol.
+    """
+    import requests
+    print("🌡️  Indicator warmup from Binance klines...")
+    for s in symbols:
+        try:
+            r = requests.get(
+                "https://api.binance.com/api/v3/klines",
+                params={"symbol": s, "interval": "1m", "limit": candles},
+                timeout=5,
+            )
+            closes = [float(c[4]) for c in r.json()]
+            if closes:
+                prices[s]     = closes
+                _macd_vals[s] = []   # will rebuild from ticks
+                short = s.replace("USDT", "")
+                print(f"   {short}: {len(closes)} svíček načteno  "
+                      f"(poslední: ${closes[-1]:,.4f})")
+        except Exception as e:
+            print(f"   ⚠️ warmup {s}: {e}")
+
+
 subscribe("price_tick", on_price)

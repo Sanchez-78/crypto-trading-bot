@@ -111,6 +111,62 @@ def get_metrics():
     }
 
 
+def bootstrap_from_history(trades):
+    """
+    Rebuild METRICS from Firebase trade history on startup.
+    Without this the bot always starts at 0 trades / 0% winrate after every restart.
+    Trades must be sorted oldest-first so streaks/equity_peak are correct.
+    """
+    if not trades:
+        print("📂 Bootstrap: žádná historická data")
+        return
+
+    global _recent_results
+    m = METRICS
+
+    sorted_trades = sorted(trades, key=lambda t: t.get("timestamp", 0))
+
+    for trade in sorted_trades:
+        result = trade.get("result")
+        profit = float(trade.get("profit") or 0)
+        sym    = trade.get("symbol")
+        conf   = float(trade.get("confidence") or 0.5)
+
+        if not result or not sym:
+            continue
+
+        m["trades"] += 1
+        m["signals_executed"] += 1
+        m["profit"] += profit
+
+        if result == "WIN":
+            m["wins"]       += 1
+            m["win_streak"] += 1
+            m["loss_streak"] = 0
+        else:
+            m["losses"]      += 1
+            m["loss_streak"] += 1
+            m["win_streak"]   = 0
+
+        m["equity_peak"] = max(m["equity_peak"], m["profit"])
+        m["drawdown"]    = max(m["drawdown"], m["equity_peak"] - m["profit"])
+        m["confidence_avg"] = m["confidence_avg"] * 0.9 + conf * 0.1
+
+        _update_sym(sym, result, profit)
+
+    # Recent trend window = last 20 trades
+    _recent_results = [
+        t["result"] for t in sorted_trades[-20:]
+        if t.get("result") in ("WIN", "LOSS")
+    ]
+
+    t   = m["trades"]
+    wr  = m["wins"] / t if t else 0
+    print(f"📂 Bootstrap: {t} obchodů  WR:{wr*100:.1f}%  "
+          f"zisk:{m['profit']:+.6f}  "
+          f"posledních {len(_recent_results)} výsledků obnoveno")
+
+
 def track_generated(): METRICS["signals_generated"] += 1
 def track_filtered():  METRICS["signals_filtered"] += 1
 def track_blocked():   METRICS["blocked"] += 1

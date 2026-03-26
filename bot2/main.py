@@ -1,9 +1,10 @@
 import threading, time
 
 from src.services.market_stream import start
-from src.services.firebase_client import init_firebase, daily_budget_report
-from src.services.learning_event import get_metrics
+from src.services.firebase_client import init_firebase, daily_budget_report, load_history
+from src.services.learning_event import get_metrics, bootstrap_from_history
 from src.services.trade_executor import get_open_positions
+from src.services.signal_generator import warmup
 
 import src.services.signal_generator
 import src.services.trade_executor
@@ -213,6 +214,12 @@ def print_status():
 def main():
     init_firebase()
     daily_budget_report()
+
+    # Restore historical state so bot doesn't start from zero after restart
+    bootstrap_from_history(load_history())
+
+    # Pre-warm price indicators from Binance klines (skip 5-min tick warmup)
+    warmup()
 
     t = threading.Thread(target=start)
     t.daemon = True
