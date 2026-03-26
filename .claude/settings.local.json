@@ -18,7 +18,8 @@
       "Bash(ls -la *.py)",
       "Bash(dir *.py)",
       "Read(//c/Projects/CryptoMaster_app/**)",
-      "Bash(rm -rf .git)"
+      "Bash(rm -rf .git)",
+      "WebSearch"
     ]
   }
 }
