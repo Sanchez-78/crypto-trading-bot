@@ -36,7 +36,10 @@ def g(text, color):
 
 # ── Bars ──────────────────────────────────────────────────────────────────────
 
-def cbar(val, total=1.0, w=16, lo=0.45, hi=0.60):
+BAR_W = 18   # single width for all progress bars
+
+
+def cbar(val, total=1.0, w=BAR_W, lo=0.45, hi=0.60):
     """Color-coded bar: red / yellow / green."""
     r = min(max(val / total if total else 0, 0.0), 1.0)
     f = int(w * r)
@@ -44,19 +47,19 @@ def cbar(val, total=1.0, w=16, lo=0.45, hi=0.60):
     return col + "\u2588" * f + C.GRY + "\u2591" * (w - f) + C.RST
 
 
-def blue_bar(val, total, w=20):
-    """Blue calibration bar."""
+def blue_bar(val, total, w=BAR_W):
+    """Blue calibration bar (caps at 100%)."""
     r = min(max(val / total if total else 0, 0.0), 1.0)
     f = int(w * r)
-    col = C.CYN if r >= 0.8 else C.BLU
+    col = C.CYN if r >= 1.0 else C.BLU
     return col + "\u2588" * f + C.GRY + "\u2591" * (w - f) + C.RST
 
 
-def pnl_bar(profit, scale=0.001, w=12):
-    """Directional profit bar."""
-    r   = min(abs(profit) / scale, 1.0)
-    f   = int(w * r)
-    col = C.GRN if profit >= 0 else C.RED
+def pnl_bar(profit, scale=0.001, w=BAR_W):
+    """Directional profit bar — green right / red left."""
+    r    = min(abs(profit) / scale, 1.0)
+    f    = int(w * r)
+    col  = C.GRN if profit >= 0 else C.RED
     sign = "\u25b6" if profit >= 0 else "\u25c4"
     return col + sign + "\u2588" * f + "\u2591" * (w - f) + C.RST
 
@@ -206,7 +209,7 @@ def print_status():
 
         print(f"    {g('Winrate', C.GRY)}     "
               f"{g(f'{w_pct:.1f}%', wr_col + C.BLD)}  "
-              f"{cbar(wr, 1.0, 18, 0.45, 0.55)}  "
+              f"{cbar(wr, 1.0, lo=0.45, hi=0.55)}  "
               f"{g('cil 55%', C.GRY)}")
 
         print(f"    {g('Zisk', C.GRY)}        "
@@ -265,17 +268,22 @@ def print_status():
             print(f"    {g(short, C.WHT + C.BLD):<5}  "
                   f"{g(str(str_), C.WHT):>4}  "
                   f"{g(f'{swr*100:.0f}%', wcol + C.BLD):>5}  "
-                  f"{cbar(swr, 1.0, 14, 0.45, 0.55)}  "
+                  f"{cbar(swr, 1.0, lo=0.45, hi=0.55)}  "
                   f"{g(f'{sproft:+.8f}', pcol):>12}  {icon}")
 
     # ── Learning ──────────────────────────────────────────────────────────────
     print(section("", "UCENI – JAK ROBOT ROSTE"))
 
-    cal_col = C.GRN if t >= 50 else C.BLU
+    if t >= 50:
+        cal_label = g("KALIBROVAN  " + "\u2713", C.GRN + C.BLD)
+        cal_note  = g(f"({t} obchodu celkem)", C.GRY)
+    else:
+        cal_label = g(f"{t} / 50 obchodu", C.BLU + C.BLD)
+        cal_note  = g(f"({50 - t} zbyvа)", C.GRY)
     print(f"    {g('Kalibrace', C.GRY)}    "
-          f"{g(f'{t}/50', cal_col + C.BLD)}  "
-          f"{blue_bar(t, 50, 20)}  "
-          f"{g(f'{min(t/50,1)*100:.0f}%', cal_col)}")
+          f"{cal_label}  "
+          f"{blue_bar(t, 50)}  "
+          f"{cal_note}")
 
     if t < 10:
         print(f"    {g('Sbiram prvni data – potrebuji 50 obchodu pro plnou kalibraci.', C.GRY)}")
@@ -292,7 +300,7 @@ def print_status():
     conf_note = "vysoka" if conf >= 0.6 else ("stredni" if conf >= 0.3 else "nizka")
     print(f"    {g('Jistota', C.GRY)}       "
           f"{g(f'{conf*100:.1f}%', conf_col + C.BLD)}  "
-          f"{cbar(conf, 1.0, 14, 0.3, 0.6)}  "
+          f"{cbar(conf, 1.0, lo=0.3, hi=0.6)}  "
           f"{g(conf_note, conf_col)}")
 
     # ── Strategy / Signals ────────────────────────────────────────────────────
