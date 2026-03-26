@@ -75,10 +75,16 @@ def evaluate_signal(signal):
     wins = sum(x[1] for x in similar if x[0]["result"] == "WIN")
     wr   = wins / w
 
-    verdict = "✅" if wr >= 0.45 else "🚫"
-    print(f"    🧠 {len(similar)} vzorů  WR:{wr:.0%}  {reg}  {verdict}")
+    # Adaptive threshold: stricter for symbols with poor recent performance
+    from src.services.learning_event import get_metrics as _gm
+    _ss = _gm().get("sym_stats", {}).get(signal["symbol"], {})
+    block_thr = 0.55 if (_ss.get("trades", 0) >= 10 and _ss.get("winrate", 0.5) < 0.40) else 0.45
 
-    if wr < 0.45:
+    verdict = "✅" if wr >= block_thr else "🚫"
+    thr_tag = f"(thr:{block_thr:.0%})" if block_thr != 0.45 else ""
+    print(f"    🧠 {len(similar)} vzorů  WR:{wr:.0%}  {reg}  {verdict} {thr_tag}")
+
+    if wr < block_thr:
         track_blocked()
         return None
 

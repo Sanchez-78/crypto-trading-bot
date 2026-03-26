@@ -173,6 +173,15 @@ def bootstrap_from_history(trades):
     if m["wins"]   > 0: m["avg_win"]  = m["gross_wins"]   / m["wins"]
     if m["losses"] > 0: m["avg_loss"] = m["gross_losses"]  / m["losses"]
 
+    # Directly set confidence_avg from last 20 signals instead of EMA approximation
+    conf_samples = [
+        float(t.get("confidence") or 0.5)
+        for t in sorted_trades[-20:]
+        if t.get("result") in ("WIN", "LOSS")
+    ]
+    if conf_samples:
+        m["confidence_avg"] = sum(conf_samples) / len(conf_samples)
+
     _recent_results = [
         t["result"] for t in sorted_trades[-20:]
         if t.get("result") in ("WIN", "LOSS")

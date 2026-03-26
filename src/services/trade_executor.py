@@ -48,7 +48,16 @@ def handle_signal(signal):
 
     entry = signal["price"]
     atr   = signal.get("atr", entry * 0.003)
-    size  = min(0.1, signal["confidence"] * 0.2)
+    from src.services.learning_event import get_metrics as _gm
+    _m   = _gm()
+    _wr  = _m.get("winrate", 0.5)
+    _t   = _m.get("trades", 0)
+    if _t >= 20:
+        # Half-Kelly: f = (WR*RR - (1-WR)) / RR, RR=2
+        kelly = max(0.0, (_wr * 2 - (1 - _wr)) / 2)
+        size  = min(0.10, max(0.01, kelly * 0.5 * signal["confidence"]))
+    else:
+        size = min(0.05, signal["confidence"] * 0.1)  # conservative during warmup
 
     tp_move = atr * TP_ATR_MULT / entry
     sl_move = atr * SL_ATR_MULT / entry

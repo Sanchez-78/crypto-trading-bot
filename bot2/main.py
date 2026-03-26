@@ -371,8 +371,9 @@ def print_status():
     # ── Strategy / Signals ────────────────────────────────────────────────────
     print(section("", "STRATEGIE  (ADX + EMA + MACD + BB + RSI)"))
 
-    eff = exe / gen * 100 if gen else 0
-    eff_col = C.GRN if eff > 5 else C.YLW
+    passed = max(0, gen - flt - blk)
+    eff = passed / gen * 100 if gen else 0
+    eff_col = C.GRN if eff > 2 else C.YLW
 
     print(f"    {g('Rezim trhu', C.GRY)}   {regime_label(m['regimes'])}")
     print(f"    {g('Signaly', C.GRY)}       "
@@ -380,8 +381,9 @@ def print_status():
           f"{g(str(gen - flt), C.WHT)} po filtru  "
           f"{g(str(blk), C.RED)} blokovano  "
           f"{g(str(exe), C.GRN)} provedeno")
-    print(f"    {g('Efektivita', C.GRY)}    "
+    print(f"    {g('Filtrace', C.GRY)}      "
           f"{g(f'{eff:.1f}%', eff_col)}  "
+          f"{g('projde filtrem', C.GRY)}  "
           f"{g('TP: 3.0xATR  /  SL: 1.5xATR  (RR 2:1)  score≥3', C.GRY)}")
 
     # ── Last signals ──────────────────────────────────────────────────────────

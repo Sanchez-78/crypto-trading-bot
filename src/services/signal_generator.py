@@ -180,6 +180,13 @@ def on_price(data):
         track_filtered()
         return
 
+    # ── EMA spread filter: prevent weak/stale crossovers ──────────────────────
+    # Require EMA10-EMA50 gap > 20% of ATR to confirm trend has strength
+    ema_spread = abs(e10 - e50)
+    if ema_spread < atr_v * 0.2:
+        track_filtered()
+        return
+
     # ── Score ─────────────────────────────────────────────────────────────────
     score, reasons = _score(
         action, p, e10, e50, e200, rsi_v,
