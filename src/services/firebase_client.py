@@ -365,11 +365,29 @@ def save_metrics_full(metrics):
             status = "BAD"
 
         regimes = metrics.get("regimes", {})
-        reg_total = sum(regimes.values()) or 1
         dominant_regime = max(regimes, key=regimes.get) if regimes else "RANGING"
 
         lp = metrics.get("last_prices", {})
         prices_clean = {sym: vals[0] for sym, vals in lp.items()}
+
+        # Convert Czech trend text → English enum for app
+        _trend_map = {
+            "ZLEPŠUJE": "IMPROVING",
+            "ZHORŠUJE": "WORSENING",
+            "STABILNÍ": "STABLE",
+        }
+        trend_en = next((v for k, v in _trend_map.items() if k in lt), "STABLE")
+
+        # Learning state: GOOD if profitable (PF >= 1.5), regardless of WR
+        # WR alone is misleading with high RR — a 2:1 system is fine at 45% WR
+        if t < 20:
+            learn_state = "LEARNING"
+        elif rdy or pf >= 1.5:
+            learn_state = "GOOD"
+        elif pf >= 1.0 and wr >= 0.40:
+            learn_state = "LEARNING"
+        else:
+            learn_state = "BAD"
 
         data = {
             "performance": {
@@ -389,8 +407,9 @@ def save_metrics_full(metrics):
                 "ready":  rdy,
             },
             "learning": {
-                "trend":          lt,
-                "state":          "GOOD" if wr >= 0.50 and pf >= 1.5 else "BAD",
+                "trend":          trend_en,
+                "trend_cs":       lt,       # Czech text for bot terminal display
+                "state":          learn_state,
                 "confidence":     round(ca, 4),
                 "recent_winrate": round(rwr, 4),
                 "recent_count":   rc,
