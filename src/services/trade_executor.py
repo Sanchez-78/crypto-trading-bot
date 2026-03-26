@@ -130,6 +130,9 @@ def on_price(data):
 
     update_metrics(pos["signal"], trade)
 
+    from src.services.firebase_client import save_last_trade
+    save_last_trade(trade)
+
     BATCH.append(trade)
     if len(BATCH) >= 20:
         _flush()

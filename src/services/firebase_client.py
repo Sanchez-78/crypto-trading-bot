@@ -69,14 +69,22 @@ def _slim_trade(trade):
     return {
         "symbol":       trade.get("symbol"),
         "action":       trade.get("action"),
+        "signal":       trade.get("action"),          # app uses 'signal' not 'action'
         "price":        round(float(trade.get("price",      0)), 4),
         "exit_price":   round(float(trade.get("exit_price", 0)), 4),
         "profit":       round(float(trade.get("profit",     0)), 8),
+        "pnl":          round(float(trade.get("profit",     0)), 8),
         "result":       trade.get("result"),
         "close_reason": trade.get("close_reason"),
         "confidence":   round(float(trade.get("confidence", 0)), 4),
         "regime":       trade.get("regime", "RANGING"),
+        "strategy":     trade.get("regime", "RANGING"),
         "timestamp":    trade.get("timestamp", time.time()),
+        "opened_at":    trade.get("timestamp", time.time()),
+        "closed_at":    trade.get("timestamp", time.time()),
+        "status":       "closed",
+        "stop_loss":    round(float(trade.get("price", 0)) * (1 - float((trade.get("features") or {}).get("volatility", 0.003)) * 1.5), 4),
+        "take_profit":  round(float(trade.get("price", 0)) * (1 + float((trade.get("features") or {}).get("volatility", 0.003)) * 3.0), 4),
         "features": {
             "ema_diff":   round(float(feat.get("ema_diff",   0)), 6),
             "rsi":        round(float(feat.get("rsi",       50)), 2),
@@ -292,6 +300,127 @@ def save_metrics(data):
         )
     except Exception as e:
         print(f"❌ save_metrics: {e}")
+
+
+def save_last_trade(trade):
+    """Write last closed trade summary to metrics/last_trade (TradesScreen)."""
+    if db is None:
+        return
+    try:
+        db.collection("metrics").document("last_trade").set({
+            "symbol":     trade.get("symbol"),
+            "action":     trade.get("action"),
+            "result":     trade.get("result"),
+            "pnl":        round(float(trade.get("profit", 0)), 8),
+            "price":      round(float(trade.get("price", 0)), 4),
+            "exit_price": round(float(trade.get("exit_price", 0)), 4),
+            "confidence": round(float(trade.get("confidence", 0)), 4),
+            "regime":     trade.get("regime", "RANGING"),
+            "reason":     trade.get("close_reason", ""),
+            "timestamp":  trade.get("timestamp", time.time()),
+        }, merge=False)
+    except Exception as e:
+        print(f"❌ save_last_trade: {e}")
+
+
+def save_metrics_full(metrics):
+    """
+    Write full nested metrics to metrics/latest.
+    Called every 30 s from bot2/main.py.
+    App reads: performance, health, learning, equity, system, sym_stats.
+    """
+    if db is None:
+        return
+    try:
+        t   = metrics.get("trades", 0)
+        wr  = metrics.get("winrate", 0.0)
+        pf  = metrics.get("profit_factor", 1.0)
+        exp = metrics.get("expectancy", 0.0)
+        dd  = metrics.get("drawdown", 0.0)
+        ep  = metrics.get("equity_peak", 0.0)
+        pr  = metrics.get("profit", 0.0)
+        rdy = metrics.get("ready", False)
+        lt  = metrics.get("learning_trend", "SBÍRÁ DATA...")
+        ca  = metrics.get("confidence_avg", 0.0)
+        rwr = metrics.get("recent_winrate", 0.0)
+        rc  = metrics.get("recent_count", 0)
+        blk = metrics.get("blocked", 0)
+        gen = metrics.get("signals_generated", 0)
+        flt = metrics.get("signals_filtered", 0)
+        exe = metrics.get("signals_executed", 0)
+
+        # health score: weighted combination of WR, PF, drawdown
+        score = int(min(100, max(0,
+            wr * 50 +
+            min(pf / 3.0, 1.0) * 30 -
+            min(dd * 5000, 20)
+        )))
+        if rdy:
+            status = "HEALTHY"
+        elif wr >= 0.45 and pf >= 1.0:
+            status = "RISKY"
+        elif t < 20:
+            status = "LEARNING"
+        else:
+            status = "BAD"
+
+        regimes = metrics.get("regimes", {})
+        reg_total = sum(regimes.values()) or 1
+        dominant_regime = max(regimes, key=regimes.get) if regimes else "RANGING"
+
+        lp = metrics.get("last_prices", {})
+        prices_clean = {sym: vals[0] for sym, vals in lp.items()}
+
+        data = {
+            "performance": {
+                "trades":        t,
+                "wins":          metrics.get("wins", 0),
+                "losses":        metrics.get("losses", 0),
+                "winrate":       round(wr, 4),
+                "avg_profit":    round(exp, 8),
+                "profit_factor": round(pf, 4),
+                "profit":        round(pr, 8),
+                "best_trade":    round(metrics.get("best_trade", 0.0), 8),
+                "worst_trade":   round(metrics.get("worst_trade", 0.0), 8),
+            },
+            "health": {
+                "score":  score,
+                "status": status,
+                "ready":  rdy,
+            },
+            "learning": {
+                "trend":          lt,
+                "state":          "GOOD" if wr >= 0.50 and pf >= 1.5 else "BAD",
+                "confidence":     round(ca, 4),
+                "recent_winrate": round(rwr, 4),
+                "recent_count":   rc,
+                "win_streak":     metrics.get("win_streak", 0),
+                "loss_streak":    metrics.get("loss_streak", 0),
+            },
+            "equity": {
+                "equity":      round(pr, 8),
+                "drawdown":    round(dd, 8),
+                "equity_peak": round(ep, 8),
+            },
+            "system": {
+                "trading_enabled": True,
+                "dominant_regime": dominant_regime,
+                "regimes":         regimes,
+                "signals": {
+                    "generated": gen,
+                    "filtered":  flt,
+                    "executed":  exe,
+                    "blocked":   blk,
+                },
+            },
+            "sym_stats":    metrics.get("sym_stats", {}),
+            "last_prices":  prices_clean,
+            "last_signals": metrics.get("last_signals", {}),
+            "timestamp":    time.time(),
+        }
+        db.collection("metrics").document("latest").set(data, merge=False)
+    except Exception as e:
+        print(f"❌ save_metrics_full: {e}")
 
 
 # ── Config ────────────────────────────────────────────────────────────────────

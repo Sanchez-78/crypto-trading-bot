@@ -1,7 +1,7 @@
 import threading, time
 
 from src.services.market_stream import start
-from src.services.firebase_client import init_firebase, daily_budget_report, load_history
+from src.services.firebase_client import init_firebase, daily_budget_report, load_history, save_metrics_full
 from src.services.learning_event import get_metrics, bootstrap_from_history
 from src.services.trade_executor import get_open_positions
 from src.services.signal_generator import warmup
@@ -451,6 +451,7 @@ def main():
         global _last_audit
         if time.time() - _last_audit >= AUDIT_INTERVAL:
             run_audit()
+            save_metrics_full(get_metrics())
             _last_audit = time.time()
 
         print_status()
