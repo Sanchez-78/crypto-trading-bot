@@ -1,147 +1,61 @@
-import time
-from src.services.firebase_client import load_trade_history
+from src.services.firebase_client import load_history
+from src.services.learning_event import track_blocked, track_regime
+import math, time
 
-# =========================
-# CACHE (low-cost Firebase usage)
-# =========================
-CACHE = {
-    "data": [],
-    "last_update": 0
-}
+def decay(ts):
+    return math.exp(-(time.time() - ts) / 3600)
 
-CACHE_TTL = 60  # 🔥 refresh z DB max 1x za minutu
-
-
-# =========================
-# LOAD / CACHE
-# =========================
-def get_cached_history():
-    global CACHE
-
-    now = time.time()
-
-    if now - CACHE["last_update"] > CACHE_TTL:
-        print("📥 Loading history from Firebase...")
-        CACHE["data"] = load_trade_history(limit=50)
-        CACHE["last_update"] = now
-        print(f"📊 Loaded {len(CACHE['data'])} trades")
-
-    return CACHE["data"]
-
-
-# =========================
-# SIMILARITY
-# =========================
 def similarity(f1, f2):
-    try:
-        keys = ["ema_short", "ema_long", "rsi", "volatility"]
+    keys = ["ema_diff", "rsi", "volatility"]
+    s = 0
+    c = 0
+    for k in keys:
+        if k in f1 and k in f2:
+            diff = abs(f1[k] - f2[k])
+            norm = abs(f2[k]) or 1
+            s += max(0, 1 - diff / norm)
+            c += 1
+    return s / c if c else 0
 
-        score = 0
-        count = 0
+def detect_regime(f):
+    v = f.get("volatility", 0)
+    if v > 0.01: return "HIGH_VOL"
+    if v < 0.002: return "CHOP"
+    return "TREND"
 
-        for k in keys:
-            if k in f1 and k in f2:
-                v1 = f1[k]
-                v2 = f2[k]
-
-                if v1 is None or v2 is None:
-                    continue
-
-                diff = abs(v1 - v2)
-
-                # normalizace
-                norm = abs(v2) if abs(v2) > 0 else 1
-
-                sim = max(0, 1 - (diff / norm))
-
-                score += sim
-                count += 1
-
-        if count == 0:
-            return 0
-
-        return score / count
-
-    except Exception as e:
-        print("❌ similarity error:", e)
-        return 0
-
-
-# =========================
-# MAIN DECISION ENGINE
-# =========================
 def evaluate_signal(signal):
-    history = get_cached_history()
+    history = load_history()
+    f = signal["features"]
 
-    symbol = signal.get("symbol")
-    action = signal.get("action")
-    features = signal.get("features", {})
+    regime = detect_regime(f)
+    track_regime(regime)
 
-    relevant = [
-        t for t in history
-        if t.get("symbol") == symbol
-        and t.get("action") == action
-    ]
-
-    # 🔥 málo dat → nech projít
-    if len(relevant) < 5:
+    if not history:
         return signal
 
     similar = []
-
-    for t in relevant:
-        sim = similarity(features, t.get("features", {}))
-
+    for t in history:
+        if t["symbol"] != signal["symbol"]:
+            continue
+        sim = similarity(f, t.get("features", {}))
         if sim > 0.6:
-            similar.append(t)
+            similar.append((t, sim * decay(t["timestamp"])))
 
-    # 🔥 málo podobných → snížit confidence
-    if len(similar) < 3:
-        signal["confidence"] *= 0.9
+    if len(similar) < 5:
         return signal
 
-    wins = sum(1 for t in similar if t.get("result") == "WIN")
-    losses = sum(1 for t in similar if t.get("result") == "LOSS")
+    w = sum(x[1] for x in similar)
+    wins = sum(x[1] for x in similar if x[0]["result"] == "WIN")
+    profit = sum(x[0]["profit"] * x[1] for x in similar)
 
-    total = wins + losses
+    wr = wins / w if w else 0
+    avg_p = profit / w if w else 0
 
-    if total == 0:
-        return signal
+    print(f"🧠 WR={wr:.2f} PnL={avg_p:.4f} regime={regime}")
 
-    winrate = wins / total
-    avg_profit = sum(t.get("profit", 0) for t in similar) / total
-
-    print(f"🧠 WR={winrate:.2f} | N={total} | PnL={avg_profit:.4f}")
-
-    # 🔥 hard filtr (zabraňuje ztrátám)
-    if winrate < 0.45 or avg_profit < 0:
-        print("⛔ BLOCKED by history")
+    if wr < 0.45 or avg_p < 0:
+        track_blocked()
         return None
 
-    # 🔥 posílení confidence
-    signal["confidence"] *= (0.5 + winrate)
-    signal["confidence"] = min(signal["confidence"], 1.0)
-
+    signal["confidence"] *= (0.5 + wr)
     return signal
-
-
-# =========================
-# LIVE UPDATE FROM TRADES
-# =========================
-def update_from_trade(trade, result):
-    global CACHE
-
-    if not isinstance(CACHE.get("data"), list):
-        CACHE["data"] = []
-
-    CACHE["data"].append({
-        "symbol": trade.get("symbol"),
-        "action": trade.get("action"),
-        "features": trade.get("features", {}),
-        "result": result.get("result"),
-        "profit": result.get("profit", 0)
-    })
-
-    # 🔥 držíme limit (RAM + rychlost)
-    if len(CACHE["data"]) > 100:
-        CACHE["data"] = CACHE["data"][-100:]

@@ -1,51 +1,58 @@
 from src.core.event_bus import subscribe, publish
-from src.services.realtime_decision_engine import evaluate_signal
+from src.services.learning_event import track_generated, track_filtered
 
-last_prices = {}
+prices = {}
 
+def rsi_calc(p):
+    gains, losses = [], []
+    for i in range(1, len(p)):
+        d = p[i] - p[i-1]
+        (gains if d > 0 else losses).append(abs(d))
+    ag = sum(gains[-14:]) / 14 if gains else 1
+    al = sum(losses[-14:]) / 14 if losses else 1
+    rs = ag / al if al else 1
+    return 100 - (100 / (1 + rs))
 
-@subscribe("price_tick")
-def on_price_tick(data):
-    try:
-        symbol = data.get("symbol")
-        price = data.get("price")
+def on_price(data):
+    track_generated()
 
-        if symbol is None or price is None:
-            return
+    s, p = data["symbol"], data["price"]
+    prices.setdefault(s, []).append(p)
 
-        prev_price = last_prices.get(symbol)
-        last_prices[symbol] = price
+    if len(prices[s]) < 30:
+        return
 
-        if prev_price is None:
-            return
+    ema_s = sum(prices[s][-5:]) / 5
+    ema_l = sum(prices[s][-20:]) / 20
+    rsi = rsi_calc(prices[s])
+    vol = abs(prices[s][-1] - prices[s][-2]) / prices[s][-2]
 
-        # LOGIKA
-        action = "BUY" if price > prev_price else "SELL"
+    if ema_s > ema_l and rsi < 65:
+        action = "BUY"
+    elif ema_s < ema_l and rsi > 35:
+        action = "SELL"
+    else:
+        track_filtered()
+        return
 
-        if not action:
-            return  # 🔥 žádný DB call
-
-        signal = {
-            "symbol": symbol,
-            "action": action,
-            "price": price,
-            "confidence": 0.6,
-            "features": {
-                "volatility": data.get("volatility", 0),
-                "trend": data.get("trend")
-            }
+    signal = {
+        "symbol": s,
+        "action": action,
+        "price": p,
+        "confidence": abs(ema_s - ema_l) / ema_l,
+        "features": {
+            "ema_diff": ema_s - ema_l,
+            "rsi": rsi,
+            "volatility": vol
         }
+    }
 
-        # 🔥 DECISION ENGINE
-        signal = evaluate_signal(signal)
+    from src.services.realtime_decision_engine import evaluate_signal
+    signal = evaluate_signal(signal)
 
-        if signal is None:
-            print("❌ Rejected by DB")
-            return
-
-        print(f"📡 SIGNAL: {signal}")
-
+    if signal:
         publish("signal_created", signal)
+    else:
+        track_filtered()
 
-    except Exception as e:
-        print("❌ Signal error:", e)
+subscribe("price_tick", on_price)
