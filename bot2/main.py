@@ -35,33 +35,81 @@ def g(text, color):
 
 
 # ── Bars ──────────────────────────────────────────────────────────────────────
-
-BAR_W = 18   # single width for all progress bars
+#
+#  Thin-line style (inspired by modern UI):
+#    filled  ━  U+2501  thick horizontal
+#    empty   ─  U+2500  thin horizontal
+#    bubble  ●  shown at the fill point with % label
+#
+BAR_W = 22   # all bars same width
 
 
 def cbar(val, total=1.0, w=BAR_W, lo=0.45, hi=0.60):
-    """Color-coded bar: red / yellow / green."""
-    r = min(max(val / total if total else 0, 0.0), 1.0)
-    f = int(w * r)
+    """
+    Thin progress bar with floating % bubble at the tip.
+
+        ━━━━━━━━━━━━●─────────  45%
+    """
+    r   = min(max(val / total if total else 0, 0.0), 1.0)
+    f   = max(int(w * r) - 1, 0)
     col = C.GRN if r >= hi else (C.YLW if r >= lo else C.RED)
-    return col + "\u2588" * f + C.GRY + "\u2591" * (w - f) + C.RST
+    pct = f"{r*100:.0f}%"
+    filled = col + "\u2501" * f
+    tip    = col + "\u25cf"          # ●
+    empty  = C.GRY + "\u2500" * (w - f - 1)
+    label  = " " + g(pct, col + C.BLD)
+    return filled + tip + empty + label + C.RST
 
 
 def blue_bar(val, total, w=BAR_W):
-    """Blue calibration bar (caps at 100%)."""
-    r = min(max(val / total if total else 0, 0.0), 1.0)
-    f = int(w * r)
+    """
+    Blue stepped bar for calibration — caps at 100%.
+
+        ━━━━━━━━━━━━●─────────  46%
+    """
+    r   = min(max(val / total if total else 0, 0.0), 1.0)
+    f   = max(int(w * r) - 1, 0)
     col = C.CYN if r >= 1.0 else C.BLU
-    return col + "\u2588" * f + C.GRY + "\u2591" * (w - f) + C.RST
+    pct = "100%" if r >= 1.0 else f"{r*100:.0f}%"
+    filled = col + "\u2501" * f
+    tip    = col + "\u25cf"
+    empty  = C.GRY + "\u2500" * (w - f - 1)
+    label  = " " + g(pct, col + C.BLD)
+    return filled + tip + empty + label + C.RST
 
 
 def pnl_bar(profit, scale=0.001, w=BAR_W):
-    """Directional profit bar — green right / red left."""
+    """
+    Directional P&L bar — green ▶ right / red ◀ left.
+
+        ▶━━━━━━━━━━━━●─────────  +0.00012
+    """
     r    = min(abs(profit) / scale, 1.0)
-    f    = int(w * r)
+    f    = max(int(w * r) - 1, 0)
     col  = C.GRN if profit >= 0 else C.RED
     sign = "\u25b6" if profit >= 0 else "\u25c4"
-    return col + sign + "\u2588" * f + "\u2591" * (w - f) + C.RST
+    filled = col + sign + "\u2501" * f
+    tip    = col + "\u25cf"
+    empty  = C.GRY + "\u2500" * (w - f - 1)
+    return filled + tip + empty + C.RST
+
+
+def steps_bar(current, total, labels=None, w=None):
+    """
+    Step progress:  Step 1 ━━━● Step 2 ───  Step 3 ───
+    current: 1-based index of active step
+    """
+    out = []
+    for i in range(1, total + 1):
+        label = (labels[i - 1] if labels and i <= len(labels)
+                 else f"Krok {i}")
+        if i < current:
+            out.append(g(f"{label}", C.GRN) + g(" \u2501\u2501\u2501 ", C.GRN))
+        elif i == current:
+            out.append(g(f"\u25cf {label}", C.BLU + C.BLD) + g(" \u2500\u2500\u2500 ", C.GRY))
+        else:
+            out.append(g(f"{label}", C.GRY) + (g(" \u2500\u2500\u2500 ", C.GRY) if i < total else ""))
+    return "".join(out)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -342,7 +390,16 @@ def print_status():
                   f"{rtag}")
 
     # ── Footer ────────────────────────────────────────────────────────────────
+    # 3-step progress: Sbírám data → Trénink → Aktivní
+    if m["ready"]:
+        step = 3
+    elif t >= 50:
+        step = 2
+    else:
+        step = 1
     print(f"\n  {sep()}")
+    print(f"  {steps_bar(step, 3, ['Sbiram data', 'Trenink', 'Aktivni'])}")
+    print(f"  {sep()}")
     if m["ready"]:
         print(f"  {g('STAV:', C.BLD)}  "
               f"{g('AKTIVNI – robot je kalibrovany a obchoduje!', C.GRN + C.BLD)}")
