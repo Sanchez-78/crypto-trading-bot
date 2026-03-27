@@ -22,6 +22,8 @@ Firebase batch flush: every 20 trades OR every 5 minutes.
 from src.core.event_bus           import subscribe_once
 from src.services.learning_event  import update_metrics
 from src.services.firebase_client import save_batch
+from src.services.execution       import (
+    exec_order, valid, ob_signal, net_edge, OrderBook)
 import time
 
 BATCH             = []
@@ -198,6 +200,12 @@ def handle_signal(signal):
         print(f"    portfolio gate: net_ws_negative  sym={sym}")
         return
 
+    # Signal staleness guard: reject if older than 500 ms
+    sig_ts = signal.get("timestamp", time.time())
+    if not valid(sig_ts):
+        print(f"    portfolio gate: stale_signal  sym={sym}")
+        return
+
     entry = signal["price"]
     atr   = signal.get("atr", entry * 0.003)
 
@@ -234,17 +242,33 @@ def handle_signal(signal):
     tp_move = max(atr * tp_mult / entry, MIN_TP_PCT)
     sl_move = max(atr * sl_mult / entry, MIN_SL_PCT)
 
+    # ── OB-aware execution ────────────────────────────────────────────────────
+    ob   = OrderBook.from_price(entry, spread_pct=_SPREAD_PCT)
+    fill = exec_order(signal, size, ob)
+    # OB signal must not oppose direction (skip if confirmed adverse)
+    obs  = ob_signal(ob)
+    if (signal["action"] == "BUY"  and obs == -1) or \
+       (signal["action"] == "SELL" and obs ==  1):
+        print(f"    portfolio gate: ob_adverse  sym={sym}  obs={obs}")
+        return
+    actual_entry = fill["avg_price"] or entry
+    actual_size  = fill["filled"]    or size
+
     _positions[sym] = {
         "action":       signal["action"],
-        "entry":        entry,
-        "size":         size,
+        "entry":        actual_entry,
+        "size":         actual_size,
         "tp_move":      tp_move,
         "sl_move":      sl_move,
         "trail_sl":     -sl_move,
         "trail_offset": trail * sl_move,
         "signal":       signal,
         "ticks":        0,
+        "order_type":   fill["order_type"],
+        "fill_slippage": fill["slippage"],
     }
+    print(f"    exec: {fill['order_type']}  slip={fill['slippage']:.5f}  "
+          f"fill={actual_size:.4f}@{actual_entry:.4f}")
     _regime_exposure[regime] = _regime_exposure.get(regime, 0) + 1
     _risk_guard()
 
@@ -288,11 +312,13 @@ def on_price(data):
 
     trade = {
         **pos["signal"],
-        "profit":       profit,
-        "result":       result,
-        "exit_price":   curr,
-        "close_reason": reason,
-        "timestamp":    time.time(),
+        "profit":        profit,
+        "result":        result,
+        "exit_price":    curr,
+        "close_reason":  reason,
+        "timestamp":     time.time(),
+        "order_type":    pos.get("order_type", "MARKET"),
+        "fill_slippage": pos.get("fill_slippage", 0.0),
     }
 
     update_metrics(pos["signal"], trade)
