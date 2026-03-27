@@ -2,22 +2,25 @@
 Trade executor with ATR-based TP/SL and trailing stop.
 
 Risk management:
-  TP    = 1.2× ATR   minimum 0.30% of entry price   (closer = fewer timeouts)
+  TP    = 1.2× ATR   minimum 0.30% of entry price
   SL    = 1.0× ATR   minimum 0.25% of entry price
-  RR    = 1.2:1       breakeven WR ≈ 46%
-  Trail = 0.5× ATR   trailing offset once in profit  (captures momentum)
-  Timeout = 60 ticks per symbol (~6 min at 2s/tick × 3 symbols)
+  Trail = 0.5× SL    trailing offset once in profit
+  Timeout = 60 ticks (~6 min at 2s/tick × 3 symbols)
 
 Position sizing:
-  ≥ 20 trades: base 5% × EV-scaled × auditor_factor (floor 0.7)
-  < 20 trades: base 2.5% (conservative while learning)
-  Strong edge: ev > 0.30 → size × 2
+  size = base × clamp(ev×6, 0.5, 3.0) × auditor_factor (floor 0.7)
+  Strong edge: ev > threshold×1.5 → size ×1.5
+  ≥ 20 trades: base 5%;  < 20 trades: base 2.5%
+
+Calibration feedback:
+  After every close → calibrator.update(confidence, WIN/LOSS)
+  Enables empirical WR mapping per confidence bucket.
 
 Firebase batch flush: every 20 trades OR every 5 minutes.
 """
 
-from src.core.event_bus          import subscribe_once
-from src.services.learning_event import update_metrics
+from src.core.event_bus           import subscribe_once
+from src.services.learning_event  import update_metrics
 from src.services.firebase_client import save_batch
 import time
 
@@ -26,12 +29,11 @@ _positions  = {}
 _last_flush = [0.0]
 
 FEE_RT      = 0.0020    # 0.20% round-trip Binance taker fees
-MIN_TP_PCT  = 0.0030    # 0.30% min TP (covers fees + net)
+MIN_TP_PCT  = 0.0030    # 0.30% min TP
 MIN_SL_PCT  = 0.0025    # 0.25% min SL
 MAX_TICKS   = 60
 FLUSH_EVERY = 60
 
-# Flat TP/SL: 1.2×ATR / 1.0×ATR — matches realtime_decision_engine
 _TP_MULT = {"BULL_TREND": 1.2, "BEAR_TREND": 1.2,
             "RANGING":    1.2, "QUIET_RANGE": 1.2}
 _SL_MULT = {"BULL_TREND": 1.0, "BEAR_TREND": 1.0,
@@ -58,23 +60,22 @@ def handle_signal(signal):
     entry = signal["price"]
     atr   = signal.get("atr", entry * 0.003)
 
-    # Position sizing: EV-based, auditor factor floor 0.7
-    from src.services.learning_event import get_metrics as _gm
+    # Position sizing: EV-scaled, auditor floor 0.7, strong-EV boost
+    from src.services.learning_event      import get_metrics as _gm
+    from src.services.realtime_decision_engine import get_ev_threshold
     _t   = _gm().get("trades", 0)
     ev   = signal.get("ev", 0.05)
     af   = min(1.0, max(0.7, signal.get("auditor_factor", 1.0)))
     base = 0.05 if _t >= 20 else 0.025
-    size = base * min(3.0, max(0.5, ev * 5)) * af
-    if ev > 0.30:
-        size *= 2.0                          # strong edge boost (ev>0.30 = real signal)
+    size = base * min(3.0, max(0.5, ev * 6)) * af
+    if ev > get_ev_threshold() * 1.5:
+        size *= 1.5                          # strong-edge boost
     size = max(0.005, size)
 
-    # TP/SL: flat ATR-based with fee-adjusted minimums
+    # TP/SL: flat ATR-based
     regime  = signal.get("regime", "RANGING")
-    tp_mult = _TP_MULT.get(regime, 1.2)
-    sl_mult = _SL_MULT.get(regime, 1.0)
-    tp_move = max(atr * tp_mult / entry, MIN_TP_PCT)
-    sl_move = max(atr * sl_mult / entry, MIN_SL_PCT)
+    tp_move = max(atr * _TP_MULT.get(regime, 1.2) / entry, MIN_TP_PCT)
+    sl_move = max(atr * _SL_MULT.get(regime, 1.0) / entry, MIN_SL_PCT)
 
     _positions[sym] = {
         "action":       signal["action"],
@@ -82,8 +83,8 @@ def handle_signal(signal):
         "size":         size,
         "tp_move":      tp_move,
         "sl_move":      sl_move,
-        "trail_sl":     -sl_move,            # starts as hard SL
-        "trail_offset": _TRAIL * sl_move,    # 0.5×ATR trailing buffer
+        "trail_sl":     -sl_move,
+        "trail_offset": _TRAIL * sl_move,
         "signal":       signal,
         "ticks":        0,
     }
@@ -106,14 +107,14 @@ def on_price(data):
     if pos["action"] == "SELL":
         move *= -1
 
-    # ── Trailing stop: tighten once in profit ─────────────────────────────────
+    # ── Trailing stop ─────────────────────────────────────────────────────────
     if move > 0:
         pos["trail_sl"] = max(pos["trail_sl"], move - pos["trail_offset"])
 
     # ── Exit conditions ───────────────────────────────────────────────────────
-    if   move >= pos["tp_move"]:           reason = "TP"
-    elif move <= pos["trail_sl"]:          reason = "SL" if move < 0 else "trail"
-    elif pos["ticks"] >= MAX_TICKS:        reason = "timeout"
+    if   move >= pos["tp_move"]:   reason = "TP"
+    elif move <= pos["trail_sl"]:  reason = "SL" if move < 0 else "trail"
+    elif pos["ticks"] >= MAX_TICKS: reason = "timeout"
     else:
         return
 
@@ -135,6 +136,14 @@ def on_price(data):
     }
 
     update_metrics(pos["signal"], trade)
+
+    # ── Calibration feedback: update empirical WR bucket ──────────────────────
+    try:
+        from src.services.realtime_decision_engine import update_calibrator
+        p = float(pos["signal"].get("confidence", 0.5))
+        update_calibrator(p, 1 if result == "WIN" else 0)
+    except Exception:
+        pass
 
     from src.services.firebase_client import save_last_trade
     save_last_trade(trade)

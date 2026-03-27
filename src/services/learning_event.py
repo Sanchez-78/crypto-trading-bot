@@ -227,6 +227,21 @@ def bootstrap_from_history(trades):
 
     if len(_ev_history) > 50: _ev_history[:] = _ev_history[-50:]
 
+    # Seed online calibrator from closed trades (must be after loop)
+    try:
+        from src.services.realtime_decision_engine import calibrator, _seeded
+        for t in sorted_trades:
+            p      = float(t.get("confidence", 0.5))
+            result = t.get("result")
+            if result in ("WIN", "LOSS"):
+                calibrator.update(p, 1 if result == "WIN" else 0)
+        _seeded[0] = True   # mark as seeded so evaluate_signal skips repeat
+        total = sum(v[1] for v in calibrator.buckets.values())
+        print(f"🎯 Calibrator bootstrap: {total} samples  "
+              f"buckets={calibrator.summary()}")
+    except Exception as e:
+        print(f"⚠️  Calibrator bootstrap skipped: {e}")
+
     if m["wins"]   > 0: m["avg_win"]  = m["gross_wins"]   / m["wins"]
     if m["losses"] > 0: m["avg_loss"] = m["gross_losses"]  / m["losses"]
 
