@@ -51,8 +51,9 @@ def evaluate_signal(signal):
     track_regime(signal.get("regime", "RANGING"))
 
     # ── Calibrated win_prob ────────────────────────────────────────────────────
-    win_prob = _calibrate(signal["confidence"], history) if history \
-               else max(0.35, min(0.65, signal["confidence"]))
+    # Always route through _calibrate — handles empty history gracefully
+    # and applies p<=0/p>=1→0.5 guard in all paths
+    win_prob = _calibrate(signal["confidence"], history or [])
 
     # ── EV (single authoritative computation) ─────────────────────────────────
     regime  = signal.get("regime", "RANGING")
