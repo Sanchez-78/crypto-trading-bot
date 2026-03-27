@@ -24,8 +24,8 @@ from src.services.learning_event  import update_metrics
 from src.services.firebase_client import save_batch
 from src.services.execution       import (
     exec_order, valid, ob_adjust, cost_guard, pre_cost,
-    ev_adjust, fill_rate, final_size, rotate_capital,
-    update_returns, OrderBook)
+    ev_adjust, fill_rate, final_size, entry_filter,
+    rotate_capital, update_returns, OrderBook)
 import time
 
 BATCH             = []
@@ -227,8 +227,13 @@ def handle_signal(signal):
         print(f"    portfolio gate: pre_cost  sym={sym}  ws={ws_raw:.3f}")
         return
 
-    # OB proportional adjustment + regime-aware EV blend
+    # Entry filter: skip low-quality setups (risk_ev < 0.05) once warmed up
     reg    = signal.get("regime", "RANGING")
+    if not entry_filter(sym, reg):
+        print(f"    portfolio gate: entry_filter  sym={sym}  reg={reg}")
+        return
+
+    # OB proportional adjustment + regime-aware EV blend
     ws_adj = ob_adjust(ws_raw, ob)
     ws_adj = ev_adjust(ws_adj, sym, reg)
 
@@ -244,7 +249,7 @@ def handle_signal(signal):
     # returns 0 if total_exposure > 70%
     base    = final_size(sym, reg, 0.05 if _t >= 20 else 0.025, _positions)
     if base == 0.0:
-        print(f"    portfolio gate: exposure_cap  sym={sym}")
+        print(f"    portfolio gate: exposure_full  sym={sym}")
         return
     thr     = get_ev_threshold()
     ws_thr  = get_ws_threshold()

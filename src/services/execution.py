@@ -138,23 +138,23 @@ def corr(sym1, sym2):
         return 0.0
 
 
+def cluster_id(sym):
+    """Classify symbol into a cluster. Majors: BTC/ETH. All others: alts."""
+    if "BTC" in sym or "ETH" in sym:
+        return "majors"
+    return "alts"
+
+
 def cluster_penalty(sym, positions):
     """
-    Non-multiplicative: collect per-position penalties, return the minimum.
-    Avoids stacking (two 0.7-corr positions previously gave 0.5×0.5=0.25).
-    At corr=0.7: factor=1.0. At corr=1.0: factor=0.5. Floor 0.3.
+    Penalise same-cluster concentration: 1 / (1 + 0.5 × count_in_cluster).
+    count=0 → 1.0, count=1 → 0.67, count=2 → 0.5.
+    Replaces correlation-based approach — works without returns history.
     """
-    penalties = []
-    for pos in positions.values():
-        other = pos["signal"]["symbol"]
-        if other == sym:
-            continue
-        c = abs(corr(sym, other))
-        if c > 0.7:
-            penalties.append(1.0 - 0.5 * (c - 0.7) / 0.3)
-    if not penalties:
-        return 1.0
-    return max(min(penalties), 0.3)
+    cid   = cluster_id(sym)
+    count = sum(1 for p in positions.values()
+                if cluster_id(p["signal"]["symbol"]) == cid)
+    return 1.0 / (1.0 + 0.5 * count)
 
 
 # ── Volatility & risk parity ──────────────────────────────────────────────────
@@ -184,13 +184,14 @@ def raw_risk_ev(sym, reg):
 
 def risk_ev(sym, reg):
     """
-    EMA-smoothed Sharpe EV: 0.8×prev + 0.2×raw.
-    Dampens tick-to-tick noise without forgetting regime shifts.
-    Cold start: first call initialises cache from raw value.
+    EMA-smoothed Sharpe EV with time decay.
+    EMA: 0.8×prev + 0.2×raw.
+    Decay: ×0.995 per call — stale (sym,reg) pairs drift toward 0 automatically.
+    Cold start: seeds cache from raw value.
     """
-    raw  = raw_risk_ev(sym, reg)
-    prev = ev_cache.get((sym, reg), raw)
-    smooth = 0.8 * prev + 0.2 * raw
+    raw    = raw_risk_ev(sym, reg)
+    prev   = ev_cache.get((sym, reg), raw)
+    smooth = (0.8 * prev + 0.2 * raw) * 0.995
     ev_cache[(sym, reg)] = smooth
     return smooth
 
@@ -311,20 +312,56 @@ def leverage():
 
 # ── Final position size (allocation × leverage) ────────────────────────────────
 
-def total_exposure(positions):
-    """Sum of all open position sizes — portfolio gross exposure."""
-    return sum(p["size"] for p in positions.values())
+def exposure_scale(positions):
+    """
+    Smooth exposure throttle — replaces hard 70% cap.
+    exp < 0.50 → 1.0  (full capital available)
+    exp > 0.90 → 0.0  (fully deployed, no new positions)
+    0.50–0.90  → linear taper 1 → 0
+    """
+    exp = sum(p["size"] for p in positions.values())
+    if exp < 0.50:
+        return 1.0
+    if exp > 0.90:
+        return 0.0
+    return 1.0 - (exp - 0.50) / 0.40
+
+
+def leverage(sym, reg):
+    """
+    Drawdown-adaptive base × EV boost.
+    base = 1.2 - 0.7×min(dd/0.1, 1)  → [0.5, 1.2]
+    EV boost: × (1 + 0.2×max(risk_ev, 0))  → up to ×1.2 extra for strong edge.
+    """
+    try:
+        from src.services.learning_event import METRICS
+        peak   = METRICS.get("equity_peak", 0.0) or 0.0
+        profit = METRICS.get("profit", 0.0) or 0.0
+        if peak > 0:
+            dd   = (peak - (1.0 + profit)) / peak
+            base = 1.2 - 0.7 * min(dd / 0.1, 1.0)
+            ev   = max(risk_ev(sym, reg), 0.0)
+            return base * (1.0 + 0.2 * ev)
+    except Exception:
+        pass
+    return 1.2
 
 
 def final_size(sym, reg, base, positions):
     """
-    Hard portfolio cap: if total deployed > 70%, reject new position.
-    Then: min(capital_alloc, 0.25) × leverage.
+    capital_alloc × exposure_scale × leverage(sym,reg).
+    Returns 0 if exposure_scale == 0 (fully deployed).
     """
-    if total_exposure(positions) > 0.70:
+    scale = exposure_scale(positions)
+    if scale == 0.0:
         return 0.0
     alloc = min(capital_alloc(sym, reg, base, positions), 0.25)
-    return alloc * leverage()
+    return alloc * scale * leverage(sym, reg)
+
+
+def entry_filter(sym, reg):
+    """Hard gate: only enter when risk_ev > 0.05. Blocks low-quality setups."""
+    return risk_ev(sym, reg) > 0.05
 
 
 # ── Portfolio EV snapshot ──────────────────────────────────────────────────────
