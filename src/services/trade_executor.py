@@ -59,14 +59,16 @@ def handle_signal(signal):
     entry = signal["price"]
     atr   = signal.get("atr", entry * 0.003)
 
-    # Position sizing: EV-based, auditor factor clamped [0.5, 1.0]
+    # Position sizing: EV-based, auditor factor floor 0.7 (no over-suppression)
     from src.services.learning_event import get_metrics as _gm
-    _t             = _gm().get("trades", 0)
-    ev             = signal.get("ev", 0.02)
-    af             = min(1.0, max(0.5, signal.get("auditor_factor", 1.0)))
-    base           = 0.05 if _t >= 20 else 0.025
-    size           = base * min(2.0, max(0.3, ev * 3)) * af
-    size           = max(0.005, size)
+    _t   = _gm().get("trades", 0)
+    ev   = signal.get("ev", 0.05)
+    af   = min(1.0, max(0.7, signal.get("auditor_factor", 1.0)))
+    base = 0.05 if _t >= 20 else 0.025
+    size = base * min(2.5, max(0.4, ev * 4)) * af
+    if ev > 0.1:
+        size *= 1.5                          # boost for high-confidence edge
+    size = max(0.005, size)
 
     # TP/SL: regime-aware ATR-based with fee-adjusted minimums
     regime  = signal.get("regime", "RANGING")
