@@ -2,18 +2,16 @@
 Trade executor with ATR-based TP/SL and trailing stop.
 
 Risk management:
-  TP  = 2.2× ATR   minimum 0.30% of entry price
-  SL  = 1.3× ATR   minimum 0.15% of entry price
-  RR  ≈ 1.7:1       breakeven WR ≈ 37%
+  TP    = 1.2× ATR   minimum 0.30% of entry price   (closer = fewer timeouts)
+  SL    = 1.0× ATR   minimum 0.25% of entry price
+  RR    = 1.2:1       breakeven WR ≈ 46%
+  Trail = 0.5× ATR   trailing offset once in profit  (captures momentum)
   Timeout = 60 ticks per symbol (~6 min at 2s/tick × 3 symbols)
 
-Trailing stop:
-  At 50% of TP → SL moves to break-even (0%)
-  At 80% of TP → SL locks in 40% of TP distance as guaranteed profit
-
 Position sizing:
-  ≥ 20 trades: half-Kelly × confidence × auditor_size_mult
-  < 20 trades: conservative 5% × confidence
+  ≥ 20 trades: base 5% × EV-scaled × auditor_factor (floor 0.7)
+  < 20 trades: base 2.5% (conservative while learning)
+  Strong edge: ev > 0.30 → size × 2
 
 Firebase batch flush: every 20 trades OR every 5 minutes.
 """
@@ -28,16 +26,17 @@ _positions  = {}
 _last_flush = [0.0]
 
 FEE_RT      = 0.0020    # 0.20% round-trip Binance taker fees
-MIN_TP_PCT  = 0.0050    # 0.50% min TP (covers fees + ~0.30% net)
+MIN_TP_PCT  = 0.0030    # 0.30% min TP (covers fees + net)
 MIN_SL_PCT  = 0.0025    # 0.25% min SL
 MAX_TICKS   = 60
 FLUSH_EVERY = 60
 
-# Regime-aware TP/SL multipliers
-_TP_MULT = {"BULL_TREND": 3.0, "BEAR_TREND": 3.0,
-            "RANGING": 1.8, "QUIET_RANGE": 1.6}
+# Flat TP/SL: 1.2×ATR / 1.0×ATR — matches realtime_decision_engine
+_TP_MULT = {"BULL_TREND": 1.2, "BEAR_TREND": 1.2,
+            "RANGING":    1.2, "QUIET_RANGE": 1.2}
 _SL_MULT = {"BULL_TREND": 1.0, "BEAR_TREND": 1.0,
-            "RANGING": 1.2, "QUIET_RANGE": 1.0}
+            "RANGING":    1.0, "QUIET_RANGE": 1.0}
+_TRAIL   = 0.5   # trailing offset = 0.5 × sl_move
 
 
 def get_open_positions():
@@ -59,33 +58,34 @@ def handle_signal(signal):
     entry = signal["price"]
     atr   = signal.get("atr", entry * 0.003)
 
-    # Position sizing: EV-based, auditor factor floor 0.7 (no over-suppression)
+    # Position sizing: EV-based, auditor factor floor 0.7
     from src.services.learning_event import get_metrics as _gm
     _t   = _gm().get("trades", 0)
     ev   = signal.get("ev", 0.05)
     af   = min(1.0, max(0.7, signal.get("auditor_factor", 1.0)))
     base = 0.05 if _t >= 20 else 0.025
     size = base * min(3.0, max(0.5, ev * 5)) * af
-    if ev > 0.20:
-        size *= 2.0                          # strong edge boost (ev>0.20 = real signal)
+    if ev > 0.30:
+        size *= 2.0                          # strong edge boost (ev>0.30 = real signal)
     size = max(0.005, size)
 
-    # TP/SL: regime-aware ATR-based with fee-adjusted minimums
+    # TP/SL: flat ATR-based with fee-adjusted minimums
     regime  = signal.get("regime", "RANGING")
-    tp_mult = _TP_MULT.get(regime, 2.2)
-    sl_mult = _SL_MULT.get(regime, 1.3)
+    tp_mult = _TP_MULT.get(regime, 1.2)
+    sl_mult = _SL_MULT.get(regime, 1.0)
     tp_move = max(atr * tp_mult / entry, MIN_TP_PCT)
     sl_move = max(atr * sl_mult / entry, MIN_SL_PCT)
 
     _positions[sym] = {
-        "action":   signal["action"],
-        "entry":    entry,
-        "size":     size,
-        "tp_move":  tp_move,
-        "sl_move":  sl_move,
-        "trail_sl": -sl_move,
-        "signal":   signal,
-        "ticks":    0,
+        "action":       signal["action"],
+        "entry":        entry,
+        "size":         size,
+        "tp_move":      tp_move,
+        "sl_move":      sl_move,
+        "trail_sl":     -sl_move,            # starts as hard SL
+        "trail_offset": _TRAIL * sl_move,    # 0.5×ATR trailing buffer
+        "signal":       signal,
+        "ticks":        0,
     }
 
 
@@ -106,17 +106,14 @@ def on_price(data):
     if pos["action"] == "SELL":
         move *= -1
 
-    # ── Trailing stop ─────────────────────────────────────────────────────────
-    tp = pos["tp_move"]
-    if move >= tp * 0.5:
-        pos["trail_sl"] = max(pos["trail_sl"], 0.0)
-    if move >= tp * 0.8:
-        pos["trail_sl"] = max(pos["trail_sl"], tp * 0.4)
+    # ── Trailing stop: tighten once in profit ─────────────────────────────────
+    if move > 0:
+        pos["trail_sl"] = max(pos["trail_sl"], move - pos["trail_offset"])
 
     # ── Exit conditions ───────────────────────────────────────────────────────
-    if   move >= tp:              reason = "TP"
-    elif move <= pos["trail_sl"]: reason = "SL" if move < 0 else "trail"
-    elif pos["ticks"] >= MAX_TICKS: reason = "timeout"
+    if   move >= pos["tp_move"]:           reason = "TP"
+    elif move <= pos["trail_sl"]:          reason = "SL" if move < 0 else "trail"
+    elif pos["ticks"] >= MAX_TICKS:        reason = "timeout"
     else:
         return
 

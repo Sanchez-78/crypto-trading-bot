@@ -27,12 +27,12 @@ _side_hist = {}   # symbol -> deque[action], last 10 actions
 _adx_hist  = {}   # symbol -> float (last adx, for slope)
 _rsi_hist  = {}   # symbol -> float (last rsi, for slope)
 
-# Regime-aware TP/SL (must match trade_executor._TP_MULT/_SL_MULT)
-_TP_MULT = {"BULL_TREND": 3.0, "BEAR_TREND": 3.0,
-            "RANGING": 1.8, "QUIET_RANGE": 1.6}
+# Flat TP/SL (must match trade_executor._TP_MULT/_SL_MULT + realtime_decision_engine)
+_TP_MULT = {"BULL_TREND": 1.2, "BEAR_TREND": 1.2,
+            "RANGING":    1.2, "QUIET_RANGE": 1.2}
 _SL_MULT = {"BULL_TREND": 1.0, "BEAR_TREND": 1.0,
-            "RANGING": 1.2, "QUIET_RANGE": 1.0}
-MIN_TP_PCT = 0.0050
+            "RANGING":    1.0, "QUIET_RANGE": 1.0}
+MIN_TP_PCT = 0.0030
 MIN_SL_PCT = 0.0025
 
 MIN_TICKS    = 50
