@@ -55,6 +55,7 @@ def run_audit():
         _cooldown -= 1
 
     loss_streak = m.get("loss_streak", 0)
+    win_streak  = m.get("win_streak",  0)
     rwr         = m.get("recent_winrate", 0.0)
     rc          = m.get("recent_count",  0)
     t           = m.get("trades",        0)
@@ -78,17 +79,24 @@ def run_audit():
     if loss_streak >= 5:
         _position_size_mult = 0.30
     elif loss_streak >= 3:
-        _position_size_mult = 0.50
+        _position_size_mult = 0.60
     else:
         _position_size_mult = 1.0
 
     # ── Dynamic min_confidence: streak-based (max 0.65 at streak=5) ─────────
-    # Ignores recent WR to avoid self-reinforcing deadlock when bot is stuck.
+    # Win streak lowers threshold (reward), loss streak raises it (protection).
     base = min(0.55 + loss_streak * 0.02, 0.65)
+
+    # Win streak reward: 2+ consecutive wins → lower threshold
+    if win_streak >= 2:
+        base = max(base - 0.02, 0.50)
 
     # Exploration mode: no trades for 15 min → lower threshold by 0.10
     if since and since > 900:
         base = max(0.45, base - 0.10)
+
+    # Hysteresis clamp: never outside [0.50, 0.65]
+    base = min(max(base, 0.50), 0.65)
 
     if abs(base - _min_confidence) >= 0.02:
         since_s = f"  since:{since:.0f}s" if since else ""

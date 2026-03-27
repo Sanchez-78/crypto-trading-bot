@@ -47,7 +47,17 @@ def evaluate_signal(signal):
     except Exception:
         min_conf = 0.55
 
-    if signal.get("confidence", 0) < min_conf:
+    # Per-signal: if filter collapsed (<5% pass rate), lower effective threshold
+    from src.services.learning_event import get_metrics as _gm2
+    _m0 = _gm2()
+    _gen0 = _m0.get("signals_generated", 0)
+    dyn_conf = min_conf
+    if _gen0 > 50:
+        _passed0 = max(0, _gen0 - _m0.get("signals_filtered", 0) - _m0.get("blocked", 0))
+        if _passed0 / _gen0 < 0.05:
+            dyn_conf = max(0.48, min_conf - 0.03)
+
+    if signal.get("confidence", 0) < dyn_conf:
         track_blocked()
         return None
 
