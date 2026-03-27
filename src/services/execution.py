@@ -34,6 +34,7 @@ ev_cache:      dict = {}   # (sym, reg) -> (smooth, timestamp)
 bayes_stats:   dict = {}   # (sym, reg) -> [alpha, beta]  (Beta prior 5/5)
 bandit_stats:  dict = {}   # (sym, reg) -> [wins, plays]
 reg_cache:     dict = {}   # sym -> last confirmed regime (hysteresis)
+closed_trades: list = []   # [{"sym","reg","pnl"}]  (last 500) — for diagnostics
 _equity:       list = [1.0]       # [current equity]   — mutable scalar
 _equity_peak:  list = [1.0]       # [peak equity]
 
@@ -414,6 +415,13 @@ def update_equity(pnl):
     """Update module-level equity and peak. Call on every trade close."""
     _equity[0]      += float(pnl)
     _equity_peak[0]  = max(_equity_peak[0], _equity[0])
+
+
+def record_trade_close(sym, reg, pnl):
+    """Append closed trade pnl for overfit/decay diagnostics."""
+    closed_trades.append({"sym": sym, "reg": reg, "pnl": float(pnl)})
+    if len(closed_trades) > 500:
+        closed_trades.pop(0)
 
 
 def leverage(sym, reg):
