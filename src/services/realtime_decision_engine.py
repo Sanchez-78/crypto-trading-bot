@@ -68,20 +68,42 @@ W_SCORE_MIN  = 0.50   # cold-start floor for weighted avg score
 DECAY        = 0.98   # exponential decay applied to counts each update
 score_history = deque(maxlen=200)   # w_scores of all evaluated winning-dir setups
 
-edge_stats = {}    # feature_name -> [effective_wins, effective_total]  (decayed floats)
+edge_stats  = {}   # feature_name -> [eff_wins, eff_total]  (decayed floats)
+combo_stats = {}   # tuple(sorted active features) -> [wins, total]  (no decay)
+
+
+def _std(lst):
+    """Population std without numpy dependency."""
+    n = len(lst)
+    if n < 2:
+        return 0.0
+    m = sum(lst) / n
+    return (sum((x - m) ** 2 for x in lst) / n) ** 0.5
 
 
 def update_edge_stats(features, outcome):
     """
-    Update per-feature counts with exponential decay.
-    Old observations fade by DECAY each update — allows adaptation over time.
+    Update individual feature counts (decayed) AND combo counts (not decayed).
+    Decay allows adaptation to regime changes.
+    Combo tracks interaction effects between features.
     """
+    active = tuple(sorted(k for k, v in features.items()
+                          if isinstance(v, bool) and v))
+    # Combo update (no decay — needs stable counts for min-sample gate)
+    if active:
+        if active not in combo_stats:
+            combo_stats[active] = [0, 0]
+        combo_stats[active][1] += 1
+        if outcome == 1:
+            combo_stats[active][0] += 1
+
+    # Individual feature update with decay
     for k, v in features.items():
         if isinstance(v, bool) and v:
             if k not in edge_stats:
                 edge_stats[k] = [0.0, 0.0]
-            edge_stats[k][0] *= DECAY   # decay existing wins
-            edge_stats[k][1] *= DECAY   # decay existing total
+            edge_stats[k][0] *= DECAY
+            edge_stats[k][1] *= DECAY
             edge_stats[k][1] += 1.0
             if outcome == 1:
                 edge_stats[k][0] += 1.0
@@ -89,33 +111,52 @@ def update_edge_stats(features, outcome):
 
 def feature_weight(k):
     """
-    Empirical WR for feature k (decayed).
-    Requires effective total ≥ 20; fallback 0.4 (conservative prior).
+    Laplace-smoothed WR: (wins + 5) / (total + 10).
+    Prior = 0.5 at zero samples; converges to empirical WR with more data.
+    No hard sample minimum — smoothing handles uncertainty.
     """
-    if k in edge_stats and edge_stats[k][1] >= 20:
-        return edge_stats[k][0] / edge_stats[k][1]
-    return 0.4
+    if k in edge_stats:
+        w, t = edge_stats[k]
+        return (w + 5.0) / (t + 10.0)
+    return 0.5
+
+
+def combo_weight(features):
+    """
+    WR of the exact feature combination seen before.
+    Requires ≥ 20 observations; else None (falls back to individual weights).
+    """
+    active = tuple(sorted(k for k, v in features.items()
+                          if isinstance(v, bool) and v))
+    if active in combo_stats and combo_stats[active][1] >= 20:
+        w, t = combo_stats[active]
+        return w / t
+    return None
 
 
 def weighted_score(features):
     """
-    Average empirical weight across all active boolean features.
-    Penalises features with WR < 0.4 by subtracting 0.2 (acts as negative vote).
-    Average (not sum) prevents bias from feature count.
+    Average Laplace-smoothed weight across active features.
+    Bad features (WR < 0.4) penalised by -0.2.
+    Blended 50/50 with combo WR if combo has ≥ 20 observations.
     """
     weights = []
     for k, v in features.items():
         if isinstance(v, bool) and v:
             w = feature_weight(k)
             if w < 0.4:
-                w -= 0.2   # bad feature actively hurts score
+                w -= 0.2
             weights.append(w)
-    return sum(weights) / len(weights) if weights else 0.0
+    if not weights:
+        return 0.0
+    base = sum(weights) / len(weights)
+    cw   = combo_weight(features)
+    return (base + cw) / 2.0 if cw is not None else base
 
 
 def get_ws_threshold():
     """
-    Adaptive w_score gate: 75th percentile of recent scores (top 25% only).
+    Adaptive w_score gate: 75th percentile of score_history (top 25% only).
     Cold-start floor W_SCORE_MIN until 50 samples collected.
     Hard floor 0.45 — never trades sub-random edge.
     """
@@ -142,11 +183,12 @@ def _seed_calibrator(trades):
             calibrator.update(p, outcome)
             if features:
                 update_edge_stats(features, outcome)
-    total = sum(v[1] for v in calibrator.buckets.values())
-    edge_n = sum(v[1] for v in edge_stats.values())
+    total   = sum(v[1] for v in calibrator.buckets.values())
+    edge_n  = sum(v[1] for v in edge_stats.values())
+    combo_n = sum(v[1] for v in combo_stats.values())
     print(f"🎯 Calibrator seeded: {total} samples  buckets={calibrator.summary()}")
-    print(f"🧠 Edge stats seeded: {edge_n} feature observations  "
-          f"keys={list(edge_stats.keys())}")
+    print(f"🧠 Edge stats seeded: {edge_n:.0f} feature obs  "
+          f"{combo_n} combo obs  keys={list(edge_stats.keys())}")
 
 
 def get_ev_threshold():

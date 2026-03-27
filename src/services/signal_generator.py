@@ -247,10 +247,16 @@ def _get_scored_edge(hist, e50, e200, breakout_up, breakout_down, mom5):
     else:
         return 0, 0.0, None, None, {}
 
-    # Self-learning weighted score gate (adaptive threshold)
-    from src.services.realtime_decision_engine import get_ws_threshold as _thr, score_history as _sh
+    # Self-learning weighted score gate (adaptive threshold + stability guard)
+    from src.services.realtime_decision_engine import (
+        get_ws_threshold as _thr, score_history as _sh, _std)
     w_score = _ws(features)
     _sh.append(w_score)           # track all evaluated scores (including rejected)
+
+    # Stability guard: collapsed score distribution = no edge differentiation
+    if len(_sh) >= 50 and _std(list(_sh)) < 0.05:
+        return base_score, w_score, None, None, {}
+
     if w_score < _thr():
         return base_score, w_score, None, None, {}
 
