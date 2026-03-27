@@ -179,6 +179,86 @@ def _record_side(s, action):
         hist.pop(0)
 
 
+# ── Edge strategies ───────────────────────────────────────────────────────────
+
+def _prefilter(hist, atr_v, price):
+    """Require current volatility ≥ 20-bar avg vol (active market, not dead flat)."""
+    if len(hist) < 21:
+        return False
+    diffs   = [abs(hist[i] / hist[i-1] - 1) for i in range(len(hist) - 20, len(hist))]
+    avg_vol = sum(diffs) / len(diffs) if diffs else 0
+    return (atr_v / price) >= avg_vol
+
+
+def _edge_trend_pullback(hist, e50, e200):
+    """
+    Bull: EMA50 > EMA200, price pulled back to EMA50 (within +1%), tick bouncing up.
+    Bear: EMA50 < EMA200, price pulled back to EMA50 (within -1%), tick rejecting.
+    Returns 'BUY', 'SELL', or None.
+    """
+    if len(hist) < 2:
+        return None
+    p = hist[-1]
+    if e50 > e200 and p < e50 * 1.01 and hist[-1] > hist[-2]:
+        return "BUY"
+    if e50 < e200 and p > e50 * 0.99 and hist[-1] < hist[-2]:
+        return "SELL"
+    return None
+
+
+def _edge_vol_breakout(hist, breakout_up, breakout_down):
+    """
+    Range compression (10-bar avg diff < 70% of 50-bar avg diff) then breakout.
+    Returns 'BUY', 'SELL', or None.
+    """
+    if len(hist) < 51:
+        return None
+    diffs = [abs(hist[i] - hist[i-1]) for i in range(1, len(hist))]
+    r10   = sum(diffs[-10:]) / 10
+    r50   = sum(diffs[-50:]) / 50
+    if r10 >= r50 * 0.7:
+        return None   # no compression
+    if breakout_up:   return "BUY"
+    if breakout_down: return "SELL"
+    return None
+
+
+def _edge_fake_breakout(hist):
+    """
+    Previous tick breached 20-bar high/low, current tick rejected back inside.
+    Exploits trapped traders reversing.
+    Returns 'BUY' (downside fake), 'SELL' (upside fake), or None.
+    """
+    if len(hist) < 23:
+        return None
+    prev_hi20 = max(hist[-22:-2])
+    prev_lo20 = min(hist[-22:-2])
+    prev_p    = hist[-2]
+    curr_p    = hist[-1]
+    if prev_p > prev_hi20 and curr_p < prev_hi20:
+        return "SELL"   # upside breakout rejected → trapped buyers → sell
+    if prev_p < prev_lo20 and curr_p > prev_lo20:
+        return "BUY"    # downside breakout rejected → trapped sellers → buy
+    return None
+
+
+def _get_edge(hist, e50, e200, breakout_up, breakout_down):
+    """
+    Returns (edge_name, action) or (None, None).
+    Priority: trend_pullback > vol_breakout > fake_breakout
+    """
+    a = _edge_trend_pullback(hist, e50, e200)
+    if a: return "trend_pullback", a
+
+    a = _edge_vol_breakout(hist, breakout_up, breakout_down)
+    if a: return "vol_breakout", a
+
+    a = _edge_fake_breakout(hist)
+    if a: return "fake_breakout", a
+
+    return None, None
+
+
 # ── Exploration mode ──────────────────────────────────────────────────────────
 
 def _is_exploration():
@@ -239,42 +319,22 @@ def on_price(data):
     mom5          = sum(returns[-5:])  if len(returns) >= 5  else 0.0
     mom10         = sum(returns[-10:]) if len(returns) >= 10 else 0.0
 
-    # HIGH_VOL → penalty on confidence only (EV gate decides)
-    _high_vol = reg == "HIGH_VOL"
+    # ── Volatility prefilter (no-op in exploration to allow cold start) ────────
+    if not _prefilter(hist, atr_v, p) and not _is_exploration():
+        track_filtered()
+        return
 
-    # ── Direction — regime-aware ───────────────────────────────────────────────
-    if reg in ("RANGING", "QUIET_RANGE"):
-        # Mean-reversion: RSI extremes only
-        if   rsi_v < 30: action = "BUY"
-        elif rsi_v > 70: action = "SELL"
-        else:
-            # Looser trigger in exploration mode
-            if _is_exploration():
-                if   rsi_v < 40: action = "BUY"
-                elif rsi_v > 60: action = "SELL"
-                else:
-                    track_filtered(); return
-            else:
-                track_filtered(); return
-    else:
-        # Trend-following: EMA crossover
-        if   e10 > e50: action = "BUY"
-        elif e10 < e50: action = "SELL"
-        else:
-            track_filtered(); return
+    # ── Edge detection (replaces raw direction logic) ─────────────────────────
+    edge, action = _get_edge(hist, e50, e200, breakout_up, breakout_down)
+    if edge is None:
+        track_filtered()
+        return
 
-        # Counter-trend penalty instead of hard block — EV decides
-        _counter_trend = (reg == "BULL_TREND" and action != "BUY") or \
-                         (reg == "BEAR_TREND" and action != "SELL")
-        _weak_spread   = abs(e10 - e50) < atr_v * 0.2
-
-    # ── Breakout filter: trend regimes require confirmed breakout ─────────────
-    # Prevents entering trends without momentum confirmation (noise trades)
-    if reg in ("BULL_TREND", "BEAR_TREND"):
-        required = breakout_up if action == "BUY" else breakout_down
-        if required == 0:
-            track_filtered()
-            return
+    # Confidence penalty flags (soft, EV gate is authoritative)
+    _high_vol      = reg == "HIGH_VOL"
+    _counter_trend = (reg == "BULL_TREND" and action != "BUY") or \
+                     (reg == "BEAR_TREND" and action != "SELL")
+    _weak_spread   = abs(e10 - e50) < atr_v * 0.2
 
     # ── Time-based debounce (30 s per symbol) ─────────────────────────────────
     if time.time() - _last_ts.get(s, 0) < DEBOUNCE_S:
@@ -331,6 +391,7 @@ def on_price(data):
         "confidence": confidence,   # raw penalised conf; RDE calibrates to win_prob
         "atr":        atr_v,
         "regime":     reg,
+        "edge":       edge,
         "features": {
             "ema_diff":      e10 - e50,
             "rsi":           rsi_v,
@@ -349,8 +410,8 @@ def on_price(data):
     short = s.replace("USDT", "")
     icon  = "🟢" if action == "BUY" else "🔴"
     expl  = "  [EXPLORE]" if _is_exploration() else ""
-    bk    = f"  bo↑{breakout_up}/↓{breakout_down}  m5={mom5:+.3f}  m10={mom10:+.3f}"
-    print(f"  {icon} {short} ${p:,.4f} | "
+    bk    = f"  bo↑{breakout_up}/↓{breakout_down}  m5={mom5:+.3f}"
+    print(f"  {icon} {short} ${p:,.4f} | [{edge}] "
           f"score:{score} [{','.join(reasons)}] | {reg} | conf:{confidence:.0%}{bk}{expl}")
 
     from src.services.realtime_decision_engine import evaluate_signal

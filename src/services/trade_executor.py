@@ -34,11 +34,20 @@ MIN_SL_PCT  = 0.0020    # 0.20% min SL
 MAX_TICKS   = 60
 FLUSH_EVERY = 60
 
+# Edge-specific TP/SL multipliers (× ATR)
+# trend_pullback: moderate TP — riding the bounce back to mean
+# vol_breakout:   wide TP — volatility expansion has further to run
+# fake_breakout:  tight TP — quick reversal, grab fast
+_EDGE_TP    = {"trend_pullback": 1.5, "vol_breakout": 2.0, "fake_breakout": 1.2}
+_EDGE_SL    = {"trend_pullback": 1.0, "vol_breakout": 1.0, "fake_breakout": 0.8}
+_EDGE_TRAIL = {"trend_pullback": 0.4, "vol_breakout": 0.5, "fake_breakout": 0.3}
+
+# Fallback (unknown edge)
 _TP_MULT = {"BULL_TREND": 1.0, "BEAR_TREND": 1.0,
             "RANGING":    1.0, "QUIET_RANGE": 1.0}
 _SL_MULT = {"BULL_TREND": 0.8, "BEAR_TREND": 0.8,
             "RANGING":    0.8, "QUIET_RANGE": 0.8}
-_TRAIL   = 0.4   # trailing offset = 0.4 × sl_move
+_TRAIL   = 0.4   # fallback trail
 
 
 def get_open_positions():
@@ -61,21 +70,25 @@ def handle_signal(signal):
     atr   = signal.get("atr", entry * 0.003)
 
     # Position sizing: EV-scaled, auditor floor 0.7, strong-EV boost
-    from src.services.learning_event      import get_metrics as _gm
+    from src.services.learning_event           import get_metrics as _gm
     from src.services.realtime_decision_engine import get_ev_threshold
     _t   = _gm().get("trades", 0)
     ev   = signal.get("ev", 0.05)
     af   = min(1.0, max(0.7, signal.get("auditor_factor", 1.0)))
     base = 0.05 if _t >= 20 else 0.025
-    size = base * min(3.0, max(0.5, ev * 6)) * af
+    size = base * min(3.0, max(0.5, ev * 5)) * af
     if ev > get_ev_threshold() * 1.5:
         size *= 1.5                          # strong-edge boost
     size = max(0.005, size)
 
-    # TP/SL: flat ATR-based
+    # TP/SL: edge-specific ATR multipliers
+    edge    = signal.get("edge", "")
     regime  = signal.get("regime", "RANGING")
-    tp_move = max(atr * _TP_MULT.get(regime, 1.2) / entry, MIN_TP_PCT)
-    sl_move = max(atr * _SL_MULT.get(regime, 1.0) / entry, MIN_SL_PCT)
+    tp_mult = _EDGE_TP.get(edge, _TP_MULT.get(regime, 1.0))
+    sl_mult = _EDGE_SL.get(edge, _SL_MULT.get(regime, 0.8))
+    trail   = _EDGE_TRAIL.get(edge, _TRAIL)
+    tp_move = max(atr * tp_mult / entry, MIN_TP_PCT)
+    sl_move = max(atr * sl_mult / entry, MIN_SL_PCT)
 
     _positions[sym] = {
         "action":       signal["action"],
@@ -84,7 +97,7 @@ def handle_signal(signal):
         "tp_move":      tp_move,
         "sl_move":      sl_move,
         "trail_sl":     -sl_move,
-        "trail_offset": _TRAIL * sl_move,
+        "trail_offset": trail * sl_move,
         "signal":       signal,
         "ticks":        0,
     }
