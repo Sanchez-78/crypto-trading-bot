@@ -57,18 +57,19 @@ class OrderBook:
         return (self.bid + self.ask) / 2.0
 
     @classmethod
-    def from_price(cls, price, spread_pct=0.001):
+    def from_price(cls, price, spread_pct=0.001, depth=1.0):
+        """depth scales bid_vol/ask_vol and level sizes (backtest noise support)."""
         half   = price * spread_pct / 2
         ask    = price + half
         levels = [
-            (ask,          5.0),
-            (ask * 1.0002, 3.0),
-            (ask * 1.0005, 2.0),
-            (ask * 1.001,  1.0),
-            (ask * 1.002,  0.5),
+            (ask,          5.0 * depth),
+            (ask * 1.0002, 3.0 * depth),
+            (ask * 1.0005, 2.0 * depth),
+            (ask * 1.001,  1.0 * depth),
+            (ask * 1.002,  0.5 * depth),
         ]
         return cls(bid=price - half, ask=ask,
-                   bid_vol=10.0, ask_vol=10.0, levels=levels)
+                   bid_vol=10.0 * depth, ask_vol=10.0 * depth, levels=levels)
 
 
 # ── Slippage ───────────────────────────────────────────────────────────────────
