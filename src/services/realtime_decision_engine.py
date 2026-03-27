@@ -5,8 +5,8 @@ Flow:
   1. Calibrate win_prob from historical buckets; p=0/1 → 0.5; clamp [0.4, 0.6]
   2. Enforce min RR >= 2.0 (regime-aware ATR)
   3. EV = win_prob * RR - (1 - win_prob)
-  4. Hard threshold 0.05 — low-edge noise trades never taken
-     Dynamic: relax to 0.04 at t15<3, tighten to 0.08 at t15>10
+  4. Hard threshold 0.10 — noise trades never taken (ev<0.10 = no real edge)
+     Dynamic: relax to 0.08 at t15<3, tighten to 0.12 at t15>10
   5. Always log {ev, p, decision}
   6. Auditor: size factor floor 0.7 — prevents over-suppression
 """
@@ -19,7 +19,7 @@ _SL_MULT = {"BULL_TREND": 1.0, "BEAR_TREND": 1.0, "RANGING": 1.2, "QUIET_RANGE":
 MIN_TP   = 0.0050
 MIN_SL   = 0.0025
 MIN_RR   = 2.0
-EV_BASE  = 0.05   # hard floor — no low-edge trades
+EV_BASE  = 0.10   # hard floor — no noise trades (ev<0.10 = statistical noise)
 
 
 def _calibrate(conf, history):
@@ -38,11 +38,11 @@ def _calibrate(conf, history):
 
 
 def _adjust_threshold(t15):
-    thr = EV_BASE                             # 0.05 base
+    thr = EV_BASE                             # 0.10 base
     if t15 < 3:
-        thr = max(0.04, thr - 0.01)          # relax to 0.04 at low activity
+        thr = max(0.08, thr - 0.02)          # relax to 0.08 at low activity
     if t15 > 10:
-        thr = min(0.08, thr + 0.005)         # tighten to 0.08 when busy
+        thr = min(0.12, thr + 0.01)          # tighten to 0.12 when busy
     return thr
 
 
