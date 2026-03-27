@@ -411,6 +411,13 @@ def save_metrics_full(metrics, open_positions=None):
         else:
             learn_state = "BAD"
 
+        ev_st  = metrics.get("ev_stats",    {})
+        cl_st  = metrics.get("close_stats", {})
+        rg_raw = metrics.get("regime_stats", {})
+        # Serialise regime_stats: {regime: {trades, winrate}}
+        rg_st  = {k: {"trades": v["trades"], "winrate": round(v["winrate"], 4)}
+                  for k, v in rg_raw.items() if v.get("trades", 0) > 0}
+
         data = {
             "performance": {
                 "trades":        t,
@@ -430,13 +437,16 @@ def save_metrics_full(metrics, open_positions=None):
             },
             "learning": {
                 "trend":          trend_en,
-                "trend_cs":       lt,       # Czech text for bot terminal display
+                "trend_cs":       lt,
                 "state":          learn_state,
                 "confidence":     round(ca, 4),
                 "recent_winrate": round(rwr, 4),
                 "recent_count":   rc,
                 "win_streak":     metrics.get("win_streak", 0),
                 "loss_streak":    metrics.get("loss_streak", 0),
+                "ev_stats":       ev_st,
+                "close_stats":    cl_st,
+                "regime_stats":   rg_st,
             },
             "equity": {
                 "equity":      round(pr, 8),

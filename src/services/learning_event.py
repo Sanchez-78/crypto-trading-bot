@@ -170,6 +170,9 @@ def get_metrics():
         "last_prices":    dict(_last_prices),
         "last_signals":   dict(_last_signals),
         "sym_stats":      sym_stats,
+        "ev_stats":       get_ev_stats(),
+        "close_stats":    get_close_stats(),
+        "regime_stats":   get_regime_stats(),
     }
 
 
