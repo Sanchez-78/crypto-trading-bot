@@ -28,10 +28,15 @@ BATCH             = []
 _positions        = {}
 _last_flush       = [0.0]
 _regime_exposure  = {}   # regime -> count of open positions
+_pending_open     = []   # signals queued after replace_if_better triggers
 
 MAX_POSITIONS     = 2    # max concurrent open positions
 MAX_SAME_DIR      = 1    # max positions in same direction (BUY or SELL)
 MAX_REGIME_PCT    = 0.70 # block if one regime holds > 70% of open positions
+_TOTAL_CAPITAL    = 1.0  # normalised capital (position sizes are fractions)
+_MAX_CAP_USED     = 0.70 # don't deploy more than 70% of capital
+_TARGET_VOL       = 0.02 # 2% target realised volatility for vol-adjusted sizing
+_REPLACE_MARGIN   = 1.10 # new signal must be 10% better to replace weakest
 
 FEE_RT      = 0.0020    # 0.20% round-trip Binance taker fees
 MIN_TP_PCT  = 0.0025    # 0.25% min TP
@@ -59,6 +64,64 @@ def get_open_positions():
     return dict(_positions)
 
 
+def capital_usage():
+    """Fraction of normalised capital currently deployed."""
+    return sum(p["size"] for p in _positions.values()) / _TOTAL_CAPITAL
+
+
+def _effective_ws(signal):
+    """
+    Risk-adjusted + regime-penalised WS for portfolio ranking.
+    risk_adjust: normalise by avg WS of open positions.
+    regime_penalty: reduce score proportionally to regime concentration.
+    """
+    ws     = signal.get("ws", 0.5)
+    regime = signal.get("regime", "RANGING")
+    # Risk-adjust: ws / avg_ws_of_open_positions
+    if _positions:
+        avg_ws = sum(p["signal"].get("ws", 0.5)
+                     for p in _positions.values()) / len(_positions)
+        ws = ws / max(avg_ws, 0.01)
+    # Regime penalty: ws * (1 - exposure_fraction)
+    n = len(_positions)
+    if n > 0:
+        exposure = _regime_exposure.get(regime, 0) / n
+        ws *= (1.0 - exposure)
+    return ws
+
+
+def _vol_adjust(size, signal):
+    """
+    Scale size to target 2% realised volatility.
+    Clamps ratio 0.5× – 2.0× to prevent extreme adjustments.
+    """
+    realised_vol = signal.get("features", {}).get("volatility", _TARGET_VOL)
+    ratio = _TARGET_VOL / max(realised_vol, 1e-6)
+    return size * max(0.5, min(2.0, ratio))
+
+
+def _replace_if_better(signal):
+    """
+    If portfolio is full and new signal's effective_ws > weakest position's
+    effective_ws by REPLACE_MARGIN, mark weakest for immediate close and
+    queue new signal to open after close.
+    Returns True if replacement was queued.
+    """
+    if len(_positions) < MAX_POSITIONS:
+        return False  # space available — caller handles normally
+    weakest_sym = min(_positions,
+                      key=lambda s: _effective_ws(_positions[s]["signal"]))
+    new_eff  = _effective_ws(signal)
+    weak_eff = _effective_ws(_positions[weakest_sym]["signal"])
+    if new_eff > weak_eff * _REPLACE_MARGIN:
+        _positions[weakest_sym]["force_close"] = True
+        _pending_open.append(signal)
+        print(f"    replace: {weakest_sym} (eff_ws={weak_eff:.3f}) "
+              f"← {signal['symbol']} (eff_ws={new_eff:.3f})")
+        return True
+    return False
+
+
 def _allow_trade(symbol, direction, regime):
     """
     Portfolio-level gates before accepting a new position.
@@ -66,6 +129,8 @@ def _allow_trade(symbol, direction, regime):
     """
     if symbol in _positions:
         return False, "already_open"
+    if capital_usage() >= _MAX_CAP_USED:
+        return False, "capital_limit"
     if len(_positions) >= MAX_POSITIONS:
         return False, "max_positions"
     # Direction concentration: max 1 same-direction position
@@ -93,7 +158,10 @@ def handle_signal(signal):
     regime  = signal.get("regime", "RANGING")
     allowed, reason = _allow_trade(sym, signal["action"], regime)
     if not allowed:
-        print(f"    portfolio gate: {reason}  sym={sym}")
+        if reason == "max_positions":
+            _replace_if_better(signal)   # may queue replacement
+        else:
+            print(f"    portfolio gate: {reason}  sym={sym}")
         return
 
     entry = signal["price"]
@@ -120,6 +188,7 @@ def handle_signal(signal):
     if explore:
         size *= 0.3                          # exploration trades: small position
     size *= equity_guard()                   # halve size if drawdown > 10%
+    size  = _vol_adjust(size, signal)        # scale to 2% target vol
     size  = max(0.005, size)
 
     # TP/SL: edge-specific ATR multipliers
@@ -167,8 +236,9 @@ def on_price(data):
         pos["trail_sl"] = max(pos["trail_sl"], move - pos["trail_offset"])
 
     # ── Exit conditions ───────────────────────────────────────────────────────
-    if   move >= pos["tp_move"]:   reason = "TP"
-    elif move <= pos["trail_sl"]:  reason = "SL" if move < 0 else "trail"
+    if   pos.get("force_close"):    reason = "replaced"
+    elif move >= pos["tp_move"]:    reason = "TP"
+    elif move <= pos["trail_sl"]:   reason = "SL" if move < 0 else "trail"
     elif pos["ticks"] >= MAX_TICKS: reason = "timeout"
     else:
         return
@@ -215,6 +285,11 @@ def on_price(data):
     _regime_exposure[closed_regime] = max(
         0, _regime_exposure.get(closed_regime, 1) - 1)
     del _positions[sym]
+
+    # Open any pending replacement signal now that a slot freed
+    if _pending_open:
+        pending = _pending_open.pop(0)
+        handle_signal(pending)
 
 
 subscribe_once("signal_created", handle_signal)
