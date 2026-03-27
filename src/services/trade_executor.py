@@ -27,12 +27,17 @@ BATCH       = []
 _positions  = {}
 _last_flush = [0.0]
 
-TP_ATR_MULT = 2.2       # was 3.0
-SL_ATR_MULT = 1.3       # was 1.5
-MIN_SL_PCT  = 0.0015    # 0.15% minimum SL
-MIN_TP_PCT  = 0.0030    # 0.30% minimum TP
+FEE_RT      = 0.0020    # 0.20% round-trip Binance taker fees
+MIN_TP_PCT  = 0.0050    # 0.50% min TP (covers fees + ~0.30% net)
+MIN_SL_PCT  = 0.0025    # 0.25% min SL
 MAX_TICKS   = 60
 FLUSH_EVERY = 60
+
+# Regime-aware TP/SL multipliers
+_TP_MULT = {"BULL_TREND": 3.0, "BEAR_TREND": 3.0,
+            "RANGING": 1.8, "QUIET_RANGE": 1.6}
+_SL_MULT = {"BULL_TREND": 1.0, "BEAR_TREND": 1.0,
+            "RANGING": 1.2, "QUIET_RANGE": 1.0}
 
 
 def get_open_positions():
@@ -74,9 +79,12 @@ def handle_signal(signal):
 
     size = max(0.005, size)  # absolute floor
 
-    # TP/SL: ATR-based with minimum absolute values
-    tp_move = max(atr * TP_ATR_MULT / entry, MIN_TP_PCT)
-    sl_move = max(atr * SL_ATR_MULT / entry, MIN_SL_PCT)
+    # TP/SL: regime-aware ATR-based with fee-adjusted minimums
+    regime  = signal.get("regime", "RANGING")
+    tp_mult = _TP_MULT.get(regime, 2.2)
+    sl_mult = _SL_MULT.get(regime, 1.3)
+    tp_move = max(atr * tp_mult / entry, MIN_TP_PCT)
+    sl_move = max(atr * sl_mult / entry, MIN_SL_PCT)
 
     _positions[sym] = {
         "action":   signal["action"],
@@ -121,7 +129,7 @@ def on_price(data):
     else:
         return
 
-    profit = move * pos["size"]
+    profit = (move - FEE_RT) * pos["size"]
     result = "WIN" if profit > 0 else "LOSS"
     short  = sym.replace("USDT", "")
     icon   = "✅" if result == "WIN" else "❌"

@@ -13,12 +13,11 @@ Parameters:
   loss streak: +0.02/loss (up to 0.70)
 """
 
-from bot2.stabilizer       import Stabilizer
 from bot2.strategy_weights import StrategyWeights
 from src.services.learning_event import get_metrics
 from src.services.firebase_client import save_auditor_state, load_auditor_state
+import time as _time
 
-_stab    = Stabilizer()
 _weights = StrategyWeights()
 
 _min_confidence     = 0.55
@@ -27,6 +26,10 @@ _cooldown           = 0
 _prev_loss_streak   = -1   # -1 = unset (skip bootstrap)
 _initialized        = False
 _cached_weights     = {}
+_dd_halt_until      = 0.0
+
+DD_HALT_THR  = 0.05    # 5% drawdown triggers trading halt
+DD_HALT_SECS = 3600    # pause duration: 1 hour
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -36,6 +39,9 @@ def get_min_confidence() -> float:
 
 def is_in_cooldown() -> bool:
     return _cooldown > 0
+
+def is_halted() -> bool:
+    return _time.time() < _dd_halt_until
 
 def get_position_size_mult() -> float:
     return _position_size_mult
@@ -48,7 +54,7 @@ def get_strategy_weights() -> dict:
 
 def run_audit():
     global _min_confidence, _position_size_mult, _cooldown
-    global _prev_loss_streak, _initialized, _cached_weights
+    global _prev_loss_streak, _initialized, _cached_weights, _dd_halt_until
 
     m = get_metrics()
 
@@ -71,6 +77,7 @@ def run_audit():
             if saved.get("min_conf"):
                 _min_confidence     = float(saved["min_conf"])
                 _position_size_mult = float(saved.get("pos_size_mult", 1.0))
+                _dd_halt_until      = float(saved.get("dd_halt_until", 0))
                 print(f"  🔍 AUDITOR restored: conf={_min_confidence:.2f}  sz={_position_size_mult:.2f}")
             else:
                 print(f"  🔍 AUDITOR init: bootstrap streak={loss_streak}  (no saved state)")
@@ -131,6 +138,18 @@ def run_audit():
         base            = 0.50
         print(f"  🔓 DEADLOCK RESET: {since/60:.0f}min no trades (gen={gen}) → conf=0.50  cooldown=0")
 
+    # ── Drawdown circuit breaker ──────────────────────────────────────────────
+    ep     = m.get("equity_peak", 0)
+    dd     = m.get("drawdown",    0)
+    if ep > 0:
+        dd_pct = dd / ep
+        if dd_pct >= DD_HALT_THR and not is_halted():
+            _dd_halt_until = _time.time() + DD_HALT_SECS
+            print(f"  🚨 DRAWDOWN HALT: {dd_pct:.1%} → pause {DD_HALT_SECS//3600}h")
+        elif is_halted():
+            rem = (_dd_halt_until - _time.time()) / 60
+            print(f"  ⏸ DD HALT: {rem:.0f}min zbývá")
+
     # ── Strategy weights ──────────────────────────────────────────────────────
     if t >= 10:
         try:
@@ -155,6 +174,7 @@ def run_audit():
             "loss_streak":   loss_streak,
             "win_streak":    win_streak,
             "cooldown":      _cooldown,
+            "dd_halt_until": _dd_halt_until,
         })
     except Exception:
         pass

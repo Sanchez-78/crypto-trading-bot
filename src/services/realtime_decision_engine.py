@@ -40,6 +40,15 @@ def _sim(f1, f2):
 
 
 def evaluate_signal(signal):
+    # ── Drawdown halt ─────────────────────────────────────────────────────────
+    try:
+        from bot2.auditor import is_halted
+        if is_halted():
+            track_blocked()
+            return None
+    except Exception:
+        pass
+
     # ── Auditor: confidence gate only (no hard cooldown block) ───────────────
     try:
         get_min_conf, _ = _auditor()

@@ -1,4 +1,7 @@
 import time as _time
+import threading as _threading
+
+_lock = _threading.Lock()
 
 METRICS = {
     "trades": 0, "wins": 0, "losses": 0, "profit": 0.0,
@@ -41,6 +44,11 @@ def _update_sym(symbol, result, profit):
 
 
 def update_metrics(signal, trade):
+    with _lock:
+     return _update_metrics_locked(signal, trade)
+
+
+def _update_metrics_locked(signal, trade):
     m      = METRICS
     profit = float(trade["profit"])
     result = trade["result"]
@@ -81,7 +89,7 @@ def update_metrics(signal, trade):
     }
 
     _recent_results.append(result)
-    if len(_recent_results) > 20:
+    if len(_recent_results) > 50:
         _recent_results.pop(0)
 
 
@@ -183,7 +191,7 @@ def bootstrap_from_history(trades):
         m["confidence_avg"] = sum(conf_samples) / len(conf_samples)
 
     _recent_results = [
-        t["result"] for t in sorted_trades[-20:]
+        t["result"] for t in sorted_trades[-50:]
         if t.get("result") in ("WIN", "LOSS")
     ]
 

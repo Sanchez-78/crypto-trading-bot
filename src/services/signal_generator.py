@@ -25,11 +25,15 @@ _macd_vals = {}   # symbol -> list[float]
 _last_ts   = {}   # symbol -> float (last signal timestamp, time-based debounce)
 _side_hist = {}   # symbol -> deque[action], last 10 actions
 _adx_hist  = {}   # symbol -> float (last adx, for slope)
+_rsi_hist  = {}   # symbol -> float (last rsi, for slope)
 
-TP_ATR_MULT = 2.2
-SL_ATR_MULT = 1.3
-MIN_TP_PCT  = 0.0030
-MIN_SL_PCT  = 0.0015
+# Regime-aware TP/SL (must match trade_executor._TP_MULT/_SL_MULT)
+_TP_MULT = {"BULL_TREND": 3.0, "BEAR_TREND": 3.0,
+            "RANGING": 1.8, "QUIET_RANGE": 1.6}
+_SL_MULT = {"BULL_TREND": 1.0, "BEAR_TREND": 1.0,
+            "RANGING": 1.2, "QUIET_RANGE": 1.0}
+MIN_TP_PCT = 0.0050
+MIN_SL_PCT = 0.0025
 
 MIN_TICKS    = 50
 DEBOUNCE_S   = 30    # seconds between signals per symbol
@@ -85,6 +89,17 @@ def _adx(series, n=14):
 
 # ── Regime ────────────────────────────────────────────────────────────────────
 
+def _htf_trend(series):
+    """HTF proxy: EMA(50) vs EMA(150) from tick buffer (~100s vs ~300s)."""
+    if len(series) < 150:
+        return None
+    e50  = _ema(series, 50)
+    e150 = _ema(series, 150)
+    if e50 > e150 * 1.0003: return "UP"
+    if e50 < e150 * 0.9997: return "DOWN"
+    return "FLAT"
+
+
 def _regime(series, adx, di_p, di_m, atr_val):
     curr    = series[-1]
     atr_pct = atr_val / curr if curr else 0
@@ -100,7 +115,7 @@ def _regime(series, adx, di_p, di_m, atr_val):
 
 # ── Score (regime-aware) ──────────────────────────────────────────────────────
 
-def _score(action, curr, e10, e50, e200, rsi_v,
+def _score(action, curr, e10, e50, e200, rsi_v, rsi_slope,
            macd_l, macd_s, bb_lo, bb_hi, adx_v, regime):
     sc = 0
     reasons = []
@@ -114,10 +129,12 @@ def _score(action, curr, e10, e50, e200, rsi_v,
         if regime == "BULL_TREND":                  sc += 1; reasons.append("ADX↑")
         if curr <= bb_lo * 1.003 and rsi_v < 35:   sc += 2; reasons.append("BB↩L")
         elif curr <= bb_lo * 1.005 and rsi_v < 40: sc += 1; reasons.append("BBlo")
-        # Mean-reversion bonus for ranging (ensures score ≥ 2 in RANGING + RSI extreme)
+        # Mean-reversion bonus: RSI slope confirms bounce direction
         if regime in ("RANGING", "QUIET_RANGE"):
-            if   rsi_v < 30: sc += 2; reasons.append("MR↓↓")
-            elif rsi_v < 42: sc += 1; reasons.append("MR↓")
+            if rsi_v < 30:
+                if rsi_slope > 0: sc += 3; reasons.append("MR↓↓✓")
+                else:             sc += 2; reasons.append("MR↓↓")
+            elif rsi_v < 42:      sc += 1; reasons.append("MR↓")
     else:
         if e10 < e50:                              sc += 1; reasons.append("EMA↓")
         if curr < e200:                            sc += 1; reasons.append("HTF↓")
@@ -127,10 +144,12 @@ def _score(action, curr, e10, e50, e200, rsi_v,
         if regime == "BEAR_TREND":                  sc += 1; reasons.append("ADX↓")
         if curr >= bb_hi * 0.997 and rsi_v > 65:   sc += 2; reasons.append("BB↩H")
         elif curr >= bb_hi * 0.995 and rsi_v > 60: sc += 1; reasons.append("BBhi")
-        # Mean-reversion bonus for ranging
+        # Mean-reversion bonus: RSI slope confirms reversal
         if regime in ("RANGING", "QUIET_RANGE"):
-            if   rsi_v > 70: sc += 2; reasons.append("MR↑↑")
-            elif rsi_v > 58: sc += 1; reasons.append("MR↑")
+            if rsi_v > 70:
+                if rsi_slope < 0: sc += 3; reasons.append("MR↑↑✓")
+                else:             sc += 2; reasons.append("MR↑↑")
+            elif rsi_v > 58:      sc += 1; reasons.append("MR↑")
 
     return sc, reasons
 
@@ -201,7 +220,13 @@ def on_price(data):
     adx_prev  = _adx_hist.get(s, adx_v)
     _adx_hist[s] = adx_v
     adx_slope = adx_v - adx_prev
+
+    rsi_prev  = _rsi_hist.get(s, rsi_v)
+    _rsi_hist[s] = rsi_v
+    rsi_slope = rsi_v - rsi_prev
+
     reg = _regime(hist, adx_v, di_p, di_m, atr_v)
+    htf = _htf_trend(hist)
 
     # ── Regime gate ───────────────────────────────────────────────────────────
     if reg == "HIGH_VOL":
@@ -235,6 +260,12 @@ def on_price(data):
         if reg == "BEAR_TREND" and action != "SELL":
             track_filtered(); return
 
+        # HTF confirmation: block only hard disagreement (not FLAT)
+        if reg == "BULL_TREND" and htf == "DOWN":
+            track_filtered(); return
+        if reg == "BEAR_TREND" and htf == "UP":
+            track_filtered(); return
+
         # EMA spread filter (trend only — not RANGING)
         ema_spread = abs(e10 - e50)
         if ema_spread < atr_v * 0.2:
@@ -247,7 +278,7 @@ def on_price(data):
 
     # ── Score ─────────────────────────────────────────────────────────────────
     score, reasons = _score(
-        action, p, e10, e50, e200, rsi_v,
+        action, p, e10, e50, e200, rsi_v, rsi_slope,
         macd_l, macd_s, bb_lo, bb_hi, adx_v, reg
     )
 
@@ -292,16 +323,18 @@ def on_price(data):
 
     try:
         from bot2.auditor import get_strategy_weights
-        regime_w = get_strategy_weights().get(reg, 1.0)
+        ws = get_strategy_weights()
+        # sym×regime weight takes priority, falls back to regime-only
+        regime_w = ws.get(f"{reg}_{s}", ws.get(reg, 1.0))
     except Exception:
         regime_w = 1.0
 
     confidence = min(_ind_conf(score, reasons) * regime_w, 1.0)
     vol_pct = atr_v / p if p else 0
 
-    # ── EV gate: reject signals with negative expected value ─────────────────
-    tp_move = max(atr_v * TP_ATR_MULT / p, MIN_TP_PCT)
-    sl_move = max(atr_v * SL_ATR_MULT / p, MIN_SL_PCT)
+    # ── EV gate: regime-aware TP/SL ratio ────────────────────────────────────
+    tp_move = max(atr_v * _TP_MULT.get(reg, 2.2) / p, MIN_TP_PCT)
+    sl_move = max(atr_v * _SL_MULT.get(reg, 1.3) / p, MIN_SL_PCT)
     rr      = tp_move / sl_move
     ev      = confidence * rr - (1 - confidence)
     if ev <= 0:
@@ -323,6 +356,7 @@ def on_price(data):
         "features": {
             "ema_diff":   e10 - e50,
             "rsi":        rsi_v,
+            "rsi_slope":  round(rsi_slope, 4),
             "volatility": vol_pct,
             "macd":       macd_l,
             "adx":        adx_v,
