@@ -139,25 +139,28 @@ def corr(sym1, sym2):
 
 def cluster_penalty(sym, positions):
     """
-    Multiply by 0.5 for each open position with |corr| > 0.7.
-    Prevents capital doubling into correlated pairs.
+    Soft proportional penalty for correlated open positions.
+    At corr=0.7: factor=1.0 (no penalty onset).
+    At corr=1.0: factor=0.5 (maximum penalty per position).
+    Interpolates linearly between. Floor 0.3 — never starves a position.
     """
     pen = 1.0
     for pos in positions.values():
         other = pos["signal"]["symbol"]
         if other == sym:
             continue
-        if abs(corr(sym, other)) > 0.7:
-            pen *= 0.5
-    return pen
+        c = abs(corr(sym, other))
+        if c > 0.7:
+            pen *= 1.0 - 0.5 * (c - 0.7) / 0.3
+    return max(pen, 0.3)
 
 
 # ── Volatility & risk parity ──────────────────────────────────────────────────
 
 def vol(sym):
-    """Std of last 50 returns. Floor 1e-6 prevents div/0."""
+    """Std of last 50 returns. Floor 0.005 caps risk_parity_weight at 200×."""
     r = returns_hist.get(sym, [0.0])
-    return float(np.std(r[-50:])) + 1e-6
+    return max(float(np.std(r[-50:])), 0.005)
 
 
 def risk_parity_weight(sym):
@@ -169,15 +172,16 @@ def risk_parity_weight(sym):
 
 def risk_ev(sym, reg):
     """
-    mean(ws − slip) / (std(ws − slip) + ε) for (sym, regime), last 50 trades.
-    Returns 0 when <10 samples. Penalises inconsistent edge.
+    mean(pnl) / (std(pnl) + 0.01) for (sym, regime), last 50 trades.
+    std floor 0.01 prevents Sharpe explosion when edge is very consistent.
+    Returns 0 when <10 samples.
     """
     trades = [t for t in trade_log
               if t["sym"] == sym and t["reg"] == reg][-50:]
     if len(trades) < 10:
         return 0.0
     pnl = [t["ws"] - t["slip"] for t in trades]
-    return float(np.mean(pnl)) / (float(np.std(pnl)) + 1e-6)
+    return float(np.mean(pnl)) / (float(np.std(pnl)) + 0.01)
 
 
 def ev_conf(sym, reg):
@@ -272,10 +276,11 @@ def capital_alloc(sym, reg, base, positions):
 
 def leverage():
     """
-    Read drawdown from METRICS. Returns:
-      0.5  if dd > 10%   (capital preservation)
-      1.2  if dd < 2%    (mild boost in low-drawdown phase)
-      1.0  otherwise
+    Smooth linear leverage: 1.2 - 0.7 × min(dd/0.1, 1).
+    dd=0%   → 1.2×  (maximum; low-drawdown phase)
+    dd=10%  → 0.5×  (capital preservation floor)
+    dd>10%  → clamped at 0.5× (no further reduction)
+    Eliminates the step discontinuity that caused size jumps.
     """
     try:
         from src.services.learning_event import METRICS
@@ -283,22 +288,21 @@ def leverage():
         profit = METRICS.get("profit", 0.0) or 0.0
         if peak > 0:
             dd = (peak - (1.0 + profit)) / peak
-            if dd > 0.10: return 0.5
-            if dd < 0.02: return 1.2
+            return 1.2 - 0.7 * min(dd / 0.1, 1.0)
     except Exception:
         pass
-    return 1.0
+    return 1.2
 
 
 # ── Final position size (allocation × leverage) ────────────────────────────────
 
 def final_size(sym, reg, base, positions):
     """
-    Combines risk-parity capital allocation with adaptive leverage.
-    Replaces fixed base in trade_executor sizing chain.
-    equity_guard() removed from executor — leverage() subsumes that role.
+    capital_alloc × leverage, with hard position cap 25% of capital.
+    Cap prevents single-position over-concentration before leverage is applied.
     """
-    return capital_alloc(sym, reg, base, positions) * leverage()
+    alloc = min(capital_alloc(sym, reg, base, positions), 0.25)
+    return alloc * leverage()
 
 
 # ── Portfolio EV snapshot ──────────────────────────────────────────────────────
