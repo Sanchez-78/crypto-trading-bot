@@ -195,73 +195,72 @@ def _prefilter(hist, atr_v, price):
     return r20 > r50   # expanding vol: recent range > longer-term average
 
 
-def _edge_trend_pullback(hist, e50, e200):
+def _score_direction(hist, e50, e200, breakout_up, breakout_down, mom5, action):
     """
-    Bull: EMA50 > EMA200, price pulled back to EMA50 (within +1%), tick bouncing up.
-    Bear: EMA50 < EMA200, price pulled back to EMA50 (within -1%), tick rejecting.
-    Returns 'BUY', 'SELL', or None.
+    Score a directional setup across 7 binary features.
+    All features are directionally symmetric (BUY/SELL mirrored).
+    Returns (score, features_dict).
     """
-    if len(hist) < 2:
-        return None
-    p = hist[-1]
-    if e50 > e200 and p < e50 * 1.01 and hist[-1] > hist[-2]:
-        return "BUY"
-    if e50 < e200 and p > e50 * 0.99 and hist[-1] < hist[-2]:
-        return "SELL"
-    return None
+    p      = hist[-1]
+    is_buy = action == "BUY"
+
+    # Vol expansion (proxy: 20-bar avg range vs 50-bar avg range)
+    diffs = [abs(hist[i] - hist[i-1]) for i in range(1, len(hist))]
+    r20   = sum(diffs[-20:]) / 20
+    r50   = sum(diffs[-50:]) / 50
+
+    # Wick: use recent 5-tick range as OHLC proxy
+    hi5 = max(hist[-5:])
+    lo5 = min(hist[-5:])
+    rng = hi5 - lo5 or 1e-9
+
+    features = {
+        "trend":    (e50 > e200)        if is_buy else (e50 < e200),
+        "pullback": (p < e50 * 1.01)    if is_buy else (p > e50 * 0.99),
+        "bounce":   (hist[-1] > hist[-2]) if is_buy else (hist[-1] < hist[-2]),
+        "breakout": bool(breakout_up    if is_buy else breakout_down),
+        "vol":      r20 > r50,
+        "mom":      (mom5 > 0)          if is_buy else (mom5 < 0),
+        "wick":     ((hi5 - p) / rng < 0.6) if is_buy else ((p - lo5) / rng < 0.6),
+    }
+    return sum(1 for v in features.values() if v), features
 
 
-def _edge_vol_breakout(hist, breakout_up, breakout_down):
+def _get_scored_edge(hist, e50, e200, breakout_up, breakout_down, mom5):
     """
-    Range compression (10-bar avg diff < 70% of 50-bar avg diff) then breakout.
-    Returns 'BUY', 'SELL', or None.
+    Score BUY and SELL setups; pick direction with base_score >= SCORE_MIN.
+    Apply weighted_score >= W_SCORE_MIN gate (self-learning).
+    Returns (base_score, w_score, action, edge_type, features) or (0,0,None,None,{}).
     """
     if len(hist) < 51:
-        return None
-    diffs = [abs(hist[i] - hist[i-1]) for i in range(1, len(hist))]
-    r10   = sum(diffs[-10:]) / 10
-    r50   = sum(diffs[-50:]) / 50
-    if r10 >= r50 * 0.7:
-        return None   # no compression
-    if breakout_up:   return "BUY"
-    if breakout_down: return "SELL"
-    return None
+        return 0, 0.0, None, None, {}
 
+    buy_sc,  buy_f  = _score_direction(hist, e50, e200, breakout_up, breakout_down, mom5, "BUY")
+    sell_sc, sell_f = _score_direction(hist, e50, e200, breakout_up, breakout_down, mom5, "SELL")
 
-def _edge_fake_breakout(hist):
-    """
-    Previous tick breached 20-bar high/low, current tick rejected back inside.
-    Exploits trapped traders reversing.
-    Returns 'BUY' (downside fake), 'SELL' (upside fake), or None.
-    """
-    if len(hist) < 23:
-        return None
-    prev_hi20 = max(hist[-22:-2])
-    prev_lo20 = min(hist[-22:-2])
-    prev_p    = hist[-2]
-    curr_p    = hist[-1]
-    if prev_p > prev_hi20 and curr_p < prev_hi20:
-        return "SELL"   # upside breakout rejected → trapped buyers → sell
-    if prev_p < prev_lo20 and curr_p > prev_lo20:
-        return "BUY"    # downside breakout rejected → trapped sellers → buy
-    return None
+    # Pick direction with higher score; require minimum SCORE_MIN
+    from src.services.realtime_decision_engine import weighted_score as _ws, SCORE_MIN, W_SCORE_MIN
+    if buy_sc >= sell_sc and buy_sc >= SCORE_MIN:
+        action, base_score, features = "BUY",  buy_sc,  buy_f
+    elif sell_sc > buy_sc and sell_sc >= SCORE_MIN:
+        action, base_score, features = "SELL", sell_sc, sell_f
+    else:
+        return 0, 0.0, None, None, {}
 
+    # Self-learning weighted score gate
+    w_score = _ws(features)
+    if w_score < W_SCORE_MIN:
+        return base_score, w_score, None, None, {}
 
-def _get_edge(hist, e50, e200, breakout_up, breakout_down):
-    """
-    Returns (edge_name, action) or (None, None).
-    Priority: trend_pullback > vol_breakout > fake_breakout
-    """
-    a = _edge_trend_pullback(hist, e50, e200)
-    if a: return "trend_pullback", a
+    # Edge type classification for TP/SL selection
+    if features["trend"] and features["pullback"] and features["bounce"]:
+        edge = "trend_pullback"
+    elif features["vol"] and features["breakout"]:
+        edge = "vol_breakout"
+    else:
+        edge = "fake_breakout"
 
-    a = _edge_vol_breakout(hist, breakout_up, breakout_down)
-    if a: return "vol_breakout", a
-
-    a = _edge_fake_breakout(hist)
-    if a: return "fake_breakout", a
-
-    return None, None
+    return base_score, w_score, action, edge, features
 
 
 # ── Exploration mode ──────────────────────────────────────────────────────────
@@ -329,9 +328,10 @@ def on_price(data):
         track_filtered()
         return
 
-    # ── Edge detection (replaces raw direction logic) ─────────────────────────
-    edge, action = _get_edge(hist, e50, e200, breakout_up, breakout_down)
-    if edge is None:
+    # ── Edge scoring: 7-feature self-learning gate ────────────────────────────
+    base_sc, w_sc, action, edge, edge_features = _get_scored_edge(
+        hist, e50, e200, breakout_up, breakout_down, mom5)
+    if action is None:
         track_filtered()
         return
 
@@ -398,6 +398,9 @@ def on_price(data):
         "regime":     reg,
         "edge":       edge,
         "features": {
+            # 7 boolean edge features (used for self-learning update_edge_stats)
+            **edge_features,
+            # Continuous indicators (stored for analysis, not for edge learning)
             "ema_diff":      e10 - e50,
             "rsi":           rsi_v,
             "rsi_slope":     round(rsi_slope, 4),
@@ -405,8 +408,6 @@ def on_price(data):
             "macd":          macd_l,
             "adx":           adx_v,
             "adx_slope":     round(adx_slope, 4),
-            "breakout_up":   breakout_up,
-            "breakout_down": breakout_down,
             "mom5":          round(mom5, 6),
             "mom10":         round(mom10, 6),
         },
@@ -415,9 +416,10 @@ def on_price(data):
     short = s.replace("USDT", "")
     icon  = "🟢" if action == "BUY" else "🔴"
     expl  = "  [EXPLORE]" if _is_exploration() else ""
-    bk    = f"  bo↑{breakout_up}/↓{breakout_down}  m5={mom5:+.3f}"
+    active_f = [k for k, v in edge_features.items() if v]
     print(f"  {icon} {short} ${p:,.4f} | [{edge}] "
-          f"score:{score} [{','.join(reasons)}] | {reg} | conf:{confidence:.0%}{bk}{expl}")
+          f"sc:{base_sc}/7  ws:{w_sc:.2f} | {reg} | conf:{confidence:.0%} "
+          f"[{','.join(active_f)}]{expl}")
 
     from src.services.realtime_decision_engine import evaluate_signal
     result = evaluate_signal(signal)

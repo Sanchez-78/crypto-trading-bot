@@ -229,16 +229,25 @@ def bootstrap_from_history(trades):
 
     # Seed online calibrator from closed trades (must be after loop)
     try:
-        from src.services.realtime_decision_engine import calibrator, _seeded
+        from src.services.realtime_decision_engine import (
+            calibrator, _seeded, update_edge_stats)
         for t in sorted_trades:
-            p      = float(t.get("confidence", 0.5))
-            result = t.get("result")
+            p        = float(t.get("confidence", 0.5))
+            result   = t.get("result")
+            features = t.get("features", {})
             if result in ("WIN", "LOSS"):
-                calibrator.update(p, 1 if result == "WIN" else 0)
-        _seeded[0] = True   # mark as seeded so evaluate_signal skips repeat
-        total = sum(v[1] for v in calibrator.buckets.values())
+                outcome = 1 if result == "WIN" else 0
+                calibrator.update(p, outcome)
+                if features:
+                    update_edge_stats(features, outcome)
+        _seeded[0] = True
+        total  = sum(v[1] for v in calibrator.buckets.values())
+        edge_n = sum(v[1] for v in
+                     __import__("src.services.realtime_decision_engine",
+                                fromlist=["edge_stats"]).edge_stats.values())
         print(f"🎯 Calibrator bootstrap: {total} samples  "
               f"buckets={calibrator.summary()}")
+        print(f"🧠 Edge stats bootstrap: {edge_n} feature observations")
     except Exception as e:
         print(f"⚠️  Calibrator bootstrap skipped: {e}")
 

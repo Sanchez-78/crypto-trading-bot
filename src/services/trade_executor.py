@@ -150,11 +150,14 @@ def on_price(data):
 
     update_metrics(pos["signal"], trade)
 
-    # ── Calibration feedback: update empirical WR bucket ──────────────────────
+    # ── Calibration + edge learning feedback ──────────────────────────────────
     try:
-        from src.services.realtime_decision_engine import update_calibrator
-        p = float(pos["signal"].get("confidence", 0.5))
-        update_calibrator(p, 1 if result == "WIN" else 0)
+        from src.services.realtime_decision_engine import update_calibrator, update_edge_stats
+        outcome  = 1 if result == "WIN" else 0
+        p        = float(pos["signal"].get("confidence", 0.5))
+        features = pos["signal"].get("features", {})
+        update_calibrator(p, outcome)
+        update_edge_stats(features, outcome)
     except Exception:
         pass
 

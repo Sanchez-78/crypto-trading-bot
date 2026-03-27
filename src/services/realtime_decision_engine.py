@@ -62,6 +62,36 @@ calibrator = Calibrator()
 ev_history = deque(maxlen=200)   # ALL evaluated EVs (including skipped)
 _seeded    = [False]
 
+# ── Self-learning edge feature stats ──────────────────────────────────────────
+SCORE_MIN   = 4    # minimum base score (out of 7)
+W_SCORE_MIN = 2.5  # minimum weighted score (sum of empirical WRs)
+
+edge_stats = {}    # feature_name -> [wins, total]
+
+
+def update_edge_stats(features, outcome):
+    """Update per-feature win/loss counts. Called after every trade close."""
+    for k, v in features.items():
+        if isinstance(v, bool) and v:
+            if k not in edge_stats:
+                edge_stats[k] = [0, 0]
+            edge_stats[k][1] += 1
+            if outcome == 1:
+                edge_stats[k][0] += 1
+
+
+def feature_weight(k):
+    """Empirical WR for feature k. Requires ≥20 samples, else 0.5."""
+    if k in edge_stats and edge_stats[k][1] >= 20:
+        return edge_stats[k][0] / edge_stats[k][1]
+    return 0.5
+
+
+def weighted_score(features):
+    """Sum of empirical WR weights for all active (True) boolean features."""
+    return sum(feature_weight(k) for k, v in features.items()
+               if isinstance(v, bool) and v)
+
 
 def update_calibrator(p, outcome):
     """Called by trade_executor after every trade close."""
@@ -69,14 +99,21 @@ def update_calibrator(p, outcome):
 
 
 def _seed_calibrator(trades):
-    """One-time bootstrap: replay closed trades into calibrator."""
+    """One-time bootstrap: replay closed trades into calibrator + edge_stats."""
     for t in trades:
-        p      = float(t.get("confidence", 0.5))
-        result = t.get("result")
+        p        = float(t.get("confidence", 0.5))
+        result   = t.get("result")
+        features = t.get("features", {})
         if result in ("WIN", "LOSS"):
-            calibrator.update(p, 1 if result == "WIN" else 0)
+            outcome = 1 if result == "WIN" else 0
+            calibrator.update(p, outcome)
+            if features:
+                update_edge_stats(features, outcome)
     total = sum(v[1] for v in calibrator.buckets.values())
+    edge_n = sum(v[1] for v in edge_stats.values())
     print(f"🎯 Calibrator seeded: {total} samples  buckets={calibrator.summary()}")
+    print(f"🧠 Edge stats seeded: {edge_n} feature observations  "
+          f"keys={list(edge_stats.keys())}")
 
 
 def get_ev_threshold():
