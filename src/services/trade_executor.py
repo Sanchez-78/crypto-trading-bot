@@ -24,9 +24,14 @@ from src.services.learning_event  import update_metrics
 from src.services.firebase_client import save_batch
 import time
 
-BATCH       = []
-_positions  = {}
-_last_flush = [0.0]
+BATCH             = []
+_positions        = {}
+_last_flush       = [0.0]
+_regime_exposure  = {}   # regime -> count of open positions
+
+MAX_POSITIONS     = 2    # max concurrent open positions
+MAX_SAME_DIR      = 1    # max positions in same direction (BUY or SELL)
+MAX_REGIME_PCT    = 0.70 # block if one regime holds > 70% of open positions
 
 FEE_RT      = 0.0020    # 0.20% round-trip Binance taker fees
 MIN_TP_PCT  = 0.0025    # 0.25% min TP
@@ -54,6 +59,28 @@ def get_open_positions():
     return dict(_positions)
 
 
+def _allow_trade(symbol, direction, regime):
+    """
+    Portfolio-level gates before accepting a new position.
+    Returns (allowed: bool, reason: str).
+    """
+    if symbol in _positions:
+        return False, "already_open"
+    if len(_positions) >= MAX_POSITIONS:
+        return False, "max_positions"
+    # Direction concentration: max 1 same-direction position
+    same_dir = sum(1 for p in _positions.values() if p["action"] == direction)
+    if same_dir >= MAX_SAME_DIR:
+        return False, "same_dir"
+    # Regime concentration: block if one regime dominates (>70%)
+    n = len(_positions)
+    if n > 0:
+        regime_count = _regime_exposure.get(regime, 0)
+        if regime_count / n >= MAX_REGIME_PCT:
+            return False, "regime_concentration"
+    return True, "ok"
+
+
 def _flush():
     if BATCH:
         save_batch(BATCH)
@@ -62,8 +89,11 @@ def _flush():
 
 
 def handle_signal(signal):
-    sym = signal["symbol"]
-    if sym in _positions:
+    sym     = signal["symbol"]
+    regime  = signal.get("regime", "RANGING")
+    allowed, reason = _allow_trade(sym, signal["action"], regime)
+    if not allowed:
+        print(f"    portfolio gate: {reason}  sym={sym}")
         return
 
     entry = signal["price"]
@@ -112,6 +142,7 @@ def handle_signal(signal):
         "signal":       signal,
         "ticks":        0,
     }
+    _regime_exposure[regime] = _regime_exposure.get(regime, 0) + 1
 
 
 def on_price(data):
@@ -180,6 +211,9 @@ def on_price(data):
     if len(BATCH) >= 20:
         _flush()
 
+    closed_regime = pos["signal"].get("regime", "RANGING")
+    _regime_exposure[closed_regime] = max(
+        0, _regime_exposure.get(closed_regime, 1) - 1)
     del _positions[sym]
 
 

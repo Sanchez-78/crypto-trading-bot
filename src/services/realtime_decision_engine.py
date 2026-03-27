@@ -68,9 +68,10 @@ W_SCORE_MIN  = 0.50   # cold-start floor for weighted avg score
 DECAY        = 0.98   # exponential decay applied to counts each update
 score_history = deque(maxlen=200)   # w_scores of all evaluated winning-dir setups
 
-edge_stats  = {}   # (feature_name, regime) -> [eff_wins, eff_total]  (decayed)
-combo_stats = {}   # (combo_tuple, regime)  -> [eff_wins, eff_total]  (decayed)
-combo_usage = {}   # combo_tuple -> int  (session use count; resets on restart)
+edge_stats     = {}   # (feature_name, regime) -> [eff_wins, eff_total]  (decayed)
+combo_stats    = {}   # (combo_tuple, regime)  -> [eff_wins, eff_total]  (decayed)
+combo_usage    = {}   # combo_tuple -> int  (session use count; resets on restart)
+archive_combos = {}   # pruned combos kept for inspection (not used in decisions)
 
 
 def _std(lst):
@@ -83,12 +84,16 @@ def _std(lst):
 
 
 def prune_combos():
-    """Remove 50 worst-WR combos when dict exceeds 200 entries."""
+    """
+    Soft-prune: move 50 worst-WR combos to archive when dict exceeds 200.
+    Archived combos are preserved for inspection but excluded from decisions.
+    """
     if len(combo_stats) <= 200:
         return
     worst = sorted(combo_stats.items(),
-                   key=lambda x: x[1][0] / max(x[1][1], 1))[:50]
-    for k, _ in worst:
+                   key=lambda x: x[1][0] / max(x[1][1], 1.0))[:50]
+    for k, v in worst:
+        archive_combos[k] = v
         del combo_stats[k]
 
 
@@ -279,12 +284,18 @@ def evaluate_signal(signal):
     ev_history.append(ev)
     ev_threshold = get_ev_threshold()
 
-    # ── Loss streak guard: halt after N consecutive losses ────────────────────
-    from src.services.learning_event import METRICS as _M
+    # ── Loss streak + velocity guard ──────────────────────────────────────────
+    from src.services.learning_event import METRICS as _M, _recent_results as _rr
     streak = _M.get("loss_streak", 0)
     if streak >= MAX_LOSS_STREAK:
         track_blocked()
         print(f"    decision=SKIP_STREAK  streak={streak}>={MAX_LOSS_STREAK}")
+        return None
+    # Velocity guard: 3+ losses in last 5 trades → temporary pause
+    recent_losses = sum(1 for r in list(_rr)[-5:] if r == "LOSS")
+    if recent_losses >= 3:
+        track_blocked()
+        print(f"    decision=SKIP_VELOCITY  recent_losses={recent_losses}/5")
         return None
 
     # ── EV spread guard: flat distribution = noise, not edge ──────────────────

@@ -353,6 +353,14 @@ def on_price(data):
     mom5          = sum(returns[-5:])  if len(returns) >= 5  else 0.0
     mom10         = sum(returns[-10:]) if len(returns) >= 10 else 0.0
 
+    # ── Vol-shock guard: flash crash / spike protection ───────────────────────
+    # If 5-tick price move > 3× ATR pct → abnormal move, skip
+    if len(hist) >= 6:
+        recent_move = abs(hist[-1] - hist[-6]) / (hist[-6] or 1)
+        if recent_move > 3 * (atr_v / p):
+            track_filtered()
+            return
+
     # ── Volatility prefilter (hard gate — no exploration bypass) ─────────────
     if not _prefilter(hist, atr_v, p):
         track_filtered()
