@@ -1,65 +1,165 @@
 """
-Exchange-level execution engine — order book aware, slippage-minimising.
-
-Order type selection:
-  MARKET — high momentum + order book imbalance confirms direction
-  LIMIT  — tight spread, passive fill at inside quote + 10% of spread
-  POST   — default; maker-only, zero taker fee, no fill guarantee
-
-Partial fill loop (exec_order):
-  3 attempts × 40% of size each; market fallback for remainder.
-  Simulates realistic fill in paper-trading context.
+Exchange-level execution engine — feedback-aware, cost-accurate.
 
 Slippage model:
-  size / depth — fraction of available liquidity consumed.
-  Used in net_edge gate and stored per trade for analysis.
+  Walk ob.levels (price, volume) pairs to compute true avg fill price.
+  Pessimistic: max(book_estimate, mean(last_20_actual)) prevents underestimation.
 
-Signal staleness:
-  Reject signals older than 500 ms — stale price = wrong edge.
+Order type:
+  MARKET  — fill_rate<30% (limits not filling) OR strong momentum+imbalance
+  LIMIT   — spread<0.05% of mid
+  POST    — default maker
+
+Partial fill loop:
+  2 attempts × 50%; market fallback for remainder.
+  fill_stats tracks limit attempts vs actual fills → drives choose_type.
+
+OB adjustment:
+  ob_adjust() softly shifts ws ±0.02 — not a hard block.
+
+Staleness:
+  dynamic_staleness(tick_ms) = clamp(2×tick_ms, 200, 800 ms).
+  Fast market → tighter window; slow market → more tolerance.
 """
 
 import time as _time
+
+# ── Session state ──────────────────────────────────────────────────────────────
+
+slippage_hist = []          # actual slippage per fill (fractional, last 100)
+fill_stats    = {"limit": 0, "market": 0, "limit_filled": 0}
 
 
 # ── Order book snapshot ────────────────────────────────────────────────────────
 
 class OrderBook:
-    """Minimal OB snapshot passed from price feed or constructed from ticker."""
+    """
+    OB snapshot with synthetic depth levels.
+    levels: list of (price, volume) tuples in ascending price order (ask side).
+    mid: (bid + ask) / 2
+    """
+    __slots__ = ("bid", "ask", "bid_vol", "ask_vol", "levels", "ts")
 
-    __slots__ = ("bid", "ask", "bid_vol", "ask_vol", "ts")
-
-    def __init__(self, bid, ask, bid_vol=1.0, ask_vol=1.0, ts=None):
+    def __init__(self, bid, ask, bid_vol=10.0, ask_vol=10.0, levels=None, ts=None):
         self.bid     = float(bid)
         self.ask     = float(ask)
         self.bid_vol = float(bid_vol)
         self.ask_vol = float(ask_vol)
+        self.levels  = levels or []
         self.ts      = ts or _time.time()
+
+    @property
+    def mid(self):
+        return (self.bid + self.ask) / 2.0
 
     @classmethod
     def from_price(cls, price, spread_pct=0.001):
-        """Construct a minimal OB from a single price + spread estimate."""
+        """
+        Construct OB from single price.
+        Synthesizes 5 ask levels with decreasing volume at widening spread.
+        """
         half = price * spread_pct / 2
-        return cls(bid=price - half, ask=price + half,
-                   bid_vol=10.0, ask_vol=10.0)
+        ask  = price + half
+        # (price, volume) — each level further away, thinner
+        levels = [
+            (ask,              5.0),
+            (ask * 1.0002,     3.0),
+            (ask * 1.0005,     2.0),
+            (ask * 1.001,      1.0),
+            (ask * 1.002,      0.5),
+        ]
+        return cls(bid=price - half, ask=ask,
+                   bid_vol=10.0, ask_vol=10.0, levels=levels)
+
+
+# ── Slippage: walk the book ────────────────────────────────────────────────────
+
+def slippage(size, ob):
+    """
+    Walk ob.levels to compute avg fill price. Returns fraction above mid.
+    Falls back to spread/2 if levels are empty.
+    """
+    if not ob.levels:
+        return (ob.ask - ob.mid) / max(ob.mid, 1e-9)
+    remaining = size
+    cost      = 0.0
+    for p, v in ob.levels:
+        take       = min(remaining, v)
+        cost      += take * p
+        remaining -= take
+        if remaining <= 0:
+            break
+    if remaining > 0:                          # exhausted book — use last level
+        cost += remaining * ob.levels[-1][0]
+    avg = cost / max(size, 1e-6)
+    return (avg - ob.mid) / max(ob.mid, 1e-9)  # fractional slippage
+
+
+# ── Net edge after costs ───────────────────────────────────────────────────────
+
+def net_edge(ws, size, ob, fee):
+    """
+    Pessimistic net edge: use max(book_estimate, recent_mean).
+    Prevents underestimating costs when market is moving.
+    """
+    est_slip = slippage(size, ob)
+    if len(slippage_hist) > 20:
+        recent_mean = sum(slippage_hist[-20:]) / 20
+        est_slip    = max(est_slip, recent_mean)
+    return ws - est_slip - fee
+
+
+# ── OB imbalance: soft ws adjustment ──────────────────────────────────────────
+
+def ob_adjust(ws, ob):
+    """
+    Soft adjustment: confirming imbalance +0.02, opposing -0.02.
+    Not a hard gate — avoids over-filtering low-liquidity markets.
+    """
+    imb = ob.bid_vol / (ob.ask_vol + 1e-6)
+    if imb > 1.5:
+        return ws + 0.02
+    if imb < 0.70:
+        return ws - 0.02
+    return ws
+
+
+# ── Dynamic staleness ─────────────────────────────────────────────────────────
+
+def dynamic_staleness(tick_ms):
+    """Clamp(2×tick_ms, 200, 800). Fast feed = tighter window."""
+    return max(200, min(800, 2 * tick_ms))
+
+
+# ── Fill rate tracker ──────────────────────────────────────────────────────────
+
+def fill_rate():
+    """Fraction of limit attempts that actually filled. 1.0 if no data."""
+    if fill_stats["limit"] == 0:
+        return 1.0
+    return fill_stats["limit_filled"] / fill_stats["limit"]
 
 
 # ── Order type selection ───────────────────────────────────────────────────────
 
-def choose_type(sig, ob):
+def choose_type(sig, ob, fr=None):
     """
-    MARKET  — strong momentum (mom>0.7) AND OB imbalance confirms (imb>1.2 for BUY)
-    LIMIT   — spread tight enough for passive fill (<0.05% of mid)
-    POST    — default; maker-only
+    fr: fill_rate() result — if < 0.30, limits aren't filling → use MARKET.
+    MARKET  — low fill rate OR strong momentum + confirming imbalance
+    LIMIT   — tight spread (<0.05% of mid)
+    POST    — default
     """
+    if fr is None:
+        fr = fill_rate()
     spread = ob.ask - ob.bid
-    mid    = (ob.ask + ob.bid) / 2
+    mid    = ob.mid
     imb    = ob.bid_vol / (ob.ask_vol + 1e-6)
     mom    = sig.get("features", {}).get("mom5", 0.0)
 
-    # Momentum + confirming imbalance → take liquidity immediately
+    if fr < 0.30:
+        return "MARKET"
     if abs(mom) > 0.007 and imb > 1.2:
         return "MARKET"
-    # Tight spread → passive limit is cheap and likely to fill
     if spread / max(mid, 1e-9) < 0.0005:
         return "LIMIT"
     return "POST"
@@ -68,121 +168,93 @@ def choose_type(sig, ob):
 # ── Limit price ────────────────────────────────────────────────────────────────
 
 def limit_price(ob, side):
-    """
-    Place limit 10% into the spread from our side.
-    BUY: bid + 10% of spread (slightly better than best bid, avoids queue tail)
-    SELL: ask - 10% of spread
-    """
+    """10% into spread — competitive but avoids queue tail."""
     spread = ob.ask - ob.bid
     if side == "BUY":
         return ob.bid + 0.10 * spread
     return ob.ask - 0.10 * spread
 
 
-# ── Slippage estimate ──────────────────────────────────────────────────────────
-
-def slippage(size, ob, side="BUY"):
-    """
-    Fraction of available depth consumed by this order.
-    Higher size relative to depth = more adverse fill.
-    """
-    depth = ob.ask_vol if side == "BUY" else ob.bid_vol
-    return size / (depth + 1e-6)
-
-
-# ── Net edge after costs ───────────────────────────────────────────────────────
-
-def net_edge(ws, size, ob, fee, side="BUY"):
-    """ws after slippage + round-trip fees. Negative = destroy edge."""
-    return ws - slippage(size, ob, side) - fee
-
-
-# ── Order book directional signal ─────────────────────────────────────────────
-
-def ob_signal(ob):
-    """
-    +1 = buy pressure (imb > 1.5)
-    -1 = sell pressure (imb < 0.67)
-     0 = neutral
-    """
-    imb = ob.bid_vol / (ob.ask_vol + 1e-6)
-    if imb > 1.5:
-        return 1
-    if imb < 0.67:
-        return -1
-    return 0
-
-
 # ── Signal staleness guard ─────────────────────────────────────────────────────
 
-def valid(sig_time, max_age_ms=500):
-    """Return True if signal is fresh enough to act on."""
+def valid(sig_time, tick_ms=250):
+    """Fresh if age < dynamic_staleness(tick_ms)."""
     age_ms = (_time.time() - sig_time) * 1000
-    return age_ms < max_age_ms
+    return age_ms < dynamic_staleness(tick_ms)
 
 
-# ── Core execution ─────────────────────────────────────────────────────────────
+# ── Cost guard ─────────────────────────────────────────────────────────────────
+
+def cost_guard(ws, size, ob, fee):
+    """True only if net_edge > 0 after pessimistic slippage + fees."""
+    return net_edge(ws, size, ob, fee) > 0
+
+
+# ── Internal paper-trading fill simulation ─────────────────────────────────────
 
 def _send_limit(size, price, side, ob):
-    """
-    Paper-trading limit fill simulation.
-    Fills if price is within current spread; partial fill probability ~80%.
-    Returns amount filled and average fill price.
-    """
+    """80% fill probability for passive limit; immediate if marketable."""
+    import random
     if side == "BUY" and price >= ob.ask:
-        return size, ob.ask                   # marketable limit → immediate fill
+        return size, ob.ask
     if side == "SELL" and price <= ob.bid:
         return size, ob.bid
-    # Passive limit: 80% fill probability per attempt
-    import random
     if random.random() < 0.80:
         return size, price
     return 0.0, price
 
 
 def _send_market(size, side, ob):
-    """Market order: fills at ask (BUY) or bid (SELL) plus slippage."""
-    slip  = slippage(size, ob, side)
-    price = ob.ask * (1 + slip) if side == "BUY" else ob.bid * (1 - slip)
+    """Market fill at top-of-book; walks levels for price impact."""
+    slip  = slippage(size, ob)
+    mid   = ob.mid
+    price = mid * (1 + slip) if side == "BUY" else mid * (1 - slip)
     return size, price
 
 
+# ── Core execution ─────────────────────────────────────────────────────────────
+
 def exec_order(sig, size, ob):
     """
-    Partial fill loop: 3 attempts × 40% each via limit.
-    Market order for unfilled remainder.
-    Returns {"filled": float, "avg_price": float, "order_type": str, "slippage": float}
+    2 attempts × 50% via limit; market fallback for remainder.
+    Updates fill_stats. Records actual slippage in slippage_hist.
+    Returns (avg_fill_price, slippage_frac).
     """
     side       = sig.get("action", "BUY")
-    order_type = choose_type(sig, ob)
+    fr         = fill_rate()
+    order_type = choose_type(sig, ob, fr)
     lp         = limit_price(ob, side)
+    ref_price  = sig.get("price", ob.mid)
 
-    filled      = 0.0
-    price_sum   = 0.0
-    entry_price = ob.ask if side == "BUY" else ob.bid   # reference for slippage calc
+    filled    = 0.0
+    price_sum = 0.0
 
     if order_type in ("LIMIT", "POST"):
-        for _ in range(3):
-            chunk = size * 0.40
-            if filled >= size * 0.80:
+        for _ in range(2):
+            chunk = size * 0.50
+            if filled >= size * 0.70:
                 break
+            fill_stats["limit"] += 1
             f, p = _send_limit(chunk, lp, side, ob)
-            filled    += f
-            price_sum += f * p
+            if f > 0:
+                fill_stats["limit_filled"] += 1
+                filled    += f
+                price_sum += f * p
 
-    # MARKET order or remainder
     if order_type == "MARKET" or filled < size:
         remainder = size - filled
+        fill_stats["market"] += 1
         f, p = _send_market(remainder, side, ob)
         filled    += f
         price_sum += f * p
 
-    avg_price  = price_sum / max(filled, 1e-9)
-    slip_frac  = abs(avg_price - entry_price) / max(entry_price, 1e-9)
+    avg   = price_sum / max(filled, 1e-9)
+    slip  = (avg - ref_price) / max(ref_price, 1e-9)
+    if side == "SELL":
+        slip = -slip          # SELL: lower fill = slippage
 
-    return {
-        "filled":     round(filled, 8),
-        "avg_price":  avg_price,
-        "order_type": order_type,
-        "slippage":   round(slip_frac, 6),
-    }
+    slippage_hist.append(slip)
+    if len(slippage_hist) > 100:
+        slippage_hist.pop(0)
+
+    return avg, slip

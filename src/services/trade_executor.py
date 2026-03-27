@@ -23,7 +23,7 @@ from src.core.event_bus           import subscribe_once
 from src.services.learning_event  import update_metrics
 from src.services.firebase_client import save_batch
 from src.services.execution       import (
-    exec_order, valid, ob_signal, net_edge, OrderBook)
+    exec_order, valid, ob_adjust, cost_guard, OrderBook, fill_rate)
 import time
 
 BATCH             = []
@@ -194,20 +194,22 @@ def handle_signal(signal):
             print(f"    portfolio gate: {reason}  sym={sym}")
         return
 
-    # Net WS gate: skip if edge is eaten by spread + fees
-    ws_raw = signal.get("ws", 0.5)
-    if net_ws(ws_raw, _SPREAD_PCT, FEE_RT) <= 0:
-        print(f"    portfolio gate: net_ws_negative  sym={sym}")
-        return
+    entry = signal["price"]
+    atr   = signal.get("atr", entry * 0.003)
 
-    # Signal staleness guard: reject if older than 500 ms
-    sig_ts = signal.get("timestamp", time.time())
-    if not valid(sig_ts):
+    # Build OB snapshot for cost calculations
+    ob = OrderBook.from_price(entry, spread_pct=_SPREAD_PCT)
+
+    # Signal staleness guard — tick_ms estimated from atr velocity
+    sig_ts  = signal.get("timestamp", time.time())
+    tick_ms = max(100, min(500, int(atr / max(entry, 1e-9) * 100_000)))
+    if not valid(sig_ts, tick_ms):
         print(f"    portfolio gate: stale_signal  sym={sym}")
         return
 
-    entry = signal["price"]
-    atr   = signal.get("atr", entry * 0.003)
+    # OB imbalance: soft adjustment to ws (not a hard gate)
+    ws_raw = signal.get("ws", 0.5)
+    ws_adj = ob_adjust(ws_raw, ob)
 
     # Position sizing: EV-scaled, auditor floor 0.7, strong-EV boost
     import math
@@ -216,22 +218,26 @@ def handle_signal(signal):
         get_ev_threshold, get_ws_threshold, equity_guard)
     _t      = _gm().get("trades", 0)
     ev      = signal.get("ev", 0.05)
-    ws      = signal.get("ws", 0.5)
     explore = signal.get("explore", False)
     af      = min(1.0, max(0.7, signal.get("auditor_factor", 1.0)))
     base    = 0.05 if _t >= 20 else 0.025
     thr     = get_ev_threshold()
     ws_thr  = get_ws_threshold()
-    # sqrt sizing: less aggressive than linear; caps overbetting at high ws
-    ws_ratio = (ws / ws_thr) if ws_thr > 0 else 1.0
-    size     = base * math.sqrt(min(ws_ratio, 2.25)) * af  # sqrt(2.25)=1.5 max
+    ws_ratio = (ws_adj / ws_thr) if ws_thr > 0 else 1.0
+    size     = base * math.sqrt(min(ws_ratio, 2.25)) * af
     if ev > thr * 1.5:
-        size *= 1.5                          # strong EV boost
+        size *= 1.5
     if explore:
-        size *= 0.3                          # exploration trades: small position
-    size *= equity_guard()                   # halve size if drawdown > 10%
-    size  = _vol_adjust(size, signal)        # scale to 2% target vol
+        size *= 0.3
+    size *= equity_guard()
+    size  = _vol_adjust(size, signal)
     size  = max(0.005, size)
+
+    # Cost guard after sizing — uses actual size for accurate slippage estimate
+    if not cost_guard(ws_adj, size, ob, FEE_RT):
+        print(f"    portfolio gate: cost_guard  sym={sym}  "
+              f"ws_adj={ws_adj:.3f}  fr={fill_rate():.2f}")
+        return
 
     # TP/SL: edge-specific ATR multipliers
     edge    = signal.get("edge", "")
@@ -243,32 +249,23 @@ def handle_signal(signal):
     sl_move = max(atr * sl_mult / entry, MIN_SL_PCT)
 
     # ── OB-aware execution ────────────────────────────────────────────────────
-    ob   = OrderBook.from_price(entry, spread_pct=_SPREAD_PCT)
-    fill = exec_order(signal, size, ob)
-    # OB signal must not oppose direction (skip if confirmed adverse)
-    obs  = ob_signal(ob)
-    if (signal["action"] == "BUY"  and obs == -1) or \
-       (signal["action"] == "SELL" and obs ==  1):
-        print(f"    portfolio gate: ob_adverse  sym={sym}  obs={obs}")
-        return
-    actual_entry = fill["avg_price"] or entry
-    actual_size  = fill["filled"]    or size
+    actual_entry, fill_slip = exec_order(signal, size, ob)
+    actual_entry = actual_entry or entry
 
     _positions[sym] = {
-        "action":       signal["action"],
-        "entry":        actual_entry,
-        "size":         actual_size,
-        "tp_move":      tp_move,
-        "sl_move":      sl_move,
-        "trail_sl":     -sl_move,
-        "trail_offset": trail * sl_move,
-        "signal":       signal,
-        "ticks":        0,
-        "order_type":   fill["order_type"],
-        "fill_slippage": fill["slippage"],
+        "action":        signal["action"],
+        "entry":         actual_entry,
+        "size":          size,
+        "tp_move":       tp_move,
+        "sl_move":       sl_move,
+        "trail_sl":      -sl_move,
+        "trail_offset":  trail * sl_move,
+        "signal":        signal,
+        "ticks":         0,
+        "fill_slippage": fill_slip,
     }
-    print(f"    exec: {fill['order_type']}  slip={fill['slippage']:.5f}  "
-          f"fill={actual_size:.4f}@{actual_entry:.4f}")
+    print(f"    exec: slip={fill_slip:.5f}  fr={fill_rate():.2f}  "
+          f"ws_adj={ws_adj:.3f}  {size:.4f}@{actual_entry:.4f}")
     _regime_exposure[regime] = _regime_exposure.get(regime, 0) + 1
     _risk_guard()
 
@@ -317,7 +314,6 @@ def on_price(data):
         "exit_price":    curr,
         "close_reason":  reason,
         "timestamp":     time.time(),
-        "order_type":    pos.get("order_type", "MARKET"),
         "fill_slippage": pos.get("fill_slippage", 0.0),
     }
 
