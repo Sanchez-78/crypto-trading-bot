@@ -320,3 +320,13 @@ def get_regime_stats():
 def trades_per_hour():
     """Estimated trade rate from last 60 minutes."""
     return trades_in_window(3600)
+
+
+def real_ev():
+    """PnL-based expectancy: wr×avg_win - (1-wr)×avg_loss. Returns 0 if insufficient data."""
+    m  = METRICS
+    t  = m["trades"]
+    if t == 0 or m["wins"] == 0 or m["losses"] == 0:
+        return 0.0
+    wr = m["wins"] / t
+    return wr * m["avg_win"] - (1 - wr) * m["avg_loss"]

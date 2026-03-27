@@ -37,6 +37,10 @@ _TOTAL_CAPITAL    = 1.0  # normalised capital (position sizes are fractions)
 _MAX_CAP_USED     = 0.70 # don't deploy more than 70% of capital
 _TARGET_VOL       = 0.02 # 2% target realised volatility for vol-adjusted sizing
 _REPLACE_MARGIN   = 1.10 # new signal must be 10% better to replace weakest
+_REPLACE_COOLDOWN = 300  # seconds between replacements of the same symbol
+_MAX_TOTAL_RISK   = 0.05 # total portfolio risk cap (sum of size*sl_pct)
+_SPREAD_PCT       = 0.001 # estimated bid-ask spread (0.10%)
+_last_replaced    = {}   # symbol -> timestamp of last replacement
 
 FEE_RT      = 0.0020    # 0.20% round-trip Binance taker fees
 MIN_TP_PCT  = 0.0025    # 0.25% min TP
@@ -58,6 +62,29 @@ _TP_MULT = {"BULL_TREND": 1.0, "BEAR_TREND": 1.0,
 _SL_MULT = {"BULL_TREND": 0.8, "BEAR_TREND": 0.8,
             "RANGING":    0.8, "QUIET_RANGE": 0.8}
 _TRAIL   = 0.4   # fallback trail
+
+
+def net_ws(ws, spread_pct, fee_rt):
+    """WS after spread and round-trip fees. Negative = edge eaten by costs."""
+    return ws - (spread_pct + fee_rt)
+
+
+def _replace_allowed(symbol):
+    """True if no replacement happened for this symbol in the last 300 s."""
+    last = _last_replaced.get(symbol, 0.0)
+    return (time.time() - last) > _REPLACE_COOLDOWN
+
+
+def _total_risk():
+    """Sum of (size × sl_move) across all open positions."""
+    return sum(p["size"] * p["sl_move"] for p in _positions.values())
+
+
+def _risk_guard():
+    """If total portfolio risk exceeds cap, scale all position sizes down."""
+    if _total_risk() > _MAX_TOTAL_RISK:
+        for p in _positions.values():
+            p["size"] *= 0.7
 
 
 def get_open_positions():
@@ -113,9 +140,10 @@ def _replace_if_better(signal):
                       key=lambda s: _effective_ws(_positions[s]["signal"]))
     new_eff  = _effective_ws(signal)
     weak_eff = _effective_ws(_positions[weakest_sym]["signal"])
-    if new_eff > weak_eff * _REPLACE_MARGIN:
+    if new_eff > weak_eff * _REPLACE_MARGIN and _replace_allowed(weakest_sym):
         _positions[weakest_sym]["force_close"] = True
         _pending_open.append(signal)
+        _last_replaced[weakest_sym] = time.time()
         print(f"    replace: {weakest_sym} (eff_ws={weak_eff:.3f}) "
               f"← {signal['symbol']} (eff_ws={new_eff:.3f})")
         return True
@@ -162,6 +190,12 @@ def handle_signal(signal):
             _replace_if_better(signal)   # may queue replacement
         else:
             print(f"    portfolio gate: {reason}  sym={sym}")
+        return
+
+    # Net WS gate: skip if edge is eaten by spread + fees
+    ws_raw = signal.get("ws", 0.5)
+    if net_ws(ws_raw, _SPREAD_PCT, FEE_RT) <= 0:
+        print(f"    portfolio gate: net_ws_negative  sym={sym}")
         return
 
     entry = signal["price"]
@@ -212,6 +246,7 @@ def handle_signal(signal):
         "ticks":        0,
     }
     _regime_exposure[regime] = _regime_exposure.get(regime, 0) + 1
+    _risk_guard()
 
 
 def on_price(data):
