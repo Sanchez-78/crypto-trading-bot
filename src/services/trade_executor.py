@@ -263,6 +263,17 @@ def handle_signal(signal):
     size  = _vol_adjust(size, signal)
     size  = max(0.005, size)
 
+    # Dashboard control gate — halves size on WARN, blocks on HALT
+    try:
+        from src.services.dashboard_live import dashboard_control
+        ctrl = dashboard_control(_positions)
+        if ctrl == 0.0:
+            print(f"    portfolio gate: dashboard_halt  sym={sym}")
+            return
+        size *= ctrl
+    except Exception:
+        pass
+
     # Full cost guard with per-symbol blended slippage
     if not cost_guard(ws_adj, size, ob, FEE_RT, sym):
         print(f"    portfolio gate: cost_guard  sym={sym}  "

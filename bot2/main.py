@@ -5,6 +5,7 @@ from src.services.firebase_client import init_firebase, daily_budget_report, loa
 from src.services.learning_event import get_metrics, bootstrap_from_history
 from src.services.trade_executor import get_open_positions
 from src.services.signal_generator import warmup
+from src.services.dashboard_live import dashboard_loop
 from bot2.auditor import run_audit
 
 import src.services.signal_generator
@@ -533,6 +534,7 @@ def main():
             _last_metrics = now
 
         print_status()
+        dashboard_loop(get_open_positions())
 
 
 if __name__ == "__main__":
