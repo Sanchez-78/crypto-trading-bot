@@ -67,8 +67,8 @@ def handle_signal(signal):
         sz_mult = 1.0
 
     if _t >= 20:
-        kelly = max(0.0, (_wr * 2 - (1 - _wr)) / 2)
-        size  = min(0.10, max(0.01, kelly * 0.5 * signal["confidence"])) * sz_mult
+        ev   = signal.get("ev", 0.3)
+        size = min(0.10, max(0.005, 0.05 * max(0.2, min(ev * 2, 1.5)))) * sz_mult
     else:
         size = min(0.05, signal["confidence"] * 0.1) * sz_mult
 

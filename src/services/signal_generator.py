@@ -24,6 +24,12 @@ prices     = {}   # symbol -> list[float], capped at 600
 _macd_vals = {}   # symbol -> list[float]
 _last_ts   = {}   # symbol -> float (last signal timestamp, time-based debounce)
 _side_hist = {}   # symbol -> deque[action], last 10 actions
+_adx_hist  = {}   # symbol -> float (last adx, for slope)
+
+TP_ATR_MULT = 2.2
+SL_ATR_MULT = 1.3
+MIN_TP_PCT  = 0.0030
+MIN_SL_PCT  = 0.0015
 
 MIN_TICKS    = 50
 DEBOUNCE_S   = 30    # seconds between signals per symbol
@@ -192,6 +198,9 @@ def on_price(data):
     macd_s = _ema(mv, 9) if len(mv) >= 9 else macd_l
 
     adx_v, di_p, di_m = _adx(hist)
+    adx_prev  = _adx_hist.get(s, adx_v)
+    _adx_hist[s] = adx_v
+    adx_slope = adx_v - adx_prev
     reg = _regime(hist, adx_v, di_p, di_m, atr_v)
 
     # ── Regime gate ───────────────────────────────────────────────────────────
@@ -290,6 +299,15 @@ def on_price(data):
     confidence = min(_ind_conf(score, reasons) * regime_w, 1.0)
     vol_pct = atr_v / p if p else 0
 
+    # ── EV gate: reject signals with negative expected value ─────────────────
+    tp_move = max(atr_v * TP_ATR_MULT / p, MIN_TP_PCT)
+    sl_move = max(atr_v * SL_ATR_MULT / p, MIN_SL_PCT)
+    rr      = tp_move / sl_move
+    ev      = confidence * rr - (1 - confidence)
+    if ev <= 0:
+        track_filtered()
+        return
+
     # ── Record + emit ─────────────────────────────────────────────────────────
     _last_ts[s] = time.time()
     _record_side(s, action)
@@ -301,12 +319,14 @@ def on_price(data):
         "confidence": confidence,
         "atr":        atr_v,
         "regime":     reg,
+        "ev":         round(ev, 4),
         "features": {
             "ema_diff":   e10 - e50,
             "rsi":        rsi_v,
             "volatility": vol_pct,
             "macd":       macd_l,
             "adx":        adx_v,
+            "adx_slope":  round(adx_slope, 4),
         },
     }
 

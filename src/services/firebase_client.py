@@ -91,6 +91,7 @@ def _slim_trade(trade):
             "volatility": round(float(feat.get("volatility", 0)), 6),
             "macd":       round(float(feat.get("macd",       0)), 8),
             "adx":        round(float(feat.get("adx",       20)), 2),
+            "adx_slope":  round(float(feat.get("adx_slope",  0)), 4),
         },
     }
 
