@@ -63,6 +63,8 @@ def evaluate_signal(signal):
         ev_threshold = max(0.01, ev_threshold - 0.01)
     if t15 == 0:
         ev_threshold = 0.0   # deadlock guard: accept any positive EV
+    if t15 > 10:
+        ev_threshold = min(0.05, ev_threshold + 0.005)  # tighten when active
 
     print(f"    📊 EV={ev:.3f}  p={win_prob:.0%}  rr={rr:.2f}  thr={ev_threshold:.3f}  t15={t15}")
 

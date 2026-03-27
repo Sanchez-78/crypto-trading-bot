@@ -358,17 +358,26 @@ def print_status():
           f"{g(conf_note, conf_col)}")
 
     # ── Auditor status ────────────────────────────────────────────────────────
-    from bot2.auditor import get_min_confidence, is_in_cooldown
-    min_conf   = get_min_confidence()
-    in_cd      = is_in_cooldown()
-    aconf_col  = C.GRN if min_conf <= 0.55 else (C.YLW if min_conf <= 0.65 else C.RED)
-    cd_tag     = g("  ⏸ COOLDOWN – čekám na stabilizaci", C.RED + C.BLD) if in_cd else g("  aktivní", C.GRN)
+    from bot2.auditor import is_in_cooldown, get_position_size_mult
+    from src.services.learning_event import trades_in_window
+    in_cd    = is_in_cooldown()
+    sz_mult  = get_position_size_mult()
+    t15      = trades_in_window(900)
+    ev_thr   = 0.02
+    if t15 < 3:  ev_thr = max(0.01, ev_thr - 0.01)
+    if t15 == 0: ev_thr = 0.0
+    if t15 > 10: ev_thr = min(0.05, ev_thr + 0.005)
+    ev_col   = C.GRN if ev_thr <= 0.02 else C.YLW
+    sz_col   = C.GRN if sz_mult >= 1.0 else (C.YLW if sz_mult >= 0.5 else C.RED)
+    cd_tag   = g("  ⏸ COOLDOWN", C.RED + C.BLD) if in_cd else g("  aktivní", C.GRN)
     print(section("", "AUDITOR  (ochrana strategie)"))
-    print(f"    {g('Min. jistota signálu', C.GRY)}  "
-          f"{g(f'{min_conf*100:.0f}%', aconf_col + C.BLD)}"
+    print(f"    {g('EV práh', C.GRY)}              "
+          f"{g(f'{ev_thr:.3f}', ev_col + C.BLD)}  "
+          f"{g(f't15={t15}', C.GRY)}"
           f"{cd_tag}")
-    print(f"    {g('Popis', C.GRY)}               "
-          f"{g('sleduje loss streak → zvysuje práh + zastaví obchodování', C.GRY)}")
+    print(f"    {g('Velikost pozice', C.GRY)}      "
+          f"{g(f'{sz_mult:.2f}×', sz_col + C.BLD)}  "
+          f"{g('EV-only gate · loss streak → scale down · DD halt 40%', C.GRY)}")
 
     # ── Strategy / Signals ────────────────────────────────────────────────────
     print(section("", "STRATEGIE  (ADX + EMA + MACD + BB + RSI)"))
@@ -386,7 +395,7 @@ def print_status():
     print(f"    {g('Filtrace', C.GRY)}      "
           f"{g(f'{eff:.1f}%', eff_col)}  "
           f"{g('projde filtrem', C.GRY)}  "
-          f"{g('TP: 3.0xATR  /  SL: 1.5xATR  (RR 2:1)  score≥3', C.GRY)}")
+          f"{g('TP: 3.0xATR  /  SL: 1.0xATR  (RR 3:1)  EV-only', C.GRY)}")
 
     # ── Last signals ──────────────────────────────────────────────────────────
     if ls:
