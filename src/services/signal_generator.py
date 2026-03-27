@@ -28,12 +28,12 @@ _adx_hist  = {}   # symbol -> float (last adx, for slope)
 _rsi_hist  = {}   # symbol -> float (last rsi, for slope)
 
 # Flat TP/SL (must match trade_executor._TP_MULT/_SL_MULT + realtime_decision_engine)
-_TP_MULT = {"BULL_TREND": 1.2, "BEAR_TREND": 1.2,
-            "RANGING":    1.2, "QUIET_RANGE": 1.2}
-_SL_MULT = {"BULL_TREND": 1.0, "BEAR_TREND": 1.0,
+_TP_MULT = {"BULL_TREND": 1.0, "BEAR_TREND": 1.0,
             "RANGING":    1.0, "QUIET_RANGE": 1.0}
-MIN_TP_PCT = 0.0030
-MIN_SL_PCT = 0.0025
+_SL_MULT = {"BULL_TREND": 0.8, "BEAR_TREND": 0.8,
+            "RANGING":    0.8, "QUIET_RANGE": 0.8}
+MIN_TP_PCT = 0.0025
+MIN_SL_PCT = 0.0020
 
 MIN_TICKS    = 50
 DEBOUNCE_S   = 30    # seconds between signals per symbol
@@ -232,6 +232,13 @@ def on_price(data):
     reg = _regime(hist, adx_v, di_p, di_m, atr_v)
     htf = _htf_trend(hist)
 
+    # ── Alpha features: breakout + momentum ───────────────────────────────────
+    breakout_up   = int(p > max(hist[-21:-1])) if len(hist) >= 21 else 0
+    breakout_down = int(p < min(hist[-21:-1])) if len(hist) >= 21 else 0
+    returns       = [hist[i] / hist[i-1] - 1 for i in range(max(1, len(hist)-10), len(hist))]
+    mom5          = sum(returns[-5:])  if len(returns) >= 5  else 0.0
+    mom10         = sum(returns[-10:]) if len(returns) >= 10 else 0.0
+
     # HIGH_VOL → penalty on confidence only (EV gate decides)
     _high_vol = reg == "HIGH_VOL"
 
@@ -260,6 +267,14 @@ def on_price(data):
         _counter_trend = (reg == "BULL_TREND" and action != "BUY") or \
                          (reg == "BEAR_TREND" and action != "SELL")
         _weak_spread   = abs(e10 - e50) < atr_v * 0.2
+
+    # ── Breakout filter: trend regimes require confirmed breakout ─────────────
+    # Prevents entering trends without momentum confirmation (noise trades)
+    if reg in ("BULL_TREND", "BEAR_TREND"):
+        required = breakout_up if action == "BUY" else breakout_down
+        if required == 0:
+            track_filtered()
+            return
 
     # ── Time-based debounce (30 s per symbol) ─────────────────────────────────
     if time.time() - _last_ts.get(s, 0) < DEBOUNCE_S:
@@ -317,21 +332,26 @@ def on_price(data):
         "atr":        atr_v,
         "regime":     reg,
         "features": {
-            "ema_diff":   e10 - e50,
-            "rsi":        rsi_v,
-            "rsi_slope":  round(rsi_slope, 4),
-            "volatility": vol_pct,
-            "macd":       macd_l,
-            "adx":        adx_v,
-            "adx_slope":  round(adx_slope, 4),
+            "ema_diff":      e10 - e50,
+            "rsi":           rsi_v,
+            "rsi_slope":     round(rsi_slope, 4),
+            "volatility":    vol_pct,
+            "macd":          macd_l,
+            "adx":           adx_v,
+            "adx_slope":     round(adx_slope, 4),
+            "breakout_up":   breakout_up,
+            "breakout_down": breakout_down,
+            "mom5":          round(mom5, 6),
+            "mom10":         round(mom10, 6),
         },
     }
 
     short = s.replace("USDT", "")
     icon  = "🟢" if action == "BUY" else "🔴"
     expl  = "  [EXPLORE]" if _is_exploration() else ""
+    bk    = f"  bo↑{breakout_up}/↓{breakout_down}  m5={mom5:+.3f}  m10={mom10:+.3f}"
     print(f"  {icon} {short} ${p:,.4f} | "
-          f"score:{score} [{','.join(reasons)}] | {reg} | conf:{confidence:.0%}{expl}")
+          f"score:{score} [{','.join(reasons)}] | {reg} | conf:{confidence:.0%}{bk}{expl}")
 
     from src.services.realtime_decision_engine import evaluate_signal
     result = evaluate_signal(signal)
