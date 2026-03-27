@@ -110,5 +110,5 @@ def evaluate_signal(signal):
         track_blocked()
         return None
 
-    signal["confidence"] *= (0.5 + wr)
+    signal["confidence"] = min(signal["confidence"] * (0.5 + wr), 1.0)
     return signal
