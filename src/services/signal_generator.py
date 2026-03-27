@@ -258,16 +258,10 @@ def on_price(data):
         else:
             track_filtered(); return
 
-        # Trend-direction alignment
-        if reg == "BULL_TREND" and action != "BUY":
-            track_filtered(); return
-        if reg == "BEAR_TREND" and action != "SELL":
-            track_filtered(); return
-
-        # EMA spread filter (trend only — not RANGING)
-        ema_spread = abs(e10 - e50)
-        if ema_spread < atr_v * 0.2:
-            track_filtered(); return
+        # Counter-trend penalty instead of hard block — EV decides
+        _counter_trend = (reg == "BULL_TREND" and action != "BUY") or \
+                         (reg == "BEAR_TREND" and action != "SELL")
+        _weak_spread   = abs(e10 - e50) < atr_v * 0.2
 
     # ── Time-based debounce (30 s per symbol) ─────────────────────────────────
     if time.time() - _last_ts.get(s, 0) < DEBOUNCE_S:
@@ -303,6 +297,12 @@ def on_price(data):
         regime_w = 1.0
 
     confidence = min(_ind_conf(score, reasons) * regime_w, 1.0)
+
+    # Penalty multipliers (soft, not hard blocks — EV gate decides)
+    if reg not in ("RANGING", "QUIET_RANGE"):
+        if _counter_trend: confidence *= 0.6   # counter-trend signal
+        if _weak_spread:   confidence *= 0.7   # weak EMA separation
+
     vol_pct = atr_v / p if p else 0
 
     # ── EV gate: regime-aware TP/SL ratio ────────────────────────────────────

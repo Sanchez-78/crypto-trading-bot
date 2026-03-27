@@ -10,7 +10,7 @@ Flow:
 """
 
 from src.services.firebase_client import load_history
-from src.services.learning_event  import track_blocked, track_regime
+from src.services.learning_event  import track_blocked, track_regime, trades_in_window
 
 _TP_MULT = {"BULL_TREND": 3.0, "BEAR_TREND": 3.0, "RANGING": 1.8, "QUIET_RANGE": 1.6}
 _SL_MULT = {"BULL_TREND": 1.0, "BEAR_TREND": 1.0, "RANGING": 1.2, "QUIET_RANGE": 1.0}
@@ -46,6 +46,11 @@ def evaluate_signal(signal):
     # ── Calibrated win probability ─────────────────────────────────────────────
     win_prob = _calibrate(signal["confidence"], history) if history else signal["confidence"]
 
+    # Deadlock calibration fallback: if bucket WR is deeply low and no
+    # recent trades (20min), blend with raw confidence to allow exploration
+    if trades_in_window(1200) == 0 and win_prob < 0.30:
+        win_prob = max(win_prob, signal["confidence"] * 0.8)
+
     # ── EV = win_prob * RR - (1 - win_prob) ───────────────────────────────────
     regime  = signal.get("regime", "RANGING")
     atr     = signal.get("atr", 0)
@@ -56,7 +61,6 @@ def evaluate_signal(signal):
     ev      = win_prob * rr - (1 - win_prob)
 
     # ── Dynamic EV threshold ───────────────────────────────────────────────────
-    from src.services.learning_event import trades_in_window
     t15          = trades_in_window(900)
     ev_threshold = 0.02
     if t15 < 3:
