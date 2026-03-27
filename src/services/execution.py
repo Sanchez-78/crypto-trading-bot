@@ -1,27 +1,28 @@
 """
-Portfolio risk-parity execution engine — correlation clustering + adaptive leverage.
+Optimal capital allocation engine — Kelly sizing, entropy regularisation,
+regime detection, execution alpha.
 
-Risk EV (Sharpe-like):
-  risk_ev = mean(pnl) / (std(pnl) + ε)  — rewards consistent EV, penalises variance.
-  Regime-split: prevents BULL_TREND weights polluting RANGING allocation.
+EV (time-decayed):
+  ev_cache stores (smooth, timestamp); decay = 0.995**dt_seconds.
+  Stale pairs decay faster when signals are absent longer.
 
-Capital allocation (three-factor):
-  score = risk_ev × risk_parity_weight × cluster_penalty
-  weight = score / total_score_of_open_positions
-  alloc  = base × clamp(0.5 + weight, 0.5, 1.5)
-  - risk_parity_weight = 1/vol → low-vol symbols get larger allocation (equal risk)
-  - cluster_penalty: ×0.5 for each open position with |corr| > 0.7 (avoids doubling up)
+Capital allocation (five-factor):
+  score = risk_ev × risk_parity × cluster_penalty × (1 + kelly_fraction)
+  weight = softmax(scores)
+  alloc  = base × clamp(0.5 + weight + 0.1×entropy(weights), 0.5, 1.5)
+  Entropy bonus incentivises diversification — concentrated books penalised.
 
-Leverage (drawdown-adaptive):
-  dd > 10%  → 0.5×   (capital preservation)
-  dd < 2%   → 1.2×   (light tailwind in low-drawdown phase)
-  otherwise → 1.0×
+Kelly fraction:
+  k = (p×(b+1)-1)/b  clamped [0, 0.25].  Requires ≥20 trades per (sym, reg).
 
-final_size = capital_alloc × leverage  (replaces fixed base in executor)
+Regime detection:
+  detect_regime(sym) infers BULL/BEAR/RANGE from returns_hist (no signal dependency).
+  Overrides signal regime inside final_size for sizing decisions.
 
-Rotation:
-  rotate_capital: true_ev 20% better AND ev_conf > 0.5 required.
-  Confidence gate prevents rotating on thin history.
+Execution alpha:
+  execution_alpha(sym, ob) = 0.01 × sign(imb-1). Tiny OB-informed size nudge.
+
+Leverage boost capped at +10% (was uncapped at 0.2×risk_ev).
 """
 
 import numpy as np
@@ -138,10 +139,36 @@ def corr(sym1, sym2):
         return 0.0
 
 
+def detect_regime(sym):
+    """
+    Infer market regime from returns_hist (no signal dependency).
+    Uses last 20 returns: trend direction + realised vol.
+    BULL: positive trend, vol < 2%.
+    BEAR: negative trend, vol < 2%.
+    RANGE: otherwise (noisy or choppy).
+    """
+    r = returns_hist.get(sym, [0.0])
+    if len(r) < 20:
+        return "RANGE"
+    recent = r[-20:]
+    trend  = float(np.mean(recent))
+    v      = float(np.std(recent))
+    if trend > 0 and v < 0.02:
+        return "BULL"
+    if trend < 0 and v < 0.02:
+        return "BEAR"
+    return "RANGE"
+
+
 def cluster_id(sym):
-    """Classify symbol into a cluster. Majors: BTC/ETH. All others: alts."""
+    """
+    Symbol cluster classification (substring match for full pair names).
+    majors: BTC, ETH  |  L1: SOL, AVAX  |  alts: everything else
+    """
     if "BTC" in sym or "ETH" in sym:
         return "majors"
+    if "SOL" in sym or "AVAX" in sym:
+        return "L1"
     return "alts"
 
 
@@ -170,6 +197,32 @@ def risk_parity_weight(sym):
     return 1.0 / vol(sym)
 
 
+def entropy_reg(weights):
+    """Shannon entropy of allocation weights. Higher = more diversified."""
+    w = np.array(weights)
+    return float(-np.sum(w * np.log(w + 1e-9)))
+
+
+def kelly_fraction(sym, reg):
+    """
+    Half-Kelly: k = (p×(b+1)−1)/b, clamped [0, 0.25].
+    Requires ≥20 trades per (sym, reg); else conservative 0.1.
+    b = avg_win / avg_loss from actual net PnL in trade_log.
+    """
+    trades = [t for t in trade_log if t["sym"] == sym and t["reg"] == reg][-50:]
+    if len(trades) < 20:
+        return 0.1
+    pnl  = [t["ws"] - t["slip"] for t in trades]
+    wins = [p for p in pnl if p > 0]
+    loss = [p for p in pnl if p < 0]
+    if not wins or not loss:
+        return 0.1
+    p = len(wins) / len(pnl)
+    b = float(np.mean(wins)) / (abs(float(np.mean(loss))) + 1e-6)
+    k = (p * (b + 1) - 1) / (b + 1e-6)
+    return max(0.0, min(k, 0.25))
+
+
 # ── Risk EV (Sharpe-like) ─────────────────────────────────────────────────────
 
 def raw_risk_ev(sym, reg):
@@ -184,15 +237,16 @@ def raw_risk_ev(sym, reg):
 
 def risk_ev(sym, reg):
     """
-    EMA-smoothed Sharpe EV with time decay.
-    EMA: 0.8×prev + 0.2×raw.
-    Decay: ×0.995 per call — stale (sym,reg) pairs drift toward 0 automatically.
-    Cold start: seeds cache from raw value.
+    Time-based EV decay: 0.995**dt_seconds — longer silence → faster decay.
+    EMA: 0.8×prev + 0.2×raw, applied after decay.
+    ev_cache stores (smooth, timestamp) for time-aware updates.
     """
-    raw    = raw_risk_ev(sym, reg)
-    prev   = ev_cache.get((sym, reg), raw)
-    smooth = (0.8 * prev + 0.2 * raw) * 0.995
-    ev_cache[(sym, reg)] = smooth
+    now          = _time.time()
+    raw          = raw_risk_ev(sym, reg)
+    prev, ts     = ev_cache.get((sym, reg), (raw, now))
+    dt           = max(1, now - ts)
+    smooth       = (0.8 * prev + 0.2 * raw) * (0.995 ** dt)
+    ev_cache[(sym, reg)] = (smooth, now)
     return smooth
 
 
@@ -266,16 +320,19 @@ def cost_guard(ws, size, ob, fee, sym):
 
 def capital_alloc(sym, reg, base, positions):
     """
-    Softmax weighting over [new_signal] + open positions.
-    exp(score) / sum(exp(scores)) — smooth, bounded, sums to 1.
-    Clamp output [0.5×, 1.5×] base as before.
+    Five-factor softmax allocation:
+      score  = risk_ev × risk_parity × cluster_penalty × (1 + kelly_fraction)
+      weight = softmax(scores)
+      alloc  = base × clamp(0.5 + weight + 0.1×entropy(weights), 0.5, 1.5)
+    Entropy bonus incentivises diversification.
     """
     def _score(s, r, pos_dict):
         return (max(risk_ev(s, r), 0.0)
                 * risk_parity_weight(s)
-                * cluster_penalty(s, pos_dict))
+                * cluster_penalty(s, pos_dict)
+                * (1.0 + kelly_fraction(s, r)))
 
-    new_score = _score(sym, reg, positions)
+    new_score  = _score(sym, reg, positions)
     all_scores = [
         _score(p["signal"]["symbol"],
                p["signal"].get("regime", "RANGING"),
@@ -283,9 +340,11 @@ def capital_alloc(sym, reg, base, positions):
         for p in positions.values()
     ]
     all_scores.append(new_score)
-    exps = np.exp(np.clip(all_scores, -10, 10))   # clip prevents overflow
-    w    = exps[-1] / (np.sum(exps) + 1e-9)
-    return base * max(0.5, min(1.5, 0.5 + w))
+    exps    = np.exp(np.clip(all_scores, -10, 10))
+    weights = exps / (np.sum(exps) + 1e-9)
+    w_new   = float(weights[-1])
+    entropy = entropy_reg(weights)
+    return base * max(0.5, min(1.5, 0.5 + w_new + 0.1 * entropy))
 
 
 # ── Exposure scale + leverage + final size ────────────────────────────────────
@@ -308,33 +367,50 @@ def exposure_scale(positions):
 def leverage(sym, reg):
     """
     Drawdown-adaptive base × EV boost.
-    base = 1.2 - 0.7×min(dd/0.1, 1)  → [0.5, 1.2]
-    EV boost: × (1 + 0.2×max(risk_ev, 0))  → up to ×1.2 extra for strong edge.
+    base  = 1.2 - 0.7×min(dd/0.1, 1)  → [0.5, 1.2]
+    boost = min(0.2×max(risk_ev,0), 0.1)  → capped at +10%.
     """
     try:
         from src.services.learning_event import METRICS
         peak   = METRICS.get("equity_peak", 0.0) or 0.0
         profit = METRICS.get("profit", 0.0) or 0.0
         if peak > 0:
-            dd   = (peak - (1.0 + profit)) / peak
-            base = 1.2 - 0.7 * min(dd / 0.1, 1.0)
-            ev   = max(risk_ev(sym, reg), 0.0)
-            return base * (1.0 + 0.2 * ev)
+            dd    = (peak - (1.0 + profit)) / peak
+            base  = 1.2 - 0.7 * min(dd / 0.1, 1.0)
+            ev    = max(risk_ev(sym, reg), 0.0)
+            boost = min(0.2 * ev, 0.1)
+            return base * (1.0 + boost)
     except Exception:
         pass
     return 1.2
 
 
-def final_size(sym, reg, base, positions):
+def execution_alpha(sym, ob):
     """
-    capital_alloc × exposure_scale × leverage(sym,reg).
+    Tiny OB-informed size nudge: 0.01 × sign(imbalance − 1).
+    Positive imbalance (bid > ask vol) → +1% size; negative → −1%.
+    """
+    imb = ob.bid_vol / (ob.ask_vol + 1e-6)
+    return 0.01 * float(np.sign(imb - 1.0))
+
+
+def final_size(sym, reg, base, positions, ob=None):
+    """
+    capital_alloc × exposure_scale × leverage(sym,reg) × execution_alpha.
+    detect_regime(sym) infers regime from returns_hist; overrides signal regime
+    when not RANGE (i.e. when there is sufficient history to trust it).
     Returns 0 if exposure_scale == 0 (fully deployed).
     """
     scale = exposure_scale(positions)
     if scale == 0.0:
         return 0.0
-    alloc = min(capital_alloc(sym, reg, base, positions), 0.25)
-    return alloc * scale * leverage(sym, reg)
+    det_reg = detect_regime(sym)
+    eff_reg = det_reg if det_reg != "RANGE" else reg
+    alloc   = min(capital_alloc(sym, eff_reg, base, positions), 0.25)
+    size    = alloc * scale * leverage(sym, eff_reg)
+    if ob is not None:
+        size *= (1.0 + execution_alpha(sym, ob))
+    return size
 
 
 def entry_filter(sym, reg):

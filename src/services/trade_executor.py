@@ -247,7 +247,7 @@ def handle_signal(signal):
     af      = min(1.0, max(0.7, signal.get("auditor_factor", 1.0)))
     # final_size = capital_alloc(risk_parity+EV+cluster) × leverage(dd-adaptive)
     # returns 0 if total_exposure > 70%
-    base    = final_size(sym, reg, 0.05 if _t >= 20 else 0.025, _positions)
+    base    = final_size(sym, reg, 0.05 if _t >= 20 else 0.025, _positions, ob)
     if base == 0.0:
         print(f"    portfolio gate: exposure_full  sym={sym}")
         return
