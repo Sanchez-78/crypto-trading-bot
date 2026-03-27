@@ -23,7 +23,8 @@ from src.core.event_bus           import subscribe_once
 from src.services.learning_event  import update_metrics
 from src.services.firebase_client import save_batch
 from src.services.execution       import (
-    exec_order, valid, ob_adjust, cost_guard, OrderBook, fill_rate)
+    exec_order, valid, ob_adjust, cost_guard, pre_cost,
+    ev_adjust, fill_rate, OrderBook)
 import time
 
 BATCH             = []
@@ -200,16 +201,24 @@ def handle_signal(signal):
     # Build OB snapshot for cost calculations
     ob = OrderBook.from_price(entry, spread_pct=_SPREAD_PCT)
 
-    # Signal staleness guard — tick_ms estimated from atr velocity
+    # Signal staleness — tick_ms from ATR velocity; vol from features
     sig_ts  = signal.get("timestamp", time.time())
+    vol_f   = signal.get("features", {}).get("vol", 0.0)
     tick_ms = max(100, min(500, int(atr / max(entry, 1e-9) * 100_000)))
-    if not valid(sig_ts, tick_ms):
+    if not valid(sig_ts, tick_ms, vol_f):
         print(f"    portfolio gate: stale_signal  sym={sym}")
         return
 
-    # OB imbalance: soft adjustment to ws (not a hard gate)
     ws_raw = signal.get("ws", 0.5)
+
+    # Pre-cost fast gate (cheap, before OB/slippage calculation)
+    if not pre_cost(ws_raw, FEE_RT):
+        print(f"    portfolio gate: pre_cost  sym={sym}  ws={ws_raw:.3f}")
+        return
+
+    # OB proportional adjustment + per-symbol EV blend
     ws_adj = ob_adjust(ws_raw, ob)
+    ws_adj = ev_adjust(ws_adj, sym)
 
     # Position sizing: EV-scaled, auditor floor 0.7, strong-EV boost
     import math
@@ -233,10 +242,10 @@ def handle_signal(signal):
     size  = _vol_adjust(size, signal)
     size  = max(0.005, size)
 
-    # Cost guard after sizing — uses actual size for accurate slippage estimate
-    if not cost_guard(ws_adj, size, ob, FEE_RT):
+    # Full cost guard with per-symbol blended slippage
+    if not cost_guard(ws_adj, size, ob, FEE_RT, sym):
         print(f"    portfolio gate: cost_guard  sym={sym}  "
-              f"ws_adj={ws_adj:.3f}  fr={fill_rate():.2f}")
+              f"ws_adj={ws_adj:.3f}  fr={fill_rate(sym):.2f}")
         return
 
     # TP/SL: edge-specific ATR multipliers
@@ -248,8 +257,8 @@ def handle_signal(signal):
     tp_move = max(atr * tp_mult / entry, MIN_TP_PCT)
     sl_move = max(atr * sl_mult / entry, MIN_SL_PCT)
 
-    # ── OB-aware execution ────────────────────────────────────────────────────
-    actual_entry, fill_slip = exec_order(signal, size, ob)
+    # ── Per-symbol execution ──────────────────────────────────────────────────
+    actual_entry, fill_slip = exec_order(signal, size, ob, sym)
     actual_entry = actual_entry or entry
 
     _positions[sym] = {
@@ -264,7 +273,7 @@ def handle_signal(signal):
         "ticks":         0,
         "fill_slippage": fill_slip,
     }
-    print(f"    exec: slip={fill_slip:.5f}  fr={fill_rate():.2f}  "
+    print(f"    exec: slip={fill_slip:.5f}  fr={fill_rate(sym):.2f}  "
           f"ws_adj={ws_adj:.3f}  {size:.4f}@{actual_entry:.4f}")
     _regime_exposure[regime] = _regime_exposure.get(regime, 0) + 1
     _risk_guard()

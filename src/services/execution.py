@@ -1,41 +1,45 @@
 """
-Exchange-level execution engine — feedback-aware, cost-accurate.
+Execution-aware learning engine — per-symbol state, unbiased slippage, true EV.
 
-Slippage model:
-  Walk ob.levels (price, volume) pairs to compute true avg fill price.
-  Pessimistic: max(book_estimate, mean(last_20_actual)) prevents underestimation.
+Slippage:
+  Book-walk gives point estimate. blended_slip() mixes 70% book + 30% per-symbol
+  history (when ≥5 samples) — unbiased vs global max() which over-penalised.
 
 Order type:
-  MARKET  — fill_rate<30% (limits not filling) OR strong momentum+imbalance
-  LIMIT   — spread<0.05% of mid
-  POST    — default maker
-
-Partial fill loop:
-  2 attempts × 50%; market fallback for remainder.
-  fill_stats tracks limit attempts vs actual fills → drives choose_type.
+  Per-symbol fill_rate() replaces global counter — avoids one illiquid symbol
+  forcing MARKET across all pairs.
 
 OB adjustment:
-  ob_adjust() softly shifts ws ±0.02 — not a hard block.
+  Proportional: strength = |imb-1|, delta = 0.03 × strength × sign(imb-1).
+  Larger imbalance → larger ws shift; neutral book → zero delta.
 
 Staleness:
-  dynamic_staleness(tick_ms) = clamp(2×tick_ms, 200, 800 ms).
-  Fast market → tighter window; slow market → more tolerance.
+  dynamic_staleness(tick_ms, vol): base × (1 + vol×5).
+  High volatility → wider tolerance (signal still relevant in fast market).
+
+True EV:
+  Per-symbol trade_log tracks ws - fractional_slip.
+  true_ev(sym) returns mean of last 50. ev_adjust() blends into ws pre-sizing.
+
+All slippage values stored and used as fractions of mid price.
 """
 
+import numpy as np
 import time as _time
 
-# ── Session state ──────────────────────────────────────────────────────────────
+# ── Per-symbol session state ───────────────────────────────────────────────────
 
-slippage_hist = []          # actual slippage per fill (fractional, last 100)
-fill_stats    = {"limit": 0, "market": 0, "limit_filled": 0}
+slippage_hist: dict = {}   # sym -> [fractional slip, ...]   (last 100)
+fill_stats:    dict = {}   # sym -> {"f": filled_count, "t": total_attempts}
+trade_log:     list = []   # [{"sym", "ws", "slip"}, ...]    (last 500)
 
 
 # ── Order book snapshot ────────────────────────────────────────────────────────
 
 class OrderBook:
     """
-    OB snapshot with synthetic depth levels.
-    levels: list of (price, volume) tuples in ascending price order (ask side).
+    OB snapshot with 5 synthetic ask levels.
+    levels: [(price, volume), ...] ascending (ask side).
     mid: (bid + ask) / 2
     """
     __slots__ = ("bid", "ask", "bid_vol", "ask_vol", "levels", "ts")
@@ -54,19 +58,14 @@ class OrderBook:
 
     @classmethod
     def from_price(cls, price, spread_pct=0.001):
-        """
-        Construct OB from single price.
-        Synthesizes 5 ask levels with decreasing volume at widening spread.
-        """
-        half = price * spread_pct / 2
-        ask  = price + half
-        # (price, volume) — each level further away, thinner
+        half   = price * spread_pct / 2
+        ask    = price + half
         levels = [
-            (ask,              5.0),
-            (ask * 1.0002,     3.0),
-            (ask * 1.0005,     2.0),
-            (ask * 1.001,      1.0),
-            (ask * 1.002,      0.5),
+            (ask,          5.0),
+            (ask * 1.0002, 3.0),
+            (ask * 1.0005, 2.0),
+            (ask * 1.001,  1.0),
+            (ask * 1.002,  0.5),
         ]
         return cls(bid=price - half, ask=ask,
                    bid_vol=10.0, ask_vol=10.0, levels=levels)
@@ -76,81 +75,82 @@ class OrderBook:
 
 def slippage(size, ob):
     """
-    Walk ob.levels to compute avg fill price. Returns fraction above mid.
-    Falls back to spread/2 if levels are empty.
+    Walk ob.levels for true avg fill price.
+    Returns fractional slippage: (avg_fill - mid) / mid.
     """
     if not ob.levels:
         return (ob.ask - ob.mid) / max(ob.mid, 1e-9)
-    remaining = size
-    cost      = 0.0
+    rem  = size
+    cost = 0.0
     for p, v in ob.levels:
-        take       = min(remaining, v)
-        cost      += take * p
-        remaining -= take
-        if remaining <= 0:
+        take  = min(rem, v)
+        cost += take * p
+        rem  -= take
+        if rem <= 0:
             break
-    if remaining > 0:                          # exhausted book — use last level
-        cost += remaining * ob.levels[-1][0]
+    if rem > 0:
+        cost += rem * ob.levels[-1][0]
     avg = cost / max(size, 1e-6)
-    return (avg - ob.mid) / max(ob.mid, 1e-9)  # fractional slippage
+    return (avg - ob.mid) / max(ob.mid, 1e-9)
+
+
+# ── Per-symbol blended slippage ────────────────────────────────────────────────
+
+def blended_slip(sym, size, ob):
+    """
+    70% book estimate + 30% per-symbol historical mean (when ≥5 samples).
+    Falls back to pure book estimate during cold start.
+    Removes global max() bias that over-penalised liquid symbols.
+    """
+    est  = slippage(size, ob)
+    hist = slippage_hist.get(sym, [])
+    if len(hist) >= 5:
+        hist_mean = float(np.mean(hist[-20:]))
+        return 0.7 * est + 0.3 * hist_mean
+    return est
 
 
 # ── Net edge after costs ───────────────────────────────────────────────────────
 
-def net_edge(ws, size, ob, fee):
-    """
-    Pessimistic net edge: use max(book_estimate, recent_mean).
-    Prevents underestimating costs when market is moving.
-    """
-    est_slip = slippage(size, ob)
-    if len(slippage_hist) > 20:
-        recent_mean = sum(slippage_hist[-20:]) / 20
-        est_slip    = max(est_slip, recent_mean)
-    return ws - est_slip - fee
+def net_edge(ws, size, ob, fee, sym):
+    """Per-symbol blended slippage + fees. Positive = executable edge."""
+    return ws - blended_slip(sym, size, ob) - fee
 
 
-# ── OB imbalance: soft ws adjustment ──────────────────────────────────────────
+# ── OB imbalance: proportional ws adjustment ──────────────────────────────────
 
 def ob_adjust(ws, ob):
     """
-    Soft adjustment: confirming imbalance +0.02, opposing -0.02.
-    Not a hard gate — avoids over-filtering low-liquidity markets.
+    Proportional: delta = 0.03 × |imb-1| × sign(imb-1).
+    Neutral book (imb≈1) → near-zero delta; strong imbalance → up to ±0.03.
     """
-    imb = ob.bid_vol / (ob.ask_vol + 1e-6)
-    if imb > 1.5:
-        return ws + 0.02
-    if imb < 0.70:
-        return ws - 0.02
-    return ws
+    imb      = ob.bid_vol / (ob.ask_vol + 1e-6)
+    strength = abs(imb - 1.0)
+    return ws + 0.03 * strength * float(np.sign(imb - 1.0))
 
 
-# ── Dynamic staleness ─────────────────────────────────────────────────────────
+# ── Per-symbol fill rate ───────────────────────────────────────────────────────
 
-def dynamic_staleness(tick_ms):
-    """Clamp(2×tick_ms, 200, 800). Fast feed = tighter window."""
-    return max(200, min(800, 2 * tick_ms))
-
-
-# ── Fill rate tracker ──────────────────────────────────────────────────────────
-
-def fill_rate():
-    """Fraction of limit attempts that actually filled. 1.0 if no data."""
-    if fill_stats["limit"] == 0:
-        return 1.0
-    return fill_stats["limit_filled"] / fill_stats["limit"]
+def fill_rate(sym=None):
+    """
+    Per-symbol limit fill fraction.
+    sym=None → aggregate across all symbols (fallback).
+    Returns 1.0 when no data (optimistic cold start).
+    """
+    if sym is not None:
+        s = fill_stats.get(sym, {"f": 0, "t": 0})
+        return s["f"] / s["t"] if s["t"] > 0 else 1.0
+    # aggregate
+    total_f = sum(s["f"] for s in fill_stats.values())
+    total_t = sum(s["t"] for s in fill_stats.values())
+    return total_f / total_t if total_t > 0 else 1.0
 
 
 # ── Order type selection ───────────────────────────────────────────────────────
 
-def choose_type(sig, ob, fr=None):
-    """
-    fr: fill_rate() result — if < 0.30, limits aren't filling → use MARKET.
-    MARKET  — low fill rate OR strong momentum + confirming imbalance
-    LIMIT   — tight spread (<0.05% of mid)
-    POST    — default
-    """
-    if fr is None:
-        fr = fill_rate()
+def choose_type(sig, ob, sym):
+    """Per-symbol fill_rate drives MARKET fallback — one slow symbol won't pollute others."""
+    fr     = fill_rate(sym)
     spread = ob.ask - ob.bid
     mid    = ob.mid
     imb    = ob.bid_vol / (ob.ask_vol + 1e-6)
@@ -168,93 +168,134 @@ def choose_type(sig, ob, fr=None):
 # ── Limit price ────────────────────────────────────────────────────────────────
 
 def limit_price(ob, side):
-    """10% into spread — competitive but avoids queue tail."""
     spread = ob.ask - ob.bid
     if side == "BUY":
         return ob.bid + 0.10 * spread
     return ob.ask - 0.10 * spread
 
 
+# ── Dynamic staleness ─────────────────────────────────────────────────────────
+
+def dynamic_staleness(tick_ms, vol=0.0):
+    """
+    base = clamp(2×tick_ms, 200, 800).
+    High vol extends window: fast moves keep signal relevant longer.
+    """
+    base = max(200, min(800, 2 * tick_ms))
+    return base * (1.0 + vol * 5.0)
+
+
 # ── Signal staleness guard ─────────────────────────────────────────────────────
 
-def valid(sig_time, tick_ms=250):
-    """Fresh if age < dynamic_staleness(tick_ms)."""
+def valid(sig_time, tick_ms=250, vol=0.0):
     age_ms = (_time.time() - sig_time) * 1000
-    return age_ms < dynamic_staleness(tick_ms)
+    return age_ms < dynamic_staleness(tick_ms, vol)
 
 
-# ── Cost guard ─────────────────────────────────────────────────────────────────
+# ── Pre-cost fast gate ─────────────────────────────────────────────────────────
 
-def cost_guard(ws, size, ob, fee):
-    """True only if net_edge > 0 after pessimistic slippage + fees."""
-    return net_edge(ws, size, ob, fee) > 0
+def pre_cost(ws, fee):
+    """Cheap early-exit: skip full slippage calc if ws can't cover fees alone."""
+    return ws > fee
+
+
+# ── Full cost gate ─────────────────────────────────────────────────────────────
+
+def cost_guard(ws, size, ob, fee, sym):
+    """net_edge > 0 using per-symbol blended slippage."""
+    return net_edge(ws, size, ob, fee, sym) > 0
+
+
+# ── True per-symbol EV from trade history ─────────────────────────────────────
+
+def true_ev(sym):
+    """
+    Mean (ws - actual_slip) over last 50 trades for this symbol.
+    Returns 0 if fewer than 10 samples — not enough data to trust.
+    """
+    trades = [t for t in trade_log if t["sym"] == sym][-50:]
+    if len(trades) < 10:
+        return 0.0
+    pnl = [t["ws"] - t["slip"] for t in trades]
+    return float(np.mean(pnl))
+
+
+# ── EV-adjusted ws ────────────────────────────────────────────────────────────
+
+def ev_adjust(ws, sym):
+    """
+    Blend current ws with per-symbol realised EV (weight 0.5).
+    Positive history → cautiously higher ws; negative → lower.
+    """
+    ev = true_ev(sym)
+    return ws + 0.5 * ev
 
 
 # ── Internal paper-trading fill simulation ─────────────────────────────────────
 
 def _send_limit(size, price, side, ob):
-    """80% fill probability for passive limit; immediate if marketable."""
     import random
-    if side == "BUY" and price >= ob.ask:
-        return size, ob.ask
-    if side == "SELL" and price <= ob.bid:
-        return size, ob.bid
-    if random.random() < 0.80:
-        return size, price
+    if side == "BUY"  and price >= ob.ask: return size, ob.ask
+    if side == "SELL" and price <= ob.bid: return size, ob.bid
+    if random.random() < 0.80:            return size, price
     return 0.0, price
 
 
 def _send_market(size, side, ob):
-    """Market fill at top-of-book; walks levels for price impact."""
     slip  = slippage(size, ob)
     mid   = ob.mid
-    price = mid * (1 + slip) if side == "BUY" else mid * (1 - slip)
+    price = mid * (1.0 + slip) if side == "BUY" else mid * (1.0 - slip)
     return size, price
 
 
 # ── Core execution ─────────────────────────────────────────────────────────────
 
-def exec_order(sig, size, ob):
+def exec_order(sig, size, ob, sym):
     """
-    2 attempts × 50% via limit; market fallback for remainder.
-    Updates fill_stats. Records actual slippage in slippage_hist.
-    Returns (avg_fill_price, slippage_frac).
+    2 × 50% limit attempts; market fallback for remainder.
+    Updates per-symbol fill_stats and slippage_hist.
+    Appends to trade_log for true_ev().
+    Returns (avg_fill_price, fractional_slip).
     """
     side       = sig.get("action", "BUY")
-    fr         = fill_rate()
-    order_type = choose_type(sig, ob, fr)
+    order_type = choose_type(sig, ob, sym)
     lp         = limit_price(ob, side)
     ref_price  = sig.get("price", ob.mid)
 
     filled    = 0.0
     price_sum = 0.0
 
+    fs = fill_stats.setdefault(sym, {"f": 0, "t": 0})
+
     if order_type in ("LIMIT", "POST"):
         for _ in range(2):
             chunk = size * 0.50
             if filled >= size * 0.70:
                 break
-            fill_stats["limit"] += 1
+            fs["t"] += 1
             f, p = _send_limit(chunk, lp, side, ob)
             if f > 0:
-                fill_stats["limit_filled"] += 1
+                fs["f"]   += 1
                 filled    += f
                 price_sum += f * p
 
     if order_type == "MARKET" or filled < size:
-        remainder = size - filled
-        fill_stats["market"] += 1
-        f, p = _send_market(remainder, side, ob)
+        f, p = _send_market(size - filled, side, ob)
         filled    += f
         price_sum += f * p
 
-    avg   = price_sum / max(filled, 1e-9)
-    slip  = (avg - ref_price) / max(ref_price, 1e-9)
+    avg  = price_sum / max(filled, 1e-9)
+    slip = (avg - ref_price) / max(ref_price, 1e-9)
     if side == "SELL":
-        slip = -slip          # SELL: lower fill = slippage
+        slip = -slip
 
-    slippage_hist.append(slip)
-    if len(slippage_hist) > 100:
-        slippage_hist.pop(0)
+    hist = slippage_hist.setdefault(sym, [])
+    hist.append(slip)
+    if len(hist) > 100:
+        hist.pop(0)
+
+    trade_log.append({"sym": sym, "ws": sig.get("ws", 0.5), "slip": slip})
+    if len(trade_log) > 500:
+        trade_log.pop(0)
 
     return avg, slip
