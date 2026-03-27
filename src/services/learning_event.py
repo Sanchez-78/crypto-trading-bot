@@ -28,6 +28,7 @@ _last_prices    = {}
 _last_signals   = {}
 _recent_results = []
 _sym_stats      = {}
+_trade_times    = []   # rolling timestamps of completed trades
 
 
 def track_price(symbol, price):
@@ -43,9 +44,19 @@ def _update_sym(symbol, result, profit):
     s["profit"] += profit
 
 
+def trades_in_window(seconds=900):
+    """Count completed trades in the last `seconds` seconds."""
+    with _lock:
+        cutoff = _time.time() - seconds
+        return sum(1 for t in _trade_times if t > cutoff)
+
+
 def update_metrics(signal, trade):
     with _lock:
-     return _update_metrics_locked(signal, trade)
+        _trade_times.append(_time.time())
+        if len(_trade_times) > 200:
+            _trade_times.pop(0)
+        return _update_metrics_locked(signal, trade)
 
 
 def _update_metrics_locked(signal, trade):

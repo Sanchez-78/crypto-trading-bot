@@ -71,13 +71,11 @@ def handle_signal(signal):
     except Exception:
         sz_mult = 1.0
 
-    if _t >= 20:
-        ev   = signal.get("ev", 0.3)
-        size = min(0.10, max(0.005, 0.05 * max(0.2, min(ev * 2, 1.5)))) * sz_mult
-    else:
-        size = min(0.05, signal["confidence"] * 0.1) * sz_mult
+    ev      = signal.get("ev", 0.02)
+    base    = 0.05 if _t >= 20 else 0.025   # conservative during learning
+    size    = base * min(2.0, max(0.3, ev * 3))
 
-    size = max(0.005, size)  # absolute floor
+    size = max(0.005, size * sz_mult)  # absolute floor + auditor scaling
 
     # TP/SL: regime-aware ATR-based with fee-adjusted minimums
     regime  = signal.get("regime", "RANGING")

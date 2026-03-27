@@ -1,46 +1,37 @@
 """
-Historical pattern filter.
+EV-only signal filter.
 
-Compares incoming signal features against last 100 trades
-(same symbol, same action direction).
-Rejects if weighted winrate of similar past trades < block_thr.
-Time-decays older trades (half-life = 1 hour).
-
-Modes:
-  normal:      block_thr = 0.45
-  poor symbol: block_thr = 0.55  (sym WR < 40% over ≥ 10 trades)
-  exploration: block_thr = 0.35  (no trades in last 15 min)
-  fallback:    block_thr = 0.30  (filter_pass_rate < 1%)
+Flow:
+  1. Drawdown halt check (auditor)
+  2. Calibrate win_prob from historical confidence buckets (fallback: raw conf)
+  3. EV = win_prob * RR - (1 - win_prob)  with regime-aware RR
+  4. Dynamic threshold: 0.02 base, -0.01 if <3 trades/15min, 0 if deadlock
+  5. Pass if EV > threshold — only gate allowed
 """
 
-from src.services.firebase_client  import load_history
-from src.services.learning_event   import track_blocked, track_regime
-import math, time
+from src.services.firebase_client import load_history
+from src.services.learning_event  import track_blocked, track_regime
+
+_TP_MULT = {"BULL_TREND": 3.0, "BEAR_TREND": 3.0, "RANGING": 1.8, "QUIET_RANGE": 1.6}
+_SL_MULT = {"BULL_TREND": 1.0, "BEAR_TREND": 1.0, "RANGING": 1.2, "QUIET_RANGE": 1.0}
+MIN_TP   = 0.0050
+MIN_SL   = 0.0025
 
 
-def _auditor():
-    from bot2.auditor import get_min_confidence, is_in_cooldown
-    return get_min_confidence, is_in_cooldown
-
-
-def _decay(ts):
-    return math.exp(-(time.time() - ts) / 3600)
-
-
-def _sim(f1, f2):
-    keys = ["ema_diff", "rsi", "volatility", "macd"]
-    sc, n = 0, 0
-    for k in keys:
-        if k in f1 and k in f2:
-            diff = abs(f1[k] - f2[k])
-            norm = abs(f2[k]) or 1
-            sc += max(0, 1 - diff / norm)
-            n  += 1
-    return sc / n if n else 0
+def _calibrate(conf, history):
+    """Calibrated win probability from historical confidence buckets.
+    Returns raw conf if fewer than 5 trades in the bucket."""
+    bucket = round(conf * 10) / 10
+    trades = [t for t in history
+              if abs(t.get("confidence", 0) - bucket) < 0.06
+              and t.get("result") in ("WIN", "LOSS")]
+    if len(trades) < 5:
+        return conf
+    return sum(1 for t in trades if t["result"] == "WIN") / len(trades)
 
 
 def evaluate_signal(signal):
-    # ── Drawdown halt ─────────────────────────────────────────────────────────
+    # ── Drawdown halt ──────────────────────────────────────────────────────────
     try:
         from bot2.auditor import is_halted
         if is_halted():
@@ -49,105 +40,36 @@ def evaluate_signal(signal):
     except Exception:
         pass
 
-    # ── Auditor: confidence gate only (no hard cooldown block) ───────────────
-    try:
-        get_min_conf, _ = _auditor()
-        min_conf = get_min_conf()
-    except Exception:
-        min_conf = 0.55
-
-    # Per-signal: if filter collapsed (<5% pass rate), lower effective threshold
-    from src.services.learning_event import get_metrics as _gm2
-    _m0 = _gm2()
-    _gen0 = _m0.get("signals_generated", 0)
-    dyn_conf = min_conf
-    if _gen0 > 50:
-        _passed0 = max(0, _gen0 - _m0.get("signals_filtered", 0) - _m0.get("blocked", 0))
-        if _passed0 / _gen0 < 0.05:
-            dyn_conf = max(0.48, min_conf - 0.03)
-
-    if signal.get("confidence", 0) < dyn_conf:
-        track_blocked()
-        return None
-
     history = load_history()
-    f       = signal["features"]
-    reg     = signal.get("regime", "RANGING")
+    track_regime(signal.get("regime", "RANGING"))
 
-    track_regime(reg)
+    # ── Calibrated win probability ─────────────────────────────────────────────
+    win_prob = _calibrate(signal["confidence"], history) if history else signal["confidence"]
 
-    if not history:
-        return signal
+    # ── EV = win_prob * RR - (1 - win_prob) ───────────────────────────────────
+    regime  = signal.get("regime", "RANGING")
+    atr     = signal.get("atr", 0)
+    p       = signal.get("price", 1) or 1
+    tp_move = max(atr * _TP_MULT.get(regime, 2.2) / p, MIN_TP)
+    sl_move = max(atr * _SL_MULT.get(regime, 1.3) / p, MIN_SL)
+    rr      = tp_move / sl_move
+    ev      = win_prob * rr - (1 - win_prob)
 
-    similar = []
-    for t in history:
-        if t["symbol"] != signal["symbol"]:
-            continue
-        if t.get("action") != signal["action"]:
-            continue
-        sim = _sim(f, t.get("features", {}))
-        if sim > 0.6:
-            similar.append((t, sim * _decay(t["timestamp"])))
+    # ── Dynamic EV threshold ───────────────────────────────────────────────────
+    from src.services.learning_event import trades_in_window
+    t15          = trades_in_window(900)
+    ev_threshold = 0.02
+    if t15 < 3:
+        ev_threshold = max(0.01, ev_threshold - 0.01)
+    if t15 == 0:
+        ev_threshold = 0.0   # deadlock guard: accept any positive EV
 
-    if len(similar) < 5:
-        return signal  # not enough history → pass through
+    print(f"    📊 EV={ev:.3f}  p={win_prob:.0%}  rr={rr:.2f}  thr={ev_threshold:.3f}  t15={t15}")
 
-    w    = sum(x[1] for x in similar) or 1e-9
-    wins = sum(x[1] for x in similar if x[0]["result"] == "WIN")
-    wr   = wins / w
-
-    # ── Adaptive block threshold ──────────────────────────────────────────────
-    from src.services.learning_event import get_metrics as _gm
-    _m  = _gm()
-    _ss = _m.get("sym_stats", {}).get(signal["symbol"], {})
-
-    # Exploration mode: no trades for 15 min → very lenient
-    since = _m.get("since_last")
-    if since and since > 900:
-        block_thr = 0.35
-
-    # Fallback: filter rate near zero → lower threshold
-    elif _m.get("signals_generated", 0) > 50:
-        gen     = _m["signals_generated"]
-        passed  = max(0, gen - _m.get("signals_filtered", 0) - _m.get("blocked", 0))
-        pass_rt = passed / gen
-        if pass_rt < 0.05:
-            block_thr = 0.30
-        elif _ss.get("trades", 0) >= 10 and _ss.get("winrate", 0.5) < 0.40:
-            block_thr = 0.55
-        else:
-            block_thr = 0.45
-    elif _ss.get("trades", 0) >= 10 and _ss.get("winrate", 0.5) < 0.40:
-        block_thr = 0.55
-    else:
-        block_thr = 0.45
-
-    verdict = "✅" if wr >= block_thr else "🚫"
-    print(f"    🧠 {len(similar)} vzorů  WR:{wr:.0%}  {reg}  {verdict}  thr:{block_thr:.0%}")
-
-    if wr < block_thr:
+    if ev <= ev_threshold:
         track_blocked()
         return None
 
-    signal["confidence"] = min(signal["confidence"] * (0.5 + wr), 1.0)
-
-    # ── Confidence calibration: bucket historical WR by confidence ────────────
-    # Anti-overfit: only active once ≥ 50 trades
-    # Threshold is relative to global WR to avoid deadlock when model is learning
-    from src.services.learning_event import get_metrics as _gm5
-    _m5 = _gm5()
-    if _m5.get("trades", 0) >= 50:
-        conf_key   = round(signal["confidence"] * 10) / 10
-        global_wr  = _m5.get("winrate", 0.5)
-        cal_floor  = max(0.35, global_wr - 0.12)   # 12pp below global WR, min 35%
-        bucket     = [t for t in history
-                      if abs(t.get("confidence", 0) - conf_key) < 0.06
-                      and t.get("result") in ("WIN", "LOSS")]
-        if len(bucket) >= 5:
-            cal_wr = sum(1 for t in bucket if t["result"] == "WIN") / len(bucket)
-            if cal_wr < cal_floor:
-                print(f"    📉 CALIB block: bucket={conf_key:.1f}  WR={cal_wr:.0%}<{cal_floor:.0%}  n={len(bucket)}")
-                track_blocked()
-                return None
-
+    signal["confidence"] = round(min(win_prob, 1.0), 4)
+    signal["ev"]         = round(ev, 4)
     return signal

@@ -283,31 +283,6 @@ def on_price(data):
     # Side-balance penalty
     score -= _side_penalty(s, action)
 
-    # Threshold: 2 in ranging, 2 in exploration, 3 normally
-    exploration = _is_exploration()
-    min_score   = 2 if (reg in ("RANGING", "QUIET_RANGE") or exploration) else 3
-
-    if score < min_score:
-        track_filtered()
-        return
-
-    # ── Filter guard: anti-collapse (pass-rate < 2% → force pass score ≥ 1) ──
-    from src.services.learning_event import get_metrics as _gm
-    _m  = _gm()
-    gen = _m.get("signals_generated", 0)
-    flt = _m.get("signals_filtered",  0)
-    blk = _m.get("blocked", 0)
-    _collapsed = False
-    if gen > 50:
-        passed   = max(0, gen - flt - blk)
-        pass_pct = passed / gen
-        if pass_pct < 0.05:
-            _collapsed = True   # collapse: pass anything with score ≥ 1
-
-    if not _collapsed and score < min_score:
-        track_filtered()
-        return
-
     # ── Confidence: indicator-weighted ────────────────────────────────────────
     # Weights per signal reason prefix — adjust which indicators to trust more
     _IND_W = {"EMA": 1.0, "HTF": 0.9, "MAC": 1.0, "RSI": 0.8,
@@ -364,9 +339,9 @@ def on_price(data):
 
     short = s.replace("USDT", "")
     icon  = "🟢" if action == "BUY" else "🔴"
-    expl  = "  [EXPLORE]" if exploration else ""
+    expl  = "  [EXPLORE]" if _is_exploration() else ""
     print(f"  {icon} {short} ${p:,.4f} | "
-          f"score:{score} [{','.join(reasons)}] | {reg} | conf:{confidence:.0%}{expl}")
+          f"score:{score} [{','.join(reasons)}] | {reg} | conf:{confidence:.0%} ev:{ev:.3f}{expl}")
 
     from src.services.realtime_decision_engine import evaluate_signal
     result = evaluate_signal(signal)
