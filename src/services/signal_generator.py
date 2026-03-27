@@ -116,7 +116,7 @@ def _regime(series, adx, di_p, di_m, atr_val):
 # ── Score (regime-aware) ──────────────────────────────────────────────────────
 
 def _score(action, curr, e10, e50, e200, rsi_v, rsi_slope,
-           macd_l, macd_s, bb_lo, bb_hi, adx_v, regime):
+           macd_l, macd_s, bb_lo, bb_hi, adx_v, regime, htf=None):
     sc = 0
     reasons = []
 
@@ -150,6 +150,10 @@ def _score(action, curr, e10, e50, e200, rsi_v, rsi_slope,
                 if rsi_slope < 0: sc += 3; reasons.append("MR↑↑✓")
                 else:             sc += 2; reasons.append("MR↑↑")
             elif rsi_v > 58:      sc += 1; reasons.append("MR↑")
+
+    # HTF alignment bonus (+1 if 5m trend agrees, no penalty if disagrees)
+    if htf == "UP"   and action == "BUY":  sc += 1; reasons.append("HTFok")
+    if htf == "DOWN" and action == "SELL": sc += 1; reasons.append("HTFok")
 
     return sc, reasons
 
@@ -260,12 +264,6 @@ def on_price(data):
         if reg == "BEAR_TREND" and action != "SELL":
             track_filtered(); return
 
-        # HTF confirmation: block only hard disagreement (not FLAT)
-        if reg == "BULL_TREND" and htf == "DOWN":
-            track_filtered(); return
-        if reg == "BEAR_TREND" and htf == "UP":
-            track_filtered(); return
-
         # EMA spread filter (trend only — not RANGING)
         ema_spread = abs(e10 - e50)
         if ema_spread < atr_v * 0.2:
@@ -279,7 +277,7 @@ def on_price(data):
     # ── Score ─────────────────────────────────────────────────────────────────
     score, reasons = _score(
         action, p, e10, e50, e200, rsi_v, rsi_slope,
-        macd_l, macd_s, bb_lo, bb_hi, adx_v, reg
+        macd_l, macd_s, bb_lo, bb_hi, adx_v, reg, htf
     )
 
     # Side-balance penalty
