@@ -24,7 +24,7 @@ from src.services.learning_event  import update_metrics
 from src.services.firebase_client import save_batch
 from src.services.execution       import (
     exec_order, valid, ob_adjust, cost_guard, pre_cost,
-    ev_adjust, fill_rate, OrderBook)
+    ev_adjust, fill_rate, capital_alloc, rotate_capital, OrderBook)
 import time
 
 BATCH             = []
@@ -143,12 +143,22 @@ def _replace_if_better(signal):
                       key=lambda s: _effective_ws(_positions[s]["signal"]))
     new_eff  = _effective_ws(signal)
     weak_eff = _effective_ws(_positions[weakest_sym]["signal"])
+    # Primary: effective_ws margin (existing logic)
     if new_eff > weak_eff * _REPLACE_MARGIN and _replace_allowed(weakest_sym):
         _positions[weakest_sym]["force_close"] = True
         _pending_open.append(signal)
         _last_replaced[weakest_sym] = time.time()
-        print(f"    replace: {weakest_sym} (eff_ws={weak_eff:.3f}) "
+        print(f"    replace[ws]: {weakest_sym} (eff_ws={weak_eff:.3f}) "
               f"← {signal['symbol']} (eff_ws={new_eff:.3f})")
+        return True
+    # Secondary: regime EV rotation (true_ev 20% better)
+    should_rotate, worst_sym = rotate_capital(signal, _positions, MAX_POSITIONS)
+    if should_rotate and worst_sym and _replace_allowed(worst_sym):
+        _positions[worst_sym]["force_close"] = True
+        _pending_open.append(signal)
+        _last_replaced[worst_sym] = time.time()
+        print(f"    replace[ev]: {worst_sym} "
+              f"← {signal['symbol']} (regime={signal.get('regime','?')})")
         return True
     return False
 
@@ -216,9 +226,10 @@ def handle_signal(signal):
         print(f"    portfolio gate: pre_cost  sym={sym}  ws={ws_raw:.3f}")
         return
 
-    # OB proportional adjustment + per-symbol EV blend
+    # OB proportional adjustment + regime-aware EV blend
+    reg    = signal.get("regime", "RANGING")
     ws_adj = ob_adjust(ws_raw, ob)
-    ws_adj = ev_adjust(ws_adj, sym)
+    ws_adj = ev_adjust(ws_adj, sym, reg)
 
     # Position sizing: EV-scaled, auditor floor 0.7, strong-EV boost
     import math
@@ -229,7 +240,7 @@ def handle_signal(signal):
     ev      = signal.get("ev", 0.05)
     explore = signal.get("explore", False)
     af      = min(1.0, max(0.7, signal.get("auditor_factor", 1.0)))
-    base    = 0.05 if _t >= 20 else 0.025
+    base    = capital_alloc(sym, reg, 0.05 if _t >= 20 else 0.025, _positions)
     thr     = get_ev_threshold()
     ws_thr  = get_ws_threshold()
     ws_ratio = (ws_adj / ws_thr) if ws_thr > 0 else 1.0
