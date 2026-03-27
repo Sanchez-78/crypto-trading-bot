@@ -1,30 +1,26 @@
 """
-Optimal capital allocation engine — Kelly sizing, entropy regularisation,
-regime detection, execution alpha.
+Ultra-adaptive capital allocation — Bayesian EV, bandit routing,
+depth-aware execution, stable regimes.
 
-EV (time-decayed):
-  ev_cache stores (smooth, timestamp); decay = 0.995**dt_seconds.
-  Stale pairs decay faster when signals are absent longer.
+EV (Bayesian + time-decayed):
+  risk_ev = 0.6×prev + 0.2×raw_sharpe + 0.2×bayes_ev, then ×0.995^dt.
+  bayes_ev = Beta posterior WR (alpha/beta updated per trade, prior 5/5).
 
-Capital allocation (five-factor):
-  score = risk_ev × risk_parity × cluster_penalty × (1 + kelly_fraction)
+Capital allocation (six-factor):
+  score  = risk_ev × risk_parity × cluster_penalty × (1+kelly) × bandit_UCB
   weight = softmax(scores)
-  alloc  = base × clamp(0.5 + weight + 0.1×entropy(weights), 0.5, 1.5)
-  Entropy bonus incentivises diversification — concentrated books penalised.
+  alloc  = base × clamp(0.5 + weight + 0.1×entropy, 0.5, 1.5)
 
-Kelly fraction:
-  k = (p×(b+1)-1)/b  clamped [0, 0.25].  Requires ≥20 trades per (sym, reg).
+Regime stability:
+  detect_regime resists switching — 70% hysteresis via reg_cache.
 
-Regime detection:
-  detect_regime(sym) infers BULL/BEAR/RANGE from returns_hist (no signal dependency).
-  Overrides signal regime inside final_size for sizing decisions.
+Execution alpha (depth-weighted):
+  0.02 × (imb−1) × min(depth/100000, 1).
 
-Execution alpha:
-  execution_alpha(sym, ob) = 0.01 × sign(imb-1). Tiny OB-informed size nudge.
-
-Leverage boost capped at +10% (was uncapped at 0.2×risk_ev).
+Leverage: module-level equity tracking; boost capped +10%.
 """
 
+import random
 import numpy as np
 import time as _time
 
@@ -34,7 +30,12 @@ slippage_hist: dict = {}   # sym -> [frac_slip, ...]         (last 100)
 fill_stats:    dict = {}   # sym -> {"f": int, "t": int}
 trade_log:     list = []   # [{"sym","reg","ws","slip"}]      (last 500)
 returns_hist:  dict = {}   # sym -> [pnl, ...]                (last 200)
-ev_cache:      dict = {}   # (sym, reg) -> smoothed risk_ev   (EMA 0.8/0.2)
+ev_cache:      dict = {}   # (sym, reg) -> (smooth, timestamp)
+bayes_stats:   dict = {}   # (sym, reg) -> [alpha, beta]  (Beta prior 5/5)
+bandit_stats:  dict = {}   # (sym, reg) -> [wins, plays]
+reg_cache:     dict = {}   # sym -> last confirmed regime (hysteresis)
+_equity:       list = [1.0]       # [current equity]   — mutable scalar
+_equity_peak:  list = [1.0]       # [peak equity]
 
 
 # ── Order book snapshot ────────────────────────────────────────────────────────
@@ -141,11 +142,10 @@ def corr(sym1, sym2):
 
 def detect_regime(sym):
     """
-    Infer market regime from returns_hist (no signal dependency).
-    Uses last 20 returns: trend direction + realised vol.
-    BULL: positive trend, vol < 2%.
-    BEAR: negative trend, vol < 2%.
-    RANGE: otherwise (noisy or choppy).
+    Infer regime from last 20 returns with 70% hysteresis (reg_cache).
+    Resists noisy flips: a raw change is accepted only 30% of the time,
+    preventing overreaction to single-bar moves.
+    BULL: positive trend + vol < 2%.  BEAR: negative + vol < 2%.  RANGE: else.
     """
     r = returns_hist.get(sym, [0.0])
     if len(r) < 20:
@@ -154,10 +154,16 @@ def detect_regime(sym):
     trend  = float(np.mean(recent))
     v      = float(np.std(recent))
     if trend > 0 and v < 0.02:
-        return "BULL"
-    if trend < 0 and v < 0.02:
-        return "BEAR"
-    return "RANGE"
+        raw = "BULL"
+    elif trend < 0 and v < 0.02:
+        raw = "BEAR"
+    else:
+        raw = "RANGE"
+    prev = reg_cache.get(sym, raw)
+    if raw != prev and random.random() < 0.7:
+        return prev   # resist switching 70% of the time
+    reg_cache[sym] = raw
+    return raw
 
 
 def cluster_id(sym):
@@ -203,22 +209,39 @@ def entropy_reg(weights):
     return float(-np.sum(w * np.log(w + 1e-9)))
 
 
+def bandit_update(sym, reg, outcome):
+    """UCB1 bandit: outcome=1 win, 0 loss. Called on every trade close."""
+    wins, plays = bandit_stats.get((sym, reg), (1, 2))
+    bandit_stats[(sym, reg)] = (wins + outcome, plays + 1)
+
+
+def bandit_score(sym, reg):
+    """
+    UCB1 exploration bonus: WR + sqrt(2×ln(N+1)/plays).
+    Naturally routes toward under-explored (sym, reg) pairs.
+    """
+    wins, plays = bandit_stats.get((sym, reg), (1, 2))
+    total = sum(p for _, p in bandit_stats.values()) + 1
+    ucb   = wins / plays + float(np.sqrt(2.0 * np.log(total) / plays))
+    return ucb
+
+
 def kelly_fraction(sym, reg):
     """
     Half-Kelly: k = (p×(b+1)−1)/b, clamped [0, 0.25].
     Requires ≥20 trades per (sym, reg); else conservative 0.1.
-    b = avg_win / avg_loss from actual net PnL in trade_log.
+    Uses median (robust to outliers) + clips pnl to ±0.05.
     """
     trades = [t for t in trade_log if t["sym"] == sym and t["reg"] == reg][-50:]
     if len(trades) < 20:
         return 0.1
-    pnl  = [t["ws"] - t["slip"] for t in trades]
+    pnl  = np.clip([t["ws"] - t["slip"] for t in trades], -0.05, 0.05)
     wins = [p for p in pnl if p > 0]
     loss = [p for p in pnl if p < 0]
     if not wins or not loss:
         return 0.1
     p = len(wins) / len(pnl)
-    b = float(np.mean(wins)) / (abs(float(np.mean(loss))) + 1e-6)
+    b = float(np.median(wins)) / (abs(float(np.median(loss))) + 1e-6)
     k = (p * (b + 1) - 1) / (b + 1e-6)
     return max(0.0, min(k, 0.25))
 
@@ -226,26 +249,44 @@ def kelly_fraction(sym, reg):
 # ── Risk EV (Sharpe-like) ─────────────────────────────────────────────────────
 
 def raw_risk_ev(sym, reg):
-    """Raw Sharpe-like EV from trade_log. std floor 0.01."""
+    """Raw Sharpe-like EV from trade_log. PnL clipped ±0.05; std floor 0.01."""
     trades = [t for t in trade_log
               if t["sym"] == sym and t["reg"] == reg][-50:]
     if len(trades) < 10:
         return 0.0
-    pnl = [t["ws"] - t["slip"] for t in trades]
+    pnl = np.clip([t["ws"] - t["slip"] for t in trades], -0.05, 0.05)
     return float(np.mean(pnl)) / (float(np.std(pnl)) + 0.01)
+
+
+def bayes_update(sym, reg, pnl):
+    """Update Beta posterior: win → alpha+1, loss → beta+1."""
+    a, b = bayes_stats.get((sym, reg), (5, 5))
+    if pnl > 0:
+        a += 1
+    else:
+        b += 1
+    bayes_stats[(sym, reg)] = (a, b)
+
+
+def bayes_ev(sym, reg):
+    """Beta posterior WR: alpha/(alpha+beta). Prior 5/5 → 0.5 cold start."""
+    a, b = bayes_stats.get((sym, reg), (5, 5))
+    return a / (a + b)
 
 
 def risk_ev(sym, reg):
     """
-    Time-based EV decay: 0.995**dt_seconds — longer silence → faster decay.
-    EMA: 0.8×prev + 0.2×raw, applied after decay.
+    Three-source blend + time decay:
+      smooth = (0.6×prev + 0.2×raw_sharpe + 0.2×bayes_ev) × 0.995^dt_s.
+    Bayes anchors cold-start; raw_sharpe corrects when data arrives.
     ev_cache stores (smooth, timestamp) for time-aware updates.
     """
-    now          = _time.time()
-    raw          = raw_risk_ev(sym, reg)
-    prev, ts     = ev_cache.get((sym, reg), (raw, now))
-    dt           = max(1, now - ts)
-    smooth       = (0.8 * prev + 0.2 * raw) * (0.995 ** dt)
+    now      = _time.time()
+    raw      = raw_risk_ev(sym, reg)
+    b_ev     = bayes_ev(sym, reg)
+    prev, ts = ev_cache.get((sym, reg), (raw, now))
+    dt       = max(1, now - ts)
+    smooth   = (0.6 * prev + 0.2 * raw + 0.2 * b_ev) * (0.995 ** dt)
     ev_cache[(sym, reg)] = (smooth, now)
     return smooth
 
@@ -320,17 +361,18 @@ def cost_guard(ws, size, ob, fee, sym):
 
 def capital_alloc(sym, reg, base, positions):
     """
-    Five-factor softmax allocation:
-      score  = risk_ev × risk_parity × cluster_penalty × (1 + kelly_fraction)
+    Six-factor softmax allocation:
+      score  = risk_ev × risk_parity × cluster_penalty × (1+kelly) × bandit_UCB
       weight = softmax(scores)
-      alloc  = base × clamp(0.5 + weight + 0.1×entropy(weights), 0.5, 1.5)
-    Entropy bonus incentivises diversification.
+      alloc  = base × clamp(0.5 + weight + 0.1×entropy, 0.5, 1.5)
+    Bandit UCB drives exploration of under-traded (sym, reg) pairs.
     """
     def _score(s, r, pos_dict):
         return (max(risk_ev(s, r), 0.0)
                 * risk_parity_weight(s)
                 * cluster_penalty(s, pos_dict)
-                * (1.0 + kelly_fraction(s, r)))
+                * (1.0 + kelly_fraction(s, r))
+                * bandit_score(s, r))
 
     new_score  = _score(sym, reg, positions)
     all_scores = [
@@ -364,34 +406,38 @@ def exposure_scale(positions):
     return 1.0 - (exp - 0.50) / 0.40
 
 
+def update_equity(pnl):
+    """Update module-level equity and peak. Call on every trade close."""
+    _equity[0]      += float(pnl)
+    _equity_peak[0]  = max(_equity_peak[0], _equity[0])
+
+
 def leverage(sym, reg):
     """
-    Drawdown-adaptive base × EV boost.
+    Drawdown-adaptive base × EV boost (module-level equity, no import needed).
     base  = 1.2 - 0.7×min(dd/0.1, 1)  → [0.5, 1.2]
     boost = min(0.2×max(risk_ev,0), 0.1)  → capped at +10%.
     """
-    try:
-        from src.services.learning_event import METRICS
-        peak   = METRICS.get("equity_peak", 0.0) or 0.0
-        profit = METRICS.get("profit", 0.0) or 0.0
-        if peak > 0:
-            dd    = (peak - (1.0 + profit)) / peak
-            base  = 1.2 - 0.7 * min(dd / 0.1, 1.0)
-            ev    = max(risk_ev(sym, reg), 0.0)
-            boost = min(0.2 * ev, 0.1)
-            return base * (1.0 + boost)
-    except Exception:
-        pass
+    peak = _equity_peak[0]
+    eq   = _equity[0]
+    if peak > 0:
+        dd    = (peak - eq) / peak
+        base  = 1.2 - 0.7 * min(dd / 0.1, 1.0)
+        boost = min(0.2 * max(risk_ev(sym, reg), 0.0), 0.1)
+        return base * (1.0 + boost)
     return 1.2
 
 
 def execution_alpha(sym, ob):
     """
-    Tiny OB-informed size nudge: 0.01 × sign(imbalance − 1).
-    Positive imbalance (bid > ask vol) → +1% size; negative → −1%.
+    Depth-weighted OB imbalance nudge: 0.02 × (imb−1) × min(depth/100000, 1).
+    Thin books → strength→0 (unreliable signal).
+    Deep books → full ±2% nudge at extreme imbalance.
     """
-    imb = ob.bid_vol / (ob.ask_vol + 1e-6)
-    return 0.01 * float(np.sign(imb - 1.0))
+    imb      = ob.bid_vol / (ob.ask_vol + 1e-6)
+    depth    = ob.bid_vol + ob.ask_vol
+    strength = min(depth / 100_000.0, 1.0)
+    return 0.02 * (imb - 1.0) * strength
 
 
 def final_size(sym, reg, base, positions, ob=None):

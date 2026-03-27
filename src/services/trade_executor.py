@@ -25,7 +25,8 @@ from src.services.firebase_client import save_batch
 from src.services.execution       import (
     exec_order, valid, ob_adjust, cost_guard, pre_cost,
     ev_adjust, fill_rate, final_size, entry_filter,
-    rotate_capital, update_returns, OrderBook)
+    rotate_capital, update_returns, update_equity,
+    bayes_update, bandit_update, OrderBook)
 import time
 
 BATCH             = []
@@ -347,7 +348,12 @@ def on_price(data):
     }
 
     update_metrics(pos["signal"], trade)
-    update_returns(sym, profit)   # feeds correlation, vol, risk_parity calc
+    update_returns(sym, profit)     # feeds correlation, vol, risk_parity calc
+    update_equity(profit)           # module-level equity for leverage()
+    outcome = 1 if result == "WIN" else 0
+    reg_sig = pos["signal"].get("regime", "RANGING")
+    bayes_update(sym, reg_sig, profit)
+    bandit_update(sym, reg_sig, outcome)
 
     # ── Calibration + edge learning feedback ──────────────────────────────────
     try:
