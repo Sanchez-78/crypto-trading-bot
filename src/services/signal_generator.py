@@ -239,7 +239,7 @@ def _get_scored_edge(hist, e50, e200, breakout_up, breakout_down, mom5):
     sell_sc, sell_f = _score_direction(hist, e50, e200, breakout_up, breakout_down, mom5, "SELL")
 
     # Pick direction with higher score; require minimum SCORE_MIN
-    from src.services.realtime_decision_engine import weighted_score as _ws, SCORE_MIN, W_SCORE_MIN
+    from src.services.realtime_decision_engine import weighted_score as _ws, SCORE_MIN
     if buy_sc >= sell_sc and buy_sc >= SCORE_MIN:
         action, base_score, features = "BUY",  buy_sc,  buy_f
     elif sell_sc > buy_sc and sell_sc >= SCORE_MIN:
@@ -247,9 +247,11 @@ def _get_scored_edge(hist, e50, e200, breakout_up, breakout_down, mom5):
     else:
         return 0, 0.0, None, None, {}
 
-    # Self-learning weighted score gate
+    # Self-learning weighted score gate (adaptive threshold)
+    from src.services.realtime_decision_engine import get_ws_threshold as _thr, score_history as _sh
     w_score = _ws(features)
-    if w_score < W_SCORE_MIN:
+    _sh.append(w_score)           # track all evaluated scores (including rejected)
+    if w_score < _thr():
         return base_score, w_score, None, None, {}
 
     # Edge type classification for TP/SL selection

@@ -63,34 +63,67 @@ ev_history = deque(maxlen=200)   # ALL evaluated EVs (including skipped)
 _seeded    = [False]
 
 # ── Self-learning edge feature stats ──────────────────────────────────────────
-SCORE_MIN   = 4    # minimum base score (out of 7)
-W_SCORE_MIN = 2.5  # minimum weighted score (sum of empirical WRs)
+SCORE_MIN    = 4      # minimum base score (out of 7)
+W_SCORE_MIN  = 0.50   # cold-start floor for weighted avg score
+DECAY        = 0.98   # exponential decay applied to counts each update
+score_history = deque(maxlen=200)   # w_scores of all evaluated winning-dir setups
 
-edge_stats = {}    # feature_name -> [wins, total]
+edge_stats = {}    # feature_name -> [effective_wins, effective_total]  (decayed floats)
 
 
 def update_edge_stats(features, outcome):
-    """Update per-feature win/loss counts. Called after every trade close."""
+    """
+    Update per-feature counts with exponential decay.
+    Old observations fade by DECAY each update — allows adaptation over time.
+    """
     for k, v in features.items():
         if isinstance(v, bool) and v:
             if k not in edge_stats:
-                edge_stats[k] = [0, 0]
-            edge_stats[k][1] += 1
+                edge_stats[k] = [0.0, 0.0]
+            edge_stats[k][0] *= DECAY   # decay existing wins
+            edge_stats[k][1] *= DECAY   # decay existing total
+            edge_stats[k][1] += 1.0
             if outcome == 1:
-                edge_stats[k][0] += 1
+                edge_stats[k][0] += 1.0
 
 
 def feature_weight(k):
-    """Empirical WR for feature k. Requires ≥20 samples, else 0.5."""
+    """
+    Empirical WR for feature k (decayed).
+    Requires effective total ≥ 20; fallback 0.4 (conservative prior).
+    """
     if k in edge_stats and edge_stats[k][1] >= 20:
         return edge_stats[k][0] / edge_stats[k][1]
-    return 0.5
+    return 0.4
 
 
 def weighted_score(features):
-    """Sum of empirical WR weights for all active (True) boolean features."""
-    return sum(feature_weight(k) for k, v in features.items()
-               if isinstance(v, bool) and v)
+    """
+    Average empirical weight across all active boolean features.
+    Penalises features with WR < 0.4 by subtracting 0.2 (acts as negative vote).
+    Average (not sum) prevents bias from feature count.
+    """
+    weights = []
+    for k, v in features.items():
+        if isinstance(v, bool) and v:
+            w = feature_weight(k)
+            if w < 0.4:
+                w -= 0.2   # bad feature actively hurts score
+            weights.append(w)
+    return sum(weights) / len(weights) if weights else 0.0
+
+
+def get_ws_threshold():
+    """
+    Adaptive w_score gate: 75th percentile of recent scores (top 25% only).
+    Cold-start floor W_SCORE_MIN until 50 samples collected.
+    Hard floor 0.45 — never trades sub-random edge.
+    """
+    if len(score_history) < 50:
+        return W_SCORE_MIN
+    s   = sorted(score_history)
+    q75 = s[int(len(s) * 0.75)]
+    return max(0.45, q75)
 
 
 def update_calibrator(p, outcome):
