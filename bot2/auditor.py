@@ -28,8 +28,9 @@ _initialized        = False
 _cached_weights     = {}
 _dd_halt_until      = 0.0
 
-DD_HALT_THR  = 0.05    # 5% drawdown triggers trading halt
-DD_HALT_SECS = 3600    # pause duration: 1 hour
+DD_HALT_THR  = 0.40    # 40% relative drawdown (was 5% — too sensitive for paper trading)
+DD_HALT_MIN  = 0.050   # minimum absolute DD to prevent false trigger on tiny equity
+DD_HALT_SECS = 1800    # pause duration: 30 min
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -77,7 +78,7 @@ def run_audit():
             if saved.get("min_conf"):
                 _min_confidence     = float(saved["min_conf"])
                 _position_size_mult = float(saved.get("pos_size_mult", 1.0))
-                _dd_halt_until      = float(saved.get("dd_halt_until", 0))
+                # dd_halt_until intentionally NOT restored — halt resets on restart
                 print(f"  🔍 AUDITOR restored: conf={_min_confidence:.2f}  sz={_position_size_mult:.2f}")
             else:
                 print(f"  🔍 AUDITOR init: bootstrap streak={loss_streak}  (no saved state)")
@@ -139,16 +140,16 @@ def run_audit():
         print(f"  🔓 DEADLOCK RESET: {since/60:.0f}min no trades (gen={gen}) → conf=0.50  cooldown=0")
 
     # ── Drawdown circuit breaker ──────────────────────────────────────────────
-    ep     = m.get("equity_peak", 0)
-    dd     = m.get("drawdown",    0)
-    if ep > 0:
+    ep = m.get("equity_peak", 0)
+    dd = m.get("drawdown",    0)
+    if ep > 0 and dd >= DD_HALT_MIN:
         dd_pct = dd / ep
         if dd_pct >= DD_HALT_THR and not is_halted():
             _dd_halt_until = _time.time() + DD_HALT_SECS
-            print(f"  🚨 DRAWDOWN HALT: {dd_pct:.1%} → pause {DD_HALT_SECS//3600}h")
-        elif is_halted():
-            rem = (_dd_halt_until - _time.time()) / 60
-            print(f"  ⏸ DD HALT: {rem:.0f}min zbývá")
+            print(f"  🚨 DRAWDOWN HALT: {dd_pct:.1%}  abs={dd:.6f} → pause {DD_HALT_SECS//60}min")
+    elif is_halted():
+        rem = (_dd_halt_until - _time.time()) / 60
+        print(f"  ⏸ DD HALT: {rem:.0f}min zbývá")
 
     # ── Strategy weights ──────────────────────────────────────────────────────
     if t >= 10:
@@ -174,7 +175,6 @@ def run_audit():
             "loss_streak":   loss_streak,
             "win_streak":    win_streak,
             "cooldown":      _cooldown,
-            "dd_halt_until": _dd_halt_until,
         })
     except Exception:
         pass
