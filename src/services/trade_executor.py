@@ -56,21 +56,17 @@ def handle_signal(signal):
     if sym in _positions:
         return
 
-    # Auditor halt: factor=0.0 means DD halt active — skip trade, EV was logged
-    auditor_factor = signal.get("auditor_factor", 1.0)
-    if auditor_factor == 0.0:
-        return
-
     entry = signal["price"]
     atr   = signal.get("atr", entry * 0.003)
 
-    # Position sizing: EV-based, scaled by auditor factor
+    # Position sizing: EV-based, auditor factor clamped [0.5, 1.0]
     from src.services.learning_event import get_metrics as _gm
-    _t   = _gm().get("trades", 0)
-    ev   = signal.get("ev", 0.02)
-    base = 0.05 if _t >= 20 else 0.025   # conservative during learning
-    size = base * min(2.0, max(0.3, ev * 3)) * auditor_factor
-    size = max(0.005, size)              # absolute floor
+    _t             = _gm().get("trades", 0)
+    ev             = signal.get("ev", 0.02)
+    af             = min(1.0, max(0.5, signal.get("auditor_factor", 1.0)))
+    base           = 0.05 if _t >= 20 else 0.025
+    size           = base * min(2.0, max(0.3, ev * 3)) * af
+    size           = max(0.005, size)
 
     # TP/SL: regime-aware ATR-based with fee-adjusted minimums
     regime  = signal.get("regime", "RANGING")

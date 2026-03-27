@@ -1,19 +1,19 @@
 """
 Multi-indicator signal generator.
 
-Regime-aware logic:
+Regime-aware direction logic:
   BULL_TREND / BEAR_TREND  → trend-following (EMA × ADX × MACD)
   RANGING                  → mean-reversion  (RSI extremes + BB)
-  QUIET_RANGE              → mean-reversion, strict score ≥ 3
-  HIGH_VOL                 → skip (too noisy)
+  QUIET_RANGE              → mean-reversion
+  HIGH_VOL                 → confidence × 0.5 penalty (EV gate decides)
 
-Score thresholds:
-  trending:        ≥ 3
-  ranging/quiet:   ≥ 2   (RSI extreme + BB already gives ≥ 3)
-  fallback mode:   ≥ 2   (no trades ≥ 15 min)
+Confidence penalties (soft — EV gate is the sole filter):
+  counter-trend            × 0.6
+  weak EMA spread          × 0.7
+  high volatility          × 0.5
 
 Side balance:  if >60% one side in last 10 signals → penalise score −1
-Time debounce: 30 s per symbol (regardless of direction)
+Time debounce: 30 s per symbol (dedup only)
 """
 
 from src.core.event_bus       import subscribe_once, publish
