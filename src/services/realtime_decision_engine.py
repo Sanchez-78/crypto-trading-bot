@@ -27,7 +27,8 @@ MIN_RR   = 1.25
 
 EV_SPREAD_MIN   = 0.05    # flat distribution guard
 EV_SPREAD_AFTER = 50      # evaluate spread only after N samples
-MAX_TRADES_15   = 6       # frequency cap (trades per 15 min)
+MAX_TRADES_15   = 5       # frequency cap (trades per 15 min)
+MAX_LOSS_STREAK = 5       # halt trading after N consecutive losses
 
 
 class Calibrator:
@@ -84,10 +85,10 @@ def get_ev_threshold():
     Cold start: 0.15 until 100 samples; floor 0.10 always.
     """
     if len(ev_history) < 100:
-        return 0.15
+        return 0.25
     s   = sorted(ev_history)
     q75 = s[int(len(s) * 0.75)]
-    return max(0.10, q75)
+    return max(0.15, q75)
 
 
 def evaluate_signal(signal):
@@ -113,6 +114,14 @@ def evaluate_signal(signal):
 
     ev_history.append(ev)
     ev_threshold = get_ev_threshold()
+
+    # ── Loss streak guard: halt after N consecutive losses ────────────────────
+    from src.services.learning_event import METRICS as _M
+    streak = _M.get("loss_streak", 0)
+    if streak >= MAX_LOSS_STREAK:
+        track_blocked()
+        print(f"    decision=SKIP_STREAK  streak={streak}>={MAX_LOSS_STREAK}")
+        return None
 
     # ── EV spread guard: flat distribution = noise, not edge ──────────────────
     if len(ev_history) >= EV_SPREAD_AFTER:

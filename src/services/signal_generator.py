@@ -182,12 +182,17 @@ def _record_side(s, action):
 # ── Edge strategies ───────────────────────────────────────────────────────────
 
 def _prefilter(hist, atr_v, price):
-    """Require current volatility ≥ 20-bar avg vol (active market, not dead flat)."""
-    if len(hist) < 21:
+    """
+    Require volatility expansion: recent 20-bar avg range > 50-bar avg range.
+    Maps to spec: vol.rolling(20).std().iloc[-1] > vol.mean()
+    Ensures market is active and directional, not dead-flat.
+    """
+    if len(hist) < 51:
         return False
-    diffs   = [abs(hist[i] / hist[i-1] - 1) for i in range(len(hist) - 20, len(hist))]
-    avg_vol = sum(diffs) / len(diffs) if diffs else 0
-    return (atr_v / price) >= avg_vol
+    diffs = [abs(hist[i] - hist[i-1]) for i in range(1, len(hist))]
+    r20   = sum(diffs[-20:]) / 20
+    r50   = sum(diffs[-50:]) / 50
+    return r20 > r50   # expanding vol: recent range > longer-term average
 
 
 def _edge_trend_pullback(hist, e50, e200):
@@ -319,8 +324,8 @@ def on_price(data):
     mom5          = sum(returns[-5:])  if len(returns) >= 5  else 0.0
     mom10         = sum(returns[-10:]) if len(returns) >= 10 else 0.0
 
-    # ── Volatility prefilter (no-op in exploration to allow cold start) ────────
-    if not _prefilter(hist, atr_v, p) and not _is_exploration():
+    # ── Volatility prefilter (hard gate — no exploration bypass) ─────────────
+    if not _prefilter(hist, atr_v, p):
         track_filtered()
         return
 
