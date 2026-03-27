@@ -304,16 +304,8 @@ def on_price(data):
 
     vol_pct = atr_v / p if p else 0
 
-    # ── EV gate: regime-aware TP/SL ratio ────────────────────────────────────
-    tp_move = max(atr_v * _TP_MULT.get(reg, 2.2) / p, MIN_TP_PCT)
-    sl_move = max(atr_v * _SL_MULT.get(reg, 1.3) / p, MIN_SL_PCT)
-    rr      = tp_move / sl_move
-    ev      = confidence * rr - (1 - confidence)
-    if ev <= 0:
-        track_filtered()
-        return
-
     # ── Record + emit ─────────────────────────────────────────────────────────
+    # EV gate is handled exclusively in realtime_decision_engine (single calc)
     _last_ts[s] = time.time()
     _record_side(s, action)
 
@@ -321,10 +313,9 @@ def on_price(data):
         "symbol":     s,
         "action":     action,
         "price":      p,
-        "confidence": confidence,
+        "confidence": confidence,   # raw penalised conf; RDE calibrates to win_prob
         "atr":        atr_v,
         "regime":     reg,
-        "ev":         round(ev, 4),
         "features": {
             "ema_diff":   e10 - e50,
             "rsi":        rsi_v,
@@ -340,7 +331,7 @@ def on_price(data):
     icon  = "🟢" if action == "BUY" else "🔴"
     expl  = "  [EXPLORE]" if _is_exploration() else ""
     print(f"  {icon} {short} ${p:,.4f} | "
-          f"score:{score} [{','.join(reasons)}] | {reg} | conf:{confidence:.0%} ev:{ev:.3f}{expl}")
+          f"score:{score} [{','.join(reasons)}] | {reg} | conf:{confidence:.0%}{expl}")
 
     from src.services.realtime_decision_engine import evaluate_signal
     result = evaluate_signal(signal)
