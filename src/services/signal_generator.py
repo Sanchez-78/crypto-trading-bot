@@ -232,10 +232,8 @@ def on_price(data):
     reg = _regime(hist, adx_v, di_p, di_m, atr_v)
     htf = _htf_trend(hist)
 
-    # ── Regime gate ───────────────────────────────────────────────────────────
-    if reg == "HIGH_VOL":
-        track_filtered()
-        return
+    # HIGH_VOL → penalty on confidence only (EV gate decides)
+    _high_vol = reg == "HIGH_VOL"
 
     # ── Direction — regime-aware ───────────────────────────────────────────────
     if reg in ("RANGING", "QUIET_RANGE"):
@@ -299,6 +297,7 @@ def on_price(data):
     confidence = min(_ind_conf(score, reasons) * regime_w, 1.0)
 
     # Penalty multipliers (soft, not hard blocks — EV gate decides)
+    if _high_vol:                              confidence *= 0.5   # extreme volatility
     if reg not in ("RANGING", "QUIET_RANGE"):
         if _counter_trend: confidence *= 0.6   # counter-trend signal
         if _weak_spread:   confidence *= 0.7   # weak EMA separation
@@ -348,8 +347,7 @@ def on_price(data):
 
     if result:
         publish("signal_created", result)
-    else:
-        track_filtered()
+    # EV-rejected: track_blocked() already called inside evaluate_signal()
 
 
 def warmup(symbols=("BTCUSDT", "ETHUSDT", "ADAUSDT"), candles=80):
