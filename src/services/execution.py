@@ -29,10 +29,11 @@ import time as _time
 
 # ── Per-symbol session state ───────────────────────────────────────────────────
 
-slippage_hist: dict = {}   # sym -> [frac_slip, ...]     (last 100)
+slippage_hist: dict = {}   # sym -> [frac_slip, ...]         (last 100)
 fill_stats:    dict = {}   # sym -> {"f": int, "t": int}
-trade_log:     list = []   # [{"sym","reg","ws","slip"}]  (last 500)
-returns_hist:  dict = {}   # sym -> [pnl, ...]            (last 200)
+trade_log:     list = []   # [{"sym","reg","ws","slip"}]      (last 500)
+returns_hist:  dict = {}   # sym -> [pnl, ...]                (last 200)
+ev_cache:      dict = {}   # (sym, reg) -> smoothed risk_ev   (EMA 0.8/0.2)
 
 
 # ── Order book snapshot ────────────────────────────────────────────────────────
@@ -139,20 +140,21 @@ def corr(sym1, sym2):
 
 def cluster_penalty(sym, positions):
     """
-    Soft proportional penalty for correlated open positions.
-    At corr=0.7: factor=1.0 (no penalty onset).
-    At corr=1.0: factor=0.5 (maximum penalty per position).
-    Interpolates linearly between. Floor 0.3 — never starves a position.
+    Non-multiplicative: collect per-position penalties, return the minimum.
+    Avoids stacking (two 0.7-corr positions previously gave 0.5×0.5=0.25).
+    At corr=0.7: factor=1.0. At corr=1.0: factor=0.5. Floor 0.3.
     """
-    pen = 1.0
+    penalties = []
     for pos in positions.values():
         other = pos["signal"]["symbol"]
         if other == sym:
             continue
         c = abs(corr(sym, other))
         if c > 0.7:
-            pen *= 1.0 - 0.5 * (c - 0.7) / 0.3
-    return max(pen, 0.3)
+            penalties.append(1.0 - 0.5 * (c - 0.7) / 0.3)
+    if not penalties:
+        return 1.0
+    return max(min(penalties), 0.3)
 
 
 # ── Volatility & risk parity ──────────────────────────────────────────────────
@@ -170,18 +172,27 @@ def risk_parity_weight(sym):
 
 # ── Risk EV (Sharpe-like) ─────────────────────────────────────────────────────
 
-def risk_ev(sym, reg):
-    """
-    mean(pnl) / (std(pnl) + 0.01) for (sym, regime), last 50 trades.
-    std floor 0.01 prevents Sharpe explosion when edge is very consistent.
-    Returns 0 when <10 samples.
-    """
+def raw_risk_ev(sym, reg):
+    """Raw Sharpe-like EV from trade_log. std floor 0.01."""
     trades = [t for t in trade_log
               if t["sym"] == sym and t["reg"] == reg][-50:]
     if len(trades) < 10:
         return 0.0
     pnl = [t["ws"] - t["slip"] for t in trades]
     return float(np.mean(pnl)) / (float(np.std(pnl)) + 0.01)
+
+
+def risk_ev(sym, reg):
+    """
+    EMA-smoothed Sharpe EV: 0.8×prev + 0.2×raw.
+    Dampens tick-to-tick noise without forgetting regime shifts.
+    Cold start: first call initialises cache from raw value.
+    """
+    raw  = raw_risk_ev(sym, reg)
+    prev = ev_cache.get((sym, reg), raw)
+    smooth = 0.8 * prev + 0.2 * raw
+    ev_cache[(sym, reg)] = smooth
+    return smooth
 
 
 def ev_conf(sym, reg):
@@ -254,21 +265,25 @@ def cost_guard(ws, size, ob, fee, sym):
 
 def capital_alloc(sym, reg, base, positions):
     """
-    Three-factor score: risk_ev × risk_parity_weight × cluster_penalty.
-    Weight relative to current open positions. Clamp [0.5×, 1.5×] base.
+    Softmax weighting over [new_signal] + open positions.
+    exp(score) / sum(exp(scores)) — smooth, bounded, sums to 1.
+    Clamp output [0.5×, 1.5×] base as before.
     """
-    ev    = max(risk_ev(sym, reg), 0.0)
-    rp    = risk_parity_weight(sym)
-    pen   = cluster_penalty(sym, positions)
-    score = ev * rp * pen
-    total = sum(
-        max(risk_ev(p["signal"]["symbol"],
-                    p["signal"].get("regime", "RANGING")), 0.0)
-        * risk_parity_weight(p["signal"]["symbol"])
-        * cluster_penalty(p["signal"]["symbol"], positions)
+    def _score(s, r, pos_dict):
+        return (max(risk_ev(s, r), 0.0)
+                * risk_parity_weight(s)
+                * cluster_penalty(s, pos_dict))
+
+    new_score = _score(sym, reg, positions)
+    all_scores = [
+        _score(p["signal"]["symbol"],
+               p["signal"].get("regime", "RANGING"),
+               positions)
         for p in positions.values()
-    ) + 1e-6
-    w = score / total if total > 0 else 1.0
+    ]
+    all_scores.append(new_score)
+    exps = np.exp(np.clip(all_scores, -10, 10))   # clip prevents overflow
+    w    = exps[-1] / (np.sum(exps) + 1e-9)
     return base * max(0.5, min(1.5, 0.5 + w))
 
 
@@ -296,11 +311,18 @@ def leverage():
 
 # ── Final position size (allocation × leverage) ────────────────────────────────
 
+def total_exposure(positions):
+    """Sum of all open position sizes — portfolio gross exposure."""
+    return sum(p["size"] for p in positions.values())
+
+
 def final_size(sym, reg, base, positions):
     """
-    capital_alloc × leverage, with hard position cap 25% of capital.
-    Cap prevents single-position over-concentration before leverage is applied.
+    Hard portfolio cap: if total deployed > 70%, reject new position.
+    Then: min(capital_alloc, 0.25) × leverage.
     """
+    if total_exposure(positions) > 0.70:
+        return 0.0
     alloc = min(capital_alloc(sym, reg, base, positions), 0.25)
     return alloc * leverage()
 
