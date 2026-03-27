@@ -69,7 +69,7 @@ DECAY        = 0.98   # exponential decay applied to counts each update
 score_history = deque(maxlen=200)   # w_scores of all evaluated winning-dir setups
 
 edge_stats  = {}   # (feature_name, regime) -> [eff_wins, eff_total]  (decayed)
-combo_stats = {}   # (combo_tuple, regime)  -> [wins, total]  (no decay, Laplace gate)
+combo_stats = {}   # (combo_tuple, regime)  -> [eff_wins, eff_total]  (decayed)
 combo_usage = {}   # combo_tuple -> int  (session use count; resets on restart)
 
 
@@ -82,23 +82,64 @@ def _std(lst):
     return (sum((x - m) ** 2 for x in lst) / n) ** 0.5
 
 
+def prune_combos():
+    """Remove 50 worst-WR combos when dict exceeds 200 entries."""
+    if len(combo_stats) <= 200:
+        return
+    worst = sorted(combo_stats.items(),
+                   key=lambda x: x[1][0] / max(x[1][1], 1))[:50]
+    for k, _ in worst:
+        del combo_stats[k]
+
+
+def epsilon():
+    """
+    Decaying exploration rate: starts 10%, floors at 2%.
+    Decay driven by total trade count — less exploration as system matures.
+    """
+    import math
+    try:
+        from src.services.learning_event import METRICS
+        tc = METRICS.get("trades", 0)
+    except Exception:
+        tc = 0
+    return max(0.02, 0.10 * math.exp(-tc / 1000.0))
+
+
+def equity_guard():
+    """Return 0.5 if drawdown > 10%, else 1.0. Halves size during drawdown."""
+    try:
+        from src.services.learning_event import METRICS
+        dd = METRICS.get("drawdown", 0.0)
+        eq = METRICS.get("equity_peak", 1.0) or 1.0
+        dd_pct = dd / eq
+        if dd_pct > 0.10:
+            return 0.5
+    except Exception:
+        pass
+    return 1.0
+
+
 def update_edge_stats(features, outcome, regime="RANGING"):
     """
-    Update regime-split feature stats (decayed) AND regime-split combo stats.
-    Regime split prevents bull-market weights polluting bear-market decisions.
+    Update regime-split feature stats AND combo stats, both with decay.
+    Prunes combo dict if it exceeds 200 entries (keeps highest-WR combos).
     """
     active = tuple(sorted(k for k, v in features.items()
                           if isinstance(v, bool) and v))
-    # Combo update — no decay (needs stable counts for Laplace gate)
+    # Combo update with decay
     if active:
         key = (active, regime)
         if key not in combo_stats:
-            combo_stats[key] = [0, 0]
-        combo_stats[key][1] += 1
+            combo_stats[key] = [0.0, 0.0]
+        combo_stats[key][0] *= DECAY
+        combo_stats[key][1] *= DECAY
+        combo_stats[key][1] += 1.0
         if outcome == 1:
-            combo_stats[key][0] += 1
+            combo_stats[key][0] += 1.0
+        prune_combos()
 
-    # Individual feature update with exponential decay
+    # Individual feature update with decay
     for k, v in features.items():
         if isinstance(v, bool) and v:
             fk = (k, regime)

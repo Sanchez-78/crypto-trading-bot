@@ -70,21 +70,27 @@ def handle_signal(signal):
     atr   = signal.get("atr", entry * 0.003)
 
     # Position sizing: EV-scaled, auditor floor 0.7, strong-EV boost
+    import math
     from src.services.learning_event           import get_metrics as _gm
-    from src.services.realtime_decision_engine import get_ev_threshold, get_ws_threshold
-    _t   = _gm().get("trades", 0)
-    ev   = signal.get("ev", 0.05)
-    ws   = signal.get("ws", 0.5)
-    af   = min(1.0, max(0.7, signal.get("auditor_factor", 1.0)))
-    base = 0.05 if _t >= 20 else 0.025
-    thr  = get_ev_threshold()
-    # WS-proportional sizing: scale by how far above ws threshold
-    ws_thr = get_ws_threshold()
+    from src.services.realtime_decision_engine import (
+        get_ev_threshold, get_ws_threshold, equity_guard)
+    _t      = _gm().get("trades", 0)
+    ev      = signal.get("ev", 0.05)
+    ws      = signal.get("ws", 0.5)
+    explore = signal.get("explore", False)
+    af      = min(1.0, max(0.7, signal.get("auditor_factor", 1.0)))
+    base    = 0.05 if _t >= 20 else 0.025
+    thr     = get_ev_threshold()
+    ws_thr  = get_ws_threshold()
+    # sqrt sizing: less aggressive than linear; caps overbetting at high ws
     ws_ratio = (ws / ws_thr) if ws_thr > 0 else 1.0
-    size = base * min(3.0, max(0.5, ws_ratio)) * af
+    size     = base * math.sqrt(min(ws_ratio, 2.25)) * af  # sqrt(2.25)=1.5 max
     if ev > thr * 1.5:
         size *= 1.5                          # strong EV boost
-    size = max(0.005, size)
+    if explore:
+        size *= 0.3                          # exploration trades: small position
+    size *= equity_guard()                   # halve size if drawdown > 10%
+    size  = max(0.005, size)
 
     # TP/SL: edge-specific ATR multipliers
     edge    = signal.get("edge", "")
