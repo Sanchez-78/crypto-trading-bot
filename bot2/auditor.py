@@ -102,17 +102,16 @@ def run_audit():
     blk = m.get("blocked", 0)
     if gen > 50:
         passed_rt = max(0, gen - flt - blk) / gen
-        if passed_rt < 0.02 and base > 0.50:
+        if passed_rt < 0.05 and base > 0.50:
             base = max(0.45, base - 0.05)
             print(f"  ⚠️  FILTER COLLAPSE: pass={passed_rt:.1%} → min_conf={base:.2f}")
 
     # ── Deadlock: no trades for 20 min (or no signals at all) → hard reset ───
     if since and since > 1200 and (gen == 0 or gen > 50):
-        if _min_confidence > 0.50 or _cooldown > 0:
-            _min_confidence = 0.50
-            _cooldown       = 0
-            base            = 0.50
-            print(f"  🔓 DEADLOCK RESET: {since/60:.0f}min no trades (gen={gen}) → conf=0.50  cooldown=0")
+        _min_confidence = 0.50
+        _cooldown       = 0
+        base            = 0.50
+        print(f"  🔓 DEADLOCK RESET: {since/60:.0f}min no trades (gen={gen}) → conf=0.50  cooldown=0")
 
     # ── Strategy weights ──────────────────────────────────────────────────────
     if t >= 10:

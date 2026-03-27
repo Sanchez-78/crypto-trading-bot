@@ -92,7 +92,7 @@ def evaluate_signal(signal):
         gen     = _m["signals_generated"]
         passed  = max(0, gen - _m.get("signals_filtered", 0) - _m.get("blocked", 0))
         pass_rt = passed / gen
-        if pass_rt < 0.01:
+        if pass_rt < 0.05:
             block_thr = 0.30
         elif _ss.get("trades", 0) >= 10 and _ss.get("winrate", 0.5) < 0.40:
             block_thr = 0.55

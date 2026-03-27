@@ -263,7 +263,7 @@ def on_price(data):
     if gen > 50:
         passed   = max(0, gen - flt - blk)
         pass_pct = passed / gen
-        if pass_pct < 0.02:
+        if pass_pct < 0.05:
             _collapsed = True   # collapse: pass anything with score ≥ 1
 
     if not _collapsed and score < min_score:
