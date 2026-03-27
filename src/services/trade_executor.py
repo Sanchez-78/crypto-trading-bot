@@ -71,14 +71,19 @@ def handle_signal(signal):
 
     # Position sizing: EV-scaled, auditor floor 0.7, strong-EV boost
     from src.services.learning_event           import get_metrics as _gm
-    from src.services.realtime_decision_engine import get_ev_threshold
+    from src.services.realtime_decision_engine import get_ev_threshold, get_ws_threshold
     _t   = _gm().get("trades", 0)
     ev   = signal.get("ev", 0.05)
+    ws   = signal.get("ws", 0.5)
     af   = min(1.0, max(0.7, signal.get("auditor_factor", 1.0)))
     base = 0.05 if _t >= 20 else 0.025
-    size = base * min(3.0, max(0.5, ev * 5)) * af
-    if ev > get_ev_threshold() * 1.5:
-        size *= 1.5                          # strong-edge boost
+    thr  = get_ev_threshold()
+    # WS-proportional sizing: scale by how far above ws threshold
+    ws_thr = get_ws_threshold()
+    ws_ratio = (ws / ws_thr) if ws_thr > 0 else 1.0
+    size = base * min(3.0, max(0.5, ws_ratio)) * af
+    if ev > thr * 1.5:
+        size *= 1.5                          # strong EV boost
     size = max(0.005, size)
 
     # TP/SL: edge-specific ATR multipliers
@@ -156,8 +161,9 @@ def on_price(data):
         outcome  = 1 if result == "WIN" else 0
         p        = float(pos["signal"].get("confidence", 0.5))
         features = pos["signal"].get("features", {})
+        regime   = pos["signal"].get("regime", "RANGING")
         update_calibrator(p, outcome)
-        update_edge_stats(features, outcome)
+        update_edge_stats(features, outcome, regime)
     except Exception:
         pass
 

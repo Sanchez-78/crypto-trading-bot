@@ -226,10 +226,10 @@ def _score_direction(hist, e50, e200, breakout_up, breakout_down, mom5, action):
     return sum(1 for v in features.values() if v), features
 
 
-def _get_scored_edge(hist, e50, e200, breakout_up, breakout_down, mom5):
+def _get_scored_edge(hist, e50, e200, breakout_up, breakout_down, mom5, reg):
     """
     Score BUY and SELL setups; pick direction with base_score >= SCORE_MIN.
-    Apply weighted_score >= W_SCORE_MIN gate (self-learning).
+    Gates: allow_combo (diversity) → adaptive ws threshold → exploration 10%.
     Returns (base_score, w_score, action, edge_type, features) or (0,0,None,None,{}).
     """
     if len(hist) < 51:
@@ -238,8 +238,12 @@ def _get_scored_edge(hist, e50, e200, breakout_up, breakout_down, mom5):
     buy_sc,  buy_f  = _score_direction(hist, e50, e200, breakout_up, breakout_down, mom5, "BUY")
     sell_sc, sell_f = _score_direction(hist, e50, e200, breakout_up, breakout_down, mom5, "SELL")
 
+    from src.services.realtime_decision_engine import (
+        weighted_score as _ws, SCORE_MIN,
+        get_ws_threshold as _thr, score_history as _sh, _std,
+        allow_combo, combo_usage)
+
     # Pick direction with higher score; require minimum SCORE_MIN
-    from src.services.realtime_decision_engine import weighted_score as _ws, SCORE_MIN
     if buy_sc >= sell_sc and buy_sc >= SCORE_MIN:
         action, base_score, features = "BUY",  buy_sc,  buy_f
     elif sell_sc > buy_sc and sell_sc >= SCORE_MIN:
@@ -247,20 +251,27 @@ def _get_scored_edge(hist, e50, e200, breakout_up, breakout_down, mom5):
     else:
         return 0, 0.0, None, None, {}
 
-    # Self-learning weighted score gate (adaptive threshold + stability guard)
-    from src.services.realtime_decision_engine import (
-        get_ws_threshold as _thr, score_history as _sh, _std)
-    w_score = _ws(features)
-    _sh.append(w_score)           # track all evaluated scores (including rejected)
+    # Combo diversity gate: max 3 uses per session per unique pattern
+    combo = tuple(sorted(k for k, v in features.items() if isinstance(v, bool) and v))
+    if not allow_combo(combo):
+        return base_score, 0.0, None, None, {}
 
-    # Stability guard: collapsed score distribution = no edge differentiation
-    if len(_sh) >= 50 and _std(list(_sh)) < 0.05:
+    # Weighted score (regime-aware)
+    w_score = _ws(features, reg)
+    _sh.append(w_score)
+
+    # Rolling stability guard: std of last 20 scores < 0.07 = flat distribution
+    if len(_sh) >= 20 and _std(list(_sh)[-20:]) < 0.07:
         return base_score, w_score, None, None, {}
 
-    if w_score < _thr():
-        return base_score, w_score, None, None, {}
+    # Threshold gate with 10% exploration (epsilon-greedy)
+    thr = _thr()
+    if w_score < thr:
+        import random
+        if random.random() > 0.10:   # 90% skip, 10% explore below threshold
+            return base_score, w_score, None, None, {}
 
-    # Edge type classification for TP/SL selection
+    # Edge type for TP/SL selection
     if features["trend"] and features["pullback"] and features["bounce"]:
         edge = "trend_pullback"
     elif features["vol"] and features["breakout"]:
@@ -338,7 +349,7 @@ def on_price(data):
 
     # ── Edge scoring: 7-feature self-learning gate ────────────────────────────
     base_sc, w_sc, action, edge, edge_features = _get_scored_edge(
-        hist, e50, e200, breakout_up, breakout_down, mom5)
+        hist, e50, e200, breakout_up, breakout_down, mom5, reg)
     if action is None:
         track_filtered()
         return
@@ -405,6 +416,7 @@ def on_price(data):
         "atr":        atr_v,
         "regime":     reg,
         "edge":       edge,
+        "ws":         round(w_sc, 4),
         "features": {
             # 7 boolean edge features (used for self-learning update_edge_stats)
             **edge_features,

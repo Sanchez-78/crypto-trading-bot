@@ -235,11 +235,12 @@ def bootstrap_from_history(trades):
             p        = float(t.get("confidence", 0.5))
             result   = t.get("result")
             features = t.get("features", {})
+            regime   = t.get("regime", "RANGING")
             if result in ("WIN", "LOSS"):
                 outcome = 1 if result == "WIN" else 0
                 calibrator.update(p, outcome)
                 if features:
-                    update_edge_stats(features, outcome)
+                    update_edge_stats(features, outcome, regime)
         _seeded[0] = True
         total  = sum(v[1] for v in calibrator.buckets.values())
         edge_n = sum(v[1] for v in

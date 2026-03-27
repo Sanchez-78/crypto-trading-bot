@@ -68,8 +68,9 @@ W_SCORE_MIN  = 0.50   # cold-start floor for weighted avg score
 DECAY        = 0.98   # exponential decay applied to counts each update
 score_history = deque(maxlen=200)   # w_scores of all evaluated winning-dir setups
 
-edge_stats  = {}   # feature_name -> [eff_wins, eff_total]  (decayed floats)
-combo_stats = {}   # tuple(sorted active features) -> [wins, total]  (no decay)
+edge_stats  = {}   # (feature_name, regime) -> [eff_wins, eff_total]  (decayed)
+combo_stats = {}   # (combo_tuple, regime)  -> [wins, total]  (no decay, Laplace gate)
+combo_usage = {}   # combo_tuple -> int  (session use count; resets on restart)
 
 
 def _std(lst):
@@ -81,76 +82,85 @@ def _std(lst):
     return (sum((x - m) ** 2 for x in lst) / n) ** 0.5
 
 
-def update_edge_stats(features, outcome):
+def update_edge_stats(features, outcome, regime="RANGING"):
     """
-    Update individual feature counts (decayed) AND combo counts (not decayed).
-    Decay allows adaptation to regime changes.
-    Combo tracks interaction effects between features.
+    Update regime-split feature stats (decayed) AND regime-split combo stats.
+    Regime split prevents bull-market weights polluting bear-market decisions.
     """
     active = tuple(sorted(k for k, v in features.items()
                           if isinstance(v, bool) and v))
-    # Combo update (no decay — needs stable counts for min-sample gate)
+    # Combo update — no decay (needs stable counts for Laplace gate)
     if active:
-        if active not in combo_stats:
-            combo_stats[active] = [0, 0]
-        combo_stats[active][1] += 1
+        key = (active, regime)
+        if key not in combo_stats:
+            combo_stats[key] = [0, 0]
+        combo_stats[key][1] += 1
         if outcome == 1:
-            combo_stats[active][0] += 1
+            combo_stats[key][0] += 1
 
-    # Individual feature update with decay
+    # Individual feature update with exponential decay
     for k, v in features.items():
         if isinstance(v, bool) and v:
-            if k not in edge_stats:
-                edge_stats[k] = [0.0, 0.0]
-            edge_stats[k][0] *= DECAY
-            edge_stats[k][1] *= DECAY
-            edge_stats[k][1] += 1.0
+            fk = (k, regime)
+            if fk not in edge_stats:
+                edge_stats[fk] = [0.0, 0.0]
+            edge_stats[fk][0] *= DECAY
+            edge_stats[fk][1] *= DECAY
+            edge_stats[fk][1] += 1.0
             if outcome == 1:
-                edge_stats[k][0] += 1.0
+                edge_stats[fk][0] += 1.0
 
 
-def feature_weight(k):
-    """
-    Laplace-smoothed WR: (wins + 5) / (total + 10).
-    Prior = 0.5 at zero samples; converges to empirical WR with more data.
-    No hard sample minimum — smoothing handles uncertainty.
-    """
-    if k in edge_stats:
-        w, t = edge_stats[k]
+def feature_weight(k, regime="RANGING"):
+    """Laplace-smoothed regime-aware WR: (wins+5)/(total+10). Prior=0.5."""
+    fk = (k, regime)
+    if fk in edge_stats:
+        w, t = edge_stats[fk]
         return (w + 5.0) / (t + 10.0)
     return 0.5
 
 
-def combo_weight(features):
+def combo_weight(features, regime="RANGING"):
     """
-    WR of the exact feature combination seen before.
-    Requires ≥ 20 observations; else None (falls back to individual weights).
+    Laplace-smoothed WR of exact feature combo in this regime.
+    Requires ≥ 30 observations; else None.
     """
     active = tuple(sorted(k for k, v in features.items()
                           if isinstance(v, bool) and v))
-    if active in combo_stats and combo_stats[active][1] >= 20:
-        w, t = combo_stats[active]
-        return w / t
+    key = (active, regime)
+    if key in combo_stats and combo_stats[key][1] >= 30:
+        w, t = combo_stats[key]
+        return (w + 5.0) / (t + 10.0)
     return None
 
 
-def weighted_score(features):
+def allow_combo(combo):
     """
-    Average Laplace-smoothed weight across active features.
-    Bad features (WR < 0.4) penalised by -0.2.
-    Blended 50/50 with combo WR if combo has ≥ 20 observations.
+    Limit each combo to 3 uses per session — forces pattern diversity.
+    Resets on restart (in-memory). Returns True if allowed, increments count.
+    """
+    if combo_usage.get(combo, 0) >= 3:
+        return False
+    combo_usage[combo] = combo_usage.get(combo, 0) + 1
+    return True
+
+
+def weighted_score(features, regime="RANGING"):
+    """
+    Regime-aware average Laplace weight. Bad features (WR<0.4) penalised -0.2.
+    Blended 50/50 with regime-split combo WR if ≥30 combo observations.
     """
     weights = []
     for k, v in features.items():
         if isinstance(v, bool) and v:
-            w = feature_weight(k)
+            w = feature_weight(k, regime)
             if w < 0.4:
                 w -= 0.2
             weights.append(w)
     if not weights:
         return 0.0
     base = sum(weights) / len(weights)
-    cw   = combo_weight(features)
+    cw   = combo_weight(features, regime)
     return (base + cw) / 2.0 if cw is not None else base
 
 
@@ -178,11 +188,12 @@ def _seed_calibrator(trades):
         p        = float(t.get("confidence", 0.5))
         result   = t.get("result")
         features = t.get("features", {})
+        regime   = t.get("regime", "RANGING")
         if result in ("WIN", "LOSS"):
             outcome = 1 if result == "WIN" else 0
             calibrator.update(p, outcome)
             if features:
-                update_edge_stats(features, outcome)
+                update_edge_stats(features, outcome, regime)
     total   = sum(v[1] for v in calibrator.buckets.values())
     edge_n  = sum(v[1] for v in edge_stats.values())
     combo_n = sum(v[1] for v in combo_stats.values())
