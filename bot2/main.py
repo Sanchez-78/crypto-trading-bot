@@ -530,7 +530,35 @@ def main():
             _last_audit = now
 
         if now - _last_metrics >= METRICS_INTERVAL:
-            save_metrics_full(get_metrics(), get_open_positions())
+            _pos = get_open_positions()
+            execution_data = None
+            try:
+                from src.services.dashboard_live import dashboard_snapshot, dashboard_metrics
+                snap  = dashboard_snapshot(_pos)
+                met   = dashboard_metrics()
+                fscore = float(snap.get("failure", 0.0))
+                # Serialise symbols dict: round float values for Firestore
+                syms = {
+                    sym: {"ev": round(float(v["ev"]), 5),
+                          "size": round(float(v["size"]), 5),
+                          "reg": str(v["reg"])}
+                    for sym, v in snap.get("symbols", {}).items()
+                }
+                execution_data = {
+                    "equity":       round(float(snap.get("equity",   1.0)), 6),
+                    "drawdown":     round(float(snap.get("drawdown", 0.0)), 6),
+                    "exposure":     round(float(snap.get("exposure", 0.0)), 4),
+                    "failure_score": round(fscore, 3),
+                    "control":      "HALT" if fscore > 3.0 else "WARN" if fscore > 1.5 else "OK",
+                    "sharpe":       round(float(met.get("sharpe",   0.0)), 4),
+                    "avg_edge":     round(float(met.get("avg_edge", 0.0)), 6),
+                    "exec_winrate": round(float(met.get("winrate",  0.0)), 4),
+                    "max_dd":       round(float(met.get("max_dd",   0.0)), 4),
+                    "symbols":      syms,
+                }
+            except Exception as _ex:
+                pass
+            save_metrics_full(get_metrics(), _pos, execution=execution_data)
             _last_metrics = now
 
         print_status()
