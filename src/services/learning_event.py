@@ -29,6 +29,9 @@ _last_signals   = {}
 _recent_results = []
 _sym_stats      = {}
 _trade_times    = []   # rolling timestamps of completed trades
+_ev_history     = []   # EV values of last 50 executed trades
+_close_reasons  = {"TP": 0, "SL": 0, "trail": 0, "timeout": 0}
+_regime_stats   = {}   # regime -> {"wins": int, "trades": int}
 
 
 def track_price(symbol, price):
@@ -94,9 +97,27 @@ def _update_metrics_locked(signal, trade):
 
     _update_sym(sym, result, profit)
 
+    # EV history (last 50 executed trades)
+    ev = float(signal.get("ev", 0))
+    if ev > 0:
+        _ev_history.append(ev)
+        if len(_ev_history) > 50: _ev_history.pop(0)
+
+    # Close-reason breakdown
+    reason = trade.get("close_reason", "")
+    if reason in _close_reasons:
+        _close_reasons[reason] += 1
+
+    # Regime-specific WR
+    regime = signal.get("regime", "RANGING")
+    rs = _regime_stats.setdefault(regime, {"wins": 0, "trades": 0})
+    rs["trades"] += 1
+    if result == "WIN": rs["wins"] += 1
+
     _last_signals[sym] = {
         "action": signal["action"], "price": signal["price"],
         "confidence": conf, "result": result,
+        "ev": ev, "regime": regime,
     }
 
     _recent_results.append(result)
@@ -189,6 +210,20 @@ def bootstrap_from_history(trades):
         m["confidence_avg"] = m["confidence_avg"] * 0.9 + conf * 0.1
         _update_sym(sym, result, profit)
 
+        # Bootstrap new trackers
+        ev = float(trade.get("ev", 0))
+        if ev > 0:
+            _ev_history.append(ev)
+        reason = trade.get("close_reason", "")
+        if reason in _close_reasons:
+            _close_reasons[reason] += 1
+        regime = trade.get("regime", "RANGING")
+        rs = _regime_stats.setdefault(regime, {"wins": 0, "trades": 0})
+        rs["trades"] += 1
+        if result == "WIN": rs["wins"] += 1
+
+    if len(_ev_history) > 50: _ev_history[:] = _ev_history[-50:]
+
     if m["wins"]   > 0: m["avg_win"]  = m["gross_wins"]   / m["wins"]
     if m["losses"] > 0: m["avg_loss"] = m["gross_losses"]  / m["losses"]
 
@@ -219,3 +254,41 @@ def track_blocked():   METRICS["blocked"]           += 1
 def track_regime(r):
     if r in METRICS["regimes"]:
         METRICS["regimes"][r] += 1
+
+
+def get_ev_stats():
+    """Returns avg/min/max EV of last 50 executed trades."""
+    if not _ev_history:
+        return {"avg": 0.0, "min": 0.0, "max": 0.0, "count": 0}
+    return {
+        "avg":   round(sum(_ev_history) / len(_ev_history), 4),
+        "min":   round(min(_ev_history), 4),
+        "max":   round(max(_ev_history), 4),
+        "count": len(_ev_history),
+    }
+
+
+def get_close_stats():
+    """Returns close-reason counts and percentages."""
+    total = sum(_close_reasons.values())
+    if not total:
+        return {k: {"n": 0, "pct": 0.0} for k in _close_reasons}
+    return {k: {"n": v, "pct": round(v / total * 100, 1)}
+            for k, v in _close_reasons.items()}
+
+
+def get_regime_stats():
+    """Returns WR per regime for executed trades."""
+    out = {}
+    for regime, rs in _regime_stats.items():
+        t = rs["trades"]
+        out[regime] = {
+            "trades": t,
+            "winrate": round(rs["wins"] / t, 3) if t else 0.0,
+        }
+    return out
+
+
+def trades_per_hour():
+    """Estimated trade rate from last 60 minutes."""
+    return trades_in_window(3600)

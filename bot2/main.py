@@ -326,58 +326,114 @@ def print_status():
                   f"{g(f'{sproft:+.8f}', pcol):>12}  {icon}")
 
     # ── Learning ──────────────────────────────────────────────────────────────
-    print(section("", "UCENI – JAK ROBOT ROSTE"))
+    from src.services.learning_event import get_ev_stats, get_close_stats, get_regime_stats
+    ev_st  = get_ev_stats()
+    cl_st  = get_close_stats()
+    rg_st  = get_regime_stats()
 
+    print(section("", "UCENI – STAV A USPESNOST"))
+
+    # Calibration progress
     if t >= 50:
-        cal_label = g("KALIBROVAN  " + "\u2713", C.GRN + C.BLD)
+        cal_label = g("KALIBROVAN  \u2713", C.GRN + C.BLD)
         cal_note  = g(f"({t} obchodu celkem)", C.GRY)
     else:
         cal_label = g(f"{t} / 50 obchodu", C.BLU + C.BLD)
         cal_note  = g(f"({50 - t} zbyvа)", C.GRY)
-    print(f"    {g('Kalibrace', C.GRY)}    "
+    print(f"    {g('Kalibrace', C.GRY)}      "
           f"{cal_label}  "
           f"{blue_bar(t, 50)}  "
           f"{cal_note}")
 
-    if t < 10:
-        print(f"    {g('Sbiram prvni data – potrebuji 50 obchodu pro plnou kalibraci.', C.GRY)}")
-    else:
+    # Learning trend + recent vs overall WR
+    if t >= 10:
         tcol  = C.GRN if "ZLEP" in trend else (C.RED if "ZHOR" in trend else C.YLW)
         delta = rwr - wr
         dcol  = C.GRN if delta > 0 else C.RED
-        print(f"    {g('Trend uceni', C.GRY)}   {g(trend, tcol + C.BLD)}")
-        print(f"    {g(f'Poslednich {rc}', C.GRY)}   "
+        print(f"    {g('Trend uceni', C.GRY)}    {g(trend, tcol + C.BLD)}")
+        print(f"    {g(f'Poslednich {rc}', C.GRY)}    "
               f"{g(f'{rwr*100:.1f}%', C.WHT)}  vs  prumer {g(f'{wr*100:.1f}%', C.WHT)}  "
               f"{g(f'({delta:+.1%})', dcol)}")
+    else:
+        print(f"    {g('Sbiram data – potrebuji 50 obchodu pro plnou kalibraci.', C.GRY)}")
 
-    conf_col  = C.GRN if conf >= 0.6 else (C.YLW if conf >= 0.3 else C.RED)
-    conf_note = "vysoka" if conf >= 0.6 else ("stredni" if conf >= 0.3 else "nizka")
-    print(f"    {g('Jistota', C.GRY)}       "
-          f"{g(f'{conf*100:.1f}%', conf_col + C.BLD)}  "
-          f"{cbar(conf, 1.0, lo=0.3, hi=0.6)}  "
-          f"{g(conf_note, conf_col)}")
+    # EV performance
+    if ev_st["count"] > 0:
+        ev_avg     = ev_st["avg"];  ev_min = ev_st["min"]
+        ev_max     = ev_st["max"];  ev_cnt = ev_st["count"]
+        ev_avg_col = C.GRN if ev_avg >= 0.1 else (C.YLW if ev_avg >= 0.05 else C.RED)
+        print(f"    {g('EV vykon', C.GRY)}       "
+              f"prumer {g(f'{ev_avg:.3f}', ev_avg_col + C.BLD)}  "
+              f"min {g(f'{ev_min:.3f}', C.GRY)}  "
+              f"max {g(f'{ev_max:.3f}', C.GRY)}  "
+              f"{g(f'({ev_cnt} obch)', C.GRY)}")
+    else:
+        print(f"    {g('EV vykon', C.GRY)}       {g('zadna data', C.GRY)}")
+
+    # Close-reason breakdown
+    total_cl = sum(v["n"] for v in cl_st.values())
+    if total_cl > 0:
+        tp_pct  = cl_st["TP"]["pct"];      sl_pct  = cl_st["SL"]["pct"]
+        tr_pct  = cl_st["trail"]["pct"];   to_pct  = cl_st["timeout"]["pct"]
+        tp_col  = C.GRN if tp_pct >= 40 else C.YLW
+        sl_col  = C.RED if sl_pct >= 40 else C.YLW
+        tr_col  = C.GRN if tr_pct >= 10 else C.GRY
+        to_col  = C.RED if to_pct >= 30 else C.YLW
+        print(f"    {g('Uzavreni', C.GRY)}       "
+              f"TP {g(f'{tp_pct:.0f}%', tp_col + C.BLD)}  "
+              f"SL {g(f'{sl_pct:.0f}%', sl_col)}  "
+              f"trail {g(f'{tr_pct:.0f}%', tr_col)}  "
+              f"timeout {g(f'{to_pct:.0f}%', to_col)}")
+    else:
+        print(f"    {g('Uzavreni', C.GRY)}       {g('zadna data', C.GRY)}")
+
+    # Win-prob calibration quality: avg conf vs actual WR
+    if t >= 5:
+        cal_drift = abs(conf - wr)
+        cal_col   = C.GRN if cal_drift < 0.08 else (C.YLW if cal_drift < 0.15 else C.RED)
+        cal_note2 = "dobre" if cal_drift < 0.08 else ("ok" if cal_drift < 0.15 else "odkalibrovan")
+        print(f"    {g('Kalibrace p', C.GRY)}    "
+              f"p={g(f'{conf*100:.1f}%', C.WHT)}  WR={g(f'{wr*100:.1f}%', C.WHT)}  "
+              f"odchylka {g(f'{cal_drift*100:.1f}pp', cal_col + C.BLD)}  "
+              f"{g(cal_note2, cal_col)}")
+
+    # Regime-specific WR table
+    if rg_st:
+        print(f"    {g('WR dle rezimu', C.GRY)}")
+        regime_order = ["BULL_TREND", "BEAR_TREND", "RANGING", "QUIET_RANGE", "HIGH_VOL"]
+        for reg in regime_order:
+            if reg not in rg_st: continue
+            rs   = rg_st[reg]
+            rwr2 = rs["winrate"]
+            rcol = C.GRN if rwr2 >= 0.55 else (C.YLW if rwr2 >= 0.45 else C.RED)
+            label = {"BULL_TREND": "BULL ", "BEAR_TREND": "BEAR ",
+                     "RANGING": "RANGE", "QUIET_RANGE": "QUIET", "HIGH_VOL": "HVOL "}.get(reg, reg[:5])
+            rnt = rs["trades"]
+            print(f"      {g(label, C.WHT + C.BLD)}  "
+                  f"{cbar(rwr2, 1.0, lo=0.45, hi=0.55)}  "
+                  f"{g(f'{rwr2*100:.0f}%', rcol + C.BLD)}  "
+                  f"{g(f'({rnt} obch)', C.GRY)}")
 
     # ── Auditor status ────────────────────────────────────────────────────────
     from bot2.auditor import is_in_cooldown, get_position_size_mult
-    from src.services.learning_event import trades_in_window
+    from src.services.learning_event import trades_in_window, trades_per_hour
     in_cd    = is_in_cooldown()
     sz_mult  = get_position_size_mult()
     t15      = trades_in_window(900)
-    ev_thr   = 0.02
-    if t15 < 3:  ev_thr = max(0.01, ev_thr - 0.01)
-    if t15 == 0: ev_thr = 0.0
+    t1h      = trades_per_hour()
+    ev_thr   = 0.0
     if t15 > 10: ev_thr = min(0.05, ev_thr + 0.005)
-    ev_col   = C.GRN if ev_thr <= 0.02 else C.YLW
+    ev_col   = C.GRN if ev_thr == 0.0 else C.YLW
     sz_col   = C.GRN if sz_mult >= 1.0 else (C.YLW if sz_mult >= 0.5 else C.RED)
-    cd_tag   = g("  ⏸ COOLDOWN", C.RED + C.BLD) if in_cd else g("  aktivní", C.GRN)
+    cd_tag   = g("  COOLDOWN", C.RED + C.BLD) if in_cd else g("  aktivni", C.GRN)
     print(section("", "AUDITOR  (ochrana strategie)"))
-    print(f"    {g('EV práh', C.GRY)}              "
+    print(f"    {g('EV prah', C.GRY)}              "
           f"{g(f'{ev_thr:.3f}', ev_col + C.BLD)}  "
-          f"{g(f't15={t15}', C.GRY)}"
+          f"{g(f't15={t15}  t60={t1h}', C.GRY)}"
           f"{cd_tag}")
     print(f"    {g('Velikost pozice', C.GRY)}      "
-          f"{g(f'{sz_mult:.2f}×', sz_col + C.BLD)}  "
-          f"{g('EV-only gate · loss streak → scale down · DD halt 40%', C.GRY)}")
+          f"{g(f'{sz_mult:.2f}x', sz_col + C.BLD)}  "
+          f"{g('EV-only · loss streak → scale · DD halt 40%', C.GRY)}")
 
     # ── Strategy / Signals ────────────────────────────────────────────────────
     print(section("", "STRATEGIE  (ADX + EMA + MACD + BB + RSI)"))
@@ -409,14 +465,20 @@ def print_status():
             action = sig["action"]
             sprice = sig["price"]
             sconf  = sig["confidence"] * 100
+            sev    = sig.get("ev", 0)
+            sreg   = sig.get("regime", "")
             res    = sig.get("result")
             is_buy = action == "BUY"
             act    = g("KUPUJ ", C.GRN + C.BLD) if is_buy else g("PRODEJ", C.RED + C.BLD)
-            rtag   = (g("  -> VYHRA",  C.GRN) if res == "WIN"
-                      else g("  -> PROHRA", C.RED) if res == "LOSS" else "")
+            rtag   = (g("  VYHRA",  C.GRN + C.BLD) if res == "WIN"
+                      else g("  PROHRA", C.RED + C.BLD) if res == "LOSS" else "")
+            ev_tag = g(f"  ev:{sev:.3f}", C.CYN) if sev else ""
+            reg_short = {"BULL_TREND": "BULL", "BEAR_TREND": "BEAR",
+                         "RANGING": "RANGE", "QUIET_RANGE": "QUIET"}.get(sreg, sreg[:5])
             print(f"    {g(short, C.WHT + C.BLD):<4}  {act}  "
                   f"{g(f'${sprice:,.4f}', C.WHT)}  "
-                  f"{g(f'conf:{sconf:.0f}%', C.GRY)}"
+                  f"{g(f'p:{sconf:.0f}%', C.GRY)}"
+                  f"{ev_tag}  {g(reg_short, C.GRY)}"
                   f"{rtag}")
 
     # ── Footer ────────────────────────────────────────────────────────────────
