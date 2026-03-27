@@ -463,6 +463,32 @@ def save_metrics_full(metrics, open_positions=None):
         print(f"❌ save_metrics_full: {e}")
 
 
+# ── Auditor state ─────────────────────────────────────────────────────────────
+
+def save_auditor_state(data):
+    """Persist auditor state (min_conf, pos_size_mult) across restarts."""
+    if db is None:
+        return
+    try:
+        db.collection("metrics").document("auditor").set(
+            {**data, "saved_at": time.time()}, merge=False
+        )
+    except Exception as e:
+        print(f"❌ save_auditor_state: {e}")
+
+
+def load_auditor_state():
+    """Load persisted auditor state; returns {} if not found."""
+    if db is None:
+        return {}
+    try:
+        doc = db.collection("metrics").document("auditor").get()
+        return doc.to_dict() or {}
+    except Exception as e:
+        print(f"❌ load_auditor_state: {e}")
+        return {}
+
+
 # ── Config ────────────────────────────────────────────────────────────────────
 
 def load_config():

@@ -13,7 +13,7 @@ import src.services.trade_executor
 _last_audit   = 0
 _last_metrics = 0
 AUDIT_INTERVAL   = 30    # seconds
-METRICS_INTERVAL = 10    # save metrics/latest every 10 s (was 30 s)
+METRICS_INTERVAL = 30    # save metrics/latest every 30 s (frees ~5 760 writes/day)
 
 _start_time = time.time()
 SYMBOLS     = ["BTCUSDT", "ETHUSDT", "ADAUSDT"]

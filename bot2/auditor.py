@@ -16,6 +16,7 @@ Parameters:
 from bot2.stabilizer       import Stabilizer
 from bot2.strategy_weights import StrategyWeights
 from src.services.learning_event import get_metrics
+from src.services.firebase_client import save_auditor_state, load_auditor_state
 
 _stab    = Stabilizer()
 _weights = StrategyWeights()
@@ -61,11 +62,20 @@ def run_audit():
     t           = m.get("trades",        0)
     since       = m.get("since_last")
 
-    # ── First run: snapshot bootstrap state, no cooldown ─────────────────────
+    # ── First run: restore persisted state, snapshot bootstrap ──────────────
     if not _initialized:
         _prev_loss_streak = loss_streak
         _initialized = True
-        print(f"  🔍 AUDITOR init: bootstrap streak={loss_streak}  (no cooldown)")
+        try:
+            saved = load_auditor_state()
+            if saved.get("min_conf"):
+                _min_confidence     = float(saved["min_conf"])
+                _position_size_mult = float(saved.get("pos_size_mult", 1.0))
+                print(f"  🔍 AUDITOR restored: conf={_min_confidence:.2f}  sz={_position_size_mult:.2f}")
+            else:
+                print(f"  🔍 AUDITOR init: bootstrap streak={loss_streak}  (no saved state)")
+        except Exception:
+            print(f"  🔍 AUDITOR init: bootstrap streak={loss_streak}  (no cooldown)")
         return
 
     # ── Cooldown: only if streak GREW in this session AND hit ≥ 4 ────────────
@@ -136,3 +146,15 @@ def run_audit():
     sz_tag   = f"  sz×{_position_size_mult:.2f}" if _position_size_mult < 1.0 else ""
     print(f"  🔍 AUDITOR: conf={_min_confidence:.2f}  streak={loss_streak}"
           f"  WR:{rwr:.0%}{cd_tag}{sz_tag}")
+
+    # Persist state so it survives restarts
+    try:
+        save_auditor_state({
+            "min_conf":      round(_min_confidence, 4),
+            "pos_size_mult": round(_position_size_mult, 4),
+            "loss_streak":   loss_streak,
+            "win_streak":    win_streak,
+            "cooldown":      _cooldown,
+        })
+    except Exception:
+        pass
