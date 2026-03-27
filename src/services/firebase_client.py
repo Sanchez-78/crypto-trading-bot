@@ -3,14 +3,19 @@ Firebase client – centralized Firestore access layer.
 
 Free-tier quotas: 50 000 reads/day · 20 000 writes/day · 1 GB storage
 
-Optimizations:
-  - History cache 600 s  → ≤ 14 400 reads/day  (100 docs × 144 fetches)
-  - Weights  cache 300 s → negligible reads
-  - Signals  cache 900 s → negligible reads
-  - Cache updated on every write  → avoids re-fetch after save_batch
-  - Slim trade documents          → ~40% smaller, same write count
-  - Firestore WriteBatch          → atomic, single round-trip per batch
-  - All missing functions added   → no ImportError from legacy modules
+PERF_MODE=False  conservative (default):
+  history  600 s / 100 docs  →  14 400 reads/day
+  weights  300 s             →     288 reads/day
+  signals  900 s             →  negligible
+  writes   ~10 300/day                           ✅ safe
+
+PERF_MODE=True  performance (enable when WR>45% AND PF>1.5):
+  history  300 s / 200 docs  →  57 600 reads/day  ⚠ near limit — monitor
+  weights  120 s             →     720 reads/day
+  signals  600 s             →  negligible
+  writes   ~11 500/day                           ✅ safe
+
+Switch: set PERF_MODE=True in this file; restart bot.
 """
 
 import firebase_admin
@@ -25,12 +30,16 @@ _HISTORY_CACHE  = {"data": [],   "ts": 0}
 _WEIGHTS_CACHE  = {"data": None, "ts": 0}
 _SIGNALS_CACHE  = {"data": [],   "ts": 0}
 
-HISTORY_LIMIT  = 100
+# ── Performance tier ───────────────────────────────────────────────────────────
+# False = conservative (default).  True = performance (flip when WR>45%, PF>1.5)
+PERF_MODE = False
+
+HISTORY_LIMIT  = 200 if PERF_MODE else 100   # docs per fetch
 SIGNALS_LIMIT  = 200
 
-HISTORY_TTL    = 600   # 10 min
-WEIGHTS_TTL    = 300   # 5  min
-SIGNALS_TTL    = 900   # 15 min
+HISTORY_TTL    = 300 if PERF_MODE else 600   # 5 min  vs  10 min
+WEIGHTS_TTL    = 120 if PERF_MODE else 300   # 2 min  vs   5 min
+SIGNALS_TTL    = 600 if PERF_MODE else 900   # 10 min vs  15 min
 
 
 # ── Init ──────────────────────────────────────────────────────────────────────
@@ -520,21 +529,24 @@ def load_config():
 def daily_budget_report():
     """
     Estimate daily Firebase operation counts (call once at startup).
-
-    Reads:
-      load_history:   100 docs × (86400 / 600)  = 14 400 reads/day   (cached 10 min)
-      load_weights:     1 doc  × (86400 / 300)  =    288 reads/day
-    Writes:
-      save_metrics_full  every 10 s              =  8 640 writes/day
-      save_batch         every 60 s              =  1 440 writes/day
-      save_last_trade    per trade (est. 200/d)  =    200 writes/day
-      total estimate                             ~ 10 280 writes/day
-    Limit: 50 000 reads · 20 000 writes/day
+    Limit: 50 000 reads · 20 000 writes/day (free tier).
     """
-    print("📊 Firebase daily budget:")
-    print("   Reads : load_history  ≤ 14 400/day  (cached 10 min)")
-    print("           load_weights  ≤    288/day")
-    print("   Writes: metrics/latest every 10s  =  8 640/day")
-    print("           save_batch    every 60s   =  1 440/day")
-    print("           save_last_trade (est.)    =    200/day")
-    print("   Total : ~10 280 writes/day  (limit 20 000)  ✅")
+    mode = "PERFORMANCE" if PERF_MODE else "CONSERVATIVE"
+    hl   = HISTORY_LIMIT
+    ht   = HISTORY_TTL
+    wt   = WEIGHTS_TTL
+
+    r_hist = hl * (86400 // ht)
+    r_wgt  = 86400 // wt
+    r_tot  = r_hist + r_wgt
+
+    print(f"📊 Firebase daily budget  [{mode}]")
+    print(f"   Reads : load_history  ≤ {r_hist:>6}/day  ({hl} docs, cache {ht}s)")
+    print(f"           load_weights  ≤ {r_wgt:>6}/day")
+    print(f"           total reads   ≈ {r_tot:>6}/day  (limit 50 000)  {'✅' if r_tot < 45000 else '⚠️'}")
+    print(f"   Writes: metrics/latest every 10s  =  8 640/day")
+    print(f"           save_batch    every 60s   =  1 440/day")
+    print(f"           save_last_trade (est.)    =    200/day")
+    print(f"   Total : ~10 280 writes/day  (limit 20 000)  ✅")
+    if not PERF_MODE:
+        print(f"   ℹ️  Set PERF_MODE=True when WR>45% AND PF>1.5 for fresher calibration")
