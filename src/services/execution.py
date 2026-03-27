@@ -217,12 +217,12 @@ def bandit_update(sym, reg, outcome):
 
 def bandit_score(sym, reg):
     """
-    UCB1 exploration bonus: WR + sqrt(2×ln(N+1)/plays).
-    Naturally routes toward under-explored (sym, reg) pairs.
+    UCB1 with cold-start damping: sqrt(2×ln(N+1)/(plays+5)).
+    +5 floor prevents exploding bonus for brand-new (sym,reg) pairs.
     """
     wins, plays = bandit_stats.get((sym, reg), (1, 2))
     total = sum(p for _, p in bandit_stats.values()) + 1
-    ucb   = wins / plays + float(np.sqrt(2.0 * np.log(total) / plays))
+    ucb   = wins / plays + float(np.sqrt(2.0 * np.log(total) / (plays + 5)))
     return ucb
 
 
@@ -259,12 +259,16 @@ def raw_risk_ev(sym, reg):
 
 
 def bayes_update(sym, reg, pnl):
-    """Update Beta posterior: win → alpha+1, loss → beta+1."""
+    """
+    Magnitude-weighted Beta update: w = min(|pnl|/0.02, 1).
+    Large wins/losses shift the posterior more; tiny scratches barely move it.
+    """
     a, b = bayes_stats.get((sym, reg), (5, 5))
+    w = min(abs(pnl) / 0.02, 1.0)
     if pnl > 0:
-        a += 1
+        a += w
     else:
-        b += 1
+        b += w
     bayes_stats[(sym, reg)] = (a, b)
 
 
@@ -430,14 +434,16 @@ def leverage(sym, reg):
 
 def execution_alpha(sym, ob):
     """
-    Depth-weighted OB imbalance nudge: 0.02 × (imb−1) × min(depth/100000, 1).
-    Thin books → strength→0 (unreliable signal).
-    Deep books → full ±2% nudge at extreme imbalance.
+    Depth-weighted OB nudge with asymmetric downside penalty.
+    Upside:   0.02 × (imb−1) × depth_strength  (bid-heavy → size up)
+    Downside: −0.01 × (1/imb if imb>1 else imb) (penalises both adverse sides)
+    Net effect is larger on the downside — conservative in thin/ask-heavy books.
     """
     imb      = ob.bid_vol / (ob.ask_vol + 1e-6)
     depth    = ob.bid_vol + ob.ask_vol
     strength = min(depth / 100_000.0, 1.0)
-    return 0.02 * (imb - 1.0) * strength
+    penalty  = (1.0 / imb) if imb > 1.0 else imb
+    return 0.02 * (imb - 1.0) * strength - 0.01 * penalty
 
 
 def final_size(sym, reg, base, positions, ob=None):
