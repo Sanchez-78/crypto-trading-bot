@@ -132,17 +132,21 @@ def evaluate_signal(signal):
     signal["confidence"] = min(signal["confidence"] * (0.5 + wr), 1.0)
 
     # ── Confidence calibration: bucket historical WR by confidence ────────────
-    # Anti-overfit: only active once ≥ 50 trades in history
+    # Anti-overfit: only active once ≥ 50 trades
+    # Threshold is relative to global WR to avoid deadlock when model is learning
     from src.services.learning_event import get_metrics as _gm5
-    if _gm5().get("trades", 0) >= 50:
-        conf_key  = round(signal["confidence"] * 10) / 10   # bucket to 0.1
-        bucket    = [t for t in history
-                     if abs(t.get("confidence", 0) - conf_key) < 0.06
-                     and t.get("result") in ("WIN", "LOSS")]
+    _m5 = _gm5()
+    if _m5.get("trades", 0) >= 50:
+        conf_key   = round(signal["confidence"] * 10) / 10
+        global_wr  = _m5.get("winrate", 0.5)
+        cal_floor  = max(0.35, global_wr - 0.12)   # 12pp below global WR, min 35%
+        bucket     = [t for t in history
+                      if abs(t.get("confidence", 0) - conf_key) < 0.06
+                      and t.get("result") in ("WIN", "LOSS")]
         if len(bucket) >= 5:
             cal_wr = sum(1 for t in bucket if t["result"] == "WIN") / len(bucket)
-            if cal_wr < 0.45:
-                print(f"    📉 CALIB block: conf_bucket={conf_key:.1f}  hist_WR={cal_wr:.0%}  n={len(bucket)}")
+            if cal_wr < cal_floor:
+                print(f"    📉 CALIB block: bucket={conf_key:.1f}  WR={cal_wr:.0%}<{cal_floor:.0%}  n={len(bucket)}")
                 track_blocked()
                 return None
 
