@@ -288,29 +288,7 @@ def capital_alloc(sym, reg, base, positions):
     return base * max(0.5, min(1.5, 0.5 + w))
 
 
-# ── Adaptive leverage ──────────────────────────────────────────────────────────
-
-def leverage():
-    """
-    Smooth linear leverage: 1.2 - 0.7 × min(dd/0.1, 1).
-    dd=0%   → 1.2×  (maximum; low-drawdown phase)
-    dd=10%  → 0.5×  (capital preservation floor)
-    dd>10%  → clamped at 0.5× (no further reduction)
-    Eliminates the step discontinuity that caused size jumps.
-    """
-    try:
-        from src.services.learning_event import METRICS
-        peak   = METRICS.get("equity_peak", 0.0) or 0.0
-        profit = METRICS.get("profit", 0.0) or 0.0
-        if peak > 0:
-            dd = (peak - (1.0 + profit)) / peak
-            return 1.2 - 0.7 * min(dd / 0.1, 1.0)
-    except Exception:
-        pass
-    return 1.2
-
-
-# ── Final position size (allocation × leverage) ────────────────────────────────
+# ── Exposure scale + leverage + final size ────────────────────────────────────
 
 def exposure_scale(positions):
     """
