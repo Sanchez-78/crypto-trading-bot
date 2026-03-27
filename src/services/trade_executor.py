@@ -29,16 +29,16 @@ _positions  = {}
 _last_flush = [0.0]
 
 FEE_RT      = 0.0020    # 0.20% round-trip Binance taker fees
-MIN_TP_PCT  = 0.0030    # 0.30% min TP
-MIN_SL_PCT  = 0.0025    # 0.25% min SL
+MIN_TP_PCT  = 0.0025    # 0.25% min TP
+MIN_SL_PCT  = 0.0020    # 0.20% min SL
 MAX_TICKS   = 60
 FLUSH_EVERY = 60
 
-_TP_MULT = {"BULL_TREND": 1.2, "BEAR_TREND": 1.2,
-            "RANGING":    1.2, "QUIET_RANGE": 1.2}
-_SL_MULT = {"BULL_TREND": 1.0, "BEAR_TREND": 1.0,
+_TP_MULT = {"BULL_TREND": 1.0, "BEAR_TREND": 1.0,
             "RANGING":    1.0, "QUIET_RANGE": 1.0}
-_TRAIL   = 0.5   # trailing offset = 0.5 × sl_move
+_SL_MULT = {"BULL_TREND": 0.8, "BEAR_TREND": 0.8,
+            "RANGING":    0.8, "QUIET_RANGE": 0.8}
+_TRAIL   = 0.4   # trailing offset = 0.4 × sl_move
 
 
 def get_open_positions():
