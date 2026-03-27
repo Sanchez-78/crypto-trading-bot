@@ -82,18 +82,13 @@ def run_audit():
     else:
         _position_size_mult = 1.0
 
-    # ── Dynamic min_confidence ────────────────────────────────────────────────
-    if rc >= 5:
-        if   rwr < 0.30: base = 0.70
-        elif rwr < 0.45: base = 0.62
-        elif rwr > 0.60: base = 0.50
-        else:            base = 0.55
-    else:
-        base = 0.55
+    # ── Dynamic min_confidence: streak-based (max 0.65 at streak=5) ─────────
+    # Ignores recent WR to avoid self-reinforcing deadlock when bot is stuck.
+    base = min(0.55 + loss_streak * 0.02, 0.65)
 
-    # Exploration mode: no trades for 15 min → lower threshold
+    # Exploration mode: no trades for 15 min → lower threshold by 0.10
     if since and since > 900:
-        base = max(0.45, base - 0.05)
+        base = max(0.45, base - 0.10)
 
     if abs(base - _min_confidence) >= 0.02:
         since_s = f"  since:{since:.0f}s" if since else ""
@@ -111,13 +106,13 @@ def run_audit():
             base = max(0.45, base - 0.05)
             print(f"  ⚠️  FILTER COLLAPSE: pass={passed_rt:.1%} → min_conf={base:.2f}")
 
-    # ── Deadlock: signals generated but no trades for 20 min → hard reset ────
-    if since and since > 1200 and gen > 50:
+    # ── Deadlock: no trades for 20 min (or no signals at all) → hard reset ───
+    if since and since > 1200 and (gen == 0 or gen > 50):
         if _min_confidence > 0.50 or _cooldown > 0:
             _min_confidence = 0.50
             _cooldown       = 0
             base            = 0.50
-            print(f"  🔓 DEADLOCK RESET: {since/60:.0f}min no trades → conf=0.50  cooldown=0")
+            print(f"  🔓 DEADLOCK RESET: {since/60:.0f}min no trades (gen={gen}) → conf=0.50  cooldown=0")
 
     # ── Strategy weights ──────────────────────────────────────────────────────
     if t >= 10:

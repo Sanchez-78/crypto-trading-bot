@@ -9,7 +9,7 @@ def subscribe(event, handler):
 
 def subscribe_once(event, handler):
     """Idempotent subscribe — no-op if already registered (prevents double-bind on reload)."""
-    key = f"{event}_{handler.__name__}"
+    key = f"{event}_{handler.__module__}_{handler.__name__}"
     if key in _subscription_keys:
         return
     _subscription_keys.add(key)
