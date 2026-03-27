@@ -24,7 +24,8 @@ from src.services.learning_event  import update_metrics
 from src.services.firebase_client import save_batch
 from src.services.execution       import (
     exec_order, valid, ob_adjust, cost_guard, pre_cost,
-    ev_adjust, fill_rate, capital_alloc, rotate_capital, OrderBook)
+    ev_adjust, fill_rate, final_size, rotate_capital,
+    update_returns, OrderBook)
 import time
 
 BATCH             = []
@@ -234,13 +235,13 @@ def handle_signal(signal):
     # Position sizing: EV-scaled, auditor floor 0.7, strong-EV boost
     import math
     from src.services.learning_event           import get_metrics as _gm
-    from src.services.realtime_decision_engine import (
-        get_ev_threshold, get_ws_threshold, equity_guard)
+    from src.services.realtime_decision_engine import get_ev_threshold, get_ws_threshold
     _t      = _gm().get("trades", 0)
     ev      = signal.get("ev", 0.05)
     explore = signal.get("explore", False)
     af      = min(1.0, max(0.7, signal.get("auditor_factor", 1.0)))
-    base    = capital_alloc(sym, reg, 0.05 if _t >= 20 else 0.025, _positions)
+    # final_size = capital_alloc(risk_parity+EV+cluster) × leverage(dd-adaptive)
+    base    = final_size(sym, reg, 0.05 if _t >= 20 else 0.025, _positions)
     thr     = get_ev_threshold()
     ws_thr  = get_ws_threshold()
     ws_ratio = (ws_adj / ws_thr) if ws_thr > 0 else 1.0
@@ -249,7 +250,6 @@ def handle_signal(signal):
         size *= 1.5
     if explore:
         size *= 0.3
-    size *= equity_guard()
     size  = _vol_adjust(size, signal)
     size  = max(0.005, size)
 
@@ -338,6 +338,7 @@ def on_price(data):
     }
 
     update_metrics(pos["signal"], trade)
+    update_returns(sym, profit)   # feeds correlation, vol, risk_parity calc
 
     # ── Calibration + edge learning feedback ──────────────────────────────────
     try:

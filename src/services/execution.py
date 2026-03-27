@@ -1,25 +1,27 @@
 """
-Regime-aware portfolio EV engine — stable feedback, capital routing.
+Portfolio risk-parity execution engine — correlation clustering + adaptive leverage.
 
-Slippage:
-  blended_slip: 70% book-walk + 30% per-symbol history (>=5 samples).
+Risk EV (Sharpe-like):
+  risk_ev = mean(pnl) / (std(pnl) + ε)  — rewards consistent EV, penalises variance.
+  Regime-split: prevents BULL_TREND weights polluting RANGING allocation.
 
-EV feedback (bounded):
-  true_ev(sym, reg): mean(ws - actual_slip) over last 50 trades for (sym, regime).
-  ev_conf(sym, reg): sample confidence = min(n/50, 1.0).
-  ev_adjust: ws + 0.3 * clamp(ev, -0.05, +0.05) * conf.
-  Clamp prevents runaway feedback; conf prevents cold-start noise.
+Capital allocation (three-factor):
+  score = risk_ev × risk_parity_weight × cluster_penalty
+  weight = score / total_score_of_open_positions
+  alloc  = base × clamp(0.5 + weight, 0.5, 1.5)
+  - risk_parity_weight = 1/vol → low-vol symbols get larger allocation (equal risk)
+  - cluster_penalty: ×0.5 for each open position with |corr| > 0.7 (avoids doubling up)
 
-Capital allocation:
-  capital_alloc: base * (0.5 + ev_weight), where weight = sym_ev / total_ev.
-  Floor at 0.5× base prevents starvation; EV drives up to 1.5× base.
+Leverage (drawdown-adaptive):
+  dd > 10%  → 0.5×   (capital preservation)
+  dd < 2%   → 1.2×   (light tailwind in low-drawdown phase)
+  otherwise → 1.0×
 
-Portfolio rotation:
-  rotate_capital: replaces worst (sym, reg) position if new signal EV is 20%
-  better. Returns (True, worst_sym) — caller handles the actual close.
+final_size = capital_alloc × leverage  (replaces fixed base in executor)
 
-Staleness:
-  dynamic_staleness: vol capped at 0.02 (2×) to prevent extreme widening.
+Rotation:
+  rotate_capital: true_ev 20% better AND ev_conf > 0.5 required.
+  Confidence gate prevents rotating on thin history.
 """
 
 import numpy as np
@@ -27,9 +29,10 @@ import time as _time
 
 # ── Per-symbol session state ───────────────────────────────────────────────────
 
-slippage_hist: dict = {}   # sym -> [frac_slip, ...]  (last 100)
+slippage_hist: dict = {}   # sym -> [frac_slip, ...]     (last 100)
 fill_stats:    dict = {}   # sym -> {"f": int, "t": int}
-trade_log:     list = []   # [{"sym","reg","ws","slip"}, ...]  (last 500)
+trade_log:     list = []   # [{"sym","reg","ws","slip"}]  (last 500)
+returns_hist:  dict = {}   # sym -> [pnl, ...]            (last 200)
 
 
 # ── Order book snapshot ────────────────────────────────────────────────────────
@@ -64,10 +67,10 @@ class OrderBook:
                    bid_vol=10.0, ask_vol=10.0, levels=levels)
 
 
-# ── Slippage: walk the book ────────────────────────────────────────────────────
+# ── Slippage ───────────────────────────────────────────────────────────────────
 
 def slippage(size, ob):
-    """Fractional: (avg_fill - mid) / mid."""
+    """Walk ob.levels → fractional (avg_fill − mid) / mid."""
     if not ob.levels:
         return (ob.ask - ob.mid) / max(ob.mid, 1e-9)
     rem  = size
@@ -85,7 +88,7 @@ def slippage(size, ob):
 
 
 def blended_slip(sym, size, ob):
-    """70% book estimate + 30% per-symbol history (when >=5 samples)."""
+    """70% book + 30% per-symbol history (when ≥5 samples)."""
     est  = slippage(size, ob)
     hist = slippage_hist.get(sym, [])
     if len(hist) >= 5:
@@ -93,22 +96,107 @@ def blended_slip(sym, size, ob):
     return est
 
 
-# ── Net edge after costs ───────────────────────────────────────────────────────
-
 def net_edge(ws, size, ob, fee, sym):
     return ws - blended_slip(sym, size, ob) - fee
 
 
-# ── OB imbalance: proportional ws adjustment ──────────────────────────────────
+# ── OB imbalance adjustment ────────────────────────────────────────────────────
 
 def ob_adjust(ws, ob):
-    """delta = 0.03 × |imb-1| × sign(imb-1). Neutral OB → 0 delta."""
+    """Proportional: delta = 0.03 × |imb−1| × sign(imb−1)."""
     imb      = ob.bid_vol / (ob.ask_vol + 1e-6)
     strength = abs(imb - 1.0)
     return ws + 0.03 * strength * float(np.sign(imb - 1.0))
 
 
-# ── Per-symbol fill rate ───────────────────────────────────────────────────────
+# ── Returns history ───────────────────────────────────────────────────────────
+
+def update_returns(sym, pnl):
+    """Record realised PnL per symbol. Called on every trade close."""
+    hist = returns_hist.setdefault(sym, [])
+    hist.append(float(pnl))
+    if len(hist) > 200:
+        hist.pop(0)
+
+
+# ── Correlation & clustering ──────────────────────────────────────────────────
+
+def corr(sym1, sym2):
+    """
+    Pearson correlation of return histories. Returns 0 when <10 common samples.
+    Used only for penalty — false positive (over-penalty) is safer than false negative.
+    """
+    r1 = returns_hist.get(sym1, [])
+    r2 = returns_hist.get(sym2, [])
+    n  = min(len(r1), len(r2))
+    if n < 10:
+        return 0.0
+    try:
+        return float(np.corrcoef(r1[-n:], r2[-n:])[0, 1])
+    except Exception:
+        return 0.0
+
+
+def cluster_penalty(sym, positions):
+    """
+    Multiply by 0.5 for each open position with |corr| > 0.7.
+    Prevents capital doubling into correlated pairs.
+    """
+    pen = 1.0
+    for pos in positions.values():
+        other = pos["signal"]["symbol"]
+        if other == sym:
+            continue
+        if abs(corr(sym, other)) > 0.7:
+            pen *= 0.5
+    return pen
+
+
+# ── Volatility & risk parity ──────────────────────────────────────────────────
+
+def vol(sym):
+    """Std of last 50 returns. Floor 1e-6 prevents div/0."""
+    r = returns_hist.get(sym, [0.0])
+    return float(np.std(r[-50:])) + 1e-6
+
+
+def risk_parity_weight(sym):
+    """1/vol — low-vol symbols receive proportionally larger allocation."""
+    return 1.0 / vol(sym)
+
+
+# ── Risk EV (Sharpe-like) ─────────────────────────────────────────────────────
+
+def risk_ev(sym, reg):
+    """
+    mean(ws − slip) / (std(ws − slip) + ε) for (sym, regime), last 50 trades.
+    Returns 0 when <10 samples. Penalises inconsistent edge.
+    """
+    trades = [t for t in trade_log
+              if t["sym"] == sym and t["reg"] == reg][-50:]
+    if len(trades) < 10:
+        return 0.0
+    pnl = [t["ws"] - t["slip"] for t in trades]
+    return float(np.mean(pnl)) / (float(np.std(pnl)) + 1e-6)
+
+
+def ev_conf(sym, reg):
+    """min(n/50, 1.0) — confidence weight based on sample count."""
+    n = sum(1 for t in trade_log if t["sym"] == sym and t["reg"] == reg)
+    return min(1.0, n / 50.0)
+
+
+def ev_adjust(ws, sym, reg):
+    """
+    ws + 0.3 × clamp(risk_ev, −0.05, +0.05) × conf.
+    Clamp prevents runaway; conf prevents cold-start noise.
+    """
+    ev   = max(-0.05, min(0.05, risk_ev(sym, reg)))
+    conf = ev_conf(sym, reg)
+    return ws + 0.3 * ev * conf
+
+
+# ── Fill rate & order type ─────────────────────────────────────────────────────
 
 def fill_rate(sym=None):
     if sym is not None:
@@ -119,45 +207,38 @@ def fill_rate(sym=None):
     return total_f / total_t if total_t > 0 else 1.0
 
 
-# ── Order type selection ───────────────────────────────────────────────────────
-
 def choose_type(sig, ob, sym):
     fr     = fill_rate(sym)
     spread = ob.ask - ob.bid
     mid    = ob.mid
     imb    = ob.bid_vol / (ob.ask_vol + 1e-6)
     mom    = sig.get("features", {}).get("mom5", 0.0)
-
-    if fr < 0.30:                                    return "MARKET"
-    if abs(mom) > 0.007 and imb > 1.2:              return "MARKET"
-    if spread / max(mid, 1e-9) < 0.0005:            return "LIMIT"
+    if fr < 0.30:                           return "MARKET"
+    if abs(mom) > 0.007 and imb > 1.2:     return "MARKET"
+    if spread / max(mid, 1e-9) < 0.0005:   return "LIMIT"
     return "POST"
 
-
-# ── Limit price ────────────────────────────────────────────────────────────────
 
 def limit_price(ob, side):
     spread = ob.ask - ob.bid
     return ob.bid + 0.10 * spread if side == "BUY" else ob.ask - 0.10 * spread
 
 
-# ── Dynamic staleness ─────────────────────────────────────────────────────────
+# ── Staleness ─────────────────────────────────────────────────────────────────
 
-def dynamic_staleness(tick_ms, vol=0.0):
-    """Vol capped at 0.02 — prevents extreme window widening in flash events."""
+def dynamic_staleness(tick_ms, vol_f=0.0):
+    """Vol capped at 0.02 to prevent extreme window widening."""
     base = max(200, min(800, 2 * tick_ms))
-    return base * (1.0 + min(vol, 0.02) * 2.0)
+    return base * (1.0 + min(vol_f, 0.02) * 2.0)
 
 
-def valid(sig_time, tick_ms=250, vol=0.0):
-    age_ms = (_time.time() - sig_time) * 1000
-    return age_ms < dynamic_staleness(tick_ms, vol)
+def valid(sig_time, tick_ms=250, vol_f=0.0):
+    return (_time.time() - sig_time) * 1000 < dynamic_staleness(tick_ms, vol_f)
 
 
 # ── Cost gates ─────────────────────────────────────────────────────────────────
 
 def pre_cost(ws, fee):
-    """Cheap early-exit before slippage calculation."""
     return ws > fee
 
 
@@ -165,90 +246,98 @@ def cost_guard(ws, size, ob, fee, sym):
     return net_edge(ws, size, ob, fee, sym) > 0
 
 
-# ── Regime-aware true EV ──────────────────────────────────────────────────────
+# ── Capital allocation (risk-parity + EV + correlation) ───────────────────────
 
-def true_ev(sym, reg):
+def capital_alloc(sym, reg, base, positions):
     """
-    Mean(ws - slip) for (sym, regime) over last 50 trades.
-    Returns 0 when fewer than 10 samples — not enough to trust.
+    Three-factor score: risk_ev × risk_parity_weight × cluster_penalty.
+    Weight relative to current open positions. Clamp [0.5×, 1.5×] base.
     """
-    trades = [t for t in trade_log
-              if t["sym"] == sym and t["reg"] == reg][-50:]
-    if len(trades) < 10:
-        return 0.0
-    return float(np.mean([t["ws"] - t["slip"] for t in trades]))
+    ev    = max(risk_ev(sym, reg), 0.0)
+    rp    = risk_parity_weight(sym)
+    pen   = cluster_penalty(sym, positions)
+    score = ev * rp * pen
+    total = sum(
+        max(risk_ev(p["signal"]["symbol"],
+                    p["signal"].get("regime", "RANGING")), 0.0)
+        * risk_parity_weight(p["signal"]["symbol"])
+        * cluster_penalty(p["signal"]["symbol"], positions)
+        for p in positions.values()
+    ) + 1e-6
+    w = score / total if total > 0 else 1.0
+    return base * max(0.5, min(1.5, 0.5 + w))
 
 
-def ev_conf(sym, reg):
-    """Confidence weight: min(n/50, 1.0). Zero → no adjustment; 50+ → full."""
-    n = sum(1 for t in trade_log if t["sym"] == sym and t["reg"] == reg)
-    return min(1.0, n / 50.0)
+# ── Adaptive leverage ──────────────────────────────────────────────────────────
 
-
-def ev_adjust(ws, sym, reg):
+def leverage():
     """
-    Bounded regime-aware EV blend: ws + 0.3 × clamp(ev, -0.05, +0.05) × conf.
-    Clamp prevents runaway positive/negative feedback loops.
+    Read drawdown from METRICS. Returns:
+      0.5  if dd > 10%   (capital preservation)
+      1.2  if dd < 2%    (mild boost in low-drawdown phase)
+      1.0  otherwise
     """
-    ev   = max(-0.05, min(0.05, true_ev(sym, reg)))
-    conf = ev_conf(sym, reg)
-    return ws + 0.3 * ev * conf
+    try:
+        from src.services.learning_event import METRICS
+        peak   = METRICS.get("equity_peak", 0.0) or 0.0
+        profit = METRICS.get("profit", 0.0) or 0.0
+        if peak > 0:
+            dd = (peak - (1.0 + profit)) / peak
+            if dd > 0.10: return 0.5
+            if dd < 0.02: return 1.2
+    except Exception:
+        pass
+    return 1.0
+
+
+# ── Final position size (allocation × leverage) ────────────────────────────────
+
+def final_size(sym, reg, base, positions):
+    """
+    Combines risk-parity capital allocation with adaptive leverage.
+    Replaces fixed base in trade_executor sizing chain.
+    equity_guard() removed from executor — leverage() subsumes that role.
+    """
+    return capital_alloc(sym, reg, base, positions) * leverage()
 
 
 # ── Portfolio EV snapshot ──────────────────────────────────────────────────────
 
 def portfolio_ev(positions):
-    """
-    Returns {sym: true_ev(sym, reg)} for all open positions.
-    positions: dict of sym -> position dict (from trade_executor._positions).
-    """
     return {
-        sym: true_ev(sym, pos["signal"].get("regime", "RANGING"))
+        sym: risk_ev(sym, pos["signal"].get("regime", "RANGING"))
         for sym, pos in positions.items()
     }
-
-
-# ── EV-weighted capital allocation ────────────────────────────────────────────
-
-def capital_alloc(sym, reg, base, positions):
-    """
-    EV-proportional base size: base × (0.5 + weight).
-    weight = sym_ev / total_positive_ev across open positions + new signal.
-    Floor 0.5× prevents capital starvation; max 1.5× caps over-allocation.
-    """
-    sym_ev   = max(true_ev(sym, reg), 0.0)
-    total_ev = sym_ev + sum(
-        max(true_ev(p["signal"]["symbol"],
-                    p["signal"].get("regime", "RANGING")), 0.0)
-        for p in positions.values()
-    ) + 1e-6
-    weight = sym_ev / total_ev
-    return base * max(0.5, min(1.5, 0.5 + weight))
 
 
 # ── Capital rotation ───────────────────────────────────────────────────────────
 
 def rotate_capital(new_sig, positions, max_pos=2):
     """
-    When portfolio is full, replace worst position if new signal's regime EV
-    is at least 20% better. Returns (should_rotate: bool, worst_sym: str|None).
-    Caller is responsible for the actual close/open.
+    Replace worst position only when:
+      1. new signal risk_ev > worst × 1.2
+      2. ev_conf > 0.5 — sufficient history to trust the comparison
+    Returns (should_rotate: bool, worst_sym: str|None).
     """
     if len(positions) < max_pos:
         return False, None
-    new_ev = true_ev(new_sig["symbol"], new_sig.get("regime", "RANGING"))
+    new_sym = new_sig["symbol"]
+    new_reg = new_sig.get("regime", "RANGING")
+    if ev_conf(new_sym, new_reg) <= 0.5:
+        return False, None
+    new_rev = risk_ev(new_sym, new_reg)
     worst_sym = min(
         positions,
-        key=lambda s: true_ev(s, positions[s]["signal"].get("regime", "RANGING"))
+        key=lambda s: risk_ev(s, positions[s]["signal"].get("regime", "RANGING"))
     )
-    worst_ev = true_ev(worst_sym,
-                       positions[worst_sym]["signal"].get("regime", "RANGING"))
-    if new_ev > worst_ev * 1.2:
+    worst_rev = risk_ev(worst_sym,
+                        positions[worst_sym]["signal"].get("regime", "RANGING"))
+    if new_rev > worst_rev * 1.2:
         return True, worst_sym
     return False, None
 
 
-# ── Internal paper-trading fill simulation ─────────────────────────────────────
+# ── Internal fill simulation ───────────────────────────────────────────────────
 
 def _send_limit(size, price, side, ob):
     import random
@@ -269,8 +358,7 @@ def _send_market(size, side, ob):
 
 def exec_order(sig, size, ob, sym):
     """
-    2 × 50% limit attempts + market fallback.
-    Records regime in trade_log for regime-split EV tracking.
+    2 × 50% limit + market fallback. Updates fill_stats, slippage_hist, trade_log.
     Returns (avg_fill_price, fractional_slip).
     """
     side       = sig.get("action", "BUY")
@@ -285,9 +373,9 @@ def exec_order(sig, size, ob, sym):
 
     if order_type in ("LIMIT", "POST"):
         for _ in range(2):
-            chunk = size * 0.50
             if filled >= size * 0.70:
                 break
+            chunk = size * 0.50
             fs["t"] += 1
             f, p = _send_limit(chunk, lp, side, ob)
             if f > 0:
