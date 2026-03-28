@@ -332,6 +332,8 @@ def handle_signal(signal):
         "size":          size,
         "tp":            tp,
         "sl":            sl,
+        "tp_move":       abs(tp - actual_entry) / actual_entry,
+        "sl_move":       abs(sl - actual_entry) / actual_entry,
         "signal":        signal,
         "ticks":         0,
         "fill_slippage": fill_slip,
