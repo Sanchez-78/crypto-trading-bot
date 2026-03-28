@@ -381,6 +381,13 @@ def on_price(data):
         track_filtered()
         return
 
+    # ── Time-based debounce (30 s per symbol) ─────────────────────────────────
+    # MUST be before _get_scored_edge — allow_combo increments on every call.
+    # Without this guard, allow_combo is exhausted within ~40 s at 2 s/tick.
+    if time.time() - _last_ts.get(s, 0) < DEBOUNCE_S:
+        track_filtered()
+        return
+
     # ── Edge scoring: 7-feature self-learning gate ────────────────────────────
     # Regime confidence: ADX-based (trend) or inverse-ADX (range)
     if reg in ("BULL_TREND", "BEAR_TREND"):
@@ -401,11 +408,6 @@ def on_price(data):
     _counter_trend = (reg == "BULL_TREND" and action != "BUY") or \
                      (reg == "BEAR_TREND" and action != "SELL")
     _weak_spread   = abs(e10 - e50) < atr_v * 0.2
-
-    # ── Time-based debounce (30 s per symbol) ─────────────────────────────────
-    if time.time() - _last_ts.get(s, 0) < DEBOUNCE_S:
-        track_filtered()
-        return
 
     # ── Score ─────────────────────────────────────────────────────────────────
     score, reasons = _score(
