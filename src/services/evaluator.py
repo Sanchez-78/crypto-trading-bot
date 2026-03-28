@@ -1,37 +1,18 @@
 from src.core.event_bus import event_bus
-from src.core.events import TRADE_EXECUTED, EVALUATION_DONE
+from src.core.events import TRADE_EXECUTED
 
-import random
-
-from src.services.firebase_client import save_trade
-
-print("📊 EVALUATOR READY")
+print("📊 EVALUATOR READY (pass-through)")
 
 
 def on_trade(trade):
-    try:
-        price = trade.get("price")
-
-        if price is None:
-            return
-
-        profit = random.uniform(-0.01, 0.02)
-
-        result = {
-            "symbol": trade["symbol"],
-            "profit": profit,
-            "result": "WIN" if profit > 0 else "LOSS"
-        }
-
-        print("📊 RESULT:", result)
-
-        # 🔥 SAVE TO FIREBASE
-        save_trade(trade, result)
-
-        event_bus.publish(EVALUATION_DONE, result)
-
-    except Exception as e:
-        print("❌ Evaluation error:", e)
+    """
+    No-op.  Trade results (profit, result, close_reason) are computed and
+    persisted by trade_executor.on_price() which has the actual entry/exit
+    prices and fees.  The old implementation here used random.uniform(-0.01,
+    0.02) as profit and wrote it to Firebase, polluting all training history
+    with fabricated WIN/LOSS records.  Removed entirely.
+    """
+    pass
 
 
 event_bus.subscribe(TRADE_EXECUTED, on_trade)

@@ -56,7 +56,12 @@ class Calibrator:
         b = round(p, 1)
         if b in self.buckets and self.buckets[b][1] >= 30:
             wr = self.buckets[b][0] / self.buckets[b][1]
-            return max(wr, 0.35)   # floor prevents EV collapse from early bad data
+            # Floor lowered 0.35→0.10: the old floor mapped a real 2% WR to 35%,
+            # producing EV = 0.35×1.25 − 0.65 = −0.21, which still passed the
+            # −0.30 learning-mode gate and hid the actual crisis from the system.
+            # 0.10 floor: EV = 0.10×1.25 − 0.90 = −0.775, correctly flagged as
+            # very poor edge so get_ev_threshold() crisis path fires.
+            return max(wr, 0.10)
         return 0.5
 
     def summary(self):
@@ -347,11 +352,13 @@ def _seed_calibrator(trades):
 def get_ev_threshold():
     """
     Adaptive EV gate threshold.
+    Crisis mode (trades >= 50 AND WR < 5%):   0.15  ← near-halt
+      WR < 5% after 50 trades is statistically confirmed failure — the old
+      learning-mode floor of -0.30 kept accepting all signals forever, meaning
+      the system could never self-protect.  At 0.15 only strong EVs pass.
     Learning mode (trades < 200 OR WR < 20%): -0.30
       Permits negative-EV signals so data can flow in — calibration is
-      unreliable when WR is near 0%. The old bootstrap check used trades<100
-      which immediately tightened to 0.15 once 100 historical trades loaded,
-      blocking everything before a single new trade was placed.
+      unreliable when WR is near 0%.
     Cold start (ev_history < 100 samples):    0.15
     Live (ev_history >= 100):                 q75 of ev_history, floor 0.10
     """
@@ -359,6 +366,9 @@ def get_ev_threshold():
         from src.services.learning_event import METRICS as _m
         _t  = _m.get("trades", 0)
         _wr = _m.get("wins", 0) / max(_t, 1)
+        # Crisis gate: confirmed failure after enough data → near-halt
+        if _t >= 50 and _wr < 0.05:
+            return 0.15
         if _t < 200 or _wr < 0.20:
             return -0.30
     except Exception:

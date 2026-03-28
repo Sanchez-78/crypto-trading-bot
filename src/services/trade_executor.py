@@ -53,20 +53,23 @@ _MAX_TOTAL_RISK   = 0.05 # total portfolio risk cap (sum of size*sl_pct)
 _SPREAD_PCT       = 0.001 # estimated bid-ask spread (0.10%)
 _last_replaced    = {}   # symbol -> timestamp of last replacement
 
-FEE_RT      = 0.0015    # 0.15% round-trip (Binance taker 0.075%×2); was 0.20% which
-                          # made TP=0.15% < FEE_RT → every TP hit produced a LOSS (confirmed
-                          # by log: 0% TP-wins, 2% overall WR, because profit=move-FEE_RT
-                          # was always negative when move≈MIN_TP_PCT < FEE_RT)
-MIN_TP_PCT  = 0.003     # 0.30% = max(0.003, 2×FEE_RT) — always > fees → TP always WIN
+FEE_RT      = 0.0015    # 0.15% round-trip (Binance taker 0.075%×2)
+MIN_TP_PCT  = 0.006     # 0.60% — raised from 0.30% to fix breakeven WR:
+                          # old: net_TP=0.15%, net_SL=0.35% → breakeven=70% (impossible)
+                          # new: net_TP=0.45%, net_SL=0.35% → breakeven=43.75% (achievable)
 MIN_SL_PCT  = 0.002     # 0.20% min SL
-MAX_TICKS   = 20        # ~40s timeout — forces closes, guarantees learning data flow
+MAX_TICKS   = 45        # ~90s timeout — raised from 20 because 0.60% TP requires more
+                          # time to hit; 20 ticks forced ~95% timeouts with TP never reached
 FLUSH_EVERY = 60
 
 
 def compute_tp_sl(entry, direction):
-    """Absolute TP/SL prices. tp_pct = max(0.003, 2×FEE_RT) — always > fees."""
-    tp_pct = max(0.003, 2 * FEE_RT)
-    sl_pct = 0.002
+    """Absolute TP/SL prices.
+    TP=0.60%, SL=0.20% → net_TP=0.45%, net_SL=0.35% → breakeven WR=43.75%.
+    Uses max(MIN_TP_PCT, 4×FEE_RT) to guarantee TP always clears round-trip fees.
+    """
+    tp_pct = max(MIN_TP_PCT, 4 * FEE_RT)
+    sl_pct = MIN_SL_PCT
     if direction == "BUY":
         return entry * (1 + tp_pct), entry * (1 - sl_pct)
     return entry * (1 - tp_pct), entry * (1 + sl_pct)

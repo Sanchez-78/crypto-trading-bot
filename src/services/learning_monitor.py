@@ -13,7 +13,10 @@ Convergence:
   → 1.0 = fully stable, 0.0 = still noisy
 
 Health score:
-  mean over all pairs with ≥20 trades of: convergence × max(EV, 0)
+  mean over all pairs with ≥20 trades of:
+    convergence × (0.5 + 0.5 × max(EV, -1.0))
+  Range: 0.0 (no data) … ~0.5 (fully converged positive edge)
+  Losing systems (EV<0) now score >0 so BAD/WEAK alerts fire correctly.
 
 Alerts:
   health < 0.10 → BAD   (no learning detected)
@@ -203,7 +206,11 @@ def lm_health():
             continue
         conv = lm_convergence(sym, reg)
         ev   = lm_edge_strength(sym, reg)
-        scores.append(conv * max(ev, 0.0))
+        # Shift range so losing systems (ev<0) still produce a non-zero score.
+        # With max(ev,0): any ev≤0 → score=0 → health=0 always for losing systems,
+        # making it impossible to distinguish "no data" from "consistently losing".
+        # With (0.5 + 0.5×max(ev,-1.0)): ev=-1→0.0, ev=0→0.5, ev=+1→1.0
+        scores.append(conv * (0.5 + 0.5 * max(ev, -1.0)))
     if not scores:
         return 0.0
     return float(np.mean(scores))
@@ -257,9 +264,18 @@ def meta_update():
         sr = 0.0
         dd = 0.0
 
-    # Learning quality gate (softened — less aggressive suppression/expansion)
-    if h < 0.20:
-        meta["ws_mult"]    = 0.95
+    # Learning quality gate
+    # ws_mult > 1 → TIGHTEN threshold (fewer signals); < 1 → LOOSEN (more signals)
+    # Crisis (h < 0.10): TIGHTEN — system is provably losing; reduce signal flow.
+    #   Previous code set ws_mult=0.95 (LOOSEN) for all h<0.20, meaning a bad
+    #   system got MORE signals → more losses → deeper crisis. Inverted logic.
+    # Learning (0.10 ≤ h < 0.20): neutral — system is still gathering data.
+    # Edge confirmed (h > 0.40): slight TIGHTEN — demand only top-quality signals.
+    if h < 0.10:
+        meta["ws_mult"]    = 1.20   # TIGHTEN — crisis mode
+        meta["alloc_mult"] = 0.70
+    elif h < 0.20:
+        meta["ws_mult"]    = 1.0    # neutral — still learning
         meta["alloc_mult"] = 0.90
     elif h > 0.40:
         meta["ws_mult"]    = 1.05

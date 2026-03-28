@@ -271,11 +271,19 @@ def bootstrap_from_history(trades):
     # all signals on boot before a single new trade is placed.
     _recent_results = []
 
-    # Reset streaks for fresh session — don't carry historical loss punishment
-    # across restarts. Each session starts with a clean slate so the streak
-    # guard doesn't immediately block trading after a loss run in a prior run.
-    m["loss_streak"] = 0
-    m["win_streak"]  = 0
+    # Compute TRAILING streak from the last 30 historical trades rather than
+    # resetting to 0.  A plain reset meant the MAX_LOSS_STREAK circuit-breaker
+    # in realtime_decision_engine never fired after a loss run survived a
+    # restart — the auditor always saw streak=0 and kept trading into losses.
+    # We limit look-back to 30 trades so a single bad historic session doesn't
+    # permanently halt a fresh session that is actually recovering.
+    from itertools import takewhile as _tw
+    _recent_closed = [
+        t.get("result") for t in sorted_trades[-30:]
+        if t.get("result") in ("WIN", "LOSS")
+    ]
+    m["loss_streak"] = sum(1 for _ in _tw(lambda r: r == "LOSS", reversed(_recent_closed)))
+    m["win_streak"]  = sum(1 for _ in _tw(lambda r: r == "WIN",  reversed(_recent_closed)))
 
     # Seed learning monitor trade counts from history so lm_health() can
     # evaluate pairs immediately instead of waiting for 10 new in-session trades.
