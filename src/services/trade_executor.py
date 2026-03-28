@@ -99,8 +99,12 @@ def _replace_allowed(symbol):
 
 
 def _total_risk():
-    """Sum of (size × sl_move) across all open positions."""
-    return sum(p["size"] * p["sl_move"] for p in _positions.values())
+    """Sum of (size × sl_fraction) across all open positions.
+    sl_fraction = |sl - entry| / entry — derived from absolute sl price."""
+    return sum(
+        p["size"] * abs(p["sl"] - p["entry"]) / max(p["entry"], 1e-9)
+        for p in _positions.values()
+    )
 
 
 def _risk_guard():
