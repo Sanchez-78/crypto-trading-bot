@@ -230,7 +230,8 @@ def bootstrap_from_history(trades):
     # Seed online calibrator from closed trades (must be after loop)
     try:
         from src.services.realtime_decision_engine import (
-            calibrator, _seeded, update_edge_stats)
+            calibrator, _seeded, update_edge_stats, _restore_full_state)
+        _restore_full_state()   # load persisted calibrator/bayes/bandit FIRST
         for t in sorted_trades:
             p        = float(t.get("confidence", 0.5))
             result   = t.get("result")
@@ -264,10 +265,11 @@ def bootstrap_from_history(trades):
     if conf_samples:
         m["confidence_avg"] = sum(conf_samples) / len(conf_samples)
 
-    _recent_results = [
-        t["result"] for t in sorted_trades[-50:]
-        if t.get("result") in ("WIN", "LOSS")
-    ]
+    # Do NOT carry _recent_results across restarts.
+    # Velocity guard (recent_losses >= 3 in last 5) must use only in-session
+    # trades — a run of historical losses in Firebase would immediately block
+    # all signals on boot before a single new trade is placed.
+    _recent_results = []
 
     # Reset streaks for fresh session — don't carry historical loss punishment
     # across restarts. Each session starts with a clean slate so the streak
