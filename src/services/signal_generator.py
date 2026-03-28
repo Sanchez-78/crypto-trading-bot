@@ -183,21 +183,23 @@ def _record_side(s, action):
 
 def _prefilter(hist, atr_v, price):
     """
-    Volatility floor gate — blocks dead-flat / fully-collapsed markets.
-    Requires recent 20-bar avg range ≥ 60% of 50-bar average.
+    Volatility floor gate — blocks only fully dead-flat markets.
+    Threshold lowered 0.60 → 0.05:
 
-    Original strict r20 > r50 (expanding vol) blocked mature trends where
-    volatility naturally contracts after the initial breakout move, causing
-    zero signals to be generated for entire sessions even with real edge.
-    60% floor still guards against truly dead-flat markets while allowing
-    signals during normal trend consolidation phases.
+    Root cause: warmup loads 80 one-minute klines. At boot r20 and r50 are
+    both computed from 1-min candle closes (same scale) → passes.
+    Once real-time 2-second ticks start, r20 fills with tiny sub-second moves
+    while r50 still holds the larger kline candle deltas → r20/r50 ≈ 0.15–0.25.
+    The 0.60 threshold therefore blocked 100% of real-time signals after boot
+    despite active markets (confirmed: 3 signals at MARKET LIVE then 0 for 37 min).
+    0.05 blocks only truly dead markets (r20 < 5% of baseline range).
     """
     if len(hist) < 51:
         return False
     diffs = [abs(hist[i] - hist[i-1]) for i in range(1, len(hist))]
     r20   = sum(diffs[-20:]) / 20
     r50   = sum(diffs[-50:]) / 50
-    return r20 > r50 * 0.6   # block only collapsed vol, allow mild contraction
+    return r20 > r50 * 0.05
 
 
 def _score_direction(hist, e50, e200, breakout_up, breakout_down, mom5, action):
@@ -273,8 +275,16 @@ def _get_scored_edge(hist, e50, e200, breakout_up, breakout_down, mom5, reg, reg
     w_score = _ws(features, reg)
     _sh.append(w_score)
 
-    # Gate 4: rolling stability guard
-    if len(_sh) >= 20 and _std(list(_sh)[-20:]) < 0.07:
+    # Gate 4: rolling stability guard — disabled during force_mode.
+    # Without edge data all w_scores = 0.50 → std=0 < 0.07 → blocks every
+    # signal after 20 are scored. Bypassed until 50+ PnL observations exist
+    # and diverse w_scores can be produced by edge_stats.
+    try:
+        from src.services.learning_monitor import force_mode as _fmode
+        _gate4_active = not _fmode()
+    except Exception:
+        _gate4_active = True
+    if _gate4_active and len(_sh) >= 20 and _std(list(_sh)[-20:]) < 0.07:
         return base_score, w_score, None, None, {}, False
 
     # Gate 5: adaptive threshold with decaying epsilon-greedy exploration

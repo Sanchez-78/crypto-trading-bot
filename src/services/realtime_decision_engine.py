@@ -188,12 +188,13 @@ def combo_weight(features, regime="RANGING"):
 
 def allow_combo(combo):
     """
-    Limit each combo to 5 uses per session — forces pattern diversity.
-    Resets on restart (in-memory). Returns True if allowed, increments count.
-    Raised from 3 → 5: with only ~64 possible 4+ feature combos across 3 symbols
-    a limit of 3 exhausts valid combos within hours, silencing the system.
+    Limit each combo to 20 uses per session — prevents a single setup from
+    dominating while still allowing learning. Raised 5→20: in a QUIET_RANGE
+    session only 2–3 distinct combos appear; a limit of 5 exhausted them
+    within the first 10 signals and blocked all subsequent trading for the
+    entire session (confirmed: 0 signals after boot in 37-min session).
     """
-    if combo_usage.get(combo, 0) >= 5:
+    if combo_usage.get(combo, 0) >= 20:
         return False
     combo_usage[combo] = combo_usage.get(combo, 0) + 1
     return True
