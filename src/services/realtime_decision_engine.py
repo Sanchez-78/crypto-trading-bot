@@ -425,7 +425,8 @@ def evaluate_signal(signal):
         return None
 
     # ── EV spread guard: flat distribution = noise, not edge ──────────────────
-    if len(ev_history) >= EV_SPREAD_AFTER:
+    # [HOTFIX] Blokace vypnuta během Bootstrapu, jinak se EV křivky nikdy nevytvoří (zůstaly by nelineární)
+    if not _bootstrap and len(ev_history) >= EV_SPREAD_AFTER:
         spread = max(ev_history) - min(ev_history)
         if spread < EV_SPREAD_MIN:
             track_blocked()
