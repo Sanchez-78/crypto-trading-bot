@@ -231,13 +231,96 @@ def get_ws_threshold():
     return max(0.45, q75)
 
 
+# ── Persistent model state ────────────────────────────────────────────────────
+# Save after every N calibrator updates (≈ N trade closes).
+# One Firestore write per save; at ~40 trades/day this costs ~8 writes/day.
+
+_STATE_SAVE_EVERY = 5
+_state_dirty      = [0]
+
+
+def _save_full_state():
+    """
+    Persist calibrator buckets + EV/score histories + bayes/bandit stats.
+    All three reset to zero on restart — saving them means the system
+    resumes with accumulated learning instead of starting blind each boot.
+    """
+    try:
+        import time as _t
+        from src.services.firebase_client import save_model_state
+        from src.services.execution       import bayes_stats, bandit_stats
+
+        rde = {
+            "calibrator":    {str(k): list(v) for k, v in calibrator.buckets.items()},
+            "ev_history":    list(ev_history)[-200:],
+            "score_history": list(score_history)[-200:],
+        }
+        exc = {
+            "bayes":  {f"{k[0]}|{k[1]}": list(v) for k, v in bayes_stats.items()},
+            "bandit": {f"{k[0]}|{k[1]}": list(v) for k, v in bandit_stats.items()},
+        }
+        save_model_state({"rde": rde, "exec": exc})
+    except Exception as e:
+        print(f"⚠️  model state save: {e}")
+
+
+def _restore_full_state():
+    """
+    Load persisted model state on startup (called at top of _seed_calibrator).
+    Calibrator replay still runs after this — adding recent trades is harmless
+    (WR ratios are preserved; counts inflate by ~10% at 100-trade history).
+    EV/score histories are NOT re-added from trade replay, so adaptive
+    thresholds work immediately instead of waiting for cold-start accumulation.
+    """
+    try:
+        import time as _t
+        from src.services.firebase_client import load_model_state
+        from src.services.execution       import bayes_stats, bandit_stats
+
+        state = load_model_state()
+        if not state:
+            print("📥 No persisted model state — starting fresh")
+            return
+
+        rde = state.get("rde", {})
+        # Calibrator buckets — keyed as floats in memory, strings in Firestore
+        for b_str, v in rde.get("calibrator", {}).items():
+            calibrator.buckets[float(b_str)] = list(v)
+        # Histories (deques with maxlen) — extend, don't overwrite
+        for ev in rde.get("ev_history", []):
+            ev_history.append(float(ev))
+        for s in rde.get("score_history", []):
+            score_history.append(float(s))
+
+        exc = state.get("exec", {})
+        for k_str, v in exc.get("bayes", {}).items():
+            sym, reg = k_str.split("|", 1)
+            bayes_stats[(sym, reg)] = tuple(v)
+        for k_str, v in exc.get("bandit", {}).items():
+            sym, reg = k_str.split("|", 1)
+            bandit_stats[(sym, reg)] = tuple(v)
+
+        age_min = (_t.time() - float(state.get("saved_at", _t.time()))) / 60
+        print(f"🔄 Model state restored ({age_min:.0f}min old): "
+              f"{len(calibrator.buckets)} cal buckets  "
+              f"{len(ev_history)} ev_hist  "
+              f"{len(bayes_stats)} bayes pairs")
+    except Exception as e:
+        print(f"⚠️  model state restore: {e}")
+
+
 def update_calibrator(p, outcome):
     """Called by trade_executor after every trade close."""
     calibrator.update(p, outcome)
+    _state_dirty[0] += 1
+    if _state_dirty[0] >= _STATE_SAVE_EVERY:
+        _state_dirty[0] = 0
+        _save_full_state()
 
 
 def _seed_calibrator(trades):
-    """One-time bootstrap: replay closed trades into calibrator + edge_stats."""
+    """One-time bootstrap: restore persisted state then replay recent trades."""
+    _restore_full_state()   # ← load calibrator + histories + bayes/bandit first
     for t in trades:
         p        = float(t.get("confidence", 0.5))
         result   = t.get("result")

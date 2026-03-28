@@ -173,6 +173,35 @@ def save_trade(trade, result):
     save_batch([combined])
 
 
+# ── Model state (calibrator + learning histories + bayes/bandit) ───────────────
+
+_MODEL_STATE_DOC = "model_state/latest"   # single document, overwritten each save
+
+def save_model_state(state: dict) -> None:
+    """
+    Persist calibrator buckets, EV/score histories, and bayes/bandit stats
+    to a single Firestore document.  ~1 write per 5 trades — negligible budget.
+    """
+    if db is None:
+        return
+    try:
+        db.document(_MODEL_STATE_DOC).set({**state, "saved_at": time.time()})
+    except Exception as e:
+        print(f"⚠️  save_model_state: {e}")
+
+
+def load_model_state() -> dict:
+    """Return persisted model state dict, or {} if not available."""
+    if db is None:
+        return {}
+    try:
+        doc = db.document(_MODEL_STATE_DOC).get()
+        return doc.to_dict() if doc.exists else {}
+    except Exception as e:
+        print(f"⚠️  load_model_state: {e}")
+        return {}
+
+
 def load_old_trades(limit=200):
     """
     Load oldest trades for cleanup (auto_cleaner.py).
