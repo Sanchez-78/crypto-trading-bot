@@ -43,17 +43,29 @@ def _cap(lst):
 
 
 def true_ev(sym, reg):
-    """Sharpe-normalised EV: mean(pnl[-20:]) / (std(pnl[-20:]) + 1e-6).
+    """Bounded Sharpe-EV via tanh: tanh(mean / max(std, 0.002)).
+    Output is always in (-1, +1) — eliminates spikes from near-zero std.
+    std floor 0.002 prevents division explosion on perfectly consistent
+    streaks (e.g. 5 identical small wins → std≈0 → raw ratio → ±∞).
     Returns 0.0 until at least 10 samples are available.
-    Normalising by std stabilises the value across different volatility regimes
-    and prevents raw PnL magnitude from dominating allocation decisions.
-    Positive → edge exists; negative → losing pair; ~0 → noise / too few trades.
     """
     pnl = lm_pnl_hist.get((sym, reg), [])
     if len(pnl) < 10:
         return 0.0
-    arr = pnl[-20:]
-    return float(np.mean(arr)) / (float(np.std(arr)) + 1e-6)
+    arr  = pnl[-20:]
+    std  = max(float(np.std(arr)), 0.002)
+    return float(np.tanh(float(np.mean(arr)) / std))
+
+
+def conf_ev(sym, reg):
+    """Confidence-weighted EV: true_ev × min(n/50, 1).
+    Pairs with fewer than 50 trades are linearly suppressed — a pair with
+    10 trades contributes 20% of its EV to allocation; at 50+ trades it
+    receives full weight. Prevents new pairs from dominating on tiny samples.
+    """
+    n    = lm_count.get((sym, reg), 0)
+    conf = min(n / 50.0, 1.0)
+    return true_ev(sym, reg) * conf
 
 
 def record_features(features, pnl):

@@ -290,15 +290,15 @@ def bayes_ev(sym, reg):
 
 def risk_ev(sym, reg):
     """
-    PnL-based EV: mean of last 20 closed trade profits for this (sym, reg).
-    Delegates to learning_monitor.true_ev (lazy import avoids circular dep).
-    Replaces the broken 3-source time-decayed blend — 0.995^dt_seconds
-    collapsed EV to ~0 within minutes, making lm_health always 0 and
-    bandit/allocation scores permanently flat.
+    Confidence-weighted bounded EV: conf_ev(sym, reg).
+    = tanh(mean/max(std,0.002)) × min(n/50, 1)
+    Bounded to (-1,+1) by tanh; low-sample pairs linearly suppressed.
+    Lazy import avoids circular dep (learning_monitor imports bandit_score
+    from this module at top level).
     """
     try:
-        from src.services.learning_monitor import true_ev as _te
-        return _te(sym, reg)
+        from src.services.learning_monitor import conf_ev as _ce
+        return _ce(sym, reg)
     except Exception:
         return 0.0
 
@@ -564,16 +564,27 @@ def is_bootstrap():
 
 def entry_filter(ev):
     """
-    Delayed entry gate:
-      trades < 30 → allow all (data collection, no blocking)
-      trades ≥ 30 → require ev > 0 (positive Sharpe-EV only)
-    Uses METRICS["trades"] (survives restarts). Threshold ev>0 not ev>0.05
-    — Sharpe-normalised EV is dimensionless so 0 is the natural break-even.
+    Adaptive entry gate:
+      trades < 30          → allow all (data collection)
+      ev_history < 20 pts  → ev > 0 (soft gate, insufficient history)
+      else                 → ev > percentile(ev_history, 60)
+    Only the top 40% of observed signal EVs are accepted once the system
+    has enough history to compute a meaningful threshold. Uses the signal
+    EV distribution (ev_history in realtime_decision_engine) so the bar
+    rises as the system encounters higher-quality opportunities.
     """
     try:
         from src.services.learning_event import METRICS
         if METRICS.get("trades", 0) < 30:
             return True
+    except Exception:
+        pass
+    try:
+        from src.services.realtime_decision_engine import ev_history
+        hist = list(ev_history)
+        if len(hist) >= 20:
+            thr = float(np.percentile(hist, 60))
+            return ev > thr
     except Exception:
         pass
     return ev > 0
