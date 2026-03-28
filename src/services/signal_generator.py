@@ -63,11 +63,10 @@ def _rsi(series, n=14):
     return 100 - 100 / (1 + ag / al)
 
 
-def _bb(series, n=20):
-    w   = series[-n:]
-    mid = sum(w) / len(w)
-    std = math.sqrt(sum((x - mid) ** 2 for x in w) / len(w)) or 1e-9
-    return mid - 2 * std, mid, mid + 2 * std
+def _kc(series, atrs, n=20):
+    mid = _ema(series, n)
+    atr = _atr(series, n) if atrs else 0.0
+    return mid - 2 * atr, mid, mid + 2 * atr
 
 
 def _atr(series, n=14):
@@ -104,7 +103,7 @@ def _htf_trend(series):
 def _regime(series, adx, di_p, di_m, atr_val):
     curr    = series[-1]
     atr_pct = atr_val / curr if curr else 0
-    bb_lo, bb_mid, bb_hi = _bb(series)
+    bb_lo, bb_mid, bb_hi = _kc(series, atr_val)
     bb_w = (bb_hi - bb_lo) / bb_mid if bb_mid else 0
 
     if atr_pct > 0.012:          return "HIGH_VOL"
@@ -117,7 +116,7 @@ def _regime(series, adx, di_p, di_m, atr_val):
 # ── Score (regime-aware) ──────────────────────────────────────────────────────
 
 def _score(action, curr, e10, e50, e200, rsi_v, rsi_slope,
-           macd_l, macd_s, bb_lo, bb_hi, adx_v, regime, htf=None):
+           macd_l, macd_s, bb_lo, bb_hi, adx_v, regime, obi, htf=None):
     sc = 0
     reasons = []
 
@@ -128,8 +127,11 @@ def _score(action, curr, e10, e50, e200, rsi_v, rsi_slope,
         if macd_l > macd_s and macd_l > 0:         sc += 1; reasons.append("MACD0↑")
         elif macd_l > macd_s:                      sc += 1; reasons.append("MACD↑")
         if regime == "BULL_TREND":                  sc += 1; reasons.append("ADX↑")
-        if curr <= bb_lo * 1.003 and rsi_v < 35:   sc += 2; reasons.append("BB↩L")
-        elif curr <= bb_lo * 1.005 and rsi_v < 40: sc += 1; reasons.append("BBlo")
+        if curr <= bb_lo * 1.003 and rsi_v < 35:   sc += 2; reasons.append("KC↩L")
+        elif curr <= bb_lo * 1.005 and rsi_v < 40: sc += 1; reasons.append("KClo")
+        # OBI boost
+        if obi > 0.3:                              sc += 1; reasons.append("OBI↑")
+        
         # Mean-reversion bonus: RSI slope confirms bounce direction
         if regime in ("RANGING", "QUIET_RANGE"):
             if rsi_v < 30:
@@ -143,8 +145,10 @@ def _score(action, curr, e10, e50, e200, rsi_v, rsi_slope,
         if macd_l < macd_s and macd_l < 0:         sc += 1; reasons.append("MACD0↓")
         elif macd_l < macd_s:                      sc += 1; reasons.append("MACD↓")
         if regime == "BEAR_TREND":                  sc += 1; reasons.append("ADX↓")
-        if curr >= bb_hi * 0.997 and rsi_v > 65:   sc += 2; reasons.append("BB↩H")
-        elif curr >= bb_hi * 0.995 and rsi_v > 60: sc += 1; reasons.append("BBhi")
+        if curr >= bb_hi * 0.997 and rsi_v > 65:   sc += 2; reasons.append("KC↩H")
+        elif curr >= bb_hi * 0.995 and rsi_v > 60: sc += 1; reasons.append("KChi")
+        # OBI boost
+        if obi < -0.3:                             sc += 1; reasons.append("OBI↓")
         # Mean-reversion bonus: RSI slope confirms reversal
         if regime in ("RANGING", "QUIET_RANGE"):
             if rsi_v > 70:
@@ -323,6 +327,7 @@ def _is_exploration():
 
 def on_price(data):
     s, p = data["symbol"], data["price"]
+    obi  = data.get("obi", 0.0)
     hist = prices.setdefault(s, [])
     hist.append(p)
     if len(hist) > 600:
@@ -340,7 +345,7 @@ def on_price(data):
     rsi_v = _rsi(hist[-50:])
     atr_v = _atr(hist)
 
-    bb_lo, bb_mid, bb_hi = _bb(hist)
+    bb_lo, bb_mid, bb_hi = _kc(hist, atr_v)
 
     e12    = _ema(hist, 12)
     e26    = _ema(hist, 26)
@@ -422,7 +427,7 @@ def on_price(data):
     # ── Score ─────────────────────────────────────────────────────────────────
     score, reasons = _score(
         action, p, e10, e50, e200, rsi_v, rsi_slope,
-        macd_l, macd_s, bb_lo, bb_hi, adx_v, reg, htf
+        macd_l, macd_s, bb_lo, bb_hi, adx_v, reg, obi, htf
     )
 
     # Side-balance penalty
@@ -485,6 +490,7 @@ def on_price(data):
             "adx_slope":     round(adx_slope, 4),
             "mom5":          round(mom5, 6),
             "mom10":         round(mom10, 6),
+            "obi":           round(obi, 4),
         },
     }
 

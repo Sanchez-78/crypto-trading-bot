@@ -108,6 +108,8 @@ def _slim_trade(trade):
         "opened_at":    trade.get("timestamp", time.time()),
         "closed_at":    trade.get("timestamp", time.time()),
         "status":       "closed",
+        "mae":          round(float(trade.get("mae", 0)), 6),
+        "mfe":          round(float(trade.get("mfe", 0)), 6),
         "stop_loss":    round(float(trade.get("price", 0)) * (1 - float((trade.get("features") or {}).get("volatility", 0.003)) * 1.5), 4),
         "take_profit":  round(float(trade.get("price", 0)) * (1 + float((trade.get("features") or {}).get("volatility", 0.003)) * 3.0), 4),
         "features": {
@@ -372,6 +374,8 @@ def save_last_trade(trade):
             "price":      round(float(trade.get("price", 0)), 4),
             "exit_price": round(float(trade.get("exit_price", 0)), 4),
             "confidence": round(float(trade.get("confidence", 0)), 4),
+            "mae":        round(float(trade.get("mae", 0)), 6),
+            "mfe":        round(float(trade.get("mfe", 0)), 6),
             "regime":     trade.get("regime", "RANGING"),
             "reason":     trade.get("close_reason", ""),
             "timestamp":  trade.get("timestamp", time.time()),

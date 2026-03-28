@@ -300,6 +300,19 @@ def handle_signal(signal):
     ws_thr  = ws_threshold()          # live-only floor for sizing (0.50+)
     ws_ratio = (ws_adj / ws_thr) if ws_thr > 0 else 1.0
     size     = base * math.sqrt(min(ws_ratio, 2.25)) * af
+    
+    # HF-Quant 3.0: Half-Kelly Optimization
+    if _t >= 30:
+        pf = _gm().get("profit_factor", 1.0)
+        wr = _gm().get("winrate", 0.0)
+        if 0 < wr < 1.0 and pf > 0:
+            rrr = pf * (1.0 - wr) / wr
+            if rrr > 0:
+                kelly_pct = wr - ((1.0 - wr) / rrr)
+                if kelly_pct > 0:
+                    half_kelly = max(0.01, min(0.20, kelly_pct / 2.0))
+                    size = half_kelly * af
+
     if ev > thr * 1.5:
         size *= 1.5
     if explore:
@@ -341,6 +354,8 @@ def handle_signal(signal):
         "ticks":         0,
         "fill_slippage": fill_slip,
         "trail_price":   actual_entry,
+        "max_price":     actual_entry,
+        "min_price":     actual_entry,
         "is_trailing":   False,
     }
     print(f"    exec: slip={fill_slip:.5f}  fr={fill_rate(sym):.2f}  "
@@ -366,6 +381,10 @@ def on_price(data):
     move = (curr - entry) / entry
     if pos["action"] == "SELL":
         move *= -1
+        
+    # Extrémy obchodu (MAE / MFE tracking)
+    if curr > pos["max_price"]: pos["max_price"] = curr
+    if curr < pos["min_price"]: pos["min_price"] = curr
         
     # Trail price tracking
     if pos["action"] == "BUY" and curr > pos["trail_price"]:
@@ -411,6 +430,9 @@ def on_price(data):
     print(f"    {icon} {short} {pos['action']} "
           f"${entry:,.4f}→${curr:,.4f}  {profit:+.6f}  [{reason}]")
 
+    mfe = (pos["max_price"] - entry) / entry if pos["action"] == "BUY" else (entry - pos["min_price"]) / entry
+    mae = (entry - pos["min_price"]) / entry if pos["action"] == "BUY" else (pos["max_price"] - entry) / entry
+
     trade = {
         **pos["signal"],
         "profit":        profit,
@@ -419,6 +441,8 @@ def on_price(data):
         "close_reason":  reason,
         "timestamp":     time.time(),
         "fill_slippage": pos.get("fill_slippage", 0.0),
+        "mae":           mae,
+        "mfe":           mfe,
     }
 
     update_metrics(pos["signal"], trade)
