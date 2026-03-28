@@ -604,16 +604,24 @@ def cost_guard_bootstrap(edge):
 
 
 def force_trade():
-    """35% of signals forced through unconditionally to guarantee data flow."""
-    return random.random() < 0.35
+    """40% of signals forced through unconditionally to guarantee data flow."""
+    return random.random() < 0.40
 
 
 def should_trade(ev, ws):
     """
-    Minimal quality gate — EV ignored until learning has enough data.
-      force_trade() (35%) → True unconditionally
-      else                → ws > 0.25 only
+    Final decision gate — three tiers:
+      ensure_activity: trades < 50 → always True (cold-start guarantee)
+      force_trade (40%)            → always True (ongoing anti-deadlock)
+      else                         → ws > 0.25 only (EV ignored)
     """
+    try:
+        from src.services.learning_event import METRICS
+        if METRICS.get("trades", 0) < 50:
+            return True
+    except Exception:
+        if len(closed_trades) < 50:
+            return True
     if force_trade():
         return True
     return ws > 0.25
