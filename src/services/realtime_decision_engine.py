@@ -341,15 +341,20 @@ def _seed_calibrator(trades):
 
 def get_ev_threshold():
     """
-    Adaptive threshold = 75th percentile of ev_history (top 25% only).
-    Bootstrap (<100 closed trades): -0.30 — permit negative-EV signals for
-    data collection; calibration is unreliable this early.
-    Post-bootstrap cold start (<100 ev_history samples): 0.15.
-    Live: q75 of ev_history, floor 0.10.
+    Adaptive EV gate threshold.
+    Learning mode (trades < 200 OR WR < 20%): -0.30
+      Permits negative-EV signals so data can flow in — calibration is
+      unreliable when WR is near 0%. The old bootstrap check used trades<100
+      which immediately tightened to 0.15 once 100 historical trades loaded,
+      blocking everything before a single new trade was placed.
+    Cold start (ev_history < 100 samples):    0.15
+    Live (ev_history >= 100):                 q75 of ev_history, floor 0.10
     """
     try:
-        from src.services.execution import is_bootstrap as _ib
-        if _ib():
+        from src.services.learning_event import METRICS as _m
+        _t  = _m.get("trades", 0)
+        _wr = _m.get("wins", 0) / max(_t, 1)
+        if _t < 200 or _wr < 0.20:
             return -0.30
     except Exception:
         pass

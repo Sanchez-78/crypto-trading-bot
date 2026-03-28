@@ -283,18 +283,19 @@ def bootstrap_from_history(trades):
     # firebase_client._slim_trade now writes both fields).
     try:
         from src.services.learning_monitor import lm_update as _lmu
+        from src.services.execution       import bandit_update as _bu
         for t in sorted_trades:
             sym    = t.get("symbol") or t.get("sym")
             reg    = t.get("regime", "RANGING")
             pnl    = float(t.get("profit") or 0)
             result = t.get("result")
             ws     = float(t.get("ws", 0.5))
-            # Only boolean features matter for lm_feature_stats — filter out
-            # continuous indicators (rsi, ema_diff, etc.) to keep WR signal clean.
             raw_f  = t.get("features") or {}
             feats  = {k: v for k, v in raw_f.items() if isinstance(v, bool)}
             if sym and result in ("WIN", "LOSS"):
                 _lmu(sym, reg, pnl, ws, feats)
+                # Seed bandit_stats so UCB scores diverge from 0.50 prior on boot
+                _bu(sym, reg, max(-0.05, min(0.05, pnl)))
     except Exception:
         pass
 
