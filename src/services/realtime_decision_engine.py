@@ -188,13 +188,13 @@ def combo_weight(features, regime="RANGING"):
 
 def allow_combo(combo):
     """
-    Limit each combo to 20 uses per session — prevents a single setup from
-    dominating while still allowing learning. Raised 5→20: in a QUIET_RANGE
-    session only 2–3 distinct combos appear; a limit of 5 exhausted them
-    within the first 10 signals and blocked all subsequent trading for the
-    entire session (confirmed: 0 signals after boot in 37-min session).
+    Limit each combo to 200 uses per session.
+    Raised 20→200: with proper debounce (1 call/30s per symbol), 3 symbols
+    exhaust 20 uses in 200s (~3 min). Confirmed in log: po_filtru=1 for 18 min
+    because even after debounce fix, combo_usage hit 20 within first 3 minutes.
+    200 uses = ~100 min at 30s debounce, sufficient for any trading session.
     """
-    if combo_usage.get(combo, 0) >= 20:
+    if combo_usage.get(combo, 0) >= 200:
         return False
     combo_usage[combo] = combo_usage.get(combo, 0) + 1
     return True

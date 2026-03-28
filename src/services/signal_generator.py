@@ -382,11 +382,15 @@ def on_price(data):
         return
 
     # ── Time-based debounce (30 s per symbol) ─────────────────────────────────
-    # MUST be before _get_scored_edge — allow_combo increments on every call.
-    # Without this guard, allow_combo is exhausted within ~40 s at 2 s/tick.
+    # Stamp _last_ts BEFORE calling _get_scored_edge. Critical: if we stamp
+    # only after a signal emits (old position: line ~452), symbols that never
+    # produce a signal keep _last_ts=0 → debounce never activates → allow_combo
+    # is called every 2 s tick → combo budget exhausted in 40 s (20 uses × 2s).
+    # Confirmed in log: po_filtru=1 for 18 min because ETH/ADA hit this path.
     if time.time() - _last_ts.get(s, 0) < DEBOUNCE_S:
         track_filtered()
         return
+    _last_ts[s] = time.time()   # stamp NOW — throttles _get_scored_edge to 1/30s per sym
 
     # ── Edge scoring: 7-feature self-learning gate ────────────────────────────
     # Regime confidence: ADX-based (trend) or inverse-ADX (range)
@@ -449,7 +453,7 @@ def on_price(data):
 
     # ── Record + emit ─────────────────────────────────────────────────────────
     # EV gate is handled exclusively in realtime_decision_engine (single calc)
-    _last_ts[s] = time.time()
+    # _last_ts[s] already stamped above (before _get_scored_edge) — do not re-stamp
     _record_side(s, action)
 
     signal = {
