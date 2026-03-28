@@ -54,15 +54,15 @@ _last_replaced    = {}   # symbol -> timestamp of last replacement
 FEE_RT      = 0.0020    # 0.20% round-trip Binance taker fees
 MIN_TP_PCT  = 0.0025    # 0.25% min TP
 MIN_SL_PCT  = 0.0020    # 0.20% min SL
-MAX_TICKS   = 60
+MAX_TICKS   = 90
 FLUSH_EVERY = 60
 
 # Edge-specific TP/SL multipliers (× ATR)
 # trend_pullback: moderate TP — riding the bounce back to mean
 # vol_breakout:   wide TP — volatility expansion has further to run
 # fake_breakout:  tight TP — quick reversal, grab fast
-_EDGE_TP    = {"trend_pullback": 1.5, "vol_breakout": 2.0, "fake_breakout": 1.2}
-_EDGE_SL    = {"trend_pullback": 1.0, "vol_breakout": 1.0, "fake_breakout": 0.8}
+_EDGE_TP    = {"trend_pullback": 1.5, "vol_breakout": 2.0, "fake_breakout": 0.8}
+_EDGE_SL    = {"trend_pullback": 1.0, "vol_breakout": 1.0, "fake_breakout": 0.5}
 _EDGE_TRAIL = {"trend_pullback": 0.4, "vol_breakout": 0.5, "fake_breakout": 0.3}
 
 # Fallback (unknown edge)

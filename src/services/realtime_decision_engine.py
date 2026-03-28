@@ -28,7 +28,7 @@ MIN_RR   = 1.25
 EV_SPREAD_MIN   = 0.05    # flat distribution guard
 EV_SPREAD_AFTER = 50      # evaluate spread only after N samples
 MAX_TRADES_15   = 5       # frequency cap (trades per 15 min)
-MAX_LOSS_STREAK = 5       # halt trading after N consecutive losses
+MAX_LOSS_STREAK = 15      # halt trading after N consecutive losses (raised: 5 was too tight)
 
 
 class Calibrator:
@@ -47,10 +47,16 @@ class Calibrator:
             self.buckets[b][0] += 1
 
     def get(self, p):
-        """Empirical WR for bucket; requires ≥30 samples, else 0.5."""
+        """
+        Empirical WR for bucket; requires ≥30 samples, else 0.5.
+        Floor at 0.35: a 0% WR from 33 samples is statistically uncertain
+        and would poison EV to −1.0, permanently blocking learning.
+        Post-bootstrap this floor decays naturally as better data accumulates.
+        """
         b = round(p, 1)
         if b in self.buckets and self.buckets[b][1] >= 30:
-            return self.buckets[b][0] / self.buckets[b][1]
+            wr = self.buckets[b][0] / self.buckets[b][1]
+            return max(wr, 0.35)   # floor prevents EV collapse from early bad data
         return 0.5
 
     def summary(self):
@@ -251,13 +257,22 @@ def _seed_calibrator(trades):
 def get_ev_threshold():
     """
     Adaptive threshold = 75th percentile of ev_history (top 25% only).
-    Cold start: 0.15 until 100 samples; floor 0.10 always.
+    Bootstrap (<100 closed trades): -0.30 — permit negative-EV signals for
+    data collection; calibration is unreliable this early.
+    Post-bootstrap cold start (<100 ev_history samples): 0.15.
+    Live: q75 of ev_history, floor 0.10.
     """
+    try:
+        from src.services.execution import is_bootstrap as _ib
+        if _ib():
+            return -0.30
+    except Exception:
+        pass
     if len(ev_history) < 100:
-        return 0.25
+        return 0.15
     s   = sorted(ev_history)
     q75 = s[int(len(s) * 0.75)]
-    return max(0.15, q75)
+    return max(0.10, q75)
 
 
 def evaluate_signal(signal):
@@ -286,14 +301,20 @@ def evaluate_signal(signal):
 
     # ── Loss streak + velocity guard ──────────────────────────────────────────
     from src.services.learning_event import METRICS as _M, _recent_results as _rr
+    try:
+        from src.services.execution import is_bootstrap as _ib
+        _bootstrap = _ib()
+    except Exception:
+        _bootstrap = False
+
     streak = _M.get("loss_streak", 0)
-    if streak >= MAX_LOSS_STREAK:
+    if not _bootstrap and streak >= MAX_LOSS_STREAK:
         track_blocked()
         print(f"    decision=SKIP_STREAK  streak={streak}>={MAX_LOSS_STREAK}")
         return None
     # Velocity guard: 3+ losses in last 5 trades → temporary pause
     recent_losses = sum(1 for r in list(_rr)[-5:] if r == "LOSS")
-    if recent_losses >= 3:
+    if not _bootstrap and recent_losses >= 3:
         track_blocked()
         print(f"    decision=SKIP_VELOCITY  recent_losses={recent_losses}/5")
         return None
