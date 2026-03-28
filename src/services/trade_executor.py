@@ -26,7 +26,9 @@ from src.services.execution       import (
     exec_order, valid, ob_adjust, cost_guard, pre_cost,
     ev_adjust, fill_rate, final_size, entry_filter,
     rotate_capital, update_returns, update_equity, record_trade_close,
-    bayes_update, bandit_update, OrderBook)
+    bayes_update, bandit_update, OrderBook,
+    bootstrap_mode, ws_threshold, cost_guard_bootstrap, size_floor,
+    failure_control, epsilon)
 import time
 
 BATCH             = []
@@ -253,7 +255,7 @@ def handle_signal(signal):
         print(f"    portfolio gate: exposure_full  sym={sym}")
         return
     thr     = get_ev_threshold()
-    ws_thr  = get_ws_threshold()
+    ws_thr  = ws_threshold()          # bootstrap-aware floor (0.40/0.45/live)
     ws_ratio = (ws_adj / ws_thr) if ws_thr > 0 else 1.0
     size     = base * math.sqrt(min(ws_ratio, 2.25)) * af
     if ev > thr * 1.5:
@@ -261,23 +263,20 @@ def handle_signal(signal):
     if explore:
         size *= 0.3
     size  = _vol_adjust(size, signal)
-    size  = max(0.005, size)
+    size  = size_floor(size)          # phase-aware minimum (0.01/0.005/none)
 
-    # Dashboard control gate — halves size on WARN, blocks on HALT
-    try:
-        from src.services.dashboard_live import dashboard_control
-        ctrl = dashboard_control(_positions)
-        if ctrl == 0.0:
-            print(f"    portfolio gate: dashboard_halt  sym={sym}")
-            return
-        size *= ctrl
-    except Exception:
-        pass
+    # Bootstrap-aware failure control (replaces dashboard_control in COLD/WARM)
+    ctrl = failure_control(_positions)
+    if ctrl == 0.0:
+        print(f"    portfolio gate: failure_halt  sym={sym}  "
+              f"mode={bootstrap_mode()}")
+        return
+    size *= ctrl
 
-    # Full cost guard with per-symbol blended slippage
-    if not cost_guard(ws_adj, size, ob, FEE_RT, sym):
+    # Bootstrap-aware cost guard (COLD=pass, WARM=soft, LIVE=strict)
+    if not cost_guard_bootstrap(ws_adj, size, ob, FEE_RT, sym):
         print(f"    portfolio gate: cost_guard  sym={sym}  "
-              f"ws_adj={ws_adj:.3f}  fr={fill_rate(sym):.2f}")
+              f"ws_adj={ws_adj:.3f}  mode={bootstrap_mode()}")
         return
 
     # TP/SL: edge-specific ATR multipliers

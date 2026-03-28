@@ -1,6 +1,11 @@
 """
 Ultra-adaptive capital allocation — Bayesian EV, bandit routing,
-depth-aware execution, stable regimes.
+depth-aware execution, stable regimes, bootstrap cold-start unlock.
+
+Bootstrap phases (driven by len(closed_trades)):
+  COLD  (<30):  all gates open — data collection, no blocking.
+  WARM  (<100): soft constraints — ev>-0.02, cost floor -0.01, size≥0.005.
+  LIVE  (≥100): full system — ev>0.05, strict cost guard, adaptive WS floor.
 
 EV (Bayesian + time-decayed):
   risk_ev = 0.6×prev + 0.2×raw_sharpe + 0.2×bayes_ev, then ×0.995^dt.
@@ -474,9 +479,120 @@ def final_size(sym, reg, base, positions, ob=None):
     return size
 
 
+# ── Bootstrap mode ────────────────────────────────────────────────────────────
+
+def bootstrap_mode():
+    """
+    Three-phase learning gate driven by closed_trades count.
+    COLD  (<30):  no gates — collect data unconditionally.
+    WARM  (<100): soft constraints — shape without blocking.
+    LIVE  (≥100): full system active.
+    """
+    n = len(closed_trades)
+    if n < 30:
+        return "COLD"
+    if n < 100:
+        return "WARM"
+    return "LIVE"
+
+
 def entry_filter(sym, reg):
-    """Hard gate: only enter when risk_ev > 0.05. Blocks low-quality setups."""
-    return risk_ev(sym, reg) > 0.05
+    """
+    Phase-aware entry gate.
+    COLD: always True  — let every signal through for data collection.
+    WARM: ev > −0.02   — only block clearly negative-EV setups.
+    LIVE: ev > 0.05    — full quality filter.
+    """
+    mode = bootstrap_mode()
+    if mode == "COLD":
+        return True
+    ev = risk_ev(sym, reg)
+    if mode == "WARM":
+        return ev > -0.02
+    return ev > 0.05
+
+
+def ws_threshold():
+    """
+    Phase-aware WS floor fed into trade_executor's ws_ratio sizing.
+    COLD: 0.40  WARM: 0.45  LIVE: max(0.50, 75th-pctl of score_history).
+    """
+    mode = bootstrap_mode()
+    if mode == "COLD":
+        return 0.40
+    if mode == "WARM":
+        return 0.45
+    scores = [t["ws"] for t in trade_log if "ws" in t]
+    if len(scores) >= 10:
+        return max(0.50, float(np.quantile(scores, 0.75)))
+    return 0.50
+
+
+def cost_guard_bootstrap(ws, size, ob, fee, sym):
+    """
+    Phase-aware cost guard.
+    COLD: always pass  — no net-edge block.
+    WARM: pass if net_edge > −0.01 (allow small negative-edge exploration).
+    LIVE: delegate to cost_guard (net_edge > 0).
+    """
+    mode = bootstrap_mode()
+    if mode == "COLD":
+        return True
+    slip = slippage(size, ob)
+    if mode == "WARM":
+        return (ws - slip - fee) > -0.01
+    return cost_guard(ws, size, ob, fee, sym)
+
+
+def epsilon():
+    """
+    Exploration rate for random signal pass-through.
+    COLD: 0.25  WARM: 0.10  LIVE: exponential decay → floor 0.02.
+    """
+    mode = bootstrap_mode()
+    if mode == "COLD":
+        return 0.25
+    if mode == "WARM":
+        return 0.10
+    return max(0.02, 0.10 * float(np.exp(-len(closed_trades) / 500.0)))
+
+
+def size_floor(size):
+    """
+    Minimum position size per phase — prevents zero/dust sizes early on.
+    COLD: max(size, 0.010)  WARM: max(size, 0.005)  LIVE: unchanged.
+    """
+    mode = bootstrap_mode()
+    if mode == "COLD":
+        return max(size, 0.010)
+    if mode == "WARM":
+        return max(size, 0.005)
+    return size
+
+
+def failure_control(positions):
+    """
+    Phase-aware failure-score multiplier applied to final position size.
+    COLD: 1.0 (no blocking — data collection phase).
+    WARM: 0.5 if score > 3, else 1.0.
+    LIVE: 0.0 if score > 3 (HALT), 0.5 if > 1.5 (WARN), else 1.0.
+    Imported lazily to avoid circular dependency.
+    """
+    mode = bootstrap_mode()
+    if mode == "COLD":
+        return 1.0
+    try:
+        from src.services.diagnostics import failure_score as _fs
+        score = _fs(positions)
+    except Exception:
+        return 1.0
+    if mode == "WARM":
+        return 0.5 if score > 3.0 else 1.0
+    if score > 3.0:
+        return 0.0
+    if score > 1.5:
+        return 0.5
+    return 1.0
 
 
 # ── Portfolio EV snapshot ──────────────────────────────────────────────────────
