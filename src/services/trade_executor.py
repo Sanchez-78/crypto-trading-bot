@@ -29,6 +29,7 @@ from src.services.execution       import (
     bayes_update, bandit_update, OrderBook,
     bootstrap_mode, ws_threshold, cost_guard_bootstrap, size_floor,
     failure_control, epsilon)
+import random
 import time
 
 BATCH             = []
@@ -246,7 +247,10 @@ def handle_signal(signal):
     from src.services.realtime_decision_engine import get_ev_threshold, get_ws_threshold
     _t      = _gm().get("trades", 0)
     ev      = signal.get("ev", 0.05)
-    explore = signal.get("explore", False)
+    # Epsilon-driven exploration: override explore flag with phase-aware probability.
+    # Forces the system to occasionally take trades at 0.3× size to sample
+    # diverse (sym, reg) outcomes rather than always following the greedy path.
+    explore = signal.get("explore", False) or (random.random() < epsilon())
     af      = min(1.0, max(0.7, signal.get("auditor_factor", 1.0)))
     # final_size = capital_alloc(risk_parity+EV+cluster) × leverage(dd-adaptive)
     # returns 0 if total_exposure > 70%

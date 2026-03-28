@@ -21,6 +21,7 @@ Alerts:
   else          → GOOD
 """
 
+import random
 import numpy as np
 
 from src.services.execution import risk_ev, bandit_score
@@ -40,6 +41,20 @@ _HIST_CAP = 200
 def _cap(lst):
     if len(lst) > _HIST_CAP:
         del lst[:-_HIST_CAP]
+
+
+def feature_dropout(features):
+    """
+    Randomly subsample the feature keys credited on each trade.
+    With k features always present, every trade credits a different
+    random subset → forces WR divergence across features instead of
+    uniform credit.  Pass-through when ≤2 features (nothing to drop).
+    """
+    keys = list(features)
+    if len(keys) <= 2:
+        return keys
+    k = random.randint(2, len(keys))
+    return random.sample(keys, k)
 
 
 # ── Update hook — call on every trade close ────────────────────────────────────
@@ -83,9 +98,11 @@ def lm_update(sym, reg, pnl, ws, features):
     b_lst.append(b)
     _cap(b_lst)
 
-    # Feature win rates (key = feature name)
-    win_flag = 1 if pnl > 0 else 0
-    for fname in features:
+    # Feature win rates — apply dropout so each trade credits a random
+    # subset of features, forcing WR divergence across keys.
+    win_flag      = 1 if pnl > 0 else 0
+    active_feats  = feature_dropout(features)
+    for fname in active_feats:
         w, t = lm_feature_stats.get(fname, (0, 0))
         lm_feature_stats[fname] = (w + win_flag, t + 1)
 

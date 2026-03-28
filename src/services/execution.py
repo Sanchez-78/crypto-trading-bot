@@ -370,20 +370,81 @@ def cost_guard(ws, size, ob, fee, sym):
 
 # ── Capital allocation (risk-parity + EV + correlation) ───────────────────────
 
+# ── Anti-flat divergence functions ────────────────────────────────────────────
+
+def ev_variance_boost(sym, reg):
+    """
+    Amplify EV for pairs whose PnL has meaningful variance.
+    Flat-return pairs (all wins same size) get no boost.
+    Uses lazy import of lm_pnl_hist to avoid circular dependency.
+    Returns multiplier ∈ [1.0, 2.0]: 1 + min(std/0.02, 1).
+    """
+    try:
+        from src.services.learning_monitor import lm_pnl_hist
+        pnl = lm_pnl_hist.get((sym, reg), [])
+    except Exception:
+        return 1.0
+    if len(pnl) < 10:
+        return 1.0
+    v = float(np.std(pnl[-20:]))
+    return 1.0 + min(v / 0.02, 1.0)
+
+
+def ev_flat_penalty(sym, reg):
+    """
+    Penalise pairs where EV has not moved at all in the last 10 samples.
+    std(evs[-10:]) < 0.01 means the smoothing is stuck → halve the score.
+    Uses lazy import of lm_ev_hist.
+    """
+    try:
+        from src.services.learning_monitor import lm_ev_hist
+        evs = lm_ev_hist.get((sym, reg), [])
+    except Exception:
+        return 1.0
+    if len(evs) < 10:
+        return 1.0
+    if float(np.std(evs[-10:])) < 0.01:
+        return 0.5
+    return 1.0
+
+
+def final_ev(sym, reg):
+    """
+    Divergence-aware EV: risk_ev × variance_boost × flat_penalty.
+    Used in capital_alloc and entry_filter instead of raw risk_ev.
+    Pairs with high PnL variance and moving EV score higher;
+    stuck/flat pairs are penalised into distinctness.
+    """
+    ev = risk_ev(sym, reg)
+    ev *= ev_variance_boost(sym, reg)
+    ev *= ev_flat_penalty(sym, reg)
+    return ev
+
+
+def bandit_noise(sym, reg):
+    """
+    UCB1 score + U(0, 0.1) dither.
+    Breaks exact ties between under-explored pairs so allocation
+    rotates across them rather than always picking the same one.
+    """
+    return bandit_score(sym, reg) + random.uniform(0.0, 0.1)
+
+
 def capital_alloc(sym, reg, base, positions):
     """
     Six-factor softmax allocation:
-      score  = risk_ev × risk_parity × cluster_penalty × (1+kelly) × bandit_UCB
+      score  = final_ev × risk_parity × cluster_penalty × (1+kelly) × bandit_noise
       weight = softmax(scores)
       alloc  = base × clamp(0.5 + weight + 0.1×entropy, 0.5, 1.5)
-    Bandit UCB drives exploration of under-traded (sym, reg) pairs.
+    final_ev includes variance boost + flat penalty for divergence.
+    bandit_noise adds U(0,0.1) dither to break allocation ties.
     """
     def _score(s, r, pos_dict):
-        return (max(risk_ev(s, r), 0.0)
+        return (max(final_ev(s, r), 0.0)
                 * risk_parity_weight(s)
                 * cluster_penalty(s, pos_dict)
                 * (1.0 + kelly_fraction(s, r))
-                * bandit_score(s, r))
+                * bandit_noise(s, r))
 
     new_score  = _score(sym, reg, positions)
     all_scores = [
@@ -498,15 +559,16 @@ def bootstrap_mode():
 
 def entry_filter(sym, reg):
     """
-    Phase-aware entry gate.
-    COLD: always True  — let every signal through for data collection.
+    Phase-aware entry gate using final_ev (variance-boosted, flat-penalised).
+    COLD: always True  — data collection, no blocking.
     WARM: ev > −0.02   — only block clearly negative-EV setups.
     LIVE: ev > 0.05    — full quality filter.
+    Using final_ev ensures flat/stuck pairs are filtered earlier.
     """
     mode = bootstrap_mode()
     if mode == "COLD":
         return True
-    ev = risk_ev(sym, reg)
+    ev = final_ev(sym, reg)
     if mode == "WARM":
         return ev > -0.02
     return ev > 0.05
@@ -546,14 +608,17 @@ def cost_guard_bootstrap(ws, size, ob, fee, sym):
 
 def epsilon():
     """
-    Exploration rate for random signal pass-through.
-    COLD: 0.25  WARM: 0.10  LIVE: exponential decay → floor 0.02.
+    Exploration rate for random trade pass-through at reduced size.
+    COLD: 0.35  — aggressive exploration, no data yet.
+    WARM: 0.15  — moderate exploration, data accumulating.
+    LIVE: exp decay from 0.10 → floor 0.02 as closed_trades grows.
+    Higher COLD/WARM vs previous (0.25/0.10) forces more divergent sampling.
     """
     mode = bootstrap_mode()
     if mode == "COLD":
-        return 0.25
+        return 0.35
     if mode == "WARM":
-        return 0.10
+        return 0.15
     return max(0.02, 0.10 * float(np.exp(-len(closed_trades) / 500.0)))
 
 
