@@ -62,11 +62,13 @@ FLUSH_EVERY = 60
 
 def compute_tp_sl(entry, direction):
     """Absolute TP/SL prices.
-    TP=0.60%, SL=0.20% → net_TP=0.45%, net_SL=0.35% → breakeven WR=43.75%.
     Uses max(MIN_TP_PCT, 4×FEE_RT) to guarantee TP always clears round-trip fees.
+    SL is dynamically calibrated via Auto Walk-Forward.
     """
+    from src.services.auto_walkforward import get_best_sl
+    
     tp_pct = max(MIN_TP_PCT, 4 * FEE_RT)
-    sl_pct = MIN_SL_PCT
+    sl_pct = max(MIN_SL_PCT, get_best_sl()) # Bezpečnostní spodní limit 0.40%
     if direction == "BUY":
         return entry * (1 + tp_pct), entry * (1 - sl_pct)
     return entry * (1 - tp_pct), entry * (1 + sl_pct)
@@ -208,6 +210,16 @@ def _allow_trade(symbol, direction, regime):
     from src.services.macro_guard import is_safe
     if not is_safe():
         return False, "macro_guard_halt"
+        
+    from src.services.squeeze_guard import is_safe_long, is_safe_short
+    if direction == "BUY" and not is_safe_long(symbol):
+        return False, "squeeze_guard_long"
+    if direction == "SELL" and not is_safe_short(symbol):
+        return False, "squeeze_guard_short"
+        
+    from src.services.correlation_shield import is_safe_correlation
+    if not is_safe_correlation(symbol, direction, _positions, 0.85):
+        return False, "correlation_shield"
         
     same_dir = sum(1 for p in _positions.values() if p["action"] == direction)
     if same_dir >= MAX_SAME_DIR:
