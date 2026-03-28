@@ -23,7 +23,7 @@ from src.services.execution import (
     trade_log, slippage_hist, returns_hist, closed_trades,
     slippage, ev_adjust, final_size, entry_filter, cost_guard,
     bayes_update, bandit_update, detect_regime, update_returns,
-    OrderBook,
+    risk_ev, OrderBook,
 )
 
 # ── Diagnostic state ───────────────────────────────────────────────────────────
@@ -165,7 +165,7 @@ class BacktestEngine:
             ob  = self._simulate_ob(price)
             reg = detect_regime(sym)
 
-            if not entry_filter(sym, reg):
+            if not entry_filter(risk_ev(sym, reg)):
                 continue
 
             ws   = float(tick.get("ws", 0.5))
@@ -230,7 +230,11 @@ def winrate():
 
 
 def avg_edge():
-    """Mean net edge (ws − slip) across closed_trades."""
+    """Mean net edge (ws − slip) across closed_trades.
+    Uses .get() defaults because entries from record_trade_close() carry
+    only {sym, reg, pnl} — ws/slip are absent for live trade closes.
+    """
     if not closed_trades:
         return 0.0
-    return float(np.mean([t["ws"] - t["slip"] for t in closed_trades]))
+    return float(np.mean([t.get("ws", 0.5) - t.get("slip", 0.0)
+                          for t in closed_trades]))
