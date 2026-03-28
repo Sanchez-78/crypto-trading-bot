@@ -205,7 +205,10 @@ def _allow_trade(symbol, direction, regime):
         return False, "capital_limit"
     if len(_positions) >= MAX_POSITIONS:
         return False, "max_positions"
-    # Direction concentration: max 1 same-direction position
+    from src.services.macro_guard import is_safe
+    if not is_safe():
+        return False, "macro_guard_halt"
+        
     same_dir = sum(1 for p in _positions.values() if p["action"] == direction)
     if same_dir >= MAX_SAME_DIR:
         return False, "same_dir"
@@ -337,6 +340,8 @@ def handle_signal(signal):
         "signal":        signal,
         "ticks":         0,
         "fill_slippage": fill_slip,
+        "trail_price":   actual_entry,
+        "is_trailing":   False,
     }
     print(f"    exec: slip={fill_slip:.5f}  fr={fill_rate(sym):.2f}  "
           f"ws_adj={ws_adj:.3f}  {size:.4f}@{actual_entry:.4f}  "
@@ -361,15 +366,41 @@ def on_price(data):
     move = (curr - entry) / entry
     if pos["action"] == "SELL":
         move *= -1
+        
+    # Trail price tracking
+    if pos["action"] == "BUY" and curr > pos["trail_price"]:
+        pos["trail_price"] = curr
+    elif pos["action"] == "SELL" and curr < pos["trail_price"]:
+        pos["trail_price"] = curr
+        
+    # Activate trailing stop
+    if not pos["is_trailing"] and move >= 0.006:  # +0.60% activation
+        pos["is_trailing"] = True
+        print(f"    🚀 {sym} TRAILING STOP ACTIVOVÁN! Zisk: {move*100:.2f}%")
 
-    # ── Exit conditions (absolute TP/SL) ──────────────────────────────────────
-    if   pos.get("force_close"):                         reason = "replaced"
-    elif pos["action"] == "BUY"  and curr >= pos["tp"]: reason = "TP"
-    elif pos["action"] == "BUY"  and curr <= pos["sl"]: reason = "SL"
-    elif pos["action"] == "SELL" and curr <= pos["tp"]: reason = "TP"
-    elif pos["action"] == "SELL" and curr >= pos["sl"]: reason = "SL"
-    elif pos["ticks"] >= MAX_TICKS:                     reason = "timeout"
+    # ── Exit conditions (Trailing vs Absolute SL) ─────────────────────────────
+    reason = None
+    atr = pos["signal"].get("atr", entry * 0.003)
+    trail_offset = 1.5 * atr
+
+    if pos.get("force_close"):
+        reason = "replaced"
+    elif pos["is_trailing"]:
+        if pos["action"] == "BUY" and curr <= (pos["trail_price"] - trail_offset):
+            reason = "TRAIL_SL"
+        elif pos["action"] == "SELL" and curr >= (pos["trail_price"] + trail_offset):
+            reason = "TRAIL_SL"
     else:
+        # Pre-trailing absolute stop-loss (wide TP as fallback)
+        if pos["action"] == "BUY" and curr <= pos["sl"]: reason = "SL"
+        elif pos["action"] == "BUY" and move > 0.10: reason = "TP_FALLBACK"
+        elif pos["action"] == "SELL" and curr >= pos["sl"]: reason = "SL"
+        elif pos["action"] == "SELL" and move > 0.10: reason = "TP_FALLBACK"
+
+    if reason is None and pos["ticks"] >= MAX_TICKS:
+        reason = "timeout"
+
+    if reason is None:
         return
 
     profit = (move - FEE_RT) * pos["size"]

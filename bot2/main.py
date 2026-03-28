@@ -17,7 +17,7 @@ AUDIT_INTERVAL   = 30    # seconds
 METRICS_INTERVAL = 30    # save metrics/latest every 30 s (frees ~5 760 writes/day)
 
 _start_time = time.time()
-SYMBOLS     = ["BTCUSDT", "ETHUSDT", "ADAUSDT"]
+from src.services.portfolio_discovery import get_active_symbols
 W           = 60
 
 
@@ -208,7 +208,7 @@ def print_status():
 
     # ── Live prices ───────────────────────────────────────────────────────────
     print(section("", "ZIVE CENY  (Binance · kazde 2 s)"))
-    for sym in SYMBOLS:
+    for sym in get_active_symbols():
         short = sym.replace("USDT", "")
         if sym not in lp:
             print(f"    {g(short, C.WHT):<4}  {g('cekam...', C.GRY)}")
@@ -240,12 +240,19 @@ def print_status():
             pnl  = move * size
             pcol = C.GRN if pnl >= 0 else C.RED
             act  = g(action, C.GRN if action == "BUY" else C.RED)
+            # Format TP/SL or Trailing Stop label
+            if pos.get("is_trailing"):
+                trail_sl_pct = (pos["trail_price"] * 1.5 * pos["signal"].get("atr", entry * 0.003)) / entry * 100 if entry else 0
+                sl_str = g(f'🚀 TRAILING', C.CYN + C.BLD)
+            else:
+                sl_str = g(f'TP:{tp_pct:.2f}%  SL:{sl_pct:.2f}%', C.GRY)
+
             print(f"    {g(short, C.WHT + C.BLD):<4}  {act}  "
                   f"{g(f'${entry:,.4f}', C.GRY)}"
                   f"{g('->', C.GRY)}"
                   f"{g(f'${curr:,.4f}', C.WHT)}  "
                   f"{g(f'{pnl:+.6f}', pcol)}  "
-                  f"{g(f'TP:{tp_pct:.2f}%  SL:{sl_pct:.2f}%', C.GRY)}")
+                  f"{sl_str}")
 
     # ── Trading performance ───────────────────────────────────────────────────
     print(section("", "VYSLEDKY OBCHODOVANI"))
@@ -307,7 +314,7 @@ def print_status():
               f"{g('Bar', C.GRY):<20}  "
               f"{g('Zisk', C.GRY):>12}")
         print(f"    {g('-' * 50, C.GRY)}")
-        for sym in SYMBOLS:
+        for sym in get_active_symbols():
             short = sym.replace("USDT", "")
             s = ss.get(sym)
             if not s:
@@ -457,7 +464,7 @@ def print_status():
     # ── Last signals ──────────────────────────────────────────────────────────
     if ls:
         print(section("", "POSLEDNI ROZHODNUTI"))
-        for sym in SYMBOLS:
+        for sym in get_active_symbols():
             short = sym.replace("USDT", "")
             if sym not in ls:
                 print(f"    {g(short, C.WHT + C.BLD):<4}  {g('zadny signal', C.GRY)}")

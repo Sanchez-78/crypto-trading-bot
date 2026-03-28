@@ -504,7 +504,11 @@ def on_price(data):
     # EV-rejected: track_blocked() already called inside evaluate_signal()
 
 
-def warmup(symbols=("BTCUSDT", "ETHUSDT", "ADAUSDT"), candles=80):
+def warmup(symbols=None, candles=80):
+    if symbols is None:
+        from src.services.portfolio_discovery import get_active_symbols
+        symbols = get_active_symbols()
+        
     import requests
     print("🌡️  Indicator warmup from Binance klines...")
     for s in symbols:

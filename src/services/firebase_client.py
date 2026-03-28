@@ -22,6 +22,13 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 import os, json, base64, time
 
+PREFIX = os.getenv("COLLECTION_PREFIX", "")
+
+def col(name: str) -> str:
+    """Returns prefixed collection name for Shadow Mode."""
+    return f"{PREFIX}{name}"
+
+
 # ── Globals ───────────────────────────────────────────────────────────────────
 
 db = None
@@ -130,7 +137,7 @@ def load_history(limit=HISTORY_LIMIT):
         return _HISTORY_CACHE["data"]
     try:
         docs = (
-            db.collection("trades")
+            db.collection(col("trades"))
             .order_by("timestamp", direction=firestore.Query.DESCENDING)
             .limit(limit)
             .stream()
@@ -155,7 +162,7 @@ def save_batch(batch):
         slimmed    = [_slim_trade(t) for t in batch]
         fb_batch   = db.batch()
         for item in slimmed:
-            fb_batch.set(db.collection("trades").document(), item)
+            fb_batch.set(db.collection(col("trades")).document(), item)
         fb_batch.commit()
 
         # Keep cache fresh – prepend new trades, cap at limit
@@ -175,7 +182,7 @@ def save_trade(trade, result):
 
 # ── Model state (calibrator + learning histories + bayes/bandit) ───────────────
 
-_MODEL_STATE_DOC = "model_state/latest"   # single document, overwritten each save
+_MODEL_STATE_DOC = col("model_state") + "/latest"   # single document, overwritten each save
 
 def save_model_state(state: dict) -> None:
     """
@@ -211,7 +218,7 @@ def load_old_trades(limit=200):
         return []
     try:
         docs = (
-            db.collection("trades")
+            db.collection(col("trades"))
             .order_by("timestamp", direction=firestore.Query.ASCENDING)
             .limit(limit)
             .stream()
@@ -227,7 +234,7 @@ def delete_trade(doc_id):
     if db is None:
         return
     try:
-        db.collection("trades").document(doc_id).delete()
+        db.collection(col("trades")).document(doc_id).delete()
     except Exception as e:
         print(f"❌ delete_trade: {e}")
 
@@ -237,7 +244,7 @@ def save_compressed(data):
     if db is None:
         return
     try:
-        db.collection("trades_compressed").add(data)
+        db.collection(col("trades_compressed")).add(data)
     except Exception as e:
         print(f"❌ save_compressed: {e}")
 
@@ -249,7 +256,7 @@ def save_signal(signal):
     if db is None:
         return None
     try:
-        _, ref = db.collection("signals").add(signal)
+        _, ref = db.collection(col("signals")).add(signal)
         # Invalidate signals cache so next load picks it up
         _SIGNALS_CACHE["ts"] = 0
         return ref.id
@@ -269,7 +276,7 @@ def load_all_signals(limit=SIGNALS_LIMIT):
         return _SIGNALS_CACHE["data"]
     try:
         docs = (
-            db.collection("signals")
+            db.collection(col("signals"))
             .order_by("timestamp", direction=firestore.Query.DESCENDING)
             .limit(limit)
             .stream()
@@ -295,7 +302,7 @@ def load_weights():
        time.time() - _WEIGHTS_CACHE["ts"] < WEIGHTS_TTL:
         return dict(_WEIGHTS_CACHE["data"])
     try:
-        doc = db.collection("weights").document("model").get()
+        doc = db.collection(col("weights")).document("model").get()
         _WEIGHTS_CACHE["data"] = doc.to_dict() or {}
         _WEIGHTS_CACHE["ts"]   = time.time()
     except Exception as e:
@@ -309,7 +316,7 @@ def save_weights(data):
     if db is None:
         return
     try:
-        db.collection("weights").document("model").set(data, merge=True)
+        db.collection(col("weights")).document("model").set(data, merge=True)
         _WEIGHTS_CACHE["data"] = dict(data)
         _WEIGHTS_CACHE["ts"]   = time.time()
     except Exception as e:
@@ -330,7 +337,7 @@ def save_portfolio(data):
     if now - _last_portfolio_save < PORTFOLIO_THROTTLE:
         return  # skip – too frequent
     try:
-        db.collection("portfolio").document("state").set(
+        db.collection(col("portfolio")).document("state").set(
             {**data, "updated_at": now}, merge=True
         )
         _last_portfolio_save = now
@@ -345,7 +352,7 @@ def save_metrics(data):
     if db is None:
         return
     try:
-        db.collection("metrics").document("latest").set(
+        db.collection(col("metrics")).document("latest").set(
             {**data, "timestamp": time.time()}, merge=True
         )
     except Exception as e:
@@ -357,7 +364,7 @@ def save_last_trade(trade):
     if db is None:
         return
     try:
-        db.collection("metrics").document("last_trade").set({
+        db.collection(col("metrics")).document("last_trade").set({
             "symbol":     trade.get("symbol"),
             "action":     trade.get("action"),
             "result":     trade.get("result"),
@@ -521,7 +528,7 @@ def save_metrics_full(metrics, open_positions=None, execution=None, monitor=None
             "monitor":      monitor,     # learning quality/convergence/feature WR snapshot
             "timestamp":    time.time(),
         }
-        db.collection("metrics").document("latest").set(data, merge=False)
+        db.collection(col("metrics")).document("latest").set(data, merge=False)
     except Exception as e:
         print(f"❌ save_metrics_full: {e}")
 
@@ -533,7 +540,7 @@ def save_auditor_state(data):
     if db is None:
         return
     try:
-        db.collection("metrics").document("auditor").set(
+        db.collection(col("metrics")).document("auditor").set(
             {**data, "saved_at": time.time()}, merge=False
         )
     except Exception as e:
@@ -545,7 +552,7 @@ def load_auditor_state():
     if db is None:
         return {}
     try:
-        doc = db.collection("metrics").document("auditor").get()
+        doc = db.collection(col("metrics")).document("auditor").get()
         return doc.to_dict() or {}
     except Exception as e:
         print(f"❌ load_auditor_state: {e}")
@@ -559,7 +566,7 @@ def load_config():
     if db is None:
         return {}
     try:
-        doc = db.collection("config").document("runtime").get()
+        doc = db.collection(col("config")).document("runtime").get()
         return doc.to_dict() or {}
     except Exception as e:
         print(f"❌ load_config: {e}")
