@@ -370,14 +370,22 @@ def cost_guard(ws, size, ob, fee, sym):
 
 # ── Capital allocation (risk-parity + EV + correlation) ───────────────────────
 
-# ── Anti-flat divergence functions ────────────────────────────────────────────
+# ── Performance-based EV quality ──────────────────────────────────────────────
 
-def ev_variance_boost(sym, reg):
+def bandit_plays(sym, reg):
+    """Number of recorded plays for (sym, reg). Used for noise decay."""
+    _, plays = bandit_stats.get((sym, reg), (1, 2))
+    return plays
+
+
+def ev_quality(sym, reg):
     """
-    Amplify EV for pairs whose PnL has meaningful variance.
-    Flat-return pairs (all wins same size) get no boost.
+    Sharpe-based EV multiplier: 1 + max(mean/std, 0).
+    Rewards pairs with consistent positive PnL (high Sharpe).
+    Pairs with negative or zero mean get multiplier 1.0 (no penalty —
+    that is handled by risk_ev going negative).
+    Requires ≥10 samples; returns 1.0 during cold start.
     Uses lazy import of lm_pnl_hist to avoid circular dependency.
-    Returns multiplier ∈ [1.0, 2.0]: 1 + min(std/0.02, 1).
     """
     try:
         from src.services.learning_monitor import lm_pnl_hist
@@ -386,48 +394,31 @@ def ev_variance_boost(sym, reg):
         return 1.0
     if len(pnl) < 10:
         return 1.0
-    v = float(np.std(pnl[-20:]))
-    return 1.0 + min(v / 0.02, 1.0)
-
-
-def ev_flat_penalty(sym, reg):
-    """
-    Penalise pairs where EV has not moved at all in the last 10 samples.
-    std(evs[-10:]) < 0.01 means the smoothing is stuck → halve the score.
-    Uses lazy import of lm_ev_hist.
-    """
-    try:
-        from src.services.learning_monitor import lm_ev_hist
-        evs = lm_ev_hist.get((sym, reg), [])
-    except Exception:
-        return 1.0
-    if len(evs) < 10:
-        return 1.0
-    if float(np.std(evs[-10:])) < 0.01:
-        return 0.5
-    return 1.0
+    arr    = pnl[-20:]
+    sharpe = float(np.mean(arr)) / (float(np.std(arr)) + 1e-6)
+    return 1.0 + max(sharpe, 0.0)
 
 
 def final_ev(sym, reg):
     """
-    Divergence-aware EV: risk_ev × variance_boost × flat_penalty.
-    Used in capital_alloc and entry_filter instead of raw risk_ev.
-    Pairs with high PnL variance and moving EV score higher;
-    stuck/flat pairs are penalised into distinctness.
+    Performance-quality EV: risk_ev × ev_quality(Sharpe-based).
+    Pairs with consistent positive edge score higher;
+    noisy or loss-making pairs stay at or below their raw risk_ev.
+    No artificial variance or flat penalties — divergence is real.
     """
-    ev = risk_ev(sym, reg)
-    ev *= ev_variance_boost(sym, reg)
-    ev *= ev_flat_penalty(sym, reg)
-    return ev
+    return risk_ev(sym, reg) * ev_quality(sym, reg)
 
 
 def bandit_noise(sym, reg):
     """
-    UCB1 score + U(0, 0.1) dither.
-    Breaks exact ties between under-explored pairs so allocation
-    rotates across them rather than always picking the same one.
+    UCB1 score + decaying dither: U(0, 0.1 / sqrt(plays+1)).
+    Exploration bonus is large when a pair is new (high uncertainty)
+    and shrinks toward zero as plays accumulate — dither is temporary,
+    not permanent noise.
     """
-    return bandit_score(sym, reg) + random.uniform(0.0, 0.1)
+    n = bandit_plays(sym, reg)
+    noise = random.uniform(0.0, 0.1 / ((n + 1) ** 0.5))
+    return bandit_score(sym, reg) + noise
 
 
 def capital_alloc(sym, reg, base, positions):
@@ -436,8 +427,8 @@ def capital_alloc(sym, reg, base, positions):
       score  = final_ev × risk_parity × cluster_penalty × (1+kelly) × bandit_noise
       weight = softmax(scores)
       alloc  = base × clamp(0.5 + weight + 0.1×entropy, 0.5, 1.5)
-    final_ev includes variance boost + flat penalty for divergence.
-    bandit_noise adds U(0,0.1) dither to break allocation ties.
+    final_ev = risk_ev × Sharpe-quality multiplier (real edge, not variance).
+    bandit_noise dither decays to zero as plays accumulate.
     """
     def _score(s, r, pos_dict):
         return (max(final_ev(s, r), 0.0)

@@ -43,18 +43,17 @@ def _cap(lst):
         del lst[:-_HIST_CAP]
 
 
-def feature_dropout(features):
+def feature_sample(features):
     """
-    Randomly subsample the feature keys credited on each trade.
-    With k features always present, every trade credits a different
-    random subset → forces WR divergence across features instead of
-    uniform credit.  Pass-through when ≤2 features (nothing to drop).
+    Soft feature retention: each key is kept with probability 0.8.
+    Retains signal structure (high-WR features still credited most
+    of the time) while introducing enough stochasticity to separate
+    WRs across features without destroying them.
+    Falls back to full set when fewer than 2 keys would survive.
     """
-    keys = list(features)
-    if len(keys) <= 2:
-        return keys
-    k = random.randint(2, len(keys))
-    return random.sample(keys, k)
+    keys    = list(features)
+    sampled = [f for f in keys if random.random() < 0.8]
+    return sampled if len(sampled) >= 2 else keys
 
 
 # ── Update hook — call on every trade close ────────────────────────────────────
@@ -98,10 +97,9 @@ def lm_update(sym, reg, pnl, ws, features):
     b_lst.append(b)
     _cap(b_lst)
 
-    # Feature win rates — apply dropout so each trade credits a random
-    # subset of features, forcing WR divergence across keys.
+    # Feature win rates — soft sampling retains signal while separating WRs.
     win_flag      = 1 if pnl > 0 else 0
-    active_feats  = feature_dropout(features)
+    active_feats  = feature_sample(features)
     for fname in active_feats:
         w, t = lm_feature_stats.get(fname, (0, 0))
         lm_feature_stats[fname] = (w + win_flag, t + 1)
