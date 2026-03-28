@@ -69,7 +69,11 @@ ev_history = deque(maxlen=200)   # ALL evaluated EVs (including skipped)
 _seeded    = [False]
 
 # ── Self-learning edge feature stats ──────────────────────────────────────────
-SCORE_MIN    = 4      # minimum base score (out of 7)
+SCORE_MIN    = 3      # minimum base score (out of 7)
+                      # was 4: BTC/ADA consistently score 3/7 in trending markets
+                      # (confirmed: 540 ticks generated, 1 po_filtru in 8-min session —
+                      #  all blocked at Gate 2 because only ETH scored 4/7 at boot).
+                      # 3 still filters random noise; Gate 5 (w_score) is the quality gate.
 W_SCORE_MIN  = 0.50   # cold-start floor for weighted avg score
 DECAY        = 0.98   # exponential decay applied to counts each update
 score_history = deque(maxlen=200)   # w_scores of all evaluated winning-dir setups

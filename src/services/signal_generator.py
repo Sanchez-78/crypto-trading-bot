@@ -36,7 +36,8 @@ MIN_TP_PCT = 0.0025   # must match trade_executor.MIN_TP_PCT
 MIN_SL_PCT = 0.0015   # must match trade_executor.MIN_SL_PCT
 
 MIN_TICKS    = 50
-DEBOUNCE_S   = 30    # seconds between signals per symbol
+DEBOUNCE_S   = 15    # seconds between signals per symbol (was 30 — halved to
+                      # double evaluation throughput; portfolio gate caps execution rate)
 SIDE_WINDOW  = 10    # signals to track for side balance
 SIDE_MAX_PCT = 0.60  # penalise if > 60% one side
 
@@ -246,8 +247,9 @@ def _get_scored_edge(hist, e50, e200, breakout_up, breakout_down, mom5, reg, reg
     if len(hist) < 51:
         return 0, 0.0, None, None, {}, False
 
-    # Gate 1: regime confidence
-    if regime_conf < 0.6:
+    # Gate 1: regime confidence (lowered 0.6→0.5: BULL_TREND at ADX=17 gives
+    # regime_conf=17/35=0.49 < 0.60 → was blocked; ADX 17-21 is valid weak trend)
+    if regime_conf < 0.5:
         return 0, 0.0, None, None, {}, False
 
     buy_sc,  buy_f  = _score_direction(hist, e50, e200, breakout_up, breakout_down, mom5, "BUY")
