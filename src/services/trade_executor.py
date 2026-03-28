@@ -28,7 +28,7 @@ from src.services.execution       import (
     rotate_capital, update_returns, update_equity, record_trade_close,
     bayes_update, bandit_update, OrderBook,
     bootstrap_mode, ws_threshold, cost_guard_bootstrap, size_floor,
-    failure_control, epsilon)
+    failure_control, epsilon, final_size_meta)
 import random
 import time
 
@@ -268,6 +268,7 @@ def handle_signal(signal):
         size *= 0.3
     size  = _vol_adjust(size, signal)
     size  = size_floor(size)          # phase-aware minimum (0.01/0.005/none)
+    size  = final_size_meta(size)     # meta risk_mult × alloc_mult, cap 0.25
 
     # Bootstrap-aware failure control (replaces dashboard_control in COLD/WARM)
     ctrl = failure_control(_positions)

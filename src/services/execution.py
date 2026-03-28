@@ -380,22 +380,21 @@ def bandit_plays(sym, reg):
 
 def ev_quality(sym, reg):
     """
-    Sharpe-based EV multiplier: 1 + max(mean/std, 0).
+    Sharpe-based EV multiplier: 1 + max(min(mean/std, 3.0), 0).
     Rewards pairs with consistent positive PnL (high Sharpe).
-    Pairs with negative or zero mean get multiplier 1.0 (no penalty —
-    that is handled by risk_ev going negative).
-    Requires ≥10 samples; returns 1.0 during cold start.
-    Uses lazy import of lm_pnl_hist to avoid circular dependency.
+    Cap at 3.0 prevents outlier runs from dominating allocation.
+    Requires ≥20 samples (raised from 10) for statistical stability;
+    returns 1.0 during cold start. Lazy import avoids circular dep.
     """
     try:
         from src.services.learning_monitor import lm_pnl_hist
         pnl = lm_pnl_hist.get((sym, reg), [])
     except Exception:
         return 1.0
-    if len(pnl) < 10:
+    if len(pnl) < 20:
         return 1.0
     arr    = pnl[-20:]
-    sharpe = float(np.mean(arr)) / (float(np.std(arr)) + 1e-6)
+    sharpe = min(float(np.mean(arr)) / (float(np.std(arr)) + 1e-6), 3.0)
     return 1.0 + max(sharpe, 0.0)
 
 
@@ -567,18 +566,41 @@ def entry_filter(sym, reg):
 
 def ws_threshold():
     """
-    Phase-aware WS floor fed into trade_executor's ws_ratio sizing.
-    COLD: 0.40  WARM: 0.45  LIVE: max(0.50, 75th-pctl of score_history).
+    Phase-aware WS floor, scaled by meta["ws_mult"].
+    COLD: 0.40  WARM: 0.45  LIVE: max(0.50, p75 of trade_log ws).
+    meta["ws_mult"] < 1 loosens threshold when system is learning;
+    > 1 tightens it when edge is confirmed.
     """
     mode = bootstrap_mode()
     if mode == "COLD":
-        return 0.40
-    if mode == "WARM":
-        return 0.45
-    scores = [t["ws"] for t in trade_log if "ws" in t]
-    if len(scores) >= 10:
-        return max(0.50, float(np.quantile(scores, 0.75)))
-    return 0.50
+        base = 0.40
+    elif mode == "WARM":
+        base = 0.45
+    else:
+        scores = [t["ws"] for t in trade_log if "ws" in t]
+        base   = max(0.50, float(np.quantile(scores, 0.75))) if len(scores) >= 10 else 0.50
+    try:
+        from src.services.learning_monitor import meta
+        return base * meta["ws_mult"]
+    except Exception:
+        return base
+
+
+def final_size_meta(size):
+    """
+    Apply meta risk_mult × alloc_mult to the computed position size.
+    Called as the last sizing step before order execution.
+    Provides system-level adaptive scaling:
+      low health  → alloc_mult < 1 (smaller positions)
+      high Sharpe → risk_mult  > 1 (larger positions)
+      drawdown    → both reduced (defensive mode)
+    Hard cap at 0.25 prevents any single position exceeding 25%.
+    """
+    try:
+        from src.services.learning_monitor import meta
+        return min(size * meta["risk_mult"] * meta["alloc_mult"], 0.25)
+    except Exception:
+        return min(size, 0.25)
 
 
 def cost_guard_bootstrap(ws, size, ob, fee, sym):

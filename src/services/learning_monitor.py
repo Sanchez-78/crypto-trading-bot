@@ -167,6 +167,67 @@ def lm_health():
     return float(np.mean(scores))
 
 
+# ── Meta state + adaptive control ────────────────────────────────────────────
+
+meta: dict = {
+    "ws_mult":    1.0,   # WS threshold multiplier  (< 1 loosens, > 1 tightens)
+    "risk_mult":  1.0,   # position size risk scaler
+    "alloc_mult": 1.0,   # allocation scaler
+}
+
+
+def meta_update():
+    """
+    Adjust meta multipliers from live system signals. Call every loop tick.
+
+    learning quality (lm_health):
+      < 0.20 → loosen threshold + shrink allocation (system still learning)
+      > 0.40 → tighten threshold + expand allocation (edge confirmed)
+      else   → reset to neutral 1.0
+
+    performance (Sharpe from equity curve):
+      > 1.5  → raise risk_mult (strong positive drift)
+      < 0.5  → lower risk_mult (weak / negative drift)
+      else   → reset to 1.0
+
+    drawdown (peak DD from equity curve):
+      > 0.10 → defensive override: risk_mult 0.5, alloc_mult 0.7
+               (takes precedence over Sharpe boost)
+    """
+    h  = lm_health()
+    try:
+        from src.services.diagnostics import sharpe as _sharpe, max_drawdown as _dd
+        sr = _sharpe()
+        dd = _dd()
+    except Exception:
+        sr = 0.0
+        dd = 0.0
+
+    # Learning quality gate
+    if h < 0.20:
+        meta["ws_mult"]    = 0.9
+        meta["alloc_mult"] = 0.8
+    elif h > 0.40:
+        meta["ws_mult"]    = 1.1
+        meta["alloc_mult"] = 1.1
+    else:
+        meta["ws_mult"]    = 1.0
+        meta["alloc_mult"] = 1.0
+
+    # Performance gate
+    if sr > 1.5:
+        meta["risk_mult"] = 1.1
+    elif sr < 0.5:
+        meta["risk_mult"] = 0.8
+    else:
+        meta["risk_mult"] = 1.0
+
+    # Drawdown override — takes precedence over everything above
+    if dd > 0.10:
+        meta["risk_mult"]  = 0.5
+        meta["alloc_mult"] = 0.7
+
+
 # ── Alerts ────────────────────────────────────────────────────────────────────
 
 def lm_alerts():

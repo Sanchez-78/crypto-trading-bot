@@ -571,6 +571,12 @@ def main():
                               monitor=monitor_data)
             _last_metrics = now
 
+        try:
+            from src.services.learning_monitor import meta_update
+            meta_update()
+        except Exception:
+            pass
+
         print_status()
         dashboard_loop(get_open_positions())
 
