@@ -184,30 +184,8 @@ def force_mode():
 
 
 def reset_if_toxic():
-    """Clear learned state when historical WR is below 10% after ≥50 trades.
-    A sub-10% WR indicates the stored history is poisoning future decisions
-    (e.g. a broken signal period, wrong regime labels, fee miscalculation).
-    Clears lm_pnl_hist, bandit_stats, lm_feature_stats so the system
-    rebuilds from a clean slate on the current session's trades.
-    Called once at the end of bootstrap_from_history().
-    """
-    try:
-        from src.services.learning_event import METRICS
-        from src.services.execution      import bandit_stats
-        t  = METRICS.get("trades", 0)
-        wr = METRICS.get("wins", 0) / t if t else 1.0
-        if t >= 50 and wr < 0.10:
-            lm_pnl_hist.clear()
-            bandit_stats.clear()
-            lm_feature_stats.clear()
-            lm_ev_hist.clear()
-            lm_wr_hist.clear()
-            lm_bandit_hist.clear()
-            lm_count.clear()
-            print(f"⚠️  reset_if_toxic: WR={wr:.1%} on {t} trades — "
-                  f"cleared lm + bandit state for fresh session")
-    except Exception as e:
-        print(f"⚠️  reset_if_toxic error: {e}")
+    """Disabled — reset loop was blocking data flow. No-op."""
+    return
 
 
 # ── Global health score ────────────────────────────────────────────────────────
