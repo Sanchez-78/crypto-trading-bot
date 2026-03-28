@@ -429,7 +429,9 @@ def on_price(data):
         elif pos["action"] == "SELL" and curr >= pos["sl"]: reason = "SL"
         elif pos["action"] == "SELL" and move > 0.10: reason = "TP_FALLBACK"
 
-    if reason is None and pos["ticks"] >= MAX_TICKS:
+    # 🚀 Bootstrap Timeout Akcelerátor (20 ticků vs 150 ticků)
+    current_timeout = 20 if is_bootstrap() else MAX_TICKS
+    if reason is None and pos["ticks"] >= current_timeout:
         reason = "timeout"
 
     if reason is None:
@@ -446,6 +448,13 @@ def on_price(data):
 
     mfe = (pos["max_price"] - entry) / entry if pos["action"] == "BUY" else (entry - pos["min_price"]) / entry
     mae = (entry - pos["min_price"]) / entry if pos["action"] == "BUY" else (pos["max_price"] - entry) / entry
+
+    try:
+        from src.services.notifier import send_trade_notification
+        profit_pct = move - fee_used
+        send_trade_notification(sym, pos["action"], profit_pct, reason)
+    except Exception as e:
+        print(f"    [Warn: Notifikace error] {e}")
 
     trade = {
         **pos["signal"],
