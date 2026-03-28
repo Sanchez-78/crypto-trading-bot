@@ -547,38 +547,30 @@ def bootstrap_mode():
     return "LIVE"
 
 
-def entry_filter(sym, reg):
+def is_bootstrap():
+    """True for the first 100 closed trades — unlocks full trade flow."""
+    return len(closed_trades) < 100
+
+
+def entry_filter(ev):
     """
-    Phase-aware entry gate using final_ev (variance-boosted, flat-penalised).
-    COLD: always True  — data collection, no blocking.
-    WARM: ev > −0.02   — only block clearly negative-EV setups.
-    LIVE: ev > 0.05    — full quality filter.
-    Using final_ev ensures flat/stuck pairs are filtered earlier.
+    Entry gate: always pass during bootstrap; require ev > 0.05 post-bootstrap.
+    Takes pre-computed EV so caller controls which measure to use.
     """
-    mode = bootstrap_mode()
-    if mode == "COLD":
+    if is_bootstrap():
         return True
-    ev = final_ev(sym, reg)
-    if mode == "WARM":
-        return ev > -0.02
     return ev > 0.05
 
 
 def ws_threshold():
     """
-    Phase-aware WS floor, scaled by meta["ws_mult"].
-    COLD: 0.40  WARM: 0.45  LIVE: max(0.50, p75 of trade_log ws).
-    meta["ws_mult"] < 1 loosens threshold when system is learning;
-    > 1 tightens it when edge is confirmed.
+    WS floor: 0.40 during bootstrap; max(0.50, p75 of trade history) post-bootstrap.
+    Scaled by meta["ws_mult"] only when live (meta frozen at 1.0 during bootstrap).
     """
-    mode = bootstrap_mode()
-    if mode == "COLD":
-        base = 0.40
-    elif mode == "WARM":
-        base = 0.45
-    else:
-        scores = [t["ws"] for t in trade_log if "ws" in t]
-        base   = max(0.50, float(np.quantile(scores, 0.75))) if len(scores) >= 10 else 0.50
+    if is_bootstrap():
+        return 0.40
+    scores = [t["ws"] for t in trade_log if "ws" in t]
+    base   = max(0.50, float(np.quantile(scores, 0.75))) if len(scores) >= 10 else 0.50
     try:
         from src.services.learning_monitor import meta
         return base * meta["ws_mult"]
@@ -603,20 +595,37 @@ def final_size_meta(size):
         return min(size, 0.25)
 
 
-def cost_guard_bootstrap(ws, size, ob, fee, sym):
+def cost_guard_bootstrap(edge):
     """
-    Phase-aware cost guard.
-    COLD: always pass  — no net-edge block.
-    WARM: pass if net_edge > −0.01 (allow small negative-edge exploration).
-    LIVE: delegate to cost_guard (net_edge > 0).
+    Phase-aware cost gate on pre-computed net edge.
+    Bootstrap: pass if edge > -0.02 (allow slight negative-edge exploration).
+    Live:      pass if edge > 0 (strict break-even requirement).
     """
-    mode = bootstrap_mode()
-    if mode == "COLD":
+    if is_bootstrap():
+        return edge > -0.02
+    return edge > 0
+
+
+def force_trade():
+    """
+    Anti-deadlock: during the first 30 trades, force 30% of signals through
+    all quality gates unconditionally. Epsilon handles the size reduction.
+    Guarantees early data collection even when gates would otherwise block.
+    """
+    if len(closed_trades) < 30:
+        return random.random() < 0.3
+    return False
+
+
+def should_trade(ev, ws):
+    """
+    Combined entry gate.
+    force_trade() bypasses all filters to prevent cold-start deadlock.
+    Otherwise: entry_filter(ev) AND ws > ws_threshold() must both pass.
+    """
+    if force_trade():
         return True
-    slip = slippage(size, ob)
-    if mode == "WARM":
-        return (ws - slip - fee) > -0.01
-    return cost_guard(ws, size, ob, fee, sym)
+    return entry_filter(ev) and ws > ws_threshold()
 
 
 def epsilon():

@@ -180,6 +180,9 @@ def meta_update():
     """
     Adjust meta multipliers from live system signals. Call every loop tick.
 
+    Frozen at 1.0 during bootstrap (<100 trades) to prevent meta from
+    suppressing early learning before sufficient data exists.
+
     learning quality (lm_health):
       < 0.20 → loosen threshold + shrink allocation (system still learning)
       > 0.40 → tighten threshold + expand allocation (edge confirmed)
@@ -191,9 +194,18 @@ def meta_update():
       else   → reset to 1.0
 
     drawdown (peak DD from equity curve):
-      > 0.10 → defensive override: risk_mult 0.5, alloc_mult 0.7
-               (takes precedence over Sharpe boost)
+      > 0.10 → risk_mult 0.6 override (takes precedence over Sharpe boost)
     """
+    try:
+        from src.services.execution import is_bootstrap
+        if is_bootstrap():
+            meta["ws_mult"]    = 1.0
+            meta["risk_mult"]  = 1.0
+            meta["alloc_mult"] = 1.0
+            return
+    except Exception:
+        pass
+
     h  = lm_health()
     try:
         from src.services.diagnostics import sharpe as _sharpe, max_drawdown as _dd
@@ -203,29 +215,28 @@ def meta_update():
         sr = 0.0
         dd = 0.0
 
-    # Learning quality gate
+    # Learning quality gate (softened — less aggressive suppression/expansion)
     if h < 0.20:
-        meta["ws_mult"]    = 0.9
-        meta["alloc_mult"] = 0.8
+        meta["ws_mult"]    = 0.95
+        meta["alloc_mult"] = 0.90
     elif h > 0.40:
-        meta["ws_mult"]    = 1.1
-        meta["alloc_mult"] = 1.1
+        meta["ws_mult"]    = 1.05
+        meta["alloc_mult"] = 1.05
     else:
         meta["ws_mult"]    = 1.0
         meta["alloc_mult"] = 1.0
 
-    # Performance gate
+    # Performance gate (softened)
     if sr > 1.5:
-        meta["risk_mult"] = 1.1
+        meta["risk_mult"] = 1.05
     elif sr < 0.5:
-        meta["risk_mult"] = 0.8
+        meta["risk_mult"] = 0.90
     else:
         meta["risk_mult"] = 1.0
 
-    # Drawdown override — takes precedence over everything above
+    # Drawdown override — takes precedence over Sharpe boost
     if dd > 0.10:
-        meta["risk_mult"]  = 0.5
-        meta["alloc_mult"] = 0.7
+        meta["risk_mult"] = 0.60
 
 
 # ── Alerts ────────────────────────────────────────────────────────────────────

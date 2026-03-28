@@ -28,7 +28,8 @@ from src.services.execution       import (
     rotate_capital, update_returns, update_equity, record_trade_close,
     bayes_update, bandit_update, OrderBook,
     bootstrap_mode, ws_threshold, cost_guard_bootstrap, size_floor,
-    failure_control, epsilon, final_size_meta)
+    failure_control, epsilon, final_size_meta,
+    is_bootstrap, force_trade, should_trade, net_edge)
 import random
 import time
 
@@ -231,22 +232,24 @@ def handle_signal(signal):
         print(f"    portfolio gate: pre_cost  sym={sym}  ws={ws_raw:.3f}")
         return
 
-    # Entry filter: skip low-quality setups (risk_ev < 0.05) once warmed up
     reg    = signal.get("regime", "RANGING")
-    if not entry_filter(sym, reg):
-        print(f"    portfolio gate: entry_filter  sym={sym}  reg={reg}")
-        return
 
     # OB proportional adjustment + regime-aware EV blend
     ws_adj = ob_adjust(ws_raw, ob)
     ws_adj = ev_adjust(ws_adj, sym, reg)
+
+    # Combined entry gate: force_trade bypasses all filters (anti-deadlock);
+    # otherwise entry_filter(ev) AND ws > ws_threshold() must pass.
+    ev = signal.get("ev", 0.05)
+    if not should_trade(ev, ws_adj):
+        print(f"    portfolio gate: should_trade  sym={sym}  ev={ev:.3f}  ws={ws_adj:.3f}")
+        return
 
     # Position sizing: EV-scaled, auditor floor 0.7, strong-EV boost
     import math
     from src.services.learning_event           import get_metrics as _gm
     from src.services.realtime_decision_engine import get_ev_threshold, get_ws_threshold
     _t      = _gm().get("trades", 0)
-    ev      = signal.get("ev", 0.05)
     # Epsilon-driven exploration: override explore flag with phase-aware probability.
     # Forces the system to occasionally take trades at 0.3× size to sample
     # diverse (sym, reg) outcomes rather than always following the greedy path.
@@ -259,7 +262,7 @@ def handle_signal(signal):
         print(f"    portfolio gate: exposure_full  sym={sym}")
         return
     thr     = get_ev_threshold()
-    ws_thr  = ws_threshold()          # bootstrap-aware floor (0.40/0.45/live)
+    ws_thr  = ws_threshold()          # live-only floor for sizing (0.50+)
     ws_ratio = (ws_adj / ws_thr) if ws_thr > 0 else 1.0
     size     = base * math.sqrt(min(ws_ratio, 2.25)) * af
     if ev > thr * 1.5:
@@ -278,18 +281,19 @@ def handle_signal(signal):
         return
     size *= ctrl
 
-    # Bootstrap-aware cost guard (COLD=pass, WARM=soft, LIVE=strict)
-    if not cost_guard_bootstrap(ws_adj, size, ob, FEE_RT, sym):
+    # Bootstrap-aware cost guard (bootstrap=edge>-0.02, live=edge>0)
+    edge = net_edge(ws_adj, size, ob, FEE_RT, sym)
+    if not cost_guard_bootstrap(edge):
         print(f"    portfolio gate: cost_guard  sym={sym}  "
-              f"ws_adj={ws_adj:.3f}  mode={bootstrap_mode()}")
+              f"edge={edge:.4f}  mode={bootstrap_mode()}")
         return
 
     # TP/SL: edge-specific ATR multipliers
-    edge    = signal.get("edge", "")
-    regime  = signal.get("regime", "RANGING")
-    tp_mult = _EDGE_TP.get(edge, _TP_MULT.get(regime, 1.0))
-    sl_mult = _EDGE_SL.get(edge, _SL_MULT.get(regime, 0.8))
-    trail   = _EDGE_TRAIL.get(edge, _TRAIL)
+    edge_type = signal.get("edge", "")
+    regime    = signal.get("regime", "RANGING")
+    tp_mult   = _EDGE_TP.get(edge_type, _TP_MULT.get(regime, 1.0))
+    sl_mult   = _EDGE_SL.get(edge_type, _SL_MULT.get(regime, 0.8))
+    trail     = _EDGE_TRAIL.get(edge_type, _TRAIL)
     tp_move = max(atr * tp_mult / entry, MIN_TP_PCT)
     sl_move = max(atr * sl_mult / entry, MIN_SL_PCT)
 
