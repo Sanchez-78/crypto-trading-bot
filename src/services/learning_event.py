@@ -269,6 +269,26 @@ def bootstrap_from_history(trades):
         if t.get("result") in ("WIN", "LOSS")
     ]
 
+    # Reset streaks for fresh session — don't carry historical loss punishment
+    # across restarts. Each session starts with a clean slate so the streak
+    # guard doesn't immediately block trading after a loss run in a prior run.
+    m["loss_streak"] = 0
+    m["win_streak"]  = 0
+
+    # Seed learning monitor trade counts from history so lm_health() can
+    # evaluate pairs immediately instead of waiting for 10 new in-session trades.
+    try:
+        from src.services.learning_monitor import lm_update as _lmu
+        for t in sorted_trades:
+            sym    = t.get("symbol") or t.get("sym")
+            reg    = t.get("regime", "RANGING")
+            pnl    = float(t.get("profit") or 0)
+            result = t.get("result")
+            if sym and result in ("WIN", "LOSS"):
+                _lmu(sym, reg, pnl, 0.5, {})
+    except Exception:
+        pass
+
     t  = m["trades"]
     wr = m["wins"] / t if t else 0
     print(f"📂 Bootstrap: {t} obchodů  WR:{wr*100:.1f}%  "

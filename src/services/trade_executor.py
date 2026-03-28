@@ -52,9 +52,9 @@ _SPREAD_PCT       = 0.001 # estimated bid-ask spread (0.10%)
 _last_replaced    = {}   # symbol -> timestamp of last replacement
 
 FEE_RT      = 0.0020    # 0.20% round-trip Binance taker fees
-MIN_TP_PCT  = 0.0025    # 0.25% min TP
-MIN_SL_PCT  = 0.0020    # 0.20% min SL
-MAX_TICKS   = 90
+MIN_TP_PCT  = 0.0015    # 0.15% min TP  (was 0.25% — floor was overriding ATR in quiet
+MIN_SL_PCT  = 0.0010    # 0.10% min SL   markets, forcing TP/SL far above achievable
+MAX_TICKS   = 60        # 2 min timeout  moves and causing 80% timeout rate)
 FLUSH_EVERY = 60
 
 # Edge-specific TP/SL multipliers (× ATR)

@@ -548,8 +548,17 @@ def bootstrap_mode():
 
 
 def is_bootstrap():
-    """True for the first 100 closed trades — unlocks full trade flow."""
-    return len(closed_trades) < 100
+    """
+    True until 100 trades have been completed (loaded from Firebase or live).
+    Uses METRICS["trades"] so the count survives restarts — closed_trades is
+    in-memory and resets to [] on every boot, causing is_bootstrap to always
+    return True even after 100+ historical trades were loaded.
+    """
+    try:
+        from src.services.learning_event import METRICS
+        return METRICS.get("trades", 0) < 100
+    except Exception:
+        return len(closed_trades) < 100
 
 
 def entry_filter(ev):

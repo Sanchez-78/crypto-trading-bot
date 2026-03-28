@@ -152,12 +152,14 @@ def lm_feature_quality():
 
 def lm_health():
     """
-    Mean of (convergence × max(EV, 0)) across pairs with ≥20 trades.
+    Mean of (convergence × max(EV, 0)) across pairs with ≥10 trades.
     0.0 when no pair has enough data.
+    Threshold lowered 20→10: with 3 symbols in slow markets,
+    accumulating 20 in-session trades per pair can take hours.
     """
     scores = []
     for (sym, reg), n in lm_count.items():
-        if n < 20:
+        if n < 10:
             continue
         conv = lm_convergence(sym, reg)
         ev   = lm_edge_strength(sym, reg)
@@ -331,7 +333,7 @@ def print_learning_monitor():
 
     any_pair = False
     for (sym, reg), n in sorted(lm_count.items()):
-        if n < 10:
+        if n < 3:
             continue
         any_pair = True
         conv = lm_convergence(sym, reg)
