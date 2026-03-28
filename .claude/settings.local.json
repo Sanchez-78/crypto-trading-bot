@@ -68,7 +68,13 @@
       "Bash(unzip -o logs.1774626511515.zip -d logs_extracted_1774626511515)",
       "Bash(unzip -o logs.1774626511515.zip -d logs_extracted_tmp)",
       "Bash(LOG=/c/Projects/CryptoMaster_srv/logs_extracted_tmp/logs.1774626511515.log)",
-      "Read(//c/Projects/CryptoMaster_srv/**)"
+      "Read(//c/Projects/CryptoMaster_srv/**)",
+      "Bash(git filter-branch:*)",
+      "Bash(git stash:*)",
+      "Bash(FILTER_BRANCH_SQUELCH_WARNING=1 git filter-branch --force --index-filter \"git rm --cached --ignore-unmatch Antigravity.exe\" --prune-empty --tag-name-filter cat -- --all)",
+      "Bash(git update-ref:*)",
+      "Bash(git gc:*)",
+      "Bash(git fetch:*)"
     ]
   }
 }
