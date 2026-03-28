@@ -287,19 +287,17 @@ def bayes_ev(sym, reg):
 
 def risk_ev(sym, reg):
     """
-    Three-source blend + time decay:
-      smooth = (0.6×prev + 0.2×raw_sharpe + 0.2×bayes_ev) × 0.995^dt_s.
-    Bayes anchors cold-start; raw_sharpe corrects when data arrives.
-    ev_cache stores (smooth, timestamp) for time-aware updates.
+    PnL-based EV: mean of last 20 closed trade profits for this (sym, reg).
+    Delegates to learning_monitor.true_ev (lazy import avoids circular dep).
+    Replaces the broken 3-source time-decayed blend — 0.995^dt_seconds
+    collapsed EV to ~0 within minutes, making lm_health always 0 and
+    bandit/allocation scores permanently flat.
     """
-    now      = _time.time()
-    raw      = raw_risk_ev(sym, reg)
-    b_ev     = bayes_ev(sym, reg)
-    prev, ts = ev_cache.get((sym, reg), (raw, now))
-    dt       = max(1, now - ts)
-    smooth   = (0.6 * prev + 0.2 * raw + 0.2 * b_ev) * (0.995 ** dt)
-    ev_cache[(sym, reg)] = (smooth, now)
-    return smooth
+    try:
+        from src.services.learning_monitor import true_ev as _te
+        return _te(sym, reg)
+    except Exception:
+        return 0.0
 
 
 def ev_conf(sym, reg):
@@ -563,28 +561,26 @@ def is_bootstrap():
 
 def entry_filter(ev):
     """
-    Entry gate: always pass during bootstrap; require ev > 0.05 post-bootstrap.
-    Takes pre-computed EV so caller controls which measure to use.
+    Entry gate: open while learning data accumulates.
+    Restored to always-True until PnL-based EV has enough samples (≥10 per pair)
+    to produce a meaningful threshold. A hard ev>0.05 gate on a broken EV
+    signal silences the system entirely — gate re-tightened once WR ≠ 0%.
     """
-    if is_bootstrap():
-        return True
-    return ev > 0.05
+    return True
 
 
 def ws_threshold():
     """
-    WS floor: 0.40 during bootstrap; max(0.50, p75 of trade history) post-bootstrap.
-    Scaled by meta["ws_mult"] only when live (meta frozen at 1.0 during bootstrap).
+    WS floor: 0.30 flat while learning resets.
+    Lowered from 0.50 (post-bootstrap p75) — the old floor was calibrated on
+    a broken EV signal, resulting in a threshold that blocked all real signals.
+    Re-tighten once feature WRs and EV diverge across pairs.
     """
-    if is_bootstrap():
-        return 0.40
-    scores = [t["ws"] for t in trade_log if "ws" in t]
-    base   = max(0.50, float(np.quantile(scores, 0.75))) if len(scores) >= 10 else 0.50
     try:
         from src.services.learning_monitor import meta
-        return base * meta["ws_mult"]
+        return 0.30 * meta.get("ws_mult", 1.0)
     except Exception:
-        return base
+        return 0.30
 
 
 def final_size_meta(size):

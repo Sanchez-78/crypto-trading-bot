@@ -21,10 +21,9 @@ Alerts:
   else          → GOOD
 """
 
-import random
 import numpy as np
 
-from src.services.execution import risk_ev, bandit_score
+from src.services.execution import bandit_score
 
 # ── Per-(sym, reg) state ───────────────────────────────────────────────────────
 
@@ -43,17 +42,24 @@ def _cap(lst):
         del lst[:-_HIST_CAP]
 
 
-def feature_sample(features):
+def true_ev(sym, reg):
+    """PnL-based EV: mean of last 20 closed trade profits for (sym, reg).
+    Returns 0.0 until at least 10 samples are available.
+    Replaces the time-decayed Sharpe blend which collapsed to ~0 within minutes.
     """
-    Soft feature retention: each key is kept with probability 0.8.
-    Retains signal structure (high-WR features still credited most
-    of the time) while introducing enough stochasticity to separate
-    WRs across features without destroying them.
-    Falls back to full set when fewer than 2 keys would survive.
-    """
-    keys    = list(features)
-    sampled = [f for f in keys if random.random() < 0.8]
-    return sampled if len(sampled) >= 2 else keys
+    pnl = lm_pnl_hist.get((sym, reg), [])
+    if len(pnl) < 10:
+        return 0.0
+    return float(np.mean(pnl[-20:]))
+
+
+def record_features(features, pnl):
+    """Direct per-feature win-rate update. No soft sampling — every feature
+    that was active on the trade gets a clean win/loss credit."""
+    win = 1 if pnl > 0 else 0
+    for f in features:
+        w, t = lm_feature_stats.get(f, (0, 0))
+        lm_feature_stats[f] = (w + win, t + 1)
 
 
 # ── Update hook — call on every trade close ────────────────────────────────────
@@ -85,8 +91,8 @@ def lm_update(sym, reg, pnl, ws, features):
     wr_lst.append(wr)
     _cap(wr_lst)
 
-    # EV snapshot
-    ev = risk_ev(sym, reg)
+    # EV snapshot — PnL-based, not time-decayed Sharpe blend
+    ev = true_ev(sym, reg)
     ev_lst = lm_ev_hist.setdefault(key, [])
     ev_lst.append(ev)
     _cap(ev_lst)
@@ -97,12 +103,8 @@ def lm_update(sym, reg, pnl, ws, features):
     b_lst.append(b)
     _cap(b_lst)
 
-    # Feature win rates — soft sampling retains signal while separating WRs.
-    win_flag      = 1 if pnl > 0 else 0
-    active_feats  = feature_sample(features)
-    for fname in active_feats:
-        w, t = lm_feature_stats.get(fname, (0, 0))
-        lm_feature_stats[fname] = (w + win_flag, t + 1)
+    # Feature win rates — direct update, no soft sampling
+    record_features(features, pnl)
 
 
 # ── Convergence & edge metrics ─────────────────────────────────────────────────
@@ -122,8 +124,8 @@ def lm_convergence(sym, reg):
 
 
 def lm_edge_strength(sym, reg):
-    """Current smoothed EV for this (sym, reg) pair."""
-    return risk_ev(sym, reg)
+    """Current PnL-based EV for this (sym, reg) pair."""
+    return true_ev(sym, reg)
 
 
 def lm_bandit_focus(sym, reg):
