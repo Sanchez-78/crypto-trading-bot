@@ -624,9 +624,16 @@ def final_size_meta(size):
 def cost_guard_bootstrap(edge):
     """
     Phase-aware cost gate on pre-computed net edge.
-    Bootstrap: pass if edge > -0.02 (allow slight negative-edge exploration).
-    Live:      pass if edge > 0 (strict break-even requirement).
+    force_mode (<50 PnL obs): always pass — data collection takes priority.
+    bootstrap (trades<100):   edge > -0.02 (allow slight negative exploration).
+    live:                     edge > 0 (strict break-even requirement).
     """
+    try:
+        from src.services.learning_monitor import force_mode as _fm
+        if _fm():
+            return True
+    except Exception:
+        pass
     if is_bootstrap():
         return edge > -0.02
     return edge > 0
@@ -634,23 +641,39 @@ def cost_guard_bootstrap(edge):
 
 def force_trade():
     """
-    Anti-deadlock: during the first 30 trades, force 30% of signals through
-    all quality gates unconditionally. Epsilon handles the size reduction.
-    Guarantees early data collection even when gates would otherwise block.
+    Anti-deadlock: while force_mode is active (< 50 PnL observations),
+    force 40% of signals through all quality gates unconditionally.
+    Uses lm_pnl_hist total count — survives restarts unlike closed_trades.
+    Epsilon handles the size reduction so forced trades are small.
     """
-    if len(closed_trades) < 30:
-        return random.random() < 0.3
+    try:
+        from src.services.learning_monitor import force_mode as _fm
+        if _fm():
+            return random.random() < 0.4
+    except Exception:
+        if len(closed_trades) < 50:
+            return random.random() < 0.4
     return False
 
 
 def should_trade(ev, ws):
     """
-    Combined entry gate.
-    force_trade() bypasses all filters to prevent cold-start deadlock.
-    Otherwise: entry_filter(ev) AND ws > ws_threshold() must both pass.
+    Combined entry gate with force-mode bypass:
+      force_trade()  → True unconditionally (anti-deadlock, small size)
+      force_mode()   → ws > 0.30 only (EV gates off, data collection)
+      else           → entry_filter(ev) AND ws > ws_threshold()
+    force_mode disables EV gates entirely when fewer than 50 PnL
+    observations exist — EV is meaningless on sparse data and a negative
+    EV reading would otherwise create a closed loop with zero trades.
     """
     if force_trade():
         return True
+    try:
+        from src.services.learning_monitor import force_mode as _fm
+        if _fm():
+            return ws > 0.30
+    except Exception:
+        pass
     return entry_filter(ev) and ws > ws_threshold()
 
 

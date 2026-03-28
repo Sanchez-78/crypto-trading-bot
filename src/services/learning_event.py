@@ -298,6 +298,14 @@ def bootstrap_from_history(trades):
     except Exception:
         pass
 
+    # Toxic history check — clear lm+bandit state if WR < 10% on 50+ trades.
+    # Must run after lm_update seeding so the data exists to evaluate.
+    try:
+        from src.services.learning_monitor import reset_if_toxic as _rit
+        _rit()
+    except Exception:
+        pass
+
     t  = m["trades"]
     wr = m["wins"] / t if t else 0
     print(f"📂 Bootstrap: {t} obchodů  WR:{wr*100:.1f}%  "
