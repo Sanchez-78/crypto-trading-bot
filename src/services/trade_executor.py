@@ -366,6 +366,15 @@ def on_price(data):
     bandit_update(sym, reg_sig, outcome)
     record_trade_close(sym, reg_sig, profit)
 
+    # Learning monitor — track EV/WR/bandit/feature convergence
+    try:
+        from src.services.learning_monitor import lm_update
+        lm_update(sym, reg_sig, profit,
+                  ws=pos["signal"].get("ws", 0.5),
+                  features=pos["signal"].get("features", {}))
+    except Exception:
+        pass
+
     # ── Calibration + edge learning feedback ──────────────────────────────────
     try:
         from src.services.realtime_decision_engine import update_calibrator, update_edge_stats

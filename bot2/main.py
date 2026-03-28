@@ -564,6 +564,12 @@ def main():
         print_status()
         dashboard_loop(get_open_positions())
 
+        try:
+            from src.services.learning_monitor import print_learning_monitor
+            print_learning_monitor()
+        except Exception:
+            pass
+
 
 if __name__ == "__main__":
     main()
