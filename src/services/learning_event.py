@@ -265,11 +265,11 @@ def bootstrap_from_history(trades):
     if conf_samples:
         m["confidence_avg"] = sum(conf_samples) / len(conf_samples)
 
-    # Do NOT carry _recent_results across restarts.
-    # Velocity guard (recent_losses >= 3 in last 5) must use only in-session
-    # trades — a run of historical losses in Firebase would immediately block
-    # all signals on boot before a single new trade is placed.
-    _recent_results = []
+    global _recent_results
+    _recent_results = [
+        t.get("result") for t in sorted_trades[-50:]
+        if t.get("result") in ("WIN", "LOSS")
+    ]
 
     # Compute TRAILING streak from the last 30 historical trades rather than
     # resetting to 0.  A plain reset meant the MAX_LOSS_STREAK circuit-breaker

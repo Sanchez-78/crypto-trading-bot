@@ -54,12 +54,9 @@ _SPREAD_PCT       = 0.001 # estimated bid-ask spread (0.10%)
 _last_replaced    = {}   # symbol -> timestamp of last replacement
 
 FEE_RT      = 0.0015    # 0.15% round-trip (Binance taker 0.075%×2)
-MIN_TP_PCT  = 0.006     # 0.60% — raised from 0.30% to fix breakeven WR:
-                          # old: net_TP=0.15%, net_SL=0.35% → breakeven=70% (impossible)
-                          # new: net_TP=0.45%, net_SL=0.35% → breakeven=43.75% (achievable)
-MIN_SL_PCT  = 0.002     # 0.20% min SL
-MAX_TICKS   = 45        # ~90s timeout — raised from 20 because 0.60% TP requires more
-                          # time to hit; 20 ticks forced ~95% timeouts with TP never reached
+MIN_TP_PCT  = 0.008     # 0.80% — giving trades room to hit higher RRs
+MIN_SL_PCT  = 0.004     # 0.40% min SL — double the old size to survive spread + fee + noise
+MAX_TICKS   = 150       # ~5 min timeout — raised from 45 because wider TP/SL takes longer to play out
 FLUSH_EVERY = 60
 
 

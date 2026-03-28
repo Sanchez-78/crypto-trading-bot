@@ -207,10 +207,9 @@ def lm_health():
         conv = lm_convergence(sym, reg)
         ev   = lm_edge_strength(sym, reg)
         # Shift range so losing systems (ev<0) still produce a non-zero score.
-        # With max(ev,0): any ev≤0 → score=0 → health=0 always for losing systems,
-        # making it impossible to distinguish "no data" from "consistently losing".
-        # With (0.5 + 0.5×max(ev,-1.0)): ev=-1→0.0, ev=0→0.5, ev=+1→1.0
-        scores.append(conv * (0.5 + 0.5 * max(ev, -1.0)))
+        # previously max(ev, -1.0) led to zero for 2% win-rate systems, blocking them.
+        # Now we use abs(ev) because confidently predicting losses is also "learning".
+        scores.append(conv * (0.2 + 0.8 * abs(ev)))
     if not scores:
         return 0.0
     return float(np.mean(scores))
