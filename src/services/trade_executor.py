@@ -39,8 +39,10 @@ _last_flush       = [0.0]
 _regime_exposure  = {}   # regime -> count of open positions
 _pending_open     = []   # signals queued after replace_if_better triggers
 
-MAX_POSITIONS     = 2    # max concurrent open positions
-MAX_SAME_DIR      = 1    # max positions in same direction (BUY or SELL)
+MAX_POSITIONS     = 3    # max concurrent open positions (raised for bootstrap learning speed)
+MAX_SAME_DIR      = 2    # max positions in same direction — 1→2: in BULL_TREND all symbols
+                          # generate BUY, old limit=1 blocked 2/3 signals every tick, cutting
+                          # learning rate by 67%; raise to 2 for faster data accumulation
 MAX_REGIME_PCT    = 0.70 # block if one regime holds > 70% of open positions
 _TOTAL_CAPITAL    = 1.0  # normalised capital (position sizes are fractions)
 _MAX_CAP_USED     = 0.70 # don't deploy more than 70% of capital
@@ -51,10 +53,14 @@ _MAX_TOTAL_RISK   = 0.05 # total portfolio risk cap (sum of size*sl_pct)
 _SPREAD_PCT       = 0.001 # estimated bid-ask spread (0.10%)
 _last_replaced    = {}   # symbol -> timestamp of last replacement
 
-FEE_RT      = 0.0020    # 0.20% round-trip Binance taker fees
-MIN_TP_PCT  = 0.0015    # 0.15% min TP  (was 0.25% — floor was overriding ATR in quiet
-MIN_SL_PCT  = 0.0010    # 0.10% min SL   markets, forcing TP/SL far above achievable
-MAX_TICKS   = 60        # 2 min timeout  moves and causing 80% timeout rate)
+FEE_RT      = 0.0015    # 0.15% round-trip (Binance taker 0.075%×2); was 0.20% which
+                          # made TP=0.15% < FEE_RT → every TP hit produced a LOSS (confirmed
+                          # by log: 0% TP-wins, 2% overall WR, because profit=move-FEE_RT
+                          # was always negative when move≈MIN_TP_PCT < FEE_RT)
+MIN_TP_PCT  = 0.0025    # 0.25% min TP — must be > FEE_RT(0.15%) to guarantee TP=WIN;
+                          # old 0.15% < FEE_RT → TP always LOSS, perverse learning signal
+MIN_SL_PCT  = 0.0015    # 0.15% min SL (proportional to new TP; old 0.10% gave RR<1 after fees)
+MAX_TICKS   = 90        # 3 min timeout (extra 1 min for 0.25% TP to be achieved; old 60
 FLUSH_EVERY = 60
 
 # Edge-specific TP/SL multipliers (× ATR)

@@ -32,8 +32,8 @@ _TP_MULT = {"BULL_TREND": 1.0, "BEAR_TREND": 1.0,
             "RANGING":    1.0, "QUIET_RANGE": 1.0}
 _SL_MULT = {"BULL_TREND": 0.8, "BEAR_TREND": 0.8,
             "RANGING":    0.8, "QUIET_RANGE": 0.8}
-MIN_TP_PCT = 0.0025
-MIN_SL_PCT = 0.0020
+MIN_TP_PCT = 0.0025   # must match trade_executor.MIN_TP_PCT
+MIN_SL_PCT = 0.0015   # must match trade_executor.MIN_SL_PCT
 
 MIN_TICKS    = 50
 DEBOUNCE_S   = 30    # seconds between signals per symbol
