@@ -277,6 +277,8 @@ def bootstrap_from_history(trades):
 
     # Seed learning monitor trade counts from history so lm_health() can
     # evaluate pairs immediately instead of waiting for 10 new in-session trades.
+    # Use actual ws/features from Firebase doc when available (stored since
+    # firebase_client._slim_trade now writes both fields).
     try:
         from src.services.learning_monitor import lm_update as _lmu
         for t in sorted_trades:
@@ -284,8 +286,13 @@ def bootstrap_from_history(trades):
             reg    = t.get("regime", "RANGING")
             pnl    = float(t.get("profit") or 0)
             result = t.get("result")
+            ws     = float(t.get("ws", 0.5))
+            # Only boolean features matter for lm_feature_stats — filter out
+            # continuous indicators (rsi, ema_diff, etc.) to keep WR signal clean.
+            raw_f  = t.get("features") or {}
+            feats  = {k: v for k, v in raw_f.items() if isinstance(v, bool)}
             if sym and result in ("WIN", "LOSS"):
-                _lmu(sym, reg, pnl, 0.5, {})
+                _lmu(sym, reg, pnl, ws, feats)
     except Exception:
         pass
 

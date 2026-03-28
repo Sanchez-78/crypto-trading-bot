@@ -73,8 +73,15 @@ def _slim_trade(trade):
     Strip redundant/derived fields before storing.
     Keeps only what the decision engine needs for pattern matching.
     Saves ~40% Firestore document size vs raw trade dict.
+
+    ws and ev are stored explicitly so bootstrap_from_history() can seed
+    lm_update() and the calibrator with real values instead of 0.5 defaults.
+    Boolean edge features (trend/pullback/bounce/etc.) are stored separately
+    from continuous indicators so update_edge_stats() can filter them correctly.
     """
     feat = trade.get("features") or {}
+    # Boolean edge features used by update_edge_stats / lm_update
+    bool_feats = {k: bool(v) for k, v in feat.items() if isinstance(v, bool)}
     return {
         "symbol":       trade.get("symbol"),
         "action":       trade.get("action"),
@@ -88,6 +95,8 @@ def _slim_trade(trade):
         "confidence":   round(float(trade.get("confidence", 0)), 4),
         "regime":       trade.get("regime", "RANGING"),
         "strategy":     trade.get("regime", "RANGING"),
+        "ws":           round(float(trade.get("ws",  0.5)), 4),   # weighted score at entry
+        "ev":           round(float(trade.get("ev",  0.0)), 4),   # expected value at entry
         "timestamp":    trade.get("timestamp", time.time()),
         "opened_at":    trade.get("timestamp", time.time()),
         "closed_at":    trade.get("timestamp", time.time()),
@@ -95,6 +104,7 @@ def _slim_trade(trade):
         "stop_loss":    round(float(trade.get("price", 0)) * (1 - float((trade.get("features") or {}).get("volatility", 0.003)) * 1.5), 4),
         "take_profit":  round(float(trade.get("price", 0)) * (1 + float((trade.get("features") or {}).get("volatility", 0.003)) * 3.0), 4),
         "features": {
+            **bool_feats,   # trend, pullback, bounce, breakout, vol, mom, wick
             "ema_diff":   round(float(feat.get("ema_diff",   0)), 6),
             "rsi":        round(float(feat.get("rsi",       50)), 2),
             "volatility": round(float(feat.get("volatility", 0)), 6),

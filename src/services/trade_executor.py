@@ -375,12 +375,18 @@ def on_price(data):
     bandit_update(sym, reg_sig, outcome)
     record_trade_close(sym, reg_sig, profit)
 
-    # Learning monitor — track EV/WR/bandit/feature convergence
+    # Learning monitor — track EV/WR/bandit/feature convergence.
+    # Filter to boolean edge features only: continuous indicators (rsi, ema_diff…)
+    # are always present so they poison lm_feature_stats with the overall WR
+    # instead of a feature-specific WR. update_edge_stats uses isinstance(v,bool)
+    # already; lm_update must match.
     try:
         from src.services.learning_monitor import lm_update
+        raw_f = pos["signal"].get("features", {})
+        bool_f = {k: v for k, v in raw_f.items() if isinstance(v, bool)}
         lm_update(sym, reg_sig, profit,
                   ws=pos["signal"].get("ws", 0.5),
-                  features=pos["signal"].get("features", {}))
+                  features=bool_f)
     except Exception:
         pass
 
