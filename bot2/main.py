@@ -558,7 +558,17 @@ def main():
                 }
             except Exception as _ex:
                 pass
-            save_metrics_full(get_metrics(), _pos, execution=execution_data)
+
+            monitor_data = None
+            try:
+                from src.services.learning_monitor import lm_snapshot
+                monitor_data = lm_snapshot()
+            except Exception:
+                pass
+
+            save_metrics_full(get_metrics(), _pos,
+                              execution=execution_data,
+                              monitor=monitor_data)
             _last_metrics = now
 
         print_status()

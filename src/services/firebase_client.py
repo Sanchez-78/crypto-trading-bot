@@ -354,7 +354,7 @@ def _build_open_positions(positions):
     return out
 
 
-def save_metrics_full(metrics, open_positions=None, execution=None):
+def save_metrics_full(metrics, open_positions=None, execution=None, monitor=None):
     """
     Write full nested metrics to metrics/latest.
     Called every 30 s from bot2/main.py.
@@ -479,6 +479,7 @@ def save_metrics_full(metrics, open_positions=None, execution=None):
             "last_signals": metrics.get("last_signals", {}),
             "open_positions": _build_open_positions(open_positions),
             "execution":    execution,   # EV/failure/sharpe/control from execution engine
+            "monitor":      monitor,     # learning quality/convergence/feature WR snapshot
             "timestamp":    time.time(),
         }
         db.collection("metrics").document("latest").set(data, merge=False)

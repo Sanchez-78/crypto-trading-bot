@@ -171,6 +171,68 @@ def lm_alerts():
     return "GOOD"
 
 
+# ── Firestore-serialisable snapshot ──────────────────────────────────────────
+
+def lm_snapshot():
+    """
+    Return a JSON-serialisable dict suitable for embedding in metrics/latest.
+    Called from bot2/main.py alongside execution_data, no extra Firestore writes.
+    Shape:
+      {
+        health:   float,
+        alert:    "GOOD"|"WEAK"|"BAD",
+        mode:     "COLD"|"WARM"|"LIVE",
+        pairs: {
+          "BTCUSDT_BULL": {sym, reg, n, ev, wr, conv, bandit}
+          ...
+        },
+        features: {feature_name: win_rate, ...}   (>=10 trades, top 10 by WR)
+      }
+    """
+    try:
+        from src.services.execution import bootstrap_mode
+        mode = bootstrap_mode()
+    except Exception:
+        mode = "UNKNOWN"
+
+    pairs = {}
+    for (sym, reg), n in lm_count.items():
+        wr_lst  = lm_wr_hist.get((sym, reg), [])
+        ev_lst  = lm_ev_hist.get((sym, reg), [])
+        b_lst   = lm_bandit_hist.get((sym, reg), [])
+        wr   = round(float(wr_lst[-1]), 4) if wr_lst else 0.0
+        ev   = round(float(ev_lst[-1]), 4) if ev_lst else 0.0
+        conv = round(lm_convergence(sym, reg), 3)
+        band = round(lm_bandit_focus(sym, reg), 3)
+        key  = f"{sym}_{reg}"
+        pairs[key] = {
+            "sym":    sym,
+            "reg":    reg,
+            "n":      n,
+            "ev":     ev,
+            "wr":     wr,
+            "conv":   conv,
+            "bandit": band,
+        }
+
+    fq = lm_feature_quality()
+    top_features = {
+        k: round(v, 4)
+        for k, v in sorted(fq.items(), key=lambda x: -x[1])[:10]
+    }
+
+    h = lm_health()
+    a = lm_alerts()
+
+    return {
+        "health":   round(h, 4),
+        "alert":    a,
+        "mode":     mode,
+        "pairs":    pairs,
+        "features": top_features,
+    }
+
+
 # ── Text monitor ──────────────────────────────────────────────────────────────
 
 def print_learning_monitor():
