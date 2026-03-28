@@ -383,16 +383,20 @@ def on_price(data):
         track_filtered()
         return
 
-    # ── Time-based debounce (30 s per symbol) ─────────────────────────────────
-    # Stamp _last_ts BEFORE calling _get_scored_edge. Critical: if we stamp
-    # only after a signal emits (old position: line ~452), symbols that never
-    # produce a signal keep _last_ts=0 → debounce never activates → allow_combo
-    # is called every 2 s tick → combo budget exhausted in 40 s (20 uses × 2s).
-    # Confirmed in log: po_filtru=1 for 18 min because ETH/ADA hit this path.
-    if time.time() - _last_ts.get(s, 0) < DEBOUNCE_S:
+    # ── Time-based debounce (per symbol) ──────────────────────────────────────
+    # Bypass during bootstrap (<30 trades): need fast data flow to fill lm_pnl_hist.
+    # Once 30 trades close, debounce re-activates to prevent combo exhaustion.
+    # Stamp _last_ts BEFORE _get_scored_edge — symbols that never emit must still
+    # be throttled, or allow_combo exhausts in 40 s (confirmed in session log).
+    try:
+        from src.services.learning_event import get_metrics as _lgm
+        _debounce_active = _lgm().get("trades", 0) >= 30
+    except Exception:
+        _debounce_active = True
+    if _debounce_active and time.time() - _last_ts.get(s, 0) < DEBOUNCE_S:
         track_filtered()
         return
-    _last_ts[s] = time.time()   # stamp NOW — throttles _get_scored_edge to 1/30s per sym
+    _last_ts[s] = time.time()   # stamp NOW
 
     # ── Edge scoring: 7-feature self-learning gate ────────────────────────────
     # Regime confidence: ADX-based (trend) or inverse-ADX (range)

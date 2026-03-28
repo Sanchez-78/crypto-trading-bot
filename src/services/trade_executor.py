@@ -57,11 +57,19 @@ FEE_RT      = 0.0015    # 0.15% round-trip (Binance taker 0.075%×2); was 0.20% 
                           # made TP=0.15% < FEE_RT → every TP hit produced a LOSS (confirmed
                           # by log: 0% TP-wins, 2% overall WR, because profit=move-FEE_RT
                           # was always negative when move≈MIN_TP_PCT < FEE_RT)
-MIN_TP_PCT  = 0.0025    # 0.25% min TP — must be > FEE_RT(0.15%) to guarantee TP=WIN;
-                          # old 0.15% < FEE_RT → TP always LOSS, perverse learning signal
-MIN_SL_PCT  = 0.0015    # 0.15% min SL (proportional to new TP; old 0.10% gave RR<1 after fees)
-MAX_TICKS   = 90        # 3 min timeout (extra 1 min for 0.25% TP to be achieved; old 60
+MIN_TP_PCT  = 0.003     # 0.30% = max(0.003, 2×FEE_RT) — always > fees → TP always WIN
+MIN_SL_PCT  = 0.002     # 0.20% min SL
+MAX_TICKS   = 20        # ~40s timeout — forces closes, guarantees learning data flow
 FLUSH_EVERY = 60
+
+
+def compute_tp_sl(entry, direction):
+    """Absolute TP/SL prices. tp_pct = max(0.003, 2×FEE_RT) — always > fees."""
+    tp_pct = max(0.003, 2 * FEE_RT)
+    sl_pct = 0.002
+    if direction == "BUY":
+        return entry * (1 + tp_pct), entry * (1 - sl_pct)
+    return entry * (1 - tp_pct), entry * (1 + sl_pct)
 
 # Edge-specific TP/SL multipliers (× ATR)
 # trend_pullback: moderate TP — riding the bounce back to mean
@@ -182,6 +190,13 @@ def _allow_trade(symbol, direction, regime):
     """
     if symbol in _positions:
         return False, "already_open"
+    # Bootstrap: bypass portfolio gates until 50 closed trades — fills lm_pnl_hist fast
+    try:
+        from src.services.learning_event import get_metrics as _lgm
+        if _lgm().get("trades", 0) < 50:
+            return True, "bootstrap_open"
+    except Exception:
+        pass
     if capital_usage() >= _MAX_CAP_USED:
         return False, "capital_limit"
     if len(_positions) >= MAX_POSITIONS:
@@ -220,6 +235,13 @@ def handle_signal(signal):
     entry = signal["price"]
     atr   = signal.get("atr", entry * 0.003)
 
+    # Bootstrap open: bypass staleness/cost gates until 30 closed trades
+    try:
+        from src.services.learning_event import get_metrics as _lgm
+        bootstrap_open = _lgm().get("trades", 0) < 30
+    except Exception:
+        bootstrap_open = False
+
     # Build OB snapshot for cost calculations
     ob = OrderBook.from_price(entry, spread_pct=_SPREAD_PCT)
 
@@ -227,14 +249,14 @@ def handle_signal(signal):
     sig_ts  = signal.get("timestamp", time.time())
     vol_f   = signal.get("features", {}).get("vol", 0.0)
     tick_ms = max(100, min(500, int(atr / max(entry, 1e-9) * 100_000)))
-    if not valid(sig_ts, tick_ms, vol_f):
+    if not bootstrap_open and not valid(sig_ts, tick_ms, vol_f):
         print(f"    portfolio gate: stale_signal  sym={sym}")
         return
 
     ws_raw = signal.get("ws", 0.5)
 
     # Pre-cost fast gate (cheap, before OB/slippage calculation)
-    if not pre_cost(ws_raw, FEE_RT):
+    if not bootstrap_open and not pre_cost(ws_raw, FEE_RT):
         print(f"    portfolio gate: pre_cost  sym={sym}  ws={ws_raw:.3f}")
         return
 
@@ -294,33 +316,25 @@ def handle_signal(signal):
               f"edge={edge:.4f}  mode={bootstrap_mode()}")
         return
 
-    # TP/SL: edge-specific ATR multipliers
-    edge_type = signal.get("edge", "")
-    regime    = signal.get("regime", "RANGING")
-    tp_mult   = _EDGE_TP.get(edge_type, _TP_MULT.get(regime, 1.0))
-    sl_mult   = _EDGE_SL.get(edge_type, _SL_MULT.get(regime, 0.8))
-    trail     = _EDGE_TRAIL.get(edge_type, _TRAIL)
-    tp_move = max(atr * tp_mult / entry, MIN_TP_PCT)
-    sl_move = max(atr * sl_mult / entry, MIN_SL_PCT)
-
     # ── Per-symbol execution ──────────────────────────────────────────────────
     actual_entry, fill_slip = exec_order(signal, size, ob, sym)
     actual_entry = actual_entry or entry
+
+    tp, sl = compute_tp_sl(actual_entry, signal["action"])
 
     _positions[sym] = {
         "action":        signal["action"],
         "entry":         actual_entry,
         "size":          size,
-        "tp_move":       tp_move,
-        "sl_move":       sl_move,
-        "trail_sl":      -sl_move,
-        "trail_offset":  trail * sl_move,
+        "tp":            tp,
+        "sl":            sl,
         "signal":        signal,
         "ticks":         0,
         "fill_slippage": fill_slip,
     }
     print(f"    exec: slip={fill_slip:.5f}  fr={fill_rate(sym):.2f}  "
-          f"ws_adj={ws_adj:.3f}  {size:.4f}@{actual_entry:.4f}")
+          f"ws_adj={ws_adj:.3f}  {size:.4f}@{actual_entry:.4f}  "
+          f"tp={tp:.4f}  sl={sl:.4f}")
     _regime_exposure[regime] = _regime_exposure.get(regime, 0) + 1
     _risk_guard()
 
@@ -342,15 +356,13 @@ def on_price(data):
     if pos["action"] == "SELL":
         move *= -1
 
-    # ── Trailing stop ─────────────────────────────────────────────────────────
-    if move > 0:
-        pos["trail_sl"] = max(pos["trail_sl"], move - pos["trail_offset"])
-
-    # ── Exit conditions ───────────────────────────────────────────────────────
-    if   pos.get("force_close"):    reason = "replaced"
-    elif move >= pos["tp_move"]:    reason = "TP"
-    elif move <= pos["trail_sl"]:   reason = "SL" if move < 0 else "trail"
-    elif pos["ticks"] >= MAX_TICKS: reason = "timeout"
+    # ── Exit conditions (absolute TP/SL) ──────────────────────────────────────
+    if   pos.get("force_close"):                         reason = "replaced"
+    elif pos["action"] == "BUY"  and curr >= pos["tp"]: reason = "TP"
+    elif pos["action"] == "BUY"  and curr <= pos["sl"]: reason = "SL"
+    elif pos["action"] == "SELL" and curr <= pos["tp"]: reason = "TP"
+    elif pos["action"] == "SELL" and curr >= pos["sl"]: reason = "SL"
+    elif pos["ticks"] >= MAX_TICKS:                     reason = "timeout"
     else:
         return
 

@@ -424,7 +424,12 @@ def evaluate_signal(signal):
 
     # ── Frequency cap ─────────────────────────────────────────────────────────
     t15 = trades_in_window(900)
-    if t15 > MAX_TRADES_15:
+    try:
+        from src.services.learning_event import METRICS as _M2
+        _freq_active = _M2.get("trades", 0) >= 50
+    except Exception:
+        _freq_active = True
+    if _freq_active and t15 > MAX_TRADES_15:
         track_blocked()
         print(f"    decision=SKIP_FREQ  t15={t15}>{MAX_TRADES_15}")
         return None
