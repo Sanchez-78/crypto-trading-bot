@@ -349,7 +349,7 @@ def handle_signal(signal):
         return
 
     # ── Per-symbol execution ──────────────────────────────────────────────────
-    actual_entry, fill_slip = exec_order(signal, size, ob, sym)
+    actual_entry, fill_slip, actual_fee_rt = exec_order(signal, size, ob, sym)
     actual_entry = actual_entry or entry
 
     tp, sl = compute_tp_sl(actual_entry, signal["action"])
@@ -365,12 +365,13 @@ def handle_signal(signal):
         "signal":        signal,
         "ticks":         0,
         "fill_slippage": fill_slip,
+        "fee_rt":        actual_fee_rt,
         "trail_price":   actual_entry,
         "max_price":     actual_entry,
         "min_price":     actual_entry,
         "is_trailing":   False,
     }
-    print(f"    exec: slip={fill_slip:.5f}  fr={fill_rate(sym):.2f}  "
+    print(f"    exec: slip={fill_slip:.5f}  fee={actual_fee_rt:.5f}  fr={fill_rate(sym):.2f}  "
           f"ws_adj={ws_adj:.3f}  {size:.4f}@{actual_entry:.4f}  "
           f"tp={tp:.4f}  sl={sl:.4f}")
     _regime_exposure[regime] = _regime_exposure.get(regime, 0) + 1
@@ -434,13 +435,14 @@ def on_price(data):
     if reason is None:
         return
 
-    profit = (move - FEE_RT) * pos["size"]
+    fee_used = pos.get("fee_rt", FEE_RT)
+    profit = (move - fee_used) * pos["size"]
     result = "WIN" if profit > 0 else "LOSS"
     short  = sym.replace("USDT", "")
     icon   = "✅" if result == "WIN" else "❌"
 
     print(f"    {icon} {short} {pos['action']} "
-          f"${entry:,.4f}→${curr:,.4f}  {profit:+.6f}  [{reason}]")
+          f"${entry:,.4f}→${curr:,.4f}  {profit:+.6f}  [{reason}] (fee: {fee_used:.5f})")
 
     mfe = (pos["max_price"] - entry) / entry if pos["action"] == "BUY" else (entry - pos["min_price"]) / entry
     mae = (entry - pos["min_price"]) / entry if pos["action"] == "BUY" else (pos["max_price"] - entry) / entry

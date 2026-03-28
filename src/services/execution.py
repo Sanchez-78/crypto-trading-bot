@@ -739,7 +739,7 @@ def _send_market(size, side, ob):
 def exec_order(sig, size, ob, sym):
     """
     2 × 50% limit + market fallback. Updates fill_stats, slippage_hist, trade_log.
-    Returns (avg_fill_price, fractional_slip).
+    Returns (avg_fill_price, fractional_slip, actual_fee_rt).
     """
     side       = sig.get("action", "BUY")
     order_type = choose_type(sig, ob, sym)
@@ -751,6 +751,9 @@ def exec_order(sig, size, ob, sym):
     price_sum = 0.0
     fs        = fill_stats.setdefault(sym, {"f": 0, "t": 0})
 
+    filled_limit  = 0.0
+    filled_market = 0.0
+
     if order_type in ("LIMIT", "POST"):
         for _ in range(2):
             if filled >= size * 0.70:
@@ -761,11 +764,13 @@ def exec_order(sig, size, ob, sym):
             if f > 0:
                 fs["f"]   += 1
                 filled    += f
+                filled_limit += f
                 price_sum += f * p
 
     if order_type == "MARKET" or filled < size:
         f, p = _send_market(size - filled, side, ob)
         filled    += f
+        filled_market += f
         price_sum += f * p
 
     avg  = price_sum / max(filled, 1e-9)
@@ -782,4 +787,12 @@ def exec_order(sig, size, ob, sym):
     if len(trade_log) > 500:
         trade_log.pop(0)
 
-    return avg, slip
+    # Calculate actual proportional fee (Maker = 0.0, Taker = 0.0015 round-trip)
+    fee_limit  = 0.0000
+    fee_market = 0.0015
+    if filled > 0:
+        actual_fee_rt = (filled_limit * fee_limit + filled_market * fee_market) / filled
+    else:
+        actual_fee_rt = fee_market
+
+    return avg, slip, actual_fee_rt

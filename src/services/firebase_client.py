@@ -121,6 +121,9 @@ def _slim_trade(trade):
             "adx":        round(float(feat.get("adx",       20)), 2),
             "adx_slope":  round(float(feat.get("adx_slope",  0)), 4),
             "rsi_slope":  round(float(feat.get("rsi_slope",  0)), 4),
+            "obi":        round(float(feat.get("obi", 0.0)), 4),
+            "hour_utc":   int(feat.get("hour_utc", 12)),
+            "is_weekend": bool(feat.get("is_weekend", False)),
         },
     }
 

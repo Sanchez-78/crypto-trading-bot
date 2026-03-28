@@ -491,6 +491,9 @@ def on_price(data):
             "mom5":          round(mom5, 6),
             "mom10":         round(mom10, 6),
             "obi":           round(obi, 4),
+            # Temporal AI Cognition
+            "hour_utc":      __import__('datetime').datetime.utcnow().hour,
+            "is_weekend":    __import__('datetime').datetime.utcnow().weekday() >= 5,
         },
     }
 

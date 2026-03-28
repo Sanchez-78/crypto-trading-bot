@@ -6,7 +6,7 @@ BASE_SYMBOLS = ["BTCUSDT", "ETHUSDT", "ADAUSDT"]
 # Caches the active symbols to avoid aggressive polling
 _cached_symbols = []
 _last_update    = 0.0
-UPDATE_INTERVAL = 3600 * 4   # 4 hours
+UPDATE_INTERVAL = 300   # 5 minut (Alpha Discovery: Volume Shock Hunter)
 
 def get_active_symbols(top_n=5) -> list[str]:
     """
@@ -58,6 +58,17 @@ def get_active_symbols(top_n=5) -> list[str]:
         top_liquidity.sort(key=lambda x: x["abs_pct"], reverse=True)
         
         added = [c["symbol"] for c in top_liquidity[:top_n]]
+        
+        # Dynamický warmup pro minci chycenou během letu
+        try:
+            from src.services.signal_generator import warmup, prices
+            new_syms = [s for s in added if s not in prices and s not in BASE_SYMBOLS]
+            if new_syms:
+                print(f"🔥 Alpha Discovery detekoval Volume Shock! Žhavím zaměřovače: {new_syms}")
+                warmup(new_syms, candles=80)
+        except Exception as e:
+            print(f"⚠️ Alpha Discovery warmup chyba: {e}")
+
         SYMBOLS.extend(added)
         
         print(f"🌍 Discovery přidáno: {', '.join(added)}")
