@@ -335,9 +335,12 @@ def lm_snapshot():
     """
     try:
         from src.services.execution import bootstrap_mode
+        from src.services.learning_event import METRICS
         mode = bootstrap_mode()
+        metrics_copy = dict(METRICS)
     except Exception:
         mode = "UNKNOWN"
+        metrics_copy = {}
 
     pairs = {}
     for (sym, reg), n in lm_count.items():
@@ -368,12 +371,23 @@ def lm_snapshot():
     h = lm_health()
     a = lm_alerts()
 
+    # Find strongest edge (min 3 let's say, or just top n)
+    best_edge = None
+    if pairs:
+        valid_edges = [p for p in pairs.values() if p["n"] > 0]
+        if valid_edges:
+            best_edge = sorted(valid_edges, key=lambda x: (x["wr"], x["ev"]), reverse=True)[0]
+            best_edge = f"{best_edge['sym']} ({best_edge['reg']})"
+
     return {
         "health":   round(h, 4),
         "alert":    a,
         "mode":     mode,
         "pairs":    pairs,
         "features": top_features,
+        "block_reasons": metrics_copy.get("block_reasons", {}),
+        "completed_trades": metrics_copy.get("trades", 0),
+        "best_edge": best_edge or "Unknown",
     }
 
 

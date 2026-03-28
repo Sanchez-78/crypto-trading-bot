@@ -22,6 +22,7 @@ METRICS = {
     "best_trade":      0.0,
     "worst_trade":     0.0,
     "last_trade_time": 0.0,
+    "block_reasons":   {},
 }
 
 _last_prices    = {}
@@ -324,7 +325,9 @@ def bootstrap_from_history(trades):
 
 def track_generated(): METRICS["signals_generated"] += 1
 def track_filtered():  METRICS["signals_filtered"]  += 1
-def track_blocked():   METRICS["blocked"]           += 1
+def track_blocked(reason="UNKNOWN"):
+    METRICS["blocked"] += 1
+    METRICS["block_reasons"][reason] = METRICS["block_reasons"].get(reason, 0) + 1
 def track_regime(r):
     if r in METRICS["regimes"]:
         METRICS["regimes"][r] += 1

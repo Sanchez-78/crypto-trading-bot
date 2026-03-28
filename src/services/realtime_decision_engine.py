@@ -414,13 +414,13 @@ def evaluate_signal(signal):
 
     streak = _M.get("loss_streak", 0)
     if not _bootstrap and streak >= MAX_LOSS_STREAK:
-        track_blocked()
+        track_blocked(reason="STREAK_GUARD")
         print(f"    decision=SKIP_STREAK  streak={streak}>={MAX_LOSS_STREAK}")
         return None
     # Velocity guard: 3+ losses in last 5 trades → temporary pause
     recent_losses = sum(1 for r in list(_rr)[-5:] if r == "LOSS")
     if not _bootstrap and recent_losses >= 3:
-        track_blocked()
+        track_blocked(reason="VELOCITY_GUARD")
         print(f"    decision=SKIP_VELOCITY  recent_losses={recent_losses}/5")
         return None
 
@@ -429,7 +429,7 @@ def evaluate_signal(signal):
     if not _bootstrap and len(ev_history) >= EV_SPREAD_AFTER:
         spread = max(ev_history) - min(ev_history)
         if spread < EV_SPREAD_MIN:
-            track_blocked()
+            track_blocked(reason="FLAT_SPREAD")
             print(f"    decision=SKIP_FLAT  spread={spread:.4f}<{EV_SPREAD_MIN}")
             return None
 
@@ -441,7 +441,7 @@ def evaluate_signal(signal):
     except Exception:
         _freq_active = True
     if _freq_active and t15 > MAX_TRADES_15:
-        track_blocked()
+        track_blocked(reason="FREQ_CAP")
         print(f"    decision=SKIP_FREQ  t15={t15}>{MAX_TRADES_15}")
         return None
 
@@ -459,7 +459,7 @@ def evaluate_signal(signal):
           f"t15={t15}  spread={max(ev_history)-min(ev_history):.3f}  af={auditor_factor:.2f}")
 
     if ev < ev_threshold:
-        track_blocked()
+        track_blocked(reason="LOW_EV")
         print(f"    decision=SKIP_Q  ev={ev:.4f}  thr={ev_threshold:.4f}")
         return None
 
