@@ -188,10 +188,12 @@ def combo_weight(features, regime="RANGING"):
 
 def allow_combo(combo):
     """
-    Limit each combo to 3 uses per session — forces pattern diversity.
+    Limit each combo to 5 uses per session — forces pattern diversity.
     Resets on restart (in-memory). Returns True if allowed, increments count.
+    Raised from 3 → 5: with only ~64 possible 4+ feature combos across 3 symbols
+    a limit of 3 exhausts valid combos within hours, silencing the system.
     """
-    if combo_usage.get(combo, 0) >= 3:
+    if combo_usage.get(combo, 0) >= 5:
         return False
     combo_usage[combo] = combo_usage.get(combo, 0) + 1
     return True

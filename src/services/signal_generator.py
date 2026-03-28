@@ -183,16 +183,21 @@ def _record_side(s, action):
 
 def _prefilter(hist, atr_v, price):
     """
-    Require volatility expansion: recent 20-bar avg range > 50-bar avg range.
-    Maps to spec: vol.rolling(20).std().iloc[-1] > vol.mean()
-    Ensures market is active and directional, not dead-flat.
+    Volatility floor gate — blocks dead-flat / fully-collapsed markets.
+    Requires recent 20-bar avg range ≥ 60% of 50-bar average.
+
+    Original strict r20 > r50 (expanding vol) blocked mature trends where
+    volatility naturally contracts after the initial breakout move, causing
+    zero signals to be generated for entire sessions even with real edge.
+    60% floor still guards against truly dead-flat markets while allowing
+    signals during normal trend consolidation phases.
     """
     if len(hist) < 51:
         return False
     diffs = [abs(hist[i] - hist[i-1]) for i in range(1, len(hist))]
     r20   = sum(diffs[-20:]) / 20
     r50   = sum(diffs[-50:]) / 50
-    return r20 > r50   # expanding vol: recent range > longer-term average
+    return r20 > r50 * 0.6   # block only collapsed vol, allow mild contraction
 
 
 def _score_direction(hist, e50, e200, breakout_up, breakout_down, mom5, action):
