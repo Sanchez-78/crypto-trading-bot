@@ -1,5 +1,5 @@
 from collections import defaultdict
-from src.services.firebase_client import load_history
+from src.services.firebase_client import load_history, save_weights
 
 _DEFAULTS = {
     "BULL_TREND":  1.0,
@@ -47,4 +47,12 @@ class StrategyWeights:
         self.weights = updated
         regime_only  = {k: f"{v:.2f}" for k, v in updated.items() if k in _DEFAULTS}
         print("🧠 Strategy weights:", regime_only)
+
+        # Persist to Firestore so execution_bot can read via load_weights().
+        # Stored under "regime_weights" key inside weights/model document.
+        try:
+            save_weights({"regime_weights": updated})
+        except Exception as e:
+            print(f"⚠️  strategy_weights save: {e}")
+
         return dict(self.weights)
