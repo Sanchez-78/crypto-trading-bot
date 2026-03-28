@@ -216,10 +216,13 @@ def entropy_reg(weights):
     return float(-np.sum(w * np.log(w + 1e-9)))
 
 
-def bandit_update(sym, reg, outcome):
-    """UCB1 bandit: outcome=1 win, 0 loss. Called on every trade close."""
-    wins, plays = bandit_stats.get((sym, reg), (1, 2))
-    bandit_stats[(sym, reg)] = (wins + outcome, plays + 1)
+def bandit_update(sym, reg, reward):
+    """UCB1 bandit with continuous reward: accumulate clipped PnL instead of
+    binary 0/1. wins/plays becomes avg clipped PnL — pairs with genuine edge
+    score higher than win-rate alone captures. reward should be np.clip(pnl,
+    -0.05, 0.05) from the caller."""
+    wins, plays = bandit_stats.get((sym, reg), (0.0, 2))
+    bandit_stats[(sym, reg)] = (wins + float(reward), plays + 1)
 
 
 def bandit_score(sym, reg):
@@ -561,12 +564,19 @@ def is_bootstrap():
 
 def entry_filter(ev):
     """
-    Entry gate: open while learning data accumulates.
-    Restored to always-True until PnL-based EV has enough samples (≥10 per pair)
-    to produce a meaningful threshold. A hard ev>0.05 gate on a broken EV
-    signal silences the system entirely — gate re-tightened once WR ≠ 0%.
+    Delayed entry gate:
+      trades < 30 → allow all (data collection, no blocking)
+      trades ≥ 30 → require ev > 0 (positive Sharpe-EV only)
+    Uses METRICS["trades"] (survives restarts). Threshold ev>0 not ev>0.05
+    — Sharpe-normalised EV is dimensionless so 0 is the natural break-even.
     """
-    return True
+    try:
+        from src.services.learning_event import METRICS
+        if METRICS.get("trades", 0) < 30:
+            return True
+    except Exception:
+        pass
+    return ev > 0
 
 
 def ws_threshold():

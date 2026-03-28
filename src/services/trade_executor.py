@@ -369,10 +369,9 @@ def on_price(data):
     update_metrics(pos["signal"], trade)
     update_returns(sym, profit)     # feeds correlation, vol, risk_parity calc
     update_equity(profit)           # module-level equity for leverage()
-    outcome = 1 if result == "WIN" else 0
     reg_sig = pos["signal"].get("regime", "RANGING")
     bayes_update(sym, reg_sig, profit)
-    bandit_update(sym, reg_sig, outcome)
+    bandit_update(sym, reg_sig, max(-0.05, min(0.05, profit)))   # clipped PnL reward
     record_trade_close(sym, reg_sig, profit)
 
     # Learning monitor — track EV/WR/bandit/feature convergence.

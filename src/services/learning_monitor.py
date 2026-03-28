@@ -43,23 +43,33 @@ def _cap(lst):
 
 
 def true_ev(sym, reg):
-    """PnL-based EV: mean of last 20 closed trade profits for (sym, reg).
+    """Sharpe-normalised EV: mean(pnl[-20:]) / (std(pnl[-20:]) + 1e-6).
     Returns 0.0 until at least 10 samples are available.
-    Replaces the time-decayed Sharpe blend which collapsed to ~0 within minutes.
+    Normalising by std stabilises the value across different volatility regimes
+    and prevents raw PnL magnitude from dominating allocation decisions.
+    Positive → edge exists; negative → losing pair; ~0 → noise / too few trades.
     """
     pnl = lm_pnl_hist.get((sym, reg), [])
     if len(pnl) < 10:
         return 0.0
-    return float(np.mean(pnl[-20:]))
+    arr = pnl[-20:]
+    return float(np.mean(arr)) / (float(np.std(arr)) + 1e-6)
 
 
 def record_features(features, pnl):
-    """Direct per-feature win-rate update. No soft sampling — every feature
-    that was active on the trade gets a clean win/loss credit."""
+    """Fractional feature attribution: each active feature receives 1/N credit
+    instead of a full binary win. With N features per signal, each gets equal
+    share — prevents high-frequency features from dominating WR stats simply
+    because they co-occur with many others.
+    win/t remains in [0, 1] so lm_feature_quality() percentages are unchanged.
+    """
+    if not features:
+        return
+    credit = 1.0 / len(features)
     win = 1 if pnl > 0 else 0
     for f in features:
-        w, t = lm_feature_stats.get(f, (0, 0))
-        lm_feature_stats[f] = (w + win, t + 1)
+        w, t = lm_feature_stats.get(f, (0.0, 0.0))
+        lm_feature_stats[f] = (w + win * credit, t + credit)
 
 
 # ── Update hook — call on every trade close ────────────────────────────────────
