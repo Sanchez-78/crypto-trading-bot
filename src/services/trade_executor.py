@@ -66,8 +66,12 @@ _trades_at_tick = []             # tick values when positions were opened (rate 
 
 
 def compute_tp_sl(entry, direction, atr=0.003):
-    """Absolute TP/SL prices. (SYSTEM_FIX_V2_COMPRESSED)"""
-    tp_k = 1.5
+    """Absolute TP/SL prices.
+    tp_k lowered 1.5→1.2: ATR floor 0.3% → TP distance 0.36% (was 0.45%).
+    At adj=33 ticks (~66s) 0.36% is achievable; 0.45% was not → 63% timeouts.
+    RR = 1.2/1.0 = 1.2 — exactly at _reject_bad_rr floor (< 1.2 rejects).
+    """
+    tp_k = 1.2
     sl_k = 1.0
 
     if direction == "BUY":
