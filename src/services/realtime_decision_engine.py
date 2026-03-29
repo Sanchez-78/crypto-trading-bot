@@ -28,7 +28,9 @@ MIN_RR   = 1.25
 
 EV_SPREAD_MIN   = 0.05    # flat distribution guard
 EV_SPREAD_AFTER = 50      # evaluate spread only after N samples
-MAX_TRADES_15   = 5       # frequency cap (trades per 15 min)
+MAX_TRADES_15   = 8       # frequency cap raised 5→8: at 103+ trades the cap
+                          # was activating with t15=5-6 and blocking training signals;
+                          # 8 allows normal 6-symbol throughput without overtrading
 MAX_LOSS_STREAK = 15      # halt trading after N consecutive losses (raised: 5 was too tight)
 
 
