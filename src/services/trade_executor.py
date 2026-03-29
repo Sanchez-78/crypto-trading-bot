@@ -56,8 +56,12 @@ _last_replaced    = {}   # symbol -> timestamp of last replacement
 FEE_RT      = 0.0015    # 0.15% round-trip (Binance taker 0.075%×2)
 MIN_TP_PCT  = 0.008     # 0.80% — giving trades room to hit higher RRs
 MIN_SL_PCT  = 0.004     # 0.40% min SL — double the old size to survive spread + fee + noise
-MAX_TICKS   = 150       # ~5 min timeout — raised from 45 because wider TP/SL takes longer to play out
-FLUSH_EVERY = 60
+MAX_TICKS                = 150   # hard cap (safety net only — dynamic_hold governs normal exits)
+FLUSH_EVERY              = 60
+MIN_TRADES_PER_100_TICKS = 5     # force-trade threshold: if fewer → bypass sigmoid gate
+MIN_EDGE_PCT             = 0.002 # 0.20% min TP/SL distance — rejects micro-PnL noise setups
+_tick_counter   = [0]            # global price-tick counter (incremented in on_price)
+_trades_at_tick = []             # tick values when positions were opened (rate tracking)
 
 
 def compute_tp_sl(entry, direction, atr=0.003):
@@ -89,6 +93,58 @@ _TRAIL   = 0.4   # fallback trail
 def net_ws(ws, spread_pct, fee_rt):
     """WS after spread and round-trip fees. Negative = edge eaten by costs."""
     return ws - (spread_pct + fee_rt)
+
+
+# ── V3 helpers ─────────────────────────────────────────────────────────────────
+
+def _decision_score(ev, ws):
+    """EV-dominant blend: 75% EV + 25% WS."""
+    return 0.75 * ev + 0.25 * ws
+
+
+def _allow_trade_sigmoid(ev, ws):
+    """Sigmoid probability gate — replaces hard should_trade() threshold.
+    Center at 0.1: score=0.1→50% pass, score=0.4→87% pass, score=-0.2→13% pass.
+    Weak-positive EV still gets through probabilistically instead of being blocked.
+    """
+    import math
+    s = _decision_score(ev, ws)
+    p = 1.0 / (1.0 + math.exp(-6.0 * (s - 0.1)))
+    return random.random() < p
+
+
+def _has_min_edge(entry, tp, sl):
+    """Reject if TP or SL distance < MIN_EDGE_PCT — prevents micro-PnL noise trades."""
+    tp_dist = abs(tp - entry) / max(entry, 1e-9)
+    sl_dist = abs(sl - entry) / max(entry, 1e-9)
+    return tp_dist >= MIN_EDGE_PCT and sl_dist >= MIN_EDGE_PCT
+
+
+def _reject_bad_rr(entry, tp, sl):
+    """True (= reject) when reward/risk < 1.2 — poor asymmetry."""
+    risk = abs(sl - entry)
+    if risk == 0:
+        return True
+    return abs(tp - entry) / risk < 1.2
+
+
+def _dynamic_hold(atr_abs, entry):
+    """Timeout ticks scaled to volatility.
+    High ATR → shorter hold (5 ticks); low ATR → longer (20 ticks).
+    Avoids both premature exits in volatile markets and zombie positions in quiet ones.
+    """
+    atr_pct = atr_abs / max(entry, 1e-9)
+    adj = int(10 * (0.01 / max(atr_pct, 0.002)))
+    return max(5, min(20, adj))
+
+
+def _force_trade_guard():
+    """True when fewer than MIN_TRADES_PER_100_TICKS opened in the last 100 ticks.
+    Bypasses sigmoid gate to guarantee minimum learning data flow.
+    """
+    n = _tick_counter[0]
+    recent = sum(1 for t in _trades_at_tick if n - t <= 100)
+    return recent < MIN_TRADES_PER_100_TICKS
 
 
 def _replace_allowed(symbol):
@@ -243,13 +299,25 @@ def handle_signal(signal):
     allowed, reason = _allow_trade(sym, signal["action"], regime)
     if not allowed:
         if reason == "max_positions":
-            _replace_if_better(signal)   # may queue replacement
+            _replace_if_better(signal)
         else:
             print(f"    portfolio gate: {reason}  sym={sym}")
         return
 
     entry = signal["price"]
     atr   = signal.get("atr", entry * 0.003)
+
+    # ── V3: quality pre-filter on estimated TP/SL ─────────────────────────────
+    atr_pct = atr / max(entry, 1e-9)
+    tp_est, sl_est = compute_tp_sl(entry, signal["action"], atr_pct)
+    if not _has_min_edge(entry, tp_est, sl_est):
+        print(f"    portfolio gate: min_edge  sym={sym}  "
+              f"tp={abs(tp_est-entry)/entry:.4f}  sl={abs(sl_est-entry)/entry:.4f}")
+        return
+    if _reject_bad_rr(entry, tp_est, sl_est):
+        rr = abs(tp_est - entry) / max(abs(sl_est - entry), 1e-9)
+        print(f"    portfolio gate: bad_rr  sym={sym}  rr={rr:.2f}<1.2")
+        return
 
     # Bootstrap open: bypass staleness/cost gates until 30 closed trades
     try:
@@ -258,10 +326,8 @@ def handle_signal(signal):
     except Exception:
         bootstrap_open = False
 
-    # Build OB snapshot for cost calculations
     ob = OrderBook.from_price(entry, spread_pct=_SPREAD_PCT)
 
-    # Signal staleness — tick_ms from ATR velocity; vol from features
     sig_ts  = signal.get("timestamp", time.time())
     vol_f   = signal.get("features", {}).get("vol", 0.0)
     tick_ms = max(100, min(500, int(atr / max(entry, 1e-9) * 100_000)))
@@ -270,47 +336,39 @@ def handle_signal(signal):
         return
 
     ws_raw = signal.get("ws", 0.5)
-
-    # Pre-cost fast gate (cheap, before OB/slippage calculation)
     if not bootstrap_open and not pre_cost(ws_raw, FEE_RT):
         print(f"    portfolio gate: pre_cost  sym={sym}  ws={ws_raw:.3f}")
         return
 
     reg    = signal.get("regime", "RANGING")
-
-    # OB proportional adjustment + regime-aware EV blend
     ws_adj = ob_adjust(ws_raw, ob)
     ws_adj = ev_adjust(ws_adj, sym, reg)
+    ev     = signal.get("ev", 0.05)
 
-    # Combined entry gate: force_trade bypasses all filters (anti-deadlock);
-    # otherwise entry_filter(ev) AND ws > ws_threshold() must pass.
-    ev = signal.get("ev", 0.05)
-    if not should_trade(ev, ws_adj):
-        print(f"    portfolio gate: should_trade  sym={sym}  ev={ev:.3f}  ws={ws_adj:.3f}")
+    # ── V3: sigmoid probability gate with force-trade bypass ──────────────────
+    # force_trade_guard fires when trade rate drops below minimum — bypasses
+    # sigmoid so the learning loop always has fresh data flowing in.
+    force = _force_trade_guard()
+    if not force and not _allow_trade_sigmoid(ev, ws_adj):
+        print(f"    portfolio gate: sigmoid_skip  sym={sym}  ev={ev:.3f}  ws={ws_adj:.3f}")
         return
 
-    # Position sizing: EV-scaled, auditor floor 0.7, strong-EV boost
     import math
     from src.services.learning_event           import get_metrics as _gm
     from src.services.realtime_decision_engine import get_ev_threshold, get_ws_threshold
-    _t      = _gm().get("trades", 0)
-    # Epsilon-driven exploration: override explore flag with phase-aware probability.
-    # Forces the system to occasionally take trades at 0.3× size to sample
-    # diverse (sym, reg) outcomes rather than always following the greedy path.
-    explore = signal.get("explore", False) or (random.random() < epsilon())
-    af      = min(1.0, max(0.7, signal.get("auditor_factor", 1.0)))
-    # final_size = capital_alloc(risk_parity+EV+cluster) × leverage(dd-adaptive)
-    # returns 0 if total_exposure > 70%
-    base    = final_size(sym, reg, 0.05 if _t >= 20 else 0.025, _positions, ob)
+    _t       = _gm().get("trades", 0)
+    explore  = signal.get("explore", False) or (random.random() < epsilon())
+    af       = min(1.0, max(0.7, signal.get("auditor_factor", 1.0)))
+    base     = final_size(sym, reg, 0.05 if _t >= 20 else 0.025, _positions, ob)
     if base == 0.0:
         print(f"    portfolio gate: exposure_full  sym={sym}")
         return
-    thr     = get_ev_threshold()
-    ws_thr  = ws_threshold()          # live-only floor for sizing (0.50+)
+    thr      = get_ev_threshold()
+    ws_thr   = ws_threshold()
     ws_ratio = (ws_adj / ws_thr) if ws_thr > 0 else 1.0
     size     = base * math.sqrt(min(ws_ratio, 2.25)) * af
-    
-    # HF-Quant 3.0: Half-Kelly Optimization
+
+    # Half-Kelly sizing after 30 trades
     if _t >= 30:
         pf = _gm().get("profit_factor", 1.0)
         wr = _gm().get("winrate", 0.0)
@@ -326,31 +384,33 @@ def handle_signal(signal):
         size *= 1.5
     if explore:
         size *= 0.3
-    size  = _vol_adjust(size, signal)
-    size  = size_floor(size)          # phase-aware minimum (0.01/0.005/none)
-    size  = final_size_meta(size)     # meta risk_mult × alloc_mult, cap 0.25
+    size = _vol_adjust(size, signal)
+    size = size_floor(size)
+    size = final_size_meta(size)
 
-    # Bootstrap-aware failure control (replaces dashboard_control in COLD/WARM)
     ctrl = failure_control(_positions)
     if ctrl == 0.0:
-        print(f"    portfolio gate: failure_halt  sym={sym}  "
-              f"mode={bootstrap_mode()}")
+        print(f"    portfolio gate: failure_halt  sym={sym}  mode={bootstrap_mode()}")
         return
     size *= ctrl
 
-    # Bootstrap-aware cost guard (bootstrap=edge>-0.02, live=edge>0)
     edge = net_edge(ws_adj, size, ob, FEE_RT, sym)
     if not cost_guard_bootstrap(edge):
         print(f"    portfolio gate: cost_guard  sym={sym}  "
               f"edge={edge:.4f}  mode={bootstrap_mode()}")
         return
 
-    # ── Per-symbol execution ──────────────────────────────────────────────────
+    # ── Execution ─────────────────────────────────────────────────────────────
     actual_entry, fill_slip, actual_fee_rt = exec_order(signal, size, ob, sym)
     actual_entry = actual_entry or entry
 
     actual_atr = signal.get("atr", actual_entry * 0.003) / actual_entry if actual_entry else 0.003
     tp, sl = compute_tp_sl(actual_entry, signal["action"], actual_atr)
+
+    # Record tick for force-trade rate tracking
+    _trades_at_tick.append(_tick_counter[0])
+    if len(_trades_at_tick) > 200:
+        del _trades_at_tick[:-200]
 
     _positions[sym] = {
         "action":        signal["action"],
@@ -369,7 +429,8 @@ def handle_signal(signal):
         "min_price":     actual_entry,
         "is_trailing":   False,
     }
-    print(f"    exec: slip={fill_slip:.5f}  fee={actual_fee_rt:.5f}  fr={fill_rate(sym):.2f}  "
+    tag = "[force]" if force else ""
+    print(f"    exec{tag}: slip={fill_slip:.5f}  fee={actual_fee_rt:.5f}  fr={fill_rate(sym):.2f}  "
           f"ws_adj={ws_adj:.3f}  {size:.4f}@{actual_entry:.4f}  "
           f"tp={tp:.4f}  sl={sl:.4f}")
     _regime_exposure[regime] = _regime_exposure.get(regime, 0) + 1
@@ -379,6 +440,8 @@ def handle_signal(signal):
 def on_price(data):
     if time.time() - _last_flush[0] >= FLUSH_EVERY and BATCH:
         _flush()
+
+    _tick_counter[0] += 1   # global tick — drives force_trade_guard rate
 
     sym = data["symbol"]
     if sym not in _positions:
@@ -392,65 +455,68 @@ def on_price(data):
     move = (curr - entry) / entry
     if pos["action"] == "SELL":
         move *= -1
-        
-    # Extrémy obchodu (MAE / MFE tracking)
+
+    # MAE / MFE tracking
     if curr > pos["max_price"]: pos["max_price"] = curr
     if curr < pos["min_price"]: pos["min_price"] = curr
-        
+
     # Trail price tracking
     if pos["action"] == "BUY" and curr > pos["trail_price"]:
         pos["trail_price"] = curr
     elif pos["action"] == "SELL" and curr < pos["trail_price"]:
         pos["trail_price"] = curr
-        
-    # Activate trailing stop
-    if not pos["is_trailing"] and move >= 0.006:  # +0.60% activation
+
+    # Activate trailing stop at +0.60% profit
+    if not pos["is_trailing"] and move >= 0.006:
         pos["is_trailing"] = True
         print(f"    🚀 {sym} TRAILING STOP ACTIVOVÁN! Zisk: {move*100:.2f}%")
 
-    # ── Exit conditions (Trailing vs Absolute SL) ─────────────────────────────
+    # ── Exit conditions ────────────────────────────────────────────────────────
     reason = None
-    atr = pos["signal"].get("atr", entry * 0.003)
+    atr          = pos["signal"].get("atr", entry * 0.003)
     trail_offset = 1.5 * atr
 
     if pos.get("force_close"):
         reason = "replaced"
     elif pos["is_trailing"]:
-        if pos["action"] == "BUY" and curr <= (pos["trail_price"] - trail_offset):
+        if pos["action"] == "BUY"  and curr <= (pos["trail_price"] - trail_offset):
             reason = "TRAIL_SL"
         elif pos["action"] == "SELL" and curr >= (pos["trail_price"] + trail_offset):
             reason = "TRAIL_SL"
     else:
-        # Pre-trailing absolute stop-loss (wide TP as fallback)
-        if pos["action"] == "BUY" and curr <= pos["sl"]: reason = "SL"
-        elif pos["action"] == "BUY" and move > 0.10: reason = "TP_FALLBACK"
+        # V3 BUG FIX: pos["tp"] was stored but never checked — TP exits never fired.
+        # Added explicit TP check before SL and removed the TP_FALLBACK (>10%) crutch.
+        if   pos["action"] == "BUY"  and curr >= pos["tp"]: reason = "TP"
+        elif pos["action"] == "SELL" and curr <= pos["tp"]: reason = "TP"
+        elif pos["action"] == "BUY"  and curr <= pos["sl"]: reason = "SL"
         elif pos["action"] == "SELL" and curr >= pos["sl"]: reason = "SL"
-        elif pos["action"] == "SELL" and move > 0.10: reason = "TP_FALLBACK"
 
-    # 🚀 SYSTEM_FIX_V2: Hard MAX_HOLD = 15
-    current_timeout = 15
-    if reason is None and pos["ticks"] >= current_timeout:
+    # V3: dynamic hold — volatility-adaptive timeout (5–20 ticks) replaces
+    # hardcoded 15 from V2. High ATR → shorter hold; low ATR → longer.
+    timeout = _dynamic_hold(atr, entry)
+    if reason is None and pos["ticks"] >= timeout:
         reason = "timeout"
 
     if reason is None:
         return
 
     fee_used = pos.get("fee_rt", FEE_RT)
-    profit = (move - fee_used) * pos["size"]
-    result = "WIN" if profit > 0 else "LOSS"
-    short  = sym.replace("USDT", "")
-    icon   = "✅" if result == "WIN" else "❌"
+    profit   = (move - fee_used) * pos["size"]
+    result   = "WIN" if profit > 0 else "LOSS"
+    short    = sym.replace("USDT", "")
+    icon     = "✅" if result == "WIN" else "❌"
 
     print(f"    {icon} {short} {pos['action']} "
           f"${entry:,.4f}→${curr:,.4f}  {profit:+.6f}  [{reason}] (fee: {fee_used:.5f})")
 
-    mfe = (pos["max_price"] - entry) / entry if pos["action"] == "BUY" else (entry - pos["min_price"]) / entry
-    mae = (entry - pos["min_price"]) / entry if pos["action"] == "BUY" else (pos["max_price"] - entry) / entry
+    mfe = ((pos["max_price"] - entry) / entry if pos["action"] == "BUY"
+           else (entry - pos["min_price"]) / entry)
+    mae = ((entry - pos["min_price"]) / entry if pos["action"] == "BUY"
+           else (pos["max_price"] - entry) / entry)
 
     try:
         from src.services.notifier import send_trade_notification
-        profit_pct = move - fee_used
-        send_trade_notification(sym, pos["action"], profit_pct, reason)
+        send_trade_notification(sym, pos["action"], move - fee_used, reason)
     except Exception as e:
         print(f"    [Warn: Notifikace error] {e}")
 
@@ -467,29 +533,26 @@ def on_price(data):
     }
 
     update_metrics(pos["signal"], trade)
-    update_returns(sym, profit)     # feeds correlation, vol, risk_parity calc
-    update_equity(profit)           # module-level equity for leverage()
+    update_returns(sym, profit)
+    update_equity(profit)
     reg_sig = pos["signal"].get("regime", "RANGING")
     bayes_update(sym, reg_sig, profit)
-    bandit_update(sym, reg_sig, max(-0.05, min(0.05, profit)))   # clipped PnL reward
+    bandit_update(sym, reg_sig, max(-0.05, min(0.05, profit)))
     record_trade_close(sym, reg_sig, profit)
 
-    # Learning monitor — track EV/WR/bandit/feature convergence.
-    # Filter to boolean edge features only: continuous indicators (rsi, ema_diff…)
-    # are always present so they poison lm_feature_stats with the overall WR
-    # instead of a feature-specific WR. update_edge_stats uses isinstance(v,bool)
-    # already; lm_update must match.
     try:
         from src.services.learning_monitor import lm_update
-        raw_f = pos["signal"].get("features", {})
+        raw_f  = pos["signal"].get("features", {})
         bool_f = {k: v for k, v in raw_f.items() if isinstance(v, bool)}
-        lm_update(sym, reg_sig, profit,
+        # V3: suppress micro-PnL from lm_update — near-zero trades carry no edge
+        # signal and pollute convergence stats; set to 0.0 so they count as neutral.
+        learning_pnl = 0.0 if abs(profit) < 0.001 else profit
+        lm_update(sym, reg_sig, learning_pnl,
                   ws=pos["signal"].get("ws", 0.5),
                   features=bool_f)
     except Exception:
         pass
 
-    # ── Calibration + edge learning feedback ──────────────────────────────────
     try:
         from src.services.realtime_decision_engine import update_calibrator, update_edge_stats
         outcome  = 1 if result == "WIN" else 0
@@ -513,7 +576,6 @@ def on_price(data):
         0, _regime_exposure.get(closed_regime, 1) - 1)
     del _positions[sym]
 
-    # Open any pending replacement signal now that a slot freed
     if _pending_open:
         pending = _pending_open.pop(0)
         handle_signal(pending)

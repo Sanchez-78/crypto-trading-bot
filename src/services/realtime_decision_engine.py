@@ -466,13 +466,19 @@ def evaluate_signal(signal):
         pass
     auditor_factor = min(1.0, max(0.7, af_raw))
 
+    # V3 entry filter: before 30 trades always pass (bootstrap); after 30 trades
+    # gate at max(ev_threshold, -0.20).  ev_threshold handles crisis (WR<5%→0.15);
+    # -0.20 floor prevents permanently loose -0.30 learning-mode gate from letting
+    # clearly broken signals through once enough data exists to evaluate them.
+    _t_ef = _M.get("trades", 0)
+    _gate = max(ev_threshold, -0.20) if _t_ef >= 30 else -1.0   # -1.0 = always pass
     print(f"    EV={ev:.3f}  p={win_prob:.2f}  rr={rr:.2f}  "
-          f"thr={ev_threshold:.3f}[q75/{len(ev_history)}]  "
+          f"gate={_gate:.2f}[n={_t_ef}]  "
           f"t15={t15}  spread={max(ev_history)-min(ev_history):.3f}  af={auditor_factor:.2f}")
 
-    if ev < ev_threshold:
+    if ev < _gate:
         track_blocked(reason="LOW_EV")
-        print(f"    decision=SKIP_Q  ev={ev:.4f}  thr={ev_threshold:.4f}")
+        print(f"    decision=SKIP_Q  ev={ev:.4f}  gate={_gate:.4f}")
         return None
 
     signal["confidence"]     = round(win_prob, 4)
