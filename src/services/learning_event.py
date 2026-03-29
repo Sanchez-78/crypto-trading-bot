@@ -266,11 +266,16 @@ def bootstrap_from_history(trades):
     if conf_samples:
         m["confidence_avg"] = sum(conf_samples) / len(conf_samples)
 
+    # Intentionally NOT seeding _recent_results from history.
+    # The velocity guard in realtime_decision_engine uses list(_rr)[-5:] to
+    # detect "3 losses in last 5 trades" — if we load historical results here,
+    # a streak of losses at session-end would permanently block trading after
+    # every restart until 2 in-session wins flip the ratio.
+    # _recent_results must only contain in-session trades so the guard reflects
+    # current performance, not stale history.  Streak (loss_streak / win_streak)
+    # is tracked separately via METRICS which IS seeded from history below.
     global _recent_results
-    _recent_results = [
-        t.get("result") for t in sorted_trades[-50:]
-        if t.get("result") in ("WIN", "LOSS")
-    ]
+    _recent_results = []   # velocity guard uses in-session trades only
 
     # Compute TRAILING streak from the last 30 historical trades rather than
     # resetting to 0.  A plain reset meant the MAX_LOSS_STREAK circuit-breaker

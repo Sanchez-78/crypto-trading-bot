@@ -131,12 +131,15 @@ def _reject_bad_rr(entry, tp, sl):
 
 def _dynamic_hold(atr_abs, entry):
     """Timeout ticks scaled to volatility.
-    High ATR → shorter hold (5 ticks); low ATR → longer (20 ticks).
-    Avoids both premature exits in volatile markets and zombie positions in quiet ones.
+    High ATR → shorter hold (5 ticks); low ATR → longer (40 ticks).
+    Cap raised 20→40: with tp_k=1.5 and ATR floor 0.3%, TP distance=0.45%;
+    crypto needs ~60-90s to move 0.45% → 20-tick cap (≈40s) was cutting TP
+    exits prematurely, forcing 86% timeouts. 40 ticks ≈ 80s gives TP time to fire.
+    ATR floor 0.3% → adj=33, comfortably below the new cap.
     """
     atr_pct = atr_abs / max(entry, 1e-9)
     adj = int(10 * (0.01 / max(atr_pct, 0.002)))
-    return max(5, min(20, adj))
+    return max(5, min(40, adj))
 
 
 def _force_trade_guard():
@@ -391,6 +394,15 @@ def handle_signal(signal):
     size = _vol_adjust(size, signal)
     size = size_floor(size)
     size = final_size_meta(size)
+
+    # Micro-cap penalty: coins priced below $0.01 (NOM $0.0027, etc.) have
+    # near-zero absolute ATR → exits dominated by timeouts → all PnL is noise.
+    # Cap position size at 25% of normal to limit per-trade damage while the
+    # system still collects learning data from these pairs.
+    _price = signal.get("price", 1.0) or 1.0
+    if _price < 0.01:
+        size *= 0.25
+        print(f"    micro-cap penalty x0.25  price={_price:.6f}  sym={sym}")
 
     ctrl = failure_control(_positions)
     if ctrl == 0.0:
