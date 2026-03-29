@@ -445,11 +445,20 @@ def evaluate_signal(signal):
         track_blocked(reason="STREAK_GUARD")
         print(f"    decision=SKIP_STREAK  streak={streak}>={MAX_LOSS_STREAK}")
         return None
-    # Velocity guard: 3+ losses in last 5 trades → temporary pause
-    recent_losses = sum(1 for r in list(_rr)[-5:] if r == "LOSS")
-    if not _bootstrap and recent_losses >= 3:
+    # Velocity guard: 5+ losses in last 8 trades → temporary pause.
+    # Window 5→8, threshold 3→5:
+    #   Old (3/5): at WR=55%, P(trigger) = 40% per 5-trade window → froze
+    #   the system every ~12 trades on average; threshold too sensitive.
+    #   New (5/8): P(trigger) ≈ 4% → fires only during genuine loss streaks.
+    # Deadlock bypass: if no trade executed in last 15 min (t15=0), the guard
+    #   may have deadlocked (Positions=0 → no wins possible → guard never lifts).
+    #   Allow one signal through to break the cycle.
+    recent_losses = sum(1 for r in list(_rr)[-8:] if r == "LOSS")
+    _t15_now = trades_in_window(900)
+    _deadlocked = (_t15_now == 0 and len(list(_rr)) >= 5)
+    if not _bootstrap and not _deadlocked and recent_losses >= 5:
         track_blocked(reason="VELOCITY_GUARD")
-        print(f"    decision=SKIP_VELOCITY  recent_losses={recent_losses}/5")
+        print(f"    decision=SKIP_VELOCITY  recent_losses={recent_losses}/8")
         return None
 
     # ── EV spread guard: flat distribution = noise, not edge ──────────────────
