@@ -42,5 +42,5 @@ jobs:
 
       - name: Run
         env:
-          FIREBASE_CREDENTIALS: ${{ secrets.FIREBASE_CREDENTIALS }}
+          FIREBASE_KEY_BASE64: ${{ secrets.FIREBASE_KEY_BASE64 }}
         run: python main.py ${{ steps.mode.outputs.mode }}
