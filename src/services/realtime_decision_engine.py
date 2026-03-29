@@ -28,9 +28,10 @@ MIN_RR   = 1.25
 
 EV_SPREAD_MIN   = 0.05    # flat distribution guard
 EV_SPREAD_AFTER = 50      # evaluate spread only after N samples
-MAX_TRADES_15   = 8       # frequency cap raised 5→8: at 103+ trades the cap
-                          # was activating with t15=5-6 and blocking training signals;
-                          # 8 allows normal 6-symbol throughput without overtrading
+MAX_TRADES_15   = 15      # frequency cap raised 5→8→15: STO (71% WR, EV:+0.123)
+                          # is the only converged pair and trades ~11/15min; capping
+                          # at 8 was throttling the best edge in the system; 15 allows
+                          # proven pairs to trade freely while still blocking runaway
 MAX_LOSS_STREAK = 15      # halt trading after N consecutive losses (raised: 5 was too tight)
 
 
@@ -402,7 +403,13 @@ def evaluate_signal(signal):
     from src.services.learning_monitor import lm_pnl_hist
     pnl = lm_pnl_hist.get((sym, regime), [])
     if len(pnl) < 10:
-        ev = 0.0
+        # Exploration prior: 0.03 instead of 0.0 so underdeveloped pairs can
+        # pass a rising EV gate (currently 0.005) and accumulate the remaining
+        # trades to reach n=10. At n=10, real EV kicks in — if negative (e.g.
+        # ETH 30% WR) the pair gets permanently blocked. Using 0.0 caused a
+        # catch-22: pairs were blocked before they could collect enough data to
+        # be evaluated (and ETH was stuck at n=7, unable to reach n=10 block).
+        ev = 0.03
     else:
         m = float(np.mean(pnl[-20:]))
         s = max(float(np.std(pnl[-20:])), 0.002)
