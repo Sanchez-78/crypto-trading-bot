@@ -459,7 +459,7 @@ def print_status():
     print(f"    {g('Filtrace', C.GRY)}      "
           f"{g(f'{eff:.1f}%', eff_col)}  "
           f"{g('projde filtrem', C.GRY)}  "
-          f"{g('TP: 3.0xATR  /  SL: 1.0xATR  (RR 3:1)  EV-only', C.GRY)}")
+          f"{g('TP: 1.2xATR  /  SL: 0.8xATR  (RR 1.5:1)  EV-only', C.GRY)}")
 
     # ── Last signals ──────────────────────────────────────────────────────────
     if ls:
