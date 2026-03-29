@@ -608,29 +608,24 @@ def force_trade():
     return random.random() < 0.40
 
 
+def allow_trade(ev, ws):
+    score = 0.6 * float(ev) + 0.4 * float(ws)
+    p = 1.0 / (1.0 + np.exp(-5 * (score - 0.2)))
+    return random.random() < p
+
+
+def allow_trade_bootstrap(ev, ws):
+    return random.random() < 0.40
+
+
 def should_trade(ev, ws):
     """
-    Final decision gate — three tiers:
-      bootstrap (< 50 trades)      → Sigmoid probability (e-greedy sampling)
-      force_trade (40%)            → always True (ongoing anti-deadlock)
-      else                         → ws > 0.25 only (EV ignored)
+    Final decision gate (SYSTEM_FIX_V2_COMPRESSED)
     """
-    try:
-        from src.services.learning_event import METRICS
-        trades = METRICS.get("trades", 0)
-    except Exception:
-        trades = len(closed_trades)
-
-    if trades < 50:
-        # Optimalizovaný Sigmoid: Pustí ~8% hrozných signálů (score 0.0), a ~92% vynikajících (score 0.5).
-        # Chrání kapitál na poplatcích, ale drží dostatečný RL průzkum.
-        score = 0.6 * float(ev) + 0.4 * float(ws)
-        p = 1.0 / (1.0 + np.exp(-10 * (score - 0.25)))
-        return random.random() < p
-
-    if force_trade():
-        return True
-    return ws > 0.25
+    if is_bootstrap():
+        return allow_trade_bootstrap(ev, ws)
+    
+    return allow_trade(ev, ws)
 
 
 def epsilon():

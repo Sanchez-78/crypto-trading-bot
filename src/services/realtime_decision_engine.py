@@ -16,6 +16,7 @@ Flow:
 """
 
 from collections import deque
+import numpy as np
 from src.services.firebase_client import load_history
 from src.services.learning_event  import track_blocked, track_regime, trades_in_window
 
@@ -392,14 +393,25 @@ def evaluate_signal(signal):
     # ── Calibrated win_prob ────────────────────────────────────────────────────
     win_prob = calibrator.get(signal["confidence"])
 
-    # ── EV (single authoritative computation) ─────────────────────────────────
+    # ── EV (True Empirical Computation) ─────────────────────────────────────
     regime  = signal.get("regime", "RANGING")
+    sym     = signal.get("sym", signal.get("symbol", ""))
+    
+    from src.services.learning_monitor import lm_pnl_hist
+    pnl = lm_pnl_hist.get((sym, regime), [])
+    if len(pnl) < 10:
+        ev = 0.0
+    else:
+        m = float(np.mean(pnl[-20:]))
+        s = max(float(np.std(pnl[-20:])), 0.002)
+        ev = float(np.tanh(m / s))
+
+    # Keep structural info for printing / metadata
     atr     = signal.get("atr", 0)
     price   = signal.get("price", 1) or 1
     tp_move = max(atr * _TP_MULT.get(regime, 1.0) / price, MIN_TP)
     sl_move = max(atr * _SL_MULT.get(regime, 0.8) / price, MIN_SL)
     rr      = max(tp_move / sl_move, MIN_RR)
-    ev      = win_prob * rr - (1 - win_prob)
 
     ev_history.append(ev)
     ev_threshold = get_ev_threshold()

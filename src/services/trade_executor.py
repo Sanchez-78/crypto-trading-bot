@@ -60,18 +60,15 @@ MAX_TICKS   = 150       # ~5 min timeout — raised from 45 because wider TP/SL 
 FLUSH_EVERY = 60
 
 
-def compute_tp_sl(entry, direction):
-    """Absolute TP/SL prices.
-    Uses max(MIN_TP_PCT, 4×FEE_RT) to guarantee TP always clears round-trip fees.
-    SL is dynamically calibrated via Auto Walk-Forward.
-    """
-    from src.services.auto_walkforward import get_best_sl
-    
-    tp_pct = max(MIN_TP_PCT, 4 * FEE_RT)
-    sl_pct = max(MIN_SL_PCT, get_best_sl()) # Bezpečnostní spodní limit 0.40%
+def compute_tp_sl(entry, direction, atr=0.003):
+    """Absolute TP/SL prices. (SYSTEM_FIX_V2_COMPRESSED)"""
+    tp_k = 1.5
+    sl_k = 1.0
+
     if direction == "BUY":
-        return entry * (1 + tp_pct), entry * (1 - sl_pct)
-    return entry * (1 - tp_pct), entry * (1 + sl_pct)
+        return entry * (1 + tp_k * atr), entry * (1 - sl_k * atr)
+    else:
+        return entry * (1 - tp_k * atr), entry * (1 + sl_k * atr)
 
 # Edge-specific TP/SL multipliers (× ATR)
 # trend_pullback: moderate TP — riding the bounce back to mean
@@ -352,7 +349,8 @@ def handle_signal(signal):
     actual_entry, fill_slip, actual_fee_rt = exec_order(signal, size, ob, sym)
     actual_entry = actual_entry or entry
 
-    tp, sl = compute_tp_sl(actual_entry, signal["action"])
+    actual_atr = signal.get("atr", actual_entry * 0.003) / actual_entry if actual_entry else 0.003
+    tp, sl = compute_tp_sl(actual_entry, signal["action"], actual_atr)
 
     _positions[sym] = {
         "action":        signal["action"],
@@ -429,8 +427,8 @@ def on_price(data):
         elif pos["action"] == "SELL" and curr >= pos["sl"]: reason = "SL"
         elif pos["action"] == "SELL" and move > 0.10: reason = "TP_FALLBACK"
 
-    # 🚀 Bootstrap Timeout Akcelerátor (20 ticků vs 150 ticků)
-    current_timeout = 20 if is_bootstrap() else MAX_TICKS
+    # 🚀 SYSTEM_FIX_V2: Hard MAX_HOLD = 15
+    current_timeout = 15
     if reason is None and pos["ticks"] >= current_timeout:
         reason = "timeout"
 
