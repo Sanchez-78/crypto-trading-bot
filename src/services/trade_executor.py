@@ -57,7 +57,9 @@ FEE_RT      = 0.0015    # 0.15% round-trip (Binance taker 0.075%×2)
 MIN_TP_PCT  = 0.008     # 0.80% — giving trades room to hit higher RRs
 MIN_SL_PCT  = 0.004     # 0.40% min SL — double the old size to survive spread + fee + noise
 MAX_TICKS                = 150   # hard cap (safety net only — dynamic_hold governs normal exits)
-FLUSH_EVERY              = 60
+FLUSH_EVERY              = 15   # lowered 60→15s: with 60s window up to 14 trades
+                                 # were lost on Railway restart (BATCH not flushed
+                                 # before process kill). 15s → max ~3-4 trades lost.
 MIN_TRADES_PER_100_TICKS = 5     # force-trade threshold: if fewer → bypass sigmoid gate
 MIN_EDGE_PCT             = 0.0003 # 0.03% min TP/SL distance (log: avg ATR-based TP=0.038%,
                                   # old 0.20% blocked 336/346 signals — 97% kill rate)
@@ -604,7 +606,7 @@ def on_price(data):
     save_last_trade(trade)
 
     BATCH.append(trade)
-    if len(BATCH) >= 20:
+    if len(BATCH) >= 5:   # lowered 20→5: flush sooner to minimise data loss on restart
         _flush()
 
     closed_regime = pos["signal"].get("regime", "RANGING")
