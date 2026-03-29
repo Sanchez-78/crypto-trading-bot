@@ -26,7 +26,11 @@ MIN_TP   = 0.0025
 MIN_SL   = 0.0020
 MIN_RR   = 1.25
 
-EV_SPREAD_MIN   = 0.05    # flat distribution guard
+EV_SPREAD_MIN   = 0.02    # flat distribution guard — lowered 0.05→0.02:
+                          # exploration prior ev=0.03 (n<10 pairs) + STO ev=0.07
+                          # gives spread=0.04 < 0.05 → SKIP_FLAT fired and halted
+                          # trading for 1+ hour. Once ADA/BTC reach n=10 their
+                          # negative EVs will push spread to 1.0+ permanently.
 EV_SPREAD_AFTER = 50      # evaluate spread only after N samples
 MAX_TRADES_15   = 15      # frequency cap raised 5→8→15: STO (71% WR, EV:+0.123)
                           # is the only converged pair and trades ~11/15min; capping
