@@ -59,7 +59,8 @@ MIN_SL_PCT  = 0.004     # 0.40% min SL — double the old size to survive spread
 MAX_TICKS                = 150   # hard cap (safety net only — dynamic_hold governs normal exits)
 FLUSH_EVERY              = 60
 MIN_TRADES_PER_100_TICKS = 5     # force-trade threshold: if fewer → bypass sigmoid gate
-MIN_EDGE_PCT             = 0.002 # 0.20% min TP/SL distance — rejects micro-PnL noise setups
+MIN_EDGE_PCT             = 0.0003 # 0.03% min TP/SL distance (log: avg ATR-based TP=0.038%,
+                                  # old 0.20% blocked 336/346 signals — 97% kill rate)
 _tick_counter   = [0]            # global price-tick counter (incremented in on_price)
 _trades_at_tick = []             # tick values when positions were opened (rate tracking)
 
@@ -305,7 +306,10 @@ def handle_signal(signal):
         return
 
     entry = signal["price"]
-    atr   = signal.get("atr", entry * 0.003)
+    # ATR floor: micro-price coins (NOM $0.0027, KAT $0.012) can have ATR≈0
+    # in absolute terms → TP=SL=entry → trade can only close on timeout.
+    # Floor at 0.3% of entry ensures minimum meaningful TP/SL distance.
+    atr   = max(signal.get("atr", 0) or 0, entry * 0.003)
 
     # ── V3: quality pre-filter on estimated TP/SL ─────────────────────────────
     atr_pct = atr / max(entry, 1e-9)
@@ -404,7 +408,7 @@ def handle_signal(signal):
     actual_entry, fill_slip, actual_fee_rt = exec_order(signal, size, ob, sym)
     actual_entry = actual_entry or entry
 
-    actual_atr = signal.get("atr", actual_entry * 0.003) / actual_entry if actual_entry else 0.003
+    actual_atr = max(signal.get("atr", 0) or 0, actual_entry * 0.003) / actual_entry if actual_entry else 0.003
     tp, sl = compute_tp_sl(actual_entry, signal["action"], actual_atr)
 
     # Record tick for force-trade rate tracking
