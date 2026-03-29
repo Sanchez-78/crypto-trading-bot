@@ -72,7 +72,9 @@ def compute_tp_sl(entry, direction, atr=0.003):
     RR = 1.2/1.0 = 1.2 — exactly at _reject_bad_rr floor (< 1.2 rejects).
     """
     tp_k = 1.2
-    sl_k = 1.0
+    sl_k = 0.8  # tightened 1.0→0.8: smaller SL distance forces faster exit resolution.
+                # SL=0.24% (vs old 0.30%) hits more often in 33-tick window →
+                # SL+TP share rises, timeout share falls. RR=1.2/0.8=1.5 (was 1.2).
 
     if direction == "BUY":
         return entry * (1 + tp_k * atr), entry * (1 - sl_k * atr)

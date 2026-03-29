@@ -404,7 +404,14 @@ def evaluate_signal(signal):
     else:
         m = float(np.mean(pnl[-20:]))
         s = max(float(np.std(pnl[-20:])), 0.002)
-        ev = float(np.tanh(m / s))
+        # tanh removed: raw m/s gives real magnitude differentiation across pairs.
+        # tanh squished everything to ±1 → all EVs collapsed near 0 → bandit=0,
+        # sigmoid gate flat, no pair separation. Raw ratio: positive pairs get
+        # ev>0, losing pairs ev<0, strong edge gets ev>1. Floor ±0.05 prevents
+        # micro-signal collapse (ev=0.001 and ev=0.0 were indistinguishable).
+        ev = float(m / s)
+        if abs(ev) < 0.05:
+            ev = 0.05 if ev >= 0 else -0.05
 
     # Keep structural info for printing / metadata
     atr     = signal.get("atr", 0)
@@ -449,7 +456,9 @@ def evaluate_signal(signal):
     t15 = trades_in_window(900)
     try:
         from src.services.learning_event import METRICS as _M2
-        _freq_active = _M2.get("trades", 0) >= 50
+        _freq_active = _M2.get("trades", 0) >= 100  # raised 50→100: freq gate was
+        # firing at 50 trades and blocking training flow; system needs ~100 trades
+        # of clean data before rate-limiting makes sense
     except Exception:
         _freq_active = True
     if _freq_active and t15 > MAX_TRADES_15:
