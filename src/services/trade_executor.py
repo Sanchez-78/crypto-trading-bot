@@ -404,14 +404,17 @@ def handle_signal(signal):
     size = final_size_meta(size)
 
     # Regime WR penalty: if a regime has <40% WR after 10+ trades, halve size.
-    # Self-adaptive — no hardcoded regime names. Covers QUIET_RANGE (35% WR,
-    # 20 trades) and BULL_TREND (36% WR, 14 trades) in the current BEAR market.
-    # Penalty lifts automatically if WR improves above 40%.
+    # Hard block if WR < 35% after 15+ trades — statistically reliable signal.
+    # Self-adaptive — no hardcoded regime names.
+    # Penalty/block lifts automatically if WR improves above threshold.
     try:
         _reg_stats = _gm().get("regime_stats", {}).get(reg, {})
         _reg_n  = _reg_stats.get("trades", 0)
         _reg_wr = _reg_stats.get("winrate", 1.0)
-        if _reg_n >= 10 and _reg_wr < 0.40:
+        if _reg_n >= 15 and _reg_wr < 0.35:
+            print(f"    regime BLOCK  regime={reg}  wr={_reg_wr:.1%}  n={_reg_n}")
+            return None
+        elif _reg_n >= 10 and _reg_wr < 0.40:
             size *= 0.5
             print(f"    regime penalty x0.5  regime={reg}  wr={_reg_wr:.1%}  n={_reg_n}")
     except Exception:
