@@ -281,17 +281,10 @@ def _get_scored_edge(hist, e50, e200, breakout_up, breakout_down, mom5, reg, reg
     w_score = _ws(features, reg)
     _sh.append(w_score)
 
-    # Gate 4: rolling stability guard — disabled during force_mode.
-    # Without edge data all w_scores = 0.50 → std=0 < 0.07 → blocks every
-    # signal after 20 are scored. Bypassed until 50+ PnL observations exist
-    # and diverse w_scores can be produced by edge_stats.
-    try:
-        from src.services.learning_monitor import force_mode as _fmode
-        _gate4_active = not _fmode()
-    except Exception:
-        _gate4_active = True
-    if _gate4_active and len(_sh) >= 20 and _std(list(_sh)[-20:]) < 0.07:
-        return base_score, w_score, None, None, {}, False
+    # Gate 4: REMOVED — caused repeated deadlocks (n=50, n=200, and again when
+    # market conditions produce uniform feature WR, making w_score std≈0 even
+    # with 200+ trades of real data).  EV gate in realtime_decision_engine and
+    # regime hard-block in trade_executor provide superior, deadlock-free filtering.
 
     # Gate 5: adaptive threshold with decaying epsilon-greedy exploration
     thr     = _thr()
