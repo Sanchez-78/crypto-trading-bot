@@ -357,6 +357,26 @@ def _seed_calibrator(trades):
           f"{combo_n} combo obs  keys={list(edge_stats.keys())}")
 
 
+def decision_score(ev, ws):
+    """Weighted combination: EV drives 70%, WS contributes 30%."""
+    return 0.7 * ev + 0.3 * ws
+
+
+def allow_trade(ev, ws):
+    """
+    Sigmoid probability gate replacing the hard EV threshold.
+    score = 0.7*ev + 0.3*ws
+    p     = sigmoid(-5 * (score - 0.1))
+    Centre point (p=0.5) at score=0.1: ev≈0.08 + ws≈0.5 → score=0.206 → p≈0.65.
+    Strong edge (ev=0.15, ws=0.6): score=0.285 → p≈0.75.
+    Weak edge  (ev=0.03, ws=0.5): score=0.171 → p≈0.58.
+    """
+    import random
+    s = decision_score(ev, ws)
+    p = 1.0 / (1.0 + np.exp(-5.0 * (s - 0.1)))
+    return random.random() < p
+
+
 def get_ev_threshold():
     """
     Adaptive EV gate threshold.
@@ -517,20 +537,31 @@ def evaluate_signal(signal):
         pass
     auditor_factor = min(1.0, max(0.7, af_raw))
 
-    # V3 entry filter: before 30 trades always pass (bootstrap); after 30 trades
-    # gate at max(ev_threshold, -0.20).  ev_threshold handles crisis (WR<5%→0.15);
-    # -0.20 floor prevents permanently loose -0.30 learning-mode gate from letting
-    # clearly broken signals through once enough data exists to evaluate them.
+    # Patch 3: sigmoid probability gate — EV 70% + WS 30%.
+    # Replaces the flat hard threshold with a continuous probability function:
+    #   bootstrap (n<30): only hard floor -0.20 (safety, no randomness)
+    #   live (n>=30):     sigmoid — higher combined score = higher pass probability
+    # Hard floor -0.10 retained as absolute safety net (pair_block/regime_block
+    # should catch these first, but defence-in-depth).
     _t_ef = _M.get("trades", 0)
-    _gate = max(ev_threshold, -0.20) if _t_ef >= 30 else -1.0   # -1.0 = always pass
-    print(f"    EV={ev:.3f}  p={win_prob:.2f}  rr={rr:.2f}  "
-          f"gate={_gate:.2f}[n={_t_ef}]  "
+    _ws   = signal.get("ws", 0.5)
+    _sc   = decision_score(ev, _ws)
+    print(f"    EV={ev:.3f}  p={win_prob:.2f}  rr={rr:.2f}  ws={_ws:.3f}  "
+          f"score={_sc:.3f}[n={_t_ef}]  "
           f"t15={t15}  spread={max(ev_history)-min(ev_history):.3f}  af={auditor_factor:.2f}")
 
-    if ev < _gate:
-        track_blocked(reason="LOW_EV")
-        print(f"    decision=SKIP_Q  ev={ev:.4f}  gate={_gate:.4f}")
-        return None
+    if _t_ef < 30:
+        # Bootstrap: hard floor only
+        if ev < -0.20:
+            track_blocked(reason="LOW_EV")
+            print(f"    decision=SKIP_Q  ev={ev:.4f}  (bootstrap floor)")
+            return None
+    else:
+        # Live: sigmoid gate
+        if not allow_trade(ev, _ws):
+            track_blocked(reason="SKIP_SCORE")
+            print(f"    decision=SKIP_SCORE  ev={ev:.3f}  ws={_ws:.3f}  score={_sc:.3f}")
+            return None
 
     signal["confidence"]     = round(win_prob, 4)
     signal["ev"]             = round(ev, 4)
