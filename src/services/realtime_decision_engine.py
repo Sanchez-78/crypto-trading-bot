@@ -100,14 +100,6 @@ archive_combos = {}   # pruned combos kept for inspection (not used in decisions
 _price_history: dict = {}   # sym → deque(maxlen=3)
 
 
-def _std(lst):
-    """Population std without numpy dependency."""
-    n = len(lst)
-    if n < 2:
-        return 0.0
-    m = sum(lst) / n
-    return (sum((x - m) ** 2 for x in lst) / n) ** 0.5
-
 
 def prune_combos():
     """
@@ -445,7 +437,7 @@ def evaluate_signal(signal):
         # sigmoid gate flat, no pair separation. Raw ratio: positive pairs get
         # ev>0, losing pairs ev<0, strong edge gets ev>1. Floor ±0.05 prevents
         # micro-signal collapse (ev=0.001 and ev=0.0 were indistinguishable).
-        ev = float(m / s)
+        ev = float(np.tanh(m / s))   # bounded (-1,+1); same formula as true_ev()
         if abs(ev) < 0.05:
             ev = 0.05 if ev >= 0 else -0.05
 
@@ -550,7 +542,7 @@ def evaluate_signal(signal):
     # WR<30% threshold leaves room for low-WR high-RR pairs if truly profitable.
     try:
         from src.services.learning_monitor import lm_pnl_hist as _lph, lm_count as _lc
-        _pk = (sym, reg)
+        _pk = (sym, regime)
         _pn = _lc.get(_pk, 0)
         if _pn >= 10:
             _pp = _lph.get(_pk, [])

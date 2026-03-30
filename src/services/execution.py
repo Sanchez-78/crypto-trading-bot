@@ -161,11 +161,11 @@ def detect_regime(sym):
     trend  = float(np.mean(recent))
     v      = float(np.std(recent))
     if trend > 0 and v < 0.02:
-        raw = "BULL"
+        raw = "BULL_TREND"
     elif trend < 0 and v < 0.02:
-        raw = "BEAR"
+        raw = "BEAR_TREND"
     else:
-        raw = "RANGE"
+        raw = "RANGING"
     prev = reg_cache.get(sym, raw)
     if raw != prev and random.random() < 0.7:
         return prev   # resist switching 70% of the time
@@ -257,15 +257,6 @@ def kelly_fraction(sym, reg):
 
 
 # ── Risk EV (Sharpe-like) ─────────────────────────────────────────────────────
-
-def raw_risk_ev(sym, reg):
-    """Raw Sharpe-like EV from trade_log. PnL clipped ±0.05; std floor 0.01."""
-    trades = [t for t in trade_log
-              if t["sym"] == sym and t["reg"] == reg][-50:]
-    if len(trades) < 10:
-        return 0.0
-    pnl = np.clip([t["ws"] - t["slip"] for t in trades], -0.05, 0.05)
-    return float(np.mean(pnl)) / (float(np.std(pnl)) + 0.01)
 
 
 def bayes_update(sym, reg, pnl):
@@ -523,7 +514,7 @@ def final_size(sym, reg, base, positions, ob=None):
     if scale == 0.0:
         return 0.0
     det_reg = detect_regime(sym)
-    eff_reg = det_reg if det_reg != "RANGE" else reg
+    eff_reg = det_reg if det_reg != "RANGING" else reg
     alloc   = min(capital_alloc(sym, eff_reg, base, positions), 0.25)
     size    = alloc * scale * leverage(sym, eff_reg)
     if ob is not None:
@@ -602,30 +593,6 @@ def cost_guard_bootstrap(edge):
     """Cost gate disabled — unconditional pass while data collection is active."""
     return True
 
-
-def force_trade():
-    """40% of signals forced through unconditionally to guarantee data flow."""
-    return random.random() < 0.40
-
-
-def allow_trade(ev, ws):
-    score = 0.6 * float(ev) + 0.4 * float(ws)
-    p = 1.0 / (1.0 + np.exp(-5 * (score - 0.2)))
-    return random.random() < p
-
-
-def allow_trade_bootstrap(ev, ws):
-    return random.random() < 0.40
-
-
-def should_trade(ev, ws):
-    """
-    Final decision gate (SYSTEM_FIX_V2_COMPRESSED)
-    """
-    if is_bootstrap():
-        return allow_trade_bootstrap(ev, ws)
-    
-    return allow_trade(ev, ws)
 
 
 def epsilon():

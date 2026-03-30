@@ -261,7 +261,7 @@ def _get_scored_edge(hist, e50, e200, breakout_up, breakout_down, mom5, reg, reg
 
     from src.services.realtime_decision_engine import (
         weighted_score as _ws, SCORE_MIN,
-        get_ws_threshold as _thr, score_history as _sh, _std,
+        get_ws_threshold as _thr, score_history as _sh,
         allow_combo, epsilon as _eps)
 
     # Gate 2: minimum base score

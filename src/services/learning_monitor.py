@@ -184,22 +184,6 @@ def lm_feature_quality():
 
 # ── Force-mode and toxic-reset ────────────────────────────────────────────────
 
-def force_mode():
-    """True when fewer than 200 total PnL observations exist across all pairs.
-    Threshold raised 50→200:
-    - After DB wipe, edge_stats loses all history → weighted_score()=0.5 for
-      every signal (Laplace prior with no data).
-    - Gate 4 in signal_generator checks std(w_scores[-20:]) < 0.07 and fires
-      when all w_scores are 0.5, blocking 100% of signals (deadlock: needs
-      diverse data to unblock, but blocking prevents new data).
-    - At 50 obs (~3 active pairs × 17 trades), feature weights haven't diverged
-      enough from 0.5 to produce std > 0.07. Raising to 200 (~67 trades/pair)
-      keeps Gate 4 bypassed long enough for real WR differences to emerge and
-      edge_stats to produce diverse w_scores.
-    """
-    total = sum(len(v) for v in lm_pnl_hist.values())
-    return total < 200
-
 
 def reset_if_toxic():
     """Disabled — reset loop was blocking data flow. No-op."""
@@ -224,7 +208,7 @@ def lm_health():
         # Shift range so losing systems (ev<0) still produce a non-zero score.
         # previously max(ev, -1.0) led to zero for 2% win-rate systems, blocking them.
         # Now we use abs(ev) because confidently predicting losses is also "learning".
-        scores.append(conv * (0.2 + 0.8 * abs(ev)))
+        scores.append(conv * (0.5 + 0.5 * max(ev, -1.0)))
     if not scores:
         return 0.0
     return float(np.mean(scores))

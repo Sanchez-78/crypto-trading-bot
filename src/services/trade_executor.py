@@ -29,7 +29,7 @@ from src.services.execution       import (
     bayes_update, bandit_update, OrderBook,
     bootstrap_mode, ws_threshold, cost_guard_bootstrap, size_floor,
     failure_control, epsilon, final_size_meta,
-    is_bootstrap, force_trade, should_trade, net_edge)
+    is_bootstrap, net_edge)
 import random
 import time
 
@@ -56,7 +56,6 @@ _last_replaced    = {}   # symbol -> timestamp of last replacement
 FEE_RT      = 0.0015    # 0.15% round-trip (Binance taker 0.075%×2)
 MIN_TP_PCT  = 0.008     # 0.80% — giving trades room to hit higher RRs
 MIN_SL_PCT  = 0.004     # 0.40% min SL — double the old size to survive spread + fee + noise
-MAX_TICKS                = 150   # hard cap (safety net only — dynamic_hold governs normal exits)
 FLUSH_EVERY              = 15   # lowered 60→15s: with 60s window up to 14 trades
                                  # were lost on Railway restart (BATCH not flushed
                                  # before process kill). 15s → max ~3-4 trades lost.
@@ -98,20 +97,10 @@ def compute_tp_sl(entry, direction, atr=0.003, sym=None, reg=None):
     else:
         return entry * (1 - tp_k * atr), entry * (1 + sl_k * atr)
 
-# Edge-specific TP/SL multipliers (× ATR)
-# trend_pullback: moderate TP — riding the bounce back to mean
-# vol_breakout:   wide TP — volatility expansion has further to run
-# fake_breakout:  tight TP — quick reversal, grab fast
-_EDGE_TP    = {"trend_pullback": 1.5, "vol_breakout": 2.0, "fake_breakout": 0.8}
-_EDGE_SL    = {"trend_pullback": 1.0, "vol_breakout": 1.0, "fake_breakout": 0.5}
-_EDGE_TRAIL = {"trend_pullback": 0.4, "vol_breakout": 0.5, "fake_breakout": 0.3}
-
-# Fallback (unknown edge)
 _TP_MULT = {"BULL_TREND": 1.0, "BEAR_TREND": 1.0,
             "RANGING":    1.0, "QUIET_RANGE": 1.0}
 _SL_MULT = {"BULL_TREND": 0.8, "BEAR_TREND": 0.8,
             "RANGING":    0.8, "QUIET_RANGE": 0.8}
-_TRAIL   = 0.4   # fallback trail
 
 
 def net_ws(ws, spread_pct, fee_rt):
@@ -375,13 +364,8 @@ def handle_signal(signal):
     ws_adj = ev_adjust(ws_adj, sym, reg)
     ev     = signal.get("ev", 0.05)
 
-    # ── V3: sigmoid probability gate with force-trade bypass ──────────────────
-    # force_trade_guard fires when trade rate drops below minimum — bypasses
-    # sigmoid so the learning loop always has fresh data flowing in.
+    # RDE already applied sigmoid gate — track force flag for logging only.
     force = _force_trade_guard()
-    if not force and not _allow_trade_sigmoid(ev, ws_adj):
-        print(f"    portfolio gate: sigmoid_skip  sym={sym}  ev={ev:.3f}  ws={ws_adj:.3f}")
-        return
 
     import math
     from src.services.learning_event           import get_metrics as _gm
