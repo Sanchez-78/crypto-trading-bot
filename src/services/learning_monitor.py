@@ -36,6 +36,7 @@ lm_pnl_hist:     dict = {}   # (sym, reg) → [pnl, ...]        (last 200)
 lm_count:        dict = {}   # (sym, reg) → int
 lm_bandit_hist:  dict = {}   # (sym, reg) → [ucb_score, ...]  (last 200)
 lm_feature_stats: dict = {}  # feature_name → [wins, total]
+sym_recent_pnl:  dict = {}   # sym → [last 8 pnl across all regimes] (loss_cluster guard)
 
 _HIST_CAP = 200
 
@@ -107,6 +108,12 @@ def lm_update(sym, reg, pnl, ws, features):
     pnl_lst = lm_pnl_hist.setdefault(key, [])
     pnl_lst.append(float(pnl))
     _cap(pnl_lst)
+
+    # Per-symbol recent PnL (across all regimes) — used by loss_cluster guard
+    s_lst = sym_recent_pnl.setdefault(sym, [])
+    s_lst.append(float(pnl))
+    if len(s_lst) > 8:
+        del s_lst[:-8]
 
     # Rolling win rate
     wins  = sum(1 for x in pnl_lst if x > 0)

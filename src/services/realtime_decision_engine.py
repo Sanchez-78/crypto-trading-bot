@@ -96,6 +96,9 @@ combo_stats    = {}   # (combo_tuple, regime)  -> [eff_wins, eff_total]  (decaye
 combo_usage    = {}   # combo_tuple -> int  (session use count; resets on restart)
 archive_combos = {}   # pruned combos kept for inspection (not used in decisions)
 
+# V6 L4: entry_timing — last 3 prices per symbol for micro-momentum check
+_price_history: dict = {}   # sym → deque(maxlen=3)
+
 
 def _std(lst):
     """Population std without numpy dependency."""
@@ -373,7 +376,7 @@ def allow_trade(ev, ws):
     """
     import random
     s = decision_score(ev, ws)
-    p = 1.0 / (1.0 + np.exp(-5.0 * (s - 0.1)))
+    p = 1.0 / (1.0 + np.exp(-6.0 * (s - 0.1)))
     return random.random() < p
 
 
@@ -507,6 +510,38 @@ def evaluate_signal(signal):
         track_blocked(reason="FREQ_CAP")
         print(f"    decision=SKIP_FREQ  t15={t15}>{MAX_TRADES_15}")
         return None
+
+    # ── V6 L4: entry timing — micro-momentum confirmation ────────────────────
+    # Require 3 consecutive ticks moving in signal direction before entry.
+    # Bypassed during bootstrap (<100 trades) to preserve learning data flow.
+    # Uses per-symbol deque updated each time a signal is evaluated for that sym.
+    try:
+        _ph = _price_history.setdefault(sym, deque(maxlen=3))
+        _ph.append(signal.get("price", 0))
+        _t_boot = _M.get("trades", 0)
+        if _t_boot >= 100 and len(_ph) >= 3:
+            _side = signal.get("action", "BUY")
+            _ph3  = list(_ph)
+            _bad_timing = (
+                (_side == "BUY"  and not (_ph3[2] > _ph3[1] > _ph3[0])) or
+                (_side == "SELL" and not (_ph3[2] < _ph3[1] < _ph3[0]))
+            )
+            if _bad_timing:
+                track_blocked(reason="TIMING")
+                return None
+    except Exception:
+        pass
+
+    # ── V6 L10: loss cluster per symbol — 4/5 recent sym-level losses → pause ─
+    try:
+        from src.services.learning_monitor import sym_recent_pnl as _srp
+        _sp = _srp.get(sym, [])
+        if len(_sp) >= 5 and sum(1 for x in _sp[-5:] if x < 0) >= 4:
+            track_blocked(reason="LOSS_CLUSTER")
+            print(f"    decision=SKIP_CLUSTER  {sym}  4/5 recent losses")
+            return None
+    except Exception:
+        pass
 
     # ── Pair+regime block: n≥10 and WR<30% → proven loser, skip ─────────────
     # Spec patch 5 (modified): lower threshold than regime hard-block (n≥15,

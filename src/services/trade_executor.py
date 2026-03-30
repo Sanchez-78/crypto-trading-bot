@@ -67,16 +67,31 @@ _tick_counter   = [0]            # global price-tick counter (incremented in on_
 _trades_at_tick = []             # tick values when positions were opened (rate tracking)
 
 
-def compute_tp_sl(entry, direction, atr=0.003):
+def compute_tp_sl(entry, direction, atr=0.003, sym=None, reg=None):
     """Absolute TP/SL prices.
-    tp_k lowered 1.5→1.2: ATR floor 0.3% → TP distance 0.36% (was 0.45%).
-    At adj=33 ticks (~66s) 0.36% is achievable; 0.45% was not → 63% timeouts.
-    RR = 1.2/1.0 = 1.2 — exactly at _reject_bad_rr floor (< 1.2 rejects).
+    V6 L8: dynamic tp_k based on pair EV — proven strong edges get wider TP
+    to let winners run; sl_k=0.8 unchanged (keeps RR ≥ 1.5).
+      ev > 0.5 → tp_k=1.8  (strong edge, wide target)
+      ev > 0.2 → tp_k=1.4  (moderate edge)
+      default  → tp_k=1.2  (baseline / exploration)
     """
     tp_k = 1.2
-    sl_k = 0.8  # tightened 1.0→0.8: smaller SL distance forces faster exit resolution.
-                # SL=0.24% (vs old 0.30%) hits more often in 33-tick window →
-                # SL+TP share rises, timeout share falls. RR=1.2/0.8=1.5 (was 1.2).
+    if sym and reg:
+        try:
+            from src.services.learning_monitor import lm_pnl_hist as _lph
+            import numpy as _np
+            _p = _lph.get((sym, reg), [])
+            if len(_p) >= 10:
+                _m = float(_np.mean(_p[-20:]))
+                _s = max(float(_np.std(_p[-20:])), 0.002)
+                _ev = _m / _s
+                if _ev > 0.5:
+                    tp_k = 1.8
+                elif _ev > 0.2:
+                    tp_k = 1.4
+        except Exception:
+            pass
+    sl_k = 0.8
 
     if direction == "BUY":
         return entry * (1 + tp_k * atr), entry * (1 - sl_k * atr)
@@ -324,7 +339,7 @@ def handle_signal(signal):
 
     # ── V3: quality pre-filter on estimated TP/SL ─────────────────────────────
     atr_pct = atr / max(entry, 1e-9)
-    tp_est, sl_est = compute_tp_sl(entry, signal["action"], atr_pct)
+    tp_est, sl_est = compute_tp_sl(entry, signal["action"], atr_pct, sym, signal.get("regime", "RANGING"))
     if not _has_min_edge(entry, tp_est, sl_est):
         print(f"    portfolio gate: min_edge  sym={sym}  "
               f"tp={abs(tp_est-entry)/entry:.4f}  sl={abs(sl_est-entry)/entry:.4f}")
@@ -446,7 +461,7 @@ def handle_signal(signal):
     actual_entry = actual_entry or entry
 
     actual_atr = max(signal.get("atr", 0) or 0, actual_entry * 0.003) / actual_entry if actual_entry else 0.003
-    tp, sl = compute_tp_sl(actual_entry, signal["action"], actual_atr)
+    tp, sl = compute_tp_sl(actual_entry, signal["action"], actual_atr, sym, signal.get("regime", "RANGING"))
 
     # Record tick for force-trade rate tracking
     _trades_at_tick.append(_tick_counter[0])
@@ -588,6 +603,11 @@ def on_price(data):
         # V3: suppress micro-PnL from lm_update — near-zero trades carry no edge
         # signal and pollute convergence stats; set to 0.0 so they count as neutral.
         learning_pnl = 0.0 if abs(profit) < 0.001 else profit
+        # V6 L12: timeout penalty — timeouts produce no learning signal (neutral PnL)
+        # but represent a regime/pair that can't reach TP or SL → penalise so EV
+        # diverges negative over time → pair_block eventually self-triggers.
+        if reason == "timeout":
+            learning_pnl -= 0.001
         lm_update(sym, reg_sig, learning_pnl,
                   ws=pos["signal"].get("ws", 0.5),
                   features=bool_f)
