@@ -68,29 +68,35 @@ _trades_at_tick = []             # tick values when positions were opened (rate 
 
 def compute_tp_sl(entry, direction, atr=0.003, sym=None, reg=None):
     """Absolute TP/SL prices.
-    V6 L8: dynamic tp_k based on pair EV — proven strong edges get wider TP
-    to let winners run; sl_k=0.8 unchanged (keeps RR ≥ 1.5).
-      ev > 0.5 → tp_k=1.8  (strong edge, wide target)
+
+    QUIET_RANGE: quick-exit targets (tp_k=0.7, sl_k=0.5, RR=1.4).
+      Dead markets rarely sustain 1.2×ATR moves → TP unreachable → timeouts dominate.
+      Tighter targets convert timeouts to TP exits at the cost of smaller wins.
+      Bypasses EV-based dynamic TP — a past strong EV doesn't mean QUIET will run far.
+
+    Other regimes — V6 L8 dynamic tp_k based on pair EV:
+      ev > 0.5 → tp_k=1.8  (strong edge, let winner run)
       ev > 0.2 → tp_k=1.4  (moderate edge)
       default  → tp_k=1.2  (baseline / exploration)
     """
-    tp_k = 1.2
-    if sym and reg:
-        try:
-            from src.services.learning_monitor import lm_pnl_hist as _lph
-            import numpy as _np
-            _p = _lph.get((sym, reg), [])
-            if len(_p) >= 10:
-                _m = float(_np.mean(_p[-20:]))
-                _s = max(float(_np.std(_p[-20:])), 0.002)
-                _ev = _m / _s
-                if _ev > 0.5:
-                    tp_k = 1.8
-                elif _ev > 0.2:
-                    tp_k = 1.4
-        except Exception:
-            pass
-    sl_k = 0.8
+    if reg == "QUIET_RANGE":
+        tp_k, sl_k = 0.7, 0.5
+    else:
+        tp_k = 1.2
+        if sym and reg:
+            try:
+                from src.services.learning_monitor import lm_pnl_hist as _lph
+                import numpy as _np
+                _p = _lph.get((sym, reg), [])
+                if len(_p) >= 10:
+                    _m = float(_np.mean(_p[-20:]))
+                    _s = max(float(_np.std(_p[-20:])), 0.002)
+                    _ev = _m / _s
+                    if _ev > 0.5:   tp_k = 1.8
+                    elif _ev > 0.2: tp_k = 1.4
+            except Exception:
+                pass
+        sl_k = 0.8
 
     if direction == "BUY":
         return entry * (1 + tp_k * atr), entry * (1 - sl_k * atr)
@@ -337,6 +343,16 @@ def handle_signal(signal):
         rr = abs(tp_est - entry) / max(abs(sl_est - entry), 1e-9)
         print(f"    portfolio gate: bad_rr  sym={sym}  rr={rr:.2f}<1.2")
         return
+
+    # QUIET_RANGE: skip when ATR < 2.5× round-trip fee.
+    # With FEE_RT=0.15%, ATR must exceed 0.375% or the fee alone eats the edge.
+    # Not bootstrapped — this is a structural market condition, not a learning gate.
+    if regime == "QUIET_RANGE":
+        _atr_pct = atr / max(entry, 1e-9)
+        if _atr_pct < 2.5 * FEE_RT:
+            print(f"    portfolio gate: quiet_atr_fee  sym={sym}  "
+                  f"atr={_atr_pct:.4f}<{2.5*FEE_RT:.4f}")
+            return
 
     # Bootstrap open: bypass staleness/cost gates until 30 closed trades
     try:

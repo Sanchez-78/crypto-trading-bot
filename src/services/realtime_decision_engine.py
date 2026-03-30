@@ -503,6 +503,18 @@ def evaluate_signal(signal):
         print(f"    decision=SKIP_FREQ  t15={t15}>{MAX_TRADES_15}")
         return None
 
+    # ── QUIET_RANGE RSI extreme gate ─────────────────────────────────────────
+    # In a dead market, only trade real extremes (RSI ≤ 35 BUY / ≥ 65 SELL).
+    # Mid-range entries score 3/7 on trend+bounce+mom alone — that's noise,
+    # not a mean-reversion edge. Bypassed in bootstrap (<50 trades) so data flows.
+    if regime == "QUIET_RANGE" and _M.get("trades", 0) >= 50:
+        _rsi_val = signal.get("features", {}).get("rsi", 50.0)
+        _side    = signal.get("action", "BUY")
+        if (_side == "BUY" and _rsi_val > 35) or (_side == "SELL" and _rsi_val < 65):
+            track_blocked(reason="QUIET_RSI")
+            print(f"    decision=SKIP_QUIET_RSI  rsi={_rsi_val:.1f}  side={_side}")
+            return None
+
     # ── V6 L4: entry timing — micro-momentum confirmation ────────────────────
     # Require 3 consecutive ticks moving in signal direction before entry.
     # Bypassed during bootstrap (<100 trades) to preserve learning data flow.
