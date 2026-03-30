@@ -4,19 +4,26 @@ import os
 # 🔥 FIX: přidání root projektu do Python path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
 
-from src.services.firebase_client import get_db
+from src.services.firebase_client import get_db, col as _col
 
-# kolekce které chceš vymazat
+# All collections that hold state (trade history, model, weights, metrics)
+# Order matters: wipe trades first so bootstrap on next start is clean.
 COLLECTIONS = [
+    "trades",
+    "trades_compressed",
+    "model_state",
+    "weights",
+    "metrics",
     "signals",
     "signals_compressed",
-    "meta"
+    "portfolio",
+    "meta",
 ]
 
 
 def delete_collection(col_name, batch_size=100):
     db = get_db()
-    col_ref = db.collection(col_name)
+    col_ref = db.collection(_col(col_name))   # respects PREFIX env var
 
     total_deleted = 0
 
@@ -41,11 +48,11 @@ def delete_collection(col_name, batch_size=100):
 def reset_firestore():
     print("🔥 RESET FIREBASE START\n")
 
-    for col in COLLECTIONS:
+    for collection in COLLECTIONS:
         try:
-            delete_collection(col)
+            delete_collection(collection)
         except Exception as e:
-            print(f"❌ ERROR in {col}:", e)
+            print(f"❌ ERROR in {collection}:", e)
 
     print("🚀 FIREBASE RESET COMPLETE")
 
