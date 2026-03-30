@@ -432,14 +432,17 @@ def evaluate_signal(signal):
     else:
         m = float(np.mean(pnl[-20:]))
         s = max(float(np.std(pnl[-20:])), 0.002)
-        # tanh removed: raw m/s gives real magnitude differentiation across pairs.
-        # tanh squished everything to ±1 → all EVs collapsed near 0 → bandit=0,
-        # sigmoid gate flat, no pair separation. Raw ratio: positive pairs get
-        # ev>0, losing pairs ev<0, strong edge gets ev>1. Floor ±0.05 prevents
-        # micro-signal collapse (ev=0.001 and ev=0.0 were indistinguishable).
-        ev = float(np.tanh(m / s))   # bounded (-1,+1); same formula as true_ev()
-        if abs(ev) < 0.05:
-            ev = 0.05 if ev >= 0 else -0.05
+        ev = float(np.tanh(m / s))   # bounded (-1,+1); matches true_ev()
+
+    # Record raw ev BEFORE floor into history — the floor collapses all
+    # exploration pairs to identical 0.05, making spread=0 → SKIP_FLAT fires.
+    # ev_history is used only for spread guard and adaptive threshold, both of
+    # which need real variance, not the artificially uniform floored value.
+    ev_history.append(ev)
+
+    # Floor for gate decisions only (prevent micro-signal collapse at gate)
+    if abs(ev) < 0.05:
+        ev = 0.05 if ev >= 0 else -0.05
 
     # Keep structural info for printing / metadata
     atr     = signal.get("atr", 0)
@@ -447,8 +450,6 @@ def evaluate_signal(signal):
     tp_move = max(atr * _TP_MULT.get(regime, 1.0) / price, MIN_TP)
     sl_move = max(atr * _SL_MULT.get(regime, 0.8) / price, MIN_SL)
     rr      = max(tp_move / sl_move, MIN_RR)
-
-    ev_history.append(ev)
     ev_threshold = get_ev_threshold()
 
     # ── Loss streak + velocity guard ──────────────────────────────────────────
@@ -474,7 +475,9 @@ def evaluate_signal(signal):
     #   Allow one signal through to break the cycle.
     recent_losses = sum(1 for r in list(_rr)[-8:] if r == "LOSS")
     _t15_now = trades_in_window(900)
-    _deadlocked = (_t15_now == 0 and len(list(_rr)) >= 5)
+    # Deadlock bypass: ≤1 trade in last 15min (not just 0) — a single stale win
+    # keeps t15=1 for 15 min after it executes, blocking the bypass the entire time.
+    _deadlocked = (_t15_now <= 1 and len(list(_rr)) >= 5)
     if not _bootstrap and not _deadlocked and recent_losses >= 5:
         track_blocked(reason="VELOCITY_GUARD")
         print(f"    decision=SKIP_VELOCITY  recent_losses={recent_losses}/8")
