@@ -79,6 +79,8 @@ def compute_tp_sl(entry, direction, atr=0.003, sym=None, reg=None):
                               timeouts; faster TP hit at lower profit beats timeout at zero)
     risk_ev = tanh(mean/std) × min(n/50, 1) → stays near 0 during bootstrap,
     so exploration pairs always use tp_k=1.1 until EV is statistically confirmed.
+    Top tier threshold lowered 0.3→0.2: reaches tp_k=1.5 slightly earlier;
+    confidence weighting still requires n≈10 before ev reliably exceeds 0.2.
     """
     if reg == "QUIET_RANGE":
         tp_k, sl_k = 0.7, 0.5
@@ -89,7 +91,7 @@ def compute_tp_sl(entry, direction, atr=0.003, sym=None, reg=None):
             try:
                 from src.services.execution import risk_ev as _rev
                 _ev = _rev(sym, reg)
-                if _ev > 0.3:   tp_k = 1.6
+                if _ev > 0.2:   tp_k = 1.5
                 elif _ev > 0.0: tp_k = 1.3
             except Exception:
                 pass
@@ -147,14 +149,13 @@ def _dynamic_hold(atr_abs, entry):
     """Timeout ticks scaled to volatility.
     High ATR → shorter hold (5 ticks); low ATR → longer (20 ticks).
     Cap lowered 40→20: with tp_k=1.1 (new conservative default), TP distance
-    is 0.33% at ATR=0.3%; at 2s/tick×3 syms, 20 ticks ≈ 40s — enough time
-    to hit 0.33% while cutting the 62% timeout rate. The old 40-tick cap
-    (≈80s) was needed for tp_k=1.5 targets; lowering tp_k allows lower cap.
-    ATR floor 0.3% → adj=33, capped to 20.
+    is 0.33% at ATR=0.3%; at 2s/tick×3 syms, 12 ticks ≈ 72s actual hold
+    per symbol. Cap lowered 20→12 targeting <30% timeout rate.
+    ATR floor 0.3% → adj=33, capped to 12.
     """
     atr_pct = atr_abs / max(entry, 1e-9)
     adj = int(10 * (0.01 / max(atr_pct, 0.002)))
-    return max(5, min(20, adj))
+    return max(5, min(12, adj))
 
 
 def _force_trade_guard():

@@ -588,6 +588,30 @@ def evaluate_signal(signal):
     except Exception:
         pass
 
+    # ── Fast-fail: structural losers (WR<20% + negative EV) ─────────────────
+    # Dual condition reduces false positives at small n: WR<20% alone can be a
+    # bad-luck run; WR<20% + EV<0 signals a structural loser (losses are real,
+    # not timeout zeros). Computed directly from pnl — no n≥10 guard — so it
+    # can catch clear losers at n=5 to n=9 before pair_block fires at n≥25.
+    # Bypassed during COLD phase (<30 total trades) to preserve bootstrap flow.
+    if _M.get("trades", 0) >= 30:
+        try:
+            from src.services.learning_monitor import lm_pnl_hist as _lph2
+            _ff_pnl = _lph2.get((sym, regime), [])
+            _ff_n   = len(_ff_pnl)
+            if _ff_n >= 5:
+                _ff_wr  = sum(1 for x in _ff_pnl if x > 0) / _ff_n
+                _ff_m   = float(np.mean(_ff_pnl))
+                _ff_s   = max(float(np.std(_ff_pnl)), 0.002)
+                _ff_ev  = float(np.tanh(_ff_m / _ff_s))
+                if _ff_wr < 0.20 and _ff_ev < 0.0:
+                    track_blocked(reason="FAST_FAIL")
+                    print(f"    decision=SKIP_FAST_FAIL  {sym}/{regime}  "
+                          f"wr={_ff_wr:.0%}  ev={_ff_ev:.3f}  n={_ff_n}")
+                    return None
+        except Exception:
+            pass
+
     # ── Pair+regime block: n≥10 and WR<30% → proven loser, skip ─────────────
     # Spec patch 5 (modified): lower threshold than regime hard-block (n≥15,
     # WR<35% in trade_executor) — catches losers earlier in the pipeline using

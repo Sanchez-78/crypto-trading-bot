@@ -516,6 +516,15 @@ def final_size(sym, reg, base, positions, ob=None):
     det_reg = detect_regime(sym)
     eff_reg = det_reg if det_reg != "RANGING" else reg
     alloc   = min(capital_alloc(sym, eff_reg, base, positions), 0.25)
+    # EV capital contrast — amplify proven winners, shrink confirmed losers.
+    # Strictly-positive / strictly-negative guards prevent bootstrap 0.0 from
+    # triggering the penalty: risk_ev stays at 0.0 when n<10 (true_ev floor),
+    # so exploration pairs get neutral sizing until real data arrives.
+    _pev = risk_ev(sym, eff_reg)
+    if _pev > 0.1:
+        alloc = min(alloc * 1.5, 0.25)    # proven winner — scale up
+    elif _pev < 0.0:
+        alloc *= 0.3                       # confirmed loser — starve it
     size    = alloc * scale * leverage(sym, eff_reg)
     if ob is not None:
         size *= (1.0 + execution_alpha(sym, ob))
