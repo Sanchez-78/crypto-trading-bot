@@ -516,15 +516,23 @@ def final_size(sym, reg, base, positions, ob=None):
     det_reg = detect_regime(sym)
     eff_reg = det_reg if det_reg != "RANGING" else reg
     alloc   = min(capital_alloc(sym, eff_reg, base, positions), 0.25)
-    # EV capital contrast — amplify proven winners, shrink confirmed losers.
-    # Strictly-positive / strictly-negative guards prevent bootstrap 0.0 from
-    # triggering the penalty: risk_ev stays at 0.0 when n<10 (true_ev floor),
-    # so exploration pairs get neutral sizing until real data arrives.
+    # EV capital 4-tier contrast — winners dominate, losers starve.
+    # risk_ev=0.0 during bootstrap (n<10 → true_ev floor) → neutral tier,
+    # so exploration pairs get full softmax allocation before data exists.
+    # Tier split:
+    #   > 0.15 → ×1.6  strong edge: proven by data, let it run
+    #   > 0.00 → ×1.0  neutral: positive but not confirmed
+    #   > -0.10 → ×0.5  weak negative: reduce but don't kill (might recover)
+    #   ≤ -0.10 → ×0.2  bad: almost off — EV confirmed negative
     _pev = risk_ev(sym, eff_reg)
-    if _pev > 0.1:
-        alloc = min(alloc * 1.5, 0.25)    # proven winner — scale up
-    elif _pev < 0.0:
-        alloc *= 0.3                       # confirmed loser — starve it
+    if _pev > 0.15:
+        alloc = min(alloc * 1.6, 0.25)  # strong edge
+    elif _pev > 0.0:
+        pass                             # neutral — ×1.0
+    elif _pev > -0.10:
+        alloc *= 0.5                     # weak negative — reduce
+    else:
+        alloc *= 0.2                     # bad — almost off
     size    = alloc * scale * leverage(sym, eff_reg)
     if ob is not None:
         size *= (1.0 + execution_alpha(sym, ob))
