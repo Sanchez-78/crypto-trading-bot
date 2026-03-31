@@ -418,18 +418,19 @@ def handle_signal(signal):
     size = size_floor(size)
     size = final_size_meta(size)
 
-    # Regime WR penalty: if a regime has <40% WR after 10+ trades, halve size.
-    # Hard block if WR < 35% after 15+ trades — statistically reliable signal.
+    # Regime WR penalty: if a regime has <40% WR after 20+ trades, halve size.
+    # Hard block if WR < 35% after 25+ trades — bootstrap safety: fresh DB
+    # needs enough data before regime blocks fire.
     # Self-adaptive — no hardcoded regime names.
     # Penalty/block lifts automatically if WR improves above threshold.
     try:
         _reg_stats = _gm().get("regime_stats", {}).get(reg, {})
         _reg_n  = _reg_stats.get("trades", 0)
         _reg_wr = _reg_stats.get("winrate", 1.0)
-        if _reg_n >= 15 and _reg_wr < 0.35:
+        if _reg_n >= 25 and _reg_wr < 0.35:
             print(f"    regime BLOCK  regime={reg}  wr={_reg_wr:.1%}  n={_reg_n}")
             return None
-        elif _reg_n >= 10 and _reg_wr < 0.40:
+        elif _reg_n >= 20 and _reg_wr < 0.40:
             size *= 0.5
             print(f"    regime penalty x0.5  regime={reg}  wr={_reg_wr:.1%}  n={_reg_n}")
     except Exception:
@@ -603,11 +604,9 @@ def on_price(data):
         # V3: suppress micro-PnL from lm_update — near-zero trades carry no edge
         # signal and pollute convergence stats; set to 0.0 so they count as neutral.
         learning_pnl = 0.0 if abs(profit) < 0.001 else profit
-        # V6 L12: timeout penalty — timeouts produce no learning signal (neutral PnL)
-        # but represent a regime/pair that can't reach TP or SL → penalise so EV
-        # diverges negative over time → pair_block eventually self-triggers.
-        if reason == "timeout":
-            learning_pnl -= 0.001
+        # Timeout = neutral: no TP/SL reached → no directional signal.
+        # Penalty removed — in QUIET market 57% timeout rate drove pair EVs
+        # negative rapidly → pair_block deadlock after bootstrap wipe.
         lm_update(sym, reg_sig, learning_pnl,
                   ws=pos["signal"].get("ws", 0.5),
                   features=bool_f)

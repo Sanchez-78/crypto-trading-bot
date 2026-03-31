@@ -553,13 +553,14 @@ def evaluate_signal(signal):
     # ── Pair+regime block: n≥10 and WR<30% → proven loser, skip ─────────────
     # Spec patch 5 (modified): lower threshold than regime hard-block (n≥15,
     # WR<35% in trade_executor) — catches losers earlier in the pipeline using
-    # in-session lm_pnl_hist data.  n=10 minimum for statistical reliability;
+    # in-session lm_pnl_hist data.  n=25 minimum — fresh DB needs enough trades
+    # before pair_block fires (bootstrap safety).
     # WR<30% threshold leaves room for low-WR high-RR pairs if truly profitable.
     try:
         from src.services.learning_monitor import lm_pnl_hist as _lph, lm_count as _lc
         _pk = (sym, regime)
         _pn = _lc.get(_pk, 0)
-        if _pn >= 10:
+        if _pn >= 25:
             _pp = _lph.get(_pk, [])
             if _pp:
                 _pwr = sum(1 for x in _pp if x > 0) / len(_pp)
