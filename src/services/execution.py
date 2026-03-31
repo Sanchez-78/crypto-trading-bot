@@ -524,15 +524,27 @@ def final_size(sym, reg, base, positions, ob=None):
     #   > 0.00 → ×1.0  neutral: positive but not confirmed
     #   > -0.10 → ×0.5  weak negative: reduce but don't kill (might recover)
     #   ≤ -0.10 → ×0.2  bad: almost off — EV confirmed negative
+    # 6-tier EV capital concentration:
+    #   > 0.20 → ×2.0  dominant winner (STO-type converged)
+    #   > 0.10 → ×1.5  strong edge
+    #   > 0.05 → ×1.0  neutral-positive (no boost, no penalty)
+    #   > -0.05 → ×0.6  EV deadzone — near-zero is noise, not edge
+    #   > -0.10 → ×0.3  weak loser
+    #   else   → ×0.1  confirmed bad — almost off
+    # Bootstrap 0.0 falls in deadzone (×0.6) — slightly reduced but not killed.
     _pev = risk_ev(sym, eff_reg)
-    if _pev > 0.15:
-        alloc = min(alloc * 1.6, 0.25)  # strong edge
-    elif _pev > 0.0:
-        pass                             # neutral — ×1.0
+    if _pev > 0.20:
+        alloc = min(alloc * 2.0, 0.25)
+    elif _pev > 0.10:
+        alloc = min(alloc * 1.5, 0.25)
+    elif _pev > 0.05:
+        pass                             # ×1.0
+    elif _pev > -0.05:
+        alloc *= 0.6                     # deadzone — noise, not edge
     elif _pev > -0.10:
-        alloc *= 0.5                     # weak negative — reduce
+        alloc *= 0.3
     else:
-        alloc *= 0.2                     # bad — almost off
+        alloc *= 0.1
     size    = alloc * scale * leverage(sym, eff_reg)
     if ob is not None:
         size *= (1.0 + execution_alpha(sym, ob))

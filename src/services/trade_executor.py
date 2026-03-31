@@ -137,25 +137,39 @@ def _has_min_edge(entry, tp, sl):
     return tp_dist >= MIN_EDGE_PCT and sl_dist >= MIN_EDGE_PCT
 
 
-def _reject_bad_rr(entry, tp, sl):
-    """True (= reject) when reward/risk < 1.2 — poor asymmetry."""
+def _reject_bad_rr(entry, tp, sl, ev=None):
+    """True (= reject) when reward/risk < threshold.
+    EV-aware: positive-EV pairs (high-WR systems) can be profitable at RR<1.2
+    if WR compensates (e.g. 60% WR × RR=1.1 → EV=0.26 > 0).
+    ev>0 → threshold=1.0;  ev≤0 or unknown → threshold=1.2 (conservative).
+    """
     risk = abs(sl - entry)
     if risk == 0:
         return True
-    return abs(tp - entry) / risk < 1.2
+    rr        = abs(tp - entry) / risk
+    threshold = 1.0 if (ev is not None and ev > 0) else 1.2
+    return rr < threshold
 
 
-def _dynamic_hold(atr_abs, entry):
-    """Timeout ticks scaled to volatility.
-    High ATR → shorter hold (5 ticks); low ATR → longer (20 ticks).
-    Cap lowered 40→20: with tp_k=1.1 (new conservative default), TP distance
-    is 0.33% at ATR=0.3%; at 2s/tick×3 syms, 12 ticks ≈ 72s actual hold
-    per symbol. Cap lowered 20→12 targeting <30% timeout rate.
-    ATR floor 0.3% → adj=33, capped to 12.
+def _dynamic_hold(atr_abs, entry, sym=None, reg=None):
+    """Timeout ticks scaled to volatility + EV.
+    EV-adaptive cap: proven pairs (ev>0.20) get max 12 ticks to reach TP;
+    neutral pairs (ev>0) get max 10; weak/unknown get max 7 — force earlier
+    exit so they don't block learning capital on long stale holds.
+    ATR floor 0.3% → adj=33, capped by EV tier.
     """
     atr_pct = atr_abs / max(entry, 1e-9)
     adj = int(10 * (0.01 / max(atr_pct, 0.002)))
-    return max(5, min(12, adj))
+    cap = 7   # default: weak pairs exit fast
+    if sym and reg:
+        try:
+            from src.services.execution import risk_ev as _rev
+            _ev = _rev(sym, reg)
+            if _ev > 0.20:  cap = 12
+            elif _ev > 0.0: cap = 10
+        except Exception:
+            pass
+    return max(5, min(cap, adj))
 
 
 def _force_trade_guard():
@@ -337,9 +351,11 @@ def handle_signal(signal):
         print(f"    portfolio gate: min_edge  sym={sym}  "
               f"tp={abs(tp_est-entry)/entry:.4f}  sl={abs(sl_est-entry)/entry:.4f}")
         return
-    if _reject_bad_rr(entry, tp_est, sl_est):
-        rr = abs(tp_est - entry) / max(abs(sl_est - entry), 1e-9)
-        print(f"    portfolio gate: bad_rr  sym={sym}  rr={rr:.2f}<1.2")
+    _sig_ev = signal.get("ev", 0.0)   # set by RDE evaluate_signal; 0.0 = conservative
+    if _reject_bad_rr(entry, tp_est, sl_est, ev=_sig_ev):
+        rr  = abs(tp_est - entry) / max(abs(sl_est - entry), 1e-9)
+        thr = 1.0 if _sig_ev > 0 else 1.2
+        print(f"    portfolio gate: bad_rr  sym={sym}  rr={rr:.2f}<{thr}")
         return
 
     # QUIET_RANGE: skip when ATR < 2.5× round-trip fee.
@@ -546,9 +562,7 @@ def on_price(data):
         elif pos["action"] == "BUY"  and curr <= pos["sl"]: reason = "SL"
         elif pos["action"] == "SELL" and curr >= pos["sl"]: reason = "SL"
 
-    # V3: dynamic hold — volatility-adaptive timeout (5–20 ticks) replaces
-    # hardcoded 15 from V2. High ATR → shorter hold; low ATR → longer.
-    timeout = _dynamic_hold(atr, entry)
+    timeout = _dynamic_hold(atr, entry, sym, pos["signal"].get("regime", "RANGING"))
     if reason is None and pos["ticks"] >= timeout:
         reason = "timeout"
 
