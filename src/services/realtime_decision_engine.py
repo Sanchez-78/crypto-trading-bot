@@ -399,17 +399,15 @@ def decision_score(ev, ws):
 
 def allow_trade(ev, ws):
     """
-    Sigmoid probability gate replacing the hard EV threshold.
-    score = 0.7*ev + 0.3*ws
-    p     = sigmoid(-5 * (score - 0.1))
-    Centre point (p=0.5) at score=0.1: ev≈0.08 + ws≈0.5 → score=0.206 → p≈0.65.
-    Strong edge (ev=0.15, ws=0.6): score=0.285 → p≈0.75.
-    Weak edge  (ev=0.03, ws=0.5): score=0.171 → p≈0.58.
+    Deterministic hard threshold — replaces sigmoid probability gate.
+    Sigmoid randomly rejected ~35% of valid signals each call; this caused
+    inconsistent throughput and made gate behaviour unpredictable in logs.
+    score = 0.7×ev + 0.3×ws > -0.05
+    At ws=0.5: passes when ev > -0.286 — floor safety only.
+    Real quality selection comes from pair_block (n≥25, WR<30%) and
+    regime_block (n≥25, WR<35%) once sufficient data exists.
     """
-    import random
-    s = decision_score(ev, ws)
-    p = 1.0 / (1.0 + np.exp(-6.0 * (s - 0.1)))
-    return random.random() < p
+    return decision_score(ev, ws) > -0.05
 
 
 def get_ev_threshold():
@@ -558,20 +556,22 @@ def evaluate_signal(signal):
             print(f"    decision=SKIP_QUIET_RSI  rsi={_rsi_val:.1f}  side={_side}")
             return None
 
-    # ── V6 L4: entry timing — micro-momentum confirmation ────────────────────
-    # Require 3 consecutive ticks moving in signal direction before entry.
+    # ── Entry timing — 1-tick momentum confirmation ──────────────────────────
+    # Require last price tick to move in signal direction (soft: 1 tick, not 3).
+    # Old 3-tick check blocked too many valid entries — requiring 3 consecutive
+    # moves in the same direction at 2s/tick is rare in sideways/ranging markets
+    # and was a large contributor to signal drop-out even with good EV.
     # Bypassed during bootstrap (<100 trades) to preserve learning data flow.
-    # Uses per-symbol deque updated each time a signal is evaluated for that sym.
     try:
         _ph = _price_history.setdefault(sym, deque(maxlen=3))
         _ph.append(signal.get("price", 0))
         _t_boot = _M.get("trades", 0)
-        if _t_boot >= 100 and len(_ph) >= 3:
+        if _t_boot >= 100 and len(_ph) >= 2:
             _side = signal.get("action", "BUY")
             _ph3  = list(_ph)
             _bad_timing = (
-                (_side == "BUY"  and not (_ph3[2] > _ph3[1] > _ph3[0])) or
-                (_side == "SELL" and not (_ph3[2] < _ph3[1] < _ph3[0]))
+                (_side == "BUY"  and not (_ph3[-1] > _ph3[-2])) or
+                (_side == "SELL" and not (_ph3[-1] < _ph3[-2]))
             )
             if _bad_timing:
                 track_blocked(reason="TIMING")
@@ -620,12 +620,10 @@ def evaluate_signal(signal):
         pass
     auditor_factor = min(1.0, max(0.7, af_raw))
 
-    # Patch 3: sigmoid probability gate — EV 70% + WS 30%.
-    # Replaces the flat hard threshold with a continuous probability function:
-    #   bootstrap (n<30): only hard floor -0.20 (safety, no randomness)
-    #   live (n>=30):     sigmoid — higher combined score = higher pass probability
-    # Hard floor -0.10 retained as absolute safety net (pair_block/regime_block
-    # should catch these first, but defence-in-depth).
+    # Unified deterministic gate — same rule for all phases.
+    # Bootstrap/live split removed: sigmoid was blocking ~35% of valid signals
+    # randomly; the hard floor (-0.20) was never consistent with the live gate.
+    # Now both phases use the same threshold: score = 0.7*ev + 0.3*ws > -0.05.
     _t_ef = _M.get("trades", 0)
     _ws   = signal.get("ws", 0.5)
     _sc   = decision_score(ev, _ws)
@@ -633,18 +631,10 @@ def evaluate_signal(signal):
           f"score={_sc:.3f}[n={_t_ef}]  "
           f"t15={t15}  spread={max(ev_history)-min(ev_history):.3f}  af={auditor_factor:.2f}")
 
-    if _t_ef < 30:
-        # Bootstrap: hard floor only
-        if ev < -0.20:
-            track_blocked(reason="LOW_EV")
-            print(f"    decision=SKIP_Q  ev={ev:.4f}  (bootstrap floor)")
-            return None
-    else:
-        # Live: sigmoid gate
-        if not allow_trade(ev, _ws):
-            track_blocked(reason="SKIP_SCORE")
-            print(f"    decision=SKIP_SCORE  ev={ev:.3f}  ws={_ws:.3f}  score={_sc:.3f}")
-            return None
+    if not allow_trade(ev, _ws):
+        track_blocked(reason="SKIP_SCORE")
+        print(f"    decision=SKIP_SCORE  ev={ev:.3f}  ws={_ws:.3f}  score={_sc:.3f}")
+        return None
 
     signal["confidence"]     = round(win_prob, 4)
     signal["ev"]             = round(ev, 4)
