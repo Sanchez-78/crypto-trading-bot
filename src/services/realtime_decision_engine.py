@@ -465,16 +465,17 @@ def evaluate_signal(signal):
         # catch-22: pairs were blocked before they could collect enough data to
         # be evaluated (and ETH was stuck at n=7, unable to reach n=10 block).
         ev = 0.03
+        # Do NOT append exploration prior to ev_history — all n<10 pairs return
+        # identical 0.03, making spread=0.0000 → SKIP_FLAT kills all trading the
+        # moment bootstrap ends (trades≥100). ev_history is used only for the
+        # spread guard and adaptive threshold; both need real variance from actual
+        # computed EVs, not a uniform exploration constant.
     else:
         m = float(np.mean(pnl[-20:]))
         s = max(float(np.std(pnl[-20:])), 0.002)
         ev = float(np.tanh(m / s))   # bounded (-1,+1); matches true_ev()
-
-    # Record raw ev BEFORE floor into history — the floor collapses all
-    # exploration pairs to identical 0.05, making spread=0 → SKIP_FLAT fires.
-    # ev_history is used only for spread guard and adaptive threshold, both of
-    # which need real variance, not the artificially uniform floored value.
-    ev_history.append(ev)
+        # Only real computed EVs go into history — preserves spread diversity.
+        ev_history.append(ev)
 
     # Floor for gate decisions only (prevent micro-signal collapse at gate)
     if abs(ev) < 0.05:
