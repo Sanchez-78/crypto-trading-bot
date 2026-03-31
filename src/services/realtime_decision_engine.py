@@ -399,15 +399,13 @@ def decision_score(ev, ws):
 
 def allow_trade(ev, ws):
     """
-    Deterministic hard threshold — replaces sigmoid probability gate.
-    Sigmoid randomly rejected ~35% of valid signals each call; this caused
-    inconsistent throughput and made gate behaviour unpredictable in logs.
-    score = 0.7×ev + 0.3×ws > -0.05
-    At ws=0.5: passes when ev > -0.286 — floor safety only.
-    Real quality selection comes from pair_block (n≥25, WR<30%) and
-    regime_block (n≥25, WR<35%) once sufficient data exists.
+    Deterministic hard threshold — score = 0.7×ev + 0.3×ws > 0.0.
+    Tightened -0.05 → 0.0: requires net-positive combined score.
+    At ws=0.5: passes when ev > -0.214. Exploration prior ev=0.03 →
+    score=0.171 ✓ still passes. Truly negative EV signals blocked here
+    before reaching pair_block (n≥25) / regime_block (n≥25).
     """
-    return decision_score(ev, ws) > -0.05
+    return decision_score(ev, ws) > 0.0
 
 
 def get_ev_threshold():
