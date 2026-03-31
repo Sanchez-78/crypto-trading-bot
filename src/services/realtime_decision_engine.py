@@ -27,12 +27,6 @@ MIN_TP   = 0.0025
 MIN_SL   = 0.0020
 MIN_RR   = 1.25
 
-EV_SPREAD_MIN   = 0.02    # flat distribution guard — lowered 0.05→0.02:
-                          # exploration prior ev=0.03 (n<10 pairs) + STO ev=0.07
-                          # gives spread=0.04 < 0.05 → SKIP_FLAT fired and halted
-                          # trading for 1+ hour. Once ADA/BTC reach n=10 their
-                          # negative EVs will push spread to 1.0+ permanently.
-EV_SPREAD_AFTER = 50      # evaluate spread only after N samples
 MAX_TRADES_15   = 15      # frequency cap raised 5→8→15: STO (71% WR, EV:+0.123)
                           # is the only converged pair and trades ~11/15min; capping
                           # at 8 was throttling the best edge in the system; 15 allows
@@ -520,14 +514,11 @@ def evaluate_signal(signal):
         print(f"    decision=SKIP_VELOCITY  recent_losses={recent_losses}/8")
         return None
 
-    # ── EV spread guard: flat distribution = noise, not edge ──────────────────
-    # [HOTFIX] Blokace vypnuta během Bootstrapu, jinak se EV křivky nikdy nevytvoří (zůstaly by nelineární)
-    if not _bootstrap and len(ev_history) >= EV_SPREAD_AFTER:
-        spread = max(ev_history) - min(ev_history)
-        if spread < EV_SPREAD_MIN:
-            track_blocked(reason="FLAT_SPREAD")
-            print(f"    decision=SKIP_FLAT  spread={spread:.4f}<{EV_SPREAD_MIN}")
-            return None
+    # EV spread guard REMOVED — caused recurring total trading halts:
+    # With few symbols, ev_history fills with a single pair's EV (e.g. -0.042)
+    # → spread=0.0000 < threshold → 100% of signals blocked.
+    # Protection is redundant: allow_trade (score>0), fast_fail, and pair_block
+    # already cover the "noise EV" case without deadlocking.
 
     # ── Frequency cap ─────────────────────────────────────────────────────────
     t15 = trades_in_window(900)
