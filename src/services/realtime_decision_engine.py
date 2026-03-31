@@ -16,6 +16,7 @@ Flow:
 """
 
 from collections import deque
+import ast
 import numpy as np
 from src.services.firebase_client import load_history
 from src.services.learning_event  import track_blocked, track_regime, trades_in_window
@@ -254,19 +255,31 @@ _state_dirty      = [0]
 
 def _save_full_state():
     """
-    Persist calibrator buckets + EV/score histories + bayes/bandit stats.
-    All three reset to zero on restart — saving them means the system
-    resumes with accumulated learning instead of starting blind each boot.
+    Persist calibrator buckets + EV/score histories + bayes/bandit stats
+    + edge_stats + combo_stats + lm_feature_stats.
+
+    edge_stats / combo_stats / lm_feature_stats are the richest learning
+    signal in the system (feature WR per regime, combo WR per regime) but
+    were not persisted — lost on every restart, cold-starting the weighted_score
+    gate after every GitHub Actions run. Adding them here means feature learning
+    survives restarts just like calibrator and bayes do.
     """
     try:
         import time as _t
         from src.services.firebase_client import save_model_state
         from src.services.execution       import bayes_stats, bandit_stats
+        from src.services.learning_monitor import lm_feature_stats
 
         rde = {
             "calibrator":    {str(k): list(v) for k, v in calibrator.buckets.items()},
             "ev_history":    list(ev_history)[-200:],
             "score_history": list(score_history)[-200:],
+            # Feature WR per regime — drives weighted_score() gate
+            "edge_stats":    {f"{k[0]}|{k[1]}": list(v) for k, v in edge_stats.items()},
+            # Combo WR per regime — drives combo_weight() blending
+            "combo_stats":   {f"{str(k[0])}|{k[1]}": list(v) for k, v in combo_stats.items()},
+            # Per-feature fractional attribution — drives lm_feature_quality()
+            "lm_feature_stats": {k: list(v) for k, v in lm_feature_stats.items()},
         }
         exc = {
             "bayes":  {f"{k[0]}|{k[1]}": list(v) for k, v in bayes_stats.items()},
@@ -284,11 +297,16 @@ def _restore_full_state():
     (WR ratios are preserved; counts inflate by ~10% at 100-trade history).
     EV/score histories are NOT re-added from trade replay, so adaptive
     thresholds work immediately instead of waiting for cold-start accumulation.
+
+    Also restores edge_stats, combo_stats, lm_feature_stats — these were
+    previously lost on every restart, cold-starting the weighted_score gate
+    even when hundreds of historical trades already established feature WR.
     """
     try:
         import time as _t
         from src.services.firebase_client import load_model_state
         from src.services.execution       import bayes_stats, bandit_stats
+        from src.services.learning_monitor import lm_feature_stats
 
         state = load_model_state()
         if not state:
@@ -305,6 +323,26 @@ def _restore_full_state():
         for s in rde.get("score_history", []):
             score_history.append(float(s))
 
+        # Restore edge_stats: "feature_name|regime" → [eff_wins, eff_total]
+        for k_str, v in rde.get("edge_stats", {}).items():
+            fname, reg = k_str.split("|", 1)
+            edge_stats[(fname, reg)] = list(v)
+
+        # Restore combo_stats: "('f1','f2',...)|regime" → [eff_wins, eff_total]
+        for k_str, v in rde.get("combo_stats", {}).items():
+            pipe = k_str.rfind("|")
+            if pipe > 0:
+                try:
+                    combo_tuple = tuple(ast.literal_eval(k_str[:pipe]))
+                    reg = k_str[pipe + 1:]
+                    combo_stats[(combo_tuple, reg)] = list(v)
+                except Exception:
+                    pass
+
+        # Restore lm_feature_stats: feature_name → [wins, total]
+        for fname, v in rde.get("lm_feature_stats", {}).items():
+            lm_feature_stats[fname] = list(v)
+
         exc = state.get("exec", {})
         for k_str, v in exc.get("bayes", {}).items():
             sym, reg = k_str.split("|", 1)
@@ -317,7 +355,9 @@ def _restore_full_state():
         print(f"🔄 Model state restored ({age_min:.0f}min old): "
               f"{len(calibrator.buckets)} cal buckets  "
               f"{len(ev_history)} ev_hist  "
-              f"{len(bayes_stats)} bayes pairs")
+              f"{len(bayes_stats)} bayes pairs  "
+              f"{len(edge_stats)} edge_stats  "
+              f"{len(combo_stats)} combos")
     except Exception as e:
         print(f"⚠️  model state restore: {e}")
 
