@@ -499,6 +499,8 @@ def handle_signal(signal):
         "max_price":     actual_entry,
         "min_price":     actual_entry,
         "is_trailing":   False,
+        "partial_taken": False,   # True after partial TP exit fires
+        "realized_pnl":  0.0,    # accumulated profit from partial exits
     }
     tag = "[force]" if force else ""
     print(f"    exec{tag}: slip={fill_slip:.5f}  fee={actual_fee_rt:.5f}  fr={fill_rate(sym):.2f}  "
@@ -541,6 +543,25 @@ def on_price(data):
     if not pos["is_trailing"] and move >= 0.006:
         pos["is_trailing"] = True
         print(f"    🚀 {sym} TRAILING STOP ACTIVOVÁN! Zisk: {move*100:.2f}%")
+
+    # ── Partial TP: exit 50% at 1.5×ATR profit, move SL to breakeven ─────────
+    # Research (Mind Math Money / Semantic Scholar): partial scale-out at an
+    # intermediate target is "the most practical approach" — locks in real gains
+    # while preserving upside on the remaining half. Directly reduces timeouts:
+    # positions that reach 1.5×ATR profit then reverse now book 50% of that gain
+    # instead of timing out at zero. After partial exit, SL moves to entry
+    # (breakeven) — remaining half is risk-free. Chandelier trail continues.
+    _atr_partial = pos["signal"].get("atr", entry * 0.003)
+    if not pos.get("partial_taken") and move >= 1.5 * (_atr_partial / max(entry, 1e-9)):
+        _fee_p  = pos.get("fee_rt", FEE_RT)
+        partial = (move - _fee_p) * pos["size"] * 0.5
+        pos["partial_taken"] = True
+        pos["realized_pnl"]  = pos.get("realized_pnl", 0.0) + partial
+        pos["size"]         *= 0.5
+        pos["sl"]            = entry   # breakeven: remaining half is now risk-free
+        _short_p = sym.replace("USDT", "")
+        print(f"    📦 {_short_p} PARTIAL TP 50%  "
+              f"pnl={partial:+.6f}  move={move*100:.2f}%  SL→breakeven")
 
     # ── Exit conditions ────────────────────────────────────────────────────────
     reason = None
@@ -585,7 +606,7 @@ def on_price(data):
         return
 
     fee_used = pos.get("fee_rt", FEE_RT)
-    profit   = (move - fee_used) * pos["size"]
+    profit   = (move - fee_used) * pos["size"] + pos.get("realized_pnl", 0.0)
     result   = "WIN" if profit > 0 else "LOSS"
     short    = sym.replace("USDT", "")
     icon     = "✅" if result == "WIN" else "❌"

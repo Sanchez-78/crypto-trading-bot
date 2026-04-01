@@ -81,11 +81,20 @@ def run_audit():
 
     _prev_loss_streak = loss_streak
 
-    # ── Position size (no hard block — just scale down) ───────────────────────
+    # ── Position size: scale down on losses, scale up on wins (anti-martingale) ─
+    # Research (Algorithmic Crypto Trading XI, Medium): anti-martingale increases
+    # size after wins, decreases after losses. Mathematical expectation is favorable
+    # when underlying strategy has edge — compounds gains on hot streaks.
+    # Loss side: conservative reduction to preserve capital.
+    # Win side: modest boost capped at 1.4× to avoid over-concentration.
     if loss_streak >= 5:
         _position_size_mult = 0.30
     elif loss_streak >= 3:
         _position_size_mult = 0.60
+    elif win_streak >= 5:
+        _position_size_mult = 1.40   # proven hot streak — ride it
+    elif win_streak >= 3:
+        _position_size_mult = 1.20   # building momentum — modest boost
     else:
         _position_size_mult = 1.0
 
