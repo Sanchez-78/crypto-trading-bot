@@ -506,9 +506,14 @@ def evaluate_signal(signal):
     #   Allow one signal through to break the cycle.
     recent_losses = sum(1 for r in list(_rr)[-8:] if r == "LOSS")
     _t15_now = trades_in_window(900)
-    # Deadlock bypass: ≤1 trade in last 15min (not just 0) — a single stale win
-    # keeps t15=1 for 15 min after it executes, blocking the bypass the entire time.
-    _deadlocked = (_t15_now <= 1 and len(list(_rr)) >= 5)
+    # Deadlock bypass: ≤3 trades in last 15min.
+    # Root cause of previous threshold (≤1): force trades bypass evaluate_signal
+    # and open 3 positions simultaneously — all 3 close as losses → t15 jumps to
+    # 3, disabling the bypass → immediate re-lock → cascading deadlock lasting
+    # 15+ minutes. Raising to ≤3 ensures a force-trade burst doesn't re-lock the
+    # gate. At t15≤3 we have so few recent trades that the velocity reading is
+    # statistically unreliable anyway (3 losses from bootstrap ≠ genuine streak).
+    _deadlocked = _t15_now <= 3
     if not _bootstrap and not _deadlocked and recent_losses >= 5:
         track_blocked(reason="VELOCITY_GUARD")
         print(f"    decision=SKIP_VELOCITY  recent_losses={recent_losses}/8")

@@ -556,9 +556,13 @@ def on_price(data):
     # positions that reach 1.5×ATR profit then reverse now book 50% of that gain
     # instead of timing out at zero. After partial exit, SL moves to entry
     # (breakeven) — remaining half is risk-free. Chandelier trail continues.
-    _atr_partial = pos["signal"].get("atr", entry * 0.003)
-    if not pos.get("partial_taken") and move >= 1.5 * (_atr_partial / max(entry, 1e-9)):
-        _fee_p  = pos.get("fee_rt", FEE_RT)
+    # Apply the same ATR floor as compute_tp_sl (entry×0.003 minimum).
+    # Without the floor, raw tick-level ATR (e.g. 0.00006 for ADA at $0.25) makes
+    # the threshold ~0.036% — partial TP fires on noise before fees are covered.
+    # With floor: threshold = 1.5×0.3% = 0.45% — well above the 0.15% round-trip fee.
+    _atr_partial = max(pos["signal"].get("atr", 0) or 0, entry * 0.003)
+    _fee_p       = pos.get("fee_rt", FEE_RT)
+    if not pos.get("partial_taken") and move >= 1.5 * (_atr_partial / max(entry, 1e-9)) and move > _fee_p:
         partial = (move - _fee_p) * pos["size"] * 0.5
         pos["partial_taken"] = True
         pos["realized_pnl"]  = pos.get("realized_pnl", 0.0) + partial
