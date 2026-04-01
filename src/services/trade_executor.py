@@ -544,15 +544,30 @@ def on_price(data):
 
     # ── Exit conditions ────────────────────────────────────────────────────────
     reason = None
-    atr          = pos["signal"].get("atr", entry * 0.003)
-    trail_offset = 1.5 * atr
+    atr = pos["signal"].get("atr", entry * 0.003)
+
+    # Chandelier exit: highest_high - 2×ATR (BUY) / lowest_low + 2×ATR (SELL)
+    # Research: ATR-based Chandelier exit outperforms fixed TP in volatile regimes
+    # (Semantic Scholar peer-reviewed study). It expands in high-vol allowing trades
+    # to breathe, and contracts in low-vol locking in gains — superior to a fixed
+    # trail_price offset that doesn't adapt to volatility changes during the trade.
+    # Uses max_price/min_price already tracked in the position dict.
+    # Multiplier 2.0×ATR: tighter than 3× (standard) to suit short 1m timeframes.
+    chandelier_atr_mult = 2.0
+    if pos["action"] == "BUY":
+        chandelier_stop = pos["max_price"] - chandelier_atr_mult * atr
+    else:
+        chandelier_stop = pos["min_price"] + chandelier_atr_mult * atr
 
     if pos.get("force_close"):
         reason = "replaced"
     elif pos["is_trailing"]:
-        if pos["action"] == "BUY"  and curr <= (pos["trail_price"] - trail_offset):
+        # Chandelier exit: uses highest_high/lowest_low since entry rather than
+        # last tick trail_price — gives more room in trending moves, still cuts
+        # quickly if price reverses sharply from the peak/trough
+        if pos["action"] == "BUY"  and curr <= chandelier_stop:
             reason = "TRAIL_SL"
-        elif pos["action"] == "SELL" and curr >= (pos["trail_price"] + trail_offset):
+        elif pos["action"] == "SELL" and curr >= chandelier_stop:
             reason = "TRAIL_SL"
     else:
         # V3 BUG FIX: pos["tp"] was stored but never checked — TP exits never fired.
