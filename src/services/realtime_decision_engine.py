@@ -646,9 +646,10 @@ def evaluate_signal(signal):
     _t_ef = _M.get("trades", 0)
     _ws   = signal.get("ws", 0.5)
     _sc   = decision_score(ev, _ws)
+    _ev_spread = (max(ev_history) - min(ev_history)) if len(ev_history) >= 2 else 0.0
     print(f"    EV={ev:.3f}  p={win_prob:.2f}  rr={rr:.2f}  ws={_ws:.3f}  "
           f"score={_sc:.3f}[n={_t_ef}]  "
-          f"t15={t15}  spread={max(ev_history)-min(ev_history):.3f}  af={auditor_factor:.2f}")
+          f"t15={t15}  spread={_ev_spread:.3f}  af={auditor_factor:.2f}")
 
     if not allow_trade(ev, _ws):
         track_blocked(reason="SKIP_SCORE")
