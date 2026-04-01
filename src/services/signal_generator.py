@@ -371,7 +371,7 @@ def _obi_zscore(sym, obi_raw):
     """
     hist = _obi_hist.setdefault(sym, [])
     hist.append(obi_raw)
-    if len(hist) > 100:
+    if len(hist) > 200:    # 200 samples for stable z-score (was 100)
         hist.pop(0)
     if len(hist) < 20:
         return obi_raw   # not enough history — return raw
@@ -410,8 +410,9 @@ def on_price(data):
     obi  = data.get("obi", 0.0)
     hist = prices.setdefault(s, [])
     hist.append(p)
-    if len(hist) > 600:
-        hist.pop(0)
+    if len(hist) > 1800:   # 1800 ticks @ 2s/tick = 60 min of indicator history
+        hist.pop(0)         # was 600 (20 min) — EMA(200) and HTF EMA(150) now
+                            # have 3× more data to converge; HTF trend detection
 
     if len(hist) < MIN_TICKS:
         return
@@ -626,7 +627,7 @@ def on_price(data):
     # EV-rejected: track_blocked() already called inside evaluate_signal()
 
 
-def warmup(symbols=None, candles=80):
+def warmup(symbols=None, candles=120):
     if symbols is None:
         from src.services.portfolio_discovery import get_active_symbols
         symbols = get_active_symbols()
