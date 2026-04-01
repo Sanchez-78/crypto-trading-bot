@@ -151,12 +151,14 @@ def _reject_bad_rr(entry, tp, sl, ev=None):
     return rr < threshold
 
 
-def _dynamic_hold(atr_abs, entry, sym=None, reg=None):
-    """Timeout ticks scaled to volatility + EV.
+def _dynamic_hold(atr_abs, entry, sym=None, reg=None, adx=0.0):
+    """Timeout ticks scaled to volatility + EV + trend strength.
     EV-adaptive cap: proven pairs (ev>0.20) get max 12 ticks to reach TP;
     neutral pairs (ev>0) get max 10; weak/unknown get max 7 — force earlier
     exit so they don't block learning capital on long stale holds.
     ATR floor 0.3% → adj=33, capped by EV tier.
+    ADX bonus: confirmed trend (ADX>25) adds +2 ticks — trending trades need
+    more room to develop; mean-reversion trades benefit from faster timeout.
     """
     atr_pct = atr_abs / max(entry, 1e-9)
     adj = int(10 * (0.01 / max(atr_pct, 0.002)))
@@ -169,6 +171,9 @@ def _dynamic_hold(atr_abs, entry, sym=None, reg=None):
             elif _ev > 0.0: cap = 10
         except Exception:
             pass
+    # ADX trend bonus: confirmed trend gives trades 2 extra ticks to develop
+    if adx > 25:
+        cap = min(cap + 2, 14)   # hard ceiling 14 — prevents runaway holds
     return max(5, min(cap, adj))
 
 
@@ -598,7 +603,8 @@ def on_price(data):
         elif pos["action"] == "BUY"  and curr <= pos["sl"]: reason = "SL"
         elif pos["action"] == "SELL" and curr >= pos["sl"]: reason = "SL"
 
-    timeout = _dynamic_hold(atr, entry, sym, pos["signal"].get("regime", "RANGING"))
+    _adx_sig = pos["signal"].get("features", {}).get("adx", 0.0)
+    timeout = _dynamic_hold(atr, entry, sym, pos["signal"].get("regime", "RANGING"), adx=_adx_sig)
     if reason is None and pos["ticks"] >= timeout:
         reason = "timeout"
 
