@@ -596,7 +596,12 @@ def evaluate_signal(signal):
                 _ff_m   = float(np.mean(_ff_pnl))
                 _ff_s   = max(float(np.std(_ff_pnl)), 0.002)
                 _ff_ev  = float(np.tanh(_ff_m / _ff_s))
-                if _ff_wr < 0.20 and _ff_ev < 0.0:
+                if _ff_wr < 0.20 and _ff_ev <= 0.0:
+                    # <= 0.0 (not < 0.0): pure-timeout pairs have learning_pnl=0.0
+                    # so tanh(0/std)=0.0 exactly — EV never goes negative even at
+                    # 0% WR. ZEC BEAR_TREND (n=14, WR=0%) and BTC BEAR_TREND
+                    # (n=14, WR=0%) were permanently blocked from being caught
+                    # because their EV was exactly 0.0, not strictly negative.
                     track_blocked(reason="FAST_FAIL")
                     print(f"    decision=SKIP_FAST_FAIL  {sym}/{regime}  "
                           f"wr={_ff_wr:.0%}  ev={_ff_ev:.3f}  n={_ff_n}")
@@ -604,24 +609,24 @@ def evaluate_signal(signal):
         except Exception:
             pass
 
-    # ── Pair+regime block: n≥10 and WR<30% → proven loser, skip ─────────────
-    # Spec patch 5 (modified): lower threshold than regime hard-block (n≥15,
-    # WR<35% in trade_executor) — catches losers earlier in the pipeline using
-    # in-session lm_pnl_hist data.  n=25 minimum — fresh DB needs enough trades
-    # before pair_block fires (bootstrap safety).
-    # WR<30% threshold leaves room for low-WR high-RR pairs if truly profitable.
+    # ── Pair+regime block — two tiers ────────────────────────────────────────
+    # Tier 1 (extreme): n≥15, WR<10% — statistically certain loser.
+    #   P(0 wins in 15 at 50% true WR) = 0.003%. No reasonable edge produces
+    #   this. Catches pure-timeout pairs (ZEC/BTC BEAR_TREND WR=0%, n=14)
+    #   one trade after the fast_fail gap closes.
+    # Tier 2 (standard): n≥25, WR<30% — statistical loser with more evidence.
+    #   Leaves room for genuine low-WR high-RR pairs if truly profitable.
     try:
         from src.services.learning_monitor import lm_pnl_hist as _lph, lm_count as _lc
         _pk = (sym, regime)
         _pn = _lc.get(_pk, 0)
-        if _pn >= 25:
-            _pp = _lph.get(_pk, [])
-            if _pp:
-                _pwr = sum(1 for x in _pp if x > 0) / len(_pp)
-                if _pwr < 0.30:
-                    track_blocked(reason="PAIR_BLOCK")
-                    print(f"    decision=SKIP_PAIR  {sym}/{reg}  wr={_pwr:.0%}  n={_pn}")
-                    return None
+        if _pn > 0:
+            _pp  = _lph.get(_pk, [])
+            _pwr = sum(1 for x in _pp if x > 0) / len(_pp) if _pp else 0.0
+            if (_pn >= 15 and _pwr < 0.10) or (_pn >= 25 and _pwr < 0.30):
+                track_blocked(reason="PAIR_BLOCK")
+                print(f"    decision=SKIP_PAIR  {sym}/{regime}  wr={_pwr:.0%}  n={_pn}")
+                return None
     except Exception:
         pass
 
