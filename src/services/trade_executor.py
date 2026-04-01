@@ -152,29 +152,40 @@ def _reject_bad_rr(entry, tp, sl, ev=None):
 
 
 def _dynamic_hold(atr_abs, entry, sym=None, reg=None, adx=0.0):
-    """Timeout ticks scaled to volatility + EV + trend strength.
-    EV-adaptive cap: proven pairs (ev>0.20) get max 12 ticks to reach TP;
-    neutral pairs (ev>0) get max 10; weak/unknown get max 7 — force earlier
-    exit so they don't block learning capital on long stale holds.
-    ATR floor 0.3% → adj=33, capped by EV tier.
-    ADX bonus: confirmed trend (ADX>25) adds +2 ticks — trending trades need
-    more room to develop; mean-reversion trades benefit from faster timeout.
+    """Timeout ticks scaled to EV tier, then fine-tuned by ATR + trend.
+
+    EV-determined base (hard floor — never reduced by ATR):
+      ev > 0.20  → base 12   proven winner, needs time for wider TP
+      ev > 0.00  → base 10   positive edge
+      unknown    → base  7   weak/exploration, exit fast
+
+    ATR fine-tuning (V7 fix — resolves the hold-paradox bug):
+      Old: min(cap, atr_adj) — high-vol makes strong pairs get SAME hold as
+           weak pairs (e.g. at ATR=2%, min(12, 5)=5 = same as min(7, 5)=5).
+      New: max(base, min(base+3, atr_adj + trend_bonus)) — strong pairs are
+           guaranteed at least their EV-determined base. ATR can increase hold
+           up to base+3 (quiet markets need more patience) but never reduces it.
+
+    ADX trend bonus (+2): confirmed trend needs more room to develop.
+    Hard ceiling 17 prevents runaway holds.
     """
-    atr_pct = atr_abs / max(entry, 1e-9)
-    adj = int(10 * (0.01 / max(atr_pct, 0.002)))
-    cap = 7   # default: weak pairs exit fast
+    atr_pct  = atr_abs / max(entry, 1e-9)
+    atr_adj  = int(5 * max(0.002, 0.01 / max(atr_pct, 1e-9)))
+    trend_bonus = 2 if adx > 25 else 0
+
+    base = 7   # default: weak/unknown — exit fast
     if sym and reg:
         try:
             from src.services.execution import risk_ev as _rev
             _ev = _rev(sym, reg)
-            if _ev > 0.20:  cap = 12
-            elif _ev > 0.0: cap = 10
+            if _ev > 0.20:  base = 12
+            elif _ev > 0.0: base = 10
         except Exception:
             pass
-    # ADX trend bonus: confirmed trend gives trades 2 extra ticks to develop
-    if adx > 25:
-        cap = min(cap + 2, 14)   # hard ceiling 14 — prevents runaway holds
-    return max(5, min(cap, adj))
+
+    # V7: base is a FLOOR (never reduced). ATR tunes up to base+3.
+    hold = max(base, min(base + 3, atr_adj + trend_bonus))
+    return max(5, min(hold, 17))   # absolute ceiling 17
 
 
 def _force_trade_guard():
@@ -659,9 +670,15 @@ def on_price(data):
         from src.services.learning_monitor import lm_update
         raw_f  = pos["signal"].get("features", {})
         bool_f = {k: v for k, v in raw_f.items() if isinstance(v, bool)}
-        # V3: suppress micro-PnL from lm_update — near-zero trades carry no edge
-        # signal and pollute convergence stats; set to 0.0 so they count as neutral.
-        learning_pnl = 0.0 if abs(profit) < 0.001 else profit
+        # V7: micro-PnL mapping — preserve directional signal for mid-range trades.
+        # < 0.0005: pure noise / timeout → 0.0 (no signal either way)
+        # [0.0005, 0.001): real but tiny → ±0.0003 (preserve direction, reduce magnitude)
+        # ≥ 0.001: real trade → use as-is
+        # Timeout trades typically have |profit| < 0.0005 (fee×tiny_size) → still zeroed.
+        _ap = abs(profit)
+        if   _ap < 0.0005: learning_pnl = 0.0
+        elif _ap < 0.001:  learning_pnl = 0.0003 if profit > 0 else -0.0003
+        else:              learning_pnl = profit
         # Timeout = neutral: no TP/SL reached → no directional signal.
         # Penalty removed — in QUIET market 57% timeout rate drove pair EVs
         # negative rapidly → pair_block deadlock after bootstrap wipe.
