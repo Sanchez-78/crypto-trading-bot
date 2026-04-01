@@ -580,6 +580,77 @@ def load_config():
         return {}
 
 
+# ── Bot2 → Bot1 advice channel ────────────────────────────────────────────────
+# Bot2 writes a compact advice doc after every audit cycle.
+# Bot1 reads it before opening trades — skips blocked pairs, sizes up winners.
+# 1 write per 30s from bot2 audit = 2 880 writes/day (within budget).
+# Bot1 reads with 60s TTL = ~1 440 reads/day.
+
+_ADVICE_DOC   = col("advice") + "/latest"   # advice/latest
+_ADVICE_CACHE = {"data": None, "ts": 0}
+ADVICE_TTL    = 60  # seconds
+
+
+def save_bot2_advice(advice: dict) -> None:
+    """
+    Write bot2 learning state for bot1 to consume.
+    Called from bot2/auditor.py after every audit cycle.
+
+    Schema:
+      blocked_pairs:  list of "SYMREGIME" strings bot1 must skip
+      top_pairs:      list of {sym, regime, ev, wr} — highest EV confirmed pairs
+      regime_ev:      {regime: ev} — average EV per regime across all pairs
+      loss_streak:    int — current system-wide loss streak
+      health:         float — lm_health() score
+      timestamp:      float
+    """
+    if db is None:
+        return
+    try:
+        db.document(_ADVICE_DOC).set({**advice, "timestamp": time.time()})
+        _ADVICE_CACHE["data"] = dict(advice)
+        _ADVICE_CACHE["ts"]   = time.time()
+    except Exception as e:
+        print(f"⚠️  save_bot2_advice: {e}")
+
+
+def load_bot2_advice() -> dict:
+    """
+    Read bot2 advice with 60s TTL cache.
+    Returns {} if Firebase unavailable or no advice written yet.
+    """
+    if db is None:
+        return {}
+    if _ADVICE_CACHE["data"] is not None and \
+       time.time() - _ADVICE_CACHE["ts"] < ADVICE_TTL:
+        return dict(_ADVICE_CACHE["data"])
+    try:
+        doc = db.document(_ADVICE_DOC).get()
+        _ADVICE_CACHE["data"] = doc.to_dict() or {}
+        _ADVICE_CACHE["ts"]   = time.time()
+    except Exception as e:
+        print(f"⚠️  load_bot2_advice: {e}")
+        return _ADVICE_CACHE["data"] or {}
+    return dict(_ADVICE_CACHE["data"])
+
+
+def load_bot2_metrics() -> dict:
+    """
+    Read the live metrics/latest that bot2 writes every 30s.
+    Returns performance (winrate, profit_factor, drawdown) for bot1's
+    RiskEngine to use instead of hardcoded stubs.
+    TTL 60s — same as advice channel.
+    """
+    if db is None:
+        return {}
+    try:
+        doc = db.collection(col("metrics")).document("latest").get()
+        return doc.to_dict() or {}
+    except Exception as e:
+        print(f"⚠️  load_bot2_metrics: {e}")
+        return {}
+
+
 # ── Daily budget report ───────────────────────────────────────────────────────
 
 def daily_budget_report():

@@ -11,7 +11,7 @@ EV threshold is managed by realtime_decision_engine (not auditor).
 
 from bot2.strategy_weights import StrategyWeights
 from src.services.learning_event import get_metrics
-from src.services.firebase_client import save_auditor_state, load_auditor_state
+from src.services.firebase_client import save_auditor_state, load_auditor_state, save_bot2_advice
 import time as _time
 
 _weights = StrategyWeights()
@@ -123,6 +123,59 @@ def run_audit():
             "loss_streak":   loss_streak,
             "win_streak":    win_streak,
             "cooldown":      _cooldown,
+        })
+    except Exception:
+        pass
+
+    # ── Publish advice for bot1 ───────────────────────────────────────────────
+    # Bot1 reads this via load_bot2_advice() before opening any trade.
+    # Gives bot1 access to bot2's learned knowledge: which pairs/regimes are
+    # blocked, which have positive EV, current system health/streak state.
+    try:
+        from src.services.learning_monitor import (
+            lm_count, lm_pnl_hist, lm_ev_hist, lm_health, conf_ev
+        )
+        import numpy as _np
+
+        # Blocked pairs: fast_fail or pair_block candidates
+        blocked = []
+        top     = []
+        reg_ev  = {}
+        for (sym, reg), n in lm_count.items():
+            pnl = lm_pnl_hist.get((sym, reg), [])
+            if not pnl:
+                continue
+            wr = sum(1 for x in pnl if x > 0) / len(pnl)
+            ev = conf_ev(sym, reg)
+            # Mirror fast_fail and pair_block logic
+            if n >= 5:
+                ff_m  = float(_np.mean(pnl))
+                ff_s  = max(float(_np.std(pnl)), 0.002)
+                ff_ev = float(_np.tanh(ff_m / ff_s))
+                if wr < 0.20 and ff_ev <= 0.0:
+                    blocked.append(f"{sym}|{reg}")
+            if (n >= 15 and wr < 0.10) or (n >= 25 and wr < 0.30):
+                blocked.append(f"{sym}|{reg}")
+            # Top pairs: positive EV with enough data
+            if n >= 10 and ev > 0.0:
+                top.append({"sym": sym, "regime": reg, "ev": round(ev, 4),
+                            "wr": round(wr, 4), "n": n})
+            # Regime-level average EV
+            prev = reg_ev.get(reg, [])
+            prev.append(ev)
+            reg_ev[reg] = prev
+
+        top.sort(key=lambda x: -x["ev"])
+        regime_ev_avg = {r: round(float(_np.mean(v)), 4)
+                         for r, v in reg_ev.items() if v}
+
+        save_bot2_advice({
+            "blocked_pairs": list(set(blocked)),
+            "top_pairs":     top[:10],
+            "regime_ev":     regime_ev_avg,
+            "loss_streak":   loss_streak,
+            "health":        round(lm_health(), 4),
+            "pos_size_mult": round(_position_size_mult, 4),
         })
     except Exception:
         pass

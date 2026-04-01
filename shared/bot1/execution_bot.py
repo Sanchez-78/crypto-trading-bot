@@ -4,7 +4,10 @@ import sys, os
 sys.path.append(os.getcwd())
 
 from shared.bot1.market_provider    import MarketProvider
-from src.services.firebase_client   import save_signal, load_config, load_weights
+from src.services.firebase_client   import (
+    save_signal, load_config, load_weights,
+    load_bot2_metrics, load_bot2_advice,
+)
 from src.services.risk_manager      import RiskManager
 from src.services.risk_engine       import RiskEngine
 from src.services.portfolio_manager import PortfolioManager
@@ -12,11 +15,68 @@ from src.services.ml_model          import MLModel
 
 
 def load_metrics():
-    # TODO: replace with live Firestore read when metrics module exposes it
+    """
+    Read live bot2 metrics from Firebase (metrics/latest, written every 30s).
+    Falls back to conservative defaults if unavailable or bot2 not running.
+    """
+    raw  = load_bot2_metrics()
+    perf = raw.get("performance", {})
+    eq   = raw.get("equity", {})
     return {
-        "performance": {"winrate": 0.55},
-        "drawdown":    0.05,
+        "performance": {
+            "winrate":       perf.get("winrate",       0.50),
+            "profit_factor": perf.get("profit_factor", 1.00),
+            "trades":        perf.get("trades",        0),
+        },
+        "drawdown": eq.get("drawdown", 0.0),
+        "health":   raw.get("health", {}).get("score", 50),
     }
+
+
+def _is_blocked_by_bot2(symbol, regime):
+    """
+    Check if bot2 has flagged this (symbol, regime) as a structural loser.
+    Returns (blocked: bool, reason: str).
+    Bot2 publishes blocked_pairs as "SYM|REGIME" strings after every audit.
+    If advice is stale (>5 min) or unavailable, pass through — don't block.
+    """
+    try:
+        advice = load_bot2_advice()
+        if not advice:
+            return False, ""
+        age = time.time() - float(advice.get("timestamp", 0))
+        if age > 300:
+            return False, "advice_stale"
+        key = f"{symbol}|{regime}"
+        if key in advice.get("blocked_pairs", []):
+            return True, f"bot2_blocked({key})"
+        # Respect bot2's drawdown halt — if pos_size_mult=0 bot2 itself stopped
+        if float(advice.get("pos_size_mult", 1.0)) == 0.0:
+            return True, "bot2_dd_halt"
+    except Exception:
+        pass
+    return False, ""
+
+
+def _bot2_ev_boost(symbol, regime):
+    """
+    Return a size multiplier based on bot2's EV for this (sym, regime).
+    top_pairs with high EV get up to 1.5x; blocked pairs already filtered above.
+    Returns 1.0 (neutral) if no advice available.
+    """
+    try:
+        advice = load_bot2_advice()
+        if not advice:
+            return 1.0
+        for p in advice.get("top_pairs", []):
+            if p.get("sym") == symbol and p.get("regime") == regime:
+                ev = float(p.get("ev", 0.0))
+                if ev > 0.20:   return 1.5
+                if ev > 0.10:   return 1.2
+                if ev > 0.05:   return 1.0
+    except Exception:
+        pass
+    return 1.0
 
 
 def run_execution():
@@ -38,6 +98,16 @@ def run_execution():
 
         symbol = features.get("symbol", "BTCUSDT")
         regime = features.get("regime", "RANGING")
+
+        # ── Bot2 pair block ────────────────────────────────────────────────────
+        # Skip pairs bot2 has confirmed as structural losers (WR<20% + EV≤0,
+        # or WR<10% at n≥15). This prevents bot1 from trading pairs that bot2's
+        # real-time learning has already identified as dead capital sinks.
+        blocked, block_reason = _is_blocked_by_bot2(symbol, regime)
+        if blocked:
+            print(f"  ⛔ {symbol}/{regime} blocked by bot2: {block_reason}")
+            time.sleep(60)
+            continue
 
         # ── ML prediction ──────────────────────────────────────────────────────
         # MLModel.predict() raises if the model has not been trained yet.
@@ -101,6 +171,9 @@ def run_execution():
         edge = risk_engine.compute_edge(confidence_adj, winrate)
         size = risk_engine.position_size(balance, price, sl, edge)
 
+        # ── Bot2 EV boost: size up on confirmed winners ────────────────────────
+        size *= _bot2_ev_boost(symbol, regime)
+
         if size <= 0 or not portfolio.can_open(balance):
             time.sleep(60)
             continue
@@ -127,6 +200,7 @@ def run_execution():
                 "confidence_raw":  confidence,
                 "confidence_used": confidence_adj,
                 "regime_weight":   regime_w,
+                "bot2_ev_boost":   _bot2_ev_boost(symbol, regime),
             },
             "timestamp": time.time(),
         })
