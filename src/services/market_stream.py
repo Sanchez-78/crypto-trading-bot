@@ -36,4 +36,4 @@ def start():
             except:
                 pass
 
-        time.sleep(2)
+        time.sleep(1)
