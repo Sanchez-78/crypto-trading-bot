@@ -66,35 +66,46 @@ _tick_counter   = [0]            # global price-tick counter (incremented in on_
 _trades_at_tick = []             # tick values when positions were opened (rate tracking)
 
 
+def _adaptive_tp_sl(ev, wr):
+    """V8: Continuous TP/SL multipliers from EV and win rate.
+
+    Replaces discrete 3-tier EV lookup with smooth scaling.
+    At ev=0, wr=0.5: tp_k=1.1, sl_k=0.9  (near-current baseline).
+    At ev=0.5, wr=0.6: tp_k=1.55, sl_k=0.75  (proven winner).
+    At ev=-0.5, wr=0.4: tp_k=0.75, sl_k=1.05  (clipped to 1.0/0.6).
+    Clamps: tp_k ∈ [1.0, 2.0], sl_k ∈ [0.6, 1.0].
+    """
+    tp_k = 1.1 + (ev * 0.8) + ((wr - 0.5) * 0.5)
+    sl_k = 0.9 - (ev * 0.3)
+    return min(max(tp_k, 1.0), 2.0), min(max(sl_k, 0.6), 1.0)
+
+
 def compute_tp_sl(entry, direction, atr=0.003, sym=None, reg=None):
     """Absolute TP/SL prices.
 
     QUIET_RANGE: quick-exit targets (tp_k=0.7, sl_k=0.5, RR=1.4).
 
-    Other regimes — 3-tier EV via risk_ev (confidence-weighted):
-      ev > 0.3 → tp_k=1.6  (proven winner, let it run; n must be ≥50 for ev to
-                              reach 0.3 after confidence weighting — earned, not random)
-      ev > 0.0 → tp_k=1.3  (positive edge, moderate target)
-      ev ≤ 0.0 → tp_k=1.1  (exploration / weak pair — conservative default reduces
-                              timeouts; faster TP hit at lower profit beats timeout at zero)
-    risk_ev = tanh(mean/std) × min(n/50, 1) → stays near 0 during bootstrap,
-    so exploration pairs always use tp_k=1.1 until EV is statistically confirmed.
-    Top tier threshold lowered 0.3→0.2: reaches tp_k=1.5 slightly earlier;
-    confidence weighting still requires n≈10 before ev reliably exceeds 0.2.
+    Other regimes — V8 adaptive_tp_sl: continuous EV+WR scaling.
+    risk_ev = tanh(mean/std) × min(n/50, 1) → near 0 during bootstrap,
+    so tp_k ≈ 1.1 until statistically confirmed (EV must earn scaling).
+    WR from global metrics (converges toward pair-specific as trades accumulate).
     """
     if reg == "QUIET_RANGE":
         tp_k, sl_k = 0.7, 0.5
     else:
-        sl_k = 0.8
-        tp_k = 1.1   # conservative default
+        _ev = 0.0
         if sym and reg:
             try:
                 from src.services.execution import risk_ev as _rev
                 _ev = _rev(sym, reg)
-                if _ev > 0.2:   tp_k = 1.5
-                elif _ev > 0.0: tp_k = 1.3
             except Exception:
                 pass
+        try:
+            from src.services.learning_event import get_metrics as _lgm
+            _wr = _lgm().get("winrate", 0.5) or 0.5
+        except Exception:
+            _wr = 0.5
+        tp_k, sl_k = _adaptive_tp_sl(_ev, _wr)
 
     if direction == "BUY":
         return entry * (1 + tp_k * atr), entry * (1 - sl_k * atr)
@@ -137,54 +148,72 @@ def _has_min_edge(entry, tp, sl):
     return tp_dist >= MIN_EDGE_PCT and sl_dist >= MIN_EDGE_PCT
 
 
-def _reject_bad_rr(entry, tp, sl, ev=None):
-    """True (= reject) when reward/risk < threshold.
-    EV-aware: positive-EV pairs (high-WR systems) can be profitable at RR<1.2
-    if WR compensates (e.g. 60% WR × RR=1.1 → EV=0.26 > 0).
-    ev>0 → threshold=1.0;  ev≤0 or unknown → threshold=1.2 (conservative).
+def _dynamic_rr_threshold(ev, atr_pct, wr):
+    """V8: WR+EV+volatility-aware RR threshold.
+
+    Base from EV tier:  ev>0.2→0.95,  ev>0→1.05,  ev≤0→1.2.
+    WR adjustment: high WR (0.7) lowers required RR by 10% (can afford lower RR).
+    Vol adjustment: high-ATR markets clamp at 1.2 (wider TP needed); low-ATR at 0.85.
+    Hard floor 0.95 — never accept RR below this regardless of WR.
+    """
+    base    = 0.95 if ev > 0.2 else 1.05 if ev > 0 else 1.2
+    wr_adj  = 1.0 - (wr - 0.5) * 0.5          # wr=0.7→0.9×, wr=0.3→1.1×
+    vol_adj = min(max(atr_pct / 0.01, 0.85), 1.2)
+    return max(0.95, base * wr_adj * vol_adj)
+
+
+def _reject_bad_rr(entry, tp, sl, ev=None, atr_pct=None):
+    """True (= reject) when reward/risk < V8 dynamic threshold.
+
+    V8: threshold driven by EV, WR, and current ATR volatility — no static 1.0/1.2 split.
+    WR from global metrics (most reliable proxy available in bootstrap phase).
     """
     risk = abs(sl - entry)
     if risk == 0:
         return True
-    rr        = abs(tp - entry) / risk
-    threshold = 1.0 if (ev is not None and ev > 0) else 1.2
+    rr = abs(tp - entry) / risk
+    _ev  = ev if ev is not None else 0.0
+    _atr = atr_pct if atr_pct is not None else 0.01
+    try:
+        from src.services.learning_event import get_metrics as _lgm
+        _wr = _lgm().get("winrate", 0.5) or 0.5
+    except Exception:
+        _wr = 0.5
+    threshold = _dynamic_rr_threshold(_ev, _atr, _wr)
     return rr < threshold
 
 
 def _dynamic_hold(atr_abs, entry, sym=None, reg=None, adx=0.0):
-    """Timeout ticks scaled to EV tier, then fine-tuned by ATR + trend.
+    """Timeout ticks scaled continuously by EV, then fine-tuned by ATR + trend.
 
-    EV-determined base (hard floor — never reduced by ATR):
-      ev > 0.20  → base 12   proven winner, needs time for wider TP
-      ev > 0.00  → base 10   positive edge
-      unknown    → base  7   weak/exploration, exit fast
+    V8: EV-continuous base (replaces V7 discrete tiers 7/10/12):
+      ev_factor = clamp((ev + 1) / 2, 0, 1)   — maps [-1..1] EV to [0..1]
+      base = 6 + int(ev_factor × 6)             — continuous 6–12 ticks
+      ev=-1 → 6,  ev=0 → 9,  ev=0.5 → 10,  ev=1 → 12
 
-    ATR fine-tuning (V7 fix — resolves the hold-paradox bug):
-      Old: min(cap, atr_adj) — high-vol makes strong pairs get SAME hold as
-           weak pairs (e.g. at ATR=2%, min(12, 5)=5 = same as min(7, 5)=5).
-      New: max(base, min(base+3, atr_adj + trend_bonus)) — strong pairs are
-           guaranteed at least their EV-determined base. ATR can increase hold
-           up to base+3 (quiet markets need more patience) but never reduces it.
-
+    Preserves V7 base-as-floor guarantee: EV base is never reduced by ATR.
+    ATR tunes up to base+4 (was +3 in V7 — slight expansion for patience).
     ADX trend bonus (+2): confirmed trend needs more room to develop.
     Hard ceiling 17 prevents runaway holds.
     """
-    atr_pct  = atr_abs / max(entry, 1e-9)
-    atr_adj  = int(5 * max(0.002, 0.01 / max(atr_pct, 1e-9)))
+    atr_pct     = atr_abs / max(entry, 1e-9)
+    atr_adj     = int(5 * max(0.002, 0.01 / max(atr_pct, 1e-9)))
     trend_bonus = 2 if adx > 25 else 0
 
-    base = 7   # default: weak/unknown — exit fast
+    _ev = 0.0
     if sym and reg:
         try:
             from src.services.execution import risk_ev as _rev
             _ev = _rev(sym, reg)
-            if _ev > 0.20:  base = 12
-            elif _ev > 0.0: base = 10
         except Exception:
             pass
 
-    # V7: base is a FLOOR (never reduced). ATR tunes up to base+3.
-    hold = max(base, min(base + 3, atr_adj + trend_bonus))
+    # V8: continuous EV → base mapping
+    ev_factor = min(max((_ev + 1) / 2, 0.0), 1.0)
+    base      = 6 + int(ev_factor * 6)   # range [6, 12]
+
+    # Base is a FLOOR (V7 guarantee retained). ATR tunes up to base+4.
+    hold = max(base, min(base + 4, atr_adj + trend_bonus))
     return max(5, min(hold, 17))   # absolute ceiling 17
 
 
@@ -368,10 +397,9 @@ def handle_signal(signal):
               f"tp={abs(tp_est-entry)/entry:.4f}  sl={abs(sl_est-entry)/entry:.4f}")
         return
     _sig_ev = signal.get("ev", 0.0)   # set by RDE evaluate_signal; 0.0 = conservative
-    if _reject_bad_rr(entry, tp_est, sl_est, ev=_sig_ev):
+    if _reject_bad_rr(entry, tp_est, sl_est, ev=_sig_ev, atr_pct=atr_pct):
         rr  = abs(tp_est - entry) / max(abs(sl_est - entry), 1e-9)
-        thr = 1.0 if _sig_ev > 0 else 1.2
-        print(f"    portfolio gate: bad_rr  sym={sym}  rr={rr:.2f}<{thr}")
+        print(f"    portfolio gate: bad_rr  sym={sym}  rr={rr:.2f}")
         return
 
     # QUIET_RANGE: skip when ATR < 2.5× round-trip fee.
