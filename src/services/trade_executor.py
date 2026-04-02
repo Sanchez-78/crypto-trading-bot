@@ -29,7 +29,7 @@ from src.services.execution       import (
     bayes_update, bandit_update, OrderBook,
     bootstrap_mode, ws_threshold, cost_guard_bootstrap, size_floor,
     failure_control, epsilon, final_size_meta,
-    is_bootstrap, net_edge)
+    is_bootstrap, net_edge, returns_hist)
 import random
 import time
 
@@ -131,6 +131,52 @@ def adaptive_sl_tightening(entry, current_price, sl, direction, atr):
         return max(sl, entry + move * tighten * entry)
     else:
         return min(sl, entry - move * tighten * entry)
+
+
+# ── V10.3 helpers ───────────────────────────────────────────────────────────────
+
+def volatility_adjustment(sym):
+    """V10.3: Realized-vol sizing refinement on top of risk_parity_weight.
+
+    Uses last 20 returns from returns_hist (same source as vol() in execution).
+    Normalises around a 1% typical crypto daily vol — stable symbols get up to
+    1.3×, high-vol symbols are capped at 0.7×.  Works multiplicatively with all
+    existing size multipliers; does not replace risk_parity_weight.
+
+    Returns 1.0 when fewer than 20 samples are available (bootstrap-safe).
+    """
+    ret = returns_hist.get(sym, [])
+    if len(ret) < 20:
+        return 1.0
+    recent = ret[-20:]
+    mean   = sum(recent) / 20
+    var    = sum((x - mean) ** 2 for x in recent) / 20
+    std    = var ** 0.5
+    # Normalise: std≈0.01 → factor=1.0;  std<0.01 → >1.0;  std>0.01 → <1.0
+    vol_factor = 0.01 / (std + 1e-6)
+    return max(0.7, min(1.3, vol_factor))
+
+
+def dynamic_hold_extension(base_hold, ev):
+    """V10.3: Edge-aware hold-time scaling applied on top of _dynamic_hold output.
+
+    Strong positive edge → 30% more time to develop.
+    Marginal positive edge → 10% more time.
+    Confirmed negative edge → 30% less time (exit faster, reduce deadweight).
+    Neutral / unknown → unchanged.
+
+    Bounded result: never below 5 ticks, never above 22 ticks (5 above the
+    existing _dynamic_hold ceiling of 17 — only reachable by strong-edge trades).
+    """
+    if ev > 0.2:
+        scaled = int(base_hold * 1.3)
+    elif ev > 0.0:
+        scaled = int(base_hold * 1.1)
+    elif ev < -0.1:
+        scaled = int(base_hold * 0.7)
+    else:
+        return base_hold
+    return max(5, min(scaled, 22))
 
 
 def compute_tp_sl(entry, direction, atr=0.003, sym=None, reg=None):
@@ -638,6 +684,9 @@ def handle_signal(signal):
     size = _vol_adjust(size, signal)
     size = size_floor(size)
     size = final_size_meta(size)
+    # V10.3: realized-vol refinement — stable symbols get slightly more capital,
+    # high-vol symbols get slightly less; bounded [0.7×, 1.3×], bootstrap-safe
+    size *= volatility_adjustment(sym)
 
     # Regime WR penalty: if a regime has <40% WR after 20+ trades, halve size.
     # Hard block if WR < 35% after 25+ trades — bootstrap safety: fresh DB
@@ -832,7 +881,16 @@ def on_price(data):
             pass
 
     _adx_sig = pos["signal"].get("features", {}).get("adx", 0.0)
-    timeout = _dynamic_hold(atr, entry, sym, pos["signal"].get("regime", "RANGING"), adx=_adx_sig)
+    _reg_hold = pos["signal"].get("regime", "RANGING")
+    timeout   = _dynamic_hold(atr, entry, sym, _reg_hold, adx=_adx_sig)
+    # V10.3: extend/shorten hold based on live edge quality
+    _ev_hold  = 0.0
+    try:
+        from src.services.execution import risk_ev as _rev_h
+        _ev_hold = _rev_h(sym, _reg_hold)
+    except Exception:
+        pass
+    timeout = dynamic_hold_extension(timeout, _ev_hold)
     if reason is None and pos["ticks"] >= timeout:
         reason = "timeout"
 
