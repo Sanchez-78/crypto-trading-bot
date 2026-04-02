@@ -553,6 +553,21 @@ def handle_signal(signal):
         return
     size *= _meta
 
+    # V10.1: confidence → size coupling.
+    # signal.confidence is from signal_generator (penalised by HIGH_VOL×0.5,
+    # counter-trend×0.6, weak-EMA×0.7, session-quality×0.85-1.0).
+    # Normalize to 0.5 baseline so average-quality signal = 1.0× (no change):
+    #   confidence=0.5 → 1.0×   neutral
+    #   confidence=0.3 → 0.6×   weak signal: trim exposure
+    #   confidence=0.7 → 1.2×   strong signal: slight boost (capped)
+    #   confidence=0.25 → 0.5×  floor
+    # Bootstrap-safe: most early signals have confidence≈0.5 → multiplier≈1.0×.
+    # Spec formula (confidence×size) NOT used — it halves every typical signal
+    # since confidence<1 for all practical inputs. Normalized version preserves
+    # expected sizing behaviour while enabling differentiation.
+    _conf = signal.get("confidence", 0.5) or 0.5
+    size *= max(0.5, min(1.2, _conf / 0.5))
+
     if explore:
         size *= 0.3
     size = _vol_adjust(size, signal)

@@ -281,15 +281,18 @@ def bayes_ev(sym, reg):
 
 def risk_ev(sym, reg):
     """
-    Confidence-weighted bounded EV: conf_ev(sym, reg).
-    = tanh(mean/max(std,0.002)) × min(n/50, 1)
-    Bounded to (-1,+1) by tanh; low-sample pairs linearly suppressed.
-    Lazy import avoids circular dep (learning_monitor imports bandit_score
-    from this module at top level).
+    V10.1: Confidence-weighted bounded EV × ev_decay multiplier.
+    = tanh(mean/max(std,0.002)) × min(n/50, 1) × ev_decay(sym, reg)
+
+    ev_decay [0.5, 1.2] adjusts for recent performance trend vs historical:
+      edge improving  → up to 1.2×  (let winners run further)
+      edge degrading  → down to 0.5× (tighten TP/SL, reduce hold, raise RR bar)
+    Returns 0.0 on bootstrap (n<10) — decay neutral during cold start.
+    Lazy import avoids circular dep (learning_monitor imports bandit_score here).
     """
     try:
-        from src.services.learning_monitor import conf_ev as _ce
-        return _ce(sym, reg)
+        from src.services.learning_monitor import conf_ev as _ce, ev_decay as _ed
+        return _ce(sym, reg) * _ed(sym, reg)
     except Exception:
         return 0.0
 

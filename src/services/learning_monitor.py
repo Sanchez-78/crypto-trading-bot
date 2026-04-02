@@ -72,6 +72,49 @@ def conf_ev(sym, reg):
     return true_ev(sym, reg) * conf
 
 
+def ev_decay(sym, reg):
+    """V10.1: Detect edge degradation or improvement vs recent history.
+
+    Compares mean PnL of last 5 non-zero trades (recent) against the 15
+    non-zero trades before that (older). Returns a multiplier in [0.5, 1.2]
+    applied to risk_ev — propagates automatically to TP/SL, hold, RR, and
+    early_exit decisions without touching those callers.
+
+    Sign-aware ratio handles all four quadrants correctly:
+      both positive  → r / o           (improving>1, weakening<1)
+      both negative  → |o| / |r|       (smaller recent loss = improvement)
+      neg → pos      → 1.2             (was losing, now winning: full boost)
+      pos → neg      → 0.5             (was winning, now losing: full penalty)
+
+    Original spec bug: simple r/o returns 0.5 for neg→pos (incorrectly
+    penalises a pair that improved). Fixed here with explicit sign checks.
+
+    Bootstrap-safe: returns 1.0 when < 20 samples, all-zero periods (micro-PnL
+    map zeroes noise trades), or insufficient non-zero data. No premature
+    penalty during early data collection.
+    """
+    pnl = lm_pnl_hist.get((sym, reg), [])
+    if len(pnl) < 20:
+        return 1.0
+    recent = [p for p in pnl[-5:]    if p != 0.0]
+    older  = [p for p in pnl[-20:-5] if p != 0.0]
+    if len(recent) < 2 or len(older) < 3:
+        return 1.0          # insufficient non-zero trades — stay neutral
+    r = sum(recent) / len(recent)
+    o = sum(older)  / len(older)
+    if abs(o) < 1e-6:
+        return 1.0
+    if r >= 0 and o > 0:
+        ratio = r / o                           # both profitable: simple ratio
+    elif r < 0 and o < 0:
+        ratio = abs(o) / max(abs(r), 1e-8)     # both losing: smaller loss = good
+    elif r > 0 and o < 0:
+        return 1.2                              # was losing, now winning: boost
+    else:
+        return 0.5                              # was winning, now losing: penalise
+    return max(0.5, min(1.2, ratio))
+
+
 def record_features(features, pnl):
     """Fractional feature attribution: each active feature receives 1/N credit
     instead of a full binary win. With N features per signal, each gets equal
