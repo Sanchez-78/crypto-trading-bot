@@ -80,6 +80,59 @@ def _adaptive_tp_sl(ev, wr):
     return min(max(tp_k, 1.0), 2.0), min(max(sl_k, 0.6), 1.0)
 
 
+def regime_tp_sl_adjust(tp_k, sl_k, regime):
+    """V10.2: Regime-specific TP/SL multipliers applied after EV/WR scaling.
+
+    Trend regimes (BULL/BEAR): wider TP (let winners run), tighter SL
+      (confirmed direction — stop doesn't need to be as wide).
+    HIGH_VOL: narrower TP (take profit sooner before reversal), wider SL
+      (noise is larger, SL needs room to breathe).
+    QUIET_RANGE: narrower TP (low ATR, don't wait for large moves), tight SL.
+    RANGING: unchanged (EV/WR scaling is sufficient for mean-reversion).
+
+    Applied after both QUIET_RANGE override and _adaptive_tp_sl so regime
+    context adds a final layer on top of the EV-based baseline.
+    """
+    if regime in ("BULL_TREND", "BEAR_TREND"):
+        tp_k *= 1.2   # let trend run further
+        sl_k *= 0.9   # confirmed direction → tighter SL
+    elif regime == "HIGH_VOL":
+        tp_k *= 0.9   # take profit before volatile reversal
+        sl_k *= 1.1   # wider SL to survive noise spikes
+    elif regime == "QUIET_RANGE":
+        tp_k *= 0.8   # low ATR — target small move, exit fast
+        sl_k *= 0.9
+    # RANGING: EV/WR scaling is the sole driver — no regime override
+    return tp_k, sl_k
+
+
+def adaptive_sl_tightening(entry, current_price, sl, direction, atr):
+    """V10.2: Gradually tighten SL as trade moves into profit.
+
+    Activates only after 0.3% move (well above fee + spread noise floor).
+    tighten factor scales with move depth: 0.3%→0.15, 1%→0.5 (cap).
+    For BUY: new_sl = max(old_sl, entry + move × tighten × entry)
+    For SELL: new_sl = min(old_sl, entry - move × tighten × entry)
+    The max/min ensures SL only ever moves in the favorable direction.
+
+    Operates in the 0.3%–0.6% pre-trail window (trailing activates at 0.6%
+    and Chandelier takes over — pos["sl"] is not read after that point).
+    After partial TP (SL→breakeven), pushes SL slightly above entry to
+    capture additional profit if price reverses before trail activates.
+
+    atr parameter reserved for future ATR-normalized version.
+    """
+    move = ((current_price - entry) / entry if direction == "BUY"
+            else (entry - current_price) / entry)
+    if move < 0.003:   # below activation threshold — don't touch SL
+        return sl
+    tighten = min(0.5, move * 50)   # 0.3%→0.15, 0.6%→0.30, 1%→0.50 (cap)
+    if direction == "BUY":
+        return max(sl, entry + move * tighten * entry)
+    else:
+        return min(sl, entry - move * tighten * entry)
+
+
 def compute_tp_sl(entry, direction, atr=0.003, sym=None, reg=None):
     """Absolute TP/SL prices.
 
@@ -89,6 +142,9 @@ def compute_tp_sl(entry, direction, atr=0.003, sym=None, reg=None):
     risk_ev = tanh(mean/std) × min(n/50, 1) → near 0 during bootstrap,
     so tp_k ≈ 1.1 until statistically confirmed (EV must earn scaling).
     WR from global metrics (converges toward pair-specific as trades accumulate).
+
+    V10.2: regime_tp_sl_adjust applied after EV/WR scaling — trend gets
+    wider TP, high-vol gets wider SL, quiet gets tighter TP.
     """
     if reg == "QUIET_RANGE":
         tp_k, sl_k = 0.7, 0.5
@@ -106,6 +162,8 @@ def compute_tp_sl(entry, direction, atr=0.003, sym=None, reg=None):
         except Exception:
             _wr = 0.5
         tp_k, sl_k = _adaptive_tp_sl(_ev, _wr)
+
+    tp_k, sl_k = regime_tp_sl_adjust(tp_k, sl_k, reg or "RANGING")
 
     if direction == "BUY":
         return entry * (1 + tp_k * atr), entry * (1 - sl_k * atr)
@@ -715,6 +773,13 @@ def on_price(data):
         _short_p = sym.replace("USDT", "")
         print(f"    📦 {_short_p} PARTIAL TP 50%  "
               f"pnl={partial:+.6f}  move={move*100:.2f}%  SL→breakeven")
+
+    # V10.2: adaptive SL tightening — protect profits in pre-trail window (0.3%-0.6%)
+    # Not applied during trailing (Chandelier owns the stop; pos["sl"] not read)
+    if not pos["is_trailing"]:
+        _atr_tighten = max(pos["signal"].get("atr", 0) or 0, entry * 0.003)
+        pos["sl"] = adaptive_sl_tightening(
+            entry, curr, pos["sl"], pos["action"], _atr_tighten)
 
     # ── Exit conditions ────────────────────────────────────────────────────────
     reason = None
