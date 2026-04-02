@@ -18,7 +18,7 @@ Time debounce: 30 s per symbol (dedup only)
 Session gate (research-backed):
   08:00–21:00 UTC: active — London/NY session, peak liquidity, tightest spreads
   21:00–08:00 UTC: suppressed — Asia session, wider spreads, fake breakouts
-  Bypassed during bootstrap (<100 trades) to preserve learning data flow.
+  Bypassed during bootstrap (<150 trades) to preserve learning data flow.
 
 OBI normalization:
   Raw OBI = (vol_bid - vol_ask) / total_vol is magnitude-dependent.
@@ -472,11 +472,11 @@ def on_price(data):
     # ── Session gate (UTC-based, research-backed) ─────────────────────────────
     # Research: CoinMetrics data confirms 08:00-21:00 UTC has peak liquidity.
     # Asia session (21:00-08:00 UTC): wider spreads, fake breakouts, bot noise.
-    # Bypassed during bootstrap (<100 trades) to preserve learning data flow —
+    # Bypassed during bootstrap (<150 trades) to preserve learning data flow —
     # the session filter adds quality filtering, not raw volume suppression.
     try:
         from src.services.learning_event import get_metrics as _lgm
-        _session_gate_active = _lgm().get("trades", 0) >= 100
+        _session_gate_active = _lgm().get("trades", 0) >= 150
     except Exception:
         _session_gate_active = True
     _sess_ok, _sess_quality = _session_ok()
