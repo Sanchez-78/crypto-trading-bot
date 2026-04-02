@@ -281,18 +281,25 @@ def bayes_ev(sym, reg):
 
 def risk_ev(sym, reg):
     """
-    V10.1: Confidence-weighted bounded EV × ev_decay multiplier.
-    = tanh(mean/max(std,0.002)) × min(n/50, 1) × ev_decay(sym, reg)
+    V10.1b: EV quality = conf_ev × ev_decay × ev_stability.
 
-    ev_decay [0.5, 1.2] adjusts for recent performance trend vs historical:
-      edge improving  → up to 1.2×  (let winners run further)
-      edge degrading  → down to 0.5× (tighten TP/SL, reduce hold, raise RR bar)
-    Returns 0.0 on bootstrap (n<10) — decay neutral during cold start.
+      conf_ev    = tanh(mean/max(std,0.002)) × min(n/50, 1)
+                   bounded (-1,+1); suppressed during bootstrap
+      ev_decay   [0.5, 1.2] — recent vs historical trend
+                   improving→1.2×, degrading→0.5×
+      ev_stability [0.6, 1.2] — signal-to-noise: |mean|/(std+ε)
+                   stable edge→1.2×, noisy edge→0.6×
+
+    Combined multipliers are applied multiplicatively so a pair must be
+    both trending correctly AND consistent to earn maximum allocation.
+    Worst case: 0.0 × 0.5 × 0.6 = 0.0 (bootstrap).
     Lazy import avoids circular dep (learning_monitor imports bandit_score here).
     """
     try:
-        from src.services.learning_monitor import conf_ev as _ce, ev_decay as _ed
-        return _ce(sym, reg) * _ed(sym, reg)
+        from src.services.learning_monitor import (
+            conf_ev as _ce, ev_decay as _ed, ev_stability as _es
+        )
+        return _ce(sym, reg) * _ed(sym, reg) * _es(sym, reg)
     except Exception:
         return 0.0
 

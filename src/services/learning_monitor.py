@@ -115,6 +115,39 @@ def ev_decay(sym, reg):
     return max(0.5, min(1.2, ratio))
 
 
+def ev_stability(sym, reg):
+    """V10.1b: Edge consistency multiplier — rewards low-variance edges.
+
+    Computes |mean| / (std + ε) over the last 15 PnL samples — a signal-to-
+    noise ratio. High mean relative to std → stable edge → boost allocation.
+    High std relative to mean → noisy edge → reduce allocation.
+
+    Works correctly for negative EV:
+      stable loser  (mean=-0.001, std=0.0002) → stability=4.99 → 1.2×
+        risk_ev more negative → tighter TP, shorter hold, stricter RR ✓
+      noisy loser   (mean=-0.001, std=0.005)  → stability=0.20 → 0.6×
+        risk_ev dampened toward 0 → treated as exploratory ✓
+
+    Bootstrap-safe:
+      returns 1.0 for < 15 samples (no premature penalty during cold start).
+      returns 1.0 when |mean| < 1e-6 (all-zero period from micro-PnL mapping).
+
+    Manual variance used (no numpy call needed for 15-element window).
+    Range: [0.6, 1.2] — cannot exceed 1.2× or drop below 0.6×.
+    """
+    pnl = lm_pnl_hist.get((sym, reg), [])
+    if len(pnl) < 15:
+        return 1.0
+    recent  = pnl[-15:]
+    mean    = sum(recent) / len(recent)
+    if abs(mean) < 1e-6:
+        return 1.0
+    var     = sum((x - mean) ** 2 for x in recent) / len(recent)
+    std     = var ** 0.5
+    stability = abs(mean) / (std + 1e-6)
+    return max(0.6, min(1.2, stability))
+
+
 def record_features(features, pnl):
     """Fractional feature attribution: each active feature receives 1/N credit
     instead of a full binary win. With N features per signal, each gets equal
