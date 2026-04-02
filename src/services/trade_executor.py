@@ -136,47 +136,47 @@ def adaptive_sl_tightening(entry, current_price, sl, direction, atr):
 # ── V10.3 helpers ───────────────────────────────────────────────────────────────
 
 def volatility_adjustment(sym):
-    """V10.3: Realized-vol sizing refinement on top of risk_parity_weight.
+    """V10.3b: Smoothed realized-vol sizing refinement on top of risk_parity_weight.
 
-    Uses last 20 returns from returns_hist (same source as vol() in execution).
-    Normalises around a 1% typical crypto daily vol — stable symbols get up to
-    1.3×, high-vol symbols are capped at 0.7×.  Works multiplicatively with all
-    existing size multipliers; does not replace risk_parity_weight.
+    Blends recent (last 20) and older (prior 20) volatility windows to avoid
+    overreacting to short-term spikes.  Blend: 70% recent + 30% older.
+    When fewer than 40 samples exist, older window falls back to recent
+    (pure recent std, same as V10.3) — no change in bootstrap behaviour.
 
-    Returns 1.0 when fewer than 20 samples are available (bootstrap-safe).
+    Normalises around 1% typical crypto vol: std=0.01 → 1.0×, stable → up to
+    1.3×, high-vol → down to 0.7×.  Returns 1.0 when < 30 samples (bootstrap-safe).
     """
     ret = returns_hist.get(sym, [])
-    if len(ret) < 20:
+    if len(ret) < 30:
         return 1.0
-    recent = ret[-20:]
-    mean   = sum(recent) / 20
-    var    = sum((x - mean) ** 2 for x in recent) / 20
-    std    = var ** 0.5
-    # Normalise: std≈0.01 → factor=1.0;  std<0.01 → >1.0;  std>0.01 → <1.0
+
+    def _std(x):
+        m = sum(x) / len(x)
+        return (sum((i - m) ** 2 for i in x) / len(x)) ** 0.5
+
+    recent     = ret[-20:]
+    older      = ret[-40:-20] if len(ret) >= 40 else recent
+    std        = 0.7 * _std(recent) + 0.3 * _std(older)
     vol_factor = 0.01 / (std + 1e-6)
     return max(0.7, min(1.3, vol_factor))
 
 
 def dynamic_hold_extension(base_hold, ev):
-    """V10.3: Edge-aware hold-time scaling applied on top of _dynamic_hold output.
+    """V10.3b: Continuous EV-based hold-time scaling (replaces discrete tiers).
 
-    Strong positive edge → 30% more time to develop.
-    Marginal positive edge → 10% more time.
-    Confirmed negative edge → 30% less time (exit faster, reduce deadweight).
-    Neutral / unknown → unchanged.
+    scale = 1.0 + clamp(ev × 1.5, -0.3, +0.3)
 
-    Bounded result: never below 5 ticks, never above 22 ticks (5 above the
-    existing _dynamic_hold ceiling of 17 — only reachable by strong-edge trades).
+    ev=-0.2  → scale≈0.70  → base×0.70   (confirmed negative edge, exit faster)
+    ev= 0.0  → scale=1.00  → unchanged
+    ev=+0.2  → scale=1.30  → base×1.30   (strong edge, more room to develop)
+
+    Continuous response removes step-function jumps between tiers.
+    Same clamp range as V10.3 [0.7×, 1.3×].
+    Bounded result: [5, 22] ticks — identical ceiling/floor as before.
     """
-    if ev > 0.2:
-        scaled = int(base_hold * 1.3)
-    elif ev > 0.0:
-        scaled = int(base_hold * 1.1)
-    elif ev < -0.1:
-        scaled = int(base_hold * 0.7)
-    else:
-        return base_hold
-    return max(5, min(scaled, 22))
+    scale   = 1.0 + max(-0.3, min(0.3, ev * 1.5))
+    timeout = int(base_hold * scale)
+    return max(5, min(22, timeout))
 
 
 def compute_tp_sl(entry, direction, atr=0.003, sym=None, reg=None):
