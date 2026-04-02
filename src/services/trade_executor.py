@@ -135,24 +135,42 @@ def adaptive_sl_tightening(entry, current_price, sl, direction, atr):
 
 # ── V10.3 helpers ───────────────────────────────────────────────────────────────
 
+def _winsorize(x, p=0.1):
+    """V10.3c: Clamp extreme values before std computation.
+
+    Removes the top and bottom p-fraction of values so that a single outlier
+    trade (e.g. a flash-crash tick or an abnormally large fill) cannot spike
+    the realized-vol estimate and cause a sudden size reduction.
+    Falls back to identity when k==0 (fewer than 10 samples at p=0.1).
+    """
+    if not x:
+        return x
+    xs = sorted(x)
+    n  = len(xs)
+    k  = int(n * p)
+    if k == 0:
+        return x
+    low  = xs[k]
+    high = xs[-k - 1]
+    return [min(max(v, low), high) for v in x]
+
+
 def volatility_adjustment(sym):
-    """V10.3b: Smoothed realized-vol sizing refinement on top of risk_parity_weight.
+    """V10.3c: Winsorized + smoothed realized-vol sizing refinement.
 
-    Blends recent (last 20) and older (prior 20) volatility windows to avoid
-    overreacting to short-term spikes.  Blend: 70% recent + 30% older.
-    When fewer than 40 samples exist, older window falls back to recent
-    (pure recent std, same as V10.3) — no change in bootstrap behaviour.
-
-    Normalises around 1% typical crypto vol: std=0.01 → 1.0×, stable → up to
-    1.3×, high-vol → down to 0.7×.  Returns 1.0 when < 30 samples (bootstrap-safe).
+    Applies _winsorize(p=0.1) inside _std before computing variance, so
+    extreme outlier returns don't distort the vol estimate.  Otherwise
+    identical to V10.3b: 70/30 blend of recent/older windows, normalised
+    around 1% typical crypto vol, clamped [0.7, 1.3], bootstrap-safe (<30→1.0).
     """
     ret = returns_hist.get(sym, [])
     if len(ret) < 30:
         return 1.0
 
     def _std(x):
-        m = sum(x) / len(x)
-        return (sum((i - m) ** 2 for i in x) / len(x)) ** 0.5
+        xw = _winsorize(x, p=0.1)
+        m  = sum(xw) / len(xw)
+        return (sum((i - m) ** 2 for i in xw) / len(xw)) ** 0.5
 
     recent     = ret[-20:]
     older      = ret[-40:-20] if len(ret) >= 40 else recent
@@ -161,21 +179,29 @@ def volatility_adjustment(sym):
     return max(0.7, min(1.3, vol_factor))
 
 
-def dynamic_hold_extension(base_hold, ev):
-    """V10.3b: Continuous EV-based hold-time scaling (replaces discrete tiers).
+def dynamic_hold_extension(base_hold, ev, atr, entry):
+    """V10.3c: EV + ATR-volatility aware hold-time scaling.
 
-    scale = 1.0 + clamp(ev × 1.5, -0.3, +0.3)
+    Two independent scale factors multiplied together:
 
-    ev=-0.2  → scale≈0.70  → base×0.70   (confirmed negative edge, exit faster)
-    ev= 0.0  → scale=1.00  → unchanged
-    ev=+0.2  → scale=1.30  → base×1.30   (strong edge, more room to develop)
+    EV component (unchanged from V10.3b):
+      scale_ev = 1.0 + clamp(ev × 1.5, -0.3, +0.3)
+      ev=-0.2 → 0.70×   ev=0 → 1.0×   ev=+0.2 → 1.30×
 
-    Continuous response removes step-function jumps between tiers.
-    Same clamp range as V10.3 [0.7×, 1.3×].
-    Bounded result: [5, 22] ticks — identical ceiling/floor as before.
+    ATR/volatility component (new):
+      atr_pct  = atr / entry
+      vol_scale = clamp(0.01 / atr_pct, 0.85, 1.15)
+      Low-vol (tight ATR) → up to 1.15× (trade has room to develop quietly)
+      High-vol (wide ATR) → down to 0.85× (don't overstay in choppy markets)
+      Normalised around 1% move; tighter band than EV component to stay subtle.
+
+    Combined: scale = scale_ev × vol_scale
+    Bounded result: [5, 22] ticks — identical to V10.3b.
     """
-    scale   = 1.0 + max(-0.3, min(0.3, ev * 1.5))
-    timeout = int(base_hold * scale)
+    scale_ev  = 1.0 + max(-0.3, min(0.3, ev * 1.5))
+    atr_pct   = atr / max(entry, 1e-9)
+    vol_scale = max(0.85, min(1.15, 0.01 / (atr_pct + 1e-6)))
+    timeout   = int(base_hold * scale_ev * vol_scale)
     return max(5, min(22, timeout))
 
 
@@ -890,7 +916,7 @@ def on_price(data):
         _ev_hold = _rev_h(sym, _reg_hold)
     except Exception:
         pass
-    timeout = dynamic_hold_extension(timeout, _ev_hold)
+    timeout = dynamic_hold_extension(timeout, _ev_hold, atr, entry)
     if reason is None and pos["ticks"] >= timeout:
         reason = "timeout"
 
