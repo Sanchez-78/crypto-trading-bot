@@ -500,7 +500,14 @@ def handle_signal(signal):
     ev     = signal.get("ev", 0.05)
 
     # RDE already applied sigmoid gate — track force flag for logging only.
+    # Force trades suppressed in QUIET_RANGE: market is dead (low ATR, no momentum)
+    # so force-trading just produces timeout losses with no edge. The force guard
+    # exists to maintain learning data flow — but QUIET_RANGE trades produce only
+    # noise (53% timeout rate observed). Better to wait for real conditions.
     force = _force_trade_guard()
+    if force and reg == "QUIET_RANGE":
+        print(f"    portfolio gate: force_quiet  sym={sym}  regime=QUIET_RANGE")
+        return
 
     import math
     from src.services.learning_event           import get_metrics as _gm
