@@ -255,11 +255,17 @@ def policy_score(ev, wr, momentum, vol, regime_score):
     return score
 
 
-def meta_controller(sharpe, drawdown, winrate, trade_freq):
-    """V9: Global system-health aggression multiplier.
+def meta_controller(sharpe, drawdown, winrate, trade_freq, volatility=0.0):
+    """V9→V10: System-health aggression multiplier with hard kill-switch.
 
     Conditions evaluated top-to-bottom (first match wins):
-      DD > 12%            → 0.5×  strong risk-off (approaching failure_control threshold)
+      DD > 20%            → 0.0×  V10: hard stop — approaching catastrophic loss,
+                                   halt all new positions (defense-in-depth before
+                                   failure_control fires at its own threshold)
+      DD > 12%            → 0.5×  V9: strong risk-off
+      volatility > 3%     → 0.7×  V10: HIGH_VOL regime — wider spreads, execution
+                                   risk; signal_generator also penalises but this
+                                   adds a position-sizing layer
       Sharpe < 0.5        → 0.7×  underperforming system — reduce size
       trade_freq < 0.1    → 1.1×  activity pressure (< 10 trades/100 ticks)
       default             → 1.0×  healthy system
@@ -268,8 +274,12 @@ def meta_controller(sharpe, drawdown, winrate, trade_freq):
     win-streak anti-martingale in auditor.py already covers this path (1.2-1.4×),
     stacking would compound to 1.68× which approaches unsafe concentration.
     """
+    if drawdown > 0.20:
+        return 0.0   # hard stop: catastrophic drawdown — no new positions
     if drawdown > 0.12:
         return 0.5
+    if volatility > 0.03:
+        return 0.7   # HIGH_VOL: wider spreads amplify execution risk
     if sharpe < 0.5:
         return 0.7
     if trade_freq < 0.1:
@@ -530,14 +540,18 @@ def handle_signal(signal):
     _pol       = policy_score(ev, _wr_ps, _momentum, atr_pct, _reg_score)
     size      *= max(0.5, min(1.5, 1.0 + _pol))   # clamp: never below 50% or above 150%
 
-    # V9: meta_controller — system-health global aggression multiplier.
-    # Applied after Kelly/base sizing so it modulates the already-risk-adjusted size.
-    # Uses same drawdown from metrics; trade_freq derived from tick-rate window.
+    # V10: meta_controller — system-health aggression multiplier.
+    # V10 adds volatility param (atr_pct already computed above) and hard 0.0 stop.
+    # Applied after Kelly/base sizing; trade_freq from tick-rate window.
     _dd_mc    = _gm().get("max_drawdown", 0.0)
     _sharpe   = _gm().get("sharpe", 0.0)
     _recent_n = sum(1 for t in _trades_at_tick if _tick_counter[0] - t <= 100)
-    _meta     = meta_controller(_sharpe, _dd_mc, _wr_ps, _recent_n / 100.0)
-    size     *= _meta
+    _meta     = meta_controller(_sharpe, _dd_mc, _wr_ps, _recent_n / 100.0,
+                                volatility=atr_pct)
+    if _meta == 0.0:
+        print(f"    portfolio gate: meta_hard_stop  DD={_dd_mc:.1%}  sym={sym}")
+        return
+    size *= _meta
 
     if explore:
         size *= 0.3
