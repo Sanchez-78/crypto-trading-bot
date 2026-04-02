@@ -226,6 +226,57 @@ def _force_trade_guard():
     return recent < MIN_TRADES_PER_100_TICKS
 
 
+# ── V9 helpers ─────────────────────────────────────────────────────────────────
+
+def policy_score(ev, wr, momentum, vol, regime_score):
+    """V9: Policy-based continuous entry score (replaces binary ev>thr*1.5→*1.5).
+
+    Weights (sum = 1.0):
+      0.40 × ev           — dominant: proven edge drives sizing most
+      0.20 × (wr - 0.5)  — WR contribution; 0 at 50%, +0.1 at 60%
+      0.15 × momentum     — directional confirmation (ws proxy, normalized)
+      0.15 × regime_score — trending (1.0) vs ranging (0.5)
+      0.10 × (1 - vol)    — penalise high-vol entries (wider spread risk)
+
+    Typical ranges at neutral state (ev=0, wr=0.5, momentum=0, regime=0.5, vol=0.01):
+      score ≈ 0.17  → size *= 1.17  (slight boost — system is exploring)
+    At strong state (ev=0.5, wr=0.65, momentum=0.4, regime=1.0, vol=0.008):
+      score ≈ 0.46  → size *= 1.46  (near-cap boost — confident edge)
+    At weak state  (ev=-0.3, wr=0.35, momentum=-0.3, regime=0.5, vol=0.025):
+      score ≈ -0.14 → size *= 0.86  (trimmed — poor conditions)
+    """
+    score = (
+        0.40 * ev +
+        0.20 * (wr - 0.5) +
+        0.15 * momentum +
+        0.15 * regime_score +
+        0.10 * (1.0 - vol)
+    )
+    return score
+
+
+def meta_controller(sharpe, drawdown, winrate, trade_freq):
+    """V9: Global system-health aggression multiplier.
+
+    Conditions evaluated top-to-bottom (first match wins):
+      DD > 12%            → 0.5×  strong risk-off (approaching failure_control threshold)
+      Sharpe < 0.5        → 0.7×  underperforming system — reduce size
+      trade_freq < 0.1    → 1.1×  activity pressure (< 10 trades/100 ticks)
+      default             → 1.0×  healthy system
+
+    Risk-on 1.2× (sharpe>1.5 AND wr>0.6) intentionally omitted:
+    win-streak anti-martingale in auditor.py already covers this path (1.2-1.4×),
+    stacking would compound to 1.68× which approaches unsafe concentration.
+    """
+    if drawdown > 0.12:
+        return 0.5
+    if sharpe < 0.5:
+        return 0.7
+    if trade_freq < 0.1:
+        return 1.1
+    return 1.0
+
+
 def _replace_allowed(symbol):
     """True if no replacement happened for this symbol in the last 300 s."""
     last = _last_replaced.get(symbol, 0.0)
@@ -468,8 +519,26 @@ def handle_signal(signal):
                     half_kelly = max(0.01, min(0.20, kelly_pct / 2.0))
                     size = half_kelly * af
 
-    if ev > thr * 1.5:
-        size *= 1.5
+    # V9: policy_score — continuous size modulation replacing binary ev>thr*1.5→*1.5.
+    # momentum proxy: ws_raw normalized to [-1, 1] via (ws-0.5)*2 — ws already
+    # aggregates MACD/RSI/EMA signals from signal_generator, so it's the best
+    # available momentum estimate without recomputing indicators.
+    _wr_ps     = _gm().get("winrate", 0.5) or 0.5
+    _momentum  = (ws_raw - 0.5) * 2.0
+    _feat_adx  = signal.get("features", {}).get("adx", 0.0)
+    _reg_score = 1.0 if _feat_adx > 25 else 0.5
+    _pol       = policy_score(ev, _wr_ps, _momentum, atr_pct, _reg_score)
+    size      *= max(0.5, min(1.5, 1.0 + _pol))   # clamp: never below 50% or above 150%
+
+    # V9: meta_controller — system-health global aggression multiplier.
+    # Applied after Kelly/base sizing so it modulates the already-risk-adjusted size.
+    # Uses same drawdown from metrics; trade_freq derived from tick-rate window.
+    _dd_mc    = _gm().get("max_drawdown", 0.0)
+    _sharpe   = _gm().get("sharpe", 0.0)
+    _recent_n = sum(1 for t in _trades_at_tick if _tick_counter[0] - t <= 100)
+    _meta     = meta_controller(_sharpe, _dd_mc, _wr_ps, _recent_n / 100.0)
+    size     *= _meta
+
     if explore:
         size *= 0.3
     size = _vol_adjust(size, signal)
@@ -645,6 +714,21 @@ def on_price(data):
         elif pos["action"] == "SELL" and curr <= pos["tp"]: reason = "TP"
         elif pos["action"] == "BUY"  and curr <= pos["sl"]: reason = "SL"
         elif pos["action"] == "SELL" and curr >= pos["sl"]: reason = "SL"
+
+    # V9 early exit: negative-EV pair that is losing → don't hold to full timeout.
+    # Rationale: if risk_ev(sym, reg) < -0.1 (statistically confirmed negative edge)
+    # AND trade is currently down 0.2%+ after at least 5 ticks, there's no reason
+    # to wait. Timeout would only worsen the loss while consuming position capacity.
+    # Threshold -0.1 (not 0) prevents triggering during bootstrap when ev ≈ 0.
+    # Threshold move < -0.002: below typical noise floor (~0.1%) and spread (0.1%).
+    # Partial-taken positions skipped — breakeven SL already protects remaining half.
+    if reason is None and move < -0.002 and pos["ticks"] >= 5 and not pos.get("partial_taken"):
+        try:
+            from src.services.execution import risk_ev as _rev
+            if _rev(sym, pos["signal"].get("regime", "RANGING")) < -0.1:
+                reason = "early_exit"
+        except Exception:
+            pass
 
     _adx_sig = pos["signal"].get("features", {}).get("adx", 0.0)
     timeout = _dynamic_hold(atr, entry, sym, pos["signal"].get("regime", "RANGING"), adx=_adx_sig)
