@@ -41,9 +41,10 @@ prices     = {}   # symbol -> list[float], capped at 600
 _macd_vals = {}   # symbol -> list[float]
 _last_ts   = {}   # symbol -> float (last signal timestamp, time-based debounce)
 _side_hist = {}   # symbol -> deque[action], last 10 actions
-_adx_hist  = {}   # symbol -> float (last adx, for slope)
-_rsi_hist  = {}   # symbol -> float (last rsi, for slope)
-_obi_hist  = {}   # symbol -> list[float], rolling OBI for z-score normalization
+_adx_hist      = {}   # symbol -> float (last adx, for slope)
+_rsi_hist      = {}   # symbol -> float (last rsi, for slope)
+_rsi_full_hist = {}   # symbol -> list[float], rolling RSI series for divergence
+_obi_hist      = {}   # symbol -> list[float], rolling OBI for z-score normalization
 
 # Flat TP/SL (must match trade_executor._TP_MULT/_SL_MULT + realtime_decision_engine)
 _TP_MULT = {"BULL_TREND": 1.0, "BEAR_TREND": 1.0,
@@ -79,6 +80,43 @@ def _rsi(series, n=14):
     ag = _ema(gains[-n*3:],  n) or 1e-9
     al = _ema(losses[-n*3:], n) or 1e-9
     return 100 - 100 / (1 + ag / al)
+
+
+def _rsi_divergence(sym, hist, rsi_now, window=30, price_th=0.003, rsi_th=3.0):
+    """Detect classic RSI divergence over the last `window` ticks.
+
+    Bullish divergence: price makes a lower low while RSI makes a higher low.
+      → selling pressure exhausted; momentum already turning — reversal up likely.
+
+    Bearish divergence: price makes a higher high while RSI makes a lower high.
+      → buying pressure exhausted; momentum fading — reversal down likely.
+
+    Thresholds:
+      price_th = 0.3%  — minimum price move to qualify (filters flat markets)
+      rsi_th   = 3.0   — minimum RSI counter-move (filters noise)
+      window   = 30    — lookback ticks (~60s at 2s/tick)
+
+    Returns (bullish: bool, bearish: bool).
+    Returns (False, False) when fewer than `window` samples available.
+    """
+    rh = _rsi_full_hist.setdefault(sym, [])
+    rh.append(rsi_now)
+    if len(rh) > 300:
+        rh.pop(0)
+
+    if len(rh) < window or len(hist) < window:
+        return False, False
+
+    price_chg = (hist[-1] - hist[-window]) / (hist[-window] or 1e-9)
+    rsi_chg   = rsi_now - rh[-window]
+
+    # Bullish: price lower low (+RSI held / rose)
+    bull = price_chg < -price_th and rsi_chg > rsi_th
+
+    # Bearish: price higher high + RSI fell
+    bear = price_chg > price_th and rsi_chg < -rsi_th
+
+    return bull, bear
 
 
 def _kc(series, atrs, n=20):
@@ -445,6 +483,7 @@ def on_price(data):
     rsi_prev  = _rsi_hist.get(s, rsi_v)
     _rsi_hist[s] = rsi_v
     rsi_slope = rsi_v - rsi_prev
+    div_bull, div_bear = _rsi_divergence(s, hist, rsi_v)
 
     reg = _regime(hist, adx_v, di_p, di_m, atr_v)
     htf = _htf_trend(hist)
@@ -525,6 +564,14 @@ def on_price(data):
         macd_l, macd_s, bb_lo, bb_hi, adx_v, reg, obi, htf
     )
 
+    # RSI divergence bonus — confirmed counter-move between price and momentum
+    # +2 when divergence agrees with signal direction (strong confirmation)
+    # Applied before confidence calc so _ind_conf weights it correctly ("DIV" → 1.0×)
+    if div_bull and action == "BUY":
+        score += 2; reasons.append("DIVb")
+    if div_bear and action == "SELL":
+        score += 2; reasons.append("DIVs")
+
     # Side-balance penalty
     score -= _side_penalty(s, action)
 
@@ -587,6 +634,8 @@ def on_price(data):
             "mom5":          round(mom5, 6),
             "mom10":         round(mom10, 6),
             "obi":           round(obi, 4),
+            "rsi_div_bull":  int(div_bull),
+            "rsi_div_bear":  int(div_bear),
             # Temporal AI Cognition
             "hour_utc":      __import__('datetime').datetime.utcnow().hour,
             "is_weekend":    __import__('datetime').datetime.utcnow().weekday() >= 5,
