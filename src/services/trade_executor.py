@@ -205,6 +205,58 @@ def dynamic_hold_extension(base_hold, ev, atr, entry):
     return max(5, min(22, timeout))
 
 
+# ── V10.4 helpers — portfolio intelligence ────────────────────────────────────
+
+def signal_score(signal, ev):
+    """V10.4: Composite quality score for incoming signals.
+
+    Weights EV (proven statistical edge) at 70% and signal confidence
+    (indicator agreement) at 30%.  Used to rank candidates against open
+    positions before committing capital.
+
+    Returns a float; higher = better opportunity.
+    """
+    conf = signal.get("confidence", 0.5) or 0.5
+    return 0.7 * ev + 0.3 * conf
+
+
+def position_score(pos):
+    """V10.4: Composite quality score for an open position.
+
+    Mirrors signal_score so scores are directly comparable.
+    risk_ev is stored at open time; confidence comes from the original signal.
+    Returns 0.0 when risk_ev is not yet stored (legacy positions).
+    """
+    ev   = pos.get("risk_ev", 0.0)
+    conf = pos.get("signal", {}).get("confidence", 0.5) or 0.5
+    return 0.7 * ev + 0.3 * conf
+
+
+def should_replace(new_score, positions):
+    """V10.4: Find the weakest open position that the incoming signal beats.
+
+    Requires a meaningful score gap (+0.05) to prevent churn — equivalent
+    to roughly a 7pp EV improvement or 17pp confidence improvement.
+    Returns the symbol of the weakest position, or None.
+
+    Cooldown is enforced by the caller (_replace_allowed) — same 300s
+    window as the existing ws/EV replacement mechanism.
+    """
+    if not positions:
+        return None
+    worst_sym   = min(positions, key=lambda s: position_score(positions[s]))
+    worst_score = position_score(positions[worst_sym])
+    if new_score > worst_score + 0.05:
+        return worst_sym
+    return None
+
+
+def rotate_position(sym):
+    """V10.4: Flag an open position for immediate close so capital is freed."""
+    if sym in _positions:
+        _positions[sym]["force_close"] = True
+
+
 def compute_tp_sl(entry, direction, atr=0.003, sym=None, reg=None):
     """Absolute TP/SL prices.
 
@@ -569,7 +621,24 @@ def handle_signal(signal):
     allowed, reason = _allow_trade(sym, signal["action"], regime)
     if not allowed:
         if reason == "max_positions":
-            _replace_if_better(signal)
+            # V10.4: score-based replacement — runs first, falls back to ws/EV rotation
+            _ev_new = 0.0
+            try:
+                from src.services.execution import risk_ev as _rev
+                _ev_new = _rev(sym, regime)
+            except Exception:
+                pass
+            _new_score  = signal_score(signal, _ev_new)
+            _worst_sym  = should_replace(_new_score, _positions)
+            if _worst_sym and _replace_allowed(_worst_sym):
+                rotate_position(_worst_sym)
+                _pending_open.append(signal)
+                _last_replaced[_worst_sym] = time.time()
+                _ws = position_score(_positions[_worst_sym])
+                print(f"    replace[v10.4]: {_worst_sym} (score={_ws:.3f}) "
+                      f"← {sym} (score={_new_score:.3f})")
+            else:
+                _replace_if_better(signal)   # fall back to ws/EV rotation
         else:
             print(f"    portfolio gate: {reason}  sym={sym}")
         return
@@ -765,6 +834,14 @@ def handle_signal(signal):
     if len(_trades_at_tick) > 200:
         del _trades_at_tick[:-200]
 
+    # V10.4: capture risk_ev at open time for position_score() comparisons
+    _ev_open = 0.0
+    try:
+        from src.services.execution import risk_ev as _rev_open
+        _ev_open = _rev_open(sym, signal.get("regime", "RANGING"))
+    except Exception:
+        pass
+
     _positions[sym] = {
         "action":        signal["action"],
         "entry":         actual_entry,
@@ -783,6 +860,7 @@ def handle_signal(signal):
         "is_trailing":   False,
         "partial_taken": False,   # True after partial TP exit fires
         "realized_pnl":  0.0,    # accumulated profit from partial exits
+        "risk_ev":       _ev_open,  # V10.4: stored for position_score comparisons
     }
     tag = "[force]" if force else ""
     print(f"    exec{tag}: slip={fill_slip:.5f}  fee={actual_fee_rt:.5f}  fr={fill_rate(sym):.2f}  "
