@@ -52,6 +52,7 @@ _REPLACE_COOLDOWN = 300  # seconds between replacements of the same symbol
 _MAX_TOTAL_RISK   = 0.05 # total portfolio risk cap (sum of size*sl_pct)
 _SPREAD_PCT       = 0.001 # estimated bid-ask spread (0.10%)
 _last_replaced    = {}   # symbol -> timestamp of last replacement
+_last_replace_ts  = 0.0  # V10.4b: global cooldown — no replacement within 15 s of the last one
 
 FEE_RT      = 0.0015    # 0.15% round-trip (Binance taker 0.075%×2)
 MIN_TP_PCT  = 0.008     # 0.80% — giving trades room to hit higher RRs
@@ -220,32 +221,75 @@ def signal_score(signal, ev):
     return 0.7 * ev + 0.3 * conf
 
 
-def position_score(pos):
-    """V10.4: Composite quality score for an open position.
+def position_score(pos, now_ts=None):
+    """V10.4b: Time-decayed composite quality score for an open position.
 
-    Mirrors signal_score so scores are directly comparable.
-    risk_ev is stored at open time; confidence comes from the original signal.
-    Returns 0.0 when risk_ev is not yet stored (legacy positions).
+    Base score mirrors signal_score (0.7×risk_ev + 0.3×conf) so they are
+    directly comparable.  A linear decay kicks in after the first 30 ticks
+    of age (≈60 s at 2 s/tick), bottoming at 0.70× at age≥150 s.
+
+    Effect: stale positions that have not hit TP/SL/trail lose priority
+    naturally, making them rotation candidates without any forced-exit logic.
+    Bootstrap-safe: positions without open_ts are treated as brand-new (no decay).
     """
+    if now_ts is None:
+        now_ts = time.time()
     ev   = pos.get("risk_ev", 0.0)
     conf = pos.get("signal", {}).get("confidence", 0.5) or 0.5
-    return 0.7 * ev + 0.3 * conf
+    base = 0.7 * ev + 0.3 * conf
+
+    open_ts = pos.get("open_ts")
+    if open_ts is None:
+        return base   # legacy position — no decay
+
+    age   = now_ts - open_ts
+    if age <= 30:
+        return base
+    decay = max(0.70, 1.0 - (age - 30) / 120)
+    return base * decay
 
 
-def should_replace(new_score, positions):
-    """V10.4: Find the weakest open position that the incoming signal beats.
+def can_replace(now_ts=None):
+    """V10.4b: Global 15-second cooldown between any two replacements.
 
-    Requires a meaningful score gap (+0.05) to prevent churn — equivalent
-    to roughly a 7pp EV improvement or 17pp confidence improvement.
-    Returns the symbol of the weakest position, or None.
+    Prevents back-to-back churn loops where the same (or another) signal
+    triggers a second replacement immediately after the first one fires.
+    Updates _last_replace_ts on success.
+    """
+    global _last_replace_ts
+    if now_ts is None:
+        now_ts = time.time()
+    if now_ts - _last_replace_ts < 15:
+        return False
+    _last_replace_ts = now_ts
+    return True
 
-    Cooldown is enforced by the caller (_replace_allowed) — same 300s
-    window as the existing ws/EV replacement mechanism.
+
+def should_replace(new_score, positions, now_ts=None):
+    """V10.4b: Find the weakest open position that the incoming signal beats.
+
+    Profit protection: positions with live_pnl > 0.3% or trailing stop active
+    are never replaced — they are working and should be allowed to reach TP.
+
+    Churn guard: requires new_score > worst_score + 0.05 (≈7pp EV gap).
+
+    Returns the symbol of the replacement candidate, or None.
     """
     if not positions:
         return None
-    worst_sym   = min(positions, key=lambda s: position_score(positions[s]))
-    worst_score = position_score(positions[worst_sym])
+    if now_ts is None:
+        now_ts = time.time()
+
+    worst_sym   = min(positions, key=lambda s: position_score(positions[s], now_ts))
+    worst_pos   = positions[worst_sym]
+
+    # Profit protection — do not kill winning trades
+    if worst_pos.get("is_trailing", False):
+        return None
+    if worst_pos.get("live_pnl", 0.0) > 0.003:
+        return None
+
+    worst_score = position_score(worst_pos, now_ts)
     if new_score > worst_score + 0.05:
         return worst_sym
     return None
@@ -621,7 +665,11 @@ def handle_signal(signal):
     allowed, reason = _allow_trade(sym, signal["action"], regime)
     if not allowed:
         if reason == "max_positions":
-            # V10.4: score-based replacement — runs first, falls back to ws/EV rotation
+            # V10.4b: global cooldown gate — no replacement within 15 s of last one
+            _now = time.time()
+            if not can_replace(_now):
+                return
+            # V10.4b: score-based replacement with time-decay + profit protection
             _ev_new = 0.0
             try:
                 from src.services.execution import risk_ev as _rev
@@ -629,13 +677,13 @@ def handle_signal(signal):
             except Exception:
                 pass
             _new_score  = signal_score(signal, _ev_new)
-            _worst_sym  = should_replace(_new_score, _positions)
+            _worst_sym  = should_replace(_new_score, _positions, _now)
             if _worst_sym and _replace_allowed(_worst_sym):
                 rotate_position(_worst_sym)
                 _pending_open.append(signal)
-                _last_replaced[_worst_sym] = time.time()
-                _ws = position_score(_positions[_worst_sym])
-                print(f"    replace[v10.4]: {_worst_sym} (score={_ws:.3f}) "
+                _last_replaced[_worst_sym] = _now
+                _ws = position_score(_positions[_worst_sym], _now)
+                print(f"    replace[v10.4b]: {_worst_sym} (score={_ws:.3f}) "
                       f"← {sym} (score={_new_score:.3f})")
             else:
                 _replace_if_better(signal)   # fall back to ws/EV rotation
@@ -861,6 +909,8 @@ def handle_signal(signal):
         "partial_taken": False,   # True after partial TP exit fires
         "realized_pnl":  0.0,    # accumulated profit from partial exits
         "risk_ev":       _ev_open,  # V10.4: stored for position_score comparisons
+        "open_ts":       time.time(),  # V10.4b: for time-decay in position_score
+        "live_pnl":      0.0,    # V10.4b: updated each tick for profit protection
     }
     tag = "[force]" if force else ""
     print(f"    exec{tag}: slip={fill_slip:.5f}  fee={actual_fee_rt:.5f}  fr={fill_rate(sym):.2f}  "
@@ -888,6 +938,9 @@ def on_price(data):
     move = (curr - entry) / entry
     if pos["action"] == "SELL":
         move *= -1
+
+    # V10.4b: keep live_pnl fresh so should_replace profit protection is accurate
+    pos["live_pnl"] = move
 
     # MAE / MFE tracking
     if curr > pos["max_price"]: pos["max_price"] = curr
