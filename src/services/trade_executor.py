@@ -1162,9 +1162,9 @@ def handle_signal(signal):
     except Exception:
         pass
 
-    print(f"    policy[v10.7/10.8]: mode={_meta_mode_pol}  pm={_pm:.3f}  "
+    print(f"    policy[v10.7/10.8/v10.9]: mode={_meta_mode_pol}  pm={_pm:.3f}  "
           f"policy_ev={_policy_ev:.4f}  risk_ev={_raw_ev_pol:.4f}  "
-          f"pred={_pred_reg}  max_pos={_max_pos:.4f}  "
+          f"fw={_fw_score:.2f}  pred={_pred_reg}  max_pos={_max_pos:.4f}  "
           f"ptp×={_partial_tp_mult:.2f}  corr×={_corr_penalty:.2f}  sxd=False")
 
     # V10.1: confidence → size coupling.
