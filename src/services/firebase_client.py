@@ -188,12 +188,14 @@ def save_batch(batch):
 
     try:
         n = _attempt(batch)
+        increment_trade_count(n)
         print(f"💾 Firebase: saved {n} trades (batch write)")
     except Exception as e:
         print(f"⚠️  save_batch failed ({e}) — retrying in 3 s …")
         time.sleep(3)
         try:
             n = _attempt(batch)
+            increment_trade_count(n)
             print(f"💾 Firebase: saved {n} trades (retry OK)")
         except Exception as e2:
             _RETRY_QUEUE.extend(batch)
@@ -204,6 +206,41 @@ def save_trade(trade, result):
     """Single-trade save used by legacy evaluator.py."""
     combined = {**trade, **result, "timestamp": time.time()}
     save_batch([combined])
+
+
+# ── Trade counter (system/stats) ─────────────────────────────────────────────
+# A single lightweight document holds the all-time completed-trade count.
+# Incremented atomically via firestore.Increment after every save_batch so
+# bootstrap_from_history gets the true total even when history is capped at
+# HISTORY_LIMIT (100–200 docs).  Costs 1 read on startup + 1 write per batch.
+
+_STATS_DOC = col("system") + "/stats"
+
+
+def increment_trade_count(n: int = 1) -> None:
+    """Atomically add `n` to system/stats.total_trades counter."""
+    if db is None or n <= 0:
+        return
+    try:
+        db.document(_STATS_DOC).set(
+            {"total_trades": firestore.Increment(n), "updated_at": time.time()},
+            merge=True,
+        )
+    except Exception as e:
+        print(f"⚠️  increment_trade_count: {e}")
+
+
+def load_trade_count() -> int | None:
+    """Return total_trades from system/stats, or None if unavailable."""
+    if db is None:
+        return None
+    try:
+        doc = db.document(_STATS_DOC).get()
+        if doc.exists:
+            return int(doc.to_dict().get("total_trades", 0))
+    except Exception as e:
+        print(f"⚠️  load_trade_count: {e}")
+    return None
 
 
 # ── Model state (calibrator + learning histories + bayes/bandit) ───────────────

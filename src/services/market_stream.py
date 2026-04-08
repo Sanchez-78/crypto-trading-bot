@@ -1,39 +1,98 @@
-import requests, time
+"""
+market_stream.py — Real-time price feed via Binance WebSocket.
+
+Replaces REST polling (1 s per-symbol loop) with a single persistent
+combined-stream connection. Latency drops from ~100–300 ms REST round-trip
+to <10 ms WebSocket push; zero per-symbol polling overhead.
+
+Combined stream (no auth required):
+  wss://stream.binance.com:9443/stream?streams=sym@bookTicker/…
+
+Each push message:
+  {"stream": "btcusdt@bookticker",
+   "data":   {"s": "BTCUSDT", "b": bid, "B": bidQty, "a": ask, "A": askQty}}
+
+Reconnect: exponential back-off (1 s → 2 s → 4 s … capped at 30 s).
+Back-off resets to 1 s after a session that lasted > 60 s (healthy run).
+"""
+
+import json
+import time
+import websocket
+
 from src.core.event_bus import publish
 from src.services.learning_event import track_price
 from src.services.portfolio_discovery import get_active_symbols
 
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _stream_url(symbols: list[str]) -> str:
+    streams = "/".join(f"{s.lower()}@bookTicker" for s in symbols)
+    return f"wss://stream.binance.com:9443/stream?streams={streams}"
+
+
+# ── WebSocket callbacks ───────────────────────────────────────────────────────
+
+def _on_open(ws):
+    short = "/".join(s.replace("USDT", "") for s in get_active_symbols())
+    print(f"📡 MARKET LIVE (WebSocket bookTicker) — {short}")
+
+
+def _on_message(ws, raw):
+    try:
+        data = json.loads(raw).get("data", {})
+        bid = float(data.get("b", 0))
+        ask = float(data.get("a", 0))
+        if bid <= 0 or ask <= 0:
+            return
+
+        p       = (bid + ask) / 2.0
+        bid_qty = float(data.get("B", 0))
+        ask_qty = float(data.get("A", 0))
+        vol_b   = bid * bid_qty
+        vol_a   = ask * ask_qty
+        total   = vol_b + vol_a
+        obi     = (vol_b - vol_a) / total if total > 0 else 0.0
+
+        sym = data.get("s", "").upper()
+        if sym:
+            track_price(sym, p)
+            publish("price_tick", {"symbol": sym, "price": p, "obi": obi})
+    except Exception:
+        pass
+
+
+def _on_error(ws, error):
+    print(f"⚠️  WebSocket error: {error}")
+
+
+def _on_close(ws, code, msg):
+    print(f"📡 WebSocket closed (code={code})")
+
+
+# ── Entry point ───────────────────────────────────────────────────────────────
+
 def start():
-    print("📡 MARKET LIVE (Level 2 OBI)")
-
+    """Open a persistent combined bookTicker stream; reconnect on disconnect."""
+    backoff = 1
     while True:
-        for s in get_active_symbols():
-            try:
-                r = requests.get(
-                    "https://api.binance.com/api/v3/ticker/bookTicker",
-                    params={"symbol": s},
-                    timeout=2
-                )
-                data = r.json()
-                
-                bid_price = float(data["bidPrice"])
-                ask_price = float(data["askPrice"])
-                bid_qty   = float(data["bidQty"])
-                ask_qty   = float(data["askQty"])
-                
-                # Střední cena je stabilnější než 'last traded price'
-                p = (bid_price + ask_price) / 2.0
-                
-                # Order Book Imbalance (Volume Bid vs Volume Ask)
-                vol_b = bid_price * bid_qty
-                vol_a = ask_price * ask_qty
-                
-                total_vol = vol_b + vol_a
-                obi = (vol_b - vol_a) / total_vol if total_vol > 0 else 0.0
-                
-                track_price(s, p)
-                publish("price_tick", {"symbol": s, "price": p, "obi": obi})
-            except:
-                pass
+        t_start = time.time()
+        try:
+            ws = websocket.WebSocketApp(
+                _stream_url(get_active_symbols()),
+                on_open=_on_open,
+                on_message=_on_message,
+                on_error=_on_error,
+                on_close=_on_close,
+            )
+            ws.run_forever(ping_interval=30, ping_timeout=10)
+        except Exception as e:
+            print(f"⚠️  WebSocket exception: {e}")
 
-        time.sleep(1)
+        # Reset back-off after a healthy session (> 60 s uptime)
+        if time.time() - t_start > 60:
+            backoff = 1
+
+        print(f"🔄 Reconnecting in {backoff} s …")
+        time.sleep(backoff)
+        backoff = min(backoff * 2, 30)

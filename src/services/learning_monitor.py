@@ -61,15 +61,38 @@ def true_ev(sym, reg):
     return float(np.tanh(float(np.mean(arr)) / std))
 
 
+# Bayesian shrinkage prior strength — equivalent to 15 "neutral" trades.
+# New pairs borrow the global mean EV rather than returning 0.
+# At n=15:  50% local / 50% global.
+# At n=50:  77% local / 23% global.
+# At n=200: 93% local /  7% global  (→ converges to true_ev).
+_SHRINKAGE_K = 15
+
+
+def _global_ev() -> float:
+    """Mean true_ev across all pairs with ≥10 samples; 0.0 if none exist."""
+    evs = [true_ev(s, r) for (s, r), n in lm_count.items() if n >= 10]
+    return float(np.mean(evs)) if evs else 0.0
+
+
 def conf_ev(sym, reg):
-    """Confidence-weighted EV: true_ev × min(n/50, 1).
-    Pairs with fewer than 50 trades are linearly suppressed — a pair with
-    10 trades contributes 20% of its EV to allocation; at 50+ trades it
-    receives full weight. Prevents new pairs from dominating on tiny samples.
+    """Bayesian shrinkage EV: blends local edge with global prior.
+
+    Replaces the old `true_ev × min(n/50, 1)` linear suppression that forced
+    new pairs to report EV=0 for their first 10 trades — triggering spurious
+    "NO LEARNING SIGNAL" alerts and blocking the meta-controller from routing
+    capital to genuinely promising new pairs.
+
+    Formula:
+        ev_shrunk = (n × local_ev + K × global_ev) / (n + K)
+
+    where K = _SHRINKAGE_K (15).  At n=0 the pair inherits the system-wide
+    mean; as data accumulates it converges toward its own true_ev.
     """
-    n    = lm_count.get((sym, reg), 0)
-    conf = min(n / 50.0, 1.0)
-    return true_ev(sym, reg) * conf
+    n       = lm_count.get((sym, reg), 0)
+    local   = true_ev(sym, reg)    # 0.0 for n < 10 (its own bootstrap guard)
+    global_ = _global_ev()
+    return (n * local + _SHRINKAGE_K * global_) / (n + _SHRINKAGE_K)
 
 
 def ev_decay(sym, reg):

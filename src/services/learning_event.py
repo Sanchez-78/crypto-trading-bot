@@ -1,5 +1,7 @@
 import time as _time
 import threading as _threading
+import queue as _queue
+from collections import deque as _deque
 
 _lock = _threading.Lock()
 
@@ -27,12 +29,41 @@ METRICS = {
 
 _last_prices    = {}
 _last_signals   = {}
-_recent_results = []
 _sym_stats      = {}
-_trade_times    = []   # rolling timestamps of completed trades
-_ev_history     = []   # EV values of last 50 executed trades
 _close_reasons  = {"TP": 0, "SL": 0, "trail": 0, "timeout": 0}
 _regime_stats   = {}   # regime -> {"wins": int, "trades": int}
+
+# Ring-buffers: O(1) append+auto-evict; no manual pop(0) needed
+_recent_results: _deque = _deque(maxlen=50)   # last 50 trade outcomes
+_ev_history:     _deque = _deque(maxlen=50)   # EV values of last 50 executed trades
+_trade_times:    _deque = _deque(maxlen=200)  # rolling timestamps of completed trades
+
+# ── Async metrics writer ──────────────────────────────────────────────────────
+# Caller fires update_metrics() and returns immediately.
+# A dedicated daemon thread drains the queue — no trading engine stall.
+
+_update_queue: _queue.Queue = _queue.Queue(maxsize=500)
+
+
+def _worker():
+    """Background thread: drain _update_queue and apply metrics updates."""
+    while True:
+        try:
+            signal, trade = _update_queue.get(timeout=1)
+        except _queue.Empty:
+            continue
+        try:
+            with _lock:
+                _trade_times.append(_time.time())
+                _update_metrics_locked(signal, trade)
+        except Exception:
+            pass
+        finally:
+            _update_queue.task_done()
+
+
+_worker_thread = _threading.Thread(target=_worker, daemon=True, name="metrics-worker")
+_worker_thread.start()
 
 
 def track_price(symbol, price):
@@ -50,17 +81,20 @@ def _update_sym(symbol, result, profit):
 
 def trades_in_window(seconds=900):
     """Count completed trades in the last `seconds` seconds."""
-    with _lock:
-        cutoff = _time.time() - seconds
-        return sum(1 for t in _trade_times if t > cutoff)
+    cutoff = _time.time() - seconds
+    # deque iteration is GIL-safe in CPython; no lock needed for read
+    return sum(1 for t in list(_trade_times) if t > cutoff)
 
 
 def update_metrics(signal, trade):
-    with _lock:
-        _trade_times.append(_time.time())
-        if len(_trade_times) > 200:
-            _trade_times.pop(0)
-        return _update_metrics_locked(signal, trade)
+    """Non-blocking: enqueue metrics update for background processing."""
+    try:
+        _update_queue.put_nowait((signal, trade))
+    except _queue.Full:
+        # Queue saturated (500 pending updates) — process inline to avoid data loss
+        with _lock:
+            _trade_times.append(_time.time())
+            _update_metrics_locked(signal, trade)
 
 
 def _update_metrics_locked(signal, trade):
@@ -98,11 +132,10 @@ def _update_metrics_locked(signal, trade):
 
     _update_sym(sym, result, profit)
 
-    # EV history (last 50 executed trades)
+    # EV history (deque auto-evicts oldest at maxlen=50)
     ev = float(signal.get("ev", 0))
     if ev > 0:
         _ev_history.append(ev)
-        if len(_ev_history) > 50: _ev_history.pop(0)
 
     # Close-reason breakdown
     reason = trade.get("close_reason", "")
@@ -121,9 +154,8 @@ def _update_metrics_locked(signal, trade):
         "ev": ev, "regime": regime,
     }
 
+    # deque auto-evicts at maxlen=50
     _recent_results.append(result)
-    if len(_recent_results) > 50:
-        _recent_results.pop(0)
 
 
 def get_metrics():
@@ -131,9 +163,10 @@ def get_metrics():
     t  = m["trades"]
     wr = m["wins"] / t if t else 0.0
 
+    rr = list(_recent_results)
     recent_wr = (
-        sum(1 for r in _recent_results if r == "WIN") / len(_recent_results)
-        if _recent_results else 0.0
+        sum(1 for r in rr if r == "WIN") / len(rr)
+        if rr else 0.0
     )
 
     if t >= 20:
@@ -163,7 +196,7 @@ def get_metrics():
         "winrate":        wr,
         "ready":          t > 50 and wr > 0.55 and m["profit"] > 0,
         "recent_winrate": recent_wr,
-        "recent_count":   len(_recent_results),
+        "recent_count":   len(rr),
         "learning_trend": trend,
         "profit_factor":  profit_factor,
         "expectancy":     expectancy,
@@ -183,9 +216,22 @@ def bootstrap_from_history(trades):
         print("📂 Bootstrap: žádná historická data")
         return
 
-    global _recent_results
     m = METRICS
     sorted_trades = sorted(trades, key=lambda t: t.get("timestamp", 0))
+
+    # Prefer accurate total from Firestore atomic counter (avoids limit=100 cap).
+    # The history query is capped at HISTORY_LIMIT (100–200 docs) so m["trades"]
+    # would otherwise be off by however many older trades exist in the DB.
+    _count_seeded = False
+    try:
+        from src.services.firebase_client import load_trade_count as _ltc
+        total_count = _ltc()
+        if total_count is not None and total_count > len(sorted_trades):
+            m["trades"]           = total_count
+            m["signals_executed"] = total_count
+            _count_seeded = True
+    except Exception:
+        pass
 
     for trade in sorted_trades:
         result = trade.get("result")
@@ -195,8 +241,10 @@ def bootstrap_from_history(trades):
         if not result or not sym:
             continue
 
-        m["trades"] += 1
-        m["signals_executed"] += 1
+        # Skip counter increment when already seeded from atomic counter doc
+        if not _count_seeded:
+            m["trades"] += 1
+            m["signals_executed"] += 1
         m["profit"] += profit
         m["last_trade_time"] = float(trade.get("timestamp") or 0)
 
@@ -217,7 +265,7 @@ def bootstrap_from_history(trades):
         # Bootstrap new trackers
         ev = float(trade.get("ev", 0))
         if ev > 0:
-            _ev_history.append(ev)
+            _ev_history.append(ev)   # deque handles cap automatically
         reason = trade.get("close_reason", "")
         if reason in _close_reasons:
             _close_reasons[reason] += 1
@@ -225,8 +273,6 @@ def bootstrap_from_history(trades):
         rs = _regime_stats.setdefault(regime, {"wins": 0, "trades": 0})
         rs["trades"] += 1
         if result == "WIN": rs["wins"] += 1
-
-    if len(_ev_history) > 50: _ev_history[:] = _ev_history[-50:]
 
     # Seed online calibrator from closed trades (must be after loop)
     try:
@@ -274,8 +320,7 @@ def bootstrap_from_history(trades):
     # _recent_results must only contain in-session trades so the guard reflects
     # current performance, not stale history.  Streak (loss_streak / win_streak)
     # is tracked separately via METRICS which IS seeded from history below.
-    global _recent_results
-    _recent_results = []   # velocity guard uses in-session trades only
+    _recent_results.clear()   # velocity guard: in-session trades only
 
     # Compute TRAILING streak from the last 30 historical trades rather than
     # resetting to 0.  A plain reset meant the MAX_LOSS_STREAK circuit-breaker
@@ -340,13 +385,14 @@ def track_regime(r):
 
 def get_ev_stats():
     """Returns avg/min/max EV of last 50 executed trades."""
-    if not _ev_history:
+    ev = list(_ev_history)
+    if not ev:
         return {"avg": 0.0, "min": 0.0, "max": 0.0, "count": 0}
     return {
-        "avg":   round(sum(_ev_history) / len(_ev_history), 4),
-        "min":   round(min(_ev_history), 4),
-        "max":   round(max(_ev_history), 4),
-        "count": len(_ev_history),
+        "avg":   round(sum(ev) / len(ev), 4),
+        "min":   round(min(ev), 4),
+        "max":   round(max(ev), 4),
+        "count": len(ev),
     }
 
 
