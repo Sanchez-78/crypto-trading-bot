@@ -1,11 +1,11 @@
-BASE_SYMBOLS = ["BTCUSDT", "ETHUSDT", "ADAUSDT"]
+BASE_SYMBOLS = ["BTCUSDT", "ETHUSDT", "ADAUSDT", "BNBUSDT", "DOTUSDT", "SOLUSDT", "XRPUSDT"]
 
 
 def get_active_symbols(top_n=0) -> list[str]:
-    """Returns the fixed symbol set: BTC, ETH, ADA only.
+    """Returns the fixed symbol set: BTC, ETH, ADA, BNB, DOT, SOL, XRP.
 
-    Dynamic altcoin discovery removed — concentrates learning data on three
-    liquid, high-volume pairs instead of spreading 246 trades across 20+
+    Dynamic altcoin discovery removed — concentrates learning data on a fixed
+    set of liquid, high-volume pairs instead of spreading trades across many
     symbol×regime combinations where most never converge.
     """
     return list(BASE_SYMBOLS)
