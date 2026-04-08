@@ -45,6 +45,7 @@ _adx_hist      = {}   # symbol -> float (last adx, for slope)
 _rsi_hist      = {}   # symbol -> float (last rsi, for slope)
 _rsi_full_hist = {}   # symbol -> list[float], rolling RSI series for divergence
 _obi_hist      = {}   # symbol -> list[float], rolling OBI for z-score normalization
+_price_z_hist  = {}   # symbol -> list[float], rolling 20-price window for Z-score
 
 # Flat TP/SL (must match trade_executor._TP_MULT/_SL_MULT + realtime_decision_engine)
 _TP_MULT = {"BULL_TREND": 1.0, "BEAR_TREND": 1.0,
@@ -172,7 +173,8 @@ def _regime(series, adx, di_p, di_m, atr_val):
 # ── Score (regime-aware) ──────────────────────────────────────────────────────
 
 def _score(action, curr, e10, e50, e200, rsi_v, rsi_slope,
-           macd_l, macd_s, bb_lo, bb_hi, adx_v, regime, obi, htf=None):
+           macd_l, macd_s, bb_lo, bb_hi, adx_v, regime, obi, htf=None,
+           price_z=0.0):
     sc = 0
     reasons = []
 
@@ -194,6 +196,10 @@ def _score(action, curr, e10, e50, e200, rsi_v, rsi_slope,
                 if rsi_slope > 0: sc += 3; reasons.append("MR↓↓✓")
                 else:             sc += 2; reasons.append("MR↓↓")
             elif rsi_v < 42:      sc += 1; reasons.append("MR↓")
+            # Price Z-score: large negative deviation → mean-reversion BUY
+            # Avellaneda & Lee (2010): |z| > 1.5 ≈ actionable deviation
+            if price_z <= -1.5:   sc += 2; reasons.append("Zlo")
+            elif price_z <= -1.0: sc += 1; reasons.append("Zlo-")
     else:
         if e10 < e50:                              sc += 1; reasons.append("EMA↓")
         if curr < e200:                            sc += 1; reasons.append("HTF↓")
@@ -211,6 +217,9 @@ def _score(action, curr, e10, e50, e200, rsi_v, rsi_slope,
                 if rsi_slope < 0: sc += 3; reasons.append("MR↑↑✓")
                 else:             sc += 2; reasons.append("MR↑↑")
             elif rsi_v > 58:      sc += 1; reasons.append("MR↑")
+            # Price Z-score: large positive deviation → mean-reversion SELL
+            if price_z >= 1.5:    sc += 2; reasons.append("Zhi")
+            elif price_z >= 1.0:  sc += 1; reasons.append("Zhi-")
 
     # HTF alignment bonus (+1 if 5m trend agrees, no penalty if disagrees)
     if htf == "UP"   and action == "BUY":  sc += 1; reasons.append("HTFok")
@@ -399,6 +408,30 @@ def _session_ok():
     return False, 0.6
 
 
+def _price_zscore(sym, price):
+    """
+    Rolling 20-price Z-score: z = (price - mean20) / std20.
+
+    Used as a RANGING regime bonus — when price deviates significantly from
+    its recent mean, mean-reversion probability increases.
+    Research (Avellaneda & Lee 2010, Statistical Arbitrage): Z-score > 1.5
+    or < -1.5 indicates a statistically meaningful deviation from fair value.
+
+    Returns 0.0 if fewer than 20 samples are available (safe bootstrap).
+    """
+    hist = _price_z_hist.setdefault(sym, [])
+    hist.append(price)
+    if len(hist) > 60:        # 60-sample window for stable mean/std
+        hist.pop(0)
+    if len(hist) < 20:
+        return 0.0
+    mean = sum(hist) / len(hist)
+    std  = (sum((x - mean) ** 2 for x in hist) / len(hist)) ** 0.5
+    if std < 1e-9:
+        return 0.0
+    return (price - mean) / std
+
+
 def _obi_zscore(sym, obi_raw):
     """
     Normalize raw OBI to a z-score using rolling 100-sample history.
@@ -522,6 +555,10 @@ def on_price(data):
     obi_raw = data.get("obi", 0.0)
     obi     = _obi_zscore(s, obi_raw)   # z-score, >1.0 = meaningful imbalance
 
+    # ── Price Z-score (RANGING mean-reversion feature) ────────────────────────
+    # Tracks rolling 20-price deviation; passed to _score() for RANGING bonus.
+    price_z = _price_zscore(s, p)
+
     # ── Time-based debounce (per symbol) ──────────────────────────────────────
     # Bypass during bootstrap (<30 trades): need fast data flow to fill lm_pnl_hist.
     # Once 30 trades close, debounce re-activates to prevent combo exhaustion.
@@ -561,7 +598,7 @@ def on_price(data):
     # ── Score ─────────────────────────────────────────────────────────────────
     score, reasons = _score(
         action, p, e10, e50, e200, rsi_v, rsi_slope,
-        macd_l, macd_s, bb_lo, bb_hi, adx_v, reg, obi, htf
+        macd_l, macd_s, bb_lo, bb_hi, adx_v, reg, obi, htf, price_z
     )
 
     # RSI divergence bonus — confirmed counter-move between price and momentum
@@ -636,6 +673,7 @@ def on_price(data):
             "obi":           round(obi, 4),
             "rsi_div_bull":  int(div_bull),
             "rsi_div_bear":  int(div_bear),
+            "price_z":       round(price_z, 4),
             # Temporal AI Cognition
             "hour_utc":      __import__('datetime').datetime.utcnow().hour,
             "is_weekend":    __import__('datetime').datetime.utcnow().weekday() >= 5,

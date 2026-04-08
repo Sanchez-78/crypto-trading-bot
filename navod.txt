@@ -1,0 +1,21 @@
+Krok 1: Registrace ve Firebase
+Přejděte do vaší Firebase Console do projektu crypto-master-bot.
+Jděte vlevo nahoře přes ozubené kolečko do Project Settings (Nastavení projektu) a najděte sekci Your apps (zhruba dole).
+Klikněte na ikonu Androida (Add app).
+Do kolonky Android package name (Název balíčku) zadejte přesně: com.cryptomaster.app a klikněte na "Register app".
+Ihned vám vyskočí tlačítko na stažení souboru google-services.json. Stáhněte ho a uložte jej fyzicky sem:
+C:\Projects\CryptoMaster_app\google-services.json
+Naklikejte Next a Skip až do konce.
+Krok 2: Získání "Server Key"
+Zůstaňte v Nastavení projektu (Project Settings) ve Firebase, ale přepněte se nahoře na záložku Cloud Messaging.
+Najděte tzv. Cloud Messaging API (Legacy). Pokud u něj vidíte "Disabled", klikněte na tři tečky vpravo a zapněte jej přes Google Cloud.
+Pokud "Enabled", tak zkopírujte dlouhý Server Key (Klíč serveru). Bude potřeba v Kroku 3!
+Krok 3: Propojení s Expo.dev
+Jděte na web expo.dev a vytvořte si bezplatný účet (pokud nemáte).
+Dejte "Create project" a pojmenujte jej např. CryptoMaster.
+Na levém panelu u nového projektu jděte dolů na Credentials > rozklikněte vaši aplikaci > Android.
+Sjeďte k položce FCM Server Key, dejte + Add FCM Server Key a vložte ten obří klíč zkrokovaný v Kroku 2. Tím jste Expu předal oprávnění posílat notifikace vaším jménem!
+Krok 4: Získání Expo Project ID (Pro mě)
+Zůstaňte na webu Expa, klikněte na domovskou stránku vašeho projektu. Nahoře (nebo v Settings) najdete Project ID, které vypadá většinou jako e25d2b7c-1234-abcd-9876-1234567890ab. Může ho tvořit i název @vás_login/CryptoMaster.
+
+Co po vás teď žádám? Do chatu mi napište to Project ID a potvrďte mi zprávou, že soubor google-services.json leží ve složce aplikace. Pak už na to vlítnu já s kódem!

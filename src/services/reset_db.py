@@ -1,8 +1,19 @@
 import sys
 import os
+import base64
 
-# 🔥 FIX: přidání root projektu do Python path
+# Add project root to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
+
+# Load firebase key from file if env var not set (local dev)
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+if not os.getenv("FIREBASE_KEY_BASE64") and os.path.exists("firebase_key.json"):
+    with open("firebase_key.json", "rb") as _f:
+        os.environ["FIREBASE_KEY_BASE64"] = base64.b64encode(_f.read()).decode("utf-8")
 
 from src.services.firebase_client import init_firebase, get_db, col as _col
 
@@ -18,6 +29,7 @@ COLLECTIONS = [
     "signals_compressed",
     "portfolio",
     "meta",
+    "advice",   # bot2→bot1 advice channel (added session 2025-04)
 ]
 
 

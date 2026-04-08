@@ -43,6 +43,77 @@ def get_strategy_weights() -> dict:
     return dict(_cached_weights) if _cached_weights else {}
 
 
+# ── Verdict + bias detection ──────────────────────────────────────────────────
+
+def _compute_verdict(m: dict, pos_size_mult: float) -> tuple[str, list[str]]:
+    """
+    Produce a structured audit verdict and bias flag list.
+
+    Verdict levels
+    ──────────────
+    APPROVED              : no significant issues detected
+    APPROVED_WITH_WARNINGS: soft warnings present; trading continues with caution
+    REJECTED              : hard stop condition active (DD halt, loss_streak ≥ 5,
+                            or multiple simultaneous bias flags)
+
+    Bias detections
+    ───────────────
+    recency_overconfidence : recent win-rate exceeded historical by ≥ 15 pp AND
+                             trade count is large enough to distinguish noise
+                             (Kahneman & Tversky: recency bias inflates confidence
+                             after short hot streaks, leading to oversizing)
+
+    revenge_trading_risk   : loss_streak ≥ 2 AND elevated trade frequency in last
+                             session (≥ 1.5× baseline) — hallmark of revenge trading
+                             pattern identified in algo-trading audit literature
+
+    win_streak_overconfidence : win_streak ≥ 5 — anti-martingale multiplier at max,
+                             risk of over-concentration after hot run
+                             (Barberis & Thaler 2003: hot-hand fallacy)
+    """
+    bias_flags: list[str] = []
+
+    loss_streak  = m.get("loss_streak",      0)
+    win_streak   = m.get("win_streak",       0)
+    recent_wr    = m.get("recent_winrate",   0.0)
+    historical_wr= m.get("win_rate",         0.0)  # long-run WR from full history
+    total_trades = m.get("trades",           0)
+    trade_freq   = m.get("trade_freq_ratio", 0.0)  # recent freq / baseline freq
+
+    # ── Bias: recency overconfidence ────────────────────────────────────────
+    # Only meaningful once we have ≥ 30 trades (cold-start noise is large)
+    if (total_trades >= 30
+            and historical_wr > 0
+            and recent_wr > historical_wr + 0.15):
+        bias_flags.append("recency_overconfidence")
+
+    # ── Bias: revenge trading risk ───────────────────────────────────────────
+    # Loss streak ≥ 2 + abnormally high trade frequency = chasing losses
+    if loss_streak >= 2 and trade_freq >= 1.5:
+        bias_flags.append("revenge_trading_risk")
+
+    # ── Bias: win-streak overconfidence ─────────────────────────────────────
+    if win_streak >= 5:
+        bias_flags.append("win_streak_overconfidence")
+
+    # ── Hard REJECTED conditions ─────────────────────────────────────────────
+    if is_halted():
+        return "REJECTED", bias_flags + ["dd_halt_active"]
+
+    if loss_streak >= 5:
+        return "REJECTED", bias_flags + ["critical_loss_streak"]
+
+    # Multiple simultaneous biases = compound risk → reject
+    if len(bias_flags) >= 2:
+        return "REJECTED", bias_flags
+
+    # ── APPROVED_WITH_WARNINGS ────────────────────────────────────────────────
+    if bias_flags or loss_streak >= 3 or pos_size_mult < 1.0:
+        return "APPROVED_WITH_WARNINGS", bias_flags
+
+    return "APPROVED", bias_flags
+
+
 # ── Main audit cycle ──────────────────────────────────────────────────────────
 
 def run_audit():
@@ -136,6 +207,9 @@ def run_audit():
     except Exception:
         pass
 
+    # ── Structured verdict + bias detection ──────────────────────────────────
+    verdict, bias_flags = _compute_verdict(m, _position_size_mult)
+
     # ── Publish advice for bot1 ───────────────────────────────────────────────
     # Bot1 reads this via load_bot2_advice() before opening any trade.
     # Gives bot1 access to bot2's learned knowledge: which pairs/regimes are
@@ -185,6 +259,8 @@ def run_audit():
             "loss_streak":   loss_streak,
             "health":        round(lm_health(), 4),
             "pos_size_mult": round(_position_size_mult, 4),
+            "verdict":       verdict,
+            "bias_flags":    bias_flags,
         })
     except Exception:
         pass
