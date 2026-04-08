@@ -995,6 +995,25 @@ def handle_signal(signal):
         return
 
     reg    = signal.get("regime", "RANGING")
+
+    # ── V10.9: Feature-weighted quality gate ──────────────────────────────────
+    # Blocks trades with insufficient feature confirmation after bootstrap.
+    # Score = Σ feature_value × adaptive_weight over 7 boolean features.
+    # Gate fires only post-bootstrap (≥30 trades) to avoid deadlock during cold start.
+    # MIN_SCORE=3.0: requires at least 3 confirmed features at baseline weight.
+    _fw_bools = {k: v for k, v in signal.get("features", {}).items()
+                 if isinstance(v, bool)}
+    _fw_score = 0.0
+    try:
+        from src.services.feature_weights import compute_weighted_score as _cws
+        _fw_score = _cws(_fw_bools, sym, reg)
+    except Exception:
+        pass
+    from src.services.feature_weights import MIN_SCORE as _FW_MIN
+    if not bootstrap_open and _fw_score < _FW_MIN:
+        print(f"    portfolio gate: fw_score  sym={sym}  "
+              f"score={_fw_score:.2f}<{_FW_MIN}  regime={reg}")
+        return
     ws_adj = ob_adjust(ws_raw, ob)
     ws_adj = ev_adjust(ws_adj, sym, reg)
     ev     = signal.get("ev", 0.05)
@@ -1506,6 +1525,34 @@ def on_price(data):
         lm_update(sym, reg_sig, learning_pnl,
                   ws=pos["signal"].get("ws", 0.5),
                   features=bool_f)
+    except Exception:
+        pass
+
+    # ── V10.9: Adapt feature weights from closed position ─────────────────────
+    # EV contribution per active feature = learning_pnl / n_active.
+    # Inactive features are omitted — no penalty for absence, only reward/penalty
+    # for features that were present and contributed to this outcome.
+    try:
+        from src.services.feature_weights import update_feature_weights as _ufw
+        _active_fw = [k for k, v in bool_f.items() if v]
+        if _active_fw and learning_pnl != 0.0:
+            _per_f = learning_pnl / len(_active_fw)
+            _fevs  = {k: _per_f for k in _active_fw}
+            _lmh_fw, _dd_fw = 0.0, 0.0
+            try:
+                from src.services.learning_monitor import lm_health as _lmhfn
+                _lmh_fw = float(_lmhfn() or 0.0)
+            except Exception:
+                pass
+            try:
+                from src.services.diagnostics import max_drawdown as _ddfn
+                _dd_fw = float(_ddfn() or 0.0)
+            except Exception:
+                pass
+            _new_w = _ufw(sym, reg_sig, _fevs, _lmh_fw, _dd_fw)
+            print(f"    fw[v10.9]: {sym} {reg_sig}  "
+                  f"score_pnl={learning_pnl:+.5f}  "
+                  f"w={{{', '.join(f'{k}:{v:.2f}' for k, v in _new_w.items() if k in _active_fw)}}}")
     except Exception:
         pass
 
