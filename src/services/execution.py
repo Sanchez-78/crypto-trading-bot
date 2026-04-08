@@ -587,13 +587,20 @@ def final_size(sym, reg, base, positions, ob=None):
 
 def bootstrap_mode():
     """
-    Three-phase learning gate driven by closed_trades count.
-    COLD  (<30):  no gates — collect data unconditionally.
+    Three-phase learning gate driven by total closed trades safely persisted.
+    COLD  (<50):  no gates — collect data unconditionally.
     WARM  (<100): soft constraints — shape without blocking.
     LIVE  (≥100): full system active.
     """
     n = len(closed_trades)
-    if n < 30:
+    try:
+        import sys
+        if "src.services.learning_event" in sys.modules:
+            n = max(n, sys.modules["src.services.learning_event"].METRICS.get("trades", 0))
+    except Exception:
+        pass
+        
+    if n < 50:
         return "COLD"
     if n < 100:
         return "WARM"
@@ -669,7 +676,13 @@ def epsilon():
         return 0.35
     if mode == "WARM":
         return 0.15
-    return max(0.02, 0.10 * float(np.exp(-len(closed_trades) / 500.0)))
+    try:
+        from src.services.learning_event import METRICS
+        n = METRICS.get("trades", 0)
+    except Exception:
+        n = len(closed_trades)
+        
+    return max(0.02, 0.10 * float(np.exp(-n / 500.0)))
 
 
 def size_floor(size):
