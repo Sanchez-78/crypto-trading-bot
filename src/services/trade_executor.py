@@ -53,6 +53,14 @@ _MAX_TOTAL_RISK   = 0.05 # total portfolio risk cap (sum of size*sl_pct)
 _SPREAD_PCT       = 0.001 # estimated bid-ask spread (0.10%)
 _last_replaced    = {}   # symbol -> timestamp of last replacement
 _last_replace_ts  = 0.0  # V10.4b: global cooldown — no replacement within 15 s of the last one
+_meta_ema   = {"lm_health": None, "sharpe": None, "drawdown": None}  # V10.6b: smoothed inputs
+_meta_state = {                                                        # V10.6b: adaptive control
+    "mode":              "neutral",
+    "last_update":       0.0,
+    "replace_threshold": 0.05,   # default; updated by update_meta_mode()
+    "pyramid_trigger":   0.004,  # default; updated by update_meta_mode()
+    "reduce_threshold":  -0.003, # default; updated by update_meta_mode()
+}
 
 FEE_RT      = 0.0015    # 0.15% round-trip (Binance taker 0.075%×2)
 MIN_TP_PCT  = 0.008     # 0.80% — giving trades room to hit higher RRs
@@ -290,7 +298,7 @@ def should_replace(new_score, positions, now_ts=None):
         return None
 
     worst_score = position_score(worst_pos, now_ts)
-    if new_score > worst_score + 0.05:
+    if new_score > worst_score + _meta_state["replace_threshold"]:
         return worst_sym
     return None
 
@@ -325,7 +333,7 @@ def should_add_to_position(pos, curr, prev):
     entry = pos["entry"]
     move  = (curr - entry) / entry if pos["action"] == "BUY" \
             else (entry - curr) / entry
-    if move < 0.004:
+    if move < _meta_state["pyramid_trigger"]:
         return False
     if pos.get("risk_ev", 0.0) < 0.1:
         return False
@@ -423,6 +431,127 @@ def reduce_position(pos, curr):
     pos["size"]    *= factor
     pos["reduced"]  = True
     _risk_guard()
+
+
+# ── V10.6b helpers — robust meta-adaptive control ─────────────────────────────
+
+def _ema_update(prev, x, alpha=0.2):
+    """Single-step EMA.  Returns x on first call (prev is None)."""
+    return x if prev is None else (alpha * x + (1.0 - alpha) * prev)
+
+
+def _update_meta_inputs(lm_h, sr, dd):
+    """Smooth raw metrics with alpha=0.2 EMA before mode decisions.
+
+    Prevents single noisy readings from triggering mode switches.
+    Stored in module-level _meta_ema dict.
+    """
+    _meta_ema["lm_health"] = _ema_update(_meta_ema["lm_health"], lm_h)
+    _meta_ema["sharpe"]    = _ema_update(_meta_ema["sharpe"],    sr)
+    _meta_ema["drawdown"]  = _ema_update(_meta_ema["drawdown"],  dd)
+    return _meta_ema["lm_health"], _meta_ema["sharpe"], _meta_ema["drawdown"]
+
+
+def _replacement_threshold(mode, lm_h):
+    """Continuous replacement gap: base 0.05 adjusted by lm_health and mode.
+
+    Higher lm_h → easier replacement (better signals justify lower bar).
+    Defensive mode adds +0.02 (harder to replace — protect stability).
+    Aggressive mode subtracts -0.01 (slightly easier rotation).
+    Clamped [0.03, 0.08].
+    """
+    adj = (lm_h - 0.3) * 0.05
+    if   mode == "defensive":  adj += 0.02
+    elif mode == "aggressive": adj -= 0.01
+    return max(0.03, min(0.08, 0.05 + adj))
+
+
+def _pyramiding_trigger(mode, sr):
+    """Continuous pyramid entry move threshold.
+
+    Higher Sharpe → can add earlier (edge is confirmed).
+    Defensive adds +0.001 (wait for more move before scaling).
+    Aggressive subtracts -0.001 (scale sooner).
+    Clamped [0.003, 0.006].
+    """
+    adj = (sr - 1.0) * 0.001
+    if   mode == "defensive":  adj += 0.001
+    elif mode == "aggressive": adj -= 0.001
+    return max(0.003, min(0.006, 0.004 + adj))
+
+
+def _reduce_threshold(mode, dd):
+    """Continuous loss-reduction trigger (negative move %).
+
+    Larger drawdown → tighter threshold (reduce earlier).
+    Aggressive mode gives +0.001 of slack (tolerates slightly more loss).
+    Clamped [-0.005, -0.002].
+    """
+    adj = dd * 0.02
+    if mode == "aggressive": adj -= 0.001
+    return max(-0.005, min(-0.002, -0.003 + adj))
+
+
+def update_meta_mode(now_ts=None):
+    """V10.6b: Hysteresis mode switcher with EMA-smoothed inputs and 10s cooldown.
+
+    Reads lm_health / sharpe / max_drawdown from their canonical sources,
+    smooths them, then applies hysteresis band logic to avoid oscillation:
+
+      neutral  → defensive  when dd_smooth > 0.12
+      neutral  → aggressive when lm_h_smooth > 0.45 AND sharpe_smooth > 1.3
+      aggressive → neutral  when lm_h_smooth < 0.35 OR sharpe_smooth < 1.0
+      defensive  → neutral  when dd_smooth < 0.08
+
+    Safety: aggressive is blocked when raw dd > 0.10 (hard override).
+    Updates _meta_state thresholds on every non-cooldown call.
+    Returns current mode string.
+    """
+    if now_ts is None:
+        now_ts = time.time()
+    if now_ts - _meta_state["last_update"] < 10:
+        return _meta_state["mode"]
+
+    # Fetch raw metrics (safe fallbacks)
+    lm_h = 0.0
+    sr   = 0.0
+    dd   = 0.0
+    try:
+        from src.services.learning_monitor import lm_health as _lmh
+        lm_h = float(_lmh() or 0.0)
+    except Exception:
+        pass
+    try:
+        from src.services.diagnostics import sharpe as _sr, max_drawdown as _dd
+        sr = float(_sr() or 0.0)
+        dd = float(_dd() or 0.0)
+    except Exception:
+        pass
+
+    # EMA-smooth before any decision
+    lm_h_s, sr_s, dd_s = _update_meta_inputs(lm_h, sr, dd)
+
+    mode = _meta_state["mode"]
+
+    if mode == "neutral":
+        if dd_s > 0.12:
+            mode = "defensive"
+        elif lm_h_s > 0.45 and sr_s > 1.3 and dd < 0.10:   # raw dd safety
+            mode = "aggressive"
+    elif mode == "aggressive":
+        if dd >= 0.10 or lm_h_s < 0.35 or sr_s < 1.0:      # raw dd hard override
+            mode = "neutral"
+    elif mode == "defensive":
+        if dd_s < 0.08:
+            mode = "neutral"
+
+    _meta_state["mode"]              = mode
+    _meta_state["last_update"]       = now_ts
+    _meta_state["replace_threshold"] = _replacement_threshold(mode, lm_h_s)
+    _meta_state["pyramid_trigger"]   = _pyramiding_trigger(mode, sr_s)
+    _meta_state["reduce_threshold"]  = _reduce_threshold(mode, dd_s)
+
+    return mode
 
 
 def compute_tp_sl(entry, direction, atr=0.003, sym=None, reg=None):
@@ -915,8 +1044,35 @@ def handle_signal(signal):
     _momentum  = (ws_raw - 0.5) * 2.0
     _feat_adx  = signal.get("features", {}).get("adx", 0.0)
     _reg_score = 1.0 if _feat_adx > 25 else 0.5
-    _pol       = policy_score(ev, _wr_ps, _momentum, atr_pct, _reg_score)
-    size      *= max(0.5, min(1.5, 1.0 + _pol))   # clamp: never below 50% or above 150%
+
+    # ── V10.7: Policy Layer — meta-adaptive EV multiplier ─────────────────────
+    # policy_ev = risk_ev × policy_multiplier(meta_mode, alignment, confidence, wr)
+    # Replaces raw ev in policy_score so sizing reflects system health context.
+    _meta_mode_pol = _meta_state["mode"]
+    _conf_pol      = signal.get("confidence", 0.5) or 0.5
+    _act_pol       = signal.get("action", "")
+    _reg_align     = 0.5   # neutral (RANGING / HIGH_VOL / QUIET_RANGE)
+    if (_act_pol == "BUY"  and reg == "BULL_TREND") or \
+       (_act_pol == "SELL" and reg == "BEAR_TREND"):
+        _reg_align = 1.0   # signal aligned with regime
+    elif (_act_pol == "BUY"  and reg == "BEAR_TREND") or \
+         (_act_pol == "SELL" and reg == "BULL_TREND"):
+        _reg_align = 0.0   # counter-regime signal
+    _raw_ev_pol = 0.0
+    try:
+        from src.services.execution import risk_ev as _rev_pol
+        _raw_ev_pol = _rev_pol(sym, reg)
+    except Exception:
+        pass
+    _policy_ev, _pm = _raw_ev_pol, 1.0
+    try:
+        from src.services.policy_layer import compute_policy_ev as _cev
+        _policy_ev, _pm = _cev(_raw_ev_pol, _meta_mode_pol, _reg_align, _conf_pol, _wr_ps)
+    except Exception:
+        pass
+
+    _pol  = policy_score(_policy_ev, _wr_ps, _momentum, atr_pct, _reg_score)
+    size *= max(0.5, min(1.5, 1.0 + _pol))   # clamp: never below 50% or above 150%
 
     # V10: meta_controller — system-health aggression multiplier.
     # V10 adds volatility param (atr_pct already computed above) and hard 0.0 stop.
@@ -930,6 +1086,27 @@ def handle_signal(signal):
         print(f"    portfolio gate: meta_hard_stop  DD={_dd_mc:.1%}  sym={sym}")
         return
     size *= _meta
+
+    # ── V10.8: Regime Transition Prediction ───────────────────────────────────
+    # Scale new position down if a regime switch is predicted; exit open weak
+    # positions already in the transitioning regime (risk_ev < 0.05).
+    _pred_reg = reg
+    try:
+        from src.services.regime_predictor import predicted_regime as _pred_fn
+        _pred_reg = _pred_fn(signal, reg, _meta_mode_pol)
+    except Exception:
+        pass
+    if _pred_reg != reg:
+        size *= 0.85
+        print(f"    regime_pred[v10.8]: {reg}→{_pred_reg}  size×0.85")
+        for _psym, _ppos in list(_positions.items()):
+            if (_ppos.get("signal", {}).get("regime", "") == reg
+                    and _ppos.get("risk_ev", 0.0) < 0.05):
+                rotate_position(_psym)
+                print(f"    regime_pred[v10.8]: weak exit  sym={_psym}  ev<0.05")
+    print(f"    policy[v10.7]: mode={_meta_mode_pol}  pm={_pm:.3f}  "
+          f"policy_ev={_policy_ev:.4f}  risk_ev={_raw_ev_pol:.4f}  "
+          f"pred_regime={_pred_reg}")
 
     # V10.1: confidence → size coupling.
     # signal.confidence is from signal_generator (penalised by HIGH_VOL×0.5,
