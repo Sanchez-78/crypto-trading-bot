@@ -27,8 +27,12 @@ from src.services.portfolio_discovery import get_active_symbols
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _stream_url(symbols: list[str]) -> str:
-    streams = "/".join(f"{s.lower()}@bookTicker" for s in symbols)
-    return f"wss://stream.binance.com:9443/stream?streams={streams}"
+    parts = []
+    for s in symbols:
+        sl = s.lower()
+        parts.append(f"{sl}@bookTicker")
+        parts.append(f"{sl}@depth20@100ms")
+    return f"wss://stream.binance.com:9443/stream?streams={'/'.join(parts)}"
 
 
 # ── WebSocket callbacks ───────────────────────────────────────────────────────
@@ -40,7 +44,21 @@ def _on_open(ws):
 
 def _on_message(ws, raw):
     try:
-        data = json.loads(raw).get("data", {})
+        msg    = json.loads(raw)
+        stream = msg.get("stream", "")
+        data   = msg.get("data", {})
+
+        # ── @depth20@100ms — Level-2 order book snapshot ─────────────────────
+        if "@depth20" in stream:
+            sym = stream.split("@")[0].upper()
+            bids = data.get("bids", [])
+            asks = data.get("asks", [])
+            if sym and (bids or asks):
+                from src.services.order_book_depth import update_depth
+                update_depth(sym, bids, asks)
+            return
+
+        # ── @bookTicker — best bid/ask + OBI ─────────────────────────────────
         bid = float(data.get("b", 0))
         ask = float(data.get("a", 0))
         if bid <= 0 or ask <= 0:

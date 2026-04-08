@@ -30,7 +30,7 @@ METRICS = {
 _last_prices    = {}
 _last_signals   = {}
 _sym_stats      = {}
-_close_reasons  = {"TP": 0, "SL": 0, "trail": 0, "timeout": 0}
+_close_reasons  = {"TP": 0, "SL": 0, "trail": 0, "timeout": 0, "wall_exit": 0}
 _regime_stats   = {}   # regime -> {"wins": int, "trades": int}
 
 # Ring-buffers: O(1) append+auto-evict; no manual pop(0) needed

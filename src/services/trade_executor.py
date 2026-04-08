@@ -1432,6 +1432,31 @@ def on_price(data):
         elif pos["action"] == "BUY"  and curr <= pos["sl"]: reason = "SL"
         elif pos["action"] == "SELL" and curr >= pos["sl"]: reason = "SL"
 
+    # ── L2 sell/buy wall exit — proactive exit before order book barrier ─────
+    # Fires only when position is already profitable (move ≥ 0.10%) to avoid
+    # noise-triggered exits in flat/losing trades.  Detects when a massive
+    # opposite-side wall sits within WALL_BAND_PCT (0.3%) of current price:
+    #   BUY  position + sell wall above  → exit before wall caps upside
+    #   SELL position + buy wall below   → exit before wall caps downside
+    # Skipped when trailing stop is already active (Chandelier owns the exit).
+    # Skipped post-partial-taken: SL already at breakeven, risk is minimal.
+    if reason is None and not pos["is_trailing"] and not pos.get("partial_taken"):
+        try:
+            from src.services.order_book_depth import (
+                is_sell_wall, is_buy_wall, MIN_PROFIT_TO_EXIT)
+            if pos["action"] == "BUY" and move >= MIN_PROFIT_TO_EXIT:
+                if is_sell_wall(sym, curr):
+                    reason = "wall_exit"
+                    print(f"    🧱 {sym.replace('USDT','')} SELL_WALL detected  "
+                          f"move={move*100:.2f}%  → proactive exit")
+            elif pos["action"] == "SELL" and move >= MIN_PROFIT_TO_EXIT:
+                if is_buy_wall(sym, curr):
+                    reason = "wall_exit"
+                    print(f"    🧱 {sym.replace('USDT','')} BUY_WALL detected  "
+                          f"move={move*100:.2f}%  → proactive exit")
+        except Exception:
+            pass
+
     # V9 early exit: negative-EV pair that is losing → don't hold to full timeout.
     # Rationale: if risk_ev(sym, reg) < -0.1 (statistically confirmed negative edge)
     # AND trade is currently down 0.2%+ after at least 5 ticks, there's no reason
