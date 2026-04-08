@@ -469,26 +469,11 @@ def on_price(data):
         track_filtered()
         return
 
-    # ── Session gate (UTC-based, research-backed) ─────────────────────────────
-    # Research: CoinMetrics data confirms 08:00-21:00 UTC has peak liquidity.
-    # Asia session (21:00-08:00 UTC): wider spreads, fake breakouts, bot noise.
-    # Bypassed during bootstrap (<150 trades) to preserve learning data flow —
-    # the session filter adds quality filtering, not raw volume suppression.
-    try:
-        from src.services.learning_event import get_metrics as _lgm
-        _session_gate_active = _lgm().get("trades", 0) >= 150
-    except Exception:
-        _session_gate_active = True
-    _sess_ok, _sess_quality = _session_ok()
-    if _session_gate_active and not _sess_ok:
-        track_filtered()
-        return
-
     # ── Relative volatility filter ────────────────────────────────────────────
     # Recent ATR vs baseline ATR ratio < 0.4 → market too flat to trade.
     # Research (ScienceDirect 2018): vol regime filtering is highest-confidence
-    # PF improvement. Bypassed during bootstrap for data collection.
-    if _session_gate_active and not _relative_vol_ok(hist):
+    # PF improvement. Always active — 24h trading, no session gate.
+    if not _relative_vol_ok(hist):
         track_filtered()
         return
 
@@ -569,10 +554,7 @@ def on_price(data):
     if reg not in ("RANGING", "QUIET_RANGE"):
         if _counter_trend: confidence *= 0.6   # counter-trend signal
         if _weak_spread:   confidence *= 0.7   # weak EMA separation
-    # Session quality penalty — weekend signals get lower confidence
-    # (already gated during Asia session; this handles weekend daytime)
-    if _session_gate_active:
-        confidence *= _sess_quality
+    # Session quality penalty removed — 24h trading, no session gate.
 
     vol_pct = atr_v / p if p else 0
 
