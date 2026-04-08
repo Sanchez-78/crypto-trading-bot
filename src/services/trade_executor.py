@@ -1278,6 +1278,7 @@ def handle_signal(signal):
         "partial_tp_mult":  _partial_tp_mult,  # V10.8: scaled TP ATR multiplier
         "pred_regime":      _pred_reg,         # V10.8: predicted regime at open
         "soft_exit_done":   False,             # V10.8: one-shot soft preemptive exit
+        "fw_score":         _fw_score,         # V10.9: feature-weighted score at open
     }
     tag = "[force]" if force else ""
     print(f"    exec{tag}: slip={fill_slip:.5f}  fee={actual_fee_rt:.5f}  fr={fill_rate(sym):.2f}  "
