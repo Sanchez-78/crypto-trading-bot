@@ -303,18 +303,14 @@ def rotate_position(sym):
 
 # ── V10.5 helpers — position scaling & pyramiding ─────────────────────────────
 
-def should_add_to_position(pos, curr):
-    """V10.5: True when a winning position qualifies for a pyramid add.
+def should_add_to_position(pos, curr, prev):
+    """V10.5b: True when a winning position qualifies for a momentum-confirmed pyramid add.
 
-    Conditions (all must pass):
-      move  ≥ +0.4%    — in profit, covers fee before adding more exposure
-      risk_ev ≥ 0.1    — confirmed positive edge (not bootstrap noise)
-      adds  < 2        — hard cap: at most two scale-ins per position
-      not is_trailing  — Chandelier already managing exit; don't change size
-      not HIGH_VOL     — wide-spread regime, adding amplifies whipsaw risk
-      not partial_taken — partial TP already halved size; no further adds
-      capital headroom — total deployed stays under _MAX_CAP_USED
-      total size ≤ 2×  — never more than double original_size
+    All V10.5 conditions plus two new guards:
+      momentum  — price must still be moving in trade direction (curr tick vs prev tick)
+                  prevents late adds at the top/bottom of a move
+      near-trail — block adds when move > 0.55% (trailing activates at 0.60%)
+                  adding just before trail would increase size right at peak exposure
     """
     if pos.get("is_trailing", False):
         return False
@@ -332,6 +328,16 @@ def should_add_to_position(pos, curr):
     if move < 0.004:
         return False
     if pos.get("risk_ev", 0.0) < 0.1:
+        return False
+
+    # V10.5b: momentum confirmation — price must continue moving in trade direction
+    if pos["action"] == "BUY"  and curr <= prev:
+        return False
+    if pos["action"] == "SELL" and curr >= prev:
+        return False
+
+    # V10.5b: near-trail guard — avoid adding within 0.05% of trailing activation
+    if move > 0.0055:
         return False
 
     # Cap: size + add must not exceed 2× original
@@ -395,9 +401,26 @@ def should_reduce_position(pos, curr):
     return True
 
 
-def reduce_position(pos):
-    """V10.5: Halve a losing position to de-risk early."""
-    pos["size"]    *= 0.5
+def reduce_position(pos, curr):
+    """V10.5b: Adaptively cut a losing position — severity scales with loss depth.
+
+    move < -0.6%  → keep 30% (heavy loss, cut hard)
+    move < -0.4%  → keep 50% (moderate loss, standard halve)
+    move < -0.3%  → keep 70% (mild loss, light trim)
+
+    Smoother than the fixed 50% cut: shallow losses get a light trim that
+    preserves more upside if price reverses; deep losses get cut hard to
+    protect remaining capital.
+    """
+    entry = pos["entry"]
+    move  = (curr - entry) / entry if pos["action"] == "BUY" \
+            else (entry - curr) / entry
+
+    if   move < -0.006:  factor = 0.3
+    elif move < -0.004:  factor = 0.5
+    else:                factor = 0.7
+
+    pos["size"]    *= factor
     pos["reduced"]  = True
     _risk_guard()
 
@@ -1084,18 +1107,19 @@ def on_price(data):
         print(f"    📦 {_short_p} PARTIAL TP 50%  "
               f"pnl={partial:+.6f}  move={move*100:.2f}%  SL→breakeven")
 
-    # V10.5: position scaling — pyramid winners / de-risk losers
+    # V10.5b: position scaling — pyramid winners / de-risk losers
     # Runs after partial TP (which can change size/sl) but before exit checks.
-    if should_add_to_position(pos, curr):
+    _prev = pos.get("prev_price", curr)   # price from previous tick (neutral on tick 1)
+    if should_add_to_position(pos, curr, _prev):
         add_to_position(pos, curr)
         entry = pos["entry"]   # refresh local var — exit math must use blended entry
         short_p = sym.replace("USDT", "")
         print(f"    📈 {short_p} PYRAMID add#{pos['adds']}  "
               f"size={pos['size']:.4f}  avg_entry={entry:.4f}  move={move*100:.2f}%")
     if should_reduce_position(pos, curr):
-        reduce_position(pos)
+        reduce_position(pos, curr)
         short_p = sym.replace("USDT", "")
-        print(f"    ✂️  {short_p} REDUCE x0.5  "
+        print(f"    ✂️  {short_p} REDUCE  "
               f"size={pos['size']:.4f}  move={move*100:.2f}%  ev={pos.get('risk_ev',0):.3f}")
 
     # V10.2: adaptive SL tightening — protect profits in pre-trail window (0.3%-0.6%)
@@ -1168,6 +1192,9 @@ def on_price(data):
     timeout = dynamic_hold_extension(timeout, _ev_hold, atr, entry)
     if reason is None and pos["ticks"] >= timeout:
         reason = "timeout"
+
+    # V10.5b: store current price as prev for next tick's momentum check
+    pos["prev_price"] = curr
 
     if reason is None:
         return
