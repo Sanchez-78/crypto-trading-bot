@@ -66,7 +66,7 @@ def init_firebase():
     cred = credentials.Certificate(json.loads(base64.b64decode(key)))
     firebase_admin.initialize_app(cred)
     db = firestore.client()
-    print("🔥 Firebase connected")
+    print("[Firebase] connected")
     return db
 
 
