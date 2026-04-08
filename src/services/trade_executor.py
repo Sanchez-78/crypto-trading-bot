@@ -1104,9 +1104,34 @@ def handle_signal(signal):
                     and _ppos.get("risk_ev", 0.0) < 0.05):
                 rotate_position(_psym)
                 print(f"    regime_pred[v10.8]: weak exit  sym={_psym}  ev<0.05")
-    print(f"    policy[v10.7]: mode={_meta_mode_pol}  pm={_pm:.3f}  "
+
+    # ── V10.8: Adaptive max position cap ──────────────────────────────────────
+    # defensive / HIGH_VOL → 0.70×base; aggressive + trend → 1.30×base.
+    # Cap applied here so Kelly, meta, and regime penalty are preserved upstream.
+    _max_pos = base
+    try:
+        from src.services.policy_layer import adaptive_max_pos as _amp
+        _max_pos = _amp(base, _meta_mode_pol, _pred_reg)
+    except Exception:
+        pass
+    if size > _max_pos:
+        print(f"    max_pos[v10.8]: {size:.4f}→{_max_pos:.4f}  "
+              f"mode={_meta_mode_pol}  pred={_pred_reg}")
+        size = _max_pos
+
+    # ── V10.8: Policy-scaled partial TP multiplier ────────────────────────────
+    # healthy system (pm>1) → fires later (let winners run);
+    # defensive (pm<1) → fires earlier (lock gains sooner). Stored in position.
+    _partial_tp_mult = 1.5
+    try:
+        from src.services.policy_layer import scaled_partial_tp as _stp
+        _partial_tp_mult = _stp(1.5, _pm)
+    except Exception:
+        pass
+
+    print(f"    policy[v10.7/10.8]: mode={_meta_mode_pol}  pm={_pm:.3f}  "
           f"policy_ev={_policy_ev:.4f}  risk_ev={_raw_ev_pol:.4f}  "
-          f"pred_regime={_pred_reg}")
+          f"pred={_pred_reg}  max_pos={_max_pos:.4f}  ptp×={_partial_tp_mult:.2f}")
 
     # V10.1: confidence → size coupling.
     # signal.confidence is from signal_generator (penalised by HIGH_VOL×0.5,
@@ -1215,6 +1240,10 @@ def handle_signal(signal):
         "original_size": size,   # V10.5: pyramid cap — total size ≤ 2× this
         "adds":          0,      # V10.5: number of scale-ins so far (max 2)
         "reduced":       False,  # V10.5: True once de-risk cut has fired
+        "policy_mult":      _pm,               # V10.7: policy multiplier at open
+        "partial_tp_mult":  _partial_tp_mult,  # V10.8: scaled TP ATR multiplier
+        "pred_regime":      _pred_reg,         # V10.8: predicted regime at open
+        "soft_exit_done":   False,             # V10.8: one-shot soft preemptive exit
     }
     tag = "[force]" if force else ""
     print(f"    exec{tag}: slip={fill_slip:.5f}  fee={actual_fee_rt:.5f}  fr={fill_rate(sym):.2f}  "
@@ -1261,20 +1290,47 @@ def on_price(data):
         pos["is_trailing"] = True
         print(f"    🚀 {sym} TRAILING STOP ACTIVOVÁN! Zisk: {move*100:.2f}%")
 
-    # ── Partial TP: exit 50% at 1.5×ATR profit, move SL to breakeven ─────────
+    # ── V10.8: Soft preemptive exit — de-risk on predicted regime transition ──
+    # Fires once when the regime is predicted to change AND position gain is
+    # small (< 0.15×ATR) — not worth waiting in a transitioning market.
+    # Reduces size 50% to lock partial value; guarded by soft_exit_done flag.
+    # Skipped when already partial-taken, reduced, or trailing (those handlers
+    # manage sizing independently and must not be double-cut).
+    if not pos.get("soft_exit_done") and not pos.get("partial_taken") \
+            and not pos.get("reduced") and not pos.get("is_trailing"):
+        _reg_op   = pos.get("signal", {}).get("regime", "RANGING")
+        _pred_soft = _reg_op
+        try:
+            from src.services.regime_predictor import predicted_regime as _pf
+            _pred_soft = _pf(pos["signal"], _reg_op, _meta_state["mode"])
+        except Exception:
+            pass
+        if _pred_soft != _reg_op:
+            _atr_soft     = max(pos["signal"].get("atr", 0) or 0, entry * 0.003)
+            _atr_pct_soft = _atr_soft / max(entry, 1e-9)
+            if move < 0.15 * _atr_pct_soft:   # small gain — not worth holding
+                pos["size"]          *= 0.5
+                pos["soft_exit_done"] = True
+                _risk_guard()
+                print(f"    🔀 {sym.replace('USDT','')} SOFT_EXIT 50%  "
+                      f"{_reg_op}→{_pred_soft}  move={move*100:.2f}%")
+
+    # ── Partial TP: exit 50% at scaled×ATR profit, move SL to breakeven ──────
+    # V10.8: threshold = partial_tp_mult × ATR (stored at open, driven by pm).
+    # Higher pm (healthy/aggressive) → fires later; lower pm (defensive) → sooner.
     # Research (Mind Math Money / Semantic Scholar): partial scale-out at an
     # intermediate target is "the most practical approach" — locks in real gains
     # while preserving upside on the remaining half. Directly reduces timeouts:
-    # positions that reach 1.5×ATR profit then reverse now book 50% of that gain
+    # positions that reach the threshold then reverse now book 50% of that gain
     # instead of timing out at zero. After partial exit, SL moves to entry
     # (breakeven) — remaining half is risk-free. Chandelier trail continues.
     # Apply the same ATR floor as compute_tp_sl (entry×0.003 minimum).
     # Without the floor, raw tick-level ATR (e.g. 0.00006 for ADA at $0.25) makes
     # the threshold ~0.036% — partial TP fires on noise before fees are covered.
-    # With floor: threshold = 1.5×0.3% = 0.45% — well above the 0.15% round-trip fee.
-    _atr_partial = max(pos["signal"].get("atr", 0) or 0, entry * 0.003)
-    _fee_p       = pos.get("fee_rt", FEE_RT)
-    if not pos.get("partial_taken") and move >= 1.5 * (_atr_partial / max(entry, 1e-9)) and move > _fee_p:
+    _atr_partial  = max(pos["signal"].get("atr", 0) or 0, entry * 0.003)
+    _fee_p        = pos.get("fee_rt", FEE_RT)
+    _ptp_mult     = pos.get("partial_tp_mult", 1.5)
+    if not pos.get("partial_taken") and move >= _ptp_mult * (_atr_partial / max(entry, 1e-9)) and move > _fee_p:
         partial = (move - _fee_p) * pos["size"] * 0.5
         pos["partial_taken"] = True
         pos["realized_pnl"]  = pos.get("realized_pnl", 0.0) + partial

@@ -46,3 +46,35 @@ def compute_policy_ev(risk_ev_val: float, meta_mode: str, regime_alignment: floa
     """
     pm = policy_multiplier(meta_mode, regime_alignment, confidence, recent_winrate)
     return risk_ev_val * pm, pm
+
+
+# ── V10.8 helpers ──────────────────────────────────────────────────────────────
+
+def adaptive_max_pos(base_size: float, meta_mode: str, predicted_regime: str) -> float:
+    """Return the maximum allowed position size given system health and predicted regime.
+
+    defensive OR predicted HIGH_VOL → cap at 0.70 × base_size (risk-off)
+    aggressive AND predicted trend   → cap at 1.30 × base_size (risk-on)
+    else                             → base_size unchanged
+
+    Applied as a hard cap — all upstream sizing (Kelly, meta, regime penalty)
+    is preserved; this only prevents the final size from exceeding the ceiling.
+    """
+    if meta_mode == "defensive" or predicted_regime == "HIGH_VOL":
+        return base_size * 0.70
+    if meta_mode == "aggressive" and predicted_regime in ("BULL_TREND", "BEAR_TREND"):
+        return base_size * 1.30
+    return base_size
+
+
+def scaled_partial_tp(base_mult: float, policy_mult: float) -> float:
+    """Return the ATR multiplier at which partial TP fires, scaled by policy state.
+
+    base_mult = 1.5 (current system default: exit 50% at 1.5×ATR profit).
+
+    Higher policy_mult (aggressive/healthy) → fires later → let winners run more.
+    Lower  policy_mult (defensive/poor)     → fires earlier → lock gains sooner.
+
+    Clamp [1.0, 2.5]: never below 1×ATR (covers fees) or above 2.5×ATR (unreachable).
+    """
+    return max(1.0, min(2.5, base_mult * policy_mult))
