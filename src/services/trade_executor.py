@@ -1105,9 +1105,23 @@ def handle_signal(signal):
                 rotate_position(_psym)
                 print(f"    regime_pred[v10.8]: weak exit  sym={_psym}  ev<0.05")
 
+    # ── V10.5: Correlation size penalty ──────────────────────────────────────
+    # Spec chain: cluster_penalty → max_pos cap → …
+    # Applied BEFORE max_pos so the cap sees already-penalised size.
+    # Soft multiplier [0.70, 1.0] — complements correlation_shield hard block.
+    _corr_penalty = 1.0
+    try:
+        from src.services.execution import correlation_size_penalty as _csp
+        _corr_penalty = _csp(sym, signal.get("action", ""), _positions)
+    except Exception:
+        pass
+    if _corr_penalty < 1.0:
+        size *= _corr_penalty
+        print(f"    corr_penalty[v10.5]: ×{_corr_penalty:.2f}  sym={sym}")
+
     # ── V10.8: Adaptive max position cap ──────────────────────────────────────
+    # Spec chain: cluster_penalty → max_pos cap (this block).
     # defensive / HIGH_VOL → 0.70×base; aggressive + trend → 1.30×base.
-    # Cap applied here so Kelly, meta, and regime penalty are preserved upstream.
     _max_pos = base
     try:
         from src.services.policy_layer import adaptive_max_pos as _amp
@@ -1129,22 +1143,10 @@ def handle_signal(signal):
     except Exception:
         pass
 
-    # ── V10.5: Correlation size penalty ──────────────────────────────────────
-    # Soft multiplier [0.70, 1.0] for same-direction cluster risk.
-    # Complements correlation_shield hard block — reduces without gating.
-    _corr_penalty = 1.0
-    try:
-        from src.services.execution import correlation_size_penalty as _csp
-        _corr_penalty = _csp(sym, signal.get("action", ""), _positions)
-    except Exception:
-        pass
-    if _corr_penalty < 1.0:
-        size *= _corr_penalty
-        print(f"    corr_penalty[v10.5]: ×{_corr_penalty:.2f}  sym={sym}")
-
     print(f"    policy[v10.7/10.8]: mode={_meta_mode_pol}  pm={_pm:.3f}  "
           f"policy_ev={_policy_ev:.4f}  risk_ev={_raw_ev_pol:.4f}  "
-          f"pred={_pred_reg}  max_pos={_max_pos:.4f}  ptp×={_partial_tp_mult:.2f}")
+          f"pred={_pred_reg}  max_pos={_max_pos:.4f}  "
+          f"ptp×={_partial_tp_mult:.2f}  corr×={_corr_penalty:.2f}  sxd=False")
 
     # V10.1: confidence → size coupling.
     # signal.confidence is from signal_generator (penalised by HIGH_VOL×0.5,
