@@ -301,6 +301,107 @@ def rotate_position(sym):
         _positions[sym]["force_close"] = True
 
 
+# ── V10.5 helpers — position scaling & pyramiding ─────────────────────────────
+
+def should_add_to_position(pos, curr):
+    """V10.5: True when a winning position qualifies for a pyramid add.
+
+    Conditions (all must pass):
+      move  ≥ +0.4%    — in profit, covers fee before adding more exposure
+      risk_ev ≥ 0.1    — confirmed positive edge (not bootstrap noise)
+      adds  < 2        — hard cap: at most two scale-ins per position
+      not is_trailing  — Chandelier already managing exit; don't change size
+      not HIGH_VOL     — wide-spread regime, adding amplifies whipsaw risk
+      not partial_taken — partial TP already halved size; no further adds
+      capital headroom — total deployed stays under _MAX_CAP_USED
+      total size ≤ 2×  — never more than double original_size
+    """
+    if pos.get("is_trailing", False):
+        return False
+    if pos.get("partial_taken", False):
+        return False
+    if pos.get("adds", 0) >= 2:
+        return False
+    reg = pos.get("signal", {}).get("regime", "")
+    if reg == "HIGH_VOL":
+        return False
+
+    entry = pos["entry"]
+    move  = (curr - entry) / entry if pos["action"] == "BUY" \
+            else (entry - curr) / entry
+    if move < 0.004:
+        return False
+    if pos.get("risk_ev", 0.0) < 0.1:
+        return False
+
+    # Cap: size + add must not exceed 2× original
+    orig     = pos.get("original_size", pos["size"])
+    max_add  = orig * 2.0 - pos["size"]
+    if max_add <= 0:
+        return False
+
+    # Capital headroom: adding half current size must not breach _MAX_CAP_USED
+    size_add = min(pos["size"] * 0.5, max_add)
+    if (capital_usage() + size_add / _TOTAL_CAPITAL) >= _MAX_CAP_USED:
+        return False
+
+    return True
+
+
+def add_to_position(pos, curr):
+    """V10.5: Scale into a winning position (VWAP entry, capped at 2×original).
+
+    size_add = min(current_size × 0.5, remaining room to 2× cap)
+    New entry = VWAP of old position and add — accurate blended cost basis.
+    _risk_guard() is called after to ensure _MAX_TOTAL_RISK is respected.
+    """
+    orig     = pos.get("original_size", pos["size"])
+    max_add  = orig * 2.0 - pos["size"]
+    size_add = min(pos["size"] * 0.5, max_add)
+
+    old_size  = pos["size"]
+    old_entry = pos["entry"]
+    new_size  = old_size + size_add
+
+    # VWAP blended entry — correct for unequal lot sizes
+    pos["entry"] = (old_entry * old_size + curr * size_add) / new_size
+    pos["size"]  = new_size
+    pos["adds"]  = pos.get("adds", 0) + 1
+    _risk_guard()
+
+
+def should_reduce_position(pos, curr):
+    """V10.5: True when a losing position with negative edge should be halved.
+
+    Conditions (all must pass):
+      move < -0.3%     — position is losing (below noise floor)
+      risk_ev < 0.0    — edge is confirmed negative (not just unlucky)
+      not reduced      — only one reduction allowed per position
+      not partial_taken — partial TP already handled sizing; don't double-cut
+    """
+    if pos.get("reduced", False):
+        return False
+    if pos.get("partial_taken", False):
+        return False
+
+    entry = pos["entry"]
+    move  = (curr - entry) / entry if pos["action"] == "BUY" \
+            else (entry - curr) / entry
+    if move > -0.003:
+        return False
+    if pos.get("risk_ev", 0.0) >= 0.0:
+        return False
+
+    return True
+
+
+def reduce_position(pos):
+    """V10.5: Halve a losing position to de-risk early."""
+    pos["size"]    *= 0.5
+    pos["reduced"]  = True
+    _risk_guard()
+
+
 def compute_tp_sl(entry, direction, atr=0.003, sym=None, reg=None):
     """Absolute TP/SL prices.
 
@@ -911,6 +1012,9 @@ def handle_signal(signal):
         "risk_ev":       _ev_open,  # V10.4: stored for position_score comparisons
         "open_ts":       time.time(),  # V10.4b: for time-decay in position_score
         "live_pnl":      0.0,    # V10.4b: updated each tick for profit protection
+        "original_size": size,   # V10.5: pyramid cap — total size ≤ 2× this
+        "adds":          0,      # V10.5: number of scale-ins so far (max 2)
+        "reduced":       False,  # V10.5: True once de-risk cut has fired
     }
     tag = "[force]" if force else ""
     print(f"    exec{tag}: slip={fill_slip:.5f}  fee={actual_fee_rt:.5f}  fr={fill_rate(sym):.2f}  "
@@ -979,6 +1083,20 @@ def on_price(data):
         _short_p = sym.replace("USDT", "")
         print(f"    📦 {_short_p} PARTIAL TP 50%  "
               f"pnl={partial:+.6f}  move={move*100:.2f}%  SL→breakeven")
+
+    # V10.5: position scaling — pyramid winners / de-risk losers
+    # Runs after partial TP (which can change size/sl) but before exit checks.
+    if should_add_to_position(pos, curr):
+        add_to_position(pos, curr)
+        entry = pos["entry"]   # refresh local var — exit math must use blended entry
+        short_p = sym.replace("USDT", "")
+        print(f"    📈 {short_p} PYRAMID add#{pos['adds']}  "
+              f"size={pos['size']:.4f}  avg_entry={entry:.4f}  move={move*100:.2f}%")
+    if should_reduce_position(pos, curr):
+        reduce_position(pos)
+        short_p = sym.replace("USDT", "")
+        print(f"    ✂️  {short_p} REDUCE x0.5  "
+              f"size={pos['size']:.4f}  move={move*100:.2f}%  ev={pos.get('risk_ev',0):.3f}")
 
     # V10.2: adaptive SL tightening — protect profits in pre-trail window (0.3%-0.6%)
     # Not applied during trailing (Chandelier owns the stop; pos["sl"] not read)
