@@ -513,12 +513,61 @@ def execution_alpha(sym, ob):
     return 0.02 * (imb - 1.0) * strength - 0.01 * penalty
 
 
+def ev_tier_mult(ev: float) -> float:
+    """V10.5: 6-tier EV capital concentration multiplier.
+
+    Maps a risk_ev value to a discrete size multiplier so proven winners receive
+    more capital and confirmed losers are starved — without cutting them off
+    entirely (recovery is still possible).
+
+    Tier table (mirrors the spec exactly):
+      ev > +0.20 → ×2.0  dominant edge (STO-type converged signal)
+      ev > +0.10 → ×1.5  strong, data-confirmed edge
+      ev > +0.05 → ×1.0  neutral-positive (no boost, no penalty)
+      ev > -0.05 → ×0.6  EV deadzone — near-zero is noise, not signal
+      ev > -0.10 → ×0.3  weak loser — still learning, halved allocation
+      else       → ×0.1  confirmed negative — near-off, data-collection only
+
+    Bootstrap-safe: ev=0.0 (cold start) falls in deadzone → ×0.6, slightly
+    reduced but not killed so pairs accumulate data without dominating capital.
+    """
+    if ev > 0.20:   return 2.0
+    if ev > 0.10:   return 1.5
+    if ev > 0.05:   return 1.0
+    if ev > -0.05:  return 0.6
+    if ev > -0.10:  return 0.3
+    return 0.1
+
+
+def correlation_size_penalty(sym: str, direction: str, positions: dict) -> float:
+    """V10.5: Soft size reduction for same-direction position cluster.
+
+    Pairs with correlation_shield hard block (fires at 0.85 correlation).
+    This is a continuous penalty that reduces — not blocks — sizing when
+    same-direction positions already exist, limiting cluster risk.
+
+    same_dir = 0 → ×1.00  (no other positions in same direction)
+    same_dir = 1 → ×0.85  (one existing — moderate reduction)
+    same_dir ≥ 2 → ×0.70  (two or more — stronger reduction)
+
+    Deterministic: counts live positions only, no randomness.
+    """
+    same_dir = sum(1 for p in positions.values() if p.get("action") == direction)
+    if same_dir == 0:   return 1.00
+    if same_dir == 1:   return 0.85
+    return 0.70
+
+
 def final_size(sym, reg, base, positions, ob=None):
     """
-    capital_alloc × exposure_scale × leverage(sym,reg) × execution_alpha.
+    capital_alloc × ev_tier_mult × exposure_scale × leverage(sym,reg) × execution_alpha.
+
     detect_regime(sym) infers regime from returns_hist; overrides signal regime
     when not RANGE (i.e. when there is sufficient history to trust it).
     Returns 0 if exposure_scale == 0 (fully deployed).
+
+    EV concentration via ev_tier_mult(): winners dominate, losers starve.
+    Bootstrap ev=0.0 falls in deadzone (×0.6) — reduced but not killed.
     """
     scale = exposure_scale(positions)
     if scale == 0.0:
@@ -526,35 +575,8 @@ def final_size(sym, reg, base, positions, ob=None):
     det_reg = detect_regime(sym)
     eff_reg = det_reg if det_reg != "RANGING" else reg
     alloc   = min(capital_alloc(sym, eff_reg, base, positions), 0.25)
-    # EV capital 4-tier contrast — winners dominate, losers starve.
-    # risk_ev=0.0 during bootstrap (n<10 → true_ev floor) → neutral tier,
-    # so exploration pairs get full softmax allocation before data exists.
-    # Tier split:
-    #   > 0.15 → ×1.6  strong edge: proven by data, let it run
-    #   > 0.00 → ×1.0  neutral: positive but not confirmed
-    #   > -0.10 → ×0.5  weak negative: reduce but don't kill (might recover)
-    #   ≤ -0.10 → ×0.2  bad: almost off — EV confirmed negative
-    # 6-tier EV capital concentration:
-    #   > 0.20 → ×2.0  dominant winner (STO-type converged)
-    #   > 0.10 → ×1.5  strong edge
-    #   > 0.05 → ×1.0  neutral-positive (no boost, no penalty)
-    #   > -0.05 → ×0.6  EV deadzone — near-zero is noise, not edge
-    #   > -0.10 → ×0.3  weak loser
-    #   else   → ×0.1  confirmed bad — almost off
-    # Bootstrap 0.0 falls in deadzone (×0.6) — slightly reduced but not killed.
-    _pev = risk_ev(sym, eff_reg)
-    if _pev > 0.20:
-        alloc = min(alloc * 2.0, 0.25)
-    elif _pev > 0.10:
-        alloc = min(alloc * 1.5, 0.25)
-    elif _pev > 0.05:
-        pass                             # ×1.0
-    elif _pev > -0.05:
-        alloc *= 0.6                     # deadzone — noise, not edge
-    elif _pev > -0.10:
-        alloc *= 0.3
-    else:
-        alloc *= 0.1
+    _pev    = risk_ev(sym, eff_reg)
+    alloc   = min(alloc * ev_tier_mult(_pev), 0.25)
     size    = alloc * scale * leverage(sym, eff_reg)
     if ob is not None:
         size *= (1.0 + execution_alpha(sym, ob))
