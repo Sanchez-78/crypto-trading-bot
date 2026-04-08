@@ -36,6 +36,7 @@ db = None
 _HISTORY_CACHE  = {"data": [],   "ts": 0}
 _WEIGHTS_CACHE  = {"data": None, "ts": 0}
 _SIGNALS_CACHE  = {"data": [],   "ts": 0}
+_RETRY_QUEUE    = []   # trades buffered after save_batch failure; flushed on next call
 
 # ── Performance tier ───────────────────────────────────────────────────────────
 # False = conservative (default).  True = performance (flip when WR>45%, PF>1.5)
@@ -160,23 +161,43 @@ def save_batch(batch):
     Atomic WriteBatch write.  Single round-trip regardless of batch size.
     Updates local history cache so next load_history() uses in-memory data.
     Write quota: 1 write per document (same as individual adds).
+
+    DB-vanish resilience: on first failure waits 3 s and retries once.
+    If the retry also fails the batch is appended to _RETRY_QUEUE so the
+    next successful save_batch call will flush it.  Prevents silent data
+    loss when Firebase is temporarily unavailable (Railway restart, quota
+    spike, network blip).
     """
     if db is None:
         return
-    try:
-        slimmed    = [_slim_trade(t) for t in batch]
-        fb_batch   = db.batch()
+
+    # Drain any previously failed batches first
+    if _RETRY_QUEUE:
+        batch = list(_RETRY_QUEUE) + list(batch)
+        _RETRY_QUEUE.clear()
+
+    def _attempt(b):
+        slimmed  = [_slim_trade(t) for t in b]
+        fb_batch = db.batch()
         for item in slimmed:
             fb_batch.set(db.collection(col("trades")).document(), item)
         fb_batch.commit()
-
-        # Keep cache fresh – prepend new trades, cap at limit
         _HISTORY_CACHE["data"] = (slimmed + _HISTORY_CACHE["data"])[:HISTORY_LIMIT]
         _HISTORY_CACHE["ts"]   = time.time()
+        return len(b)
 
-        print(f"💾 Firebase: saved {len(batch)} trades (batch write)")
+    try:
+        n = _attempt(batch)
+        print(f"💾 Firebase: saved {n} trades (batch write)")
     except Exception as e:
-        print(f"❌ save_batch: {e}")
+        print(f"⚠️  save_batch failed ({e}) — retrying in 3 s …")
+        time.sleep(3)
+        try:
+            n = _attempt(batch)
+            print(f"💾 Firebase: saved {n} trades (retry OK)")
+        except Exception as e2:
+            _RETRY_QUEUE.extend(batch)
+            print(f"❌ save_batch retry failed ({e2}) — {len(batch)} trades queued for next flush")
 
 
 def save_trade(trade, result):

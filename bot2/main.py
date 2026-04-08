@@ -519,7 +519,18 @@ def print_status():
 def main():
     init_firebase()
     daily_budget_report()
-    bootstrap_from_history(load_history())
+
+    _history = load_history()
+
+    # DB-vanish detection: Firebase connected but zero trades returned.
+    # Could be a genuine first run or a collection wipe.  Either way, the
+    # bot enters bootstrap mode (trades=0 < 150 threshold) automatically.
+    # Log clearly so the Railway log makes the cause obvious.
+    if _history is not None and len(_history) == 0:
+        print("⚠️  [DB_WIPE] Firebase returned 0 trades — starting in full bootstrap mode. "
+              "Session gate bypassed, debounce bypassed, force-trade guard active.")
+
+    bootstrap_from_history(_history)
     warmup()
 
     t = threading.Thread(target=start)
