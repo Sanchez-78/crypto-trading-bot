@@ -1452,6 +1452,26 @@ def handle_signal(signal):
         return
     size *= ctrl
 
+    # ── V10.11: Execution Quality Layer ──────────────────────────────────────
+    # Applied last in sizing chain — after all EV/policy/risk multipliers.
+    # Only hard block: extreme spread (> 0.15%). Everything else is a penalty.
+    try:
+        from src.services.execution_quality import exec_quality_score as _eqs
+        _eq = _eqs(sym, signal.get("action", "BUY"), entry, atr_pct, ob)
+        if _eq["skip"]:
+            print(f"    exec_quality[v10.11]: SKIP_SPREAD  "
+                  f"spread={_eq['spread']:.4f}>{0.0015:.4f}  sym={sym}")
+            return
+        _eq_mult = _eq["exec_quality"]
+        if _eq_mult < 1.0:
+            size *= _eq_mult
+        print(f"    exec_quality[v10.11]: "
+              f"exec_q={_eq_mult:.2f} spread={_eq['spread']:.4f} "
+              f"slip={_eq['slip']:.4f} fill={_eq['fill']:.2f} "
+              f"lat={_eq['lat']:.2f}")
+    except Exception as _eq_exc:
+        print(f"    exec_quality[v10.11]: skipped ({_eq_exc})")
+
     edge = net_edge(ws_adj, size, ob, FEE_RT, sym)
     if not cost_guard_bootstrap(edge):
         print(f"    portfolio gate: cost_guard  sym={sym}  "
