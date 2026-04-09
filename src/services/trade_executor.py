@@ -967,10 +967,20 @@ def handle_signal(signal):
                 _worst_eff = _wp10.get("efficiency_live",
                                        _wp10.get("efficiency", 0.0))
 
-                # Threshold: meta-adaptive (spec §4B)
-                _mode10 = _meta_state["mode"]
+                # Threshold: meta-adaptive (spec §4B) + V10.12 correlation adj
+                # Replacing worst_sym with a diversifying position → lower bar
+                # Replacing with a concentrating position → higher bar
+                _mode10  = _meta_state["mode"]
                 _eff_thr = 0.01 if _mode10 == "aggressive" else \
                            0.04 if _mode10 == "defensive"  else 0.02
+                try:
+                    from src.services.risk_engine import (
+                        replacement_correlation_adj as _rca)
+                    _corr_adj = _rca(signal.get("action", ""), regime,
+                                     _positions, _worst10)
+                    _eff_thr *= _corr_adj
+                except Exception:
+                    _corr_adj = 1.0
 
                 # All replacement conditions
                 _cond_A = _new_eff > _worst_eff + _eff_thr
@@ -984,9 +994,10 @@ def handle_signal(signal):
                     rotate_position(_worst10)
                     _pending_open.append(signal)
                     _last_replaced[_worst10] = _now
-                    print(f"    replace[v10.10]: {_worst10} "
+                    print(f"    replace[v10.10/v10.12]: {_worst10} "
                           f"(eff={_worst_eff:.4f}) ← {sym} "
-                          f"(eff={_new_eff:.4f})  thr={_eff_thr}  "
+                          f"(eff={_new_eff:.4f})  "
+                          f"thr={_eff_thr:.4f}  corr_adj×{_corr_adj:.2f}  "
                           f"mode={_mode10}")
                     return
 
@@ -1214,6 +1225,36 @@ def handle_signal(signal):
               f"mode={_meta_mode_pol}  pred={_pred_reg}")
         size = _max_pos
 
+    # ── V10.12: Portfolio risk budget constraint ───────────────────────────────
+    # Correlation-aware marginal VaR ensures the new position fits within the
+    # remaining risk budget without breaching the per-regime allocation.
+    # Uses estimated SL (tp_est/sl_est computed earlier from atr_pct) so no
+    # additional computation is needed — sl_pct is already available here.
+    # corr_size_factor() replaces the count-based correlation_size_penalty()
+    # with a regime-aware version that includes a hedge bonus (opposite dir →
+    # 1.10×) and a heavier same-regime penalty (same dir + same reg → 0.60×).
+    _sl_pct_rb = abs(sl_est - entry) / max(entry, 1e-9)
+    try:
+        from src.services.risk_engine import (
+            apply_risk_budget as _arb,
+            corr_size_factor  as _csf,
+            risk_report       as _rrpt,
+        )
+        # Regime-aware correlation factor (supplement to existing corr_penalty)
+        _csf_mult  = _csf(signal.get("action", ""), reg, _positions)
+        _size_pre  = size
+        size      *= _csf_mult
+        # Budget constraint — quadratic solve for max size within var cap
+        size       = _arb(size, _sl_pct_rb, signal.get("action", ""), reg, _positions)
+        if size < _size_pre * 0.95:   # log only when meaningfully constrained
+            _rb  = _rrpt(_positions)
+            print(f"    risk_engine[v10.12]: {_size_pre:.4f}→{size:.4f}  "
+                  f"csf×{_csf_mult:.2f}  "
+                  f"budget_used={_rb.get('budget_used_pct', 0):.1%}  "
+                  f"regime={reg}")
+    except Exception:
+        pass
+
     # ── V10.8: Policy-scaled partial TP multiplier ────────────────────────────
     # healthy system (pm>1) → fires later (let winners run);
     # defensive (pm<1) → fires earlier (lock gains sooner). Stored in position.
@@ -1225,11 +1266,13 @@ def handle_signal(signal):
         pass
 
     _repl_flag = signal.get("_is_replacement", False)
-    print(f"    policy[v10.7/10.8/v10.9/v10.10]: mode={_meta_mode_pol}  pm={_pm:.3f}  "
-          f"policy_ev={_policy_ev:.4f}  risk_ev={_raw_ev_pol:.4f}\n"
+    _coh_log   = signal.get("coherence", 1.0)
+    print(f"    policy[v10.7/10.8/v10.9/v10.10/v10.12]: mode={_meta_mode_pol}  "
+          f"pm={_pm:.3f}  policy_ev={_policy_ev:.4f}  risk_ev={_raw_ev_pol:.4f}\n"
           f"     fw={_fw_score:.2f}  pred={_pred_reg}  max_pos={_max_pos:.4f}  "
           f"ptp×={_partial_tp_mult:.2f}  corr×={_corr_penalty:.2f}  sxd=False\n"
-          f"     eff={_efficiency:.4f}  eff_live={_efficiency:.4f}  repl={_repl_flag}")
+          f"     eff={_efficiency:.4f}  eff_live={_efficiency:.4f}  "
+          f"repl={_repl_flag}  coh={_coh_log:.3f}")
 
     # V10.1: confidence → size coupling.
     # signal.confidence is from signal_generator (penalised by HIGH_VOL×0.5,

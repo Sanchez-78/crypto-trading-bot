@@ -656,6 +656,24 @@ def evaluate_signal(signal):
           f"score={_sc:.3f}[n={_t_ef}]  "
           f"t15={t15}  spread={_ev_spread:.3f}  af={auditor_factor:.2f}")
 
+    # ── V10.12: Signal coherence — quality-weighted EV modulation ─────────────
+    # Multiplies EV by a coherence factor [0.5, 1.0] derived from internal
+    # consistency of the signal's indicators (regime-feature alignment,
+    # momentum direction agreement, indicator breadth, price Z-score fit).
+    # Floor at 0.6: coherence never fully suppresses EV — allow_trade() decides.
+    # Applied AFTER all blocking gates so only accepted signals are modulated.
+    _coh = 1.0
+    try:
+        from src.services.signal_coherence import coherence_score as _coh_fn
+        _coh    = _coh_fn(signal)
+        ev_adj  = ev * max(0.60, _coh)
+        if abs(ev_adj - ev) > 0.001:   # only log when meaningfully changed
+            print(f"    coherence[v10.12]: {_coh:.3f}  ev {ev:.3f}→{ev_adj:.3f}")
+        ev = ev_adj
+        signal["coherence"] = round(_coh, 4)
+    except Exception:
+        pass
+
     if not allow_trade(ev, _ws):
         track_blocked(reason="SKIP_SCORE")
         print(f"    decision=SKIP_SCORE  ev={ev:.3f}  ws={_ws:.3f}  score={_sc:.3f}")
@@ -664,5 +682,6 @@ def evaluate_signal(signal):
     signal["confidence"]     = round(win_prob, 4)
     signal["ev"]             = round(ev, 4)
     signal["auditor_factor"] = round(auditor_factor, 4)
-    print(f"    decision=TAKE  ev={ev:.4f}  p={win_prob:.4f}  af={auditor_factor:.2f}")
+    print(f"    decision=TAKE  ev={ev:.4f}  p={win_prob:.4f}  "
+          f"af={auditor_factor:.2f}  coh={_coh:.3f}")
     return signal
