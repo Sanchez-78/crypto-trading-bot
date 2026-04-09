@@ -38,6 +38,32 @@ lm_bandit_hist:  dict = {}   # (sym, reg) → [ucb_score, ...]  (last 200)
 lm_feature_stats: dict = {}  # feature_name → [wins, total]
 sym_recent_pnl:  dict = {}   # sym → [last 8 pnl across all regimes] (loss_cluster guard)
 
+
+# ── Redis hydration on boot (zero-loss cold start) ────────────────────────────
+
+def _hydrate_from_redis() -> None:
+    try:
+        from src.services.state_manager import hydrate_lm
+        data = hydrate_lm()
+        if not data:
+            return
+        lm_pnl_hist.update(data.get("lm_pnl_hist", {}))
+        lm_wr_hist.update(data.get("lm_wr_hist", {}))
+        lm_ev_hist.update(data.get("lm_ev_hist", {}))
+        lm_bandit_hist.update(data.get("lm_bandit_hist", {}))
+        lm_count.update(data.get("lm_count", {}))
+        sym_recent_pnl.update(data.get("sym_recent_pnl", {}))
+        lm_feature_stats.update(data.get("lm_feature_stats", {}))
+        n_pairs = len(lm_count)
+        if n_pairs:
+            print(f"🔄 LM hydrated from Redis: {n_pairs} pairs, "
+                  f"{sum(lm_count.values())} total trades")
+    except Exception as exc:
+        print(f"⚠️  LM Redis hydration skipped: {exc}")
+
+
+_hydrate_from_redis()
+
 _HIST_CAP = 200
 
 
@@ -245,6 +271,22 @@ def lm_update(sym, reg, pnl, ws, features):
 
     # Feature win rates — direct update, no soft sampling
     record_features(features, pnl)
+
+    # Persist to Redis (zero-loss cold start)
+    try:
+        from src.services.state_manager import flush_lm_update
+        flush_lm_update(
+            sym, reg,
+            pnl_lst,
+            lm_wr_hist[key],
+            lm_ev_hist[key],
+            lm_bandit_hist.get(key, []),
+            lm_count[key],
+            sym_recent_pnl.get(sym, []),
+            lm_feature_stats,
+        )
+    except Exception:
+        pass
 
 
 # ── Convergence & edge metrics ─────────────────────────────────────────────────

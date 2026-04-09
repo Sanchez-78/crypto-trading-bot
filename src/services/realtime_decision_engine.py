@@ -17,9 +17,14 @@ Flow:
 
 from collections import deque
 import ast
+import time as _time
 import numpy as np
 from src.services.firebase_client import load_history
 from src.services.learning_event  import track_blocked, track_regime, trades_in_window
+
+# ── Anti-deadlock state ───────────────────────────────────────────────────────
+# Mutable scalar — updated on every trade close via update_calibrator().
+_last_trade_ts: list[float] = [0.0]
 
 _TP_MULT = {"BULL_TREND": 1.0, "BEAR_TREND": 1.0, "RANGING": 1.0, "QUIET_RANGE": 1.0}
 _SL_MULT = {"BULL_TREND": 0.8, "BEAR_TREND": 0.8, "RANGING": 0.8, "QUIET_RANGE": 0.8}
@@ -195,16 +200,33 @@ def combo_weight(features, regime="RANGING"):
 
 def allow_combo(combo):
     """
-    Limit each combo to 200 uses per session.
-    Raised 20→200: with proper debounce (1 call/30s per symbol), 3 symbols
-    exhaust 20 uses in 200s (~3 min). Confirmed in log: po_filtru=1 for 18 min
-    because even after debounce fix, combo_usage hit 20 within first 3 minutes.
-    200 uses = ~100 min at 30s debounce, sufficient for any trading session.
+    V10.10b: Hard block removed — converted to soft penalty via get_combo_penalty().
+    Now always returns True; penalty is applied to sizing in evaluate_signal.
+    Also applies exponential decay (×0.995) to all usage counts on each call,
+    preventing permanent lockout of old combos.
     """
-    if combo_usage.get(combo, 0) >= 200:
-        return False
+    # Decay all usage counts — old combos gradually become usable again
+    for c in list(combo_usage.keys()):
+        combo_usage[c] *= 0.995
+        if combo_usage[c] < 1.0:
+            del combo_usage[c]
     combo_usage[combo] = combo_usage.get(combo, 0) + 1
-    return True
+    return True   # hard block removed; penalty computed in get_combo_penalty()
+
+
+def get_combo_penalty(combo: tuple) -> float:
+    """
+    V10.10b: Soft penalty by combo saturation.
+    usage > 200 → 0.70 (high saturation — reduce size, don't block)
+    usage > 100 → 0.85 (moderate saturation — slight size reduction)
+    else        → 1.00 (no penalty)
+    """
+    usage = combo_usage.get(combo, 0)
+    if usage > 200:
+        return 0.70
+    if usage > 100:
+        return 0.85
+    return 1.0
 
 
 def weighted_score(features, regime="RANGING"):
@@ -355,14 +377,55 @@ def _restore_full_state():
     except Exception as e:
         print(f"⚠️  model state restore: {e}")
 
+    # Also hydrate from Redis (faster, per-update granularity vs Firebase every-5th)
+    try:
+        from src.services.state_manager import hydrate_rde_state
+        rdata = hydrate_rde_state()
+        if rdata:
+            for ev in rdata.get("ev_history", []):
+                ev_history.append(float(ev))
+            for s in rdata.get("score_history", []):
+                score_history.append(float(s))
+            for combo_key, v in rdata.get("combo_stats", {}).items():
+                pipe = combo_key.rfind("|")
+                if pipe > 0:
+                    try:
+                        import ast as _ast
+                        combo_tuple = tuple(_ast.literal_eval(combo_key[:pipe]))
+                        reg = combo_key[pipe + 1:]
+                        combo_stats[(combo_tuple, reg)] = list(v)
+                    except Exception:
+                        pass
+            for stat_key, v in rdata.get("edge_stats", {}).items():
+                fname, reg = stat_key.split("|", 1)
+                edge_stats[(fname, reg)] = list(v)
+            print(f"  + Redis RDE: {len(rdata.get('ev_history', []))} ev  "
+                  f"{len(rdata.get('combo_stats', {}))} combos")
+    except Exception as exc:
+        print(f"⚠️  RDE Redis hydration skipped: {exc}")
+
 
 def update_calibrator(p, outcome):
     """Called by trade_executor after every trade close."""
+    _last_trade_ts[0] = _time.time()   # V10.10b: track activity for emergency failsafe
     calibrator.update(p, outcome)
     _state_dirty[0] += 1
     if _state_dirty[0] >= _STATE_SAVE_EVERY:
         _state_dirty[0] = 0
         _save_full_state()
+    # Redis flush on every update (lower-latency than Firebase every-5th)
+    try:
+        from src.services.state_manager import flush_rde_state
+        cal_buckets = {float(k): list(v) for k, v in calibrator.buckets.items()}
+        flush_rde_state(
+            list(ev_history),
+            list(score_history),
+            {f"{k[0]}|{k[1]}": list(v) for k, v in combo_stats.items()},
+            cal_buckets,
+            {f"{k[0]}|{k[1]}": list(v) for k, v in edge_stats.items()},
+        )
+    except Exception:
+        pass
 
 
 def _seed_calibrator(trades):
@@ -427,7 +490,10 @@ def get_ev_threshold():
     except Exception:
         pass
     if len(ev_history) < 100:
-        return 0.15
+        # V10.10b: linear decay 0.15→0.0 instead of hard cliff at n=100.
+        # At n=0: 0.15, n=50: 0.075, n=99: ~0.0015 — system always thaws.
+        progress = min(1.0, len(ev_history) / 100.0)
+        return 0.15 * (1.0 - progress)
     s   = sorted(ev_history)
     q75 = s[int(len(s) * 0.75)]
     return max(0.10, q75)
@@ -491,33 +557,35 @@ def evaluate_signal(signal):
     except Exception:
         _bootstrap = False
 
+    # ── V10.10b: Soft streak penalty (replaces hard block) ───────────────────
+    # streak >= 10 → 0.50× size;  streak >= 5 → 0.75×;  else → 1.0×
+    # Hard block at MAX_LOSS_STREAK completely removed — system never stalls.
     streak = _M.get("loss_streak", 0)
-    if not _bootstrap and streak >= MAX_LOSS_STREAK:
-        track_blocked(reason="STREAK_GUARD")
-        print(f"    decision=SKIP_STREAK  streak={streak}>={MAX_LOSS_STREAK}")
-        return None
-    # Velocity guard: 5+ losses in last 8 trades → temporary pause.
-    # Window 5→8, threshold 3→5:
-    #   Old (3/5): at WR=55%, P(trigger) = 40% per 5-trade window → froze
-    #   the system every ~12 trades on average; threshold too sensitive.
-    #   New (5/8): P(trigger) ≈ 4% → fires only during genuine loss streaks.
-    # Deadlock bypass: if no trade executed in last 15 min (t15=0), the guard
-    #   may have deadlocked (Positions=0 → no wins possible → guard never lifts).
-    #   Allow one signal through to break the cycle.
+    streak_penalty = 1.0
+    if not _bootstrap:
+        if streak >= 10:
+            streak_penalty = 0.50
+        elif streak >= 5:
+            streak_penalty = 0.75
+
+    # ── V10.10b: Soft velocity penalty (replaces hard block) ─────────────────
+    # 5+ losses in last 8 trades → 0.70× size instead of full stop.
+    # Deadlock bypass retained: ≤3 trades in 15 min → no penalty (unreliable signal).
     recent_losses = sum(1 for r in list(_rr)[-8:] if r == "LOSS")
-    _t15_now = trades_in_window(900)
-    # Deadlock bypass: ≤3 trades in last 15min.
-    # Root cause of previous threshold (≤1): force trades bypass evaluate_signal
-    # and open 3 positions simultaneously — all 3 close as losses → t15 jumps to
-    # 3, disabling the bypass → immediate re-lock → cascading deadlock lasting
-    # 15+ minutes. Raising to ≤3 ensures a force-trade burst doesn't re-lock the
-    # gate. At t15≤3 we have so few recent trades that the velocity reading is
-    # statistically unreliable anyway (3 losses from bootstrap ≠ genuine streak).
-    _deadlocked = _t15_now <= 3
+    _t15_now      = trades_in_window(900)
+    _deadlocked   = _t15_now <= 3
+    velocity_penalty = 1.0
     if not _bootstrap and not _deadlocked and recent_losses >= 5:
-        track_blocked(reason="VELOCITY_GUARD")
-        print(f"    decision=SKIP_VELOCITY  recent_losses={recent_losses}/8")
-        return None
+        velocity_penalty = 0.70
+
+    # ── V10.10b: Emergency activity failsafe ─────────────────────────────────
+    # If no trade closed in the last 5 min and we have some history → relax.
+    _inactivity   = _time.time() - _last_trade_ts[0] if _last_trade_ts[0] > 0 else 0.0
+    emergency_mode = _last_trade_ts[0] > 0 and _inactivity > 300
+    if emergency_mode:
+        ev_threshold    *= 0.5
+        velocity_penalty = max(velocity_penalty, 0.85)
+        streak_penalty   = max(streak_penalty,   0.85)
 
     # EV spread guard REMOVED — caused recurring total trading halts:
     # With few symbols, ev_history fills with a single pair's EV (e.g. -0.042)
@@ -642,12 +710,22 @@ def evaluate_signal(signal):
         af_raw = get_position_size_mult()
     except Exception:
         pass
-    auditor_factor = min(1.0, max(0.7, af_raw))
+    auditor_base = min(1.0, max(0.7, af_raw))
+
+    # ── V10.10b: Combo saturation penalty ────────────────────────────────────
+    _combo = tuple(sorted(
+        k for k, v in signal.get("features", {}).items()
+        if isinstance(v, bool) and v
+    ))
+    combo_pen = get_combo_penalty(_combo)
+
+    # ── V10.10b: Fold all anti-deadlock penalties into auditor_factor ─────────
+    # Penalties can only REDUCE risk — never increase it (min cap at 1.0).
+    # Order: auditor base × velocity × streak × combo saturation.
+    auditor_factor = auditor_base * velocity_penalty * streak_penalty * combo_pen
+    auditor_factor = min(1.0, auditor_factor)   # never boost above base
 
     # Unified deterministic gate — same rule for all phases.
-    # Bootstrap/live split removed: sigmoid was blocking ~35% of valid signals
-    # randomly; the hard floor (-0.20) was never consistent with the live gate.
-    # Now both phases use the same threshold: score = 0.7*ev + 0.3*ws > -0.05.
     _t_ef = _M.get("trades", 0)
     _ws   = signal.get("ws", 0.5)
     _sc   = decision_score(ev, _ws)
@@ -655,19 +733,17 @@ def evaluate_signal(signal):
     print(f"    EV={ev:.3f}  p={win_prob:.2f}  rr={rr:.2f}  ws={_ws:.3f}  "
           f"score={_sc:.3f}[n={_t_ef}]  "
           f"t15={t15}  spread={_ev_spread:.3f}  af={auditor_factor:.2f}")
+    print(f"    RDE[v10.10b]: ev={ev:.3f} thr={ev_threshold:.3f} "
+          f"vel_pen={velocity_penalty:.2f} streak_pen={streak_penalty:.2f} "
+          f"combo_pen={combo_pen:.2f} emergency={emergency_mode}")
 
     # ── V10.12: Signal coherence — quality-weighted EV modulation ─────────────
-    # Multiplies EV by a coherence factor [0.5, 1.0] derived from internal
-    # consistency of the signal's indicators (regime-feature alignment,
-    # momentum direction agreement, indicator breadth, price Z-score fit).
-    # Floor at 0.6: coherence never fully suppresses EV — allow_trade() decides.
-    # Applied AFTER all blocking gates so only accepted signals are modulated.
     _coh = 1.0
     try:
         from src.services.signal_coherence import coherence_score as _coh_fn
         _coh    = _coh_fn(signal)
         ev_adj  = ev * max(0.60, _coh)
-        if abs(ev_adj - ev) > 0.001:   # only log when meaningfully changed
+        if abs(ev_adj - ev) > 0.001:
             print(f"    coherence[v10.12]: {_coh:.3f}  ev {ev:.3f}→{ev_adj:.3f}")
         ev = ev_adj
         signal["coherence"] = round(_coh, 4)
@@ -679,9 +755,12 @@ def evaluate_signal(signal):
         print(f"    decision=SKIP_SCORE  ev={ev:.3f}  ws={_ws:.3f}  score={_sc:.3f}")
         return None
 
-    signal["confidence"]     = round(win_prob, 4)
-    signal["ev"]             = round(ev, 4)
-    signal["auditor_factor"] = round(auditor_factor, 4)
+    signal["confidence"]      = round(win_prob, 4)
+    signal["ev"]              = round(ev, 4)
+    signal["auditor_factor"]  = round(auditor_factor, 4)
+    signal["velocity_penalty"] = round(velocity_penalty, 3)
+    signal["streak_penalty"]   = round(streak_penalty, 3)
+    signal["combo_penalty"]    = round(combo_pen, 3)
     print(f"    decision=TAKE  ev={ev:.4f}  p={win_prob:.4f}  "
           f"af={auditor_factor:.2f}  coh={_coh:.3f}")
     return signal

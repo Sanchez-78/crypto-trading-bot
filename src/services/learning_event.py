@@ -5,6 +5,25 @@ from collections import deque as _deque
 
 _lock = _threading.Lock()
 
+# ── Redis hydration on boot ───────────────────────────────────────────────────
+
+def _hydrate_from_redis() -> None:
+    try:
+        from src.services.state_manager import hydrate_metrics
+        data = hydrate_metrics()
+        if not data:
+            return
+        m = data.get("metrics", {})
+        if m:
+            METRICS.update(m)
+        _close_reasons.update(data.get("close_reasons", {}))
+        _regime_stats.update(data.get("regime_stats", {}))
+        if m.get("trades", 0):
+            print(f"🔄 Metrics hydrated from Redis: {m['trades']} trades")
+    except Exception as exc:
+        print(f"⚠️  Metrics Redis hydration skipped: {exc}")
+
+
 METRICS = {
     "trades": 0, "wins": 0, "losses": 0, "profit": 0.0,
     "win_streak": 0, "loss_streak": 0,
@@ -56,6 +75,11 @@ def _worker():
             with _lock:
                 _trade_times.append(_time.time())
                 _update_metrics_locked(signal, trade)
+            try:
+                from src.services.state_manager import flush_metrics
+                flush_metrics(METRICS, dict(_close_reasons), dict(_regime_stats))
+            except Exception:
+                pass
         except Exception:
             pass
         finally:
@@ -64,6 +88,8 @@ def _worker():
 
 _worker_thread = _threading.Thread(target=_worker, daemon=True, name="metrics-worker")
 _worker_thread.start()
+
+_hydrate_from_redis()
 
 
 def track_price(symbol, price):
