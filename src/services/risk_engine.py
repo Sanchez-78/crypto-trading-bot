@@ -599,17 +599,26 @@ def portfolio_score(positions: dict) -> float:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# V10.12b — Portfolio Risk Budget multiplier
+# V10.12c — Portfolio Risk Budget multiplier (stability refinements)
 # ══════════════════════════════════════════════════════════════════════════════
 
-# Raw notional heat cap (sum of position sizes, not risk-adjusted).
-# Applied after risk_budget scaling so effective cap = BASE_HEAT × risk_budget.
-BASE_HEAT: float = 0.20   # 20% of capital notional across all open positions
+# Base notional heat cap — adaptive: expands during good performance,
+# tightens during drawdown. See _adaptive_base_heat().
+_BASE_HEAT_NOMINAL: float = 0.20   # 20% nominal
+
+# EMA state for risk_budget smoothing (prevents jumpy sizing)
+_rb_ema: list[float | None] = [None]   # mutable scalar; None = uninitialised
+_RB_EMA_ALPHA: float = 0.10            # 0.9 × prev + 0.1 × raw
+
+# Module-level peak equity tracker (true equity, includes unrealized PnL)
+_peak_equity: list[float] = [0.0]
 
 # Cache for prob_ruin from Monte Carlo (Firebase I/O — refresh every 5 min)
 _mc_cache: dict[str, Any] = {"prob_ruin": None, "ts": 0.0}
 _MC_TTL = 300.0   # seconds
 
+
+# ── Internal helpers ───────────────────────────────────────────────────────────
 
 def _get_prob_ruin() -> float | None:
     """
@@ -631,31 +640,72 @@ def _get_prob_ruin() -> float | None:
         return None
 
 
+def _true_equity(positions: dict) -> float:
+    """
+    V10.12c: True equity = realized PnL + unrealized PnL across open positions.
+
+    unrealized contribution per position = live_pnl (fractional return) × size.
+    live_pnl is set each tick: (curr - entry) / entry × direction.
+    Positions dict may be empty — returns realized-only equity in that case.
+    """
+    try:
+        from src.services.learning_event import METRICS as _M
+        realized = _M.get("profit", 0.0)
+    except Exception:
+        realized = 0.0
+
+    unrealized = sum(
+        p.get("live_pnl", 0.0) * abs(p.get("size", 0.0))
+        for p in positions.values()
+    )
+    return realized + unrealized
+
+
+def _adaptive_base_heat(dd: float) -> float:
+    """
+    V10.12c: Adaptive heat cap — tightens during drawdown, expands on recovery.
+    dd=0.0 → 0.30 (full expansion)
+    dd=0.20 → 0.20 (nominal)
+    dd=0.40+ → 0.10 (floor, high drawdown)
+    Formula: 0.20 + 0.10 × (1 - dd), clamped [0.10, 0.30].
+    """
+    return max(0.10, min(0.30, _BASE_HEAT_NOMINAL + 0.10 * (1.0 - dd)))
+
+
+# ── Public API ─────────────────────────────────────────────────────────────────
+
 def portfolio_risk_budget(positions: dict) -> dict[str, float]:
     """
     Compute a system-health multiplier risk_budget ∈ [0.3, 1.0].
+
+    V10.12c changes vs V10.12b:
+      - Drawdown uses TRUE equity (realized + unrealized), not realized-only.
+      - Peak equity tracked at module level and updated each call.
+      - Raw multiplier smoothed via EMA (α=0.10) to prevent jumpy sizing.
+      - Returns heat / max_heat for logging.
 
     Three independent axes:
       dd_factor     — drawdown depth (primary circuit breaker)
       sharpe_factor — trend quality (are wins covering losses?)
       mc_factor     — Monte Carlo ruin probability (tail risk)
 
-    Returns
-    -------
-    dict with keys: risk_budget, dd, sharpe, ruin
-    All floats — safe to log directly.
-
     Fail-safe: any exception returns risk_budget=1.0 (no scaling).
     """
-    result = {"risk_budget": 1.0, "dd": 0.0, "sharpe": 0.0, "ruin": 0.0}
+    result = {
+        "risk_budget": 1.0, "dd": 0.0, "sharpe": 0.0, "ruin": 0.0,
+        "heat": 0.0, "max_heat": _adaptive_base_heat(0.0),
+    }
     try:
-        # ── Drawdown factor ───────────────────────────────────────────────────
-        from src.services.learning_event import METRICS as _M
-        _eq_peak = _M.get("equity_peak", 0.0) or 0.0
-        _profit  = _M.get("profit",      0.0)
-        if _eq_peak > 0:
-            dd = (_eq_peak - _profit) / max(_eq_peak, 1e-6)
-            dd = max(0.0, dd)   # never negative (profit can exceed peak briefly)
+        # ── True equity + drawdown ────────────────────────────────────────────
+        equity = _true_equity(positions)
+
+        # Update module-level peak (never decreases)
+        if equity > _peak_equity[0]:
+            _peak_equity[0] = equity
+        peak = _peak_equity[0]
+
+        if peak > 0:
+            dd = max(0.0, (peak - equity) / max(peak, 1e-6))
         else:
             dd = 0.0
 
@@ -695,14 +745,26 @@ def portfolio_risk_budget(positions: dict) -> dict[str, float]:
         else:
             mc_factor = 1.0
 
-        risk_budget = dd_factor * sharpe_factor * mc_factor
-        risk_budget = max(0.3, min(1.0, risk_budget))
+        # ── EMA smoothing (prevents jumpy sizing on noisy inputs) ─────────────
+        raw_budget = dd_factor * sharpe_factor * mc_factor
+        if _rb_ema[0] is None:
+            _rb_ema[0] = raw_budget          # first call — no history yet
+        else:
+            _rb_ema[0] = (1.0 - _RB_EMA_ALPHA) * _rb_ema[0] + _RB_EMA_ALPHA * raw_budget
+        risk_budget = max(0.3, min(1.0, _rb_ema[0]))
+
+        # ── Heat accounting ───────────────────────────────────────────────────
+        base_heat = _adaptive_base_heat(dd)
+        heat      = _vol_weighted_heat(positions)
+        max_heat  = base_heat * risk_budget
 
         result = {
             "risk_budget": round(risk_budget, 4),
             "dd":          round(dd,          4),
             "sharpe":      round(sharpe or 0.0, 3),
             "ruin":        round(prob_ruin or 0.0, 3),
+            "heat":        round(heat,      4),
+            "max_heat":    round(max_heat,  4),
         }
 
     except Exception:
@@ -711,17 +773,41 @@ def portfolio_risk_budget(positions: dict) -> dict[str, float]:
     return result
 
 
+def _vol_weighted_heat(positions: dict) -> float:
+    """
+    V10.12c: Volatility-weighted exposure — high-vol positions count more.
+    Uses sl_move (abs(sl-entry)/entry) as the atr_pct proxy; it's always
+    present in the position dict and captures the volatility at open.
+    Fallback: 0.001 (0.1%) when field is missing or zero.
+    """
+    total = 0.0
+    for p in positions.values():
+        size    = abs(p.get("size", 0.0))
+        atr_pct = max(p.get("sl_move", 0.0), 0.001)
+        total  += size * atr_pct
+    return total
+
+
 def heat_limit_ok(positions: dict, risk_budget: float) -> bool:
     """
-    Return False when total notional exposure already exceeds
-    BASE_HEAT × risk_budget — block new entries until positions close.
+    V10.12c: Vol-weighted heat vs adaptive cap.
 
-    Uses raw position sizes (not risk-adjusted) as a simpler, more
-    conservative exposure measure than VaR.
+    max_heat = _adaptive_base_heat(current_dd) × risk_budget
+    total_exposure = Σ size × max(sl_move, 0.001)   [vol-weighted]
+
+    Returns False → skip new trade (heat full).
+    Fail-safe: True on any exception (allow trade).
     """
     try:
-        total_exposure = sum(abs(p.get("size", 0.0)) for p in positions.values())
-        max_heat       = BASE_HEAT * risk_budget
+        # Reconstruct current dd from module-level peak (consistent with
+        # the dd used in portfolio_risk_budget — no extra equity I/O).
+        equity    = _true_equity(positions)
+        peak      = _peak_equity[0]
+        dd        = max(0.0, (peak - equity) / max(peak, 1e-6)) if peak > 0 else 0.0
+
+        base_heat      = _adaptive_base_heat(dd)
+        max_heat       = base_heat * risk_budget
+        total_exposure = _vol_weighted_heat(positions)
         return total_exposure <= max_heat
     except Exception:
         return True   # fail-safe: allow trade

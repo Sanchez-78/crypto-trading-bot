@@ -1491,7 +1491,7 @@ def handle_signal(signal):
         _rb     = _rb_res["risk_budget"]
 
         if not _hlo(_positions, _rb):
-            print(f"    risk_budget[v10.12b]: HEAT_LIMIT  sym={sym}  "
+            print(f"    risk_budget[v10.12c]: HEAT_LIMIT  sym={sym}  "
                   f"risk={_rb:.2f}")
             return
 
@@ -1499,9 +1499,10 @@ def handle_signal(signal):
             size       *= _rb
             _max_pos   *= _rb   # scale position cap proportionally
 
-        print(f"    risk_budget[v10.12b]: "
+        print(f"    risk_budget[v10.12c]: "
               f"risk={_rb:.2f} dd={_rb_res['dd']:.3f} "
-              f"sharpe={_rb_res['sharpe']:.2f} ruin={_rb_res['ruin']:.3f}")
+              f"sharpe={_rb_res['sharpe']:.2f} ruin={_rb_res['ruin']:.3f} "
+              f"heat={_rb_res['heat']:.4f} max_heat={_rb_res['max_heat']:.4f}")
     except Exception as _rb_exc:
         print(f"    risk_budget[v10.12b]: skipped ({_rb_exc})")
 
