@@ -558,20 +558,41 @@ def correlation_size_penalty(sym: str, direction: str, positions: dict) -> float
     return 0.70
 
 
-def final_size(sym, reg, base, positions, ob=None):
+def final_size(sym, reg, base, positions, ob=None,
+               coherence: float = 1.0,
+               portfolio_pressure: float = 0.0) -> float:
     """
-    capital_alloc × ev_tier_mult × exposure_scale × leverage(sym,reg) × execution_alpha.
+    capital_alloc × ev_tier_mult × exposure_scale × leverage × execution_alpha.
 
-    detect_regime(sym) infers regime from returns_hist; overrides signal regime
-    when not RANGE (i.e. when there is sufficient history to trust it).
-    Returns 0 if exposure_scale == 0 (fully deployed).
+    V10.13 extensions (backward-compatible via default kwargs):
 
-    EV concentration via ev_tier_mult(): winners dominate, losers starve.
+    coherence [0.5, 1.0] — signal quality from signal_coherence.coherence_score().
+      Applied as a continuous size multiplier: low-coherence signals get smaller
+      positions regardless of EV. Floor at 0.75× (never below 75% of computed
+      size from coherence alone — EV gate is still the primary arbiter).
+      Multiplier: max(0.75, coherence) applied to final size.
+
+    portfolio_pressure [0.0, 1.0] — global stress from risk_engine.portfolio_pressure().
+      Linearly reduces size as stress rises:
+        pressure=0.0 → ×1.00 (no reduction)
+        pressure=0.5 → ×0.75 (moderate stress — trim all new positions)
+        pressure=1.0 → ×0.50 (max stress — half-size new positions)
+      Floor at 0.50: new positions are never blocked purely by pressure
+      (other gates — failure_control, meta_hard_stop — handle blocking).
+
+    regime_concentration_penalty: BULL_TREND or BEAR_TREND already holding
+      ≥2 positions → 0.80× on any new SAME-regime position. Complements
+      correlation_size_penalty (count-based) with regime-specificity.
+      Does not apply during bootstrap (<30 trades).
+
+    Original logic: detect_regime(sym) infers regime from returns_hist;
+    overrides signal regime when not RANGE (trusts history over signal).
     Bootstrap ev=0.0 falls in deadzone (×0.6) — reduced but not killed.
     """
     scale = exposure_scale(positions)
     if scale == 0.0:
         return 0.0
+
     det_reg = detect_regime(sym)
     eff_reg = det_reg if det_reg != "RANGING" else reg
     alloc   = min(capital_alloc(sym, eff_reg, base, positions), 0.25)
@@ -580,6 +601,32 @@ def final_size(sym, reg, base, positions, ob=None):
     size    = alloc * scale * leverage(sym, eff_reg)
     if ob is not None:
         size *= (1.0 + execution_alpha(sym, ob))
+
+    # ── V10.13: Regime concentration penalty ─────────────────────────────────
+    # Prevents over-loading a single trending regime — complementary to the
+    # direction-count penalty in correlation_size_penalty().
+    try:
+        n_total = len(positions)
+        if n_total >= 1:
+            n_same_reg = sum(
+                1 for p in positions.values()
+                if p.get("signal", {}).get("regime", "") == eff_reg
+            )
+            if n_same_reg >= 2 and eff_reg in ("BULL_TREND", "BEAR_TREND"):
+                size *= 0.80   # concentrated trending regime — trim new position
+    except Exception:
+        pass
+
+    # ── V10.13: Portfolio pressure throttle ───────────────────────────────────
+    # Linear reduction under stress: pressure=0→×1.0, pressure=1→×0.5
+    pressure_mult = max(0.50, 1.0 - 0.50 * portfolio_pressure)
+    size *= pressure_mult
+
+    # ── V10.13: Coherence-based size scaling ──────────────────────────────────
+    # Floor at 0.75: coherence modulates, does not block.
+    coherence_mult = max(0.75, coherence)
+    size *= coherence_mult
+
     return size
 
 

@@ -54,6 +54,7 @@ _MAX_TOTAL_RISK   = 0.05 # total portfolio risk cap (sum of size*sl_pct)
 _SPREAD_PCT       = 0.001 # estimated bid-ask spread (0.10%)
 _last_replaced    = {}   # symbol -> timestamp of last replacement
 _last_replace_ts  = 0.0  # V10.4b: global cooldown — no replacement within 15 s of the last one
+_pf_tick_counter  = [0]  # V10.13: global tick counter for portfolio_pnl sampling rate
 _meta_ema   = {"lm_health": None, "sharpe": None, "drawdown": None}  # V10.6b: smoothed inputs
 _meta_state = {                                                        # V10.6b: adaptive control
     "mode":              "neutral",
@@ -831,18 +832,109 @@ def _vol_adjust(size, signal):
 
 def _replace_if_better(signal):
     """
-    If portfolio is full and new signal's effective_ws > weakest position's
-    effective_ws by REPLACE_MARGIN, mark weakest for immediate close and
-    queue new signal to open after close.
-    Returns True if replacement was queued.
+    V10.13: Global portfolio_score comparison replaces local effective_ws logic.
+
+    Instead of comparing new signal vs weakest position in isolation, we
+    SIMULATE the portfolio after each candidate replacement and score the
+    resulting portfolio globally. Replace only when the simulated portfolio
+    improves on the current global score.
+
+    Global score = sum(efficiency_live) + momentum_bonus − risk_penalty
+    (see risk_engine.portfolio_score for full definition).
+
+    Process:
+    1. Score the current portfolio baseline.
+    2. For each candidate replacement (worst efficiency_live, worst ws):
+       a. Build a simulated positions dict: remove candidate, add proxy for
+          incoming signal using its policy_ev / estimated_hold.
+       b. Score the simulated portfolio.
+       c. If simulated_score > current_score + GLOBAL_REPLACE_MARGIN: replace.
+    3. Fall back to V10.12 ws/ev rotation if global score doesn't improve.
+
+    GLOBAL_REPLACE_MARGIN = 0.05: requires the portfolio to genuinely improve
+    by at least 5% of a typical single-position efficiency contribution, not
+    just a marginal improvement that could be noise.
+
+    Returns True if replacement was queued, False otherwise.
     """
     if len(_positions) < MAX_POSITIONS:
-        return False  # space available — caller handles normally
+        return False
+
+    GLOBAL_REPLACE_MARGIN = 0.05
+
+    try:
+        from src.services.risk_engine import portfolio_score as _pf_score
+
+        current_score = _pf_score(_positions)
+
+        # Build a proxy position for the incoming signal (used in simulation)
+        _ev_sig = signal.get("ev", 0.0) or 0.0
+        _atr_s  = max(signal.get("atr", 0) or 0, signal["price"] * 0.003)
+        _adx_s  = signal.get("features", {}).get("adx", 0.0)
+        _hold_s = _dynamic_hold(_atr_s, signal["price"],
+                                signal["symbol"], signal.get("regime","RANGING"),
+                                adx=_adx_s)
+        _hold_s = dynamic_hold_extension(_hold_s, _ev_sig, _atr_s, signal["price"])
+        _eff_s  = _ev_sig / max(_hold_s, 1e-6)
+
+        # Proxy position has same structure as a real position but simplified
+        _now_sim = time.time()
+        _proxy   = {
+            "action":          signal.get("action", "BUY"),
+            "size":            0.025,   # conservative estimate — real size unknown
+            "entry":           signal["price"],
+            "sl":              signal["price"] * 0.996,   # 0.4% proxy SL
+            "signal":          signal,
+            "efficiency":      _eff_s,
+            "efficiency_live": _eff_s,
+            "expected_hold":   _hold_s,
+            "live_pnl":        0.0,
+            "open_ts":         _now_sim,
+        }
+
+        best_candidate = None
+        best_sim_score = current_score + GLOBAL_REPLACE_MARGIN   # must beat this
+
+        for candidate_sym in _positions:
+            if not _replace_allowed(candidate_sym):
+                continue
+            wp = _positions[candidate_sym]
+            # Safety guards: never replace trailing/partial-taken/strong winners
+            if wp.get("is_trailing", False):
+                continue
+            if wp.get("partial_taken", False):
+                continue
+            if wp.get("live_pnl", 0.0) >= 0.003:
+                continue
+
+            # Simulate: remove candidate, add proxy
+            simulated = {s: p for s, p in _positions.items() if s != candidate_sym}
+            simulated[signal["symbol"]] = _proxy
+            sim_score = _pf_score(simulated)
+
+            if sim_score > best_sim_score:
+                best_sim_score = sim_score
+                best_candidate = candidate_sym
+
+        if best_candidate is not None:
+            _positions[best_candidate]["force_close"] = True
+            _pending_open.append(signal)
+            _last_replaced[best_candidate] = _now_sim
+            _gain = best_sim_score - current_score
+            print(f"    replace[v10.13/global]: {best_candidate} "
+                  f"← {signal['symbol']}  "
+                  f"score {current_score:.4f}→{best_sim_score:.4f} "
+                  f"(+{_gain:.4f})")
+            return True
+
+    except Exception:
+        pass
+
+    # ── Fallback: ws-margin and EV rotation (V10.12 logic preserved) ──────────
     weakest_sym = min(_positions,
                       key=lambda s: _effective_ws(_positions[s]["signal"]))
     new_eff  = _effective_ws(signal)
     weak_eff = _effective_ws(_positions[weakest_sym]["signal"])
-    # Primary: effective_ws margin (existing logic)
     if new_eff > weak_eff * _REPLACE_MARGIN and _replace_allowed(weakest_sym):
         _positions[weakest_sym]["force_close"] = True
         _pending_open.append(signal)
@@ -850,7 +942,7 @@ def _replace_if_better(signal):
         print(f"    replace[ws]: {weakest_sym} (eff_ws={weak_eff:.3f}) "
               f"← {signal['symbol']} (eff_ws={new_eff:.3f})")
         return True
-    # Secondary: regime EV rotation (true_ev 20% better)
+
     should_rotate, worst_sym = rotate_capital(signal, _positions, MAX_POSITIONS)
     if should_rotate and worst_sym and _replace_allowed(worst_sym):
         _positions[worst_sym]["force_close"] = True
@@ -1107,7 +1199,24 @@ def handle_signal(signal):
     _t       = _gm().get("trades", 0)
     explore  = signal.get("explore", False) or (random.random() < epsilon())
     af       = min(1.0, max(0.7, signal.get("auditor_factor", 1.0)))
-    base     = final_size(sym, reg, 0.05 if _t >= 20 else 0.025, _positions, ob)
+
+    # ── V10.13: Pre-sizing inputs (coherence, portfolio_pressure) ─────────────
+    _coh_v1013 = signal.get("coherence", 1.0)   # set by evaluate_signal V10.12
+    _pp_v1013  = 0.0
+    _mom_v1013 = 0.0
+    try:
+        from src.services.risk_engine import (
+            portfolio_pressure as _ppfn,
+            portfolio_momentum as _pmfn,
+        )
+        _pp_v1013  = _ppfn(_positions)
+        _mom_v1013 = _pmfn(_positions)
+    except Exception:
+        pass
+
+    base     = final_size(sym, reg, 0.05 if _t >= 20 else 0.025, _positions, ob,
+                          coherence=_coh_v1013,
+                          portfolio_pressure=_pp_v1013)
     if base == 0.0:
         print(f"    portfolio gate: exposure_full  sym={sym}")
         return
@@ -1127,6 +1236,15 @@ def handle_signal(signal):
                 if kelly_pct > 0:
                     half_kelly = max(0.01, min(0.20, kelly_pct / 2.0))
                     size = half_kelly * af
+
+    # ── V10.13: Portfolio momentum sizing multiplier ───────────────────────────
+    # Portfolio-level trajectory (not per-signal momentum) modulates size.
+    # Positive portfolio momentum → allow slight expansion; negative → trim.
+    # Range: momentum=+1 → ×1.20; momentum=-1 → ×0.70 (floor).
+    # Applied AFTER Kelly so the trajectory multiplier scales the Kelly fraction,
+    # not base — keeps Kelly math intact.
+    _pf_mom_mult = max(0.70, 1.0 + 0.20 * _mom_v1013)
+    size *= _pf_mom_mult
 
     # V9: policy_score — continuous size modulation replacing binary ev>thr*1.5→*1.5.
     # momentum proxy: ws_raw normalized to [-1, 1] via (ws-0.5)*2 — ws already
@@ -1267,12 +1385,15 @@ def handle_signal(signal):
 
     _repl_flag = signal.get("_is_replacement", False)
     _coh_log   = signal.get("coherence", 1.0)
-    print(f"    policy[v10.7/10.8/v10.9/v10.10/v10.12]: mode={_meta_mode_pol}  "
-          f"pm={_pm:.3f}  policy_ev={_policy_ev:.4f}  risk_ev={_raw_ev_pol:.4f}\n"
+    print(f"    policy[v10.7/10.8/v10.9/v10.10/v10.12/v10.13]: "
+          f"mode={_meta_mode_pol}  pm={_pm:.3f}  "
+          f"policy_ev={_policy_ev:.4f}  risk_ev={_raw_ev_pol:.4f}\n"
           f"     fw={_fw_score:.2f}  pred={_pred_reg}  max_pos={_max_pos:.4f}  "
           f"ptp×={_partial_tp_mult:.2f}  corr×={_corr_penalty:.2f}  sxd=False\n"
           f"     eff={_efficiency:.4f}  eff_live={_efficiency:.4f}  "
-          f"repl={_repl_flag}  coh={_coh_log:.3f}")
+          f"repl={_repl_flag}  coh={_coh_log:.3f}\n"
+          f"     pp={_pp_v1013:.3f}  mom={_mom_v1013:.3f}  "
+          f"mom_mult×{_pf_mom_mult:.2f}")
 
     # V10.1: confidence → size coupling.
     # signal.confidence is from signal_generator (penalised by HIGH_VOL×0.5,
@@ -1365,13 +1486,28 @@ def handle_signal(signal):
     _expected_hold = dynamic_hold_extension(_hold_base10, _ev_open, atr, actual_entry)
     _efficiency    = _policy_ev / max(_expected_hold, 1e-6)
 
-    # V10.10: capital recycling bonus — if the replaced position closed profitably,
-    # reinvest 10% more into the new opportunity (spec §6), capped at _max_pos.
+    # V10.10/V10.13: capital recycling bonus — disabled under portfolio stress.
+    # Recycling ×1.1 only fires when:
+    #   - replaced position closed profitably (move ≥ 0)
+    #   - portfolio_pressure < 0.50  (not in stress regime)
+    #   - portfolio_momentum ≥ -0.30 (trajectory not actively worsening)
+    #   - drawdown < 12%            (not in defensive mode)
     _recycling_pnl = signal.get("_recycling_pnl", None)
-    if _recycling_pnl is not None and _recycling_pnl >= 0:
+    _dd_recycle    = _gm().get("max_drawdown", 0.0)
+    _recycle_ok    = (
+        _recycling_pnl is not None
+        and _recycling_pnl >= 0
+        and _pp_v1013 < 0.50
+        and _mom_v1013 >= -0.30
+        and _dd_recycle < 0.12
+    )
+    if _recycle_ok:
         size = min(size * 1.1, _max_pos)
-        print(f"    recycle[v10.10]: ×1.1  prev_move={_recycling_pnl*100:.2f}%"
-              f"  size→{size:.4f}")
+        print(f"    recycle[v10.10/v10.13]: ×1.1  prev_move={_recycling_pnl*100:.2f}%"
+              f"  pp={_pp_v1013:.2f}  mom={_mom_v1013:.2f}  size→{size:.4f}")
+    elif _recycling_pnl is not None and _recycling_pnl >= 0:
+        print(f"    recycle[v10.13/BLOCKED]: pp={_pp_v1013:.2f}  "
+              f"mom={_mom_v1013:.2f}  dd={_dd_recycle:.1%}  → no bonus")
 
     _positions[sym] = {
         "action":        signal["action"],
@@ -1452,6 +1588,16 @@ def on_price(data):
     _t_alive = time.time() - pos.get("open_ts", time.time())
     _tau10   = max(pos.get("expected_hold", 10.0), 1e-6)
     pos["efficiency_live"] = pos.get("efficiency", 0.0) * math.exp(-_t_alive / _tau10)
+
+    # V10.13: record portfolio PnL snapshot every 5 ticks (sampled, not every tick)
+    # to keep _pf_pnl_hist dense enough for OLS slope without excessive overhead.
+    _pf_tick_counter[0] += 1
+    if _pf_tick_counter[0] % 5 == 0 and _positions:
+        try:
+            from src.services.risk_engine import record_portfolio_pnl as _rpf
+            _rpf(_positions)
+        except Exception:
+            pass
 
     # MAE / MFE tracking
     if curr > pos["max_price"]: pos["max_price"] = curr
@@ -1742,6 +1888,15 @@ def on_price(data):
     BATCH.append(trade)
     if len(BATCH) >= 5:   # lowered 20→5: flush sooner to minimise data loss on restart
         _flush()
+
+    # V10.13: update dynamic correlation memory before removing the position.
+    # Pairs the closing trade's realized move with each peer's current live_pnl
+    # so the realized correlation can be learned for future variance estimates.
+    try:
+        from src.services.risk_engine import update_correlation_memory as _ucm
+        _ucm(sym, move, _positions)
+    except Exception:
+        pass
 
     closed_regime = pos["signal"].get("regime", "RANGING")
     _regime_exposure[closed_regime] = max(

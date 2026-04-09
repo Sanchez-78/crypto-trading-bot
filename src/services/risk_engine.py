@@ -46,6 +46,8 @@ Legacy class (RiskEngine) preserved for backward compatibility.
 """
 
 import math
+import time as _time
+from collections import deque
 
 # ── Legacy class — preserved, not used by trade_executor ──────────────────────
 
@@ -98,6 +100,16 @@ _RHO_SAME_SAME =  0.70    # same direction + same regime
 _RHO_SAME_DIFF =  0.45    # same direction + different regime
 _RHO_OPPOSITE  = -0.20    # opposite direction (partial natural hedge)
 
+# ── V10.13: Dynamic correlation memory ────────────────────────────────────────
+# Stores rolling realized PnL pairs per (sym_a, sym_b) to learn true correlation.
+# Falls back to heuristic when <MIN_CORR_SAMPLES pairs are available.
+_corr_memory: dict[tuple, deque] = {}   # (sym_a, sym_b) → deque[(pnl_a, pnl_b)]
+_CORR_WINDOW  = 30     # number of co-closed trade pairs to retain
+_MIN_CORR_N   = 8      # minimum pairs before switching from heuristic to realized
+
+# ── V10.13: Portfolio PnL trajectory (for momentum) ───────────────────────────
+_pf_pnl_hist: deque = deque(maxlen=20)   # (timestamp, total_live_pnl) snapshots
+
 
 # ── Internal helpers ───────────────────────────────────────────────────────────
 
@@ -115,15 +127,53 @@ def _pos_risk(pos: dict) -> float:
     return pos.get("size", 0.0) * _sl_pct(pos)
 
 
+def _realized_rho(sym_a: str, sym_b: str) -> float | None:
+    """
+    Realized correlation from rolling trade PnL pairs.
+    Returns None when insufficient data (falls back to heuristic).
+
+    Pearson correlation of (pnl_a, pnl_b) pairs from _corr_memory.
+    Pairs are appended when both symbols close trades in the same session.
+    """
+    key  = (min(sym_a, sym_b), max(sym_a, sym_b))   # canonical order
+    buf  = _corr_memory.get(key)
+    if buf is None or len(buf) < _MIN_CORR_N:
+        return None
+
+    xs = [p[0] for p in buf]
+    ys = [p[1] for p in buf]
+    n  = len(xs)
+    mx, my = sum(xs) / n, sum(ys) / n
+    num = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
+    sx  = (sum((x - mx) ** 2 for x in xs) / n) ** 0.5
+    sy  = (sum((y - my) ** 2 for y in ys) / n) ** 0.5
+    if sx < 1e-9 or sy < 1e-9:
+        return None
+    return max(-1.0, min(1.0, num / (n * sx * sy)))
+
+
 def _pairwise_rho(pos_a: dict, pos_b: dict) -> float:
     """
-    Heuristic pairwise correlation between two open positions.
+    Pairwise correlation: realized (V10.13) when available, heuristic fallback.
 
-    Uses direction alignment and regime match as proxies for return correlation.
-    Research basis: Binance spot daily 2021-2024, same-direction pairs in same
-    regime show realized ρ of 0.65-0.75; cross-regime same-direction ~0.40-0.50;
-    opposite-direction pairs provide modest hedging at ρ ≈ -0.15 to -0.25.
+    V10.13: first queries _corr_memory for realized ρ from actual trade
+    outcomes. When insufficient data, falls back to the direction/regime
+    heuristic from V10.12.
+
+    Research basis (heuristic): Binance spot 2021-2024, same-regime
+    same-direction pairs: realized ρ ≈ 0.65-0.75.
     """
+    sym_a = pos_a.get("signal", {}).get("symbol",
+            pos_a.get("sym", ""))
+    sym_b = pos_b.get("signal", {}).get("symbol",
+            pos_b.get("sym", ""))
+
+    if sym_a and sym_b and sym_a != sym_b:
+        realized = _realized_rho(sym_a, sym_b)
+        if realized is not None:
+            return realized
+
+    # Heuristic fallback
     dir_a = pos_a.get("action", "BUY")
     dir_b = pos_b.get("action", "BUY")
     reg_a = pos_a.get("signal", {}).get("regime", "RANGING")
@@ -333,3 +383,215 @@ def risk_report(positions: dict) -> dict:
         }
     except Exception:
         return {}
+
+
+# ── V10.13: Dynamic correlation memory update ─────────────────────────────────
+
+def update_correlation_memory(closed_sym: str, closed_pnl: float,
+                               positions: dict) -> None:
+    """
+    Record a realized (pnl_closed, pnl_peer) pair for every symbol currently
+    open alongside the just-closed position. Called from trade_executor
+    immediately before del _positions[sym] so the peer positions are still live.
+
+    The closed_pnl is paired with each peer's current live_pnl (best proxy for
+    realized return at the same time window). Pairs accumulate in _corr_memory
+    keyed by canonical (min_sym, max_sym) tuple and feed _realized_rho().
+
+    Bootstrap-safe: does nothing until at least one peer position is open.
+    Thread-safe: deque.append() is atomic in CPython.
+    """
+    for peer_sym, peer_pos in positions.items():
+        if peer_sym == closed_sym:
+            continue
+        peer_pnl = peer_pos.get("live_pnl", 0.0)
+        key = (min(closed_sym, peer_sym), max(closed_sym, peer_sym))
+        if key not in _corr_memory:
+            _corr_memory[key] = deque(maxlen=_CORR_WINDOW)
+        _corr_memory[key].append((closed_pnl, peer_pnl))
+
+
+# ── V10.13: Portfolio PnL trajectory snapshot ─────────────────────────────────
+
+def record_portfolio_pnl(positions: dict) -> None:
+    """
+    Snapshot total live_pnl of all open positions into the rolling history.
+    Called from trade_executor.on_price() once per global tick (not per symbol).
+    Used by portfolio_momentum() to compute trajectory direction and slope.
+    """
+    total_pnl = sum(p.get("live_pnl", 0.0) * p.get("size", 1.0)
+                    for p in positions.values())
+    _pf_pnl_hist.append((_time.time(), total_pnl))
+
+
+# ── V10.13: Portfolio momentum ────────────────────────────────────────────────
+
+def portfolio_momentum(positions: dict | None = None) -> float:
+    """
+    Trajectory-aware portfolio momentum score ∈ [-1.0, +1.0].
+
+    Uses OLS slope of recent size-weighted portfolio PnL snapshots from
+    _pf_pnl_hist (populated by record_portfolio_pnl() each tick).
+
+    Positive momentum → system is trending toward profit → allow risk expansion.
+    Negative momentum → system is degrading → tighten risk budget.
+
+    Fallback (< 4 snapshots): uses current position live_pnl sign as proxy.
+    Returns 0.0 when no data is available (neutral — no throttling).
+
+    Usage in trade_executor handle_signal():
+      size *= max(0.70, 1.0 + 0.20 * portfolio_momentum())
+      → momentum=+1.0 → ×1.20 (expansion)
+      → momentum=-1.0 → ×0.70 (floor — never below 70%)
+      → momentum=0.0  → ×1.00 (neutral)
+    """
+    # ── OLS slope over snapshot window ───────────────────────────────────────
+    snaps = list(_pf_pnl_hist)
+    if len(snaps) >= 4:
+        n   = len(snaps)
+        ts  = [s[0] for s in snaps]
+        pnl = [s[1] for s in snaps]
+        t0  = ts[0]
+        xs  = [t - t0 for t in ts]   # relative seconds
+        mx  = sum(xs) / n
+        my  = sum(pnl) / n
+        num = sum((xs[i] - mx) * (pnl[i] - my) for i in range(n))
+        den = sum((xs[i] - mx) ** 2 for i in range(n))
+        if den > 1e-9:
+            slope = num / den   # PnL change per second
+            # Normalize by typical PnL magnitude; cap at ±1
+            norm = max(abs(my) * 0.01, 1e-6)
+            return max(-1.0, min(1.0, slope / norm))
+
+    # ── Fallback: direction of current open positions ─────────────────────────
+    if positions:
+        signed = [p.get("live_pnl", 0.0) for p in positions.values()]
+        pos_n  = sum(1 for x in signed if x > 0)
+        neg_n  = sum(1 for x in signed if x < 0)
+        if pos_n + neg_n == 0:
+            return 0.0
+        return (pos_n - neg_n) / (pos_n + neg_n)
+
+    return 0.0
+
+
+# ── V10.13: Portfolio pressure ────────────────────────────────────────────────
+
+def portfolio_pressure(positions: dict) -> float:
+    """
+    Global stress score ∈ [0.0, 1.0] combining four independent stress signals.
+    Used to throttle trades, reduce sizes, disable recycling, and tighten
+    replacement thresholds.
+
+    Components:
+      drawdown_stress (weight 0.35):
+        Current drawdown vs equity peak, normalized to 0-20% range.
+        >20% DD → 1.0; <1% → ~0.05. Dominant term: capital preservation.
+
+      failure_stress (weight 0.25):
+        failure_score from diagnostics.py, normalized to [0,3] range.
+        >3 → 1.0; 0 → 0.0. Reflects overfit + regime shift + exec decay.
+
+      risk_budget_stress (weight 0.25):
+        Current portfolio variance as fraction of MAX_PORTFOLIO_VAR.
+        100% budget used → 1.0; 0% → 0.0.
+
+      regime_concentration_stress (weight 0.15):
+        Fraction of positions in the most-concentrated regime.
+        All in same regime → 1.0; perfectly spread → 0.0.
+
+    Returns 0.0 on empty portfolio or when any component fails.
+    Safe: all components have try/except; partial failures return 0.0
+    for that component only.
+    """
+    # 1. Drawdown stress
+    dd_stress = 0.0
+    try:
+        from src.services.diagnostics import max_drawdown as _mdd
+        dd_val    = float(_mdd() or 0.0)
+        dd_stress = min(1.0, dd_val / 0.20)   # normalize to 20% range
+    except Exception:
+        pass
+
+    # 2. Failure score stress
+    fs_stress = 0.0
+    try:
+        from src.services.diagnostics import failure_score as _fs
+        fs_val    = float(_fs(positions) or 0.0)
+        fs_stress = min(1.0, fs_val / 3.0)    # normalize: >3.0 = halt territory
+    except Exception:
+        pass
+
+    # 3. Risk budget stress
+    rb_stress = 0.0
+    try:
+        pvar      = portfolio_variance(positions)
+        rb_stress = min(1.0, pvar / max(MAX_PORTFOLIO_VAR, 1e-9))
+    except Exception:
+        pass
+
+    # 4. Regime concentration stress
+    rc_stress = 0.0
+    try:
+        n = len(positions)
+        if n >= 2:
+            regime_counts: dict[str, int] = {}
+            for p in positions.values():
+                r = p.get("signal", {}).get("regime", "RANGING")
+                regime_counts[r] = regime_counts.get(r, 0) + 1
+            max_count = max(regime_counts.values())
+            rc_stress = max_count / n   # 1.0 when all same regime
+    except Exception:
+        pass
+
+    pressure = (0.35 * dd_stress
+              + 0.25 * fs_stress
+              + 0.25 * rb_stress
+              + 0.15 * rc_stress)
+    return max(0.0, min(1.0, pressure))
+
+
+# ── V10.13: Global portfolio score ────────────────────────────────────────────
+
+def portfolio_score(positions: dict) -> float:
+    """
+    Global portfolio quality metric for replacement decisions.
+
+    score = sum(efficiency_live)
+            + momentum_bonus
+            − risk_penalty
+
+    Components:
+      sum(efficiency_live):  total live capital efficiency across all positions.
+        efficiency_live = policy_ev × exp(-t/tau) — stored per position.
+        Higher is better: more EV per unit of expected hold time.
+
+      momentum_bonus [0, 0.1]:  portfolio trajectory boosts or suppresses score.
+        Positive momentum (+1.0) → +0.10; negative (-1.0) → 0.
+        Bounded [0, 0.1] to avoid momentum dominating the efficiency signal.
+
+      risk_penalty [0, ∞):  penalize over-concentration and drawdown stress.
+        = portfolio_variance(positions) × 20 + pressure × 0.2
+        ×20 maps typical variance (0.0001–0.001) to (0.002–0.02) range,
+        comparable to efficiency contributions from 1–3 positions.
+
+    Returns 0.0 on empty portfolio.
+    Higher score = portfolio is in better shape.
+    Used by _replace_if_better() to compare current vs simulated portfolios.
+    """
+    if not positions:
+        return 0.0
+
+    eff_sum = sum(
+        p.get("efficiency_live", p.get("efficiency", 0.0))
+        for p in positions.values()
+    )
+
+    mom        = portfolio_momentum(positions)
+    mom_bonus  = max(0.0, mom * 0.10)   # only positive momentum boosts score
+
+    pvar       = portfolio_variance(positions)
+    pressure   = portfolio_pressure(positions)
+    risk_pen   = pvar * 20.0 + pressure * 0.20
+
+    return eff_sum + mom_bonus - risk_pen
