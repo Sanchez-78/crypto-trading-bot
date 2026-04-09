@@ -48,6 +48,7 @@ Legacy class (RiskEngine) preserved for backward compatibility.
 import math
 import time as _time
 from collections import deque
+from typing import Any
 
 # ── Legacy class — preserved, not used by trade_executor ──────────────────────
 
@@ -595,3 +596,132 @@ def portfolio_score(positions: dict) -> float:
     risk_pen   = pvar * 20.0 + pressure * 0.20
 
     return eff_sum + mom_bonus - risk_pen
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# V10.12b — Portfolio Risk Budget multiplier
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Raw notional heat cap (sum of position sizes, not risk-adjusted).
+# Applied after risk_budget scaling so effective cap = BASE_HEAT × risk_budget.
+BASE_HEAT: float = 0.20   # 20% of capital notional across all open positions
+
+# Cache for prob_ruin from Monte Carlo (Firebase I/O — refresh every 5 min)
+_mc_cache: dict[str, Any] = {"prob_ruin": None, "ts": 0.0}
+_MC_TTL = 300.0   # seconds
+
+
+def _get_prob_ruin() -> float | None:
+    """
+    Load prob_ruin from auditor_state["monte_carlo"] with 5-min cache.
+    Returns None when unavailable (triggers mc_factor = 1.0 neutral).
+    """
+    now = _time.time()
+    if now - _mc_cache["ts"] < _MC_TTL and _mc_cache["prob_ruin"] is not None:
+        return _mc_cache["prob_ruin"]
+    try:
+        from src.services.firebase_client import load_auditor_state
+        state = load_auditor_state() or {}
+        mc = state.get("monte_carlo", {})
+        pr = mc.get("prob_ruin")
+        _mc_cache["prob_ruin"] = float(pr) if pr is not None else None
+        _mc_cache["ts"] = now
+        return _mc_cache["prob_ruin"]
+    except Exception:
+        return None
+
+
+def portfolio_risk_budget(positions: dict) -> dict[str, float]:
+    """
+    Compute a system-health multiplier risk_budget ∈ [0.3, 1.0].
+
+    Three independent axes:
+      dd_factor     — drawdown depth (primary circuit breaker)
+      sharpe_factor — trend quality (are wins covering losses?)
+      mc_factor     — Monte Carlo ruin probability (tail risk)
+
+    Returns
+    -------
+    dict with keys: risk_budget, dd, sharpe, ruin
+    All floats — safe to log directly.
+
+    Fail-safe: any exception returns risk_budget=1.0 (no scaling).
+    """
+    result = {"risk_budget": 1.0, "dd": 0.0, "sharpe": 0.0, "ruin": 0.0}
+    try:
+        # ── Drawdown factor ───────────────────────────────────────────────────
+        from src.services.learning_event import METRICS as _M
+        _eq_peak = _M.get("equity_peak", 0.0) or 0.0
+        _profit  = _M.get("profit",      0.0)
+        if _eq_peak > 0:
+            dd = (_eq_peak - _profit) / max(_eq_peak, 1e-6)
+            dd = max(0.0, dd)   # never negative (profit can exceed peak briefly)
+        else:
+            dd = 0.0
+
+        if dd < 0.05:
+            dd_factor = 1.0
+        elif dd < 0.10:
+            dd_factor = 0.80
+        elif dd < 0.20:
+            dd_factor = 0.60
+        else:
+            dd_factor = 0.40
+
+        # ── Sharpe factor ─────────────────────────────────────────────────────
+        sharpe = None
+        try:
+            from src.services.diagnostics import sharpe as _sr
+            sharpe = _sr()
+        except Exception:
+            pass
+        if sharpe is None:
+            sharpe_factor = 1.0
+        elif sharpe > 1.5:
+            sharpe_factor = 1.0
+        elif sharpe > 1.0:
+            sharpe_factor = 0.90
+        else:
+            sharpe_factor = 0.75
+
+        # ── Monte Carlo ruin factor ───────────────────────────────────────────
+        prob_ruin = _get_prob_ruin()
+        if prob_ruin is None:
+            mc_factor = 1.0
+        elif prob_ruin > 0.20:
+            mc_factor = 0.60
+        elif prob_ruin > 0.10:
+            mc_factor = 0.80
+        else:
+            mc_factor = 1.0
+
+        risk_budget = dd_factor * sharpe_factor * mc_factor
+        risk_budget = max(0.3, min(1.0, risk_budget))
+
+        result = {
+            "risk_budget": round(risk_budget, 4),
+            "dd":          round(dd,          4),
+            "sharpe":      round(sharpe or 0.0, 3),
+            "ruin":        round(prob_ruin or 0.0, 3),
+        }
+
+    except Exception:
+        pass   # neutral fallback already set
+
+    return result
+
+
+def heat_limit_ok(positions: dict, risk_budget: float) -> bool:
+    """
+    Return False when total notional exposure already exceeds
+    BASE_HEAT × risk_budget — block new entries until positions close.
+
+    Uses raw position sizes (not risk-adjusted) as a simpler, more
+    conservative exposure measure than VaR.
+    """
+    try:
+        total_exposure = sum(abs(p.get("size", 0.0)) for p in positions.values())
+        max_heat       = BASE_HEAT * risk_budget
+        return total_exposure <= max_heat
+    except Exception:
+        return True   # fail-safe: allow trade

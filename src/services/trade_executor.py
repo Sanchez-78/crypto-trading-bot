@@ -1383,8 +1383,9 @@ def handle_signal(signal):
     except Exception:
         pass
 
-    _repl_flag = signal.get("_is_replacement", False)
-    _coh_log   = signal.get("coherence", 1.0)
+    _repl_flag  = signal.get("_is_replacement", False)
+    _coh_log    = signal.get("coherence", 1.0)
+    _efficiency = 0.0   # computed post-exec at line ~1507; pre-log placeholder
     print(f"    policy[v10.7/10.8/v10.9/v10.10/v10.12/v10.13]: "
           f"mode={_meta_mode_pol}  pm={_pm:.3f}  "
           f"policy_ev={_policy_ev:.4f}  risk_ev={_raw_ev_pol:.4f}\n"
@@ -1477,6 +1478,32 @@ def handle_signal(signal):
         print(f"    portfolio gate: cost_guard  sym={sym}  "
               f"edge={edge:.4f}  mode={bootstrap_mode()}")
         return
+
+    # ── V10.12b: Portfolio Risk Budget ────────────────────────────────────────
+    # Applied after all sizing multipliers and quality/cost checks.
+    # Only block: portfolio heat limit (total notional exposure cap).
+    try:
+        from src.services.risk_engine import (
+            portfolio_risk_budget as _prb,
+            heat_limit_ok         as _hlo,
+        )
+        _rb_res = _prb(_positions)
+        _rb     = _rb_res["risk_budget"]
+
+        if not _hlo(_positions, _rb):
+            print(f"    risk_budget[v10.12b]: HEAT_LIMIT  sym={sym}  "
+                  f"risk={_rb:.2f}")
+            return
+
+        if _rb < 1.0:
+            size       *= _rb
+            _max_pos   *= _rb   # scale position cap proportionally
+
+        print(f"    risk_budget[v10.12b]: "
+              f"risk={_rb:.2f} dd={_rb_res['dd']:.3f} "
+              f"sharpe={_rb_res['sharpe']:.2f} ruin={_rb_res['ruin']:.3f}")
+    except Exception as _rb_exc:
+        print(f"    risk_budget[v10.12b]: skipped ({_rb_exc})")
 
     # ── Execution ─────────────────────────────────────────────────────────────
     actual_entry, fill_slip, actual_fee_rt = exec_order(signal, size, ob, sym)
