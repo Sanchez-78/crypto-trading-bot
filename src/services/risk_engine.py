@@ -612,6 +612,14 @@ _RB_EMA_ALPHA: float = 0.10            # 0.9 × prev + 0.1 × raw
 
 # Module-level peak equity tracker (true equity, includes unrealized PnL)
 _peak_equity: list[float] = [0.0]
+try:
+    from src.services.learning_event import METRICS as _M_init
+    _peak_equity[0] = float(_M_init.get("equity_peak", 0.0) or 0.0)
+    _dd0 = float(_M_init.get("drawdown", 0.0) or 0.0)
+    _rb_ema[0] = max(0.3, min(1.0, 1.0 - _dd0 * 2.0))
+    del _M_init, _dd0
+except Exception:
+    pass
 
 # Cache for prob_ruin from Monte Carlo (Firebase I/O — refresh every 5 min)
 _mc_cache: dict[str, Any] = {"prob_ruin": None, "ts": 0.0}

@@ -884,6 +884,7 @@ def _replace_if_better(signal):
             "size":            0.025,   # conservative estimate — real size unknown
             "entry":           signal["price"],
             "sl":              signal["price"] * 0.996,   # 0.4% proxy SL
+            "sl_move":         0.004,                     # 0.4% proxy SL distance
             "signal":          signal,
             "efficiency":      _eff_s,
             "efficiency_live": _eff_s,
@@ -1496,8 +1497,8 @@ def handle_signal(signal):
             return
 
         if _rb < 1.0:
-            size       *= _rb
-            _max_pos   *= _rb   # scale position cap proportionally
+            size *= _rb
+            # _max_pos intentionally NOT scaled: recycling gate has its own dd<12% guard
 
         print(f"    risk_budget[v10.12c]: "
               f"risk={_rb:.2f} dd={_rb_res['dd']:.3f} "
