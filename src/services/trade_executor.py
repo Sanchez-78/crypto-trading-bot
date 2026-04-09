@@ -1491,7 +1491,7 @@ def handle_signal(signal):
         _rb_res = _prb(_positions)
         _rb     = _rb_res["risk_budget"]
 
-        if not _hlo(_positions, _rb):
+        if not _hlo(_positions, _rb):  # existing positions only; incoming size capped by VaR above
             print(f"    risk_budget[v10.12c]: HEAT_LIMIT  sym={sym}  "
                   f"risk={_rb:.2f}")
             return
