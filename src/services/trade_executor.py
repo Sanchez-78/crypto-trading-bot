@@ -30,6 +30,7 @@ from src.services.execution       import (
     bootstrap_mode, ws_threshold, cost_guard_bootstrap, size_floor,
     failure_control, epsilon, final_size_meta,
     is_bootstrap, net_edge, returns_hist)
+import math
 import random
 import time
 
@@ -913,24 +914,85 @@ def _flush():
 
 
 def handle_signal(signal):
+    global _last_replace_ts   # V10.10: written directly in efficiency replacement path
     sym     = signal["symbol"]
     regime  = signal.get("regime", "RANGING")
     allowed, reason = _allow_trade(sym, signal["action"], regime)
     if not allowed:
         if reason == "max_positions":
-            # V10.4b: global cooldown gate — no replacement within 15 s of last one
+            # Global 15 s cooldown — covers both V10.10 and V10.4b paths
             _now = time.time()
             if not can_replace(_now):
                 return
-            # V10.4b: score-based replacement with time-decay + profit protection
-            _ev_new = 0.0
+
+            # ── Shared: risk_ev for incoming signal ───────────────────────────
+            _ev_r = 0.0
             try:
-                from src.services.execution import risk_ev as _rev
-                _ev_new = _rev(sym, regime)
+                from src.services.execution import risk_ev as _rev_r
+                _ev_r = _rev_r(sym, regime)
             except Exception:
                 pass
-            _new_score  = signal_score(signal, _ev_new)
-            _worst_sym  = should_replace(_new_score, _positions, _now)
+
+            # ── V10.10: Efficiency-based replacement (primary path) ────────────
+            # Compute expected hold time for the incoming signal using same
+            # logic as the open path — dynamic_hold then hold_extension.
+            _sig_atr_r = max(signal.get("atr", 0) or 0, signal["price"] * 0.003)
+            _sig_adx_r = signal.get("features", {}).get("adx", 0.0)
+            _hold_r    = _dynamic_hold(_sig_atr_r, signal["price"], sym, regime,
+                                       adx=_sig_adx_r)
+            _hold_r    = dynamic_hold_extension(_hold_r, _ev_r, _sig_atr_r,
+                                                signal["price"])
+            _new_eff   = _ev_r / max(_hold_r, 1e-6)
+
+            # Gate D: fw_score ≥ MIN and policy_ev > 0
+            _fw_bools_r = {k: v for k, v in signal.get("features", {}).items()
+                           if isinstance(v, bool)}
+            _fw_r = 0.0
+            try:
+                from src.services.feature_weights import compute_weighted_score as _cws_r
+                _fw_r = _cws_r(_fw_bools_r, sym, regime)
+            except Exception:
+                pass
+            from src.services.feature_weights import MIN_SCORE as _FW_MIN_R
+
+            _use_v1010 = (_fw_r >= _FW_MIN_R and _ev_r > 0 and _positions)
+
+            if _use_v1010:
+                # Find weakest by efficiency_live (falls back to efficiency at open)
+                _worst10 = min(
+                    _positions,
+                    key=lambda s: _positions[s].get(
+                        "efficiency_live", _positions[s].get("efficiency", 0.0)))
+                _wp10     = _positions[_worst10]
+                _worst_eff = _wp10.get("efficiency_live",
+                                       _wp10.get("efficiency", 0.0))
+
+                # Threshold: meta-adaptive (spec §4B)
+                _mode10 = _meta_state["mode"]
+                _eff_thr = 0.01 if _mode10 == "aggressive" else \
+                           0.04 if _mode10 == "defensive"  else 0.02
+
+                # All replacement conditions
+                _cond_A = _new_eff > _worst_eff + _eff_thr
+                _cond_C = (_wp10.get("live_pnl", 0.0) < 0.003
+                           and not _wp10.get("is_trailing", False)
+                           and not _wp10.get("partial_taken", False))
+
+                if _cond_A and _cond_C and _replace_allowed(_worst10):
+                    # Tag the signal so handle_signal records it + applies recycling
+                    signal["_is_replacement"] = True
+                    rotate_position(_worst10)
+                    _pending_open.append(signal)
+                    _last_replaced[_worst10] = _now
+                    print(f"    replace[v10.10]: {_worst10} "
+                          f"(eff={_worst_eff:.4f}) ← {sym} "
+                          f"(eff={_new_eff:.4f})  thr={_eff_thr}  "
+                          f"mode={_mode10}")
+                    return
+
+            # ── V10.4b fallback: score-based replacement ───────────────────────
+            _new_score = signal_score(signal, _ev_r)
+            _worst_sym = should_replace(_new_score, _positions, _now)
             if _worst_sym and _replace_allowed(_worst_sym):
                 rotate_position(_worst_sym)
                 _pending_open.append(signal)
@@ -1162,10 +1224,12 @@ def handle_signal(signal):
     except Exception:
         pass
 
-    print(f"    policy[v10.7/10.8/v10.9]: mode={_meta_mode_pol}  pm={_pm:.3f}  "
-          f"policy_ev={_policy_ev:.4f}  risk_ev={_raw_ev_pol:.4f}  "
-          f"fw={_fw_score:.2f}  pred={_pred_reg}  max_pos={_max_pos:.4f}  "
-          f"ptp×={_partial_tp_mult:.2f}  corr×={_corr_penalty:.2f}  sxd=False")
+    _repl_flag = signal.get("_is_replacement", False)
+    print(f"    policy[v10.7/10.8/v10.9/v10.10]: mode={_meta_mode_pol}  pm={_pm:.3f}  "
+          f"policy_ev={_policy_ev:.4f}  risk_ev={_raw_ev_pol:.4f}\n"
+          f"     fw={_fw_score:.2f}  pred={_pred_reg}  max_pos={_max_pos:.4f}  "
+          f"ptp×={_partial_tp_mult:.2f}  corr×={_corr_penalty:.2f}  sxd=False\n"
+          f"     eff={_efficiency:.4f}  eff_live={_efficiency:.4f}  repl={_repl_flag}")
 
     # V10.1: confidence → size coupling.
     # signal.confidence is from signal_generator (penalised by HIGH_VOL×0.5,
@@ -1250,6 +1314,22 @@ def handle_signal(signal):
     except Exception:
         pass
 
+    # V10.10: expected hold time + efficiency at open
+    # Re-uses dynamic_hold + dynamic_hold_extension (same as on_price timeout logic)
+    # so efficiency = policy_ev per expected tick of capital lock-up.
+    _adx_open10   = signal.get("features", {}).get("adx", 0.0)
+    _hold_base10  = _dynamic_hold(atr, actual_entry, sym, reg, adx=_adx_open10)
+    _expected_hold = dynamic_hold_extension(_hold_base10, _ev_open, atr, actual_entry)
+    _efficiency    = _policy_ev / max(_expected_hold, 1e-6)
+
+    # V10.10: capital recycling bonus — if the replaced position closed profitably,
+    # reinvest 10% more into the new opportunity (spec §6), capped at _max_pos.
+    _recycling_pnl = signal.get("_recycling_pnl", None)
+    if _recycling_pnl is not None and _recycling_pnl >= 0:
+        size = min(size * 1.1, _max_pos)
+        print(f"    recycle[v10.10]: ×1.1  prev_move={_recycling_pnl*100:.2f}%"
+              f"  size→{size:.4f}")
+
     _positions[sym] = {
         "action":        signal["action"],
         "entry":         actual_entry,
@@ -1279,6 +1359,9 @@ def handle_signal(signal):
         "pred_regime":      _pred_reg,         # V10.8: predicted regime at open
         "soft_exit_done":   False,             # V10.8: one-shot soft preemptive exit
         "fw_score":         _fw_score,         # V10.9: feature-weighted score at open
+        "efficiency":       _efficiency,       # V10.10: EV / expected_hold at open
+        "efficiency_live":  _efficiency,       # V10.10: decays each tick (exp decay)
+        "expected_hold":    _expected_hold,    # V10.10: hold ticks used as decay tau
     }
     tag = "[force]" if force else ""
     print(f"    exec{tag}: slip={fill_slip:.5f}  fee={actual_fee_rt:.5f}  fr={fill_rate(sym):.2f}  "
@@ -1286,6 +1369,16 @@ def handle_signal(signal):
           f"tp={tp:.4f}  sl={sl:.4f}")
     _regime_exposure[regime] = _regime_exposure.get(regime, 0) + 1
     _risk_guard()
+
+    # V10.10: portfolio efficiency snapshot (diagnostic — not persisted)
+    if _positions:
+        _pf_ev_sum  = sum(p.get("efficiency", 0.0) * max(p.get("expected_hold", 1.0), 1e-6)
+                          for p in _positions.values())
+        _pf_sz_sum  = sum(p["size"] * max(p.get("expected_hold", 1.0), 1e-6)
+                          for p in _positions.values())
+        _pf_eff     = _pf_ev_sum / max(_pf_sz_sum, 1e-9)
+        print(f"    portfolio[v10.10]: positions={len(_positions)}  "
+              f"portfolio_efficiency={_pf_eff:.4f}")
 
 
 def on_price(data):
@@ -1309,6 +1402,13 @@ def on_price(data):
 
     # V10.4b: keep live_pnl fresh so should_replace profit protection is accurate
     pos["live_pnl"] = move
+
+    # V10.10: live efficiency decay — exp(-t/tau) where tau = expected_hold ticks.
+    # As the trade ages past its expected duration its efficiency value drops,
+    # making it a natural candidate for replacement by fresher opportunities.
+    _t_alive = time.time() - pos.get("open_ts", time.time())
+    _tau10   = max(pos.get("expected_hold", 10.0), 1e-6)
+    pos["efficiency_live"] = pos.get("efficiency", 0.0) * math.exp(-_t_alive / _tau10)
 
     # MAE / MFE tracking
     if curr > pos["max_price"]: pos["max_price"] = curr
@@ -1607,6 +1707,9 @@ def on_price(data):
 
     if _pending_open:
         pending = _pending_open.pop(0)
+        # V10.10: pass closed position's move so handle_signal can apply
+        # the capital recycling bonus (×1.1) when the exited trade was profitable.
+        pending["_recycling_pnl"] = move
         handle_signal(pending)
 
 
