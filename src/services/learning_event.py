@@ -139,10 +139,16 @@ def _update_metrics_locked(signal, trade):
     # Learning system already maps these to 0.0 PnL — METRICS must match.
     # Do NOT count as losses: they carry no directional signal and
     # inflate loss_streak / suppress winrate misleadingly.
-    _reason        = trade.get("close_reason", "")
+    # IMPORTANT: neutral check MUST fire BEFORE result=="WIN" check —
+    # Firestore stores result="WIN" when pnl>0 (even tiny 0.0005), so a
+    # tiny-positive timeout would be miscounted as a real win.
+    _reason          = trade.get("close_reason", "")
     _neutral_timeout = (_reason == "timeout" and abs(profit) < 0.001)
 
-    if result == "WIN":
+    if _neutral_timeout:
+        m["timeouts"]   += 1
+        # streak unchanged — a neutral exit is not a loss
+    elif result == "WIN":
         m["wins"]       += 1
         m["win_streak"] += 1
         m["loss_streak"] = 0
@@ -150,9 +156,6 @@ def _update_metrics_locked(signal, trade):
         m["avg_win"]     = m["gross_wins"] / m["wins"]
         if profit > m["best_trade"]:
             m["best_trade"] = profit
-    elif _neutral_timeout:
-        m["timeouts"]   += 1
-        # streak unchanged — a neutral exit is not a loss
     else:
         m["losses"]      += 1
         m["loss_streak"] += 1
@@ -292,12 +295,15 @@ def bootstrap_from_history(trades):
 
         _bs_reason   = trade.get("close_reason", "")
         _bs_neutral  = (_bs_reason == "timeout" and abs(profit) < 0.001)
-        if result == "WIN":
+        # neutral_timeout check MUST precede result=="WIN":
+        # Firestore stores result="WIN" when pnl>0, even 0.0005 — a tiny-positive
+        # timeout would otherwise be miscounted as a win and inflate WR.
+        if _bs_neutral:
+            m["timeouts"] = m.get("timeouts", 0) + 1
+        elif result == "WIN":
             m["wins"] += 1; m["win_streak"] += 1; m["loss_streak"] = 0
             m["gross_wins"] += profit
             if profit > m["best_trade"]:  m["best_trade"] = profit
-        elif _bs_neutral:
-            m["timeouts"] = m.get("timeouts", 0) + 1
         else:
             m["losses"] += 1; m["loss_streak"] += 1; m["win_streak"] = 0
             m["gross_losses"] += abs(profit)
@@ -471,8 +477,8 @@ def trades_per_hour():
 def real_ev():
     """PnL-based expectancy: wr×avg_win - (1-wr)×avg_loss. Returns 0 if insufficient data."""
     m  = METRICS
-    t  = m["trades"]
-    if t == 0 or m["wins"] == 0 or m["losses"] == 0:
+    _decisive = m["wins"] + m["losses"]   # excludes neutral timeouts
+    if _decisive == 0 or m["wins"] == 0 or m["losses"] == 0:
         return 0.0
-    wr = m["wins"] / t
+    wr = m["wins"] / _decisive
     return wr * m["avg_win"] - (1 - wr) * m["avg_loss"]

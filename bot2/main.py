@@ -262,6 +262,7 @@ def print_status():
     if t == 0:
         print(f"    {g('Zadne uzavrene obchody – robot se zahrива...', C.GRY)}")
     else:
+        _decisive = wins + losses  # neutral timeouts excluded
         w_pct   = wr * 100
         wr_col  = C.GRN if wr >= 0.55 else (C.YLW if wr >= 0.45 else C.RED)
         pr_col  = C.GRN if profit >= 0 else C.RED
@@ -273,11 +274,18 @@ def print_status():
               f"({g(f'OK {wins}', C.GRN)}  {g(f'X {losses}', C.RED)}  "
               f"{g(f'~ {timeouts}', C.GRY)})")
 
-        print(f"    {g('Winrate', C.GRY)}     "
-              f"{g(f'{w_pct:.1f}%', wr_col + C.BLD)}  "
-              f"{cbar(wr, 1.0, lo=0.45, hi=0.55)}  "
-              f"{g('cil 55%', C.GRY)}  "
-              f"{g(f'(bez timeoutu)', C.GRY)}")
+        # WR is shown as "N/A" when fewer than 10 decisive trades exist —
+        # with only 1-5 trades a 100% reading is meaningless noise.
+        if _decisive < 10:
+            _wr_str  = g("N/A", C.GRY + C.BLD)
+            _wr_note = g(f"(malo dat: {_decisive}/10 rozhodujicich)", C.GRY)
+            print(f"    {g('Winrate', C.GRY)}     {_wr_str}  {_wr_note}")
+        else:
+            print(f"    {g('Winrate', C.GRY)}     "
+                  f"{g(f'{w_pct:.1f}%', wr_col + C.BLD)}  "
+                  f"{cbar(wr, 1.0, lo=0.45, hi=0.55)}  "
+                  f"{g('cil 55%', C.GRY)}  "
+                  f"{g(f'(bez timeoutu)', C.GRY)}")
 
         print(f"    {g('Zisk', C.GRY)}        "
               f"{g(f'{profit:+.8f}', pr_col + C.BLD)}  "

@@ -539,17 +539,27 @@ def save_metrics_full(metrics, open_positions=None, execution=None, monitor=None
         rg_st  = {k: {"trades": v["trades"], "winrate": round(v["winrate"], 4)}
                   for k, v in rg_raw.items() if v.get("trades", 0) > 0}
 
+        _wins        = metrics.get("wins", 0)
+        _losses      = metrics.get("losses", 0)
+        _timeouts    = metrics.get("timeouts", 0)
+        _decisive    = _wins + _losses      # neutral timeouts excluded from WR
+        # Mark WR as unreliable below 10 decisive trades to avoid misleading 100%
+        _wr_reliable = _decisive >= 10
+
         data = {
             "performance": {
-                "trades":        t,
-                "wins":          metrics.get("wins", 0),
-                "losses":        metrics.get("losses", 0),
-                "winrate":       round(wr, 4),
-                "avg_profit":    round(exp, 8),
-                "profit_factor": round(pf, 4),
-                "profit":        round(pr, 8),
-                "best_trade":    round(metrics.get("best_trade", 0.0), 8),
-                "worst_trade":   round(metrics.get("worst_trade", 0.0), 8),
+                "trades":          t,
+                "wins":            _wins,
+                "losses":          _losses,
+                "timeouts":        _timeouts,
+                "decisive":        _decisive,
+                "winrate":         round(wr, 4),
+                "winrate_reliable": _wr_reliable,   # False → app should show "N/A"
+                "avg_profit":      round(exp, 8),
+                "profit_factor":   round(pf, 4),
+                "profit":          round(pr, 8),
+                "best_trade":      round(metrics.get("best_trade", 0.0), 8),
+                "worst_trade":     round(metrics.get("worst_trade", 0.0), 8),
             },
             "health": {
                 "score":  score,
