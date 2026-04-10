@@ -169,7 +169,10 @@ def _update_metrics_locked(signal, trade):
     m["drawdown"]    = max(m["drawdown"], m["equity_peak"] - m["profit"])
     m["confidence_avg"] = m["confidence_avg"] * 0.9 + conf * 0.1
 
-    _update_sym(sym, result, profit)
+    # Neutral timeouts are excluded from per-symbol WR — they carry no
+    # directional signal and would inflate sym_stats.winrate just like METRICS.winrate.
+    if not _neutral_timeout:
+        _update_sym(sym, result, profit)
 
     # EV history (deque auto-evicts oldest at maxlen=50)
     ev = float(signal.get("ev", 0))
