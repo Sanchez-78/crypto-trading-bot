@@ -213,7 +213,8 @@ def get_metrics():
         if rr else 0.0
     )
 
-    if t >= 20:
+    # Need at least 10 session samples for a meaningful trend
+    if len(rr) >= 10:
         delta = recent_wr - wr
         if   delta >  0.05: trend = "ZLEPŠUJE SE 📈"
         elif delta < -0.05: trend = "ZHORŠUJE SE 📉"
@@ -427,7 +428,8 @@ def bootstrap_from_history(trades):
         pass
 
     t  = m["trades"]
-    wr = m["wins"] / t if t else 0
+    _decisive = m["wins"] + m["losses"]
+    wr = m["wins"] / _decisive if _decisive else 0.0
     print(f"📂 Bootstrap: {t} obchodů  WR:{wr*100:.1f}%  "
           f"zisk:{m['profit']:+.8f}  "
           f"posledních {len(_recent_results)} výsledků")

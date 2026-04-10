@@ -340,7 +340,7 @@ def lm_convergence(sym, reg):
     Returns 0 when fewer than 20 samples available.
     """
     evs = lm_ev_hist.get((sym, reg), [])
-    if len(evs) < 20:
+    if len(evs) < 10:
         return 0.0
     recent = float(np.std(evs[-10:]))
     long   = float(np.std(evs))
@@ -393,7 +393,7 @@ def lm_health():
     """
     scores = []
     for (sym, reg), n in lm_count.items():
-        if n < 10:
+        if n < 5:
             continue
         conv = lm_convergence(sym, reg)
         ev   = lm_edge_strength(sym, reg)
