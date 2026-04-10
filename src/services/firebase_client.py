@@ -177,7 +177,7 @@ def save_batch(batch):
         _RETRY_QUEUE.clear()
 
     try:
-        slimmed  = [_slim_trade(t) for t in b]
+        slimmed  = [_slim_trade(t) for t in batch]
         fb_batch = db.batch()
         for item in slimmed:
             fb_batch.set(db.collection(col("trades")).document(), item)
@@ -188,20 +188,20 @@ def save_batch(batch):
         # Count wins/losses for atomic stats update
         wins   = sum(1 for t in slimmed if t.get("result") == "WIN")
         losses = sum(1 for t in slimmed if t.get("result") == "LOSS")
-        increment_stats(len(b), wins, losses)
-        return len(b)
-    except Exception as e:
-        raise e
-        print(f"💾 Firebase: saved {n} trades (batch write)")
+        increment_stats(len(batch), wins, losses)
+        print(f"💾 Firebase: saved {len(batch)} trades (batch write)")
+        return len(batch)
     except Exception as e:
         print(f"⚠️  save_batch failed ({e}) — retrying in 3 s …")
         time.sleep(3)
         try:
             n = _attempt(batch)
             print(f"💾 Firebase: saved {n} trades (retry OK)")
+            return n
         except Exception as e2:
             _RETRY_QUEUE.extend(batch)
             print(f"❌ save_batch retry failed ({e2}) — {len(batch)} trades queued for next flush")
+            return 0
 
 
 def save_trade(trade, result):
