@@ -124,7 +124,13 @@
       "Bash(python -c \"import src.services.diagnostics as d; import inspect; print\\(inspect.getsource\\(d.max_drawdown\\)\\)\")",
       "Bash(python -c ':*)",
       "Bash(python -c \"import sys,json; lines=sys.stdin.read\\(\\).strip\\(\\).split\\('\\\\n'\\); [print\\(json.loads\\(l\\).get\\('message',{}\\).get\\('content',''\\)[:2000] if isinstance\\(json.loads\\(l\\).get\\('message',{}\\).get\\('content',''\\),str\\) else ''\\) for l in lines[-5:]]\")",
-      "Bash(find /c/Projects/CryptoMaster_srv -type f -name \"*.py\" -exec grep -l \"redis\\\\|Redis\\\\|REDIS\" {} \\\\;)"
+      "Bash(find /c/Projects/CryptoMaster_srv -type f -name \"*.py\" -exec grep -l \"redis\\\\|Redis\\\\|REDIS\" {} \\\\;)",
+      "Bash(git -C /c/Projects/CryptoMaster_srv log --oneline -5)",
+      "Bash(git -C /c/Projects/CryptoMaster_srv diff HEAD~1 HEAD --name-only)",
+      "Bash(git -C /c/Projects/CryptoMaster_srv show dd35db8 --stat)",
+      "Bash(git -C /c/Projects/CryptoMaster_srv show dd35db8 -- src/services/firebase_client.py)",
+      "Read(//mnt/c/**)",
+      "Bash(cmd.exe /c \"cd C:\\\\Projects\\\\CryptoMaster_app && git diff --stat && git log --oneline -5\")"
     ]
   }
 }
