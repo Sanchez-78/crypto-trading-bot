@@ -537,14 +537,25 @@ def _run_pre_live_audit() -> None:
         )
         # ── Publish audit summary to Firebase for observability ───────────────
         try:
-            from src.services.pre_live_audit import _build_summary
             from src.services.firebase_client import get_db
             _db = get_db()
             if _db is not None:
-                _summary = _build_summary(results)
-                _summary["ci_pass"]   = ci_pass
-                _summary["timestamp"] = time.time()
-                _summary["mode"]      = "replay"
+                _passed  = [r for r in results if r.passed]
+                _sizes   = [r.s_final     for r in _passed]
+                _rbs     = [r.risk_budget for r in _passed]
+                _blocked = len(results) - len(_passed)
+                _mono_v  = sum(len(r.monotone_violations) for r in results)
+                _summary = {
+                    "ci_pass":             ci_pass,
+                    "timestamp":           time.time(),
+                    "mode":                "replay",
+                    "total_trades":        len(results),
+                    "blocked_trades":      _blocked,
+                    "blocked_ratio":       round(_blocked / max(len(results), 1), 4),
+                    "monotone_violations": _mono_v,
+                    "avg_size":            round(sum(_sizes) / max(len(_sizes), 1), 6),
+                    "avg_risk_budget":     round(sum(_rbs)   / max(len(_rbs),   1), 4),
+                }
                 _db.document("audit/latest").set(_summary)
         except Exception as _fb_exc:
             print(f"[bot2] audit Firebase publish skipped: {_fb_exc}")
@@ -582,7 +593,7 @@ def main():
     while True:
         time.sleep(10)
 
-        global _last_audit, _last_metrics
+        global _last_audit, _last_metrics, _last_pre_audit
         now = time.time()
 
         if now - _last_audit >= AUDIT_INTERVAL:
