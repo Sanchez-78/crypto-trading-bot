@@ -52,6 +52,7 @@ class AuditWorker:
         # Start background flush loop
         self._flush_task = asyncio.create_task(self._flush_loop())
         
+        fail_count = 0
         while self._running:
             try:
                 r = await self._get_redis()
@@ -63,6 +64,11 @@ class AuditWorker:
                 pubsub = r.pubsub()
                 await pubsub.subscribe(AUDIT_CHANNEL)
                 
+                # Success - reset fail_count
+                if fail_count > 0:
+                    log.info("📡 AuditWorker: Redis connection RESTORED after %d failed attempts.", fail_count)
+                fail_count = 0
+
                 async for message in pubsub.listen():
                     if not self._running: break
                     if message["type"] != "message": continue
@@ -79,9 +85,18 @@ class AuditWorker:
                     self._running = False
                     break
                 
-                log.warning("AuditWorker connection lost: %s — reconnecting in 5s", exc)
+                fail_count += 1
+                # Log as warning only once per failure cycle, then switch to debug
+                if fail_count == 1:
+                    log.warning("⚠️  AuditWorker: Redis connection lost/failed. Subsequent retries will be silent. Error: %s", exc)
+                else:
+                    log.debug("AuditWorker reconnection attempt #%d failed: %s", fail_count, exc)
+                
                 self._redis = None
-                await asyncio.sleep(5)
+                
+                # Exponential backoff: 5s, 10s, 20s, up to 60s max
+                backoff = min(60, 5 * (2 ** (min(fail_count - 1, 4))))
+                await asyncio.sleep(backoff)
 
     async def stop(self) -> None:
         self._running = False
