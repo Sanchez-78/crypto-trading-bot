@@ -63,6 +63,7 @@ _feat_mean: float = 0.0
 _feat_std:  float = 0.0
 _feat_count: int  = 0
 _drift_detected: bool = False
+_drift_consecutive: int = 0   # hysteresis counter — prevents UI flickering
 
 # Phase 4 Task 1 — L2 gate rejection counter (process-lifetime, flushed to Redis)
 _l2_rejected: int = 0
@@ -229,8 +230,8 @@ async def _evaluate_tick(data: dict[str, Any]) -> Optional[TradeSignal]:
             # singleton which is fed by the depth WebSocket in market_stream.
             try:
                 from src.services.order_book_depth import (
-                    is_sell_wall_near_tp as _ob_sell_wall,
-                    is_buy_wall_near_tp  as _ob_buy_wall,
+                    is_sell_wall_between as _ob_sell_wall,
+                    is_buy_wall_between  as _ob_buy_wall,
                 )
                 _e_sym    = evaluated.get("symbol", "")
                 _e_price  = float(evaluated.get("price", 0.0))
@@ -241,10 +242,10 @@ async def _evaluate_tick(data: dict[str, Any]) -> Optional[TradeSignal]:
                 _atr_pct = max(_e_atr, _e_price * 0.003) / max(_e_price, 1e-9)
                 if _e_action == "BUY":
                     _tp_est = _e_price * (1.0 + 1.1 * _atr_pct)
-                    _wall   = _ob_sell_wall(_e_sym, _e_price, _tp_est)
+                    _wall   = _ob_sell_wall(_e_sym, _e_price, _tp_est)  # scans entry→TP
                 else:
                     _tp_est = _e_price * (1.0 - 1.1 * _atr_pct)
-                    _wall   = _ob_buy_wall(_e_sym, _e_price, _tp_est)
+                    _wall   = _ob_buy_wall(_e_sym, _e_price, _tp_est)  # scans entry→TP
 
                 if _wall:
                     # Increment process-lifetime counter (non-blocking global write)
@@ -262,12 +263,10 @@ async def _evaluate_tick(data: dict[str, Any]) -> Optional[TradeSignal]:
                         increment_l2_rejected()
                     except Exception:
                         pass
-                        pass
 
                     # ── Phase 5: Publish Audit ──
                     if publisher:
-                        # We use call_soon_threadsafe because we are in an executor thread
-                        msg = {
+                        _audit_msg = {
                             "symbol": _e_sym,
                             "action": _e_action,
                             "reason": "REJECTED_L2_WALL",
@@ -275,8 +274,9 @@ async def _evaluate_tick(data: dict[str, Any]) -> Optional[TradeSignal]:
                             "price":  _e_price
                         }
                         loop.call_soon_threadsafe(
-                            asyncio.create_task,
-                            publisher.publish_raw(AUDIT_CHANNEL, msg)
+                            lambda m=_audit_msg: asyncio.ensure_future(
+                                publisher.publish_raw(AUDIT_CHANNEL, m)
+                            )
                         )
 
                     return None
@@ -295,7 +295,7 @@ async def _evaluate_tick(data: dict[str, Any]) -> Optional[TradeSignal]:
     if sig_dict is None:
         return None
 
-    return TradeSignal(
+    sig = TradeSignal(
         symbol         = sig_dict.get("symbol", ""),
         action         = sig_dict.get("action", "BUY"),
         price          = float(sig_dict.get("price", 0.0)),
@@ -312,33 +312,36 @@ async def _evaluate_tick(data: dict[str, Any]) -> Optional[TradeSignal]:
     )
 
     # ── Phase 5 Task 3: Concept Drift Detection ────────────────────────────
-    # Update rolling mean/std of feature vector magnitude
+    # Update rolling mean/std of feature vector magnitude using Welford's
+    # online algorithm.  Flags concept_drift when z-score > 3.0.
     try:
         feats = sig.features
         if feats:
-            # Simple Euclidean magnitude of all numeric features
             mag = sum(v**2 for v in feats.values() if isinstance(v, (int, float)))**0.5
-            
+
             import src.services.signal_engine as _sm
             _sm._feat_count += 1
             n = _sm._feat_count
-            
-            # Welford's algorithm for rolling mean/std
+
             old_mean = _sm._feat_mean
             _sm._feat_mean += (mag - old_mean) / n
             new_mean = _sm._feat_mean
-            
+
             _sm._feat_std += (mag - old_mean) * (mag - new_mean)
-            
+
             if n > 50:
                 current_std = (_sm._feat_std / (n - 1))**0.5
                 if current_std > 0:
                     z_score = abs(mag - new_mean) / current_std
                     if z_score > 3.0:
-                        log.warning("CONCEPT DRIFT detected! z_score=%.2f magnitude=%.2f", 
-                                     z_score, mag)
-                        _sm._drift_detected = True
+                        _sm._drift_consecutive += 1
+                        if _sm._drift_consecutive >= 5:
+                            if not _sm._drift_detected:
+                                log.warning("CONCEPT DRIFT detected! z_score=%.2f magnitude=%.2f",
+                                            z_score, mag)
+                            _sm._drift_detected = True
                     else:
+                        _sm._drift_consecutive = 0
                         _sm._drift_detected = False
     except Exception as exc:
         log.debug("Concept drift detection error: %s", exc)

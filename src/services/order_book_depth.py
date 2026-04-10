@@ -221,6 +221,80 @@ def is_buy_wall_near_tp(
     return avg_vol > 0 and wall_vol >= ratio * avg_vol
 
 
+# ── Entry-time wall check (Phase 4 signal gate — no approach guard) ──────────
+# These functions scan for walls ANYWHERE between entry and TP.
+# Unlike is_sell_wall_near_tp (which only fires near TP), these are designed
+# for the signal_engine entry gate where price == entry (far from TP).
+
+def is_sell_wall_between(
+    sym: str,
+    entry_price: float,
+    tp_price: float,
+    ratio: float = TP_WALL_RATIO,
+) -> bool:
+    """True when a massive ask wall sits between entry_price and tp_price (BUY signal gate).
+
+    Scans ask levels in (entry_price, tp_price]. If any single level has
+    volume >= ratio × average level volume, a wall is detected.
+    No approach_pct guard — fires at any distance from TP.
+    """
+    if tp_price <= entry_price:
+        return False
+
+    snap = _get_snap(sym)
+    if snap is None:
+        return False
+
+    asks = snap["asks"]
+    if not asks:
+        return False
+
+    band_asks = [(p, q) for p, q in asks if entry_price < p <= tp_price]
+    if not band_asks:
+        return False
+
+    avg_vol = sum(q for _, q in asks) / len(asks)
+    if avg_vol <= 0:
+        return False
+
+    max_vol = max(q for _, q in band_asks)
+    return max_vol >= ratio * avg_vol
+
+
+def is_buy_wall_between(
+    sym: str,
+    entry_price: float,
+    tp_price: float,
+    ratio: float = TP_WALL_RATIO,
+) -> bool:
+    """True when a massive bid wall sits between entry_price and tp_price (SELL signal gate).
+
+    Mirror of is_sell_wall_between for SELL entries.
+    tp_price < entry_price for SELL trades.
+    """
+    if tp_price >= entry_price:
+        return False
+
+    snap = _get_snap(sym)
+    if snap is None:
+        return False
+
+    bids = snap["bids"]
+    if not bids:
+        return False
+
+    band_bids = [(p, q) for p, q in bids if tp_price <= p < entry_price]
+    if not band_bids:
+        return False
+
+    avg_vol = sum(q for _, q in bids) / len(bids)
+    if avg_vol <= 0:
+        return False
+
+    max_vol = max(q for _, q in band_bids)
+    return max_vol >= ratio * avg_vol
+
+
 # ── Internal ──────────────────────────────────────────────────────────────────
 
 def _get_snap(sym: str) -> dict | None:

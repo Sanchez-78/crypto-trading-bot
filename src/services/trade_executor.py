@@ -31,8 +31,12 @@ from src.services.execution       import (
     failure_control, epsilon, final_size_meta,
     is_bootstrap, net_edge, returns_hist)
 import math
+import os
+import logging
 import random
 import time
+
+log = logging.getLogger(__name__)
 
 BATCH             = []
 _positions        = {}
@@ -922,7 +926,7 @@ def _replace_if_better(signal):
             _pending_open.append(signal)
             _last_replaced[best_candidate] = _now_sim
             _gain = best_sim_score - current_score
-            print(f"    replace[v10.13/global]: {best_candidate} "
+            log.info(f"    replace[v10.13/global]: {best_candidate} "
                   f"← {signal['symbol']}  "
                   f"score {current_score:.4f}→{best_sim_score:.4f} "
                   f"(+{_gain:.4f})")
@@ -940,7 +944,7 @@ def _replace_if_better(signal):
         _positions[weakest_sym]["force_close"] = True
         _pending_open.append(signal)
         _last_replaced[weakest_sym] = time.time()
-        print(f"    replace[ws]: {weakest_sym} (eff_ws={weak_eff:.3f}) "
+        log.info(f"    replace[ws]: {weakest_sym} (eff_ws={weak_eff:.3f}) "
               f"← {signal['symbol']} (eff_ws={new_eff:.3f})")
         return True
 
@@ -949,7 +953,7 @@ def _replace_if_better(signal):
         _positions[worst_sym]["force_close"] = True
         _pending_open.append(signal)
         _last_replaced[worst_sym] = time.time()
-        print(f"    replace[ev]: {worst_sym} "
+        log.info(f"    replace[ev]: {worst_sym} "
               f"← {signal['symbol']} (regime={signal.get('regime','?')})")
         return True
     return False
@@ -983,9 +987,13 @@ def _allow_trade(symbol, direction, regime):
     if direction == "SELL" and not is_safe_short(symbol):
         return False, "squeeze_guard_short"
         
-    from src.services.correlation_shield import is_safe_correlation
-    if not is_safe_correlation(symbol, direction, _positions, 0.85):
-        return False, "correlation_shield"
+    # Correlation shield — only check here when async execution engine is OFF.
+    # When EXECUTION_ENGINE_ENABLED=1, the async path checks against its own
+    # _positions dict (which may differ). Avoid double-gating with stale state.
+    if os.getenv("EXECUTION_ENGINE_ENABLED", "0") != "1":
+        from src.services.correlation_shield import is_safe_correlation
+        if not is_safe_correlation(symbol, direction, _positions, 0.85):
+            return False, "correlation_shield"
         
     same_dir = sum(1 for p in _positions.values() if p["action"] == direction)
     if same_dir >= MAX_SAME_DIR:
@@ -1087,7 +1095,7 @@ def handle_signal(signal):
                     rotate_position(_worst10)
                     _pending_open.append(signal)
                     _last_replaced[_worst10] = _now
-                    print(f"    replace[v10.10/v10.12]: {_worst10} "
+                    log.info(f"    replace[v10.10/v10.12]: {_worst10} "
                           f"(eff={_worst_eff:.4f}) ← {sym} "
                           f"(eff={_new_eff:.4f})  "
                           f"thr={_eff_thr:.4f}  corr_adj×{_corr_adj:.2f}  "
@@ -1102,12 +1110,12 @@ def handle_signal(signal):
                 _pending_open.append(signal)
                 _last_replaced[_worst_sym] = _now
                 _ws = position_score(_positions[_worst_sym], _now)
-                print(f"    replace[v10.4b]: {_worst_sym} (score={_ws:.3f}) "
+                log.info(f"    replace[v10.4b]: {_worst_sym} (score={_ws:.3f}) "
                       f"← {sym} (score={_new_score:.3f})")
             else:
                 _replace_if_better(signal)   # fall back to ws/EV rotation
         else:
-            print(f"    portfolio gate: {reason}  sym={sym}")
+            log.info(f"    portfolio gate: {reason}  sym={sym}")
         return
 
     entry = signal["price"]
@@ -1120,13 +1128,13 @@ def handle_signal(signal):
     atr_pct = atr / max(entry, 1e-9)
     tp_est, sl_est = compute_tp_sl(entry, signal["action"], atr_pct, sym, signal.get("regime", "RANGING"))
     if not _has_min_edge(entry, tp_est, sl_est):
-        print(f"    portfolio gate: min_edge  sym={sym}  "
+        log.info(f"    portfolio gate: min_edge  sym={sym}  "
               f"tp={abs(tp_est-entry)/entry:.4f}  sl={abs(sl_est-entry)/entry:.4f}")
         return
     _sig_ev = signal.get("ev", 0.0)   # set by RDE evaluate_signal; 0.0 = conservative
     if _reject_bad_rr(entry, tp_est, sl_est, ev=_sig_ev, atr_pct=atr_pct):
         rr  = abs(tp_est - entry) / max(abs(sl_est - entry), 1e-9)
-        print(f"    portfolio gate: bad_rr  sym={sym}  rr={rr:.2f}")
+        log.info(f"    portfolio gate: bad_rr  sym={sym}  rr={rr:.2f}")
         return
 
     # QUIET_RANGE: skip when ATR < 2.5× round-trip fee.
@@ -1135,7 +1143,7 @@ def handle_signal(signal):
     if regime == "QUIET_RANGE":
         _atr_pct = atr / max(entry, 1e-9)
         if _atr_pct < 2.5 * FEE_RT:
-            print(f"    portfolio gate: quiet_atr_fee  sym={sym}  "
+            log.info(f"    portfolio gate: quiet_atr_fee  sym={sym}  "
                   f"atr={_atr_pct:.4f}<{2.5*FEE_RT:.4f}")
             return
 
@@ -1152,12 +1160,12 @@ def handle_signal(signal):
     vol_f   = signal.get("features", {}).get("vol", 0.0)
     tick_ms = max(100, min(500, int(atr / max(entry, 1e-9) * 100_000)))
     if not bootstrap_open and not valid(sig_ts, tick_ms, vol_f):
-        print(f"    portfolio gate: stale_signal  sym={sym}")
+        log.info(f"    portfolio gate: stale_signal  sym={sym}")
         return
 
     ws_raw = signal.get("ws", 0.5)
     if not bootstrap_open and not pre_cost(ws_raw, FEE_RT):
-        print(f"    portfolio gate: pre_cost  sym={sym}  ws={ws_raw:.3f}")
+        log.info(f"    portfolio gate: pre_cost  sym={sym}  ws={ws_raw:.3f}")
         return
 
     reg    = signal.get("regime", "RANGING")
@@ -1177,7 +1185,7 @@ def handle_signal(signal):
         pass
     from src.services.feature_weights import MIN_SCORE as _FW_MIN
     if not bootstrap_open and _fw_score < _FW_MIN:
-        print(f"    portfolio gate: fw_score  sym={sym}  "
+        log.info(f"    portfolio gate: fw_score  sym={sym}  "
               f"score={_fw_score:.2f}<{_FW_MIN}  regime={reg}")
         return
     ws_adj = ob_adjust(ws_raw, ob)
@@ -1191,7 +1199,7 @@ def handle_signal(signal):
     # noise (53% timeout rate observed). Better to wait for real conditions.
     force = _force_trade_guard()
     if force and reg == "QUIET_RANGE":
-        print(f"    portfolio gate: force_quiet  sym={sym}  regime=QUIET_RANGE")
+        log.info(f"    portfolio gate: force_quiet  sym={sym}  regime=QUIET_RANGE")
         return
 
     import math
@@ -1219,7 +1227,7 @@ def handle_signal(signal):
                           coherence=_coh_v1013,
                           portfolio_pressure=_pp_v1013)
     if base == 0.0:
-        print(f"    portfolio gate: exposure_full  sym={sym}")
+        log.info(f"    portfolio gate: exposure_full  sym={sym}")
         return
     thr      = get_ev_threshold()
     ws_thr   = ws_threshold()
@@ -1294,7 +1302,7 @@ def handle_signal(signal):
     _meta     = meta_controller(_sharpe, _dd_mc, _wr_ps, _recent_n / 100.0,
                                 volatility=atr_pct)
     if _meta == 0.0:
-        print(f"    portfolio gate: meta_hard_stop  DD={_dd_mc:.1%}  sym={sym}")
+        log.info(f"    portfolio gate: meta_hard_stop  DD={_dd_mc:.1%}  sym={sym}")
         return
     size *= _meta
 
@@ -1309,12 +1317,12 @@ def handle_signal(signal):
         pass
     if _pred_reg != reg:
         size *= 0.85
-        print(f"    regime_pred[v10.8]: {reg}→{_pred_reg}  size×0.85")
+        log.info(f"    regime_pred[v10.8]: {reg}→{_pred_reg}  size×0.85")
         for _psym, _ppos in list(_positions.items()):
             if (_ppos.get("signal", {}).get("regime", "") == reg
                     and _ppos.get("risk_ev", 0.0) < 0.05):
                 rotate_position(_psym)
-                print(f"    regime_pred[v10.8]: weak exit  sym={_psym}  ev<0.05")
+                log.info(f"    regime_pred[v10.8]: weak exit  sym={_psym}  ev<0.05")
 
     # ── V10.5: Correlation size penalty ──────────────────────────────────────
     # Spec chain: cluster_penalty → max_pos cap → …
@@ -1328,7 +1336,7 @@ def handle_signal(signal):
         pass
     if _corr_penalty < 1.0:
         size *= _corr_penalty
-        print(f"    corr_penalty[v10.5]: ×{_corr_penalty:.2f}  sym={sym}")
+        log.info(f"    corr_penalty[v10.5]: ×{_corr_penalty:.2f}  sym={sym}")
 
     # ── V10.8: Adaptive max position cap ──────────────────────────────────────
     # Spec chain: cluster_penalty → max_pos cap (this block).
@@ -1340,7 +1348,7 @@ def handle_signal(signal):
     except Exception:
         pass
     if size > _max_pos:
-        print(f"    max_pos[v10.8]: {size:.4f}→{_max_pos:.4f}  "
+        log.info(f"    max_pos[v10.8]: {size:.4f}→{_max_pos:.4f}  "
               f"mode={_meta_mode_pol}  pred={_pred_reg}")
         size = _max_pos
 
@@ -1367,7 +1375,7 @@ def handle_signal(signal):
         size       = _arb(size, _sl_pct_rb, signal.get("action", ""), reg, _positions)
         if size < _size_pre * 0.95:   # log only when meaningfully constrained
             _rb  = _rrpt(_positions)
-            print(f"    risk_engine[v10.12]: {_size_pre:.4f}→{size:.4f}  "
+            log.info(f"    risk_engine[v10.12]: {_size_pre:.4f}→{size:.4f}  "
                   f"csf×{_csf_mult:.2f}  "
                   f"budget_used={_rb.get('budget_used_pct', 0):.1%}  "
                   f"regime={reg}")
@@ -1387,7 +1395,7 @@ def handle_signal(signal):
     _repl_flag  = signal.get("_is_replacement", False)
     _coh_log    = signal.get("coherence", 1.0)
     _efficiency = 0.0   # computed post-exec at line ~1507; pre-log placeholder
-    print(f"    policy[v10.7/10.8/v10.9/v10.10/v10.12/v10.13]: "
+    log.info(f"    policy[v10.7/10.8/v10.9/v10.10/v10.12/v10.13]: "
           f"mode={_meta_mode_pol}  pm={_pm:.3f}  "
           f"policy_ev={_policy_ev:.4f}  risk_ev={_raw_ev_pol:.4f}\n"
           f"     fw={_fw_score:.2f}  pred={_pred_reg}  max_pos={_max_pos:.4f}  "
@@ -1431,11 +1439,11 @@ def handle_signal(signal):
         _reg_n  = _reg_stats.get("trades", 0)
         _reg_wr = _reg_stats.get("winrate", 1.0)
         if _reg_n >= 25 and _reg_wr < 0.35:
-            print(f"    regime BLOCK  regime={reg}  wr={_reg_wr:.1%}  n={_reg_n}")
+            log.info(f"    regime BLOCK  regime={reg}  wr={_reg_wr:.1%}  n={_reg_n}")
             return None
         elif _reg_n >= 20 and _reg_wr < 0.40:
             size *= 0.5
-            print(f"    regime penalty x0.5  regime={reg}  wr={_reg_wr:.1%}  n={_reg_n}")
+            log.info(f"    regime penalty x0.5  regime={reg}  wr={_reg_wr:.1%}  n={_reg_n}")
     except Exception:
         pass
 
@@ -1446,11 +1454,11 @@ def handle_signal(signal):
     _price = signal.get("price", 1.0) or 1.0
     if _price < 0.01:
         size *= 0.25
-        print(f"    micro-cap penalty x0.25  price={_price:.6f}  sym={sym}")
+        log.info(f"    micro-cap penalty x0.25  price={_price:.6f}  sym={sym}")
 
     ctrl = failure_control(_positions)
     if ctrl == 0.0:
-        print(f"    portfolio gate: failure_halt  sym={sym}  mode={bootstrap_mode()}")
+        log.info(f"    portfolio gate: failure_halt  sym={sym}  mode={bootstrap_mode()}")
         return
     size *= ctrl
 
@@ -1461,22 +1469,22 @@ def handle_signal(signal):
         from src.services.execution_quality import exec_quality_score as _eqs
         _eq = _eqs(sym, signal.get("action", "BUY"), entry, atr_pct, ob)
         if _eq["skip"]:
-            print(f"    exec_quality[v10.11]: SKIP_SPREAD  "
+            log.info(f"    exec_quality[v10.11]: SKIP_SPREAD  "
                   f"spread={_eq['spread']:.4f}>{0.0015:.4f}  sym={sym}")
             return
         _eq_mult = _eq["exec_quality"]
         if _eq_mult < 1.0:
             size *= _eq_mult
-        print(f"    exec_quality[v10.11]: "
+        log.info(f"    exec_quality[v10.11]: "
               f"exec_q={_eq_mult:.2f} spread={_eq['spread']:.4f} "
               f"slip={_eq['slip']:.4f} fill={_eq['fill']:.2f} "
               f"lat={_eq['lat']:.2f}")
     except Exception as _eq_exc:
-        print(f"    exec_quality[v10.11]: skipped ({_eq_exc})")
+        log.info(f"    exec_quality[v10.11]: skipped ({_eq_exc})")
 
     edge = net_edge(ws_adj, size, ob, FEE_RT, sym)
     if not cost_guard_bootstrap(edge):
-        print(f"    portfolio gate: cost_guard  sym={sym}  "
+        log.info(f"    portfolio gate: cost_guard  sym={sym}  "
               f"edge={edge:.4f}  mode={bootstrap_mode()}")
         return
 
@@ -1492,7 +1500,7 @@ def handle_signal(signal):
         _rb     = _rb_res["risk_budget"]
 
         if not _hlo(_positions, _rb):  # existing positions only; incoming size capped by VaR above
-            print(f"    risk_budget[v10.12c]: HEAT_LIMIT  sym={sym}  "
+            log.info(f"    risk_budget[v10.12c]: HEAT_LIMIT  sym={sym}  "
                   f"risk={_rb:.2f}")
             return
 
@@ -1500,12 +1508,12 @@ def handle_signal(signal):
             size *= _rb
             # _max_pos intentionally NOT scaled: recycling gate has its own dd<12% guard
 
-        print(f"    risk_budget[v10.12c]: "
+        log.info(f"    risk_budget[v10.12c]: "
               f"risk={_rb:.2f} dd={_rb_res['dd']:.3f} "
               f"sharpe={_rb_res['sharpe']:.2f} ruin={_rb_res['ruin']:.3f} "
               f"heat={_rb_res['heat']:.4f} max_heat={_rb_res['max_heat']:.4f}")
     except Exception as _rb_exc:
-        print(f"    risk_budget[v10.12b]: skipped ({_rb_exc})")
+        log.info(f"    risk_budget[v10.12b]: skipped ({_rb_exc})")
 
     # ── Execution ─────────────────────────────────────────────────────────────
     actual_entry, fill_slip, actual_fee_rt = exec_order(signal, size, ob, sym)
@@ -1552,10 +1560,10 @@ def handle_signal(signal):
     )
     if _recycle_ok:
         size = min(size * 1.1, _max_pos)
-        print(f"    recycle[v10.10/v10.13]: ×1.1  prev_move={_recycling_pnl*100:.2f}%"
+        log.info(f"    recycle[v10.10/v10.13]: ×1.1  prev_move={_recycling_pnl*100:.2f}%"
               f"  pp={_pp_v1013:.2f}  mom={_mom_v1013:.2f}  size→{size:.4f}")
     elif _recycling_pnl is not None and _recycling_pnl >= 0:
-        print(f"    recycle[v10.13/BLOCKED]: pp={_pp_v1013:.2f}  "
+        log.info(f"    recycle[v10.13/BLOCKED]: pp={_pp_v1013:.2f}  "
               f"mom={_mom_v1013:.2f}  dd={_dd_recycle:.1%}  → no bonus")
 
     _positions[sym] = {
@@ -1605,7 +1613,7 @@ def handle_signal(signal):
         _pf_sz_sum  = sum(p["size"] * max(p.get("expected_hold", 1.0), 1e-6)
                           for p in _positions.values())
         _pf_eff     = _pf_ev_sum / max(_pf_sz_sum, 1e-9)
-        print(f"    portfolio[v10.10]: positions={len(_positions)}  "
+        log.info(f"    portfolio[v10.10]: positions={len(_positions)}  "
               f"portfolio_efficiency={_pf_eff:.4f}")
 
 
@@ -1661,7 +1669,7 @@ def on_price(data):
     # Activate trailing stop at +0.60% profit
     if not pos["is_trailing"] and move >= 0.006:
         pos["is_trailing"] = True
-        print(f"    🚀 {sym} TRAILING STOP ACTIVOVÁN! Zisk: {move*100:.2f}%")
+        log.info(f"    🚀 {sym} TRAILING STOP ACTIVOVÁN! Zisk: {move*100:.2f}%")
 
     # ── V10.8: Soft preemptive exit — de-risk on predicted regime transition ──
     # Fires once when the regime is predicted to change AND position gain is
@@ -1685,7 +1693,7 @@ def on_price(data):
                 pos["size"]          *= 0.5
                 pos["soft_exit_done"] = True
                 _risk_guard()
-                print(f"    🔀 {sym.replace('USDT','')} SOFT_EXIT 50%  "
+                log.info(f"    🔀 {sym.replace('USDT','')} SOFT_EXIT 50%  "
                       f"{_reg_op}→{_pred_soft}  move={move*100:.2f}%")
 
     # ── Partial TP: exit 50% at scaled×ATR profit, move SL to breakeven ──────
@@ -1710,7 +1718,7 @@ def on_price(data):
         pos["size"]         *= 0.5
         pos["sl"]            = entry   # breakeven: remaining half is now risk-free
         _short_p = sym.replace("USDT", "")
-        print(f"    📦 {_short_p} PARTIAL TP 50%  "
+        log.info(f"    📦 {_short_p} PARTIAL TP 50%  "
               f"pnl={partial:+.6f}  move={move*100:.2f}%  SL→breakeven")
 
     # V10.5b: position scaling — pyramid winners / de-risk losers
@@ -1720,12 +1728,12 @@ def on_price(data):
         add_to_position(pos, curr)
         entry = pos["entry"]   # refresh local var — exit math must use blended entry
         short_p = sym.replace("USDT", "")
-        print(f"    📈 {short_p} PYRAMID add#{pos['adds']}  "
+        log.info(f"    📈 {short_p} PYRAMID add#{pos['adds']}  "
               f"size={pos['size']:.4f}  avg_entry={entry:.4f}  move={move*100:.2f}%")
     if should_reduce_position(pos, curr):
         reduce_position(pos, curr)
         short_p = sym.replace("USDT", "")
-        print(f"    ✂️  {short_p} REDUCE  "
+        log.info(f"    ✂️  {short_p} REDUCE  "
               f"size={pos['size']:.4f}  move={move*100:.2f}%  ev={pos.get('risk_ev',0):.3f}")
 
     # V10.2: adaptive SL tightening — protect profits in pre-trail window (0.3%-0.6%)
@@ -1785,12 +1793,12 @@ def on_price(data):
             if pos["action"] == "BUY" and move >= MIN_PROFIT_TO_EXIT:
                 if is_sell_wall(sym, curr):
                     reason = "wall_exit"
-                    print(f"    🧱 {sym.replace('USDT','')} SELL_WALL detected  "
+                    log.info(f"    🧱 {sym.replace('USDT','')} SELL_WALL detected  "
                           f"move={move*100:.2f}%  → proactive exit")
             elif pos["action"] == "SELL" and move >= MIN_PROFIT_TO_EXIT:
                 if is_buy_wall(sym, curr):
                     reason = "wall_exit"
-                    print(f"    🧱 {sym.replace('USDT','')} BUY_WALL detected  "
+                    log.info(f"    🧱 {sym.replace('USDT','')} BUY_WALL detected  "
                           f"move={move*100:.2f}%  → proactive exit")
         except Exception:
             pass
@@ -1848,7 +1856,7 @@ def on_price(data):
         from src.services.notifier import send_trade_notification
         send_trade_notification(sym, pos["action"], move - fee_used, reason)
     except Exception as e:
-        print(f"    [Warn: Notifikace error] {e}")
+        log.info(f"    [Warn: Notifikace error] {e}")
 
     trade = {
         **pos["signal"],
@@ -1914,7 +1922,7 @@ def on_price(data):
             except Exception:
                 pass
             _new_w = _ufw(sym, reg_sig, _fevs, _lmh_fw, _dd_fw)
-            print(f"    fw[v10.9]: {sym} {reg_sig}  "
+            log.info(f"    fw[v10.9]: {sym} {reg_sig}  "
                   f"score_pnl={learning_pnl:+.5f}  "
                   f"w={{{', '.join(f'{k}:{v:.2f}' for k, v in _new_w.items() if k in _active_fw)}}}")
     except Exception:

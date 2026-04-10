@@ -255,7 +255,7 @@ class ExecutionEngine:
                 await self._publish_audit({
                     "symbol": sym,
                     "action": signal.action,
-                    "reason": "REJECTED_CORROLLATION",
+                    "reason": "REJECTED_CORRELATION",
                     "info":   f"Vysoka korelace s jinou pozici ({signal.action})",
                     "price":  signal.price
                 })

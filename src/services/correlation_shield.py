@@ -1,5 +1,8 @@
 import math
+import logging
 from src.services.signal_generator import prices
+
+log = logging.getLogger(__name__)
 
 def get_correlation(sym1: str, sym2: str, window: int = 150) -> float:
     """
@@ -51,7 +54,8 @@ def is_safe_correlation(new_sym: str, action: str, open_positions: dict, thresho
         if pos_action == action:
             corr = get_correlation(new_sym, open_sym)
             if corr >= threshold:
-                print(f"🛑 CORRELATION SHIELD: Blokováno {new_sym}. Shoda s {open_sym} ({corr*100:.1f}%)")
+                log.info("CORRELATION SHIELD: Blokováno %s. Shoda s %s (%.1f%%)",
+                         new_sym, open_sym, corr * 100)
                 return False
                 
     return True

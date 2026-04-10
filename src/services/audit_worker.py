@@ -7,26 +7,31 @@ visibility in the React Native app.
 
 Throttling: 
   - Max 1 write per second per reason to avoid db hammering.
+  - Buffers events for up to 3 seconds, then batch-commits.
   - Keeps only the last 50 audits total (circular buffer logic).
 """
 
 import asyncio
 import json
 import logging
+import os
 import time
 from typing import Any, Optional
 
 log = logging.getLogger(__name__)
 
-REDIS_URL: str      = "redis://localhost:6379/0"
+REDIS_URL: str      = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 AUDIT_CHANNEL: str  = "audits"
 MAX_AUDITS: int    = 50
+BATCH_INTERVAL: float = 3.0   # seconds between batch flushes
 
 class AuditWorker:
     def __init__(self) -> None:
         self._running = False
         self._redis: Optional[Any] = None
         self._last_write_ts: dict[str, float] = {}
+        self._buffer: list[dict] = []
+        self._flush_task: Optional[asyncio.Task] = None
 
     async def _get_redis(self) -> Any:
         if self._redis is None:
@@ -37,6 +42,9 @@ class AuditWorker:
     async def start(self) -> None:
         self._running = True
         log.info("AuditWorker started (subscribing to '%s')", AUDIT_CHANNEL)
+        
+        # Start background flush loop
+        self._flush_task = asyncio.create_task(self._flush_loop())
         
         while self._running:
             try:
@@ -50,7 +58,7 @@ class AuditWorker:
                     
                     try:
                         data = json.loads(message["data"])
-                        await self._persist_audit(data)
+                        self._buffer_audit(data)
                     except Exception as exc:
                         log.warning("Audit parse error: %s", exc)
                         
@@ -61,47 +69,79 @@ class AuditWorker:
 
     async def stop(self) -> None:
         self._running = False
+        # Flush remaining buffer
+        if self._buffer:
+            await self._flush_batch()
+        if self._flush_task:
+            self._flush_task.cancel()
         if self._redis:
             await self._redis.aclose()
             self._redis = None
 
-    async def _persist_audit(self, data: dict) -> None:
-        """Throttled write to Firestore."""
+    def _buffer_audit(self, data: dict) -> None:
+        """Throttled buffering — skip if same reason was seen < 1s ago."""
         reason = data.get("reason", "unknown")
         now = time.time()
         
-        # Throttle: 1s per reason type
         if now - self._last_write_ts.get(reason, 0) < 1.0:
             return
             
         self._last_write_ts[reason] = now
+        data["timestamp"] = now
+        data["server_ts"] = now
+        self._buffer.append(data)
+
+    async def _flush_loop(self) -> None:
+        """Periodic flush of buffered audits to Firestore."""
+        while self._running:
+            await asyncio.sleep(BATCH_INTERVAL)
+            if self._buffer:
+                await self._flush_batch()
+
+    async def _flush_batch(self) -> None:
+        """Batch-commit all buffered audits to Firestore."""
+        if not self._buffer:
+            return
+        
+        # Grab and clear buffer atomically
+        batch_data = self._buffer[:]
+        self._buffer.clear()
         
         try:
             from src.services.firebase_client import db
             if db is None: return
             
-            # Use background executor for Firestore blocking calls
             loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, self._sync_write, db, data)
+            await loop.run_in_executor(None, self._sync_batch_write, db, batch_data)
         except Exception as exc:
-            log.debug("_persist_audit error: %s", exc)
+            log.debug("_flush_batch error: %s", exc)
 
-    def _sync_write(self, db: Any, data: dict) -> None:
+    def _sync_batch_write(self, db: Any, items: list[dict]) -> None:
+        """Sync Firestore batch write — runs in executor thread."""
         try:
-            # Write new audit
-            db.collection("audits").add({
-                **data,
-                "server_ts": time.time()
-            })
+            batch = db.batch()
+            for data in items:
+                ref = db.collection("audits").document()
+                batch.set(ref, data)
+            batch.commit()
             
-            # Simple cleanup: delete oldest if > MAX_AUDITS
-            # (In production, a triggered Cloud Function is better, but this works for HFT-lite)
-            snap = db.collection("audits").order_by("timestamp", direction="DESCENDING").offset(MAX_AUDITS).limit(10).get()
-            for doc in snap:
-                doc.reference.delete()
+            log.debug("Audit batch committed: %d events", len(items))
+            
+            # Cleanup: delete oldest if > MAX_AUDITS
+            try:
+                snap = db.collection("audits").order_by(
+                    "timestamp", direction="DESCENDING"
+                ).offset(MAX_AUDITS).limit(20).get()
+                if snap:
+                    del_batch = db.batch()
+                    for doc in snap:
+                        del_batch.delete(doc.reference)
+                    del_batch.commit()
+            except Exception:
+                pass  # cleanup failure is non-critical
                 
         except Exception as exc:
-            log.debug("_sync_write error: %s", exc)
+            log.debug("_sync_batch_write error: %s", exc)
 
 _worker: Optional[AuditWorker] = None
 

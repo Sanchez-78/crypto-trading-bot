@@ -8,6 +8,7 @@ from src.services.signal_generator import warmup
 from src.services.dashboard_live import dashboard_loop
 from bot2.auditor import run_audit
 
+import src.services.signal_generator
 import src.services.signal_engine
 import src.services.trade_executor
 import src.services.audit_worker
