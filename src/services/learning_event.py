@@ -279,8 +279,9 @@ def bootstrap_from_history(trades):
         if total_count > len(sorted_trades):
             m["trades"]           = total_count
             m["signals_executed"] = total_count
-            m["wins"]             = stats.get("wins",   0)
-            m["losses"]           = stats.get("losses", 0)
+            m["wins"]             = stats.get("wins",     0)
+            m["losses"]           = stats.get("losses",   0)
+            m["timeouts"]         = stats.get("timeouts", 0)
             _count_seeded = True
     except Exception:
         pass

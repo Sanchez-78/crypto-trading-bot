@@ -185,10 +185,12 @@ def save_batch(batch):
         _HISTORY_CACHE["data"] = (slimmed + _HISTORY_CACHE["data"])[:HISTORY_LIMIT]
         _HISTORY_CACHE["ts"]   = time.time()
         
-        # Count wins/losses for atomic stats update
-        wins   = sum(1 for t in slimmed if t.get("result") == "WIN")
-        losses = sum(1 for t in slimmed if t.get("result") == "LOSS")
-        increment_stats(len(batch), wins, losses)
+        # Count wins/losses/timeouts for atomic stats update
+        wins     = sum(1 for t in slimmed if t.get("result") == "WIN")
+        losses   = sum(1 for t in slimmed if t.get("result") == "LOSS")
+        timeouts = sum(1 for t in slimmed
+                       if t.get("reason") in ("timeout",) or t.get("close_reason") == "timeout")
+        increment_stats(len(batch), wins, losses, timeouts)
         print(f"💾 Firebase: saved {len(batch)} trades (batch write)")
         return len(batch)
     except Exception as e:
@@ -219,15 +221,16 @@ def save_trade(trade, result):
 _STATS_DOC = col("system") + "/stats"
 
 
-def increment_stats(n: int = 1, wins: int = 0, losses: int = 0) -> None:
+def increment_stats(n: int = 1, wins: int = 0, losses: int = 0, timeouts: int = 0) -> None:
     """Atomically update counters in system/stats."""
-    if db is None or (n <= 0 and wins <= 0 and losses <= 0):
+    if db is None or (n <= 0 and wins <= 0 and losses <= 0 and timeouts <= 0):
         return
     try:
         upd = {"updated_at": time.time()}
-        if n > 0:      upd["total_trades"] = firestore.Increment(n)
-        if wins > 0:   upd["total_wins"]   = firestore.Increment(wins)
-        if losses > 0: upd["total_losses"] = firestore.Increment(losses)
+        if n > 0:        upd["total_trades"]   = firestore.Increment(n)
+        if wins > 0:     upd["total_wins"]     = firestore.Increment(wins)
+        if losses > 0:   upd["total_losses"]   = firestore.Increment(losses)
+        if timeouts > 0: upd["total_timeouts"] = firestore.Increment(timeouts)
         db.document(_STATS_DOC).set(upd, merge=True)
     except Exception as e:
         print(f"⚠️  increment_stats: {e}")
@@ -242,9 +245,10 @@ def load_stats() -> dict:
         if doc.exists:
             d = doc.to_dict()
             return {
-                "trades": int(d.get("total_trades", 0)),
-                "wins":   int(d.get("total_wins",   0)),
-                "losses": int(d.get("total_losses", 0)),
+                "trades":   int(d.get("total_trades",   0)),
+                "wins":     int(d.get("total_wins",     0)),
+                "losses":   int(d.get("total_losses",   0)),
+                "timeouts": int(d.get("total_timeouts", 0)),
             }
     except Exception as e:
         print(f"⚠️  load_stats: {e}")
