@@ -183,6 +183,7 @@ def print_status():
     # pre-extract to avoid backslash-in-fstring errors
     wins       = m["wins"]
     losses     = m["losses"]
+    timeouts   = m.get("timeouts", 0)
     profit     = m["profit"]
     drawdown   = m["drawdown"]
     win_streak = m["win_streak"]
@@ -269,12 +270,14 @@ def print_status():
         exp_col = C.GRN if exp > 0 else C.RED
 
         print(f"    {g('Obchody', C.GRY)}    {g(str(t), C.WHT + C.BLD)}  "
-              f"({g(f'OK {wins}', C.GRN)}  {g(f'X {losses}', C.RED)})")
+              f"({g(f'OK {wins}', C.GRN)}  {g(f'X {losses}', C.RED)}  "
+              f"{g(f'~ {timeouts}', C.GRY)})")
 
         print(f"    {g('Winrate', C.GRY)}     "
               f"{g(f'{w_pct:.1f}%', wr_col + C.BLD)}  "
               f"{cbar(wr, 1.0, lo=0.45, hi=0.55)}  "
-              f"{g('cil 55%', C.GRY)}")
+              f"{g('cil 55%', C.GRY)}  "
+              f"{g(f'(bez timeoutu)', C.GRY)}")
 
         print(f"    {g('Zisk', C.GRY)}        "
               f"{g(f'{profit:+.8f}', pr_col + C.BLD)}  "

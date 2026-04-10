@@ -25,7 +25,7 @@ def _hydrate_from_redis() -> None:
 
 
 METRICS = {
-    "trades": 0, "wins": 0, "losses": 0, "profit": 0.0,
+    "trades": 0, "wins": 0, "losses": 0, "timeouts": 0, "profit": 0.0,
     "win_streak": 0, "loss_streak": 0,
     "equity_peak": 0.0, "drawdown": 0.0,
     "confidence_avg": 0.0,
@@ -135,6 +135,13 @@ def _update_metrics_locked(signal, trade):
     m["profit"] += profit
     m["last_trade_time"] = _time.time()
 
+    # Neutral timeout: close_reason=="timeout" + |profit| < 0.001
+    # Learning system already maps these to 0.0 PnL — METRICS must match.
+    # Do NOT count as losses: they carry no directional signal and
+    # inflate loss_streak / suppress winrate misleadingly.
+    _reason        = trade.get("close_reason", "")
+    _neutral_timeout = (_reason == "timeout" and abs(profit) < 0.001)
+
     if result == "WIN":
         m["wins"]       += 1
         m["win_streak"] += 1
@@ -143,12 +150,15 @@ def _update_metrics_locked(signal, trade):
         m["avg_win"]     = m["gross_wins"] / m["wins"]
         if profit > m["best_trade"]:
             m["best_trade"] = profit
+    elif _neutral_timeout:
+        m["timeouts"]   += 1
+        # streak unchanged — a neutral exit is not a loss
     else:
         m["losses"]      += 1
         m["loss_streak"] += 1
         m["win_streak"]   = 0
         m["gross_losses"] += abs(profit)
-        m["avg_loss"]      = m["gross_losses"] / m["losses"]
+        m["avg_loss"]      = m["gross_losses"] / max(m["losses"], 1)
         if profit < m["worst_trade"]:
             m["worst_trade"] = profit
 
@@ -187,7 +197,9 @@ def _update_metrics_locked(signal, trade):
 def get_metrics():
     m  = METRICS
     t  = m["trades"]
-    wr = m["wins"] / t if t else 0.0
+    # Effective winrate excludes neutral timeouts — directional trades only
+    _decisive = m["wins"] + m["losses"]
+    wr = m["wins"] / _decisive if _decisive else 0.0
 
     rr = list(_recent_results)
     recent_wr = (
@@ -217,9 +229,13 @@ def get_metrics():
         for sym, s in _sym_stats.items()
     }
 
+    _timeouts     = m.get("timeouts", 0)
+    _timeout_rate = _timeouts / t if t else 0.0
+
     return {
         **m,
-        "winrate":        wr,
+        "winrate":        wr,           # wins / (wins + real_losses) — excludes neutral timeouts
+        "timeout_rate":   _timeout_rate,
         "ready":          t > 50 and wr > 0.55 and m["profit"] > 0,
         "recent_winrate": recent_wr,
         "recent_count":   len(rr),
@@ -274,10 +290,14 @@ def bootstrap_from_history(trades):
         m["profit"] += profit
         m["last_trade_time"] = float(trade.get("timestamp") or 0)
 
+        _bs_reason   = trade.get("close_reason", "")
+        _bs_neutral  = (_bs_reason == "timeout" and abs(profit) < 0.001)
         if result == "WIN":
             m["wins"] += 1; m["win_streak"] += 1; m["loss_streak"] = 0
             m["gross_wins"] += profit
             if profit > m["best_trade"]:  m["best_trade"] = profit
+        elif _bs_neutral:
+            m["timeouts"] = m.get("timeouts", 0) + 1
         else:
             m["losses"] += 1; m["loss_streak"] += 1; m["win_streak"] = 0
             m["gross_losses"] += abs(profit)
