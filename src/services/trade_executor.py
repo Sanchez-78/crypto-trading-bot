@@ -35,6 +35,7 @@ import os
 import logging
 import random
 import time
+from src.core.guard import guard, FailureLevel
 
 log = logging.getLogger(__name__)
 
@@ -214,9 +215,13 @@ def dynamic_hold_extension(base_hold, ev, atr, entry):
     Bounded result: [5, 22] ticks — identical to V10.3b.
     """
     scale_ev  = 1.0 + max(-0.3, min(0.3, ev * 1.5))
-    atr_pct   = atr / max(entry, 1e-9)
+    # V11.0: Volatility-Weighted Adaptive Timeout
+    # timeout = base * (1 + atr_ratio). Baseline ATR = 1.0%
+    atr_pct = atr / max(entry, 1e-9)
     vol_scale = max(0.85, min(1.15, 0.01 / (atr_pct + 1e-6)))
-    timeout   = int(base_hold * scale_ev * vol_scale)
+    vol_factor = max(0.7, min(1.5, 1.0 + (atr_pct - 0.01) / 0.01))
+    
+    timeout = int(base_hold * scale_ev * vol_scale * vol_factor)
     return max(120, min(600, timeout))  # [2m, 10m] range in seconds
 
 
@@ -1484,6 +1489,20 @@ def handle_signal(signal):
     except Exception as _eq_exc:
         log.info(f"    exec_quality[v10.11]: skipped ({_eq_exc})")
 
+    # ── V11.0: Fail-Safe Guard Checks ─────────────────────────────────────────
+    # 1. System Level Check
+    if guard.hard_stop:
+        log.warning(f"    [HALT] SystemGuard Hard Stop active — blocking trade {sym}")
+        return
+        
+    # 2. Sizing Escalation (DEGRADE mode)
+    size *= guard.get_size_multiplier()
+    
+    # 3. Hard Invariants (NaN, Monotonicity)
+    if not guard.check_trade_invariants(sym, size, entry, tp_est, sl_est):
+        log.error(f"    [HARD_FAIL] Invariant breach detected for {sym} — halting system.")
+        return
+
     edge = net_edge(ws_adj, size, ob, FEE_RT, sym)
     if not cost_guard_bootstrap(edge):
         log.info(f"    portfolio gate: cost_guard  sym={sym}  "
@@ -1620,6 +1639,7 @@ def handle_signal(signal):
 
 
 def on_price(data):
+    _t_start = time.perf_counter()
     if time.time() - _last_flush[0] >= FLUSH_EVERY and BATCH:
         _flush()
 
@@ -1970,6 +1990,13 @@ def on_price(data):
         # the capital recycling bonus (×1.1) when the exited trade was profitable.
         pending["_recycling_pnl"] = move
         handle_signal(pending)
+
+    # V11.0: End of decision chain — check Latency SLA (50ms)
+    _t_end = time.perf_counter()
+    _lat_ms = (_t_end - _t_start) * 1000
+    guard.report_latency(_lat_ms)
+    if _lat_ms > 50:
+        log.warning(f"    [LATENCY_WARN] on_price processing time: {_lat_ms:.2f}ms (SLA: 50ms)")
 
 
 subscribe_once("signal_created", handle_signal)
