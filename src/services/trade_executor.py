@@ -217,7 +217,7 @@ def dynamic_hold_extension(base_hold, ev, atr, entry):
     atr_pct   = atr / max(entry, 1e-9)
     vol_scale = max(0.85, min(1.15, 0.01 / (atr_pct + 1e-6)))
     timeout   = int(base_hold * scale_ev * vol_scale)
-    return max(5, min(22, timeout))
+    return max(120, min(600, timeout))  # [2m, 10m] range in seconds
 
 
 # ── V10.4 helpers — portfolio intelligence ────────────────────────────────────
@@ -693,13 +693,15 @@ def _dynamic_hold(atr_abs, entry, sym=None, reg=None, adx=0.0):
         except Exception:
             pass
 
-    # V8: continuous EV → base mapping
+    # V8: continuous EV → base mapping (seconds)
     ev_factor = min(max((_ev + 1) / 2, 0.0), 1.0)
-    base      = 6 + int(ev_factor * 6)   # range [6, 12]
+    base      = 180 + int(ev_factor * 120)   # base [180s, 300s] (3–5 min)
 
-    # Base is a FLOOR (V7 guarantee retained). ATR tunes up to base+4.
-    hold = max(base, min(base + 4, atr_adj + trend_bonus))
-    return max(5, min(hold, 17))   # absolute ceiling 17
+    # V10.14: conversion to seconds. ATR/trend bonus scales up to base+120s.
+    # atr_adj multiplier 5→100 matches the seconds-scale conversion.
+    atr_adj_s = int(100 * max(0.002, 0.01 / max(atr_pct, 1e-9)))
+    hold      = max(base, min(base + 120, atr_adj_s + trend_bonus * 30))
+    return max(150, min(hold, 480))   # absolute ceiling 480s (8 min)
 
 
 def _force_trade_guard():
@@ -1829,7 +1831,9 @@ def on_price(data):
     except Exception:
         pass
     timeout = dynamic_hold_extension(timeout, _ev_hold, atr, entry)
-    if reason is None and pos["ticks"] >= timeout:
+    # V10.14: switched from tick-based to time-based timeout calculation.
+    # pos["ticks"] remains for diagnostics; exit uses absolute session time.
+    if reason is None and (time.time() - pos["open_ts"]) >= timeout:
         reason = "timeout"
 
     # V10.5b: store current price as prev for next tick's momentum check
