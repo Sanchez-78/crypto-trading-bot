@@ -33,10 +33,16 @@ class AuditWorker:
         self._buffer: list[dict] = []
         self._flush_task: Optional[asyncio.Task] = None
 
-    async def _get_redis(self) -> Any:
+    async def _get_redis(self) -> Optional[Any]:
         if self._redis is None:
-            import redis.asyncio as aioredis
-            self._redis = aioredis.from_url(REDIS_URL, decode_responses=True)
+            try:
+                import redis.asyncio as aioredis
+                self._redis = aioredis.from_url(REDIS_URL, decode_responses=True)
+            except ImportError:
+                log.error("❌ CRITICAL: 'redis' module NOT FOUND. 'AuditWorker' (Redis -> Firestore bridge) is DISABLED.")
+                log.error("   To fix this, run: pip install redis")
+                self._running = False  # Shut down to prevent infinite loop
+                return None
         return self._redis
 
     async def start(self) -> None:
@@ -48,7 +54,12 @@ class AuditWorker:
         
         while self._running:
             try:
-                r      = await self._get_redis()
+                r = await self._get_redis()
+                if r is None:
+                    # redis module missing, already logged
+                    self._running = False
+                    break
+                
                 pubsub = r.pubsub()
                 await pubsub.subscribe(AUDIT_CHANNEL)
                 
@@ -63,6 +74,11 @@ class AuditWorker:
                         log.warning("Audit parse error: %s", exc)
                         
             except Exception as exc:
+                if "No module named 'redis'" in str(exc) or isinstance(exc, ImportError):
+                    log.error("❌ 'redis' module missing. Disabling AuditWorker.")
+                    self._running = False
+                    break
+                
                 log.warning("AuditWorker connection lost: %s — reconnecting in 5s", exc)
                 self._redis = None
                 await asyncio.sleep(5)
