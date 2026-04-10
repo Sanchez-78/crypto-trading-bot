@@ -47,7 +47,8 @@ WALL_BAND_PCT:   float = 0.002   # scan ±0.2% from TP price
 WALL_RATIO:      float = 5.0     # ask_vol ≥ 5× avg level vol = wall
 WALL_TP_APPROACH: float = 0.002  # fire wall check within 0.2% of TP
 
-FEE_RT: float = 0.0015   # 0.15% round-trip
+FEE_RT:     float = 0.0015   # 0.15% round-trip
+MAX_TICKS:  int   = 80       # Task 3: max price ticks before timeout close
 
 
 # ── Position state ─────────────────────────────────────────────────────────────
@@ -389,6 +390,15 @@ class ExecutionEngine:
             else:
                 if price <= pos.tp: reason = "TP"
                 elif price >= pos.sl: reason = "SL"
+
+        # ── Task 3: timeout close (MAX_TICKS) ─────────────────────────────────
+        # Close any position that has been open for MAX_TICKS price updates
+        # without hitting TP / SL. Prevents positions from lingering indefinitely.
+        # close_reason="timeout" — same tag as the synchronous executor uses.
+        if reason is None and pos.ticks >= MAX_TICKS:
+            reason = "timeout"
+            log.info("TIMEOUT %s ticks=%d move=%.2f%% → closing",
+                     sym, pos.ticks, move * 100)
 
         # ── Task 3: L2 wall exit ───────────────────────────────────────────────
         # Fires when:

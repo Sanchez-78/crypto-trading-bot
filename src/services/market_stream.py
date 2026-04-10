@@ -76,6 +76,17 @@ def _on_message(ws, raw):
         if sym:
             track_price(sym, p)
             publish("price_tick", {"symbol": sym, "price": p, "obi": obi})
+            # Phase 2 / Task 2: push tick into async SignalEngine when enabled
+            try:
+                from src.services.signal_engine import (
+                    SIGNAL_ENGINE_ENABLED, push_tick,
+                )
+                if SIGNAL_ENGINE_ENABLED:
+                    push_tick({"symbol": sym, "price": p, "obi": obi,
+                                "bid": bid, "ask": ask,
+                                "bid_qty": bid_qty, "ask_qty": ask_qty})
+            except Exception:
+                pass
     except Exception:
         pass
 

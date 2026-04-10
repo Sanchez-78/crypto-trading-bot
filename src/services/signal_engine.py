@@ -277,6 +277,7 @@ class SignalEngine:
 # ── Module-level singleton ────────────────────────────────────────────────────
 
 _engine: Optional[SignalEngine] = None
+_loop:   Optional[asyncio.AbstractEventLoop] = None
 
 
 async def start() -> None:
@@ -286,10 +287,11 @@ async def start() -> None:
         from src.services.signal_engine import start as signal_engine_start
         asyncio.create_task(signal_engine_start())
     """
-    global _engine
+    global _engine, _loop
     if not SIGNAL_ENGINE_ENABLED:
         log.info("SignalEngine disabled (SIGNAL_ENGINE_ENABLED != 1)")
         return
+    _loop   = asyncio.get_running_loop()
     _engine = SignalEngine()
     await _engine.start()
 
@@ -298,3 +300,19 @@ async def enqueue_tick(tick: dict[str, Any]) -> None:
     """Push a price tick into the engine. No-op if engine is not running."""
     if _engine is not None:
         await _engine.enqueue_tick(tick)
+
+
+def push_tick(tick: dict[str, Any]) -> None:
+    """
+    Thread-safe sync entry point for non-async callers (e.g. WebSocket callbacks).
+
+    Called from market_stream._on_message when SIGNAL_ENGINE_ENABLED=1.
+    Uses call_soon_threadsafe to inject the tick into the asyncio event loop
+    without blocking the WebSocket receive thread.
+    No-op when the engine or loop is not initialised.
+    """
+    if _engine is not None and _loop is not None and _loop.is_running():
+        try:
+            _loop.call_soon_threadsafe(_engine._queue.put_nowait, tick)
+        except Exception as exc:
+            log.debug("push_tick error: %s", exc)
