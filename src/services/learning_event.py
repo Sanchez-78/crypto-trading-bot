@@ -272,11 +272,14 @@ def bootstrap_from_history(trades):
     # would otherwise be off by however many older trades exist in the DB.
     _count_seeded = False
     try:
-        from src.services.firebase_client import load_trade_count as _ltc
-        total_count = _ltc()
-        if total_count is not None and total_count > len(sorted_trades):
+        from src.services.firebase_client import load_stats as _ls
+        stats = _ls()
+        total_count = stats.get("trades", 0)
+        if total_count > len(sorted_trades):
             m["trades"]           = total_count
             m["signals_executed"] = total_count
+            m["wins"]             = stats.get("wins",   0)
+            m["losses"]           = stats.get("losses", 0)
             _count_seeded = True
     except Exception:
         pass
@@ -304,11 +307,13 @@ def bootstrap_from_history(trades):
         if _bs_neutral:
             m["timeouts"] = m.get("timeouts", 0) + 1
         elif result == "WIN":
-            m["wins"] += 1; m["win_streak"] += 1; m["loss_streak"] = 0
+            if not _count_seeded: m["wins"] += 1
+            m["win_streak"] += 1; m["loss_streak"] = 0
             m["gross_wins"] += profit
             if profit > m["best_trade"]:  m["best_trade"] = profit
         else:
-            m["losses"] += 1; m["loss_streak"] += 1; m["win_streak"] = 0
+            if not _count_seeded: m["losses"] += 1
+            m["loss_streak"] += 1; m["win_streak"] = 0
             m["gross_losses"] += abs(profit)
             if profit < m["worst_trade"]: m["worst_trade"] = profit
 

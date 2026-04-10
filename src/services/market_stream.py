@@ -18,7 +18,10 @@ Back-off resets to 1 s after a session that lasted > 60 s (healthy run).
 
 import json
 import time
-import websocket
+try:
+    import websocket
+except ImportError:
+    websocket = None
 
 from src.core.event_bus import publish
 from src.services.learning_event import track_price
@@ -103,6 +106,10 @@ def _on_close(ws, code, msg):
 
 def start():
     """Open a persistent combined bookTicker stream; reconnect on disconnect."""
+    if websocket is None:
+        print("❌ CRITICAL: 'websocket' module not found. Run: pip install websocket-client")
+        return
+
     backoff = 1
     while True:
         t_start = time.time()

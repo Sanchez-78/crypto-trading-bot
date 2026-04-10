@@ -176,7 +176,7 @@ def save_batch(batch):
         batch = list(_RETRY_QUEUE) + list(batch)
         _RETRY_QUEUE.clear()
 
-    def _attempt(b):
+    try:
         slimmed  = [_slim_trade(t) for t in b]
         fb_batch = db.batch()
         for item in slimmed:
@@ -184,18 +184,20 @@ def save_batch(batch):
         fb_batch.commit()
         _HISTORY_CACHE["data"] = (slimmed + _HISTORY_CACHE["data"])[:HISTORY_LIMIT]
         _HISTORY_CACHE["ts"]   = time.time()
+        
+        # Count wins/losses for atomic stats update
+        wins   = sum(1 for t in slimmed if t.get("result") == "WIN")
+        losses = sum(1 for t in slimmed if t.get("result") == "LOSS")
+        increment_stats(len(b), wins, losses)
         return len(b)
-
-    try:
-        n = _attempt(batch)
-        increment_trade_count(n)
+    except Exception as e:
+        raise e
         print(f"💾 Firebase: saved {n} trades (batch write)")
     except Exception as e:
         print(f"⚠️  save_batch failed ({e}) — retrying in 3 s …")
         time.sleep(3)
         try:
             n = _attempt(batch)
-            increment_trade_count(n)
             print(f"💾 Firebase: saved {n} trades (retry OK)")
         except Exception as e2:
             _RETRY_QUEUE.extend(batch)
@@ -217,30 +219,41 @@ def save_trade(trade, result):
 _STATS_DOC = col("system") + "/stats"
 
 
-def increment_trade_count(n: int = 1) -> None:
-    """Atomically add `n` to system/stats.total_trades counter."""
-    if db is None or n <= 0:
+def increment_stats(n: int = 1, wins: int = 0, losses: int = 0) -> None:
+    """Atomically update counters in system/stats."""
+    if db is None or (n <= 0 and wins <= 0 and losses <= 0):
         return
     try:
-        db.document(_STATS_DOC).set(
-            {"total_trades": firestore.Increment(n), "updated_at": time.time()},
-            merge=True,
-        )
+        upd = {"updated_at": time.time()}
+        if n > 0:      upd["total_trades"] = firestore.Increment(n)
+        if wins > 0:   upd["total_wins"]   = firestore.Increment(wins)
+        if losses > 0: upd["total_losses"] = firestore.Increment(losses)
+        db.document(_STATS_DOC).set(upd, merge=True)
     except Exception as e:
-        print(f"⚠️  increment_trade_count: {e}")
+        print(f"⚠️  increment_stats: {e}")
 
 
-def load_trade_count() -> int | None:
-    """Return total_trades from system/stats, or None if unavailable."""
+def load_stats() -> dict:
+    """Return stats from system/stats, or empty dict if unavailable."""
     if db is None:
-        return None
+        return {}
     try:
         doc = db.document(_STATS_DOC).get()
         if doc.exists:
-            return int(doc.to_dict().get("total_trades", 0))
+            d = doc.to_dict()
+            return {
+                "trades": int(d.get("total_trades", 0)),
+                "wins":   int(d.get("total_wins",   0)),
+                "losses": int(d.get("total_losses", 0)),
+            }
     except Exception as e:
-        print(f"⚠️  load_trade_count: {e}")
-    return None
+        print(f"⚠️  load_stats: {e}")
+    return {}
+
+
+def load_trade_count() -> int | None:
+    """Legacy shim for learning_event.py."""
+    return load_stats().get("trades", 0)
 
 
 # ── Model state (calibrator + learning histories + bayes/bandit) ───────────────
