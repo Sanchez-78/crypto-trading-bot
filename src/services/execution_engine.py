@@ -45,10 +45,7 @@ BINANCE_API_KEY: str           = os.getenv("BINANCE_API_KEY", "")
 BINANCE_SECRET:  str           = os.getenv("BINANCE_SECRET", "")
 BINANCE_BASE:    str           = "https://api.binance.com"
 
-# L2 wall detection parameters (Task 3)
-WALL_BAND_PCT:   float = 0.002   # scan ±0.2% from TP price
-WALL_RATIO:      float = 5.0     # ask_vol ≥ 5× avg level vol = wall
-WALL_TP_APPROACH: float = 0.002  # fire wall check within 0.2% of TP
+# L2 wall detection — delegated to shared order_book_depth module (Phase 4)
 
 FEE_RT:          float = 0.0015  # 0.15% round-trip
 MAX_TICKS:       int   = 80      # default max price ticks before timeout close
@@ -149,89 +146,16 @@ class BinanceClient:
             await self._client.aclose()
 
 
-# ── L2 Order Book depth state + wall detector ────────────────────────────────
+# ── L2 wall detection — shared module (Phase 4) ──────────────────────────────
+# L2WallDetector logic is now centralised in order_book_depth.py so both
+# signal_engine (entry gate) and execution_engine (exit gate) share the same
+# live book state.  ExecutionEngine delegates all wall queries there.
 
-class L2WallDetector:
-    """
-    Tracks the live L2 order book top-100 and detects liquidity walls.
-
-    Wall definition (Task 3):
-      A "sell wall" exists when the total ask volume in the band
-      (tp_price, tp_price × (1 + WALL_BAND_PCT)] is ≥ WALL_RATIO × average
-      volume per level across the entire ask side.
-
-    Why top-100 and not top-20?
-      With only 20 levels the wall might sit at level 15-20 and not be
-      detectable until price is already inside it. 100 levels give enough
-      lookahead at the cost of slightly more WebSocket bandwidth.
-    """
-
-    def __init__(self) -> None:
-        # symbol → {"asks": [(price, qty), ...], "bids": [...], "ts": float}
-        self._books: dict[str, dict[str, Any]] = {}
-
-    def update(self, symbol: str, bids: list, asks: list) -> None:
-        self._books[symbol] = {
-            "bids": [(float(p), float(q)) for p, q in bids if float(q) > 0],
-            "asks": [(float(p), float(q)) for p, q in asks if float(q) > 0],
-            "ts":   time.time(),
-        }
-
-    def is_sell_wall_near_tp(self, symbol: str, current_price: float,
-                              tp_price: float) -> bool:
-        """
-        True when:
-        1. current_price is within WALL_TP_APPROACH of tp_price (approaching TP).
-        2. Total ask volume in (tp_price, tp_price × (1+WALL_BAND_PCT)] is
-           ≥ WALL_RATIO × average ask volume per level.
-
-        Task 3 spec: fires when "approaching TP (within 0.2%) AND massive wall
-        5× average level volume is detected right before TP price."
-        """
-        approach = (tp_price - current_price) / max(current_price, 1e-9)
-        if approach > WALL_TP_APPROACH:
-            return False   # not close enough to TP yet
-
-        book = self._books.get(symbol)
-        if book is None or time.time() - book["ts"] > 5.0:
-            return False   # stale or missing
-
-        asks: list[tuple[float, float]] = book["asks"]
-        if not asks:
-            return False
-
-        upper = tp_price * (1.0 + WALL_BAND_PCT)
-        wall_vol = sum(q for p, q in asks if tp_price < p <= upper)
-        avg_vol  = sum(q for _, q in asks) / len(asks)
-
-        if avg_vol <= 0:
-            return False
-
-        return wall_vol >= WALL_RATIO * avg_vol
-
-    def is_buy_wall_near_tp(self, symbol: str, current_price: float,
-                             tp_price: float) -> bool:
-        """Mirror for SELL positions: buy wall below TP (which is lower)."""
-        approach = (current_price - tp_price) / max(tp_price, 1e-9)
-        if approach > WALL_TP_APPROACH:
-            return False
-
-        book = self._books.get(symbol)
-        if book is None or time.time() - book["ts"] > 5.0:
-            return False
-
-        bids: list[tuple[float, float]] = book["bids"]
-        if not bids:
-            return False
-
-        lower    = tp_price * (1.0 - WALL_BAND_PCT)
-        wall_vol = sum(q for p, q in bids if lower <= p < tp_price)
-        avg_vol  = sum(q for _, q in bids) / len(bids)
-
-        if avg_vol <= 0:
-            return False
-
-        return wall_vol >= WALL_RATIO * avg_vol
+from src.services.order_book_depth import (          # noqa: E402
+    update_depth as _ob_update_depth,
+    is_sell_wall_near_tp as _ob_sell_wall_tp,
+    is_buy_wall_near_tp  as _ob_buy_wall_tp,
+)
 
 
 # ── Execution Engine ──────────────────────────────────────────────────────────
@@ -247,7 +171,6 @@ class ExecutionEngine:
     def __init__(self) -> None:
         self._positions: dict[str, Position] = {}
         self._binance   = BinanceClient(BINANCE_API_KEY, BINANCE_SECRET, BINANCE_BASE)
-        self._walls     = L2WallDetector()
         self._running   = False
         self._redis: Optional[Any] = None
         self._boot_ms: int = int(time.time() * 1000)  # epoch ms at startup
@@ -406,19 +329,17 @@ class ExecutionEngine:
             log.info("TIMEOUT %s ticks=%d/%d move=%.2f%% → closing",
                      sym, pos.ticks, _max_ticks, move * 100)
 
-        # ── Task 3: L2 wall exit ───────────────────────────────────────────────
+        # ── L2 wall exit (shared order_book_depth module) ─────────────────────
         # Fires when:
         #   position is profitable (move ≥ 0.10%)
         #   current price is within 0.2% of TP
         #   massive liquidity wall sits right before TP price
         if reason is None and move >= 0.001:
-            if pos.action == "BUY" and self._walls.is_sell_wall_near_tp(
-                    sym, price, pos.tp):
+            if pos.action == "BUY" and _ob_sell_wall_tp(sym, price, pos.tp):
                 reason = "wall_exit"
                 log.info("L2 WALL detected BUY %s price=%.4f tp=%.4f → wall_exit",
                          sym, price, pos.tp)
-            elif pos.action == "SELL" and self._walls.is_buy_wall_near_tp(
-                    sym, price, pos.tp):
+            elif pos.action == "SELL" and _ob_buy_wall_tp(sym, price, pos.tp):
                 reason = "wall_exit"
                 log.info("L2 WALL detected SELL %s price=%.4f tp=%.4f → wall_exit",
                          sym, price, pos.tp)
@@ -615,8 +536,12 @@ class ExecutionEngine:
     # ── L2 book update (called from WebSocket depth stream) ──────────────────
 
     def update_depth(self, symbol: str, bids: list, asks: list) -> None:
-        """Update L2 book for `symbol`. Thread-safe (called from async loop)."""
-        self._walls.update(symbol, bids, asks)
+        """
+        Feed a depth snapshot into the shared order_book_depth singleton.
+        Both execution_engine (wall_exit) and signal_engine (L2 gate) read it.
+        Thread-safe: called from async loop, GIL protects dict writes.
+        """
+        _ob_update_depth(symbol, bids, asks)
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 

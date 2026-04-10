@@ -57,6 +57,14 @@ REDIS_URL: str              = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 PUBSUB_CHANNEL: str         = "signals"
 TICK_QUEUE_MAXSIZE: int     = 512   # price-tick buffer before back-pressure
 
+# Phase 4 Task 1 — L2 gate rejection counter (process-lifetime, flushed to Redis)
+_l2_rejected: int = 0
+
+
+def l2_rejected_count() -> int:
+    """Return the total number of signals rejected by the L2 entry gate."""
+    return _l2_rejected
+
 
 # ── TradeSignal dataclass ──────────────────────────────────────────────────────
 
@@ -180,7 +188,55 @@ async def _evaluate_tick(data: dict[str, Any]) -> Optional[TradeSignal]:
 
             raw_sig = _captured[0]
             # Run through RDE gate (EV scoring, coherence, all guards)
-            return evaluate_signal(raw_sig)
+            evaluated = evaluate_signal(raw_sig)
+            if evaluated is None:
+                return None
+
+            # ── Phase 4 Task 1: L2 entry gate ────────────────────────────────
+            # Reject signals that would run head-first into a liquidity wall
+            # before reaching their TP.  Uses the shared order_book_depth
+            # singleton which is fed by the depth WebSocket in market_stream.
+            try:
+                from src.services.order_book_depth import (
+                    is_sell_wall_near_tp as _ob_sell_wall,
+                    is_buy_wall_near_tp  as _ob_buy_wall,
+                )
+                _e_sym    = evaluated.get("symbol", "")
+                _e_price  = float(evaluated.get("price", 0.0))
+                _e_atr    = float(evaluated.get("atr", 0.0))
+                _e_action = evaluated.get("action", "BUY")
+
+                # Estimate TP the same way execution_engine does
+                _atr_pct = max(_e_atr, _e_price * 0.003) / max(_e_price, 1e-9)
+                if _e_action == "BUY":
+                    _tp_est = _e_price * (1.0 + 1.1 * _atr_pct)
+                    _wall   = _ob_sell_wall(_e_sym, _e_price, _tp_est)
+                else:
+                    _tp_est = _e_price * (1.0 - 1.1 * _atr_pct)
+                    _wall   = _ob_buy_wall(_e_sym, _e_price, _tp_est)
+
+                if _wall:
+                    # Increment process-lifetime counter (non-blocking global write)
+                    import src.services.signal_engine as _self_mod
+                    _self_mod._l2_rejected += 1
+                    log.info(
+                        "REJECTED_L2_WALL %s %s price=%.4f tp_est=%.4f "
+                        "(total_rejected=%d)",
+                        _e_sym, _e_action, _e_price, _tp_est,
+                        _self_mod._l2_rejected,
+                    )
+                    # Flush counter to Redis for cross-restart persistence
+                    try:
+                        from src.services.state_manager import increment_l2_rejected
+                        increment_l2_rejected()
+                    except Exception:
+                        pass
+                    return None
+
+            except Exception as _gate_exc:
+                log.debug("L2 gate error (non-fatal): %s", _gate_exc)
+
+            return evaluated
 
         except Exception as exc:
             log.debug("_sync_evaluate error: %s", exc)

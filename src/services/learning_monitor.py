@@ -224,7 +224,31 @@ def record_features(features, pnl):
 
 # ── Update hook — call on every trade close ────────────────────────────────────
 
-def lm_update(sym, reg, pnl, ws, features):
+def _pnl_weighted_label(pnl: float) -> float:
+    """
+    Phase 4 Task 2: PnL-weighted LSTM training label.
+
+    Converts a raw PnL float into a weighted label for online LSTM fine-tuning.
+    Formula: sign(pnl) × clamp(|pnl| × 100, 0.5, 5.0)
+
+    Examples:
+      pnl = +0.02  →  +2.0   (solid 2% win — strong positive gradient)
+      pnl = +0.001 →  +0.5   (floor: tiny win still gets minimum signal)
+      pnl = +0.10  →  +5.0   (fat winner — maximum gradient, 5× noisy edge)
+      pnl = -0.015 →  -1.5   (1.5% loss — proportional negative signal)
+      pnl = 0.0    →   0.0   (neutral timeout — no gradient update)
+
+    The floor of 0.5 prevents tiny wins/losses from being silenced entirely.
+    The cap of 5.0 prevents a single outlier from dominating the weights.
+    """
+    if pnl == 0.0:
+        return 0.0
+    sign      = 1.0 if pnl > 0 else -1.0
+    magnitude = min(max(abs(pnl) * 100.0, 0.5), 5.0)
+    return sign * magnitude
+
+
+def lm_update(sym, reg, pnl, ws, features, window=None):
     """
     Record one closed trade.
     sym:      symbol string ("BTCUSDT")
@@ -232,6 +256,8 @@ def lm_update(sym, reg, pnl, ws, features):
     pnl:      realised profit/loss (float)
     ws:       win-score at entry (float)
     features: dict of signal features (may be empty)
+    window:   np.ndarray shape (SEQ_LEN, INPUT_SIZE) — LSTM training window
+              Optional; if provided, triggers a PnL-weighted online update.
     """
     key = (sym, reg)
 
@@ -271,6 +297,22 @@ def lm_update(sym, reg, pnl, ws, features):
 
     # Feature win rates — direct update, no soft sampling
     record_features(features, pnl)
+
+    # ── Phase 4 Task 2: PnL-weighted LSTM online fine-tuning ─────────────────
+    # Only update when a feature window is provided (caller must build it).
+    # Neutral timeouts (pnl ≈ 0) produce label 0.0 → no gradient update.
+    if window is not None:
+        try:
+            from src.services.lstm_model import model as _lstm
+            _label = _pnl_weighted_label(pnl)
+            if _label != 0.0:            # skip neutral timeouts
+                _lstm.update(window, _label)
+                log.debug(
+                    "LSTM update %s/%s pnl=%.4f → label=%.2f updates=%d",
+                    sym, reg, pnl, _label, _lstm._updates,
+                )
+        except Exception as _exc:
+            log.debug("LSTM update skipped: %s", _exc)
 
     # Persist to Redis (zero-loss cold start)
     try:
@@ -445,6 +487,50 @@ def meta_update():
         meta["risk_mult"] = 0.60
 
 
+# ── Phase 4 Task 3: Defense efficiency ────────────────────────────────────────
+
+def defense_efficiency() -> dict:
+    """
+    Compute defense metrics from close_reasons + L2 rejection counter.
+
+    Definitions:
+      wall_exits   — positions closed early via L2 wall_exit (execution_engine)
+      timeouts     — positions that expired without hitting TP/SL
+      l2_rejected  — entry signals blocked before a position was even opened
+      defended     — wall_exits + l2_rejected  (situations where L2 data helped)
+      efficiency   — defended / (defended + timeouts)
+                     → 1.0 = every timeout was either avoided or caught early
+                     → 0.0 = L2 intelligence contributed nothing
+
+    Returns a dict ready to embed in lm_snapshot() and Firestore metrics.
+    """
+    try:
+        from src.services.learning_event import CLOSE_REASONS  # type: ignore
+        wall_exits  = CLOSE_REASONS.get("wall_exit", 0)
+        timeouts    = CLOSE_REASONS.get("timeout",   0)
+    except Exception:
+        wall_exits  = 0
+        timeouts    = 0
+
+    try:
+        from src.services.state_manager import get_l2_rejected
+        l2_rejected = get_l2_rejected()
+    except Exception:
+        l2_rejected = 0
+
+    defended   = wall_exits + l2_rejected
+    total      = defended + timeouts
+    efficiency = round(defended / total, 4) if total > 0 else 0.0
+
+    return {
+        "wall_exits":   wall_exits,
+        "timeouts":     timeouts,
+        "l2_rejected":  l2_rejected,
+        "defended":     defended,
+        "efficiency":   efficiency,
+    }
+
+
 # ── Alerts ────────────────────────────────────────────────────────────────────
 
 def lm_alerts():
@@ -537,6 +623,7 @@ def lm_snapshot():
         "block_reasons": metrics_copy.get("block_reasons", {}),
         "completed_trades": metrics_copy.get("trades", 0),
         "best_edge": best_edge or "Unknown",
+        "defense":  defense_efficiency(),
     }
 
 

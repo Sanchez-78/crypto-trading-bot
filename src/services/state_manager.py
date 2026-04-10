@@ -468,3 +468,45 @@ def is_redis_available() -> bool:
     """Returns True if Redis is reachable. Used for graceful degradation."""
     result = _run(_async_ping())
     return bool(result)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Phase 4 Task 3 — Defense efficiency counters
+# ══════════════════════════════════════════════════════════════════════════════
+# Tracks two independent rejection events:
+#   "exec:l2_rejected"  — signals killed at entry by L2 wall gate (signal_engine)
+#
+# close_reasons (wall_exit, timeout) are already persisted via flush_metrics()
+# in learning_event.py.  l2_rejected is a separate counter because it lives in
+# signal_engine.py (never touches a trade document).
+
+async def _async_increment_l2_rejected() -> None:
+    try:
+        r = await _get_client()
+        await r.incr("exec:l2_rejected")
+    except Exception as exc:
+        log.debug("increment_l2_rejected error: %s", exc)
+
+
+def increment_l2_rejected() -> None:
+    """
+    Atomically increment the L2 rejection counter in Redis.
+    Called from signal_engine._sync_evaluate on each REJECTED_L2_WALL event.
+    Sync shim — non-blocking (runs in fresh event loop).
+    """
+    _run(_async_increment_l2_rejected())
+
+
+async def _async_get_l2_rejected() -> int:
+    try:
+        r = await _get_client()
+        val = await r.get("exec:l2_rejected")
+        return int(val) if val else 0
+    except Exception:
+        return 0
+
+
+def get_l2_rejected() -> int:
+    """Return the total number of L2-rejected signals since last Redis reset."""
+    result = _run(_async_get_l2_rejected())
+    return int(result) if result else 0
