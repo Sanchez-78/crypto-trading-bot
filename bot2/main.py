@@ -16,6 +16,26 @@ import src.services.audit_worker
 _last_audit      = 0
 _last_metrics    = 0
 _last_pre_audit  = 0
+
+# ── FX rate cache (USD/CZK) ───────────────────────────────────────────────────
+_fx_usd_czk:      float = 0.0
+_fx_last_fetch:   float = 0.0
+_FX_REFRESH_SECS: int   = 3600   # refresh once per hour
+
+def _refresh_fx_rate() -> None:
+    """Fetch USD/CZK from Frankfurter API; silently keeps old value on error."""
+    global _fx_usd_czk, _fx_last_fetch
+    try:
+        import urllib.request, json as _json
+        with urllib.request.urlopen(
+            "https://api.frankfurter.app/latest?from=USD&to=CZK", timeout=5
+        ) as r:
+            rate = _json.loads(r.read()).get("rates", {}).get("CZK", 0.0)
+            if rate > 0:
+                _fx_usd_czk    = float(rate)
+                _fx_last_fetch = time.time()
+    except Exception:
+        pass  # keep stale value — better than 0
 AUDIT_INTERVAL      = 30      # seconds — bot2 auditor cycle
 METRICS_INTERVAL    = 30      # save metrics/latest every 30 s
 PRE_AUDIT_INTERVAL  = 7200    # pre_live_audit replay run every 2 hours
@@ -661,9 +681,14 @@ def main():
             except Exception:
                 pass
 
+            # Refresh FX rate once per hour
+            if time.time() - _fx_last_fetch > _FX_REFRESH_SECS:
+                _refresh_fx_rate()
+
             save_metrics_full(get_metrics(), _pos,
                               execution=execution_data,
-                              monitor=monitor_data)
+                              monitor=monitor_data,
+                              fx_usd_czk=_fx_usd_czk or None)
             _last_metrics = now
 
         if now - _last_pre_audit >= PRE_AUDIT_INTERVAL:

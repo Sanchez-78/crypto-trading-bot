@@ -478,12 +478,13 @@ def _build_open_positions(positions):
     return out
 
 
-def save_metrics_full(metrics, open_positions=None, execution=None, monitor=None):
+def save_metrics_full(metrics, open_positions=None, execution=None, monitor=None, fx_usd_czk=None):
     """
     Write full nested metrics to metrics/latest.
     Called every 30 s from bot2/main.py.
     App reads: performance, health, learning, equity, system, sym_stats,
-               open_positions, execution (EV/failure/sharpe/control).
+               open_positions, execution (EV/failure/sharpe/control),
+               fx_usd_czk (CZK/USD fallback for app when Frankfurter API is down).
     """
     if db is None:
         return
@@ -614,6 +615,7 @@ def save_metrics_full(metrics, open_positions=None, execution=None, monitor=None
             "open_positions": _build_open_positions(open_positions),
             "execution":    execution,   # EV/failure/sharpe/control from execution engine
             "monitor":      monitor,     # learning quality/convergence/feature WR snapshot
+            "fx_usd_czk":   round(float(fx_usd_czk), 4) if fx_usd_czk else None,
             "timestamp":    time.time(),
         }
         db.collection(col("metrics")).document("latest").set(data, merge=False)
