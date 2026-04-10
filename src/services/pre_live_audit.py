@@ -1,16 +1,27 @@
 """
-pre_live_audit.py — Pre-Live Audit Script (V10.12c)
+pre_live_audit.py — Audit + Replay + Regression Validation System (V10.12c)
 
-Simulates 20–50 synthetic signals through the full sizing chain and logs
-intermediate sizes, risk-engine metrics, execution quality, and RDE
-auditor factors.  Read-only: does NOT modify any production state.
+Simulates or replays signals through the full sizing chain, exports structured
+JSON, compares against a baseline for regression detection, and acts as a
+CI/CD gate.  Read-only: does NOT modify any production state or database.
 
-    python -m src.services.pre_live_audit [--trades N] [--quiet] [--seed N]
+    python -m src.services.pre_live_audit [OPTIONS]
+
+Options:
+    --trades N          Number of synthetic trades (default 40)
+    --quiet             Suppress per-trade verbose logs
+    --seed N            RNG seed for reproducibility (default 42)
+    --replay            Load real closed trades from Firestore instead of synthetic
+    --out PATH          Write full JSON result to file
+    --baseline PATH     Compare current run against previous JSON export
 """
 
 from __future__ import annotations
 
 import argparse
+import dataclasses
+import datetime
+import json
 import os
 import sys
 import random
@@ -77,6 +88,7 @@ def _make_signals(n: int = 40, seed: int = 42) -> list[dict]:
             "ws":              rng.uniform(0.40, 0.90),
             "_is_replacement": False,
             "_recycling_pnl":  None,
+            "_source":         "synthetic",
         })
     return out
 
@@ -191,6 +203,9 @@ class AuditResult:
     monotone_ok:         bool      = True
     monotone_violations: list[str] = field(default_factory=list)
 
+    # Provenance
+    source: str = "synthetic"   # "synthetic" | "replay"
+
     @property
     def passed(self) -> bool:
         return (self.rde_pass
@@ -210,7 +225,10 @@ def _audit_one(signal: dict, positions: dict, idx: int, verbose: bool) -> AuditR
     price  = signal["price"]
     atr    = signal["atr"]
 
-    r = AuditResult(idx=idx, sym=sym, action=action, regime=regime, price=price)
+    r = AuditResult(
+        idx=idx, sym=sym, action=action, regime=regime, price=price,
+        source=signal.get("_source", "synthetic"),
+    )
 
     if verbose:
         sep = "─" * 68
@@ -475,9 +493,279 @@ def _verify_warm_start() -> None:
         print(f"  [ERROR] {exc}")
 
 
+# ── Summary metric builder ─────────────────────────────────────────────────────
+
+def _build_summary(results: list[AuditResult]) -> dict[str, Any]:
+    """Compute canonical summary metrics from a completed audit run."""
+    passed  = [r for r in results if r.passed]
+    total   = len(results)
+    blocked = total - len(passed)
+
+    sizes = [r.s_final     for r in passed]
+    rbs   = [r.risk_budget for r in passed]
+    eqs   = [r.exec_quality for r in passed]
+    mono_v = sum(len(r.monotone_violations) for r in results)
+
+    return {
+        "total_trades":        total,
+        "blocked_trades":      blocked,
+        "blocked_ratio":       round(blocked / max(total, 1), 4),
+        "monotone_violations": mono_v,
+        "avg_size":            round(sum(sizes) / max(len(sizes), 1), 6),
+        "min_size":            round(min(sizes, default=0.0), 6),
+        "max_size":            round(max(sizes, default=0.0), 6),
+        "avg_risk_budget":     round(sum(rbs) / max(len(rbs), 1), 4),
+        "max_risk_budget":     round(max(rbs, default=0.0), 4),
+        "exec_quality_mean":   round(sum(eqs) / max(len(eqs), 1), 4),
+    }
+
+
+# ── JSON serialisation helper ──────────────────────────────────────────────────
+
+def _safe_json(obj: Any) -> Any:
+    """Recursively convert numpy scalars and non-serialisable types to JSON-safe equivalents."""
+    if hasattr(obj, "item"):          # numpy scalar (float32, int64, …)
+        return obj.item()
+    if isinstance(obj, dict):
+        return {k: _safe_json(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_safe_json(v) for v in obj]
+    if isinstance(obj, bool):         # must come before int check
+        return obj
+    if isinstance(obj, float):
+        return obj
+    if isinstance(obj, int):
+        return obj
+    if isinstance(obj, str):
+        return obj
+    return str(obj)                   # last-resort: stringify unknown types
+
+
+# ── JSON export ────────────────────────────────────────────────────────────────
+
+def _export_json(
+    results:  list[AuditResult],
+    mode:     str,
+    config:   dict[str, Any],
+    path:     str,
+) -> None:
+    """
+    Write full audit result to a JSON file.
+
+    Output structure:
+        version, timestamp, mode, config, summary, trades[]
+    """
+    summary = _build_summary(results)
+    trades  = [_safe_json(dataclasses.asdict(r)) for r in results]
+    payload: dict[str, Any] = {
+        "version":   "v10.12c",
+        "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+        "mode":      mode,
+        "config":    config,
+        "summary":   summary,
+        "trades":    trades,
+    }
+    try:
+        parent = os.path.dirname(os.path.abspath(path))
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh, indent=2)
+        print(f"[audit] exported → {path}")
+    except Exception as exc:
+        print(f"[audit] JSON export failed: {exc}")
+
+
+# ── Replay loader ──────────────────────────────────────────────────────────────
+
+def _load_replay_signals(n: int) -> list[dict] | None:
+    """
+    Load the last `n` closed trades from Firestore and convert them to the
+    audit signal format expected by _audit_one().
+
+    Returns None if Firestore is unavailable; caller falls back to synthetic.
+    This function is strictly read-only — it makes no writes to the database.
+
+    Field mapping (slim_trade schema → audit signal):
+        symbol          → sym
+        action          → action
+        price           → price  (entry price)
+        confidence      → confidence
+        regime          → regime
+        ws              → ws
+        ev              → (used as confidence proxy when confidence missing)
+        features        → features  (preserved verbatim)
+        features.volatility → atr  (atr ≈ price × volatility × 2.0)
+    """
+    try:
+        from src.services.firebase_client import init_firebase, load_history
+        init_firebase()
+        raw: list[dict] = load_history(limit=n) or []
+        if not raw:
+            print("[audit] replay unavailable, using synthetic fallback "
+                  "(load_history returned empty)")
+            return None
+
+        signals: list[dict] = []
+        for t in raw:
+            sym    = str(t.get("symbol") or t.get("sym") or "BTCUSDT")
+            action = str(t.get("action") or t.get("signal") or "BUY").upper()
+            if action not in ("BUY", "SELL"):
+                action = "BUY"
+
+            price  = float(t.get("price") or t.get("entry_price") or 65000.0)
+            if price <= 0:
+                price = 65000.0
+
+            regime = str(t.get("regime") or t.get("strategy") or "RANGING")
+            if regime not in ("BULL_TREND", "BEAR_TREND", "RANGING",
+                              "QUIET_RANGE", "HIGH_VOL"):
+                regime = "RANGING"
+
+            conf   = float(t.get("confidence") or t.get("ev") or 0.55)
+            conf   = max(0.01, min(0.99, conf))
+            ws     = float(t.get("ws") or 0.5)
+            ws     = max(0.01, min(0.99, ws))
+
+            feats: dict = {}
+            raw_feats = t.get("features")
+            if isinstance(raw_feats, dict):
+                feats = {k: v for k, v in raw_feats.items()
+                         if isinstance(v, (bool, int, float))}
+
+            # Derive ATR from stored volatility feature (volatility ≈ atr_pct/2)
+            volatility = float(feats.get("volatility", 0.0) or 0.0)
+            atr = price * max(volatility * 2.0, 0.008)   # floor 0.8% ATR
+
+            signals.append({
+                "sym":             sym,
+                "action":          action,
+                "regime":          regime,
+                "confidence":      conf,
+                "price":           price,
+                "atr":             atr,
+                "features":        feats,
+                "ws":              ws,
+                "_is_replacement": False,
+                "_recycling_pnl":  None,
+                "_source":         "replay",
+            })
+
+        if not signals:
+            print("[audit] replay unavailable, using synthetic fallback "
+                  "(no valid signals after mapping)")
+            return None
+
+        return signals
+
+    except Exception as exc:
+        print(f"[audit] replay unavailable, using synthetic fallback "
+              f"({exc.__class__.__name__}: {exc})")
+        return None
+
+
+# ── Regression comparison ──────────────────────────────────────────────────────
+
+_REG_FAIL    = "FAIL"
+_REG_WARNING = "WARNING"
+_REG_OK      = "OK"
+
+
+def _compare_baseline(
+    current: dict[str, Any],
+    baseline_path: str,
+) -> tuple[bool, list[str]]:
+    """
+    Load a previous audit JSON and compare summary metrics against `current`.
+
+    Returns
+    -------
+    passed : bool
+        True if no FAIL conditions triggered.
+    lines : list[str]
+        Human-readable regression report lines ready for printing.
+
+    Failure conditions (exit 1):
+        - monotone_violations increased
+        - blocked_ratio increased by >0.25
+        - avg_risk_budget increased by >20%  (WARNING only, not FAIL)
+    """
+    lines: list[str] = []
+    failed = False
+
+    try:
+        with open(baseline_path, "r", encoding="utf-8") as fh:
+            baseline_doc = json.load(fh)
+        bs: dict[str, Any] = baseline_doc.get("summary", {})
+    except FileNotFoundError:
+        lines.append(f"  [WARN] Baseline not found: {baseline_path}  (skipping comparison)")
+        return True, lines
+    except Exception as exc:
+        lines.append(f"  [ERROR] Cannot load baseline: {exc}")
+        return True, lines   # don't fail CI on unreadable baseline
+
+    def _pct_str(old: float, new: float) -> str:
+        if abs(old) < 1e-12:
+            return "+∞%" if new > 0 else "0.0%"
+        return f"{(new - old) / abs(old) * 100:+.1f}%"
+
+    def _row(label: str, old: float, new: float, status: str) -> str:
+        return (f"  {label:<22} {_pct_str(old, new):<10} "
+                f"{old:.4f} → {new:.4f}   {status}")
+
+    lines.append("")
+    lines.append("REGRESSION CHECK:")
+
+    # avg_size
+    old_v = float(bs.get("avg_size",  0.0))
+    new_v = float(current.get("avg_size", 0.0))
+    lines.append(_row("avg_size:", old_v, new_v, _REG_OK))
+
+    # max_size
+    old_v = float(bs.get("max_size",  0.0))
+    new_v = float(current.get("max_size", 0.0))
+    lines.append(_row("max_size:", old_v, new_v, _REG_OK))
+
+    # avg_risk_budget — WARNING at >20%, not a hard FAIL
+    old_rb = float(bs.get("avg_risk_budget", 0.0))
+    new_rb = float(current.get("avg_risk_budget", 0.0))
+    rb_change_pct = abs((new_rb - old_rb) / max(abs(old_rb), 1e-9)) * 100
+    rb_status = _REG_WARNING if rb_change_pct > 20.0 else _REG_OK
+    lines.append(_row("risk_budget:", old_rb, new_rb, rb_status))
+
+    # blocked_ratio — FAIL if increase > 0.25
+    old_br = float(bs.get("blocked_ratio", 0.0))
+    new_br = float(current.get("blocked_ratio", 0.0))
+    br_delta = new_br - old_br
+    br_status = _REG_FAIL if br_delta > 0.25 else _REG_OK
+    if br_status == _REG_FAIL:
+        failed = True
+    delta_str = f"  (Δ+{br_delta:.2f})" if br_delta > 0 else ""
+    lines.append(f"  {'blocked_ratio:':<22} {old_br:.2f} → {new_br:.2f}"
+                 f"{delta_str:<12}   {br_status}")
+
+    # exec_quality_mean — WARNING at >5% drop
+    old_eq = float(bs.get("exec_quality_mean", 0.0))
+    new_eq = float(current.get("exec_quality_mean", 0.0))
+    eq_drop_pct = (old_eq - new_eq) / max(abs(old_eq), 1e-9) * 100
+    eq_status = _REG_WARNING if eq_drop_pct > 5.0 else _REG_OK
+    lines.append(_row("exec_quality:", old_eq, new_eq, eq_status))
+
+    # monotone_violations — FAIL if increased
+    old_mv = int(bs.get("monotone_violations", 0))
+    new_mv = int(current.get("monotone_violations", 0))
+    mv_status = _REG_FAIL if new_mv > old_mv else _REG_OK
+    if mv_status == _REG_FAIL:
+        failed = True
+    lines.append(f"  {'monotone:':<22} {old_mv} → {new_mv}"
+                 + (" " * 10) + f"   {mv_status}")
+
+    return not failed, lines
+
+
 # ── Summary report ─────────────────────────────────────────────────────────────
 
-def _print_summary(results: list[AuditResult]) -> None:
+def _print_summary(results: list[AuditResult], mode: str = "synthetic") -> None:
     print(f"\n{'=' * 68}")
     print("AUDIT SUMMARY REPORT")
     print(f"{'=' * 68}")
@@ -547,29 +835,72 @@ def _print_summary(results: list[AuditResult]) -> None:
 
     print(f"\n{'=' * 68}")
 
+    # ── Structured canonical summary block (Feature 6) ────────────────────────
+    sm       = _build_summary(results)
+    min_s    = sm["min_size"]
+    avg_s    = sm["avg_size"]
+    max_s    = sm["max_size"]
+    avg_rb   = sm["avg_risk_budget"]
+    max_rb   = sm["max_risk_budget"]
+    blocked_n = sm["blocked_trades"]
+    blocked_r = sm["blocked_ratio"]
+    mono_v   = sm["monotone_violations"]
+
+    print(f"\nSUMMARY[v10.12c]:")
+    print(f"  trades={total}  mode={mode}")
+    print(f"  size[min/avg/max]={min_s:.4f} / {avg_s:.4f} / {max_s:.4f}")
+    print(f"  risk_budget[avg/max]={avg_rb:.2f} / {max_rb:.2f}")
+    print(f"  blocked={blocked_n} ({blocked_r:.3f})")
+    print(f"  monotone_violations={mono_v}")
+    print(f"{'=' * 68}")
+
 
 # ── Public entry point ────────────────────────────────────────────────────────
 
 def run_audit(
-    n_trades: int = 40,
-    verbose:  bool = True,
-    seed:     int  = 42,
-) -> list[AuditResult]:
+    n_trades:      int  = 40,
+    verbose:       bool = True,
+    seed:          int  = 42,
+    replay:        bool = False,
+    out:           str | None = None,
+    baseline:      str | None = None,
+) -> tuple[list[AuditResult], bool]:
     """
-    Run pre-live audit on `n_trades` synthetic signals.
+    Run pre-live audit on synthetic or replayed signals.
 
     Parameters
     ----------
-    n_trades : Number of synthetic trades to simulate.
-    verbose  : Per-trade verbose logging (disable with --quiet).
-    seed     : RNG seed for reproducibility.
+    n_trades  : Number of trades to audit.
+    verbose   : Per-trade verbose logging.
+    seed      : RNG seed (used for synthetic mode; ignored in replay).
+    replay    : If True, load real closed trades from Firestore.
+    out       : If set, write full JSON to this file path.
+    baseline  : If set, compare summary against this JSON baseline.
+
+    Returns
+    -------
+    results : list[AuditResult]
+    ci_pass : bool — False if any CI failure condition triggered.
     """
+    mode = "replay" if replay else "synthetic"
     print(f"{'=' * 68}")
-    print(f"PRE-LIVE AUDIT  (V10.12c)  n={n_trades}  seed={seed}")
+    print(f"PRE-LIVE AUDIT  (V10.12c)  n={n_trades}  seed={seed}  mode={mode}")
     print(f"{'=' * 68}")
 
-    signals   = _make_signals(n_trades, seed)
-    results:  list[AuditResult]  = []
+    # ── Signal acquisition ────────────────────────────────────────────────────
+    signals: list[dict]
+    if replay:
+        loaded = _load_replay_signals(n_trades)
+        if loaded is None:
+            mode    = "synthetic"   # fallback logged inside _load_replay_signals
+            signals = _make_signals(n_trades, seed)
+        else:
+            signals = loaded
+    else:
+        signals = _make_signals(n_trades, seed)
+
+    # ── Audit loop ────────────────────────────────────────────────────────────
+    results:   list[AuditResult] = []
     positions: dict[str, Any]    = {}   # simulated open position book
 
     for i, sig in enumerate(signals):
@@ -579,12 +910,12 @@ def run_audit(
         # Add passing trades to the simulated book (cap at 3 positions)
         if r.passed and len(positions) < 3 and sig["sym"] not in positions:
             positions[sig["sym"]] = {
-                "action":  sig["action"],
-                "size":    r.s_final,
-                "entry":   sig["price"],
-                "sl":      sig["price"] * (0.996 if sig["action"] == "BUY" else 1.004),
-                "sl_move": 0.004,      # consistent with _proxy in trade_executor
-                "tp_move": 0.010,
+                "action":   sig["action"],
+                "size":     r.s_final,
+                "entry":    sig["price"],
+                "sl":       sig["price"] * (0.996 if sig["action"] == "BUY" else 1.004),
+                "sl_move":  0.004,      # consistent with _proxy in trade_executor
+                "tp_move":  0.010,
                 "live_pnl": 0.0,
                 "regime":   sig["regime"],
             }
@@ -592,15 +923,77 @@ def run_audit(
         if i > 0 and i % 5 == 0 and positions:
             positions.pop(next(iter(positions)))
 
+    # ── Reports ───────────────────────────────────────────────────────────────
     _verify_warm_start()
-    _print_summary(results)
-    return results
+    _print_summary(results, mode=mode)
+
+    summary = _build_summary(results)
+
+    # ── Regression comparison ─────────────────────────────────────────────────
+    reg_pass = True
+    if baseline:
+        reg_pass, reg_lines = _compare_baseline(summary, baseline)
+        for line in reg_lines:
+            print(line)
+        if not reg_pass:
+            print("\n  [REGRESSION] One or more FAIL conditions triggered.")
+
+    # ── JSON export ───────────────────────────────────────────────────────────
+    if out:
+        config: dict[str, Any] = {
+            "trades": n_trades,
+            "seed":   seed,
+            "quiet":  not verbose,
+            "replay": replay,
+        }
+        _export_json(results, mode, config, out)
+
+    # ── CI/CD gate conditions ─────────────────────────────────────────────────
+    mono_violations = summary["monotone_violations"]
+    blocked_ratio   = summary["blocked_ratio"]
+
+    ci_pass = True
+    if mono_violations > 0:
+        print(f"\n  [CI FAIL] monotone_violations={mono_violations} > 0")
+        ci_pass = False
+    if blocked_ratio > 0.80:
+        print(f"\n  [CI FAIL] blocked_ratio={blocked_ratio:.3f} > 0.80")
+        ci_pass = False
+    if not reg_pass:
+        ci_pass = False
+
+    if ci_pass:
+        print("\n  [CI] PASS")
+    else:
+        print("\n  [CI] FAIL")
+
+    return results, ci_pass
 
 
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser(description="CryptoMaster pre-live audit (V10.12c)")
-    ap.add_argument("--trades", type=int, default=40,  help="Number of synthetic trades")
-    ap.add_argument("--quiet",  action="store_true",   help="Suppress per-trade logs")
-    ap.add_argument("--seed",   type=int, default=42,  help="RNG seed for reproducibility")
+    ap = argparse.ArgumentParser(
+        description="CryptoMaster pre-live audit + replay + regression validator (V10.12c)"
+    )
+    ap.add_argument("--trades",   type=int,  default=40,
+                    help="Number of trades to audit (default: 40)")
+    ap.add_argument("--quiet",    action="store_true",
+                    help="Suppress per-trade verbose logs")
+    ap.add_argument("--seed",     type=int,  default=42,
+                    help="RNG seed for synthetic mode (default: 42)")
+    ap.add_argument("--replay",   action="store_true",
+                    help="Load real closed trades from Firestore instead of synthetic")
+    ap.add_argument("--out",      type=str,  default=None,
+                    help="Write full JSON result to this file path")
+    ap.add_argument("--baseline", type=str,  default=None,
+                    help="Compare current run against this previous JSON export")
     args = ap.parse_args()
-    run_audit(n_trades=args.trades, verbose=not args.quiet, seed=args.seed)
+
+    _, passed = run_audit(
+        n_trades  = args.trades,
+        verbose   = not args.quiet,
+        seed      = args.seed,
+        replay    = args.replay,
+        out       = args.out,
+        baseline  = args.baseline,
+    )
+    sys.exit(0 if passed else 1)
