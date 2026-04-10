@@ -55,7 +55,14 @@ log = logging.getLogger(__name__)
 SIGNAL_ENGINE_ENABLED: bool = os.getenv("SIGNAL_ENGINE_ENABLED", "0") == "1"
 REDIS_URL: str              = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 PUBSUB_CHANNEL: str         = "signals"
+AUDIT_CHANNEL:  str         = "audits"
 TICK_QUEUE_MAXSIZE: int     = 512   # price-tick buffer before back-pressure
+
+# Phase 5 Task 3 — Concept Drift Monitoring (Z-Score on feature magnitude)
+_feat_mean: float = 0.0
+_feat_std:  float = 0.0
+_feat_count: int  = 0
+_drift_detected: bool = False
 
 # Phase 4 Task 1 — L2 gate rejection counter (process-lifetime, flushed to Redis)
 _l2_rejected: int = 0
@@ -64,6 +71,11 @@ _l2_rejected: int = 0
 def l2_rejected_count() -> int:
     """Return the total number of signals rejected by the L2 entry gate."""
     return _l2_rejected
+
+
+def concept_drift_active() -> bool:
+    """Return True if a significant regime shift (concept drift) is detected."""
+    return _drift_detected
 
 
 # ── TradeSignal dataclass ──────────────────────────────────────────────────────
@@ -129,6 +141,19 @@ class RedisPublisher:
             self._client = None   # force reconnect on next attempt
             return False
 
+    async def publish_raw(self, channel: str, data: dict) -> bool:
+        """Publish raw dict as JSON to any channel."""
+        try:
+            r = await self._ensure_connected()
+            data["timestamp"] = time.time()
+            if "engine" not in data:
+                data["engine"] = "signal_engine"
+            await r.publish(channel, json.dumps(data))
+            return True
+        except Exception:
+            self._client = None
+            return False
+
     async def close(self) -> None:
         if self._client:
             await self._client.aclose()
@@ -149,6 +174,12 @@ async def _evaluate_tick(data: dict[str, Any]) -> Optional[TradeSignal]:
     async event loop during heavy numpy/pandas work.
     """
     loop = asyncio.get_running_loop()
+
+    # Access singleton publisher if it exists to send audits
+    publisher = None
+    from src.services.signal_engine import _engine
+    if _engine:
+        publisher = _engine._publisher
 
     def _sync_evaluate() -> Optional[dict[str, Any]]:
         """
@@ -231,6 +262,23 @@ async def _evaluate_tick(data: dict[str, Any]) -> Optional[TradeSignal]:
                         increment_l2_rejected()
                     except Exception:
                         pass
+                        pass
+
+                    # ── Phase 5: Publish Audit ──
+                    if publisher:
+                        # We use call_soon_threadsafe because we are in an executor thread
+                        msg = {
+                            "symbol": _e_sym,
+                            "action": _e_action,
+                            "reason": "REJECTED_L2_WALL",
+                            "info":   f"Likviditni zed u TP ({_tp_est:.4f})",
+                            "price":  _e_price
+                        }
+                        loop.call_soon_threadsafe(
+                            asyncio.create_task,
+                            publisher.publish_raw(AUDIT_CHANNEL, msg)
+                        )
+
                     return None
 
             except Exception as _gate_exc:
@@ -262,6 +310,40 @@ async def _evaluate_tick(data: dict[str, Any]) -> Optional[TradeSignal]:
         features       = sig_dict.get("features", {}),
         timestamp      = time.time(),
     )
+
+    # ── Phase 5 Task 3: Concept Drift Detection ────────────────────────────
+    # Update rolling mean/std of feature vector magnitude
+    try:
+        feats = sig.features
+        if feats:
+            # Simple Euclidean magnitude of all numeric features
+            mag = sum(v**2 for v in feats.values() if isinstance(v, (int, float)))**0.5
+            
+            import src.services.signal_engine as _sm
+            _sm._feat_count += 1
+            n = _sm._feat_count
+            
+            # Welford's algorithm for rolling mean/std
+            old_mean = _sm._feat_mean
+            _sm._feat_mean += (mag - old_mean) / n
+            new_mean = _sm._feat_mean
+            
+            _sm._feat_std += (mag - old_mean) * (mag - new_mean)
+            
+            if n > 50:
+                current_std = (_sm._feat_std / (n - 1))**0.5
+                if current_std > 0:
+                    z_score = abs(mag - new_mean) / current_std
+                    if z_score > 3.0:
+                        log.warning("CONCEPT DRIFT detected! z_score=%.2f magnitude=%.2f", 
+                                     z_score, mag)
+                        _sm._drift_detected = True
+                    else:
+                        _sm._drift_detected = False
+    except Exception as exc:
+        log.debug("Concept drift detection error: %s", exc)
+
+    return sig
 
 
 # ── Main engine ────────────────────────────────────────────────────────────────

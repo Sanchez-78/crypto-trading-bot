@@ -8,8 +8,9 @@ from src.services.signal_generator import warmup
 from src.services.dashboard_live import dashboard_loop
 from bot2.auditor import run_audit
 
-import src.services.signal_generator
+import src.services.signal_engine
 import src.services.trade_executor
+import src.services.audit_worker
 
 _last_audit      = 0
 _last_metrics    = 0
@@ -600,6 +601,17 @@ def main():
     t = threading.Thread(target=start)
     t.daemon = True
     t.start()
+
+    # Phase 5: Start Audit Worker (Redis -> Firestore bridge)
+    def _run_audit_worker():
+        import asyncio
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(src.services.audit_worker.start())
+
+    t_audit = threading.Thread(target=_run_audit_worker)
+    t_audit.daemon = True
+    t_audit.start()
 
     while True:
         time.sleep(10)

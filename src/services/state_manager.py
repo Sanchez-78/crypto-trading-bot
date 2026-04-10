@@ -474,7 +474,8 @@ def is_redis_available() -> bool:
 # Phase 4 Task 3 — Defense efficiency counters
 # ══════════════════════════════════════════════════════════════════════════════
 # Tracks two independent rejection events:
-#   "exec:l2_rejected"  — signals killed at entry by L2 wall gate (signal_engine)
+#   "exec:l2_rejected"    — signals killed at entry by L2 wall gate (signal_engine)
+#   "exec:corr_rejected"  — signals killed at entry by Correlation Shield (execution_engine)
 #
 # close_reasons (wall_exit, timeout) are already persisted via flush_metrics()
 # in learning_event.py.  l2_rejected is a separate counter because it lives in
@@ -509,4 +510,36 @@ async def _async_get_l2_rejected() -> int:
 def get_l2_rejected() -> int:
     """Return the total number of L2-rejected signals since last Redis reset."""
     result = _run(_async_get_l2_rejected())
+    return int(result) if result else 0
+
+
+async def _async_increment_corr_rejected() -> None:
+    try:
+        r = await _get_client()
+        await r.incr("exec:corr_rejected")
+    except Exception as exc:
+        log.debug("increment_corr_rejected error: %s", exc)
+
+
+def increment_corr_rejected() -> None:
+    """
+    Atomically increment the Correlation Shield rejection counter in Redis.
+    Called from execution_engine._handle_signal on each REJECTED_CORR_SHIELD event.
+    Sync shim — non-blocking (runs in fresh event loop).
+    """
+    _run(_async_increment_corr_rejected())
+
+
+async def _async_get_corr_rejected() -> int:
+    try:
+        r = await _get_client()
+        val = await r.get("exec:corr_rejected")
+        return int(val) if val else 0
+    except Exception:
+        return 0
+
+
+def get_corr_rejected() -> int:
+    """Return the total number of correlation-rejected signals since last Redis reset."""
+    result = _run(_async_get_corr_rejected())
     return int(result) if result else 0

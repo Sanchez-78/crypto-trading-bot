@@ -47,7 +47,8 @@ def is_safe_correlation(new_sym: str, action: str, open_positions: dict, thresho
             
         # Zajímají nás jen zdvojené pozice ve stejném směru (kumulace rizika)
         # Opačné akce (Hedge) jsou naopak vítané, jelikož korelaci zneužívají ve fluktuacích.
-        if pos.get("action") == action:
+        pos_action = pos.get("action") if isinstance(pos, dict) else getattr(pos, "action", None)
+        if pos_action == action:
             corr = get_correlation(new_sym, open_sym)
             if corr >= threshold:
                 print(f"🛑 CORRELATION SHIELD: Blokováno {new_sym}. Shoda s {open_sym} ({corr*100:.1f}%)")

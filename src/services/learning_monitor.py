@@ -513,21 +513,24 @@ def defense_efficiency() -> dict:
         timeouts    = 0
 
     try:
-        from src.services.state_manager import get_l2_rejected
-        l2_rejected = get_l2_rejected()
+        from src.services.state_manager import get_l2_rejected, get_corr_rejected
+        l2_rejected   = get_l2_rejected()
+        corr_rejected = get_corr_rejected()
     except Exception:
-        l2_rejected = 0
+        l2_rejected   = 0
+        corr_rejected = 0
 
-    defended   = wall_exits + l2_rejected
+    defended   = wall_exits + l2_rejected + corr_rejected
     total      = defended + timeouts
     efficiency = round(defended / total, 4) if total > 0 else 0.0
 
     return {
-        "wall_exits":   wall_exits,
-        "timeouts":     timeouts,
-        "l2_rejected":  l2_rejected,
-        "defended":     defended,
-        "efficiency":   efficiency,
+        "wall_exits":    wall_exits,
+        "timeouts":      timeouts,
+        "l2_rejected":   l2_rejected,
+        "corr_rejected": corr_rejected,
+        "defended":      defended,
+        "efficiency":    efficiency,
     }
 
 
@@ -614,6 +617,13 @@ def lm_snapshot():
             best_edge = sorted(valid_edges, key=lambda x: (x["wr"], x["ev"]), reverse=True)[0]
             best_edge = f"{best_edge['sym']} ({best_edge['reg']})"
 
+    # Phase 5: Concept Drift
+    drift = False
+    try:
+        from src.services.signal_engine import concept_drift_active
+        drift = concept_drift_active()
+    except Exception: pass
+
     return {
         "health":   round(h, 4),
         "alert":    a,
@@ -624,6 +634,7 @@ def lm_snapshot():
         "completed_trades": metrics_copy.get("trades", 0),
         "best_edge": best_edge or "Unknown",
         "defense":  defense_efficiency(),
+        "concept_drift": drift,
     }
 
 

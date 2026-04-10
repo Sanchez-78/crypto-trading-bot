@@ -41,6 +41,7 @@ log = logging.getLogger(__name__)
 EXECUTION_ENGINE_ENABLED: bool = os.getenv("EXECUTION_ENGINE_ENABLED", "0") == "1"
 REDIS_URL: str                 = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 PUBSUB_CHANNEL: str            = "signals"
+AUDIT_CHANNEL:  str            = "audits"
 BINANCE_API_KEY: str           = os.getenv("BINANCE_API_KEY", "")
 BINANCE_SECRET:  str           = os.getenv("BINANCE_SECRET", "")
 BINANCE_BASE:    str           = "https://api.binance.com"
@@ -214,6 +215,17 @@ class ExecutionEngine:
                 self._redis = None
                 await asyncio.sleep(3)
 
+    async def _publish_audit(self, event: dict) -> None:
+        """Publish an audit event (rejections, etc.) to Redis."""
+        try:
+            r = await self._get_redis()
+            event["timestamp"] = time.time()
+            if "engine" not in event:
+                event["engine"] = "execution_engine"
+            await r.publish(AUDIT_CHANNEL, json.dumps(event))
+        except Exception as exc:
+            log.debug("_publish_audit error: %s", exc)
+
     # ── Order routing ─────────────────────────────────────────────────────────
 
     async def _handle_signal(self, signal: "TradeSignal") -> None:
@@ -227,6 +239,30 @@ class ExecutionEngine:
         sym = signal.symbol
         if sym in self._positions:
             return
+
+        # ── Correlation check (Phase 5 Task 1) ────────────────────────────────
+        try:
+            from src.services.correlation_shield import is_safe_correlation
+            if not is_safe_correlation(sym, signal.action, self._positions):
+                log.info("REJECTED_CORR_SHIELD %s %s", sym, signal.action)
+                # Increment counter
+                try:
+                    from src.services.state_manager import increment_corr_rejected
+                    increment_corr_rejected()
+                except Exception: pass
+
+                # Publish to audits
+                await self._publish_audit({
+                    "symbol": sym,
+                    "action": signal.action,
+                    "reason": "REJECTED_CORROLLATION",
+                    "info":   f"Vysoka korelace s jinou pozici ({signal.action})",
+                    "price":  signal.price
+                })
+                return
+        except Exception as exc:
+            log.debug("Correlation check error: %s", exc)
+
         if signal.ev <= 0 and not signal.explore:
             return
 
