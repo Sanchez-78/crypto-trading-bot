@@ -11,10 +11,12 @@ from bot2.auditor import run_audit
 import src.services.signal_generator
 import src.services.trade_executor
 
-_last_audit   = 0
-_last_metrics = 0
-AUDIT_INTERVAL   = 30    # seconds
-METRICS_INTERVAL = 30    # save metrics/latest every 30 s (frees ~5 760 writes/day)
+_last_audit      = 0
+_last_metrics    = 0
+_last_pre_audit  = 0
+AUDIT_INTERVAL      = 30      # seconds — bot2 auditor cycle
+METRICS_INTERVAL    = 30      # save metrics/latest every 30 s
+PRE_AUDIT_INTERVAL  = 7200    # pre_live_audit replay run every 2 hours
 
 _start_time = time.time()
 from src.services.portfolio_discovery import get_active_symbols
@@ -514,6 +516,46 @@ def print_status():
     print(g("=" * W, C.CYN) + "\n")
 
 
+# ── Pre-live audit (periodic health check, replay from Firestore) ─────────────
+
+def _run_pre_live_audit() -> None:
+    """
+    Run pre_live_audit in replay mode every PRE_AUDIT_INTERVAL seconds.
+
+    Replays the last 20 closed trades through the full sizing chain, checks
+    invariants, and publishes a summary to Firebase (audit/latest).
+    Non-blocking: any exception is caught and logged; bot loop continues.
+    """
+    try:
+        from src.services.pre_live_audit import run_audit as _pa_run
+        print("\n[bot2] ── pre_live_audit ─────────────────────────────────────")
+        results, ci_pass = _pa_run(
+            n_trades = 20,
+            verbose  = False,   # quiet — summary only in bot2 log
+            seed     = 42,
+            replay   = True,    # use real closed trades from Firestore
+        )
+        # ── Publish audit summary to Firebase for observability ───────────────
+        try:
+            from src.services.pre_live_audit import _build_summary
+            from src.services.firebase_client import get_db
+            _db = get_db()
+            if _db is not None:
+                _summary = _build_summary(results)
+                _summary["ci_pass"]   = ci_pass
+                _summary["timestamp"] = time.time()
+                _summary["mode"]      = "replay"
+                _db.document("audit/latest").set(_summary)
+        except Exception as _fb_exc:
+            print(f"[bot2] audit Firebase publish skipped: {_fb_exc}")
+
+        status = "PASS" if ci_pass else "FAIL"
+        print(f"[bot2] pre_live_audit complete  ci={status}")
+        print("[bot2] ─────────────────────────────────────────────────────────")
+    except Exception as exc:
+        print(f"[bot2] pre_live_audit skipped: {exc.__class__.__name__}: {exc}")
+
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def main():
@@ -588,6 +630,10 @@ def main():
                               execution=execution_data,
                               monitor=monitor_data)
             _last_metrics = now
+
+        if now - _last_pre_audit >= PRE_AUDIT_INTERVAL:
+            _run_pre_live_audit()
+            _last_pre_audit = now
 
         try:
             from src.services.learning_monitor import meta_update

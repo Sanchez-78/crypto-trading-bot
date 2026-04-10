@@ -1,0 +1,39 @@
+name: Pre-Live Audit Gate
+
+on:
+  schedule:
+    - cron: "0 5 * * *"    # daily at 05:00 UTC — runs before the 15-min signal cron
+  workflow_dispatch:        # manual trigger for ad-hoc audits
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run pre-live audit (replay from Firestore)
+        env:
+          FIREBASE_KEY_BASE64: ${{ secrets.FIREBASE_KEY_BASE64 }}
+        run: |
+          python -m src.services.pre_live_audit \
+            --replay \
+            --quiet \
+            --out audit_result.json
+        # exits 1 if: monotone_violations > 0  OR  blocked_ratio > 0.80
+
+      - name: Upload audit result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-result-${{ github.run_id }}
+          path: audit_result.json
+          retention-days: 30
