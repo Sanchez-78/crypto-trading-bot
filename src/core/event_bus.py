@@ -1,3 +1,13 @@
+import sys as _sys
+
+# Windows cp1250 consoles crash on emoji — force utf-8 stdout/stderr at import time.
+if hasattr(_sys.stdout, "reconfigure"):
+    try:
+        _sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        _sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 _subscribers        = {}
 _subscription_keys  = set()
 
