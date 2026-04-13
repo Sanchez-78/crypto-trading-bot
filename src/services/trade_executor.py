@@ -627,10 +627,16 @@ def compute_tp_sl(entry, direction, atr=0.003, sym=None, reg=None):
 
     tp_k, sl_k = regime_tp_sl_adjust(tp_k, sl_k, reg or "RANGING")
 
+    # Hard floor: TP must be ≥ MIN_TP_PCT from entry, SL ≥ MIN_SL_PCT.
+    # Prevents degenerate SL=TP=entry when atr collapses to near-zero
+    # (observed: ETH RANGING with ATR≈0 → SL=$2183.43 = entry exactly).
+    tp_dist = max(tp_k * atr, MIN_TP_PCT)
+    sl_dist = max(sl_k * atr, MIN_SL_PCT)
+
     if direction == "BUY":
-        return entry * (1 + tp_k * atr), entry * (1 - sl_k * atr)
+        return entry * (1 + tp_dist), entry * (1 - sl_dist)
     else:
-        return entry * (1 - tp_k * atr), entry * (1 + sl_k * atr)
+        return entry * (1 - tp_dist), entry * (1 + sl_dist)
 
 _TP_MULT = {"BULL_TREND": 1.0, "BEAR_TREND": 1.0,
             "RANGING":    1.0, "QUIET_RANGE": 1.0}
