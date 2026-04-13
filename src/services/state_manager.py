@@ -372,7 +372,9 @@ async def _async_flush_metrics(
     """Persist METRICS dict + close_reasons + regime_stats to Redis."""
     try:
         r = await _get_client()
-        await r.set("le:metrics", json.dumps(metrics))
+        # TTL=300s: le:metrics is Firestore-derived; bootstrap_from_history()
+        # rebuilds it on cold start.  lm:* and rde:* keep TTL=0 (zero-loss).
+        await r.set("le:metrics", json.dumps(metrics), ex=300)
 
         for reason, count in close_reasons.items():
             await r.hset("le:close_reasons", reason, str(count))
@@ -421,6 +423,53 @@ async def _async_hydrate_metrics() -> dict[str, Any]:
 def hydrate_metrics() -> dict[str, Any]:
     """Synchronous shim — call at module import in learning_event.py."""
     return _run(_async_hydrate_metrics()) or {}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# V10.14.b — Generic Redis-as-cache with Firestore fallback
+# ══════════════════════════════════════════════════════════════════════════════
+
+async def _async_get_cached(key: str, ttl: int, fetch_fn: Any) -> Any:
+    """
+    Check Redis for *key*; on miss call fetch_fn() and cache the result for
+    *ttl* seconds.  Redis unavailability is fully tolerated — falls through
+    to fetch_fn every time.
+    """
+    try:
+        r = await _get_client()
+        raw = await r.get(key)
+        if raw is not None:
+            return json.loads(raw)
+    except Exception as exc:
+        log.debug("get_cached Redis read error: %s", exc)
+
+    # Cache miss or Redis unavailable
+    try:
+        result = fetch_fn()
+        if result is not None:
+            try:
+                r = await _get_client()
+                await r.set(key, json.dumps(result), ex=ttl)
+            except Exception as exc:
+                log.debug("get_cached Redis write error: %s", exc)
+        return result
+    except Exception as exc:
+        log.debug("get_cached fetch_fn error: %s", exc)
+        return None
+
+
+def get_cached(key: str, ttl: int, fetch_fn: Any) -> Any:
+    """
+    Synchronous shim for _async_get_cached.
+
+    Usage:
+        data = get_cached("my:key", 300, lambda: fetch_from_firestore())
+
+    Returns the cached (or freshly fetched) value, or None on total failure.
+    TTL is in seconds; use 0 for no expiry (though prefer flush_* helpers for
+    persistent learning state).
+    """
+    return _run(_async_get_cached(key, ttl, fetch_fn))
 
 
 # ══════════════════════════════════════════════════════════════════════════════

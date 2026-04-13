@@ -13,15 +13,19 @@ from bot2.strategy_weights import StrategyWeights
 from src.services.learning_event import get_metrics
 from src.services.firebase_client import save_auditor_state, load_auditor_state, save_bot2_advice
 import time as _time
+import logging as _logging
+
+_log = _logging.getLogger(__name__)
 
 _weights = StrategyWeights()
 
-_position_size_mult = 1.0
-_cooldown           = 0
-_prev_loss_streak   = -1   # -1 = unset (skip bootstrap)
-_initialized        = False
-_cached_weights     = {}
-_dd_halt_until      = 0.0
+_position_size_mult  = 1.0
+_cooldown            = 0
+_prev_loss_streak    = -1   # -1 = unset (skip bootstrap)
+_initialized         = False
+_cached_weights      = {}
+_dd_halt_until       = 0.0
+_monotone_violations = 0    # V10.14.b: monotone corruption counter
 
 DD_HALT_THR  = 0.40    # 40% relative drawdown
 DD_HALT_MIN  = 0.050   # minimum absolute DD to prevent false trigger on tiny equity
@@ -34,7 +38,14 @@ def is_in_cooldown() -> bool:
     return _cooldown > 0
 
 def is_halted() -> bool:
-    return _time.time() < _dd_halt_until
+    """True if DD circuit-breaker is active OR system_state is HALTED."""
+    if _time.time() < _dd_halt_until:
+        return True
+    try:
+        from src.core.system_state import is_halted as _sys_halted
+        return _sys_halted()
+    except Exception:
+        return False
 
 def get_position_size_mult() -> float:
     return _position_size_mult
@@ -116,9 +127,13 @@ def _compute_verdict(m: dict, pos_size_mult: float) -> tuple[str, list[str]]:
 
 # ── Main audit cycle ──────────────────────────────────────────────────────────
 
+_MONOTONE_THRESH = 3   # consecutive violations before HARD escalation
+
+
 def run_audit():
     global _position_size_mult, _cooldown
     global _prev_loss_streak, _initialized, _cached_weights, _dd_halt_until
+    global _monotone_violations
 
     m = get_metrics()
 
@@ -180,6 +195,29 @@ def run_audit():
     elif is_halted():
         rem = (_dd_halt_until - _time.time()) / 60
         print(f"  ⏸ DD HALT: {rem:.0f}min zbývá")
+
+    # ── Monotone violation guard (V10.14.b) ──────────────────────────────────
+    # avg_win < 0 with wins >= 5 means "winning" trades are net negative —
+    # a structural data-corruption signal (sign inversion, wrong PnL calc, etc.).
+    # Three consecutive observations trigger a HARD escalation.
+    avg_win = m.get("avg_win", 0.0)
+    wins    = m.get("wins",    0)
+    if avg_win < 0 and wins >= 5:
+        _monotone_violations += 1
+        _log.warning(
+            "[AUDITOR] Monotone violation #%d: avg_win=%.6f  wins=%d",
+            _monotone_violations, avg_win, wins,
+        )
+        if _monotone_violations >= _MONOTONE_THRESH:
+            try:
+                from src.core.failure_manager import handle_hard_fail
+                handle_hard_fail(
+                    f"Monotone violation: avg_win={avg_win:.6f} after {wins} wins"
+                )
+            except Exception as _me:
+                _log.critical("[AUDITOR] handle_hard_fail import failed: %s", _me)
+    else:
+        _monotone_violations = max(0, _monotone_violations - 1)
 
     # ── Strategy weights ──────────────────────────────────────────────────────
     if t >= 10:

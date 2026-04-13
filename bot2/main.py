@@ -637,6 +637,20 @@ def main():
     while True:
         time.sleep(10)
 
+        # V10.14.b: Execution gate — block all operations when system is HALTED.
+        # This ensures a HARD failure in any module (guard, auditor, invariants)
+        # propagates here and stops all audit / metrics / trading activity.
+        try:
+            from src.core.system_state import is_halted as _sys_halted
+            if _sys_halted():
+                import logging as _log
+                _log.getLogger(__name__).warning(
+                    "[MAIN_LOOP] System HALTED — skipping cycle (manual guard.reset() required)"
+                )
+                continue
+        except Exception:
+            pass  # if import fails, continue normally (fail-open for monitoring)
+
         global _last_audit, _last_metrics, _last_pre_audit
         now = time.time()
 

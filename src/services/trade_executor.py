@@ -214,15 +214,45 @@ def dynamic_hold_extension(base_hold, ev, atr, entry):
     Combined: scale = scale_ev × vol_scale
     Bounded result: [5, 22] ticks — identical to V10.3b.
     """
-    scale_ev  = 1.0 + max(-0.3, min(0.3, ev * 1.5))
+    scale_ev   = 1.0 + max(-0.3, min(0.3, ev * 1.5))
     # V11.0: Volatility-Weighted Adaptive Timeout
-    # timeout = base * (1 + atr_ratio). Baseline ATR = 1.0%
-    atr_pct = atr / max(entry, 1e-9)
-    vol_scale = max(0.85, min(1.15, 0.01 / (atr_pct + 1e-6)))
+    # vol_factor maps ATR deviation from 1% baseline to hold multiplier.
+    # baseline ATR 1.0% → vol_factor=1.0 (no change)
+    # ATR 0.5% (quiet)    → vol_factor=0.5 (shorter – market too quiet to develop)
+    # ATR 2.0% (volatile) → vol_factor=1.5 (longer – more room needed, capped)
+    atr_pct    = atr / max(entry, 1e-9)
     vol_factor = max(0.7, min(1.5, 1.0 + (atr_pct - 0.01) / 0.01))
-    
-    timeout = int(base_hold * scale_ev * vol_scale * vol_factor)
+    timeout    = int(base_hold * scale_ev * vol_factor)
     return max(120, min(600, timeout))  # [2m, 10m] range in seconds
+
+
+def compute_timeout(base: float = 180, atr_ratio: float = 0.0) -> float:
+    """V10.14.b: Adaptive timeout with ATR-ratio volatility scaling.
+
+    Standalone function required by V10.14.b spec (name: compute_timeout).
+    Complements dynamic_hold_extension which operates on live ATR + EV signals.
+
+    Parameters
+    ----------
+    base      : float — base hold time in seconds (default 180 s = 3 min)
+    atr_ratio : float — atr / entry_price  (0.0 = no ATR adjustment)
+
+    Vol scaling
+    -----------
+      vol_scale = clamp(0.01 / atr_ratio, 0.7, 1.3)
+      Tight market (low ATR)  → up to 1.3× (trade needs more time to develop)
+      Volatile market (hi ATR)→ down to 0.7× (exit earlier in choppy regime)
+      Normalised around 1% ATR baseline.
+
+    Returns
+    -------
+    float — timeout in seconds, bounded [60, 600].
+    """
+    if atr_ratio > 0:
+        vol_scale = max(0.7, min(1.3, 0.01 / (atr_ratio + 1e-9)))
+    else:
+        vol_scale = 1.0
+    return max(60.0, min(600.0, base * vol_scale))
 
 
 # ── V10.4 helpers — portfolio intelligence ────────────────────────────────────
@@ -687,7 +717,6 @@ def _dynamic_hold(atr_abs, entry, sym=None, reg=None, adx=0.0):
     Hard ceiling 17 prevents runaway holds.
     """
     atr_pct     = atr_abs / max(entry, 1e-9)
-    atr_adj     = int(5 * max(0.002, 0.01 / max(atr_pct, 1e-9)))
     trend_bonus = 2 if adx > 25 else 0
 
     _ev = 0.0
@@ -698,12 +727,12 @@ def _dynamic_hold(atr_abs, entry, sym=None, reg=None, adx=0.0):
         except Exception:
             pass
 
-    # V8: continuous EV → base mapping (seconds)
+    # V8 → V10.14: continuous EV → base mapping (seconds).
+    # atr_adj removed — dead code after seconds conversion.
     ev_factor = min(max((_ev + 1) / 2, 0.0), 1.0)
     base      = 180 + int(ev_factor * 120)   # base [180s, 300s] (3–5 min)
 
-    # V10.14: conversion to seconds. ATR/trend bonus scales up to base+120s.
-    # atr_adj multiplier 5→100 matches the seconds-scale conversion.
+    # Adaptive ATR adjustment (seconds-scale).
     atr_adj_s = int(100 * max(0.002, 0.01 / max(atr_pct, 1e-9)))
     hold      = max(base, min(base + 120, atr_adj_s + trend_bonus * 30))
     return max(150, min(hold, 480))   # absolute ceiling 480s (8 min)
@@ -1490,18 +1519,20 @@ def handle_signal(signal):
         log.info(f"    exec_quality[v10.11]: skipped ({_eq_exc})")
 
     # ── V11.0: Fail-Safe Guard Checks ─────────────────────────────────────────
-    # 1. System Level Check
+    # 1. System Level Check (hard stop blocks all new trades)
     if guard.hard_stop:
         log.warning(f"    [HALT] SystemGuard Hard Stop active — blocking trade {sym}")
         return
-        
-    # 2. Sizing Escalation (DEGRADE mode)
-    size *= guard.get_size_multiplier()
-    
-    # 3. Hard Invariants (NaN, Monotonicity)
+
+    # 2. Hard Invariants (NaN, negative size) — checked BEFORE exec_quality
+    #    so we never pass a corrupted size into the order book simulation.
     if not guard.check_trade_invariants(sym, size, entry, tp_est, sl_est):
-        log.error(f"    [HARD_FAIL] Invariant breach detected for {sym} — halting system.")
+        log.error(f"    [HARD_FAIL] Invariant breach for {sym} — halting system.")
         return
+
+    # 3. Sizing Escalation: DEGRADE mode (0.5×) applied here, before exec_quality,
+    #    so exec_quality sees the already-degraded size and doesn't double-penalize.
+    size *= guard.get_size_multiplier()
 
     edge = net_edge(ws_adj, size, ob, FEE_RT, sym)
     if not cost_guard_bootstrap(edge):
@@ -1826,13 +1857,11 @@ def on_price(data):
             pass
 
     # V9 early exit: negative-EV pair that is losing → don't hold to full timeout.
-    # Rationale: if risk_ev(sym, reg) < -0.1 (statistically confirmed negative edge)
-    # AND trade is currently down 0.2%+ after at least 5 ticks, there's no reason
-    # to wait. Timeout would only worsen the loss while consuming position capacity.
-    # Threshold -0.1 (not 0) prevents triggering during bootstrap when ev ≈ 0.
-    # Threshold move < -0.002: below typical noise floor (~0.1%) and spread (0.1%).
-    # Partial-taken positions skipped — breakeven SL already protects remaining half.
-    if reason is None and move < -0.002 and pos["ticks"] >= 5 and not pos.get("partial_taken"):
+    # V11.0: switched from tick-count (pos["ticks"] >= 5) to time-based (>= 30s)
+    # to match V10.14 time-based timeout model. 30s ensures spread + fees are
+    # absorbed before early-exit fires — prevents noise exits in first seconds.
+    if reason is None and move < -0.002 and (time.time() - pos["open_ts"]) >= 30 \
+            and not pos.get("partial_taken"):
         try:
             from src.services.execution import risk_ev as _rev
             if _rev(sym, pos["signal"].get("regime", "RANGING")) < -0.1:
