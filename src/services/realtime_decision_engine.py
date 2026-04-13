@@ -17,8 +17,11 @@ Flow:
 
 from collections import deque
 import ast
+import logging
 import time as _time
 import numpy as np
+
+log = logging.getLogger(__name__)
 from src.services.firebase_client import load_history
 from src.services.learning_event  import track_blocked, track_regime, trades_in_window
 
@@ -749,6 +752,39 @@ def evaluate_signal(signal):
         signal["coherence"] = round(_coh, 4)
     except Exception:
         pass
+
+    # ── Mammon-inspired: Monte Carlo survival + Council environmental gate ────
+    # Geometric mean of 3-lane MC survival × weighted ATR/ADX/Vol/Spread score.
+    # combined < 0.28 → hard inhibit (INHIBIT_COMBINED)
+    # combined < 0.38 → auditor_factor × 0.75 (soft penalty)
+    # Regime → ADX proxy used; volume_ratio from volume_surge feature flag.
+    try:
+        from src.services.monte_council import monte_council_gate as _mcg
+        _mc_vol = 1.5 if signal.get("features", {}).get("volume_surge") else 1.0
+        _mc_res = _mcg(
+            price        = signal["price"],
+            atr          = signal.get("atr", signal["price"] * 0.005),
+            regime       = signal.get("regime", "RANGING"),
+            volume_ratio = _mc_vol,
+        )
+        if _mc_res["inhibit"]:
+            track_blocked(reason="INHIBIT_COMBINED")
+            print(f"    decision=INHIBIT_COMBINED  mc={_mc_res['monte_score']:.3f}"
+                  f"  council={_mc_res['council_score']:.3f}"
+                  f"  combined={_mc_res['combined']:.3f}")
+            return None
+        if _mc_res["af_mult"] < 1.0:
+            auditor_factor *= _mc_res["af_mult"]
+            auditor_factor  = min(1.0, auditor_factor)
+        signal["monte_score"]   = _mc_res["monte_score"]
+        signal["council_score"] = _mc_res["council_score"]
+        if _mc_res["soft_penalty"]:
+            print(f"    monte_council[mammon]: {_mc_res['reason']}"
+                  f"  mc={_mc_res['monte_score']:.3f}"
+                  f"  council={_mc_res['council_score']:.3f}"
+                  f"  af×{_mc_res['af_mult']:.2f}")
+    except Exception as _mc_err:
+        log.debug("monte_council gate error: %s", _mc_err)
 
     if not allow_trade(ev, _ws):
         track_blocked(reason="SKIP_SCORE")

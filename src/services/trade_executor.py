@@ -1199,6 +1199,29 @@ def handle_signal(signal):
         log.info(f"    portfolio gate: stale_signal  sym={sym}")
         return
 
+    # ── Mammon-inspired: price-drift staleness guard ──────────────────────────
+    # If the market has moved ≥ 30 bps from the signal price by the time we
+    # reach execution, the signal is stale — entry at a worse price changes
+    # the expected RR and invalidates the EV calculation.
+    # This mirrors Mammon's MINT-time stale_price guard (ACTION→MINT gap).
+    if not bootstrap_open:
+        _STALE_DRIFT = 0.0030   # 30 bps
+        try:
+            from src.services.learning_event import get_metrics as _drift_gm
+            _lp = _drift_gm().get("last_prices", {})
+            _cur = _lp.get(sym, 0.0)
+            if _cur > 0:
+                _drift = abs(_cur - entry) / entry
+                if _drift > _STALE_DRIFT:
+                    log.info(
+                        "    portfolio gate: price_drift  sym=%s  "
+                        "sig=%.6f  cur=%.6f  drift=%.2f%%",
+                        sym, entry, _cur, _drift * 100,
+                    )
+                    return
+        except Exception:
+            pass
+
     ws_raw = signal.get("ws", 0.5)
     if not bootstrap_open and not pre_cost(ws_raw, FEE_RT):
         log.info(f"    portfolio gate: pre_cost  sym={sym}  ws={ws_raw:.3f}")
