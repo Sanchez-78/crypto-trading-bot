@@ -232,7 +232,7 @@ def print_status():
     print(g("=" * W, C.CYN))
 
     # ── Live prices ───────────────────────────────────────────────────────────
-    print(section("", "ZIVE CENY  (Binance · kazde 2 s)"))
+    print(section("", "ZIVE CENY  (Binance · kazde 1 s)"))
     for sym in get_active_symbols():
         short = sym.replace("USDT", "")
         if sym not in lp:
