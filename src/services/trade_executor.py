@@ -1199,19 +1199,27 @@ def handle_signal(signal):
         log.info(f"    portfolio gate: stale_signal  sym={sym}")
         return
 
-    # ── Mammon-inspired: price-drift staleness guard ──────────────────────────
-    # If the market has moved ≥ 30 bps from the signal price by the time we
-    # reach execution, the signal is stale — entry at a worse price changes
-    # the expected RR and invalidates the EV calculation.
-    # This mirrors Mammon's MINT-time stale_price guard (ACTION→MINT gap).
+    # ── Mammon-inspired: dual staleness guards ───────────────────────────────
+    # Guard A — hard floor: if price moved ≥ 30 bps from signal, always skip.
+    #           Catches obvious stale signals regardless of volatility.
+    # Guard B — z-score cancel: ATR-normalised drift vs signal distribution.
+    #           Regime-adaptive: high-ATR pairs tolerate more absolute movement
+    #           before being considered stale; low-ATR pairs are tighter.
+    #           z = |cur - sig| / (atr × 0.30); cancel if z ≥ 2.0.
+    #           Equivalent to Mammon's brain_stem_mean_dev_cancel_sigma gate
+    #           (Brain_Stem/trigger/service.py lines 251-277).
     if not bootstrap_open:
-        _STALE_DRIFT = 0.0030   # 30 bps
+        _STALE_DRIFT    = 0.0030   # 30 bps hard floor (Guard A)
+        _CANCEL_Z_SIGMA = 2.0      # z-score cancel threshold (Guard B)
+        _MC_NOISE       = 0.30     # ATR fraction = 1-sigma (matches monte_council)
         try:
             from src.services.learning_event import get_metrics as _drift_gm
-            _lp = _drift_gm().get("last_prices", {})
+            _lp  = _drift_gm().get("last_prices", {})
             _cur = _lp.get(sym, 0.0)
             if _cur > 0:
                 _drift = abs(_cur - entry) / entry
+
+                # Guard A — fixed bps floor
                 if _drift > _STALE_DRIFT:
                     log.info(
                         "    portfolio gate: price_drift  sym=%s  "
@@ -1219,6 +1227,18 @@ def handle_signal(signal):
                         sym, entry, _cur, _drift * 100,
                     )
                     return
+
+                # Guard B — ATR-normalised z-score cancel
+                _sig = atr * _MC_NOISE
+                if _sig > 0:
+                    _z = abs(_cur - entry) / _sig
+                    if _z >= _CANCEL_Z_SIGMA:
+                        log.info(
+                            "    portfolio gate: mean_dev_cancel  sym=%s  "
+                            "sig=%.6f  cur=%.6f  z=%.2f>=%.1f",
+                            sym, entry, _cur, _z, _CANCEL_Z_SIGMA,
+                        )
+                        return
         except Exception:
             pass
 
