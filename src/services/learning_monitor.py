@@ -250,7 +250,8 @@ def _pnl_weighted_label(pnl: float) -> float:
 
 def lm_update(sym, reg, pnl, ws, features, window=None):
     """
-    Record one closed trade.
+    PATCH 3.5: Record one closed trade with incremental averaging.
+    
     sym:      symbol string ("BTCUSDT")
     reg:      regime string ("RANGING")
     pnl:      realised profit/loss (float)
@@ -258,16 +259,34 @@ def lm_update(sym, reg, pnl, ws, features, window=None):
     features: dict of signal features (may be empty)
     window:   np.ndarray shape (SEQ_LEN, INPUT_SIZE) — LSTM training window
               Optional; if provided, triggers a PnL-weighted online update.
+    
+    Key change: Use incremental averaging instead of list append for EV/PnL
+    to prevent stale data from dominating convergence metrics.
     """
     key = (sym, reg)
 
     # Trade count
     lm_count[key] = lm_count.get(key, 0) + 1
+    n = lm_count[key]
 
     # PnL history
     pnl_lst = lm_pnl_hist.setdefault(key, [])
     pnl_lst.append(float(pnl))
     _cap(pnl_lst)
+
+    # ────────────────────────────────────────────────────────────────────────
+    # PATCH 3.5: Incremental EV averaging — convergence acceleration
+    # ────────────────────────────────────────────────────────────────────────
+    # Instead of storing all EV values and recomputing stats, use 
+    # incremental mean: ev_n = ev_{n-1} + (new_ev - ev_{n-1}) / n
+    ev_current = true_ev(sym, reg)
+    ev_mean = lm_ev_hist.get(key, [0.0])[-1] if lm_ev_hist.get(key) else 0.0
+    
+    # Incremental update: new_ev = old_ev + (current_ev - old_ev) / count
+    ev_new = ev_mean + (ev_current - ev_mean) / max(n, 1)
+    ev_lst = lm_ev_hist.setdefault(key, [])
+    ev_lst.append(ev_new)
+    _cap(ev_lst)
 
     # Per-symbol recent PnL (across all regimes) — used by loss_cluster guard
     s_lst = sym_recent_pnl.setdefault(sym, [])
@@ -282,12 +301,6 @@ def lm_update(sym, reg, pnl, ws, features, window=None):
     wr_lst = lm_wr_hist.setdefault(key, [])
     wr_lst.append(wr)
     _cap(wr_lst)
-
-    # EV snapshot — PnL-based, not time-decayed Sharpe blend
-    ev = true_ev(sym, reg)
-    ev_lst = lm_ev_hist.setdefault(key, [])
-    ev_lst.append(ev)
-    _cap(ev_lst)
 
     # Bandit UCB snapshot
     b = bandit_score(sym, reg)

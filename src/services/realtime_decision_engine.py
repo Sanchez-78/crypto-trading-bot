@@ -479,11 +479,38 @@ def allow_trade(ev, ws, exploration=0.4):
     if ev > 0:
         return True  # Always execute positive EV
     
+    # ────────────────────────────────────────────────────────────────────────
+    # PATCH 3.3: Soft Filter — Reduce confidence instead of hard-blocking
+    # ────────────────────────────────────────────────────────────────────────
     # Negative EV: probabilistic exploration
     if random.random() < exploration:
         return True
     
     return False
+
+
+def soft_filter_signal(signal, ev, state=None):
+    """PATCH 3.3: Soft filter — attenuate signal strength below threshold.
+    
+    Instead of blocking low-EV signals, reduce their confidence multiplier.
+    This preserves data flow for learning while naturally reducing position sizes.
+    
+    Args:
+        signal: dict with 'confidence', 'ev', etc.
+        ev: Expected Value score
+        state: Optional system state dict
+    
+    Returns:
+        signal: Modified signal with reduced confidence if EV is low
+    """
+    if ev is None or ev < -0.05:
+        # Very negative EV: reduce confidence by 20%
+        signal["confidence"] = max(0.1, signal.get("confidence", 0.5) * 0.8)
+    elif ev < 0:
+        # Slightly negative EV: reduce confidence by 10%
+        signal["confidence"] = max(0.2, signal.get("confidence", 0.5) * 0.9)
+    
+    return signal
 
 
 def get_ev_threshold():

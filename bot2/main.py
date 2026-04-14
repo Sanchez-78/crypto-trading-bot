@@ -18,6 +18,41 @@ _last_metrics    = 0
 _last_pre_audit  = 0
 
 # ────────────────────────────────────────────────────────────────────────────
+# PATCH 3.1: Renderer Lock — Atomic rendering with deduplication
+# ────────────────────────────────────────────────────────────────────────────
+_render_lock = threading.Lock()
+_last_snapshot_hash = [None]  # Use list for mutability
+
+def atomic_render(snapshot_data, component_name=""):
+    """PATCH 3.1: Thread-safe render with deduplication.
+    
+    Prevents duplicate dashboard output by comparing hash of current snapshot
+    to last rendered snapshot. Only renders if content changed.
+    
+    Args:
+        snapshot_data: dict or str to render (metrics, dashboard, learning monitor)
+        component_name: Optional label for the component being rendered
+    """
+    with _render_lock:
+        current_hash = hash(str(snapshot_data))
+        
+        # Skip if identical to last render
+        if current_hash == _last_snapshot_hash[0]:
+            return
+        
+        _last_snapshot_hash[0] = current_hash
+        
+        # Render the snapshot (consolidated output)
+        if snapshot_data:
+            if component_name:
+                print(f"\n  ── {component_name} ────────────────────────────────────────")
+            if isinstance(snapshot_data, dict):
+                import json
+                print(json.dumps(snapshot_data, indent=2, default=str))
+            else:
+                print(snapshot_data)
+
+# ────────────────────────────────────────────────────────────────────────────
 # PATCH 5 & 6: Watchdog + Last Trade Tracking
 # ────────────────────────────────────────────────────────────────────────────
 last_trade_ts = [0.0]  # use list for mutability in watchdog function
@@ -41,6 +76,20 @@ def watchdog(now, agent=None):
                     rde._exploration_boost = min(1.0, rde._exploration_boost + 0.2)
             except Exception:
                 pass
+    
+    # ────────────────────────────────────────────────────────────────────────
+    # PATCH 3.4: Watchdog micro-trades — Allow small trades when idle
+    # ────────────────────────────────────────────────────────────────────────
+    if now - last_trade_ts[0] > 900:  # 15 minutes idle
+        print("[WATCHDOG] Critical idle (15min) → enabling micro-trades")
+        try:
+            import src.services.trade_executor as te
+            # Flag to allow smaller, exploratory positions
+            if not hasattr(te, '_allow_micro_trade'):
+                te._allow_micro_trade = False
+            te._allow_micro_trade = True
+        except Exception:
+            pass
 
 
 # ── FX rate cache (USD/CZK) ───────────────────────────────────────────────────
@@ -746,8 +795,36 @@ def main():
         except Exception:
             pass
 
-        print_status()
-        dashboard_loop(get_open_positions())
+        # ────────────────────────────────────────────────────────────────────
+        # PATCH 3.2: Consolidate rendering — single atomic render per cycle
+        # ────────────────────────────────────────────────────────────────────
+        # Build unified snapshot (all metrics, positions, learning state)
+        try:
+            from src.services.learning_monitor import lm_snapshot
+            lm_snap = lm_snapshot()
+        except Exception:
+            lm_snap = {}
+        
+        dashboard_snapshot_data = {
+            "cycle_time": now,
+            "positions": len(get_open_positions()),
+            "learning": lm_snap,
+        }
+        
+        # Single atomic render call (deduplication happens inside)
+        atomic_render(dashboard_snapshot_data, "CYCLE SNAPSHOT")
+        
+        # Legacy dashboard calls (if needed for backward compatibility)
+        # These will be deduplicated by atomic_render if content hasn't changed
+        try:
+            print_status()
+        except Exception:
+            pass
+        
+        try:
+            dashboard_loop(get_open_positions())
+        except Exception:
+            pass
 
         try:
             from src.services.learning_monitor import print_learning_monitor

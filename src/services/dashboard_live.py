@@ -51,6 +51,48 @@ def dashboard_snapshot(positions):
     return snap
 
 
+# ────────────────────────────────────────────────────────────────────────────────
+# PATCH 3.6: Simplified Snapshot Builder — Unified state snapshot
+# ────────────────────────────────────────────────────────────────────────────────
+def build_snapshot_minimal(positions, metrics=None):
+    """PATCH 3.6: Build minimal snapshot for atomic rendering.
+    
+    Consolidates execution state, positions, and learning metrics into
+    a single immutable snapshot suitable for deduplication and rendering.
+    
+    Args:
+        positions: dict of open positions
+        metrics: optional dict of current metrics
+    
+    Returns:
+        dict: Unified snapshot for rendering
+    """
+    eq = _equity[0]
+    peak = _equity_peak[0]
+    
+    snapshot = {
+        "timestamp": __import__('time').time(),
+        "system": {
+            "equity": round(eq, 8),
+            "drawdown": round((peak - eq) / max(peak, 1e-9), 4),
+            "exposure": round(sum(p.get("size", 0) for p in positions.values()), 6),
+            "positions": len(positions),
+        },
+        "symbols": {
+            pos["signal"]["symbol"]: {
+                "size": round(pos.get("size", 0), 6),
+                "regime": pos["signal"].get("regime", "RANGING"),
+            }
+            for pos in positions.values()
+        },
+    }
+    
+    if metrics:
+        snapshot["metrics"] = metrics
+    
+    return snapshot
+
+
 # ── Metrics stream ─────────────────────────────────────────────────────────────
 
 def dashboard_metrics():
