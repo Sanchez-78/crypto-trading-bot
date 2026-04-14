@@ -97,6 +97,21 @@ def track_price(symbol, price):
     _last_prices[symbol] = (price, prev)
 
 
+def track_signal(symbol: str, action: str, price: float,
+                 confidence: float, ev: float, regime: str) -> None:
+    """Update _last_signals when a signal is GENERATED (not only on trade close).
+    Called from realtime_decision_engine so dashboard always shows current bot intent."""
+    with _lock:
+        _last_signals[symbol] = {
+            "action":     action,
+            "price":      price,
+            "confidence": round(confidence, 4),
+            "ev":         round(ev, 4),
+            "regime":     regime,
+            "timestamp":  _time.time(),   # signal generation time — used by app for age display
+        }
+
+
 def _update_sym(symbol, result, profit):
     s = _sym_stats.setdefault(symbol, {"trades": 0, "wins": 0, "profit": 0.0})
     s["trades"] += 1
@@ -191,9 +206,13 @@ def _update_metrics_locked(signal, trade):
     if result == "WIN": rs["wins"] += 1
 
     _last_signals[sym] = {
-        "action": signal["action"], "price": signal["price"],
-        "confidence": conf, "result": result,
-        "ev": ev, "regime": regime,
+        "action":     signal["action"],
+        "price":      signal["price"],
+        "confidence": conf,
+        "result":     result,
+        "ev":         ev,
+        "regime":     regime,
+        "timestamp":  _time.time(),
     }
 
     # deque auto-evicts at maxlen=50

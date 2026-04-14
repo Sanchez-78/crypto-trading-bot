@@ -799,4 +799,19 @@ def evaluate_signal(signal):
     signal["combo_penalty"]    = round(combo_pen, 3)
     print(f"    decision=TAKE  ev={ev:.4f}  p={win_prob:.4f}  "
           f"af={auditor_factor:.2f}  coh={_coh:.3f}")
+
+    # Update last_signals immediately so dashboard shows current bot intent
+    try:
+        from src.services.learning_event import track_signal
+        track_signal(
+            symbol   = signal.get("symbol", ""),
+            action   = signal.get("action", "HOLD"),
+            price    = float(signal.get("price", 0)),
+            confidence = win_prob,
+            ev       = ev,
+            regime   = signal.get("regime", "RANGING"),
+        )
+    except Exception:
+        pass
+
     return signal
