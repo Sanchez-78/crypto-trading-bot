@@ -482,6 +482,25 @@ def _build_open_positions(positions):
     return out
 
 
+def _sanitize_doc(obj):
+    """
+    Recursively strip Firestore-illegal dict keys before .set().
+    Firestore rejects: None keys, empty-string keys, and keys containing '.'.
+    Drops the offending key (with a fallback rename for '.' cases).
+    """
+    if isinstance(obj, dict):
+        clean = {}
+        for k, v in obj.items():
+            if not isinstance(k, str) or not k:
+                continue   # drop None / non-string / empty keys
+            safe_k = k.replace(".", "_")   # dots create phantom sub-paths
+            clean[safe_k] = _sanitize_doc(v)
+        return clean
+    if isinstance(obj, list):
+        return [_sanitize_doc(i) for i in obj]
+    return obj
+
+
 def save_metrics_full(metrics, open_positions=None, execution=None, monitor=None, fx_usd_czk=None):
     """
     Write full nested metrics to metrics/latest.
@@ -622,7 +641,7 @@ def save_metrics_full(metrics, open_positions=None, execution=None, monitor=None
             "fx_usd_czk":   round(float(fx_usd_czk), 4) if fx_usd_czk else None,
             "timestamp":    time.time(),
         }
-        db.collection(col("metrics")).document("latest").set(data, merge=False)
+        db.collection(col("metrics")).document("latest").set(_sanitize_doc(data), merge=False)
     except Exception as e:
         print(f"❌ save_metrics_full: {e}")
 
