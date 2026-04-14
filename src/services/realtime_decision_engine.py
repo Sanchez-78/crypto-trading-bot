@@ -596,6 +596,16 @@ def evaluate_signal(signal):
     # Protection is redundant: allow_trade (score>0), fast_fail, and pair_block
     # already cover the "noise EV" case without deadlocking.
 
+    # ── Daily drawdown circuit breaker (hard halt at 5% session loss) ────────
+    try:
+        from src.services.risk_engine import is_daily_dd_safe as _dd_safe
+        if not _dd_safe():
+            track_blocked(reason="DAILY_DD_HALT")
+            print(f"    decision=DAILY_DD_HALT  session loss ≥5%")
+            return None
+    except Exception:
+        pass
+
     # ── Frequency cap ─────────────────────────────────────────────────────────
     t15 = trades_in_window(900)
     try:
@@ -819,6 +829,24 @@ def evaluate_signal(signal):
             return None
     except Exception:
         pass
+
+    # ── OFI toxicity guard (arXiv:2602.00776) ────────────────────────────────
+    _ofi_size = 1.0
+    try:
+        from src.services.ofi_guard import is_toxic as _ofi_toxic, ofi_size_factor as _ofi_sf
+        _ofi_blocked, _ofi_reason = _ofi_toxic(sym, signal.get("action", "BUY"))
+        if _ofi_blocked:
+            track_blocked(reason="OFI_TOXIC")
+            print(f"    decision=OFI_TOXIC  {_ofi_reason}")
+            return None
+        _ofi_size = _ofi_sf(sym, signal.get("action", "BUY"))
+        if _ofi_size < 1.0:
+            print(f"    OFI soft penalty: size×{_ofi_size:.2f}")
+    except Exception:
+        pass
+    # Apply OFI size factor to auditor_factor
+    if _ofi_size < 1.0:
+        auditor_factor = min(1.0, auditor_factor * _ofi_size)
 
     signal["confidence"]      = round(win_prob, 4)
     signal["ev"]              = round(ev, 4)

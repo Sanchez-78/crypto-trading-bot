@@ -621,6 +621,56 @@ try:
 except Exception:
     pass
 
+# ── Daily drawdown circuit breaker ────────────────────────────────────────────
+# Resets at midnight UTC. Hard halt when session loss exceeds DAILY_DD_LIMIT.
+# Graduated: 5% → 1.0× , 3% → 0.75× , DAILY_DD_LIMIT(5%) → HALT
+import time as _time_re
+_DAILY_DD_LIMIT  = 0.05    # 5% daily loss → hard halt (no new trades)
+_DAILY_DD_WARN   = 0.03    # 3% → size reduced to 75%
+_daily_start_eq: list[float] = [0.0]   # equity at session start
+_daily_reset_day: list[int]  = [-1]    # UTC day of last reset
+
+
+def _maybe_reset_daily() -> None:
+    """Reset daily equity baseline at midnight UTC."""
+    today = int(_time_re.time() // 86400)
+    if _daily_reset_day[0] != today:
+        try:
+            from src.services.learning_event import METRICS as _M_d
+            _daily_start_eq[0] = float(_M_d.get("profit", 0.0))
+        except Exception:
+            _daily_start_eq[0] = 0.0
+        _daily_reset_day[0] = today
+
+
+def daily_dd_factor() -> float:
+    """
+    Returns size multiplier based on today's session drawdown:
+      DD < 3%  → 1.00 (no penalty)
+      DD < 5%  → 0.75 (reduce size)
+      DD >= 5% → 0.00 (hard halt — return 0.0 signals caller to block)
+    """
+    _maybe_reset_daily()
+    try:
+        from src.services.learning_event import METRICS as _M_d
+        current = float(_M_d.get("profit", 0.0))
+    except Exception:
+        return 1.0
+    start = _daily_start_eq[0]
+    if start <= 0:
+        return 1.0   # insufficient baseline — don't block
+    daily_loss = (start - current) / max(abs(start), 1e-9)
+    if daily_loss >= _DAILY_DD_LIMIT:
+        return 0.0   # HALT
+    if daily_loss >= _DAILY_DD_WARN:
+        return 0.75  # reduce
+    return 1.0
+
+
+def is_daily_dd_safe() -> bool:
+    """Returns False when daily loss limit is reached → block all new trades."""
+    return daily_dd_factor() > 0.0
+
 # Cache for prob_ruin from Monte Carlo (Firebase I/O — refresh every 5 min)
 _mc_cache: dict[str, Any] = {"prob_ruin": None, "ts": 0.0}
 _MC_TTL = 300.0   # seconds

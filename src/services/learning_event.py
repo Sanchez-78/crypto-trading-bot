@@ -96,6 +96,12 @@ _hydrate_from_redis()
 def track_price(symbol, price):
     prev = _last_prices.get(symbol, (price, price))[0]
     _last_prices[symbol] = (price, prev)
+    # Feed OFI guard with each price tick
+    try:
+        from src.services.ofi_guard import update_price as _ofi_update
+        _ofi_update(symbol, price)
+    except Exception:
+        pass
 
 
 def track_signal(symbol: str, action: str, price: float,

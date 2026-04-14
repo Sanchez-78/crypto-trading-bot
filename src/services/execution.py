@@ -238,22 +238,38 @@ def bandit_score(sym, reg):
 
 def kelly_fraction(sym, reg):
     """
-    Half-Kelly: k = (p×(b+1)−1)/b, clamped [0, 0.25].
-    Requires ≥20 trades per (sym, reg); else conservative 0.1.
+    Regime-aware half-Kelly: k = (p×(b+1)−1)/b × regime_multiplier.
+
+    Regime multipliers (dynamic Kelly per research on Sharpe maximization):
+      BULL_TREND / BEAR_TREND : 0.50 — directional momentum, moderate risk
+      RANGING                 : 0.40 — mean reversion, standard edge
+      QUIET_RANGE             : 0.25 — thin edge in low-vol dead market
+      HIGH_VOL                : 0.20 — unpredictable, reduce exposure
+
+    Requires ≥20 trades per (sym, reg); bootstrap default scales by regime.
     Uses median (robust to outliers) + clips pnl to ±0.05.
     """
+    _REGIME_MULT = {
+        "BULL_TREND":  0.50,
+        "BEAR_TREND":  0.50,
+        "RANGING":     0.40,
+        "QUIET_RANGE": 0.25,
+        "HIGH_VOL":    0.20,
+    }
+    regime_mult = _REGIME_MULT.get(reg, 0.40)
+
     trades = [t for t in trade_log if t["sym"] == sym and t["reg"] == reg][-50:]
     if len(trades) < 20:
-        return 0.1
+        return round(0.1 * regime_mult, 4)
     pnl  = np.clip([t["ws"] - t["slip"] for t in trades], -0.05, 0.05)
     wins = [p for p in pnl if p > 0]
     loss = [p for p in pnl if p < 0]
     if not wins or not loss:
-        return 0.1
+        return round(0.1 * regime_mult, 4)
     p = len(wins) / len(pnl)
     b = float(np.median(wins)) / (abs(float(np.median(loss))) + 1e-6)
     k = (p * (b + 1) - 1) / (b + 1e-6)
-    return max(0.0, min(k, 0.25))
+    return max(0.0, min(k * regime_mult, 0.25))
 
 
 # ── Risk EV (Sharpe-like) ─────────────────────────────────────────────────────
