@@ -1966,10 +1966,13 @@ def on_price(data):
         "result":        result,
         "exit_price":    curr,
         "close_reason":  reason,
-        "timestamp":     time.time(),
+        "timestamp":     pos["signal"].get("timestamp", time.time()),  # entry time
+        "close_time":    time.time(),                                   # actual close time
         "fill_slippage": pos.get("fill_slippage", 0.0),
         "mae":           mae,
         "mfe":           mfe,
+        "stop_loss":     pos.get("stop_loss",   pos["signal"].get("stop_loss")),
+        "take_profit":   pos.get("take_profit", pos["signal"].get("take_profit")),
     }
 
     update_metrics(pos["signal"], trade)

@@ -107,12 +107,12 @@ def _slim_trade(trade):
         "ev":           round(float(trade.get("ev",  0.0)), 4),   # expected value at entry
         "timestamp":    trade.get("timestamp", time.time()),
         "opened_at":    trade.get("timestamp", time.time()),
-        "closed_at":    trade.get("timestamp", time.time()),
+        "closed_at":    trade.get("close_time", time.time()),
         "status":       "closed",
         "mae":          round(float(trade.get("mae", 0)), 6),
         "mfe":          round(float(trade.get("mfe", 0)), 6),
-        "stop_loss":    round(float(trade.get("price", 0)) * (1 - float((trade.get("features") or {}).get("volatility", 0.003)) * 1.5), 4),
-        "take_profit":  round(float(trade.get("price", 0)) * (1 + float((trade.get("features") or {}).get("volatility", 0.003)) * 3.0), 4),
+        "stop_loss":    round(float(trade.get("stop_loss")  or 0), 6),
+        "take_profit":  round(float(trade.get("take_profit") or 0), 6),
         "features": {
             **bool_feats,   # trend, pullback, bounce, breakout, vol, mom, wick
             "ema_diff":   round(float(feat.get("ema_diff",   0)), 6),
