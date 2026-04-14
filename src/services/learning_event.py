@@ -148,6 +148,13 @@ def update_metrics(signal, trade):
 def _update_metrics_locked(signal, trade):
     m      = METRICS
     profit = float(trade["profit"])
+    
+    # ────────────────────────────────────────────────────────────────────────
+    # PATCH 7: Anti-Zero Reward — Convert zero/tiny PnL to penalty
+    # ────────────────────────────────────────────────────────────────────────
+    if abs(profit) < 1e-8:
+        profit = -0.0001  # Assign a small penalty to prevent reward signal collapse
+    
     result = trade["result"]
     sym    = signal["symbol"]
     conf   = float(signal.get("confidence", 0.5))

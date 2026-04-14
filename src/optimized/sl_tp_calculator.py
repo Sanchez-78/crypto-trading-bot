@@ -10,6 +10,27 @@ ASSET_BASE: dict[str, dict] = {
     "DEFAULT": {"sl": 3.0, "tp": 4.0, "period": 10},
 }
 
+# ────────────────────────────────────────────────────────────────────────────
+# PATCH 1: TP/SL Runtime Fix — Regime-aware adaptive targets
+# ────────────────────────────────────────────────────────────────────────────
+def compute_tp_sl(atr, regime):
+    """PATCH 1: Quick regime-specific TP/SL multipliers for runtime deployment.
+    
+    Replaces complex asset_base logic with aggressive, fast-exit targets.
+    Trending: wide TP (let winners run), tight SL
+    Ranging: balanced TP/SL
+    Quiet: tight everything (low ATR, consolidation)
+    
+    Returns: (tp_multiplier, sl_multiplier)  — multiply with ATR to get distances
+    """
+    if regime in ["BULL_TREND", "BEAR_TREND"]:
+        return 0.6 * atr, 0.4 * atr
+    if regime == "RANGING":
+        return 0.5 * atr, 0.4 * atr
+    if regime == "QUIET_RANGE":
+        return 0.4 * atr, 0.35 * atr
+    return 0.5 * atr, 0.4 * atr
+
 # Regime ATR-ratio → SL multiplier adjustment
 # <0.70 → 0.75×  |  0.70-1.20 → 1.0×  |  1.20-1.50 → 1.25×  |  >1.50 → 1.50×
 

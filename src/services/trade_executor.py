@@ -1623,6 +1623,13 @@ def handle_signal(signal):
     actual_atr = max(signal.get("atr", 0) or 0, actual_entry * 0.003) / actual_entry if actual_entry else 0.003
     tp, sl = compute_tp_sl(actual_entry, signal["action"], actual_atr, sym, signal.get("regime", "RANGING"))
 
+    # ────────────────────────────────────────────────────────────────────────
+    # PATCH 4: Execution Debug — Log TP/SL levels for runtime verification
+    # ────────────────────────────────────────────────────────────────────────
+    print(f"[EXEC] regime={regime} TP={tp:.5f} SL={sl:.5f}")
+    log.info(f"[EXEC] regime={regime} entry={actual_entry:.8f} TP={tp:.8f} SL={sl:.8f} "
+             f"size={size:.6f} atr={signal.get('atr', 0):.8f}")
+
     # Record tick for force-trade rate tracking
     _trades_at_tick.append(_tick_counter[0])
     if len(_trades_at_tick) > 200:
@@ -1666,6 +1673,15 @@ def handle_signal(signal):
     elif _recycling_pnl is not None and _recycling_pnl >= 0:
         log.info(f"    recycle[v10.13/BLOCKED]: pp={_pp_v1013:.2f}  "
               f"mom={_mom_v1013:.2f}  dd={_dd_recycle:.1%}  → no bonus")
+
+    # ────────────────────────────────────────────────────────────────────────
+    # PATCH 6: Track Last Trade Timestamp
+    # ────────────────────────────────────────────────────────────────────────
+    try:
+        import bot2.main as bot2_main
+        bot2_main.last_trade_ts[0] = time.time()
+    except Exception:
+        pass
 
     _positions[sym] = {
         "action":        signal["action"],

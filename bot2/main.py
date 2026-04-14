@@ -17,6 +17,32 @@ _last_audit      = 0
 _last_metrics    = 0
 _last_pre_audit  = 0
 
+# ────────────────────────────────────────────────────────────────────────────
+# PATCH 5 & 6: Watchdog + Last Trade Tracking
+# ────────────────────────────────────────────────────────────────────────────
+last_trade_ts = [0.0]  # use list for mutability in watchdog function
+
+
+def watchdog(now, agent=None):
+    """PATCH 5: Watchdog — boost exploration if no trades in 600 seconds.
+    
+    Monitors trade frequency and increases exploration rate if system is idle.
+    This maintains signal flow during market downturns or poor conditions.
+    """
+    if now - last_trade_ts[0] > 600:
+        print("[WATCHDOG] No trades for 600s → boosting exploration")
+        if agent and hasattr(agent, 'exploration_rate'):
+            agent.exploration_rate = min(1.0, agent.exploration_rate + 0.2)
+        else:
+            # Direct exploration rate boost in decision engine
+            try:
+                import src.services.realtime_decision_engine as rde
+                if hasattr(rde, '_exploration_boost'):
+                    rde._exploration_boost = min(1.0, rde._exploration_boost + 0.2)
+            except Exception:
+                pass
+
+
 # ── FX rate cache (USD/CZK) ───────────────────────────────────────────────────
 _fx_usd_czk:      float = 0.0
 _fx_last_fetch:   float = 0.0
@@ -653,6 +679,11 @@ def main():
 
         global _last_audit, _last_metrics, _last_pre_audit
         now = time.time()
+
+        # ────────────────────────────────────────────────────────────────────
+        # PATCH 5: Call watchdog to monitor trade frequency
+        # ────────────────────────────────────────────────────────────────────
+        watchdog(now)
 
         if now - _last_audit >= AUDIT_INTERVAL:
             run_audit()

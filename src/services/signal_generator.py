@@ -585,9 +585,24 @@ def on_price(data):
 
     base_sc, w_sc, action, edge, edge_features, explore = _get_scored_edge(
         hist, e50, e200, breakout_up, breakout_down, mom5, reg, regime_conf)
+    
+    # ────────────────────────────────────────────────────────────────────────
+    # PATCH 3: Force Signal Generation — Fallback when no signal detected
+    # ────────────────────────────────────────────────────────────────────────
     if action is None:
-        track_filtered()
-        return
+        import random
+        # 30% chance to force generate a signal to maintain data flow
+        if random.random() < 0.3:
+            action = random.choice(["LONG", "SHORT"])
+            # Synthesize confidence at mid-level for forced signals
+            base_sc = 3  # 3/7
+            w_sc = 0.5
+            edge = "FORCED_EXPLORE"
+            edge_features = {}
+            explore = True
+        else:
+            track_filtered()
+            return
 
     # Confidence penalty flags (soft, EV gate is authoritative)
     _high_vol      = reg == "HIGH_VOL"

@@ -457,15 +457,33 @@ def decision_score(ev, ws):
     return 0.7 * ev + 0.3 * ws
 
 
-def allow_trade(ev, ws):
+# ────────────────────────────────────────────────────────────────────────────
+# PATCH 2: Disable Hard EV Filter — Probabilistic exploration gate
+# ────────────────────────────────────────────────────────────────────────────
+def allow_trade(ev, ws, exploration=0.4):
+    """PATCH 2: Replace hard EV threshold with probabilistic gating.
+    
+    Always allow positive EV trades.
+    For others: random exploration (40% chance to trade anyway).
+    This unblocks signal flow and enables RL data collection.
+    
+    Args:
+        ev: Expected Value score
+        ws: Win-score  
+        exploration: probability to trade even on negative EV (default 40%)
+    
+    Returns: bool — should this signal proceed to execution?
     """
-    Deterministic hard threshold — score = 0.7×ev + 0.3×ws > 0.0.
-    Tightened -0.05 → 0.0: requires net-positive combined score.
-    At ws=0.5: passes when ev > -0.214. Exploration prior ev=0.03 →
-    score=0.171 ✓ still passes. Truly negative EV signals blocked here
-    before reaching pair_block (n≥25) / regime_block (n≥25).
-    """
-    return decision_score(ev, ws) > 0.0
+    import random
+    
+    if ev > 0:
+        return True  # Always execute positive EV
+    
+    # Negative EV: probabilistic exploration
+    if random.random() < exploration:
+        return True
+    
+    return False
 
 
 def get_ev_threshold():
