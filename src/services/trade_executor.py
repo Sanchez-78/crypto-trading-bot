@@ -19,6 +19,7 @@ Calibration feedback:
 Firebase batch flush: every 20 trades OR every 5 minutes.
 """
 
+from src.core.event_bus_v2        import get_event_bus
 from src.core.event_bus           import subscribe_once
 from src.services.learning_event  import update_metrics
 from src.services.firebase_client import save_batch
@@ -1624,9 +1625,11 @@ def handle_signal(signal):
     tp, sl = compute_tp_sl(actual_entry, signal["action"], actual_atr, sym, signal.get("regime", "RANGING"))
 
     # ────────────────────────────────────────────────────────────────────────
-    # PATCH 4: Execution Debug — Log TP/SL levels for runtime verification
+    # PATCH 4 + ZERO BUG V2: Execution Debug — Log TP/SL levels for runtime verification
     # ────────────────────────────────────────────────────────────────────────
-    print(f"[EXEC] regime={regime} TP={tp:.5f} SL={sl:.5f}")
+    msg = f"[EXEC] regime={regime} TP={tp:.5f} SL={sl:.5f}"
+    get_event_bus().emit("LOG_OUTPUT", {"message": msg}, time.time())
+    
     log.info(f"[EXEC] regime={regime} entry={actual_entry:.8f} TP={tp:.8f} SL={sl:.8f} "
              f"size={size:.6f} atr={signal.get('atr', 0):.8f}")
 
@@ -1717,9 +1720,11 @@ def handle_signal(signal):
         "expected_hold":    _expected_hold,    # V10.10: hold ticks used as decay tau
     }
     tag = "[force]" if force else ""
-    print(f"    exec{tag}: slip={fill_slip:.5f}  fee={actual_fee_rt:.5f}  fr={fill_rate(sym):.2f}  "
-          f"ws_adj={ws_adj:.3f}  {size:.4f}@{actual_entry:.4f}  "
-          f"tp={tp:.4f}  sl={sl:.4f}")
+    msg = (f"    exec{tag}: slip={fill_slip:.5f}  fee={actual_fee_rt:.5f}  fr={fill_rate(sym):.2f}  "
+           f"ws_adj={ws_adj:.3f}  {size:.4f}@{actual_entry:.4f}  "
+           f"tp={tp:.4f}  sl={sl:.4f}")
+    get_event_bus().emit("LOG_OUTPUT", {"message": msg}, time.time())
+    
     _regime_exposure[regime] = _regime_exposure.get(regime, 0) + 1
     _risk_guard()
 
@@ -1964,6 +1969,11 @@ def on_price(data):
 
     print(f"    {icon} {short} {pos['action']} "
           f"${entry:,.4f}→${curr:,.4f}  {profit:+.6f}  [{reason}] (fee: {fee_used:.5f})")
+    
+    # PATCH: Zero Bug V2 - Log via event_bus
+    msg = (f"    {icon} {short} {pos['action']} "
+           f"${entry:,.4f}→${curr:,.4f}  {profit:+.6f}  [{reason}] (fee: {fee_used:.5f})")
+    get_event_bus().emit("LOG_OUTPUT", {"message": msg}, time.time())
 
     mfe = ((pos["max_price"] - entry) / entry if pos["action"] == "BUY"
            else (entry - pos["min_price"]) / entry)
