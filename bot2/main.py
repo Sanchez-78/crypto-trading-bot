@@ -13,6 +13,29 @@ import src.services.signal_engine
 import src.services.trade_executor
 import src.services.audit_worker
 
+# ────────────────────────────────────────────────────────────────────────────
+# PATCH: Event Bus Integration (Zero Bug V2 Migration Phase 1)
+# ────────────────────────────────────────────────────────────────────────────
+from src.core.event_bus_v2 import get_event_bus
+
+def _init_event_handlers():
+    """Set up event handlers for LOG_OUTPUT events (replaces print)."""
+    bus = get_event_bus()
+    
+    # Handler for LOG_OUTPUT events → print to console
+    def log_handler(payload):
+        if payload and isinstance(payload, dict):
+            msg = payload.get("message", str(payload))
+            timestamp = payload.get("timestamp", "")
+            if timestamp:
+                print(f"[{timestamp}] {msg}")
+            else:
+                print(msg)
+        elif payload:
+            print(payload)
+    
+    bus.subscribe("LOG_OUTPUT", log_handler, priority=100)
+
 _last_audit      = 0
 _last_metrics    = 0
 _last_pre_audit  = 0
@@ -24,10 +47,12 @@ _render_lock = threading.Lock()
 _last_snapshot_hash = [None]  # Use list for mutability
 
 def atomic_render(snapshot_data, component_name=""):
-    """PATCH 3.1: Thread-safe render with deduplication.
+    """PATCH 3.1 + ZERO BUG V2: Thread-safe render with deduplication.
     
     Prevents duplicate dashboard output by comparing hash of current snapshot
     to last rendered snapshot. Only renders if content changed.
+    
+    Uses event_bus.emit() instead of direct print() calls (Zero Bug Migration).
     
     Args:
         snapshot_data: dict or str to render (metrics, dashboard, learning monitor)
@@ -42,15 +67,21 @@ def atomic_render(snapshot_data, component_name=""):
         
         _last_snapshot_hash[0] = current_hash
         
-        # Render the snapshot (consolidated output)
+        # Render via event_bus (PATCH: Zero Bug V2 Migration)
         if snapshot_data:
+            bus = get_event_bus()
+            
             if component_name:
-                print(f"\n  ── {component_name} ────────────────────────────────────────")
+                msg = f"\n  ── {component_name} ────────────────────────────────────────"
+                bus.emit("LOG_OUTPUT", {"message": msg}, time.time())
+            
             if isinstance(snapshot_data, dict):
                 import json
-                print(json.dumps(snapshot_data, indent=2, default=str))
+                msg = json.dumps(snapshot_data, indent=2, default=str)
             else:
-                print(snapshot_data)
+                msg = str(snapshot_data)
+            
+            bus.emit("LOG_OUTPUT", {"message": msg}, time.time())
 
 # ────────────────────────────────────────────────────────────────────────────
 # PATCH 5 & 6: Watchdog + Last Trade Tracking
@@ -59,13 +90,19 @@ last_trade_ts = [0.0]  # use list for mutability in watchdog function
 
 
 def watchdog(now, agent=None):
-    """PATCH 5: Watchdog — boost exploration if no trades in 600 seconds.
+    """PATCH 5 & ZERO BUG V2: Watchdog — boost exploration if no trades in 600 seconds.
     
     Monitors trade frequency and increases exploration rate if system is idle.
     This maintains signal flow during market downturns or poor conditions.
+    
+    Uses event_bus.emit() instead of direct print() calls (Zero Bug Migration).
     """
+    bus = get_event_bus()
+    
     if now - last_trade_ts[0] > 600:
-        print("[WATCHDOG] No trades for 600s → boosting exploration")
+        msg = "[WATCHDOG] No trades for 600s → boosting exploration"
+        bus.emit("LOG_OUTPUT", {"message": msg}, now)
+        
         if agent and hasattr(agent, 'exploration_rate'):
             agent.exploration_rate = min(1.0, agent.exploration_rate + 0.2)
         else:
@@ -78,10 +115,12 @@ def watchdog(now, agent=None):
                 pass
     
     # ────────────────────────────────────────────────────────────────────────
-    # PATCH 3.4: Watchdog micro-trades — Allow small trades when idle
+    # PATCH 3.4 + ZERO BUG V2: Watchdog micro-trades — Allow small trades when idle
     # ────────────────────────────────────────────────────────────────────────
     if now - last_trade_ts[0] > 900:  # 15 minutes idle
-        print("[WATCHDOG] Critical idle (15min) → enabling micro-trades")
+        msg = "[WATCHDOG] Critical idle (15min) → enabling micro-trades"
+        bus.emit("LOG_OUTPUT", {"message": msg}, now)
+        
         try:
             import src.services.trade_executor as te
             # Flag to allow smaller, exploratory positions
@@ -678,6 +717,9 @@ def _run_pre_live_audit() -> None:
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def main():
+    # Initialize event bus handlers (Zero Bug V2 Migration Phase 1)
+    _init_event_handlers()
+    
     init_firebase()
     daily_budget_report()
 
@@ -688,8 +730,9 @@ def main():
     # bot enters bootstrap mode (trades=0 < 150 threshold) automatically.
     # Log clearly so the Railway log makes the cause obvious.
     if _history is not None and len(_history) == 0:
-        print("⚠️  [DB_WIPE] Firebase returned 0 trades — starting in full bootstrap mode. "
-              "Session gate bypassed, debounce bypassed, force-trade guard active.")
+        bus = get_event_bus()
+        msg = "⚠️  [DB_WIPE] Firebase returned 0 trades — starting in full bootstrap mode. Session gate bypassed, debounce bypassed, force-trade guard active."
+        bus.emit("LOG_OUTPUT", {"message": msg}, time.time())
 
     bootstrap_from_history(_history)
     warmup()
