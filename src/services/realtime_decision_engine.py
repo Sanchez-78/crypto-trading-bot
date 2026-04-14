@@ -610,16 +610,27 @@ def evaluate_signal(signal):
         print(f"    decision=SKIP_FREQ  t15={t15}>{MAX_TRADES_15}")
         return None
 
-    # ── QUIET_RANGE RSI extreme gate ─────────────────────────────────────────
-    # In a dead market, only trade real extremes (RSI ≤ 35 BUY / ≥ 65 SELL).
-    # Mid-range entries score 3/7 on trend+bounce+mom alone — that's noise,
-    # not a mean-reversion edge. Bypassed in bootstrap (<50 trades) so data flows.
-    if regime == "QUIET_RANGE" and _M.get("trades", 0) >= 50:
-        _rsi_val = signal.get("features", {}).get("rsi", 50.0)
-        _side    = signal.get("action", "BUY")
-        if (_side == "BUY" and _rsi_val > 35) or (_side == "SELL" and _rsi_val < 65):
+    # ── B19: regime-aware RSI neutrality gate ────────────────────────────────
+    # RANGING / QUIET_RANGE: neutral RSI (40-60) is FINE — mean reversion valid.
+    # TRENDING (BULL/BEAR): neutral RSI = no momentum → skip.
+    # QUIET_RANGE extreme: require real extreme (≤35 BUY / ≥65 SELL).
+    # Bypassed in bootstrap (<50 trades) so data flows in early learning.
+    if _M.get("trades", 0) >= 50:
+        _rsi_val    = signal.get("features", {}).get("rsi", 50.0)
+        _side       = signal.get("action", "BUY")
+        _neutral    = 40.0 <= _rsi_val <= 60.0
+        _is_trend   = regime in ("BULL_TREND", "BEAR_TREND")
+        _is_quiet   = regime == "QUIET_RANGE"
+        _skip_rsi   = False
+        if _neutral and _is_trend:
+            _skip_rsi = True   # trending market + no momentum → wait
+        elif _is_quiet:
+            # Dead market: only allow real extremes
+            if (_side == "BUY" and _rsi_val > 35) or (_side == "SELL" and _rsi_val < 65):
+                _skip_rsi = True
+        if _skip_rsi:
             track_blocked(reason="QUIET_RSI")
-            print(f"    decision=SKIP_QUIET_RSI  rsi={_rsi_val:.1f}  side={_side}")
+            print(f"    decision=SKIP_QUIET_RSI  rsi={_rsi_val:.1f}  side={_side}  regime={regime}")
             return None
 
     # ── Entry timing — 1-tick momentum confirmation ──────────────────────────
@@ -632,7 +643,7 @@ def evaluate_signal(signal):
         _ph = _price_history.setdefault(sym, deque(maxlen=3))
         _ph.append(signal.get("price", 0))
         _t_boot = _M.get("trades", 0)
-        if _t_boot >= 100 and len(_ph) >= 2:
+        if _t_boot >= 30 and len(_ph) >= 2:   # lowered 100→30: timing only engages after enough data
             _side = signal.get("action", "BUY")
             _ph3  = list(_ph)
             _bad_timing = (
@@ -645,13 +656,14 @@ def evaluate_signal(signal):
     except Exception:
         pass
 
-    # ── V6 L10: loss cluster per symbol — 4/5 recent sym-level losses → pause ─
+    # ── B15: regime-aware loss cluster guard (signal_filter) ─────────────────
     try:
-        from src.services.learning_monitor import sym_recent_pnl as _srp
-        _sp = _srp.get(sym, [])
-        if len(_sp) >= 5 and sum(1 for x in _sp[-5:] if x < 0) >= 4:
+        from src.services.signal_filter import loss_cluster_check as _lcc, log_signal_outcome as _lso
+        _lc_blocked, _lc_reason = _lcc(sym, regime)
+        if _lc_blocked:
             track_blocked(reason="LOSS_CLUSTER")
-            print(f"    decision=SKIP_CLUSTER  {sym}  4/5 recent losses")
+            _lso(sym, accepted=False, reason="LOSS_CLUSTER")
+            print(f"    decision=SKIP_CLUSTER  {sym}  {_lc_reason}")
             return None
     except Exception:
         pass
@@ -788,8 +800,25 @@ def evaluate_signal(signal):
 
     if not allow_trade(ev, _ws):
         track_blocked(reason="SKIP_SCORE")
+        try:
+            from src.services.signal_filter import log_signal_outcome as _lso2
+            _lso2(sym, accepted=False, reason="SKIP_SCORE")
+        except Exception:
+            pass
         print(f"    decision=SKIP_SCORE  ev={ev:.3f}  ws={_ws:.3f}  score={_sc:.3f}")
         return None
+
+    # ── B17: direction bias guard ─────────────────────────────────────────────
+    try:
+        from src.services.signal_filter import is_biased as _ib2, log_signal_outcome as _lso3
+        _bias_blocked, _bias_reason = _ib2(sym, signal.get("action", "BUY"))
+        if _bias_blocked:
+            track_blocked(reason="BIAS_DISABLED")
+            _lso3(sym, accepted=False, reason="BIAS_DISABLED")
+            print(f"    decision=BIAS_DISABLED  {_bias_reason}")
+            return None
+    except Exception:
+        pass
 
     signal["confidence"]      = round(win_prob, 4)
     signal["ev"]              = round(ev, 4)
@@ -799,6 +828,15 @@ def evaluate_signal(signal):
     signal["combo_penalty"]    = round(combo_pen, 3)
     print(f"    decision=TAKE  ev={ev:.4f}  p={win_prob:.4f}  "
           f"af={auditor_factor:.2f}  coh={_coh:.3f}")
+
+    # B16: conv-rate tracking — signal accepted
+    try:
+        from src.services.signal_filter import log_signal_outcome as _lso4
+        _lso4(sym, accepted=True)
+        from src.services.learning_event import METRICS as _M_take
+        _M_take["signals_accepted"] = _M_take.get("signals_accepted", 0) + 1
+    except Exception:
+        pass
 
     # Update last_signals immediately so dashboard shows current bot intent
     try:

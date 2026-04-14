@@ -32,6 +32,7 @@ METRICS = {
     "signals_generated": 0,
     "signals_filtered": 0,
     "signals_executed": 0,
+    "signals_accepted": 0,   # signals that passed ALL gates → trade opened
     "blocked": 0,
     "regimes": {"BULL_TREND": 0, "BEAR_TREND": 0, "RANGING": 0,
                 "QUIET_RANGE": 0, "HIGH_VOL": 0},
@@ -188,6 +189,12 @@ def _update_metrics_locked(signal, trade):
     # directional signal and would inflate sym_stats.winrate just like METRICS.winrate.
     if not _neutral_timeout:
         _update_sym(sym, result, profit)
+        # Direction bias tracking (B17) — record to detect systematic wrong-direction
+        try:
+            from src.services.signal_filter import record_bias as _rb
+            _rb(sym, signal.get("action", "BUY"), profit)
+        except Exception:
+            pass
 
     # EV history (deque auto-evicts oldest at maxlen=50)
     ev = float(signal.get("ev", 0))
