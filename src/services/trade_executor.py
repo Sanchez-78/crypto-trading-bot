@@ -736,12 +736,12 @@ def _dynamic_hold(atr_abs, entry, sym=None, reg=None, adx=0.0):
     # V8 → V10.14: continuous EV → base mapping (seconds).
     # atr_adj removed — dead code after seconds conversion.
     ev_factor = min(max((_ev + 1) / 2, 0.0), 1.0)
-    base      = 180 + int(ev_factor * 120)   # base [180s, 300s] (3–5 min)
+    base      = 120 + int(ev_factor * 90)    # base [120s, 210s] (2–3.5 min)
 
     # Adaptive ATR adjustment (seconds-scale).
     atr_adj_s = int(100 * max(0.002, 0.01 / max(atr_pct, 1e-9)))
-    hold      = max(base, min(base + 120, atr_adj_s + trend_bonus * 30))
-    return max(150, min(hold, 480))   # absolute ceiling 480s (8 min)
+    hold      = max(base, min(base + 90, atr_adj_s + trend_bonus * 30))
+    return max(120, min(hold, 300))   # absolute ceiling 300s (5 min)
 
 
 def _force_trade_guard():

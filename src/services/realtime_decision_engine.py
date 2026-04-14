@@ -4,7 +4,7 @@ EV-only decision engine — stable adaptive threshold + online calibration.
 Flow:
   1. Calibrate win_prob: empirical WR from online bucket tracker
      Requires 30 samples per bucket; fallback = 0.5 (honest, not raw conf)
-  2. TP=1.0×ATR / SL=0.8×ATR → RR=1.25 (tighter exits, faster edge realization)
+  2. TP=0.5–0.6×ATR / SL=0.35–0.4×ATR → RR≥1.25 (regime-scaled; fits 8-min hold window)
   3. EV = win_prob × RR - (1 - win_prob)
   4. EV spread guard: if last 50 EVs span < 0.05 → flat distribution = noise → skip
   5. Frequency cap: > 6 trades/15min → skip (prevents overtrading)
@@ -29,8 +29,8 @@ from src.services.learning_event  import track_blocked, track_regime, trades_in_
 # Mutable scalar — updated on every trade close via update_calibrator().
 _last_trade_ts: list[float] = [0.0]
 
-_TP_MULT = {"BULL_TREND": 1.0, "BEAR_TREND": 1.0, "RANGING": 1.0, "QUIET_RANGE": 1.0}
-_SL_MULT = {"BULL_TREND": 0.8, "BEAR_TREND": 0.8, "RANGING": 0.8, "QUIET_RANGE": 0.8}
+_TP_MULT = {"BULL_TREND": 0.6, "BEAR_TREND": 0.6, "RANGING": 0.5, "QUIET_RANGE": 0.4}
+_SL_MULT = {"BULL_TREND": 0.4, "BEAR_TREND": 0.4, "RANGING": 0.4, "QUIET_RANGE": 0.35}
 MIN_TP   = 0.0025
 MIN_SL   = 0.0020
 MIN_RR   = 1.25
