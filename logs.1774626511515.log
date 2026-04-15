@@ -1,15 +1,99 @@
+      "SOLUSDT_BEAR_TREND": {
+        "sym": "SOLUSDT",
+        "reg": "BEAR_TREND",
+        "n": 2,
+        "ev": 0.0,
+        "wr": 0.5,
+        "conv": 0.0,
+        "bandit": 0.0
+      },
+      "ETHUSDT_BEAR_TREND": {
+        "sym": "ETHUSDT",
+        "reg": "BEAR_TREND",
+        "n": 1,
+        "ev": 0.0,
+        "wr": 1.0,
+        "conv": 0.0,
+        "bandit": 0.0
+      },
+      "BTCUSDT_RANGING": {
+        "sym": "BTCUSDT",
+Menu
+        "reg": "RANGING",
+        "n": 1,
+        "ev": 0.0,
+        "wr": 1.0,
+        "conv": 0.0,
+        "bandit": 0.0
+      },
+      "XRPUSDT_BEAR_TREND": {
+        "sym": "XRPUSDT",
+        "reg": "BEAR_TREND",
+        "n": 1,
+        "ev": 0.0,
+        "wr": 1.0,
+        "conv": 0.0,
+        "bandit": 0.0
+      },
+      "BNBUSDT_BEAR_TREND": {
+        "sym": "BNBUSDT",
+        "reg": "BEAR_TREND",
+        "n": 1,
+        "ev": 0.0,
+        "wr": 0.0,
+        "conv": 0.0,
+        "bandit": 0.0
+      },
+      "DOTUSDT_BULL_TREND": {
+        "sym": "DOTUSDT",
+        "reg": "BULL_TREND",
+        "n": 1,
+        "ev": 0.0,
+        "wr": 1.0,
+        "conv": 0.0,
+        "bandit": 0.0
+      }
+    },
+    "features": {
+      "is_weekend": 0.3343,
+      "bounce": 0.3343,
+      "breakout": 0.3343,
+      "trend": 0.3343,
+      "pullback": 0.3343,
+      "mom": 0.3343,
+      "wick": 0.3343,
+      "vol": 0.3343
+    },
+    "block_reasons": {
+      "SKIP_SCORE": 213,
+      "LOSS_CLUSTER": 166,
+      "OFI_TOXIC": 23
+    },
+    "completed_trades": 1269,
+    "best_edge": "DOTUSDT (RANGING)",
+    "defense": {
+      "wall_exits": 0,
+      "timeouts": 0,
+      "l2_rejected": 0,
+      "corr_rejected": 0,
+      "defended": 0,
+      "efficiency": 0.0
+    },
+    "concept_drift": false
+  }
+}
 ============================================================
-  CRYPTOMASTER  |  0h 7m 26s  | TRENINK 
+  CRYPTOMASTER  |  0h 10m 53s  | TRENINK 
 ============================================================
     ZIVE CENY  (Binance · kazde 1 s)
   ────────────────────────────────────────────────────────
-    BTC  $   74,113.0000   ─  +0.000%
-    ETH  $    2,327.5100   ─  +0.000%
-    ADA  $        0.2400   ─  +0.000%
-    BNB  $      614.5700   ─  +0.000%
+    BTC  $   74,026.0000   ─  +0.000%
+    ETH  $    2,323.3600   ─  +0.000%
+    ADA  $        0.2401   ─  +0.000%
+    BNB  $      614.5800   ─  +0.000%
     DOT  $        1.1600   ─  +0.000%
-    SOL  $       83.1800   ─  +0.000%
-    XRP  $        1.3600   ─  +0.000%
+    SOL  $       83.1200   ─  +0.000%
+    XRP  $        1.3500   ─  +0.000%
     VYSLEDKY OBCHODOVANI
   ────────────────────────────────────────────────────────
     Obchody    1269  (OK 366  X 308  ~ 558)
@@ -20,7 +104,7 @@
     Profit Factor  99.00x  (zisk / ztrata, cil > 1.5)
     Expectancy     +0.00000001  (prumerny vynos / obchod)
     Nejlepsi      +0.00000650   Nejhorsi  0.00000000
-    Posledni obchod  8h 34m zpet
+    Posledni obchod  9h 14m zpet
     VYSLEDKY PO MENACH
   ────────────────────────────────────────────────────────
     Mena  Obch  WR  Bar          Zisk
@@ -51,7 +135,7 @@
     STRATEGIE  (ADX + EMA + MACD + BB + RSI)
   ────────────────────────────────────────────────────────
     Rezim trhu   BULL TREND  silny vzestup  (87%)
-    Signaly       0 zachyceno  0 po filtru  584 blokovano  1269 provedeno
+    Signaly       0 zachyceno  0 po filtru  402 blokovano  1269 provedeno
     Filtrace      0.0%  projde filtrem  TP: 1.2xATR  /  SL: 0.8xATR  (RR 1.5:1)  EV-only
     POSLEDNI ROZHODNUTI
   ────────────────────────────────────────────────────────
@@ -81,109 +165,55 @@
   SOL  BULL_TREND  n:19    EV:-0.000  WR:47%  conv:-- (19/20)  bandit:0.51
   XRP  BULL_TREND  n:3     EV:+0.000  WR:33%  conv:-- (3/20)  bandit:0.00
   Features (WR per signal key):
-    breakout              [####--------]  33%  -
-    vol                   [####--------]  33%  -
-    bounce                [####--------]  33%  -
-    mom                   [####--------]  33%  -
     is_weekend            [####--------]  33%  -
-    pullback              [####--------]  33%  -
-    wick                  [####--------]  33%  -
+    bounce                [####--------]  33%  -
+    breakout              [####--------]  33%  -
     trend                 [####--------]  33%  -
+    pullback              [####--------]  33%  -
+    mom                   [####--------]  33%  -
+    wick                  [####--------]  33%  -
+    vol                   [####--------]  33%  -
   [!] LEARNING: WEAK EDGE -- still converging
   Health: 0.154  [WEAK]
 ========================
 [WATCHDOG] No trades for 600s → boosting exploration
 [WATCHDOG] Critical idle (15min) → enabling micro-trades
   [!] LEARNING: WEAK EDGE -- still converging
-[bot2] ── pre_live_audit ─────────────────────────────────────
-====================================================================
-PRE-LIVE AUDIT  (V10.12c)  n=20  seed=42  mode=replay
-====================================================================
-    decision=SKIP_CLUSTER  BTCUSDT  LOSS_CLUSTER:cooldown 761s
-    EV=0.050  p=0.53  rr=1.50  ws=0.555  score=0.201[n=1269]  t15=0  spread=0.008  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=0.100 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.609  ev 0.050→0.030
-    decision=OFI_TOXIC  OFI_TOXIC:flow=-1.00 heavy sell pressure vs BUY
-    EV=-0.050  p=0.53  rr=1.50  ws=0.540  score=0.127[n=1269]  t15=0  spread=0.008  af=1.00
-    RDE[v10.10b]: ev=-0.050 thr=0.100 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.719  ev -0.050→-0.036
-    decision=SKIP_SCORE  ev=-0.036  ws=0.540  score=0.127
-    EV=0.050  p=0.53  rr=1.50  ws=0.555  score=0.201[n=1269]  t15=0  spread=0.008  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=0.100 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.841  ev 0.050→0.042
-    decision=TAKE  ev=0.0420  p=0.5312  af=1.00  coh=0.841
-    EV=0.050  p=0.53  rr=1.50  ws=0.567  score=0.205[n=1269]  t15=0  spread=0.008  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=0.100 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.893  ev 0.050→0.045
-    decision=OFI_TOXIC  OFI_TOXIC:flow=-1.00 heavy sell pressure vs BUY
-    EV=-0.050  p=0.53  rr=1.50  ws=0.521  score=0.121[n=1269]  t15=0  spread=0.008  af=1.00
-    RDE[v10.10b]: ev=-0.050 thr=0.100 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev -0.050→-0.030
-    decision=SKIP_SCORE  ev=-0.030  ws=0.521  score=0.121
-    EV=-0.050  p=0.53  rr=1.50  ws=0.542  score=0.128[n=1269]  t15=0  spread=0.008  af=1.00
-    RDE[v10.10b]: ev=-0.050 thr=0.100 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.544  ev -0.050→-0.030
-    decision=SKIP_SCORE  ev=-0.030  ws=0.542  score=0.128
-    EV=0.050  p=0.53  rr=1.50  ws=0.558  score=0.202[n=1269]  t15=0  spread=0.008  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=0.100 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.784  ev 0.050→0.039
-    decision=TAKE  ev=0.0392  p=0.5312  af=1.00  coh=0.784
-    EV=-0.050  p=0.53  rr=1.50  ws=0.556  score=0.132[n=1269]  t15=0  spread=0.008  af=1.00
-    RDE[v10.10b]: ev=-0.050 thr=0.100 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.666  ev -0.050→-0.033
-    decision=TAKE  ev=-0.0333  p=0.5312  af=1.00  coh=0.666
-    EV=0.050  p=0.53  rr=1.50  ws=0.545  score=0.199[n=1269]  t15=0  spread=0.008  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=0.100 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.544  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5312  af=1.00  coh=0.544
-    decision=SKIP_CLUSTER  BTCUSDT  LOSS_CLUSTER:cooldown 761s
-    EV=0.050  p=0.53  rr=1.50  ws=0.563  score=0.204[n=1269]  t15=0  spread=0.008  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=0.100 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.600  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5312  af=1.00  coh=0.600
-    EV=0.050  p=0.53  rr=1.50  ws=0.572  score=0.207[n=1269]  t15=0  spread=0.008  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=0.100 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.841  ev 0.050→0.042
-    decision=TAKE  ev=0.0420  p=0.5312  af=1.00  coh=0.841
-    EV=-0.050  p=0.53  rr=1.50  ws=0.597  score=0.144[n=1269]  t15=0  spread=0.008  af=1.00
-    RDE[v10.10b]: ev=-0.050 thr=0.100 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.784  ev -0.050→-0.039
-    decision=SKIP_SCORE  ev=-0.039  ws=0.597  score=0.144
-    EV=0.050  p=0.53  rr=1.50  ws=0.569  score=0.206[n=1269]  t15=0  spread=0.008  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=0.100 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.631  ev 0.050→0.032
-    decision=OFI_TOXIC  OFI_TOXIC:flow=-1.00 heavy sell pressure vs BUY
-    EV=-0.050  p=0.53  rr=1.50  ws=0.612  score=0.149[n=1269]  t15=0  spread=0.008  af=1.00
-    RDE[v10.10b]: ev=-0.050 thr=0.100 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.784  ev -0.050→-0.039
-    decision=SKIP_SCORE  ev=-0.039  ws=0.612  score=0.149
-    EV=0.050  p=0.53  rr=1.50  ws=0.542  score=0.198[n=1269]  t15=0  spread=0.008  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=0.100 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.622  ev 0.050→0.031
-    decision=TAKE  ev=0.0311  p=0.5312  af=1.00  coh=0.622
-    decision=SKIP_CLUSTER  BTCUSDT  LOSS_CLUSTER:cooldown 760s
-    EV=0.050  p=0.53  rr=1.50  ws=0.586  score=0.211[n=1269]  t15=0  spread=0.008  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=0.100 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.609  ev 0.050→0.030
-    OFI soft penalty: size×0.75
-    decision=TAKE  ev=0.0305  p=0.5312  af=0.75  coh=0.609
-    decision=SKIP_CLUSTER  BTCUSDT  LOSS_CLUSTER:cooldown 760s
-    EV=0.050  p=0.53  rr=1.50  ws=0.560  score=0.203[n=1269]  t15=0  spread=0.008  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=0.100 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.893  ev 0.050→0.045
-    decision=TAKE  ev=0.0447  p=0.5312  af=1.00  coh=0.893
-    decision=SKIP_CLUSTER  BTCUSDT  LOSS_CLUSTER:cooldown 760s
-    EV=0.050  p=0.53  rr=1.50  ws=0.559  score=0.203[n=1269]  t15=0  spread=0.008  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=0.100 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.741  ev 0.050→0.037
-    decision=OFI_TOXIC  OFI_TOXIC:flow=-1.00 heavy sell pressure vs BUY
-    EV=0.050  p=0.53  rr=1.50  ws=0.595  score=0.214[n=1269]  t15=0  spread=0.008  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=0.100 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.893  ev 0.050→0.045
-    OFI soft penalty: size×0.75
-    decision=TAKE  ev=0.0447  p=0.5312  af=0.75  coh=0.893
-    decision=SKIP_CLUSTER  BTCUSDT  LOSS_CLUSTER:cooldown 760s
-    EV=0.050  p=0.53  rr=1.50  ws=0.470  score=0.176[n=1269]  t15=0  spread=0.008  af=1.00
+  ── CYCLE SNAPSHOT ────────────────────────────────────────
+{
+  "cycle_time": 1776245322.8717558,
+  "positions": 0,
+  "learning": {
+    "health": 0.1543,
+    "alert": "WEAK",
+    "mode": "LIVE",
+    "pairs": {
+      "ADAUSDT_BULL_TREND": {
+        "sym": "ADAUSDT",
+        "reg": "BULL_TREND",
+        "n": 24,
+        "ev": 0.0018,
+        "wr": 0.625,
+        "conv": 0.696,
+        "bandit": 0.383
+      },
+      "SOLUSDT_BULL_TREND": {
+        "sym": "SOLUSDT",
+        "reg": "BULL_TREND",
+        "n": 19,
+        "ev": -0.0004,
+        "wr": 0.4737,
+        "conv": 0.518,
+        "bandit": 0.507
+      },
+      "BTCUSDT_BULL_TREND": {
+        "sym": "BTCUSDT",
+        "reg": "BULL_TREND",
+        "n": 17,
+        "ev": -0.0006,
+        "wr": 0.3529,
+        "conv": 0.109,
+        "bandit": 0.413
       },
       "XRPUSDT_BULL_TREND": {
         "sym": "XRPUSDT",
@@ -203,6 +233,7 @@ PRE-LIVE AUDIT  (V10.12c)  n=20  seed=42  mode=replay
         "conv": 0.0,
         "bandit": 0.0
       },
+      "DOTUSDT_RANGING": {
       "DOTUSDT_RANGING": {
         "sym": "DOTUSDT",
         "reg": "RANGING",
@@ -304,20 +335,19 @@ PRE-LIVE AUDIT  (V10.12c)  n=20  seed=42  mode=replay
       }
     },
     "features": {
-      "breakout": 0.3343,
-      "vol": 0.3343,
-      "bounce": 0.3343,
-      "mom": 0.3343,
       "is_weekend": 0.3343,
+      "bounce": 0.3343,
+      "breakout": 0.3343,
+      "trend": 0.3343,
       "pullback": 0.3343,
+      "mom": 0.3343,
       "wick": 0.3343,
-      "trend": 0.3343
+      "vol": 0.3343
     },
     "block_reasons": {
-      "SKIP_SCORE": 37,
-      "TIMING": 645,
-      "LOSS_CLUSTER": 97,
-      "OFI_TOXIC": 55
+      "SKIP_SCORE": 226,
+      "LOSS_CLUSTER": 168,
+      "OFI_TOXIC": 23
     },
     "completed_trades": 1269,
     "best_edge": "DOTUSDT (RANGING)",
@@ -333,17 +363,17 @@ PRE-LIVE AUDIT  (V10.12c)  n=20  seed=42  mode=replay
   }
 }
 ============================================================
-  CRYPTOMASTER  |  0h 10m 34s  | TRENINK 
+  CRYPTOMASTER  |  0h 12m 26s  | TRENINK 
 ============================================================
     ZIVE CENY  (Binance · kazde 1 s)
   ────────────────────────────────────────────────────────
-    BTC  $   74,062.0000   ─  +0.000%
-    ETH  $    2,325.9000   ─  +0.000%
-    ADA  $        0.2398   ─  +0.000%
-    BNB  $      614.6400   ─  +0.000%
+    BTC  $   73,972.0000   ─  +0.000%
+    ETH  $    2,321.0500   ─  +0.000%
+    ADA  $        0.2400   ─  +0.000%
+    BNB  $      614.2000   ─  +0.000%
     DOT  $        1.1600   ─  +0.000%
-    SOL  $       83.0700   ─  +0.000%
-    XRP  $        1.3600   ─  +0.000%
+    SOL  $       83.0500   ─  +0.000%
+    XRP  $        1.3500   ─  +0.000%
     VYSLEDKY OBCHODOVANI
   ────────────────────────────────────────────────────────
     Obchody    1269  (OK 366  X 308  ~ 558)
@@ -354,7 +384,7 @@ PRE-LIVE AUDIT  (V10.12c)  n=20  seed=42  mode=replay
     Profit Factor  99.00x  (zisk / ztrata, cil > 1.5)
     Expectancy     +0.00000001  (prumerny vynos / obchod)
     Nejlepsi      +0.00000650   Nejhorsi  0.00000000
-    Posledni obchod  8h 37m zpet
+    Posledni obchod  9h 15m zpet
     VYSLEDKY PO MENACH
   ────────────────────────────────────────────────────────
     Mena  Obch  WR  Bar          Zisk
@@ -384,8 +414,8 @@ PRE-LIVE AUDIT  (V10.12c)  n=20  seed=42  mode=replay
     Velikost pozice      1.00x  EV-only · loss streak → scale · DD halt 40%
     STRATEGIE  (ADX + EMA + MACD + BB + RSI)
   ────────────────────────────────────────────────────────
-    Rezim trhu   BULL TREND  silny vzestup  (87%)
-    Signaly       0 zachyceno  0 po filtru  834 blokovano  1269 provedeno
+    Rezim trhu   BULL TREND  silny vzestup  (88%)
+    Signaly       0 zachyceno  0 po filtru  417 blokovano  1269 provedeno
     Filtrace      0.0%  projde filtrem  TP: 1.2xATR  /  SL: 0.8xATR  (RR 1.5:1)  EV-only
     POSLEDNI ROZHODNUTI
   ────────────────────────────────────────────────────────
@@ -415,9 +445,29 @@ PRE-LIVE AUDIT  (V10.12c)  n=20  seed=42  mode=replay
   SOL  BULL_TREND  n:19    EV:-0.000  WR:47%  conv:-- (19/20)  bandit:0.51
   XRP  BULL_TREND  n:3     EV:+0.000  WR:33%  conv:-- (3/20)  bandit:0.00
   Features (WR per signal key):
-    breakout              [####--------]  33%  -
-    vol                   [####--------]  33%  -
-🚨 ANOMALY: STALL 1776243106.9705527s > 900s
-🚨 ANOMALY: NO_SIGNALS 62 cycles
+    is_weekend            [####--------]  33%  -
+    bounce                [####--------]  33%  -
+🚨 ANOMALY: STALL 1776245425.9421444s > 900s
+🚨 ANOMALY: NO_SIGNALS 69 cycles
+SELF_HEAL: STALL (no trades 900s) → boosting exploration
+SELF_HEAL: NO_SIGNALS (pipeline dead) → reducing filter thresholds
+🚨 ANOMALY: STALL 1776245436.6656792s > 900s
+🚨 ANOMALY: NO_SIGNALS 70 cycles
+SELF_HEAL: STALL (no trades 900s) → boosting exploration
+SELF_HEAL: NO_SIGNALS (pipeline dead) → reducing filter thresholds
+🚨 ANOMALY: STALL 1776245446.6741486s > 900s
+🚨 ANOMALY: NO_SIGNALS 71 cycles
+SELF_HEAL: STALL (no trades 900s) → boosting exploration
+SELF_HEAL: NO_SIGNALS (pipeline dead) → reducing filter thresholds
+🚨 ANOMALY: STALL 1776245456.6805017s > 900s
+🚨 ANOMALY: NO_SIGNALS 72 cycles
+SELF_HEAL: STALL (no trades 900s) → boosting exploration
+SELF_HEAL: NO_SIGNALS (pipeline dead) → reducing filter thresholds
+🚨 ANOMALY: STALL 1776245468.024656s > 900s
+🚨 ANOMALY: NO_SIGNALS 73 cycles
+SELF_HEAL: STALL (no trades 900s) → boosting exploration
+SELF_HEAL: NO_SIGNALS (pipeline dead) → reducing filter thresholds
+🚨 ANOMALY: STALL 1776245478.0348299s > 900s
+🚨 ANOMALY: NO_SIGNALS 74 cycles
 SELF_HEAL: STALL (no trades 900s) → boosting exploration
 SELF_HEAL: NO_SIGNALS (pipeline dead) → reducing filter thresholds

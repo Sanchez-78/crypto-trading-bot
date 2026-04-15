@@ -41,7 +41,7 @@ _MAX_COOLDOWN_S  = 420   # V10.12d: lowered 3600→420 (7 min cap)
 
 def loss_cluster_check(sym: str, regime: str) -> tuple[bool, str]:
     """
-    Regime-aware loss cluster guard.
+    Regime-aware loss cluster guard with V10.12e unblock-aware cooldown.
 
     Returns (blocked: bool, reason: str).
     blocked=True  → caller should track_blocked("LOSS_CLUSTER") and skip.
@@ -49,12 +49,25 @@ def loss_cluster_check(sym: str, regime: str) -> tuple[bool, str]:
 
     Uses sym_recent_pnl from learning_monitor (last 8 pnl across all regimes).
     Cooldown scales with total loss magnitude (larger draw = longer pause).
+    
+    V10.12e: Apply idle-state reduction to EXISTING cooldowns, not just new ones.
     """
     now = time.time()
 
-    # Check existing cooldown
+    # V10.12e: Check existing cooldown WITH idle-state adjustment
     if sym in _blocked_until:
         rem = _blocked_until[sym] - now
+        
+        # V10.12e CRITICAL FIX: Apply unblock mode adjustment to existing cooldowns
+        # This is what fixes the deadlock — existing symbols aren't trapped forever
+        try:
+            from src.services.realtime_decision_engine import is_unblock_mode, _last_trade_ts
+            if is_unblock_mode():
+                # If in unblock mode, cap remaining cooldown at 120s
+                rem = min(rem, 120.0)
+        except:
+            pass
+        
         if rem > 0:
             return True, f"LOSS_CLUSTER:cooldown {rem:.0f}s"
         del _blocked_until[sym]

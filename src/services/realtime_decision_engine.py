@@ -953,16 +953,44 @@ def evaluate_signal(signal):
 
     # V10.12d: Apply timing penalty to EV before score gate
     _ev_adj = ev * _timing_mult
+    _score_threshold = current_score_threshold()
+    _score_adj = decision_score(_ev_adj, _ws)
+    
+    # V10.12e: Bounded unblock fallback TAKE path
+    # If normal gate fails but we're in unblock mode and signal meets fallback criteria,
+    # accept as micro-trade to prevent infinite deadlock
+    _unblock_fallback_used = False
     if not allow_trade(_ev_adj, _ws):
-        track_blocked(reason="SKIP_SCORE")
-        try:
-            from src.services.signal_filter import log_signal_outcome as _lso2
-            _lso2(sym, accepted=False, reason="SKIP_SCORE")
-        except Exception:
-            pass
-        _timing_str = f" timing×{_timing_mult:.2f}" if _timing_mult < 1.0 else ""
-        print(f"    decision=SKIP_SCORE  ev={ev:.3f}{_timing_str}→{_ev_adj:.3f}  ws={_ws:.3f}  score={_sc:.3f}")
-        return None
+        # Check fallback unblock path
+        if is_unblock_mode() and _ev_adj >= 0.020 and _score_adj >= 0.110:
+            # V10.12e: Bounded fallback entry
+            # Still respects rate limits, size limits, risk engine
+            try:
+                from src.services.trade_executor import can_open_unblock_trade, record_unblock_trade
+                _can_open, _reason = can_open_unblock_trade()
+                if _can_open:
+                    _unblock_fallback_used = True
+                    record_unblock_trade()
+                    log.info(f"[V10.12e_FALLBACK] {sym}  ev={_ev_adj:.4f}  score={_score_adj:.4f}  "
+                             f"thr={_score_threshold:.4f}  → TAKE micro-trade")
+                else:
+                    track_blocked(reason="UNBLOCK_RATE_LIMIT")
+                    print(f"    decision=SKIP_UNBLOCK_LIMIT  {_reason}")
+                    return None
+            except Exception as _ub_err:
+                log.debug("unblock fallback error: %s", _ub_err)
+        
+        if not _unblock_fallback_used:
+            track_blocked(reason="SKIP_SCORE")
+            try:
+                from src.services.signal_filter import log_signal_outcome as _lso2
+                _lso2(sym, accepted=False, reason="SKIP_SCORE")
+            except Exception:
+                pass
+            _timing_str = f" timing×{_timing_mult:.2f}" if _timing_mult < 1.0 else ""
+            _unblock_str = " unblock_fallback_failed" if is_unblock_mode() else ""
+            print(f"    decision=SKIP_SCORE  ev={_ev_adj:.3f}{_timing_str}  score={_score_adj:.3f}<{_score_threshold:.3f}{_unblock_str}")
+            return None
 
     # ── B17: direction bias guard ─────────────────────────────────────────────
     try:
@@ -994,14 +1022,24 @@ def evaluate_signal(signal):
     if _ofi_size < 1.0:
         auditor_factor = min(1.0, auditor_factor * _ofi_size)
 
+    # V10.12e: Add unblock state and size multiplier to signal
+    _unblock_size_mult = unblock_size_multiplier()
+    _is_unblock = is_unblock_mode()
+    
     signal["confidence"]      = round(win_prob, 4)
     signal["ev"]              = round(ev, 4)
     signal["auditor_factor"]  = round(auditor_factor, 4)
     signal["velocity_penalty"] = round(velocity_penalty, 3)
     signal["streak_penalty"]   = round(streak_penalty, 3)
     signal["combo_penalty"]    = round(combo_pen, 3)
+    signal["unblock_mode"]     = _is_unblock
+    signal["unblock_fallback"] = _unblock_fallback_used
+    signal["unblock_size_mult"] = _unblock_size_mult
+    
+    # V10.12e: Enhanced decision logging with unblock state
+    _ub_str = f" unblock=True fallback={_unblock_fallback_used} size×{_unblock_size_mult:.2f}" if _is_unblock else ""
     print(f"    decision=TAKE  ev={ev:.4f}  p={win_prob:.4f}  "
-          f"af={auditor_factor:.2f}  coh={_coh:.3f}")
+          f"af={auditor_factor:.2f}  coh={_coh:.3f}{_ub_str}")
 
     # B16: conv-rate tracking — signal accepted
     try:

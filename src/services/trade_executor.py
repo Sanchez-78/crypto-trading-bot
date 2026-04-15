@@ -1572,6 +1572,13 @@ def handle_signal(signal):
     # high-vol symbols get slightly less; bounded [0.7×, 1.3×], bootstrap-safe
     size *= volatility_adjustment(sym)
 
+    # V10.12e: Apply unblock size multiplier from decision engine
+    # Reduce position size during unblock mode to bound risk: 0.25x critical, 0.35x lighter
+    _ub_mult = signal.get("unblock_size_mult", 1.0)
+    if _ub_mult < 1.0:
+        size *= _ub_mult
+        log.info(f"    unblock_size[v10.12e]: ×{_ub_mult:.2f}  fallback={signal.get('unblock_fallback', False)}")
+
     # Regime WR penalty: if a regime has <40% WR after 20+ trades, halve size.
     # Hard block if WR < 35% after 25+ trades — bootstrap safety: fresh DB
     # needs enough data before regime blocks fire.
