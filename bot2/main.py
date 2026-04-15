@@ -1125,8 +1125,9 @@ def main():
             trades_last_60s = len(trades_in_window(60)) if hasattr(trades_in_window, '__call__') else 0
             signals_gen = METRICS.get("signals_generated", 0)
             # V10.12h: Use safe idle computation to prevent unix-time-sized values
-            last_trade_ts = METRICS.get("last_trade_ts") or now
-            no_trade_time = safe_idle_seconds(last_trade_ts, now)
+            # Note: Use local var name to avoid shadowing global last_trade_ts list
+            last_trade_ts_value = METRICS.get("last_trade_ts") or now
+            no_trade_time = safe_idle_seconds(last_trade_ts_value, now)
 
             # Update adaptive systems
             stall_status = update_adaptive_state(
