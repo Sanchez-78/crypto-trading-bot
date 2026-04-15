@@ -8,6 +8,19 @@ from src.services.signal_generator import warmup
 from src.services.dashboard_live import dashboard_loop
 from bot2.auditor import run_audit
 
+# ────────────────────────────────────────────────────────────────────────────
+# PATCH: Self-Healing System (Autonomous Failure Detection & Recovery)
+# ────────────────────────────────────────────────────────────────────────────
+from src.core.anomaly import AnomalyDetector
+from src.core.self_heal import (
+    handle_anomaly,
+    apply_safe_mode,
+    apply_position_floor,
+    apply_position_cap,
+    failsafe_halt,
+)
+from src.core.state_history import StateHistory
+
 import src.services.signal_generator
 import src.services.signal_engine
 import src.services.trade_executor
@@ -716,9 +729,18 @@ def _run_pre_live_audit() -> None:
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
+# Self-healing system globals
+_anomaly_detector = None
+_state_history = None
+
 def main():
     # Initialize event bus handlers (Zero Bug V2 Migration Phase 1)
     _init_event_handlers()
+    
+    # Initialize self-healing system (Autonomous Failure Detection)
+    global _anomaly_detector, _state_history
+    _anomaly_detector = AnomalyDetector()
+    _state_history = StateHistory(max_size=100)
     
     init_firebase()
     daily_budget_report()
@@ -776,6 +798,43 @@ def main():
         # PATCH 5: Call watchdog to monitor trade frequency
         # ────────────────────────────────────────────────────────────────────
         watchdog(now)
+
+        # ────────────────────────────────────────────────────────────────────
+        # PATCH: SELF-HEALING CYCLE (Autonomous Failure Detection & Recovery)
+        # ────────────────────────────────────────────────────────────────────
+        # This is the CRITICAL POSITION: after all operations, before audit
+        if _anomaly_detector and _state_history:
+            try:
+                # Build current state snapshot from metrics
+                current_state = type('State', (), {
+                    'equity': float(get_metrics().get('equity', 1.0)),
+                    'drawdown': float(get_metrics().get('max_dd', 0.0)),
+                    'no_trade_duration': time.time() - last_trade_ts[0],
+                    'signal_count': 0,  # Will be updated by signal generator
+                })()
+                
+                # Check for anomalies
+                anomalies = _anomaly_detector.check(current_state)
+                
+                # Handle each anomaly
+                for anomaly in anomalies:
+                    handle_anomaly(anomaly, current_state)
+                
+                # Auto-rollback if critical
+                current_state = _state_history.rollback_if_needed(current_state, anomalies)
+                
+                # Save snapshot for recovery
+                _state_history.save(current_state)
+                
+                # Check failsafe
+                if failsafe_halt(current_state):
+                    bus = get_event_bus()
+                    msg = "🛑 FAILSAFE: Trading disabled (safe_mode + DD>45%)"
+                    bus.emit("LOG_OUTPUT", {"message": msg}, now)
+                    
+            except Exception as _heal_ex:
+                import logging as _log_heal
+                _log_heal.getLogger(__name__).error(f"Self-heal cycle error: {_heal_ex}")
 
         if now - _last_audit >= AUDIT_INTERVAL:
             run_audit()
