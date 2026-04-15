@@ -28,6 +28,13 @@ from src.core.genetic_pool import GeneticPool
 from src.core.strategy_selector import StrategySelector
 from src.core.strategy_executor import StrategyExecutor
 
+# ────────────────────────────────────────────────────────────────────────────
+# PATCH: V5 Reinforcement Learning (DQN Agent)
+# ────────────────────────────────────────────────────────────────────────────
+from src.core.rl_agent import DQNAgent
+from src.core.state_builder import StateBuilder, ACTIONS, action_to_name
+from src.core.reward_engine import RewardEngine
+
 import src.services.signal_generator
 import src.services.signal_engine
 import src.services.trade_executor
@@ -160,6 +167,17 @@ _current_strategy = None
 _strategy_trade_count = [0]  # Use list for mutability
 _evolution_interval = 50  # Run evolution every N trades
 
+# ────────────────────────────────────────────────────────────────────────────
+# PATCH: V5 Reinforcement Learning (DQN Agent)
+# ────────────────────────────────────────────────────────────────────────────
+_rl_agent = None
+_state_builder = None
+_reward_engine = None
+_prev_state = None
+_prev_action = None
+_episode_reward = [0.0]  # Use list for mutability
+_rl_training_interval = 10  # Train every 10 transitions
+
 
 # ── FX rate cache (USD/CZK) ───────────────────────────────────────────────────
 _fx_usd_czk:      float = 0.0
@@ -242,9 +260,91 @@ def update_strategy_fitness(trade):
         _log_evo.getLogger(__name__).error(f"Strategy fitness update error: {e}")
 
 
-AUDIT_INTERVAL      = 30      # seconds — bot2 auditor cycle
-METRICS_INTERVAL    = 30      # save metrics/latest every 30 s
-PRE_AUDIT_INTERVAL  = 7200    # pre_live_audit replay run every 2 hours
+# ────────────────────────────────────────────────────────────────────────────
+# PATCH: V5 RL Training (Experience Replay & Q-Learning)
+# ────────────────────────────────────────────────────────────────────────────
+
+def train_rl_agent(trade, market_data=None, learning_state=None):
+    """
+    Train DQN agent on closed trade (experience replay).
+    
+    Called after every trade close. Records outcome as (state, action, reward, next_state)
+    and trains the agent.
+    
+    Args:
+        trade: Closed trade object
+        market_data: Current market data (for state)
+        learning_state: Learning system state (for state)
+    """
+    global _rl_agent, _state_builder, _reward_engine, _prev_state, _prev_action, _episode_reward
+    
+    if _rl_agent is None or _state_builder is None or _reward_engine is None:
+        return
+    
+    try:
+        # Compute reward for closed trade
+        reward = _reward_engine.compute({
+            'pnl': trade.net_pnl_pct / 100 if hasattr(trade, 'net_pnl_pct') else 0.0,
+            'exit_reason': trade.close_reason.value if hasattr(trade, 'close_reason') else 'unknown',
+            'duration_seconds': trade.duration_seconds if hasattr(trade, 'duration_seconds') else 0,
+            'bars_held': 1,
+        })
+        
+        _episode_reward[0] += reward
+        
+        # Build next state (from market data if available)
+        if market_data is not None and learning_state is not None:
+            next_state = _state_builder.build(market_data, learning_state)
+        else:
+            next_state = None
+        
+        # Record experience (state, action, reward, next_state, done)
+        if _prev_state is not None and _prev_action is not None:
+            done = True  # Trade is done
+            _rl_agent.remember(_prev_state, _prev_action, reward, next_state or _prev_state, done)
+            
+            # Train agent on batch
+            _rl_agent.replay(batch_size=32)
+            
+            # Log RL progress every 50 trades
+            if _reward_engine.reward_count % 50 == 0:
+                bus = get_event_bus()
+                rl_stats = _rl_agent.get_stats()
+                msg = (
+                    f"🧠 RL STATUS: epsilon={rl_stats['epsilon']:.3f}, "
+                    f"steps={rl_stats['training_steps']}, "
+                    f"q_table={rl_stats['q_table_size']}, "
+                    f"avg_reward={_reward_engine.avg_reward:.5f}"
+                )
+                bus.emit("LOG_OUTPUT", {"message": msg}, time.time())
+        
+        # Update previous state/action for next iteration
+        _prev_state = next_state or _prev_state
+        _prev_action = None  # Reset action (will be chosen by agent next cycle)
+        
+    except Exception as e:
+        import logging as _log_rl
+        _log_rl.getLogger(__name__).error(f"RL agent training error: {e}")
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# RL Agent Safety Hooks (called by V3 self-healing when needed)
+# ────────────────────────────────────────────────────────────────────────────
+
+def rl_force_exploration():
+    """Force RL agent to explore (during crisis/stall)."""
+    global _rl_agent
+    if _rl_agent:
+        _rl_agent.force_exploration(epsilon=1.0)
+
+
+def rl_force_exploitation():
+    """Force RL agent to exploit best strategy (during safe mode)."""
+    global _rl_agent
+    if _rl_agent:
+        _rl_agent.force_exploitation(epsilon=0.05)
+
+
 
 _start_time = time.time()
 from src.services.portfolio_discovery import get_active_symbols
@@ -827,8 +927,17 @@ def main():
     _strategy_selector = StrategySelector(_genetic_pool)
     _current_strategy = _strategy_selector.select(regime="RANGING", force_best=False)
     
+    # Initialize V5 reinforcement learning system (DQN Agent)
+    global _rl_agent, _state_builder, _reward_engine
+    _rl_agent = DQNAgent(state_size=8, action_size=3)
+    _state_builder = StateBuilder()
+    _reward_engine = RewardEngine()
+    
     bus = get_event_bus()
     msg = f"✅ V4 Genetic Pool initialized: {_genetic_pool}, Current strategy: {_current_strategy}"
+    bus.emit("LOG_OUTPUT", {"message": msg}, time.time())
+    
+    msg = f"🧠 V5 RL Agent initialized: {_rl_agent}"
     bus.emit("LOG_OUTPUT", {"message": msg}, time.time())
     
     init_firebase()
@@ -887,6 +996,37 @@ def main():
         # PATCH 5: Call watchdog to monitor trade frequency
         # ────────────────────────────────────────────────────────────────────
         watchdog(now)
+
+        # ════════════════════════════════════════════════════════════════════
+        # V5.1 ADAPTIVE RECOVERY CYCLE — Stall detection + self-healing
+        # ════════════════════════════════════════════════════════════════════
+        try:
+            from src.services.adaptive_recovery import (
+                update_adaptive_state,
+                stall_recovery,
+            )
+            from src.services.learning_event import trades_in_window, METRICS
+
+            # Count trades in last cycle and signals generated
+            trades_last_60s = len(trades_in_window(60)) if hasattr(trades_in_window, '__call__') else 0
+            signals_gen = METRICS.get("signals_generated", 0)
+            no_trade_time = now - (METRICS.get("last_trade_ts", now) or now)
+
+            # Update adaptive systems
+            stall_status = update_adaptive_state(
+                trades_last_n=trades_last_60s,
+                signals_generated=signals_gen,
+                no_trade_time=no_trade_time,
+            )
+
+            if stall_status == "RECOVERY_TRIGGERED":
+                print(f"🚨 [V5.1] STALL RECOVERY ACTIVATED at {now:.0f}s")
+                # Reset filter counters and force exploration in next cycle
+                METRICS["recovery_active"] = True
+                METRICS["recovery_timestamp"] = now
+        except Exception as e:
+            import logging as _log
+            _log.getLogger(__name__).debug(f"Adaptive recovery cycle error: {e}")
 
         # ────────────────────────────────────────────────────────────────────
         # PATCH: SELF-HEALING CYCLE (Autonomous Failure Detection & Recovery)

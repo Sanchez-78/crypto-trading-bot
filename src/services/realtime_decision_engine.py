@@ -24,6 +24,18 @@ import numpy as np
 log = logging.getLogger(__name__)
 from src.services.firebase_client import load_history
 from src.services.learning_event  import track_blocked, track_regime, trades_in_window
+from src.services.adaptive_recovery import (
+    ev_gate,
+    filter_relaxation,
+    stall_recovery,
+    micro_trade_mode,
+    get_ev_relaxation,
+    get_filter_relaxation_state,
+    is_micro_trade_active,
+    get_position_size_multiplier,
+)
+from src.services.smart_exit_engine import evaluate_position_exit
+from src.services.reward_system import compute_reward
 
 # ── Anti-deadlock state ───────────────────────────────────────────────────────
 # Mutable scalar — updated on every trade close via update_calibrator().
@@ -515,17 +527,30 @@ def soft_filter_signal(signal, ev, state=None):
 
 def get_ev_threshold():
     """
-    Adaptive EV gate threshold.
-    Crisis mode (trades >= 50 AND WR < 5%):   0.15  ← near-halt
-      WR < 5% after 50 trades is statistically confirmed failure — the old
-      learning-mode floor of -0.30 kept accepting all signals forever, meaning
-      the system could never self-protect.  At 0.15 only strong EVs pass.
-    Learning mode (trades < 200 OR WR < 20%): -0.30
-      Permits negative-EV signals so data can flow in — calibration is
-      unreliable when WR is near 0%.
-    Cold start (ev_history < 100 samples):    0.15
-    Live (ev_history >= 100):                 q75 of ev_history, floor 0.10
+    V5.1 Adaptive EV gate threshold with stall recovery.
+
+    Combines:
+    1. Original adaptive gate (crisis mode, learning mode, cold start)
+    2. NEW: Adaptive relaxation curve for zero-trade stall recovery
+    3. NEW: Filter relaxation state for deadlock prevention
     """
+    # Get base threshold from original logic
+    base_threshold = _get_base_ev_threshold()
+
+    # Add adaptive relaxation for stall recovery
+    relaxation = get_ev_relaxation()
+
+    # Add filter relaxation if triggered
+    filter_state = get_filter_relaxation_state()
+    filter_relaxation_offset = filter_state.get("ev_relaxation", 0.0)
+
+    final_threshold = base_threshold + relaxation + filter_relaxation_offset
+
+    return final_threshold
+
+
+def _get_base_ev_threshold():
+    """Original adaptive threshold logic (preserved)."""
     try:
         from src.services.learning_event import METRICS as _m
         _t  = _m.get("trades", 0)
@@ -539,7 +564,6 @@ def get_ev_threshold():
         pass
     if len(ev_history) < 100:
         # V10.10b: linear decay 0.15→0.0 instead of hard cliff at n=100.
-        # At n=0: 0.15, n=50: 0.075, n=99: ~0.0015 — system always thaws.
         progress = min(1.0, len(ev_history) / 100.0)
         return 0.15 * (1.0 - progress)
     s   = sorted(ev_history)

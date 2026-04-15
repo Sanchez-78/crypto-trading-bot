@@ -1939,6 +1939,30 @@ def on_price(data):
         except Exception:
             pass
 
+    # 🚀 V5.1 SMART EXIT ENGINE: Check active profit-taking/loss-cutting FIRST
+    # Only fallback to timeout if no smart exit condition met
+    if reason is None:
+        try:
+            from src.services.smart_exit_engine import evaluate_position_exit
+
+            age_seconds = int(time.time() - pos["open_ts"])
+            exit_eval = evaluate_position_exit(
+                symbol=sym,
+                entry_price=entry,
+                tp=pos.get("tp", entry),
+                sl=pos.get("sl", entry),
+                current_price=curr,
+                age_seconds=age_seconds,
+                direction="LONG" if move >= 0 else "SHORT",
+            )
+
+            if exit_eval:
+                reason = exit_eval.get("exit_type", "smart_exit").lower()
+                log.info(f"    🔥 Smart exit: {reason} | {exit_eval.get('reason')}")
+        except Exception as e:
+            log.debug(f"Smart exit check failed: {e}")
+
+    # Timeout fallback (V10.14): if no smart exit, use time-based timeout
     _adx_sig = pos["signal"].get("features", {}).get("adx", 0.0)
     _reg_hold = pos["signal"].get("regime", "RANGING")
     timeout   = _dynamic_hold(atr, entry, sym, _reg_hold, adx=_adx_sig)

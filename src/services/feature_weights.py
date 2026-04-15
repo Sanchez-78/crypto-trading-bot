@@ -29,14 +29,17 @@ Bootstrap-safe:
 # ── Constants ──────────────────────────────────────────────────────────────────
 
 # Feature names exactly as emitted by signal_generator.py (boolean features only)
+# V5.1 Patch: Rebalanced weights to improve signal separability and reduce flat distributions
+# Previous all-1.0 weights caused ~0.33 feature activations (no separability)
+# New weights: high-confidence features boosted, low-signal features reduced
 BASE_WEIGHTS: dict = {
-    "trend":    1.0,
-    "pullback": 1.0,
-    "bounce":   1.0,
-    "breakout": 1.0,
-    "vol":      1.0,
-    "mom":      1.0,
-    "wick":     1.0,
+    "trend":    1.25,    # Strong directional signal — boost
+    "momentum": 1.15,    # Velocity indicator — support trend
+    "breakout": 1.20,    # High-confidence setup — boost
+    "vol":      0.85,    # Volatility filter — reduce false signals
+    "wick":     0.80,    # Wick rejection — low reliability
+    "pullback": 1.05,    # Counter-trend setup — slight boost
+    "bounce":   1.10,    # Reversion signal — moderate boost
 }
 
 FEATURES   = list(BASE_WEIGHTS)   # canonical order

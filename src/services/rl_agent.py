@@ -25,17 +25,33 @@ class RLAgent:
     # =========================
     # 🎯 ACTION
     # =========================
-    def act(self, features):
+    def act(self, features, no_trade_cycles=0, force_exploration=False):
+        """
+        V5.1 Anti-hold force exploration fix.
+
+        Args:
+            features: Feature dict with regime, volatility
+            no_trade_cycles: Number of consecutive cycles with no trades
+            force_exploration: If True, force random action (stall recovery)
+        """
         state = self._state_key(features)
 
-        # 🎲 exploration
+        # 🚨 FORCE EXPLORATION: If stalled (no trades > 100 cycles), force non-HOLD action
+        if force_exploration or no_trade_cycles > 100:
+            action = random.choice(["BUY", "SELL"])  # Exclude HOLD in recovery mode
+            return action, 0.3
+
+        # 🎲 Standard exploration
         if random.random() < self.epsilon:
             action = random.choice(["BUY", "SELL", "HOLD"])
-            print("🎲 Random action:", action)
             return action, 0.5
 
         q_values = self.q_table[state]
         action = max(q_values, key=q_values.get)
+
+        # 🔥 ANTI-HOLD BIAS CORRECTION: If HOLD wins but no_trade_cycles > 50, override
+        if action == "HOLD" and no_trade_cycles > 50 and random.random() < 0.3:
+            action = random.choice(["BUY", "SELL"])
 
         confidence = abs(q_values[action])
 
