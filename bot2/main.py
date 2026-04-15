@@ -11,29 +11,52 @@ from bot2.auditor import run_audit
 # ────────────────────────────────────────────────────────────────────────────
 # PATCH: Self-Healing System (Autonomous Failure Detection & Recovery)
 # ────────────────────────────────────────────────────────────────────────────
-from src.core.anomaly import AnomalyDetector
-from src.core.self_heal import (
-    handle_anomaly,
-    apply_safe_mode,
-    apply_position_floor,
-    apply_position_cap,
-    failsafe_halt,
-)
-from src.core.state_history import StateHistory
+try:
+    from src.core.anomaly import AnomalyDetector
+    from src.core.self_heal import (
+        handle_anomaly,
+        apply_safe_mode,
+        apply_position_floor,
+        apply_position_cap,
+        failsafe_halt,
+    )
+    from src.core.state_history import StateHistory
+except ImportError as e:
+    import logging
+    logging.warning(f"Self-healing imports failed: {e} - continuing without self-healing")
+    AnomalyDetector = None
+    StateHistory = None
 
 # ────────────────────────────────────────────────────────────────────────────
 # PATCH: V4 Self-Evolving Strategy (Genetic Algorithm)
 # ────────────────────────────────────────────────────────────────────────────
-from src.core.genetic_pool import GeneticPool
-from src.core.strategy_selector import StrategySelector
-from src.core.strategy_executor import StrategyExecutor
+try:
+    from src.core.genetic_pool import GeneticPool
+    from src.core.strategy_selector import StrategySelector
+    from src.core.strategy_executor import StrategyExecutor
+except ImportError as e:
+    import logging
+    logging.warning(f"Genetic algorithm imports failed: {e} - continuing without genetic pool")
+    GeneticPool = None
+    StrategySelector = None
+    StrategyExecutor = None
 
 # ────────────────────────────────────────────────────────────────────────────
-# PATCH: V5 Reinforcement Learning (DQN Agent)
+# PATCH: V5.1 Reinforcement Learning (RL Agent)
 # ────────────────────────────────────────────────────────────────────────────
-from src.core.rl_agent import DQNAgent
-from src.core.state_builder import StateBuilder, ACTIONS, action_to_name
-from src.core.reward_engine import RewardEngine
+# V5.1: Using RLAgent from src.services (not DQNAgent from src.core)
+try:
+    from src.services.rl_agent import RLAgent
+    rl_agent_instance = RLAgent()
+except Exception as e:
+    import logging
+    logging.warning(f"RL Agent import error: {e} - continuing without RL")
+    rl_agent_instance = None
+
+# Legacy imports (commented out for V5.1 compatibility)
+# from src.core.rl_agent import DQNAgent
+# from src.core.state_builder import StateBuilder, ACTIONS, action_to_name
+# from src.core.reward_engine import RewardEngine
 
 import src.services.signal_generator
 import src.services.signal_engine
@@ -43,7 +66,16 @@ import src.services.audit_worker
 # ────────────────────────────────────────────────────────────────────────────
 # PATCH: Event Bus Integration (Zero Bug V2 Migration Phase 1)
 # ────────────────────────────────────────────────────────────────────────────
-from src.core.event_bus_v2 import get_event_bus
+try:
+    from src.core.event_bus_v2 import get_event_bus
+except ImportError:
+    import logging
+    logging.warning("Event bus import failed - using no-op implementation")
+    def get_event_bus():
+        class NoOpBus:
+            def subscribe(self, *args, **kwargs): pass
+            def emit(self, *args, **kwargs): pass
+        return NoOpBus()
 
 def _init_event_handlers():
     """Set up event handlers for LOG_OUTPUT events (replaces print)."""
@@ -918,27 +950,51 @@ def main():
     
     # Initialize self-healing system (Autonomous Failure Detection)
     global _anomaly_detector, _state_history
-    _anomaly_detector = AnomalyDetector()
-    _state_history = StateHistory(max_size=100)
-    
+    try:
+        if AnomalyDetector:
+            _anomaly_detector = AnomalyDetector()
+            _state_history = StateHistory(max_size=100)
+        else:
+            _anomaly_detector = None
+            _state_history = None
+    except Exception as e:
+        import logging
+        logging.warning(f"Self-healing init failed: {e}")
+        _anomaly_detector = None
+        _state_history = None
+
     # Initialize V4 self-evolving strategy system (Genetic Algorithm)
     global _genetic_pool, _strategy_selector, _current_strategy
-    _genetic_pool = GeneticPool(size=20)
-    _strategy_selector = StrategySelector(_genetic_pool)
-    _current_strategy = _strategy_selector.select(regime="RANGING", force_best=False)
-    
-    # Initialize V5 reinforcement learning system (DQN Agent)
+    try:
+        if GeneticPool:
+            _genetic_pool = GeneticPool(size=20)
+            _strategy_selector = StrategySelector(_genetic_pool)
+            _current_strategy = _strategy_selector.select(regime="RANGING", force_best=False)
+        else:
+            _genetic_pool = None
+            _strategy_selector = None
+            _current_strategy = None
+    except Exception as e:
+        import logging
+        logging.warning(f"Genetic algorithm init failed: {e}")
+        _genetic_pool = None
+        _strategy_selector = None
+        _current_strategy = None
+
+    # Initialize V5.1 reinforcement learning system (RLAgent from services)
     global _rl_agent, _state_builder, _reward_engine
-    _rl_agent = DQNAgent(state_size=8, action_size=3)
-    _state_builder = StateBuilder()
-    _reward_engine = RewardEngine()
-    
+    _rl_agent = rl_agent_instance  # V5.1: Use services RL agent
+    _state_builder = None  # Legacy - not used in V5.1
+    _reward_engine = None  # Legacy - not used in V5.1
+
     bus = get_event_bus()
-    msg = f"✅ V4 Genetic Pool initialized: {_genetic_pool}, Current strategy: {_current_strategy}"
-    bus.emit("LOG_OUTPUT", {"message": msg}, time.time())
-    
-    msg = f"🧠 V5 RL Agent initialized: {_rl_agent}"
-    bus.emit("LOG_OUTPUT", {"message": msg}, time.time())
+    if _genetic_pool:
+        msg = f"✅ V4 Genetic Pool initialized: {_genetic_pool}, Current strategy: {_current_strategy}"
+        bus.emit("LOG_OUTPUT", {"message": msg}, time.time())
+
+    if _rl_agent:
+        msg = f"🧠 V5.1 RL Agent initialized: {_rl_agent}"
+        bus.emit("LOG_OUTPUT", {"message": msg}, time.time())
     
     init_firebase()
     daily_budget_report()
@@ -986,7 +1042,7 @@ def main():
                     "[MAIN_LOOP] System HALTED — skipping cycle (manual guard.reset() required)"
                 )
                 continue
-        except Exception:
+        except (ImportError, AttributeError):
             pass  # if import fails, continue normally (fail-open for monitoring)
 
         global _last_audit, _last_metrics, _last_pre_audit
