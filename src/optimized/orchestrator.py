@@ -186,6 +186,15 @@ class TradeOrchestrator:
             timing_frac=0.0,
         )
         
+        # PATCH: Update V4 strategy fitness (evolving strategies)
+        try:
+            from bot2.main import update_strategy_fitness
+            update_strategy_fitness(t)
+        except ImportError:
+            pass  # V4 not initialized yet; skip
+        except Exception as e:
+            logger.debug(f"V4 strategy update error: {e}")
+        
         return t
 
     # ── Statistics ────────────────────────────────────────────────────────────

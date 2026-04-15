@@ -21,6 +21,13 @@ from src.core.self_heal import (
 )
 from src.core.state_history import StateHistory
 
+# ────────────────────────────────────────────────────────────────────────────
+# PATCH: V4 Self-Evolving Strategy (Genetic Algorithm)
+# ────────────────────────────────────────────────────────────────────────────
+from src.core.genetic_pool import GeneticPool
+from src.core.strategy_selector import StrategySelector
+from src.core.strategy_executor import StrategyExecutor
+
 import src.services.signal_generator
 import src.services.signal_engine
 import src.services.trade_executor
@@ -144,6 +151,16 @@ def watchdog(now, agent=None):
             pass
 
 
+# ────────────────────────────────────────────────────────────────────────────
+# PATCH: V4 Self-Evolving Strategy System (Genetic Algorithm)
+# ────────────────────────────────────────────────────────────────────────────
+_genetic_pool = None
+_strategy_selector = None
+_current_strategy = None
+_strategy_trade_count = [0]  # Use list for mutability
+_evolution_interval = 50  # Run evolution every N trades
+
+
 # ── FX rate cache (USD/CZK) ───────────────────────────────────────────────────
 _fx_usd_czk:      float = 0.0
 _fx_last_fetch:   float = 0.0
@@ -163,6 +180,68 @@ def _refresh_fx_rate() -> None:
                 _fx_last_fetch = time.time()
     except Exception:
         pass  # keep stale value — better than 0
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# PATCH: V4 Strategy Evolution Cycle (Genetic Algorithm)
+# ────────────────────────────────────────────────────────────────────────────
+
+def update_strategy_fitness(trade):
+    """
+    Update current strategy fitness when a trade closes.
+    
+    Called after every trade close to record outcomes and trigger evolution if needed.
+    
+    Args:
+        trade: Trade object with pnl, net_pnl_pct, result, etc.
+    """
+    global _current_strategy, _strategy_trade_count, _genetic_pool, _strategy_selector
+    
+    if _current_strategy is None or _genetic_pool is None:
+        return
+    
+    try:
+        # Record trade in strategy
+        _current_strategy.record_trade(trade)
+        _strategy_trade_count[0] += 1
+        
+        # Log updates every 10 trades
+        if _strategy_trade_count[0] % 10 == 0:
+            bus = get_event_bus()
+            msg = f"STRATEGY: {_current_strategy} | Pool avg fitness: {_genetic_pool.get_stats()['avg_fitness']:.3f}"
+            bus.emit("LOG_OUTPUT", {"message": msg}, time.time())
+        
+        # Evolution trigger: every N trades
+        if _strategy_trade_count[0] % _evolution_interval == 0:
+            bus = get_event_bus()
+            msg = f"🧬 EVOLVE: Running evolution cycle (trade #{_strategy_trade_count[0]})"
+            bus.emit("LOG_OUTPUT", {"message": msg}, time.time())
+            
+            # Run evolution
+            _genetic_pool.evolve()
+            
+            # Select new strategy for next trades
+            _current_strategy = _strategy_selector.select(
+                regime='RANGING',  # Could be enhanced with actual regime
+                force_best=False
+            )
+            
+            # Log pool state
+            stats = _genetic_pool.get_stats()
+            msg = (
+                f"POOL: size={stats['population_size']}, "
+                f"evolution={stats['evolution_count']}, "
+                f"diversity={stats['diversity']}, "
+                f"avg_fitness={stats['avg_fitness']:.3f}, "
+                f"max_fitness={stats['max_fitness']:.3f}"
+            )
+            bus.emit("LOG_OUTPUT", {"message": msg}, time.time())
+            
+    except Exception as e:
+        import logging as _log_evo
+        _log_evo.getLogger(__name__).error(f"Strategy fitness update error: {e}")
+
+
 AUDIT_INTERVAL      = 30      # seconds — bot2 auditor cycle
 METRICS_INTERVAL    = 30      # save metrics/latest every 30 s
 PRE_AUDIT_INTERVAL  = 7200    # pre_live_audit replay run every 2 hours
@@ -741,6 +820,16 @@ def main():
     global _anomaly_detector, _state_history
     _anomaly_detector = AnomalyDetector()
     _state_history = StateHistory(max_size=100)
+    
+    # Initialize V4 self-evolving strategy system (Genetic Algorithm)
+    global _genetic_pool, _strategy_selector, _current_strategy
+    _genetic_pool = GeneticPool(size=20)
+    _strategy_selector = StrategySelector(_genetic_pool)
+    _current_strategy = _strategy_selector.select(regime="RANGING", force_best=False)
+    
+    bus = get_event_bus()
+    msg = f"✅ V4 Genetic Pool initialized: {_genetic_pool}, Current strategy: {_current_strategy}"
+    bus.emit("LOG_OUTPUT", {"message": msg}, time.time())
     
     init_firebase()
     daily_budget_report()
