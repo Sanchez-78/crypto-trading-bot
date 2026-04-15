@@ -14,6 +14,78 @@ from typing import Optional, Dict, Any
 
 log = logging.getLogger(__name__)
 
+
+# V10.12h: Safe idle computation (prevents unix-time-sized values)
+def safe_idle_seconds(last_trade_ts, now=None):
+    """
+    Compute idle seconds safely, preventing timestamp bugs from exploding.
+    
+    Returns 0.0 for invalid/missing timestamps.
+    Never returns values > 86400s (1 day).
+    """
+    if now is None:
+        now = time.time()
+    
+    if not last_trade_ts:
+        return 0.0
+    
+    try:
+        ts = float(last_trade_ts)
+    except (ValueError, TypeError):
+        return 0.0
+    
+    if ts <= 0:
+        return 0.0
+    
+    if ts > now:
+        return 0.0
+    
+    idle = now - ts
+    
+    # Sanity check: if > 86400s (1 day) probably a bug
+    if idle > 86400:
+        log.warning("safe_idle_seconds: unrealistic idle=%.0fs, clamping to 0", idle)
+        return 0.0
+    
+    return max(0.0, idle)
+
+
+
+# V10.12h: Safe idle computation (prevents unix-time-sized values)
+def safe_idle_seconds(last_trade_ts, now=None):
+    """
+    Compute idle seconds safely, preventing timestamp bugs from exploding.
+    
+    Returns 0.0 for invalid/missing timestamps.
+    Never returns values > 86400s (1 day).
+    """
+    if now is None:
+        now = time.time()
+    
+    if not last_trade_ts:
+        return 0.0
+    
+    try:
+        ts = float(last_trade_ts)
+    except (ValueError, TypeError):
+        return 0.0
+    
+    if ts <= 0:
+        return 0.0
+    
+    if ts > now:
+        return 0.0
+    
+    idle = now - ts
+    
+    # Sanity check: if > 86400s (1 day) probably a bug
+    if idle > 86400:
+        log.warning("safe_idle_seconds: unrealistic idle=%.0fs, clamping to 0", idle)
+        return 0.0
+    
+    return max(0.0, idle)
+
+
 # Global state for adaptive systems
 _no_trade_counter = [0]  # Counter for consecutive no-trade cycles
 _no_signal_cycles = [0]  # Counter for zero-signal cycles
@@ -149,8 +221,11 @@ class StallRecovery:
         if current_time - self.last_recovery_time < self.recovery_cooldown:
             return None
 
-        if no_trade_time > self.stall_threshold:
-            log.warning(f"🚨 STALL DETECTED: {no_trade_time:.0f}s no trades → RECOVERY")
+        # V10.12h: Use safe idle computation
+        safe_idle = safe_idle_seconds(system_state.get("last_trade_ts"), current_time)
+        
+        if safe_idle > self.stall_threshold:
+            log.warning(f"🚨 STALL DETECTED: {safe_idle:.0f}s no trades → RECOVERY")
 
             # Apply emergency recovery settings
             system_state["ev_threshold"] = -0.02
@@ -185,6 +260,7 @@ class MicroTradeMode:
 
     def update(self, no_trade_time: float):
         """Update micro-trade mode state."""
+        # V10.12h: Ensure no_trade_time comes from safe computation
         if no_trade_time > self.stagnation_threshold:
             self.active = True
         else:

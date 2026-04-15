@@ -1,88 +1,113 @@
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.50  ws=0.481  score=0.179[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.25  ws=0.816  score=0.280[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.50  ws=0.666  score=0.235[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.50  ws=0.778  score=0.268[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.25  ws=0.524  score=0.192[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.50  ws=0.853  score=0.291[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.25  ws=0.521  score=0.191[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=SKIP_SCORE  ev=0.030  score=0.177<0.180
+============================================================
+  CRYPTOMASTER  |  0h 2m 12s  | TRENINK 
+============================================================
+    ZIVE CENY  (Binance · kazde 1 s)
+  ────────────────────────────────────────────────────────
+    BTC  $   74,203.0000   ─  +0.000%
+    ETH  $    2,333.5400   ─  +0.000%
+    ADA  $        0.2416   ─  +0.000%
+    BNB  $      618.5300   ─  +0.000%
+    DOT  $        1.1700   ─  +0.000%
+    SOL  $       83.5300   ─  +0.000%
+    XRP  $        1.3600   ─  +0.000%
+    VYSLEDKY OBCHODOVANI
+  ────────────────────────────────────────────────────────
+    Zadne uzavrene obchody – robot se zahrива...
+    UCENI – STAV A USPESNOST
+  ────────────────────────────────────────────────────────
+    Kalibrace      0 / 50 obchodu  ●───────────────────── 0%  (50 zbyvа)
+    Sbiram data – potrebuji 50 obchodu pro plnou kalibraci.
+    EV vykon       zadna data
+    Uzavreni       zadna data
+    AUDITOR  (ochrana strategie)
+  ────────────────────────────────────────────────────────
+    EV prah              0.000  t15=0  t60=0  aktivni
+    Velikost pozice      1.00x  EV-only · loss streak → scale · DD halt 40%
+    STRATEGIE  (ADX + EMA + MACD + BB + RSI)
+  ────────────────────────────────────────────────────────
+    Rezim trhu   BEAR TREND  silny pokles  (35%)
+    Signaly       0 zachyceno  0 po filtru  7 blokovano  0 provedeno
+    Filtrace      0.0%  projde filtrem  TP: 1.2xATR  /  SL: 0.8xATR  (RR 1.5:1)  EV-only
+    POSLEDNI ROZHODNUTI
+  ────────────────────────────────────────────────────────
+    BTC  zadny signal
+    ETH  zadny signal
+    ADA  zadny signal
+    BNB  zadny signal
+    DOT  zadny signal
+    SOL  zadny signal
+    XRP  zadny signal
+  ────────────────────────────────────────────────────────
+  ● Sbiram data ─── Trenink ─── Aktivni
+  ────────────────────────────────────────────────────────
+  STAV:  TRENINK  (obchody 0/50,  winrate 0%->55%,  zisk > 0)
+============================================================
+=== EXECUTION ENGINE ===
+  Equity:   1.000000  |  DD: 0.00%
+  Exposure: 0.000  |  Positions: 0
+  Sharpe:   0.000  |  WR: 0.00%  |  Edge: 0.00000  |  MaxDD: 0.00%
+  Failure:  0.000  [OK]
+=== LEARNING MONITOR ===
+  (waiting for 10 closed trades per pair)
+  [!] LEARNING: NO LEARNING SIGNAL DETECTED
+  Health: 0.000  [BAD]
+========================
+[WATCHDOG] No trades for 600s → boosting exploration
+[WATCHDOG] Critical idle (15min) → enabling micro-trades
+  [!] LEARNING: NO LEARNING SIGNAL DETECTED
+[bot2] ── pre_live_audit ─────────────────────────────────────
 ====================================================================
-WARM START VERIFICATION
+PRE-LIVE AUDIT  (V10.12c)  n=20  seed=42  mode=replay
 ====================================================================
-  METRICS['equity_peak']   = 0.000000
-  _peak_equity[0]          = 0.000000  [OK]
-  METRICS['drawdown']      = 0.000000
-  _rb_ema[0]               = current=0.7501
-====================================================================
-AUDIT SUMMARY REPORT
-====================================================================
-  Trades audited         : 20
-  Passed to execution    : 19
-  Blocked                : 1
-  ── Size distribution ───────────────────────────────
-  Min final size         : 0.00431
-  Max final size         : 0.00780
-  Avg final size         : 0.00612
-  ── Risk budget ─────────────────────────────────────
-  Avg risk_budget        : 0.750
-  Max risk_budget        : 0.751
-  Min risk_budget        : 0.750
-  ── Execution quality ───────────────────────────────
-  Avg exec_quality       : 0.798
-  Min exec_quality       : 0.703
-  ── Heat violations (existing book) ─────────────────
-  heat > max_heat        : 0
-  exec_quality < 0.60    : 0
-  ── Soft penalties applied ──────────────────────────
-  velocity_pen < 1.0     : 0
-  streak_pen < 1.0       : 0
-  combo_pen < 1.0        : 0
-  emergency mode         : 0
-  ── Block breakdown ─────────────────────────────────
-  RDE                    : 1
-  exec_quality HARD_SKIP : 0
-  net_edge               : 0
-  cost_guard             : 0
-  heat_limit             : 0
-  ── Monotone check (reduce-only: corr→final) ────────
-  Violations             : 0
-====================================================================
-SUMMARY[v10.12c]:
-🚨 ANOMALY: STALL 1776249754.471072s > 900s
-🚨 ANOMALY: NO_SIGNALS 21 cycles
-SELF_HEAL: STALL (no trades 900s) → boosting exploration
-SELF_HEAL: NO_SIGNALS (pipeline dead) → reducing filter thresholds
+[audit] replay unavailable, using synthetic fallback (load_history returned empty)
+    EV=0.050  p=0.50  rr=1.25  ws=0.611  score=0.218[n=0]  t15=0  spread=0.000  af=1.00
+    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
+    coherence[v10.12]: 0.500  ev 0.050→0.030
+    decision=OFI_TOXIC  OFI_TOXIC:flow=-1.00 heavy sell pressure vs BUY
+    EV=0.050  p=0.50  rr=1.50  ws=0.539  score=0.197[n=0]  t15=0  spread=0.000  af=1.00
+    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
     coherence[v10.12]: 0.500  ev 0.050→0.030
     decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
+    EV=0.050  p=0.50  rr=1.50  ws=0.568  score=0.205[n=0]  t15=0  spread=0.000  af=1.00
+    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
+    coherence[v10.12]: 0.500  ev 0.050→0.030
+    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
+    EV=0.050  p=0.50  rr=1.25  ws=0.861  score=0.293[n=0]  t15=0  spread=0.000  af=1.00
+    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
+    coherence[v10.12]: 0.500  ev 0.050→0.030
+    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
+    EV=0.050  p=0.50  rr=1.50  ws=0.514  score=0.189[n=0]  t15=0  spread=0.000  af=1.00
+    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
+    coherence[v10.12]: 0.500  ev 0.050→0.030
+    decision=SKIP_SCORE  ev=0.030  score=0.175<0.180
+    EV=0.050  p=0.50  rr=1.25  ws=0.578  score=0.208[n=0]  t15=0  spread=0.000  af=1.00
+    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
+    coherence[v10.12]: 0.500  ev 0.050→0.030
+    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
+    EV=0.050  p=0.50  rr=1.50  ws=0.535  score=0.195[n=0]  t15=0  spread=0.000  af=1.00
+    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
+    coherence[v10.12]: 0.500  ev 0.050→0.030
+    decision=OFI_TOXIC  OFI_TOXIC:flow=-1.00 heavy sell pressure vs BUY
+    EV=0.050  p=0.50  rr=1.50  ws=0.803  score=0.276[n=0]  t15=0  spread=0.000  af=1.00
+    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
+    coherence[v10.12]: 0.500  ev 0.050→0.030
+    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
+    EV=0.050  p=0.50  rr=1.25  ws=0.721  score=0.251[n=0]  t15=0  spread=0.000  af=1.00
+    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
+    coherence[v10.12]: 0.500  ev 0.050→0.030
+    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
+    EV=0.050  p=0.50  rr=1.25  ws=0.510  score=0.188[n=0]  t15=0  spread=0.000  af=1.00
+    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
+    coherence[v10.12]: 0.500  ev 0.050→0.030
+    decision=SKIP_SCORE  ev=0.030  score=0.174<0.180
     EV=0.050  p=0.50  rr=1.50  ws=0.611  score=0.218[n=0]  t15=0  spread=0.000  af=1.00
     RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
     coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
+    decision=OFI_TOXIC  OFI_TOXIC:flow=-1.00 heavy sell pressure vs BUY
     EV=0.050  p=0.50  rr=1.50  ws=0.668  score=0.236[n=0]  t15=0  spread=0.000  af=1.00
     RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
     coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
+    decision=OFI_TOXIC  OFI_TOXIC:flow=-1.00 heavy sell pressure vs BUY
     EV=0.050  p=0.50  rr=1.25  ws=0.781  score=0.269[n=0]  t15=0  spread=0.000  af=1.00
     RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
     coherence[v10.12]: 0.500  ev 0.050→0.030
@@ -90,7 +115,7 @@ SELF_HEAL: NO_SIGNALS (pipeline dead) → reducing filter thresholds
     EV=0.050  p=0.50  rr=1.50  ws=0.481  score=0.179[n=0]  t15=0  spread=0.000  af=1.00
     RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
     coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
+    decision=SKIP_SCORE  ev=0.030  score=0.165<0.180
     EV=0.050  p=0.50  rr=1.25  ws=0.816  score=0.280[n=0]  t15=0  spread=0.000  af=1.00
     RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
     coherence[v10.12]: 0.500  ev 0.050→0.030
@@ -106,7 +131,7 @@ SELF_HEAL: NO_SIGNALS (pipeline dead) → reducing filter thresholds
     EV=0.050  p=0.50  rr=1.25  ws=0.524  score=0.192[n=0]  t15=0  spread=0.000  af=1.00
     RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
     coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
+    decision=SKIP_SCORE  ev=0.030  score=0.178<0.180
     EV=0.050  p=0.50  rr=1.50  ws=0.853  score=0.291[n=0]  t15=0  spread=0.000  af=1.00
     RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
     coherence[v10.12]: 0.500  ev 0.050→0.030
@@ -121,34 +146,39 @@ WARM START VERIFICATION
   METRICS['equity_peak']   = 0.000000
   _peak_equity[0]          = 0.000000  [OK]
   METRICS['drawdown']      = 0.000000
-  _rb_ema[0]               = current=0.7501
+  _rb_ema[0]               = current=0.7524
 ====================================================================
 AUDIT SUMMARY REPORT
 ====================================================================
   Trades audited         : 20
-  Passed to execution    : 19
-  Blocked                : 1
+  Passed to execution    : 11
+  Blocked                : 9
   ── Size distribution ───────────────────────────────
-  Min final size         : 0.00431
-  Max final size         : 0.00780
-  Avg final size         : 0.00612
+  Min final size         : 0.00292
+  Max final size         : 0.00499
+  Avg final size         : 0.00400
   ── Risk budget ─────────────────────────────────────
-  Avg risk_budget        : 0.750
-  Max risk_budget        : 0.751
-  Min risk_budget        : 0.750
+  Avg risk_budget        : 0.754
+  Max risk_budget        : 0.757
+  Min risk_budget        : 0.752
   ── Execution quality ───────────────────────────────
-  Avg exec_quality       : 0.798
-  Min exec_quality       : 0.703
+  Avg exec_quality       : 0.504
+  Min exec_quality       : 0.500
   ── Heat violations (existing book) ─────────────────
   heat > max_heat        : 0
-  exec_quality < 0.60    : 0
+  exec_quality < 0.60    : 11
+    [02] ETHUSDT SELL  eq=0.500  spread=0.00050
+    [03] SOLUSDT BUY  eq=0.505  spread=0.00050
+    [04] BNBUSDT SELL  eq=0.500  spread=0.00050
+    [06] BTCUSDT SELL  eq=0.500  spread=0.00050
+    [08] SOLUSDT BUY  eq=0.507  spread=0.00050
   ── Soft penalties applied ──────────────────────────
   velocity_pen < 1.0     : 0
   streak_pen < 1.0       : 0
   combo_pen < 1.0        : 0
   emergency mode         : 0
   ── Block breakdown ─────────────────────────────────
-  RDE                    : 1
+  RDE                    : 9
   exec_quality HARD_SKIP : 0
   net_edge               : 0
   cost_guard             : 0
@@ -157,447 +187,554 @@ AUDIT SUMMARY REPORT
   Violations             : 0
 ====================================================================
 SUMMARY[v10.12c]:
-🚨 ANOMALY: STALL 1776249754.471072s > 900s
+  trades=20  mode=synthetic
+  size[min/avg/max]=0.0029 / 0.0040 / 0.0050
+  risk_budget[avg/max]=0.75 / 0.76
+  blocked=9 (0.450)
+  monotone_violations=0
+====================================================================
+  [CI] PASS
+[bot2] pre_live_audit complete  ci=PASS
+[bot2] ─────────────────────────────────────────────────────────
+  [!] LEARNING: NO LEARNING SIGNAL DETECTED
+  ── CYCLE SNAPSHOT ────────────────────────────────────────
+{
+  "cycle_time": 1776256164.8699718,
+  "positions": 0,
+  "learning": {
+    "health": 0.0,
+    "alert": "BAD",
+    "mode": "COLD",
+    "pairs": {},
+    "features": {},
+    "block_reasons": {
+      "SKIP_SCORE": 12,
+      "OFI_TOXIC": 4
+    },
+    "completed_trades": 0,
+    "best_edge": "Unknown",
+    "defense": {
+      "wall_exits": 0,
+      "timeouts": 0,
+      "l2_rejected": 0,
+      "corr_rejected": 0,
+      "defended": 0,
+      "efficiency": 0.0
+    },
+    "concept_drift": false
+  }
+}
+============================================================
+  CRYPTOMASTER  |  0h 2m 24s  | TRENINK 
+============================================================
+    ZIVE CENY  (Binance · kazde 1 s)
+  ────────────────────────────────────────────────────────
+    BTC  $   74,203.0000   ─  +0.000%
+    ETH  $    2,333.5400   ─  +0.000%
+    ADA  $        0.2416   ─  +0.000%
+    BNB  $      618.5300   ─  +0.000%
+    DOT  $        1.1700   ─  +0.000%
+    SOL  $       83.5300   ─  +0.000%
+    XRP  $        1.3600   ─  +0.000%
+    VYSLEDKY OBCHODOVANI
+  ────────────────────────────────────────────────────────
+    Zadne uzavrene obchody – robot se zahrива...
+    UCENI – STAV A USPESNOST
+  ────────────────────────────────────────────────────────
+    Kalibrace      0 / 50 obchodu  ●───────────────────── 0%  (50 zbyvа)
+    Sbiram data – potrebuji 50 obchodu pro plnou kalibraci.
+    EV vykon       zadna data
+    Uzavreni       zadna data
+    AUDITOR  (ochrana strategie)
+  ────────────────────────────────────────────────────────
+    EV prah              0.000  t15=0  t60=0  aktivni
+    Velikost pozice      1.00x  EV-only · loss streak → scale · DD halt 40%
+    STRATEGIE  (ADX + EMA + MACD + BB + RSI)
+  ────────────────────────────────────────────────────────
+    Rezim trhu   BEAR TREND  silny pokles  (35%)
+    Signaly       0 zachyceno  0 po filtru  16 blokovano  0 provedeno
+    Filtrace      0.0%  projde filtrem  TP: 1.2xATR  /  SL: 0.8xATR  (RR 1.5:1)  EV-only
+    POSLEDNI ROZHODNUTI
+  ────────────────────────────────────────────────────────
+    BTC  zadny signal
+    ETH  zadny signal
+    ADA  zadny signal
+    BNB  zadny signal
+    DOT  zadny signal
+    SOL  zadny signal
+    XRP  zadny signal
+  ────────────────────────────────────────────────────────
+  ● Sbiram data ─── Trenink ─── Aktivni
+  ────────────────────────────────────────────────────────
+  STAV:  TRENINK  (obchody 0/50,  winrate 0%->55%,  zisk > 0)
+============================================================
+=== EXECUTION ENGINE ===
+  Equity:   1.000000  |  DD: 0.00%
+  Exposure: 0.000  |  Positions: 0
+  Sharpe:   0.000  |  WR: 0.00%  |  Edge: 0.00000  |  MaxDD: 0.00%
+  Failure:  0.000  [OK]
+=== LEARNING MONITOR ===
+  (waiting for 10 closed trades per pair)
+  [!] LEARNING: NO LEARNING SIGNAL DETECTED
+  Health: 0.000  [BAD]
+========================
+[WATCHDOG] No trades for 600s → boosting exploration
+[WATCHDOG] Critical idle (15min) → enabling micro-trades
+  [!] LEARNING: NO LEARNING SIGNAL DETECTED
+  ── CYCLE SNAPSHOT ────────────────────────────────────────
+{
+  "cycle_time": 1776256176.8272943,
+  "positions": 0,
+  "learning": {
+    "health": 0.0,
+    "alert": "BAD",
+    "mode": "COLD",
+    "pairs": {},
+    "features": {},
+    "block_reasons": {
+      "SKIP_SCORE": 12,
+      "OFI_TOXIC": 4
+    },
+    "completed_trades": 0,
+    "best_edge": "Unknown",
+    "defense": {
+      "wall_exits": 0,
+      "timeouts": 0,
+      "l2_rejected": 0,
+      "corr_rejected": 0,
+      "defended": 0,
+      "efficiency": 0.0
+    },
+    "concept_drift": false
+  }
+}
+============================================================
+  CRYPTOMASTER  |  0h 2m 34s  | TRENINK 
+============================================================
+    ZIVE CENY  (Binance · kazde 1 s)
+  ────────────────────────────────────────────────────────
+    BTC  $   74,203.0000   ─  +0.000%
+    ETH  $    2,333.5400   ─  +0.000%
+    ADA  $        0.2416   ─  +0.000%
+    BNB  $      618.5300   ─  +0.000%
+    DOT  $        1.1700   ─  +0.000%
+    SOL  $       83.5300   ─  +0.000%
+    XRP  $        1.3600   ─  +0.000%
+    VYSLEDKY OBCHODOVANI
+  ────────────────────────────────────────────────────────
+    Zadne uzavrene obchody – robot se zahrива...
+    UCENI – STAV A USPESNOST
+  ────────────────────────────────────────────────────────
+    Kalibrace      0 / 50 obchodu  ●───────────────────── 0%  (50 zbyvа)
+    Sbiram data – potrebuji 50 obchodu pro plnou kalibraci.
+    EV vykon       zadna data
+    Uzavreni       zadna data
+    AUDITOR  (ochrana strategie)
+  ────────────────────────────────────────────────────────
+    EV prah              0.000  t15=0  t60=0  aktivni
+    Velikost pozice      1.00x  EV-only · loss streak → scale · DD halt 40%
+    STRATEGIE  (ADX + EMA + MACD + BB + RSI)
+  ────────────────────────────────────────────────────────
+    Rezim trhu   BEAR TREND  silny pokles  (35%)
+    Signaly       0 zachyceno  0 po filtru  16 blokovano  0 provedeno
+    Filtrace      0.0%  projde filtrem  TP: 1.2xATR  /  SL: 0.8xATR  (RR 1.5:1)  EV-only
+    POSLEDNI ROZHODNUTI
+  ────────────────────────────────────────────────────────
+    BTC  zadny signal
+    ETH  zadny signal
+    ADA  zadny signal
+    BNB  zadny signal
+    DOT  zadny signal
+    SOL  zadny signal
+    XRP  zadny signal
+  ────────────────────────────────────────────────────────
+  ● Sbiram data ─── Trenink ─── Aktivni
+  ────────────────────────────────────────────────────────
+  STAV:  TRENINK  (obchody 0/50,  winrate 0%->55%,  zisk > 0)
+============================================================
+=== EXECUTION ENGINE ===
+  Equity:   1.000000  |  DD: 0.00%
+  Exposure: 0.000  |  Positions: 0
+  Sharpe:   0.000  |  WR: 0.00%  |  Edge: 0.00000  |  MaxDD: 0.00%
+  Failure:  0.000  [OK]
+=== LEARNING MONITOR ===
+  (waiting for 10 closed trades per pair)
+  [!] LEARNING: NO LEARNING SIGNAL DETECTED
+  Health: 0.000  [BAD]
+========================
+[WATCHDOG] No trades for 600s → boosting exploration
+[WATCHDOG] Critical idle (15min) → enabling micro-trades
+  [!] LEARNING: NO LEARNING SIGNAL DETECTED
+  ── CYCLE SNAPSHOT ────────────────────────────────────────
+{
+  "cycle_time": 1776256186.8285005,
+  "positions": 0,
+  "learning": {
+    "health": 0.0,
+    "alert": "BAD",
+    "mode": "COLD",
+    "pairs": {},
+    "features": {},
+    "block_reasons": {
+      "SKIP_SCORE": 12,
+      "OFI_TOXIC": 4
+    },
+    "completed_trades": 0,
+    "best_edge": "Unknown",
+    "defense": {
+      "wall_exits": 0,
+      "timeouts": 0,
+      "l2_rejected": 0,
+      "corr_rejected": 0,
+      "defended": 0,
+      "efficiency": 0.0
+    },
+    "concept_drift": false
+  }
+}
+============================================================
+  CRYPTOMASTER  |  0h 2m 44s  | TRENINK 
+============================================================
+    ZIVE CENY  (Binance · kazde 1 s)
+  ────────────────────────────────────────────────────────
+    BTC  $   74,203.0000   ─  +0.000%
+    ETH  $    2,333.5400   ─  +0.000%
+    ADA  $        0.2416   ─  +0.000%
+    BNB  $      618.5300   ─  +0.000%
+    DOT  $        1.1700   ─  +0.000%
+    SOL  $       83.5300   ─  +0.000%
+    XRP  $        1.3600   ─  +0.000%
+    VYSLEDKY OBCHODOVANI
+  ────────────────────────────────────────────────────────
+    Zadne uzavrene obchody – robot se zahrива...
+    UCENI – STAV A USPESNOST
+  ────────────────────────────────────────────────────────
+    Kalibrace      0 / 50 obchodu  ●───────────────────── 0%  (50 zbyvа)
+    Sbiram data – potrebuji 50 obchodu pro plnou kalibraci.
+    EV vykon       zadna data
+    Uzavreni       zadna data
+    AUDITOR  (ochrana strategie)
+  ────────────────────────────────────────────────────────
+    EV prah              0.000  t15=0  t60=0  aktivni
+    Velikost pozice      1.00x  EV-only · loss streak → scale · DD halt 40%
+    STRATEGIE  (ADX + EMA + MACD + BB + RSI)
+  ────────────────────────────────────────────────────────
+    Rezim trhu   BEAR TREND  silny pokles  (35%)
+    Signaly       0 zachyceno  0 po filtru  16 blokovano  0 provedeno
+    Filtrace      0.0%  projde filtrem  TP: 1.2xATR  /  SL: 0.8xATR  (RR 1.5:1)  EV-only
+    POSLEDNI ROZHODNUTI
+  ────────────────────────────────────────────────────────
+    BTC  zadny signal
+    ETH  zadny signal
+    ADA  zadny signal
+    BNB  zadny signal
+    DOT  zadny signal
+    SOL  zadny signal
+    XRP  zadny signal
+  ────────────────────────────────────────────────────────
+  ● Sbiram data ─── Trenink ─── Aktivni
+  ────────────────────────────────────────────────────────
+  STAV:  TRENINK  (obchody 0/50,  winrate 0%->55%,  zisk > 0)
+============================================================
+=== EXECUTION ENGINE ===
+  Equity:   1.000000  |  DD: 0.00%
+  Exposure: 0.000  |  Positions: 0
+  Sharpe:   0.000  |  WR: 0.00%  |  Edge: 0.00000  |  MaxDD: 0.00%
+  Failure:  0.000  [OK]
+=== LEARNING MONITOR ===
+  (waiting for 10 closed trades per pair)
+  [!] LEARNING: NO LEARNING SIGNAL DETECTED
+  Health: 0.000  [BAD]
+========================
+[WATCHDOG] No trades for 600s → boosting exploration
+[WATCHDOG] Critical idle (15min) → enabling micro-trades
+  [!] LEARNING: NO LEARNING SIGNAL DETECTED
+  [!] LEARNING: NO LEARNING SIGNAL DETECTED
+  ── CYCLE SNAPSHOT ────────────────────────────────────────
+{
+  "cycle_time": 1776256196.837524,
+  "positions": 0,
+  "learning": {
+    "health": 0.0,
+    "alert": "BAD",
+    "mode": "COLD",
+    "pairs": {},
+    "features": {},
+    "block_reasons": {
+      "SKIP_SCORE": 12,
+      "OFI_TOXIC": 4
+    },
+    "completed_trades": 0,
+    "best_edge": "Unknown",
+    "defense": {
+      "wall_exits": 0,
+      "timeouts": 0,
+      "l2_rejected": 0,
+      "corr_rejected": 0,
+      "defended": 0,
+      "efficiency": 0.0
+    },
+    "concept_drift": false
+  }
+}
+============================================================
+  CRYPTOMASTER  |  0h 2m 55s  | TRENINK 
+============================================================
+    ZIVE CENY  (Binance · kazde 1 s)
+  ────────────────────────────────────────────────────────
+    BTC  $   74,203.0000   ─  +0.000%
+    ETH  $    2,333.5400   ─  +0.000%
+    ADA  $        0.2416   ─  +0.000%
+    BNB  $      618.5300   ─  +0.000%
+    DOT  $        1.1700   ─  +0.000%
+    SOL  $       83.5300   ─  +0.000%
+    XRP  $        1.3600   ─  +0.000%
+    VYSLEDKY OBCHODOVANI
+  ────────────────────────────────────────────────────────
+    Zadne uzavrene obchody – robot se zahrива...
+    UCENI – STAV A USPESNOST
+  ────────────────────────────────────────────────────────
+    Kalibrace      0 / 50 obchodu  ●───────────────────── 0%  (50 zbyvа)
+    Sbiram data – potrebuji 50 obchodu pro plnou kalibraci.
+    EV vykon       zadna data
+    Uzavreni       zadna data
+    AUDITOR  (ochrana strategie)
+  ────────────────────────────────────────────────────────
+    EV prah              0.000  t15=0  t60=0  aktivni
+    Velikost pozice      1.00x  EV-only · loss streak → scale · DD halt 40%
+    STRATEGIE  (ADX + EMA + MACD + BB + RSI)
+  ────────────────────────────────────────────────────────
+    Rezim trhu   BEAR TREND  silny pokles  (35%)
+    Signaly       0 zachyceno  0 po filtru  16 blokovano  0 provedeno
+    Filtrace      0.0%  projde filtrem  TP: 1.2xATR  /  SL: 0.8xATR  (RR 1.5:1)  EV-only
+    POSLEDNI ROZHODNUTI
+  ────────────────────────────────────────────────────────
+    BTC  zadny signal
+    ETH  zadny signal
+    ADA  zadny signal
+    BNB  zadny signal
+    DOT  zadny signal
+    SOL  zadny signal
+    XRP  zadny signal
+  ────────────────────────────────────────────────────────
+  ● Sbiram data ─── Trenink ─── Aktivni
+  ────────────────────────────────────────────────────────
+  STAV:  TRENINK  (obchody 0/50,  winrate 0%->55%,  zisk > 0)
+============================================================
+=== EXECUTION ENGINE ===
+  Equity:   1.000000  |  DD: 0.00%
+  Exposure: 0.000  |  Positions: 0
+  Sharpe:   0.000  |  WR: 0.00%  |  Edge: 0.00000  |  MaxDD: 0.00%
+  Failure:  0.000  [OK]
+=== LEARNING MONITOR ===
+  (waiting for 10 closed trades per pair)
+  [!] LEARNING: NO LEARNING SIGNAL DETECTED
+  Health: 0.000  [BAD]
+========================
+[WATCHDOG] No trades for 600s → boosting exploration
+[WATCHDOG] Critical idle (15min) → enabling micro-trades
+  [!] LEARNING: NO LEARNING SIGNAL DETECTED
+  ── CYCLE SNAPSHOT ────────────────────────────────────────
+{
+  "cycle_time": 1776256207.0847404,
+  "positions": 0,
+  "learning": {
+    "health": 0.0,
+    "alert": "BAD",
+    "mode": "COLD",
+    "pairs": {},
+    "features": {},
+    "block_reasons": {
+      "SKIP_SCORE": 12,
+      "OFI_TOXIC": 4
+    },
+    "completed_trades": 0,
+    "best_edge": "Unknown",
+    "defense": {
+      "wall_exits": 0,
+      "timeouts": 0,
+      "l2_rejected": 0,
+      "corr_rejected": 0,
+      "defended": 0,
+      "efficiency": 0.0
+    },
+    "concept_drift": false
+  }
+}
+============================================================
+  CRYPTOMASTER  |  0h 3m 5s  | TRENINK 
+============================================================
+    ZIVE CENY  (Binance · kazde 1 s)
+  ────────────────────────────────────────────────────────
+    BTC  $   74,203.0000   ─  +0.000%
+    ETH  $    2,333.5400   ─  +0.000%
+    ADA  $        0.2416   ─  +0.000%
+    BNB  $      618.5300   ─  +0.000%
+    DOT  $        1.1700   ─  +0.000%
+    SOL  $       83.5300   ─  +0.000%
+    XRP  $        1.3600   ─  +0.000%
+    VYSLEDKY OBCHODOVANI
+  ────────────────────────────────────────────────────────
+    Zadne uzavrene obchody – robot se zahrива...
+    UCENI – STAV A USPESNOST
+  ────────────────────────────────────────────────────────
+    Kalibrace      0 / 50 obchodu  ●───────────────────── 0%  (50 zbyvа)
+    Sbiram data – potrebuji 50 obchodu pro plnou kalibraci.
+    EV vykon       zadna data
+    Uzavreni       zadna data
+    AUDITOR  (ochrana strategie)
+  ────────────────────────────────────────────────────────
+    EV prah              0.000  t15=0  t60=0  aktivni
+    Velikost pozice      1.00x  EV-only · loss streak → scale · DD halt 40%
+    STRATEGIE  (ADX + EMA + MACD + BB + RSI)
+  ────────────────────────────────────────────────────────
+    Rezim trhu   BEAR TREND  silny pokles  (35%)
+    Signaly       0 zachyceno  0 po filtru  16 blokovano  0 provedeno
+    Filtrace      0.0%  projde filtrem  TP: 1.2xATR  /  SL: 0.8xATR  (RR 1.5:1)  EV-only
+    POSLEDNI ROZHODNUTI
+  ────────────────────────────────────────────────────────
+    BTC  zadny signal
+    ETH  zadny signal
+    ADA  zadny signal
+    BNB  zadny signal
+    DOT  zadny signal
+    SOL  zadny signal
+    XRP  zadny signal
+  ────────────────────────────────────────────────────────
+  ● Sbiram data ─── Trenink ─── Aktivni
+  ────────────────────────────────────────────────────────
+  STAV:  TRENINK  (obchody 0/50,  winrate 0%->55%,  zisk > 0)
+============================================================
+=== EXECUTION ENGINE ===
+  Equity:   1.000000  |  DD: 0.00%
+  Exposure: 0.000  |  Positions: 0
+  Sharpe:   0.000  |  WR: 0.00%  |  Edge: 0.00000  |  MaxDD: 0.00%
+  Failure:  0.000  [OK]
+=== LEARNING MONITOR ===
+  (waiting for 10 closed trades per pair)
+  [!] LEARNING: NO LEARNING SIGNAL DETECTED
+  Health: 0.000  [BAD]
+========================
+[WATCHDOG] No trades for 600s → boosting exploration
+[WATCHDOG] Critical idle (15min) → enabling micro-trades
+  [!] LEARNING: NO LEARNING SIGNAL DETECTED
+  ── CYCLE SNAPSHOT ────────────────────────────────────────
+{
+  "cycle_time": 1776256217.088525,
+  "positions": 0,
+  "learning": {
+    "health": 0.0,
+    "alert": "BAD",
+    "mode": "COLD",
+    "pairs": {},
+    "features": {},
+    "block_reasons": {
+      "SKIP_SCORE": 12,
+      "OFI_TOXIC": 4
+    },
+    "completed_trades": 0,
+    "best_edge": "Unknown",
+    "defense": {
+      "wall_exits": 0,
+      "timeouts": 0,
+      "l2_rejected": 0,
+      "corr_rejected": 0,
+      "defended": 0,
+      "efficiency": 0.0
+    },
+    "concept_drift": false
+  }
+}
+============================================================
+  CRYPTOMASTER  |  0h 3m 15s  | TRENINK 
+============================================================
+    ZIVE CENY  (Binance · kazde 1 s)
+  ────────────────────────────────────────────────────────
+    BTC  $   74,203.0000   ─  +0.000%
+    ETH  $    2,333.5400   ─  +0.000%
+    ADA  $        0.2416   ─  +0.000%
+    BNB  $      618.5300   ─  +0.000%
+    DOT  $        1.1700   ─  +0.000%
+    SOL  $       83.5300   ─  +0.000%
+    XRP  $        1.3600   ─  +0.000%
+    VYSLEDKY OBCHODOVANI
+  ────────────────────────────────────────────────────────
+    Zadne uzavrene obchody – robot se zahrива...
+    UCENI – STAV A USPESNOST
+  ────────────────────────────────────────────────────────
+    Kalibrace      0 / 50 obchodu  ●───────────────────── 0%  (50 zbyvа)
+    Sbiram data – potrebuji 50 obchodu pro plnou kalibraci.
+    EV vykon       zadna data
+    Uzavreni       zadna data
+    AUDITOR  (ochrana strategie)
+  ────────────────────────────────────────────────────────
+    EV prah              0.000  t15=0  t60=0  aktivni
+    Velikost pozice      1.00x  EV-only · loss streak → scale · DD halt 40%
+    STRATEGIE  (ADX + EMA + MACD + BB + RSI)
+  ────────────────────────────────────────────────────────
+    Rezim trhu   BEAR TREND  silny pokles  (35%)
+    Signaly       0 zachyceno  0 po filtru  16 blokovano  0 provedeno
+    Filtrace      0.0%  projde filtrem  TP: 1.2xATR  /  SL: 0.8xATR  (RR 1.5:1)  EV-only
+    POSLEDNI ROZHODNUTI
+  ────────────────────────────────────────────────────────
+    BTC  zadny signal
+    ETH  zadny signal
+    ADA  zadny signal
+    BNB  zadny signal
+    DOT  zadny signal
+    SOL  zadny signal
+    XRP  zadny signal
+  ────────────────────────────────────────────────────────
+  ● Sbiram data ─── Trenink ─── Aktivni
+  ────────────────────────────────────────────────────────
+  STAV:  TRENINK  (obchody 0/50,  winrate 0%->55%,  zisk > 0)
+============================================================
+=== EXECUTION ENGINE ===
+  Equity:   1.000000  |  DD: 0.00%
+  Exposure: 0.000  |  Positions: 0
+  Sharpe:   0.000  |  WR: 0.00%  |  Edge: 0.00000  |  MaxDD: 0.00%
+  Failure:  0.000  [OK]
+=== LEARNING MONITOR ===
+  (waiting for 10 closed trades per pair)
+  [!] LEARNING: NO LEARNING SIGNAL DETECTED
+  Health: 0.000  [BAD]
+========================
+[WATCHDOG] No trades for 600s → boosting exploration
+[WATCHDOG] Critical idle (15min) → enabling micro-trades
+  [!] LEARNING: NO LEARNING SIGNAL DETECTED
+[bot2] ── pre_live_audit ─────────────────────────────────────
+====================================================================
+PRE-LIVE AUDIT  (V10.12c)  n=20  seed=42  mode=replay
+====================================================================
+[audit] replay unavailable, using synthetic fallback (load_history returned empty)
+    EV=0.050  p=0.50  rr=1.25  ws=0.611  score=0.218[n=0]  t15=0  spread=0.000  af=1.00
+    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
+    coherence[v10.12]: 0.500  ev 0.050→0.030
+    decision=OFI_TOXIC  OFI_TOXIC:flow=-1.00 heavy sell pressure vs BUY
+    EV=0.050  p=0.50  rr=1.50  ws=0.539  score=0.197[n=0]  t15=0  spread=0.000  af=1.00
+    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
+    coherence[v10.12]: 0.500  ev 0.050→0.030
+    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
+    EV=0.050  p=0.50  rr=1.50  ws=0.568  score=0.205[n=0]  t15=0  spread=0.000  af=1.00
+    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
+    coherence[v10.12]: 0.500  ev 0.050→0.030
+    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
+    EV=0.050  p=0.50  rr=1.25  ws=0.861  score=0.293[n=0]  t15=0  spread=0.000  af=1.00
+    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
+    coherence[v10.12]: 0.500  ev 0.050→0.030
+🚨 ANOMALY: STALL 1776256239.147902s > 900s
+🚨 ANOMALY: NO_SIGNALS 20 cycles
+SELF_HEAL: STALL (no trades 900s) → boosting exploration
+SELF_HEAL: NO_SIGNALS (pipeline dead) → reducing filter thresholds
+🚨 ANOMALY: STALL 1776256249.1499302s > 900s
 🚨 ANOMALY: NO_SIGNALS 21 cycles
 SELF_HEAL: STALL (no trades 900s) → boosting exploration
 SELF_HEAL: NO_SIGNALS (pipeline dead) → reducing filter thresholds
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.50  ws=0.611  score=0.218[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.50  ws=0.668  score=0.236[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.25  ws=0.781  score=0.269[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.50  ws=0.481  score=0.179[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.25  ws=0.816  score=0.280[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.50  ws=0.666  score=0.235[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.50  ws=0.778  score=0.268[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.25  ws=0.524  score=0.192[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.50  ws=0.853  score=0.291[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.25  ws=0.521  score=0.191[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=SKIP_SCORE  ev=0.030  score=0.177<0.180
-====================================================================
-WARM START VERIFICATION
-====================================================================
-  METRICS['equity_peak']   = 0.000000
-  _peak_equity[0]          = 0.000000  [OK]
-  METRICS['drawdown']      = 0.000000
-  _rb_ema[0]               = current=0.7501
-====================================================================
-AUDIT SUMMARY REPORT
-====================================================================
-  Trades audited         : 20
-  Passed to execution    : 19
-  Blocked                : 1
-  ── Size distribution ───────────────────────────────
-  Min final size         : 0.00431
-  Max final size         : 0.00780
-  Avg final size         : 0.00612
-  ── Risk budget ─────────────────────────────────────
-  Avg risk_budget        : 0.750
-  Max risk_budget        : 0.751
-  Min risk_budget        : 0.750
-  ── Execution quality ───────────────────────────────
-  Avg exec_quality       : 0.798
-  Min exec_quality       : 0.703
-  ── Heat violations (existing book) ─────────────────
-  heat > max_heat        : 0
-  exec_quality < 0.60    : 0
-  ── Soft penalties applied ──────────────────────────
-  velocity_pen < 1.0     : 0
-  streak_pen < 1.0       : 0
-  combo_pen < 1.0        : 0
-  emergency mode         : 0
-  ── Block breakdown ─────────────────────────────────
-  RDE                    : 1
-  exec_quality HARD_SKIP : 0
-  net_edge               : 0
-  cost_guard             : 0
-  heat_limit             : 0
-  ── Monotone check (reduce-only: corr→final) ────────
-  Violations             : 0
-====================================================================
-SUMMARY[v10.12c]:
-🚨 ANOMALY: STALL 1776249754.471072s > 900s
-🚨 ANOMALY: NO_SIGNALS 21 cycles
+🚨 ANOMALY: STALL 1776256259.1512673s > 900s
+🚨 ANOMALY: NO_SIGNALS 22 cycles
 SELF_HEAL: STALL (no trades 900s) → boosting exploration
 SELF_HEAL: NO_SIGNALS (pipeline dead) → reducing filter thresholds
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.50  ws=0.611  score=0.218[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.50  ws=0.668  score=0.236[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.25  ws=0.781  score=0.269[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.50  ws=0.481  score=0.179[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.25  ws=0.816  score=0.280[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.50  ws=0.666  score=0.235[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.50  ws=0.778  score=0.268[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.25  ws=0.524  score=0.192[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.50  ws=0.853  score=0.291[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.25  ws=0.521  score=0.191[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=SKIP_SCORE  ev=0.030  score=0.177<0.180
-====================================================================
-WARM START VERIFICATION
-====================================================================
-  METRICS['equity_peak']   = 0.000000
-  _peak_equity[0]          = 0.000000  [OK]
-  METRICS['drawdown']      = 0.000000
-  _rb_ema[0]               = current=0.7501
-====================================================================
-AUDIT SUMMARY REPORT
-====================================================================
-  Trades audited         : 20
-  Passed to execution    : 19
-  Blocked                : 1
-  ── Size distribution ───────────────────────────────
-  Min final size         : 0.00431
-  Max final size         : 0.00780
-  Avg final size         : 0.00612
-  ── Risk budget ─────────────────────────────────────
-  Avg risk_budget        : 0.750
-  Max risk_budget        : 0.751
-  Min risk_budget        : 0.750
-  ── Execution quality ───────────────────────────────
-  Avg exec_quality       : 0.798
-  Min exec_quality       : 0.703
-  ── Heat violations (existing book) ─────────────────
-  heat > max_heat        : 0
-  exec_quality < 0.60    : 0
-  ── Soft penalties applied ──────────────────────────
-  velocity_pen < 1.0     : 0
-  streak_pen < 1.0       : 0
-  combo_pen < 1.0        : 0
-  emergency mode         : 0
-  ── Block breakdown ─────────────────────────────────
-  RDE                    : 1
-  exec_quality HARD_SKIP : 0
-  net_edge               : 0
-  cost_guard             : 0
-  heat_limit             : 0
-  ── Monotone check (reduce-only: corr→final) ────────
-  Violations             : 0
-====================================================================
-SUMMARY[v10.12c]:
-🚨 ANOMALY: STALL 1776249754.471072s > 900s
-🚨 ANOMALY: NO_SIGNALS 21 cycles
-SELF_HEAL: STALL (no trades 900s) → boosting exploration
-SELF_HEAL: NO_SIGNALS (pipeline dead) → reducing filter thresholds
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.50  ws=0.611  score=0.218[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.50  ws=0.668  score=0.236[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.25  ws=0.781  score=0.269[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.50  ws=0.481  score=0.179[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.25  ws=0.816  score=0.280[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.50  ws=0.666  score=0.235[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.50  ws=0.778  score=0.268[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.25  ws=0.524  score=0.192[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.50  ws=0.853  score=0.291[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.25  ws=0.521  score=0.191[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=SKIP_SCORE  ev=0.030  score=0.177<0.180
-====================================================================
-WARM START VERIFICATION
-====================================================================
-  METRICS['equity_peak']   = 0.000000
-  _peak_equity[0]          = 0.000000  [OK]
-  METRICS['drawdown']      = 0.000000
-  _rb_ema[0]               = current=0.7501
-====================================================================
-AUDIT SUMMARY REPORT
-====================================================================
-  Trades audited         : 20
-  Passed to execution    : 19
-  Blocked                : 1
-  ── Size distribution ───────────────────────────────
-  Min final size         : 0.00431
-  Max final size         : 0.00780
-  Avg final size         : 0.00612
-  ── Risk budget ─────────────────────────────────────
-  Avg risk_budget        : 0.750
-  Max risk_budget        : 0.751
-  Min risk_budget        : 0.750
-  ── Execution quality ───────────────────────────────
-  Avg exec_quality       : 0.798
-  Min exec_quality       : 0.703
-  ── Heat violations (existing book) ─────────────────
-  heat > max_heat        : 0
-  exec_quality < 0.60    : 0
-  ── Soft penalties applied ──────────────────────────
-  velocity_pen < 1.0     : 0
-  streak_pen < 1.0       : 0
-  combo_pen < 1.0        : 0
-  emergency mode         : 0
-  ── Block breakdown ─────────────────────────────────
-  RDE                    : 1
-  exec_quality HARD_SKIP : 0
-  net_edge               : 0
-  cost_guard             : 0
-  heat_limit             : 0
-  ── Monotone check (reduce-only: corr→final) ────────
-  Violations             : 0
-====================================================================
-SUMMARY[v10.12c]:
-🚨 ANOMALY: STALL 1776249754.471072s > 900s
-🚨 ANOMALY: NO_SIGNALS 21 cycles
-SELF_HEAL: STALL (no trades 900s) → boosting exploration
-SELF_HEAL: NO_SIGNALS (pipeline dead) → reducing filter thresholds
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.50  ws=0.611  score=0.218[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.50  ws=0.668  score=0.236[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.25  ws=0.781  score=0.269[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.50  ws=0.481  score=0.179[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.25  ws=0.816  score=0.280[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.50  ws=0.666  score=0.235[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.50  ws=0.778  score=0.268[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.25  ws=0.524  score=0.192[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.50  ws=0.853  score=0.291[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.25  ws=0.521  score=0.191[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=SKIP_SCORE  ev=0.030  score=0.177<0.180
-====================================================================
-WARM START VERIFICATION
-====================================================================
-  METRICS['equity_peak']   = 0.000000
-  _peak_equity[0]          = 0.000000  [OK]
-  METRICS['drawdown']      = 0.000000
-  _rb_ema[0]               = current=0.7501
-====================================================================
-AUDIT SUMMARY REPORT
-====================================================================
-  Trades audited         : 20
-  Passed to execution    : 19
-  Blocked                : 1
-  ── Size distribution ───────────────────────────────
-  Min final size         : 0.00431
-  Max final size         : 0.00780
-  Avg final size         : 0.00612
-  ── Risk budget ─────────────────────────────────────
-  Avg risk_budget        : 0.750
-  Max risk_budget        : 0.751
-  Min risk_budget        : 0.750
-  ── Execution quality ───────────────────────────────
-  Avg exec_quality       : 0.798
-  Min exec_quality       : 0.703
-  ── Heat violations (existing book) ─────────────────
-  heat > max_heat        : 0
-  exec_quality < 0.60    : 0
-  ── Soft penalties applied ──────────────────────────
-  velocity_pen < 1.0     : 0
-  streak_pen < 1.0       : 0
-  combo_pen < 1.0        : 0
-  emergency mode         : 0
-  ── Block breakdown ─────────────────────────────────
-  RDE                    : 1
-  exec_quality HARD_SKIP : 0
-  net_edge               : 0
-  cost_guard             : 0
-  heat_limit             : 0
-  ── Monotone check (reduce-only: corr→final) ────────
-  Violations             : 0
-====================================================================
-SUMMARY[v10.12c]:
-🚨 ANOMALY: STALL 1776249754.471072s > 900s
-🚨 ANOMALY: NO_SIGNALS 21 cycles
-SELF_HEAL: STALL (no trades 900s) → boosting exploration
-SELF_HEAL: NO_SIGNALS (pipeline dead) → reducing filter thresholds
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.50  ws=0.611  score=0.218[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.50  ws=0.668  score=0.236[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.25  ws=0.781  score=0.269[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.50  ws=0.481  score=0.179[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.25  ws=0.816  score=0.280[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.50  ws=0.666  score=0.235[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.50  ws=0.778  score=0.268[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.25  ws=0.524  score=0.192[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.50  ws=0.853  score=0.291[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.25  ws=0.521  score=0.191[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=SKIP_SCORE  ev=0.030  score=0.177<0.180
-====================================================================
-WARM START VERIFICATION
-====================================================================
-  METRICS['equity_peak']   = 0.000000
-  _peak_equity[0]          = 0.000000  [OK]
-  METRICS['drawdown']      = 0.000000
-  _rb_ema[0]               = current=0.7501
-====================================================================
-AUDIT SUMMARY REPORT
-====================================================================
-  Trades audited         : 20
-  Passed to execution    : 19
-  Blocked                : 1
-  ── Size distribution ───────────────────────────────
-  Min final size         : 0.00431
-  Max final size         : 0.00780
-  Avg final size         : 0.00612
-  ── Risk budget ─────────────────────────────────────
-  Avg risk_budget        : 0.750
-  Max risk_budget        : 0.751
-  Min risk_budget        : 0.750
-  ── Execution quality ───────────────────────────────
-  Avg exec_quality       : 0.798
-  Min exec_quality       : 0.703
-  ── Heat violations (existing book) ─────────────────
-  heat > max_heat        : 0
-  exec_quality < 0.60    : 0
-  ── Soft penalties applied ──────────────────────────
-  velocity_pen < 1.0     : 0
-  streak_pen < 1.0       : 0
-  combo_pen < 1.0        : 0
-  emergency mode         : 0
-  ── Block breakdown ─────────────────────────────────
-  RDE                    : 1
-  exec_quality HARD_SKIP : 0
-  net_edge               : 0
-  cost_guard             : 0
-  heat_limit             : 0
-  ── Monotone check (reduce-only: corr→final) ────────
-  Violations             : 0
-====================================================================
-SUMMARY[v10.12c]:
-🚨 ANOMALY: STALL 1776249754.471072s > 900s
-🚨 ANOMALY: NO_SIGNALS 21 cycles
+🚨 ANOMALY: STALL 1776256269.3544412s > 900s
+🚨 ANOMALY: NO_SIGNALS 23 cycles
 SELF_HEAL: STALL (no trades 900s) → boosting exploration
 SELF_HEAL: NO_SIGNALS (pipeline dead) → reducing filter thresholds

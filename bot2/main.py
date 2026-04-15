@@ -1073,7 +1073,9 @@ def main():
             # Count trades in last cycle and signals generated
             trades_last_60s = len(trades_in_window(60)) if hasattr(trades_in_window, '__call__') else 0
             signals_gen = METRICS.get("signals_generated", 0)
-            no_trade_time = now - (METRICS.get("last_trade_ts", now) or now)
+            # V10.12h: Use safe idle computation to prevent unix-time-sized values
+            last_trade_ts = METRICS.get("last_trade_ts") or now
+            no_trade_time = safe_idle_seconds(last_trade_ts, now)
 
             # Update adaptive systems
             stall_status = update_adaptive_state(
