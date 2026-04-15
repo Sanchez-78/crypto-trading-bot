@@ -145,6 +145,18 @@ _last_audit      = 0
 _last_metrics    = 0
 _last_pre_audit  = 0
 
+# ════════════════════════════════════════════════════════════════════════════════
+# V10.13a: Per-symbol block reason tracking for observability
+# ════════════════════════════════════════════════════════════════════════════════
+_symbol_block_reasons = {}  # sym → (reason_code, reason_str, timestamp)
+_cycle_stats = {
+    "symbols_evaluated": 0,
+    "candidates_generated": 0,
+    "candidates_passed": 0,
+    "candidates_executed": 0,
+    "block_reasons": {},  # reason → count
+}
+
 # ════════════════════════════════════════════════════════════════════════════
 # INTERVAL CONSTANTS — Control audit and metrics frequency
 # ════════════════════════════════════════════════════════════════════════════
@@ -898,7 +910,13 @@ def print_status():
         for sym in get_active_symbols():
             short = sym.replace("USDT", "")
             if sym not in ls:
-                print(f"    {g(short, C.WHT + C.BLD):<4}  {g('zadny signal', C.GRY)}")
+                # V10.13a: Show actual block reason instead of generic "zadny signal"
+                block_info = _symbol_block_reasons.get(sym, (None, None, None))
+                if block_info[1]:
+                    reason_str = block_info[1]
+                else:
+                    reason_str = "zadny signal"
+                print(f"    {g(short, C.WHT + C.BLD):<4}  {g(reason_str, C.GRY)}")
                 continue
             sig    = ls[sym]
             action = sig["action"]
@@ -1001,6 +1019,78 @@ def _run_pre_live_audit() -> None:
 # Self-healing system globals
 _anomaly_detector = None
 _state_history = None
+
+# ════════════════════════════════════════════════════════════════════════════════
+# V10.13a: Cycle tracking and block reason reporting
+# ════════════════════════════════════════════════════════════════════════════════
+
+def track_symbol_block_reason(sym: str, reason_code: str, reason_str: str) -> None:
+    """Track the last block reason for a symbol.
+
+    V10.13a: Used to display per-symbol decision status in live output.
+    """
+    global _symbol_block_reasons
+    _symbol_block_reasons[sym] = (reason_code, reason_str, time.time())
+
+
+def track_cycle_stats(candidates: int, passed: int, executed: int, block_reasons_dict: dict) -> None:
+    """Update cycle statistics for end-of-cycle reporting.
+
+    V10.13a: Accumulates per-cycle metrics for diagnosis.
+    """
+    global _cycle_stats
+    _cycle_stats["candidates_generated"] = candidates
+    _cycle_stats["candidates_passed"] = passed
+    _cycle_stats["candidates_executed"] = executed
+    _cycle_stats["block_reasons"] = block_reasons_dict.copy() if block_reasons_dict else {}
+
+
+def print_cycle_summary(now: float) -> None:
+    """Print authoritative cycle-level summary.
+
+    V10.13a: Makes visible:
+    - Whether candidates were generated
+    - How many passed each gate
+    - Which block reasons dominated
+    - Thresholds used by the active path
+    """
+    global _cycle_stats, _symbol_block_reasons
+
+    try:
+        from src.services.realtime_decision_engine import get_ev_threshold, get_score_threshold
+        from src.services.adaptive_recovery import is_unblock_mode
+        from src.services.learning_event import METRICS
+
+        ev_thr = get_ev_threshold()
+        score_thr = get_score_threshold()
+        unblock = is_unblock_mode()
+        idle_sec = safe_idle_seconds(METRICS.get("last_trade_ts"), now)
+
+        # Count dominant block reason
+        block_counts = _cycle_stats.get("block_reasons", {})
+        top_block = max(block_counts.items(), key=lambda x: x[1])[0] if block_counts else "NONE"
+
+        # Per-symbol summary (show reason for each symbol)
+        sym_summary = []
+        for sym, (reason_code, reason_str, ts) in _symbol_block_reasons.items():
+            sym_summary.append(f"{sym}:{reason_code}")
+
+        print(
+            f"[V10.13a CYCLE] "
+            f"symbols={len(_symbol_block_reasons)} "
+            f"generated={_cycle_stats['candidates_generated']} "
+            f"passed={_cycle_stats['candidates_passed']} "
+            f"executed={_cycle_stats['candidates_executed']} "
+            f"top_block={top_block} "
+            f"ev_thr={ev_thr:.4f} score_thr={score_thr:.4f} "
+            f"unblock={'YES' if unblock else 'NO'} "
+            f"idle={idle_sec:.1f}s | " +
+            " ".join(sym_summary[:10])  # Show first 10 symbols
+        )
+    except Exception as e:
+        import logging as _log
+        _log.getLogger(__name__).debug(f"Cycle summary error: {e}")
+
 
 def main():
     # Initialize event bus handlers (Zero Bug V2 Migration Phase 1)
@@ -1283,6 +1373,11 @@ def main():
             print_learning_monitor()
         except Exception:
             pass
+
+        # ────────────────────────────────────────────────────────────────────
+        # V10.13a: Print cycle summary with per-symbol block reasons
+        # ────────────────────────────────────────────────────────────────────
+        print_cycle_summary(now)
 
 
 if __name__ == "__main__":

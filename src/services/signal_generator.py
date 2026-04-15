@@ -708,6 +708,13 @@ def on_price(data):
 
     if result:
         publish("signal_created", result)
+    else:
+        # V10.13a: Track RDE rejection for per-symbol block reason reporting
+        try:
+            from bot2.main import track_symbol_block_reason
+            track_symbol_block_reason(sym, "RDE_REJECTED", "Rejected by realtime_decision_engine")
+        except (ImportError, Exception):
+            pass  # Fail silently if main not yet loaded or circular import issue
     # EV-rejected: track_blocked() already called inside evaluate_signal()
 
 
