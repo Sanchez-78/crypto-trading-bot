@@ -30,6 +30,7 @@ class TradeOrchestrator:
         # Strategy router — lazy import to avoid hard dependency on talib at import time
         self._capital = capital
         self._router = None
+        self.current_regime = "RANGING"  # Track current regime for outcome broadcasting
 
     def _get_router(self):
         if self._router is None:
@@ -132,23 +133,46 @@ class TradeOrchestrator:
             obi=market.get("obi", 0.0) if market else 0.0,
             atr=atr,
         )
+        self.current_regime = regime  # Update current regime for outcome broadcasting
         return self.on_signal(sig, market) if market else None
 
     # ── Internal ──────────────────────────────────────────────────────────────
 
     def _close(self, exit_price: float, reason: CloseReason) -> Trade:
+        from src.optimized.bot_types import TradeResult
         t = self.active
         t.exit_price = exit_price
         t.closed_at = datetime.now()
         t.close_reason = reason
         t = self.classifier.classify(t)
-        self.pipeline.on_trade_closed(t.symbol, "RANGING", t.net_pnl_pct, reason)
+        self.pipeline.on_trade_closed(t.symbol, self.current_regime, t.net_pnl_pct, reason)
         self.active = None
         self.history.append(t)
         logger.info(
             "[%s] CLOSE %s PnL=%+.4f%% %s %ss",
             t.id, t.result.value, t.net_pnl_pct, reason.value, t.duration_seconds,
         )
+        
+        # PATCH: Broadcast outcome to learning system (unlocks feedback loop)
+        self.pipeline.broadcast_outcome(
+            trade_id=t.id,
+            symbol=t.symbol,
+            direction=t.direction.value,
+            regime=self.current_regime,
+            won=t.result == TradeResult.WIN,
+            net_pnl_pct=t.net_pnl_pct,
+            duration_s=t.duration_seconds or 0,
+            signal_features={
+                "obi": t.obi,
+                "conviction": t.probability,
+                "expected_value": t.expected_value,
+                "atr": t.atr,
+                "entry_size": t.entry_size,
+            },
+            filters_passed=[],
+            timing_frac=0.0,
+        )
+        
         return t
 
     # ── Statistics ────────────────────────────────────────────────────────────
