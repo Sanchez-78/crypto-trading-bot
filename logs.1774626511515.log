@@ -1,121 +1,3 @@
-      "SOLUSDT_BEAR_TREND": {
-        "sym": "SOLUSDT",
-        "reg": "BEAR_TREND",
-        "n": 2,
-        "ev": 0.0,
-        "wr": 0.5,
-        "conv": 0.0,
-        "bandit": 0.0
-      },
-      "ETHUSDT_BEAR_TREND": {
-        "sym": "ETHUSDT",
-        "reg": "BEAR_TREND",
-        "n": 1,
-        "ev": 0.0,
-        "wr": 1.0,
-        "conv": 0.0,
-        "bandit": 0.0
-      },
-      "BTCUSDT_RANGING": {
-        "sym": "BTCUSDT",
-Menu
-        "reg": "RANGING",
-        "n": 1,
-        "ev": 0.0,
-        "wr": 1.0,
-        "conv": 0.0,
-        "bandit": 0.0
-      },
-      "XRPUSDT_BEAR_TREND": {
-        "sym": "XRPUSDT",
-        "reg": "BEAR_TREND",
-        "n": 1,
-        "ev": 0.0,
-        "wr": 1.0,
-        "conv": 0.0,
-        "bandit": 0.0
-      },
-      "BNBUSDT_BEAR_TREND": {
-        "sym": "BNBUSDT",
-        "reg": "BEAR_TREND",
-        "n": 1,
-        "ev": 0.0,
-        "wr": 0.0,
-        "conv": 0.0,
-        "bandit": 0.0
-      },
-      "DOTUSDT_BULL_TREND": {
-        "sym": "DOTUSDT",
-        "reg": "BULL_TREND",
-        "n": 1,
-        "ev": 0.0,
-        "wr": 1.0,
-        "conv": 0.0,
-        "bandit": 0.0
-      }
-    },
-    "features": {
-      "is_weekend": 0.3343,
-      "bounce": 0.3343,
-      "breakout": 0.3343,
-      "trend": 0.3343,
-      "pullback": 0.3343,
-      "mom": 0.3343,
-      "wick": 0.3343,
-      "vol": 0.3343
-    },
-    "block_reasons": {
-      "SKIP_SCORE": 213,
-      "LOSS_CLUSTER": 166,
-      "OFI_TOXIC": 23
-    },
-    "completed_trades": 1269,
-    "best_edge": "DOTUSDT (RANGING)",
-    "defense": {
-      "wall_exits": 0,
-      "timeouts": 0,
-      "l2_rejected": 0,
-      "corr_rejected": 0,
-      "defended": 0,
-      "efficiency": 0.0
-    },
-    "concept_drift": false
-  }
-}
-============================================================
-  CRYPTOMASTER  |  0h 10m 53s  | TRENINK 
-============================================================
-    ZIVE CENY  (Binance · kazde 1 s)
-  ────────────────────────────────────────────────────────
-    BTC  $   74,026.0000   ─  +0.000%
-    ETH  $    2,323.3600   ─  +0.000%
-    ADA  $        0.2401   ─  +0.000%
-    BNB  $      614.5800   ─  +0.000%
-    DOT  $        1.1600   ─  +0.000%
-    SOL  $       83.1200   ─  +0.000%
-    XRP  $        1.3500   ─  +0.000%
-    VYSLEDKY OBCHODOVANI
-  ────────────────────────────────────────────────────────
-    Obchody    1269  (OK 366  X 308  ~ 558)
-    Winrate     54.3%  ━━━━━━━━━━●─────────── 54%  cil 55%  (bez timeoutu)
-    Zisk        +0.00028453  ▶━━━━━●────────────────
-    Drawdown    0.00010185  (pokles od vrcholu)
-    ----------------------------------------
-    Profit Factor  99.00x  (zisk / ztrata, cil > 1.5)
-    Expectancy     +0.00000001  (prumerny vynos / obchod)
-    Nejlepsi      +0.00000650   Nejhorsi  0.00000000
-    Posledni obchod  9h 14m zpet
-    VYSLEDKY PO MENACH
-  ────────────────────────────────────────────────────────
-    Mena  Obch  WR  Bar          Zisk
-    --------------------------------------------------
-    BTC  19  37%  ━━━━━━━●────────────── 37%  -0.00003012  X
-    ETH  6  50%  ━━━━━━━━━━●─────────── 50%  -0.00002496  ?
-    ADA  24  62%  ━━━━━━━━━━━━●───────── 62%  +0.00009267  OK
-    BNB  22  59%  ━━━━━━━━━━━━●───────── 59%  +0.00024562  OK
-    DOT  4  100%  ━━━━━━━━━━━━━━━━━━━━━● 100%  +0.00001004  OK
-    SOL  21  48%  ━━━━━━━━━●──────────── 48%  -0.00002973  ?
-    XRP  4  50%  ━━━━━━━━━━●─────────── 50%  +0.00002101  ?
     UCENI – STAV A USPESNOST
   ────────────────────────────────────────────────────────
     Kalibrace      KALIBROVAN  ✓  ━━━━━━━━━━━━━━━━━━━━━● 100%  (1269 obchodu celkem)
@@ -134,8 +16,9 @@ Menu
     Velikost pozice      1.00x  EV-only · loss streak → scale · DD halt 40%
     STRATEGIE  (ADX + EMA + MACD + BB + RSI)
   ────────────────────────────────────────────────────────
-    Rezim trhu   BULL TREND  silny vzestup  (87%)
-    Signaly       0 zachyceno  0 po filtru  402 blokovano  1269 provedeno
+    Rezim trhu   BULL TREND  silny vzestup  (91%)
+Menu
+    Signaly       0 zachyceno  0 po filtru  573 blokovano  1269 provedeno
     Filtrace      0.0%  projde filtrem  TP: 1.2xATR  /  SL: 0.8xATR  (RR 1.5:1)  EV-only
     POSLEDNI ROZHODNUTI
   ────────────────────────────────────────────────────────
@@ -165,14 +48,14 @@ Menu
   SOL  BULL_TREND  n:19    EV:-0.000  WR:47%  conv:-- (19/20)  bandit:0.51
   XRP  BULL_TREND  n:3     EV:+0.000  WR:33%  conv:-- (3/20)  bandit:0.00
   Features (WR per signal key):
-    is_weekend            [####--------]  33%  -
-    bounce                [####--------]  33%  -
-    breakout              [####--------]  33%  -
-    trend                 [####--------]  33%  -
     pullback              [####--------]  33%  -
-    mom                   [####--------]  33%  -
     wick                  [####--------]  33%  -
+    trend                 [####--------]  33%  -
+    breakout              [####--------]  33%  -
+    bounce                [####--------]  33%  -
     vol                   [####--------]  33%  -
+    is_weekend            [####--------]  33%  -
+    mom                   [####--------]  33%  -
   [!] LEARNING: WEAK EDGE -- still converging
   Health: 0.154  [WEAK]
 ========================
@@ -181,7 +64,7 @@ Menu
   [!] LEARNING: WEAK EDGE -- still converging
   ── CYCLE SNAPSHOT ────────────────────────────────────────
 {
-  "cycle_time": 1776245322.8717558,
+  "cycle_time": 1776247955.5420294,
   "positions": 0,
   "learning": {
     "health": 0.1543,
@@ -233,7 +116,6 @@ Menu
         "conv": 0.0,
         "bandit": 0.0
       },
-      "DOTUSDT_RANGING": {
       "DOTUSDT_RANGING": {
         "sym": "DOTUSDT",
         "reg": "RANGING",
@@ -306,168 +188,3 @@ Menu
         "conv": 0.0,
         "bandit": 0.0
       },
-      "XRPUSDT_BEAR_TREND": {
-        "sym": "XRPUSDT",
-        "reg": "BEAR_TREND",
-        "n": 1,
-        "ev": 0.0,
-        "wr": 1.0,
-        "conv": 0.0,
-        "bandit": 0.0
-      },
-      "BNBUSDT_BEAR_TREND": {
-        "sym": "BNBUSDT",
-        "reg": "BEAR_TREND",
-        "n": 1,
-        "ev": 0.0,
-        "wr": 0.0,
-        "conv": 0.0,
-        "bandit": 0.0
-      },
-      "DOTUSDT_BULL_TREND": {
-        "sym": "DOTUSDT",
-        "reg": "BULL_TREND",
-        "n": 1,
-        "ev": 0.0,
-        "wr": 1.0,
-        "conv": 0.0,
-        "bandit": 0.0
-      }
-    },
-    "features": {
-      "is_weekend": 0.3343,
-      "bounce": 0.3343,
-      "breakout": 0.3343,
-      "trend": 0.3343,
-      "pullback": 0.3343,
-      "mom": 0.3343,
-      "wick": 0.3343,
-      "vol": 0.3343
-    },
-    "block_reasons": {
-      "SKIP_SCORE": 226,
-      "LOSS_CLUSTER": 168,
-      "OFI_TOXIC": 23
-    },
-    "completed_trades": 1269,
-    "best_edge": "DOTUSDT (RANGING)",
-    "defense": {
-      "wall_exits": 0,
-      "timeouts": 0,
-      "l2_rejected": 0,
-      "corr_rejected": 0,
-      "defended": 0,
-      "efficiency": 0.0
-    },
-    "concept_drift": false
-  }
-}
-============================================================
-  CRYPTOMASTER  |  0h 12m 26s  | TRENINK 
-============================================================
-    ZIVE CENY  (Binance · kazde 1 s)
-  ────────────────────────────────────────────────────────
-    BTC  $   73,972.0000   ─  +0.000%
-    ETH  $    2,321.0500   ─  +0.000%
-    ADA  $        0.2400   ─  +0.000%
-    BNB  $      614.2000   ─  +0.000%
-    DOT  $        1.1600   ─  +0.000%
-    SOL  $       83.0500   ─  +0.000%
-    XRP  $        1.3500   ─  +0.000%
-    VYSLEDKY OBCHODOVANI
-  ────────────────────────────────────────────────────────
-    Obchody    1269  (OK 366  X 308  ~ 558)
-    Winrate     54.3%  ━━━━━━━━━━●─────────── 54%  cil 55%  (bez timeoutu)
-    Zisk        +0.00028453  ▶━━━━━●────────────────
-    Drawdown    0.00010185  (pokles od vrcholu)
-    ----------------------------------------
-    Profit Factor  99.00x  (zisk / ztrata, cil > 1.5)
-    Expectancy     +0.00000001  (prumerny vynos / obchod)
-    Nejlepsi      +0.00000650   Nejhorsi  0.00000000
-    Posledni obchod  9h 15m zpet
-    VYSLEDKY PO MENACH
-  ────────────────────────────────────────────────────────
-    Mena  Obch  WR  Bar          Zisk
-    --------------------------------------------------
-    BTC  19  37%  ━━━━━━━●────────────── 37%  -0.00003012  X
-    ETH  6  50%  ━━━━━━━━━━●─────────── 50%  -0.00002496  ?
-    ADA  24  62%  ━━━━━━━━━━━━●───────── 62%  +0.00009267  OK
-    BNB  22  59%  ━━━━━━━━━━━━●───────── 59%  +0.00024562  OK
-    DOT  4  100%  ━━━━━━━━━━━━━━━━━━━━━● 100%  +0.00001004  OK
-    SOL  21  48%  ━━━━━━━━━●──────────── 48%  -0.00002973  ?
-    XRP  4  50%  ━━━━━━━━━━●─────────── 50%  +0.00002101  ?
-    UCENI – STAV A USPESNOST
-  ────────────────────────────────────────────────────────
-    Kalibrace      KALIBROVAN  ✓  ━━━━━━━━━━━━━━━━━━━━━● 100%  (1269 obchodu celkem)
-    Trend uceni    SBÍRÁ DATA...
-    Poslednich 0    0.0%  vs  prumer 54.3%  (-54.3%)
-    EV vykon       prumer 0.036  min 0.030  max 0.048  (50 obch)
-    Uzavreni       TP 0%  SL 0%  trail 0%  timeout 99%
-    Kalibrace p    p=50.5%  WR=54.3%  odchylka 3.8pp  dobre
-    WR dle rezimu
-      BULL   ━━━━━━━━━━●─────────── 54%  54%  (87 obch)
-      BEAR   ━━━━━━━━━━━━●───────── 62%  62%  (8 obch)
-      RANGE  ━━━━━━━●────────────── 40%  40%  (5 obch)
-    AUDITOR  (ochrana strategie)
-  ────────────────────────────────────────────────────────
-    EV prah              0.000  t15=0  t60=0  aktivni
-    Velikost pozice      1.00x  EV-only · loss streak → scale · DD halt 40%
-    STRATEGIE  (ADX + EMA + MACD + BB + RSI)
-  ────────────────────────────────────────────────────────
-    Rezim trhu   BULL TREND  silny vzestup  (88%)
-    Signaly       0 zachyceno  0 po filtru  417 blokovano  1269 provedeno
-    Filtrace      0.0%  projde filtrem  TP: 1.2xATR  /  SL: 0.8xATR  (RR 1.5:1)  EV-only
-    POSLEDNI ROZHODNUTI
-  ────────────────────────────────────────────────────────
-    BTC  zadny signal
-    ETH  zadny signal
-    ADA  zadny signal
-    BNB  zadny signal
-    DOT  zadny signal
-    SOL  zadny signal
-    XRP  zadny signal
-  ────────────────────────────────────────────────────────
-  Sbiram data ━━━ ● Trenink ─── Aktivni
-  ────────────────────────────────────────────────────────
-  STAV:  TRENINK  (winrate 54%->55%)
-============================================================
-=== EXECUTION ENGINE ===
-  Equity:   1.000000  |  DD: 0.00%
-  Exposure: 0.000  |  Positions: 0
-  Sharpe:   0.000  |  WR: 0.00%  |  Edge: 0.00000  |  MaxDD: 0.00%
-  Failure:  0.000  [OK]
-=== LEARNING MONITOR ===
-  ADA  BULL_TREND  n:24    EV:+0.002  WR:62%  conv:0.70  bandit:0.38
-  BNB  BULL_TREND  n:18    EV:+0.007  WR:72%  conv:-- (18/20)  bandit:0.50
-  BNB  RANGING     n:3     EV:+0.000  WR:0%  conv:-- (3/20)  bandit:0.00
-  BTC  BULL_TREND  n:17    EV:-0.001  WR:35%  conv:-- (17/20)  bandit:0.41
-  ETH  BULL_TREND  n:5     EV:+0.000  WR:40%  conv:-- (5/20)  bandit:0.00
-  SOL  BULL_TREND  n:19    EV:-0.000  WR:47%  conv:-- (19/20)  bandit:0.51
-  XRP  BULL_TREND  n:3     EV:+0.000  WR:33%  conv:-- (3/20)  bandit:0.00
-  Features (WR per signal key):
-    is_weekend            [####--------]  33%  -
-    bounce                [####--------]  33%  -
-🚨 ANOMALY: STALL 1776245425.9421444s > 900s
-🚨 ANOMALY: NO_SIGNALS 69 cycles
-SELF_HEAL: STALL (no trades 900s) → boosting exploration
-SELF_HEAL: NO_SIGNALS (pipeline dead) → reducing filter thresholds
-🚨 ANOMALY: STALL 1776245436.6656792s > 900s
-🚨 ANOMALY: NO_SIGNALS 70 cycles
-SELF_HEAL: STALL (no trades 900s) → boosting exploration
-SELF_HEAL: NO_SIGNALS (pipeline dead) → reducing filter thresholds
-🚨 ANOMALY: STALL 1776245446.6741486s > 900s
-🚨 ANOMALY: NO_SIGNALS 71 cycles
-SELF_HEAL: STALL (no trades 900s) → boosting exploration
-SELF_HEAL: NO_SIGNALS (pipeline dead) → reducing filter thresholds
-🚨 ANOMALY: STALL 1776245456.6805017s > 900s
-🚨 ANOMALY: NO_SIGNALS 72 cycles
-SELF_HEAL: STALL (no trades 900s) → boosting exploration
-SELF_HEAL: NO_SIGNALS (pipeline dead) → reducing filter thresholds
-🚨 ANOMALY: STALL 1776245468.024656s > 900s
-🚨 ANOMALY: NO_SIGNALS 73 cycles
-SELF_HEAL: STALL (no trades 900s) → boosting exploration
-SELF_HEAL: NO_SIGNALS (pipeline dead) → reducing filter thresholds
-🚨 ANOMALY: STALL 1776245478.0348299s > 900s
-🚨 ANOMALY: NO_SIGNALS 74 cycles
-SELF_HEAL: STALL (no trades 900s) → boosting exploration
-SELF_HEAL: NO_SIGNALS (pipeline dead) → reducing filter thresholds

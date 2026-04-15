@@ -992,35 +992,69 @@ def evaluate_signal(signal):
             print(f"    decision=SKIP_SCORE  ev={_ev_adj:.3f}{_timing_str}  score={_score_adj:.3f}<{_score_threshold:.3f}{_unblock_str}")
             return None
 
-    # ── B17: direction bias guard ─────────────────────────────────────────────
-    try:
-        from src.services.signal_filter import is_biased as _ib2, log_signal_outcome as _lso3
-        _bias_blocked, _bias_reason = _ib2(sym, signal.get("action", "BUY"))
-        if _bias_blocked:
-            track_blocked(reason="BIAS_DISABLED")
-            _lso3(sym, accepted=False, reason="BIAS_DISABLED")
-            print(f"    decision=BIAS_DISABLED  {_bias_reason}")
-            return None
-    except Exception:
-        pass
+    # ── V10.12f: B17 direction bias guard — skip for unblock fallback ─────────
+    # V10.12f: Allow fallback unblock trades to bypass optional guards
+    # Fallback is already bounded by EV/score, rate limits, and size reduction
+    if not _unblock_fallback_used:
+        try:
+            from src.services.signal_filter import is_biased as _ib2, log_signal_outcome as _lso3
+            _bias_blocked, _bias_reason = _ib2(sym, signal.get("action", "BUY"))
+            if _bias_blocked:
+                track_blocked(reason="BIAS_DISABLED")
+                _lso3(sym, accepted=False, reason="BIAS_DISABLED")
+                print(f"    decision=BIAS_DISABLED  {_bias_reason}")
+                return None
+        except Exception:
+            pass
 
-    # ── OFI toxicity guard (arXiv:2602.00776) ────────────────────────────────
+    # ── V10.12f: OFI toxicity guard — soft penalty always, hard block only for normal trades ─
+    # V10.12f: Fallback unblock trades skip OFI hard block but keep soft size penalty
+    # Rationale: fallback is last resort when stalled; soft penalty still applied via auditor_factor
     _ofi_size = 1.0
     try:
         from src.services.ofi_guard import is_toxic as _ofi_toxic, ofi_size_factor as _ofi_sf
         _ofi_blocked, _ofi_reason = _ofi_toxic(sym, signal.get("action", "BUY"))
-        if _ofi_blocked:
+        
+        # V10.12f: Hard OFI block only applied if not using unblock fallback
+        if _ofi_blocked and not _unblock_fallback_used:
             track_blocked(reason="OFI_TOXIC")
             print(f"    decision=OFI_TOXIC  {_ofi_reason}")
             return None
+        
+        # Always apply soft OFI size penalty (even for fallback)
         _ofi_size = _ofi_sf(sym, signal.get("action", "BUY"))
         if _ofi_size < 1.0:
-            print(f"    OFI soft penalty: size×{_ofi_size:.2f}")
+            _fallback_str = " (fallback_soften)" if _unblock_fallback_used else ""
+            print(f"    OFI soft penalty: size×{_ofi_size:.2f}{_fallback_str}")
     except Exception:
         pass
     # Apply OFI size factor to auditor_factor
     if _ofi_size < 1.0:
         auditor_factor = min(1.0, auditor_factor * _ofi_size)
+
+    # ════════════════════════════════════════════════════════════════════════════════
+    # V10.12f: ANTI-DEADLOCK GUARD — Ensure non-zero pass-through during critical idle
+    # ════════════════════════════════════════════════════════════════════════════════
+    # If system is in critical idle (900s+) and this signal passes basic safety checks,
+    # force acceptance to break deadlock. This is the ultimate fallback.
+    _anti_deadlock_triggered = False
+    if not _unblock_fallback_used and is_unblock_mode():
+        try:
+            # Check if signal passes minimum viability checks
+            _has_positive_rr = rr >= MIN_RR
+            _has_decent_ev = ev > 0.0 or (ev >= -0.05 and spread_pct <= 0.005)
+            _is_new_pair = _M.get("trades", 0) < 100  # Still in learning phase
+            _no_cluster_forever = sym not in _blocked_until
+            
+            # Force accept if all basic checks pass and system is stalled
+            if _has_positive_rr and (_has_decent_ev or _is_new_pair) and _no_cluster_forever:
+                _anti_deadlock_triggered = True
+                _unblock_fallback_used = True
+                record_unblock_trade()
+                log.warning(f"[V10.12f_ANTI_DEADLOCK] {sym}  forcing micro-trade to break 900s+ stall  "
+                           f"ev={ev:.4f}  rr={rr:.2f}  spread={spread_pct:.4f}")
+        except Exception as _ad_err:
+            log.debug("anti-deadlock error: %s", _ad_err)
 
     # V10.12e: Add unblock state and size multiplier to signal
     _unblock_size_mult = unblock_size_multiplier()
@@ -1034,10 +1068,11 @@ def evaluate_signal(signal):
     signal["combo_penalty"]    = round(combo_pen, 3)
     signal["unblock_mode"]     = _is_unblock
     signal["unblock_fallback"] = _unblock_fallback_used
+    signal["anti_deadlock"]    = _anti_deadlock_triggered
     signal["unblock_size_mult"] = _unblock_size_mult
     
-    # V10.12e: Enhanced decision logging with unblock state
-    _ub_str = f" unblock=True fallback={_unblock_fallback_used} size×{_unblock_size_mult:.2f}" if _is_unblock else ""
+    # V10.12f: Enhanced decision logging with unblock state and anti-deadlock info
+    _ub_str = f" unblock=True fallback={_unblock_fallback_used} anti_deadlock={_anti_deadlock_triggered} size×{_unblock_size_mult:.2f}" if _is_unblock else ""
     print(f"    decision=TAKE  ev={ev:.4f}  p={win_prob:.4f}  "
           f"af={auditor_factor:.2f}  coh={_coh:.3f}{_ub_str}")
 
