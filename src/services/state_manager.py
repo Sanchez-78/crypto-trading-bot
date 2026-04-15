@@ -56,6 +56,7 @@ import asyncio
 import json
 import logging
 import os
+import time as _time
 from typing import Any
 
 log = logging.getLogger(__name__)
@@ -68,29 +69,69 @@ REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 _LIST_CAP = 200
 _SYM_PNL_CAP = 8
 
-# ── Lazy async client ──────────────────────────────────────────────────────────
+# ── Lazy async client with cooldown window (V10.12g) ────────────────────────────
 
-_redis_client: Any | None = None   # redis.asyncio.Redis instance
+_redis_client: Any | None = None        # redis.asyncio.Redis instance
+_redis_disabled_until: float = 0.0      # timestamp when cooldown expires
+_redis_warned: bool = False             # flag to log warning only once per cooldown
 
 
 async def _get_client() -> Any:
     """Return (or create) a shared async Redis client."""
-    global _redis_client
+    """
+    Return (or create) a shared async Redis client.
+    
+    V10.12g: After connection failure, Redis enters 60-second cooldown window.
+    During cooldown, raises RuntimeError immediately without retry overhead.
+    This prevents connection spam and allows graceful degradation.
+    """
+    global _redis_client, _redis_disabled_until, _redis_warned
+    
+    now = _time.time()
+    
+    # If cooldown active, reject immediately without trying
+    if now < _redis_disabled_until:
+        raise RuntimeError("Redis temporarily disabled (cooldown window active)")
+    
     if _redis_client is None:
         try:
             import redis.asyncio as aioredis  # type: ignore[import]
             _redis_client = aioredis.from_url(
                 REDIS_URL,
-                socket_connect_timeout=2,
-                socket_timeout=2,
+                socket_connect_timeout=1,
+                socket_timeout=1,
                 decode_responses=True,
             )
+            await _redis_client.ping()
+            _redis_warned = False  # Reset warning flag on successful connection
         except ImportError as e:
             raise RuntimeError(
                 "redis-py not installed. Run: pip install redis") from e
+        except Exception as exc:
+            # Connection failed: enter cooldown window
+            _redis_client = None
+            _redis_disabled_until = now + 60  # 60-second cooldown
+            
+            # Log warning only on first failure, then silent for remaining cooldown
+            if not _redis_warned:
+                log.warning("Redis unavailable; falling back to in-memory mode: %s", exc)
+                _redis_warned = True
+            raise
+    
     return _redis_client
 
 
+async def _safe_client() -> Any | None:
+    """
+    V10.12g: Attempt to get Redis client; return None if unavailable.
+    
+    Used by all async Redis operations to enable graceful degradation
+    when Redis is unreachable.
+    """
+    try:
+        return await _get_client()
+    except Exception:
+        return None
 def _run(coro: Any) -> Any:
     """Run a coroutine in a fresh event loop (sync shim, thread-safe)."""
     try:
@@ -491,7 +532,7 @@ async def _async_clear_redis_state() -> int:
                 if cursor == 0:
                     break
     except Exception as exc:
-        log.warning("clear_redis_state error: %s", exc)
+        log.debug("clear_redis_state skipped: %s", exc)
     return deleted
 
 

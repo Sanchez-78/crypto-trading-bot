@@ -37,9 +37,155 @@ from src.services.adaptive_recovery import (
 from src.services.smart_exit_engine import evaluate_position_exit
 from src.services.reward_system import compute_reward
 
+
+# ── V10.12g: Safe idle time calculation ─────────────────────────────────────
+
+def safe_idle_seconds(last_trade_ts: float | None = None, now: float | None = None) -> float:
+    """
+    V10.12g: Calculate safe idle seconds, preventing unix-time-sized values.
+    
+    If last_trade_ts is None/0/invalid, returns 0.0 (not idle yet).
+    Never returns values > 1 day (prevents timestamp bugs from exploding).
+    """
+    if last_trade_ts is None:
+        last_trade_ts = _last_trade_ts[0]
+    
+    if now is None:
+        now = _time.time()
+    
+    # Invalid cases
+    if not last_trade_ts:
+        return 0.0
+    
+    try:
+        ts = float(last_trade_ts)
+    except (ValueError, TypeError):
+        return 0.0
+    
+    if ts <= 0:
+        return 0.0
+    
+    if ts > now:
+        return 0.0
+    
+    idle = now - ts
+    # Sanity check: if > 86400s (1 day) probably a bug
+    if idle > 86400:
+        log.warning("safe_idle_seconds: unrealistic idle=%.0fs, resetting", idle)
+        return 0.0
+    
+    return max(0.0, idle)
+
+
+# ── V10.12g: Comprehensive decision logging ──────────────────────────────────
+
+def log_decision(
+    decision: str,
+    symbol: str,
+    regime: str,
+    unblock_mode: bool,
+    raw_ev: float,
+    adj_ev: float,
+    raw_score: float,
+    adj_score: float,
+    ev_threshold: float,
+    score_threshold: float,
+    timing_mult: float = 1.0,
+    ofi_mult: float = 1.0,
+    cooldown_remaining: float = float('inf'),
+    fallback_considered: bool = False,
+    fallback_used: bool = False,
+    anti_deadlock: bool = False,
+    size_mult: float = 1.0,
+    reason: str = "unspecified"
+) -> None:
+    """
+    V10.12g: Log comprehensive decision state for diagnostics.
+    
+    Captures all decision variables at the final decision point so pipeline
+    deadlocks can be diagnosed from logs.
+    """
+    if cooldown_remaining == float('inf'):
+        cooldown_str = "inf"
+    else:
+        cooldown_str = f"{cooldown_remaining:.0f}"
+    
+    log.info(
+        "decision=%s sym=%s reg=%s unblock=%s ev=%.4f->%.4f score=%.4f->%.4f "
+        "thr_ev=%.4f thr_sc=%.4f timing=%.2f ofi=%.2f cooldown=%s "
+        "fallback_considered=%s fallback_used=%s anti_deadlock=%s size=%.2f reason=%s",
+        decision, symbol, regime, unblock_mode,
+        raw_ev, adj_ev, raw_score, adj_score,
+        ev_threshold, score_threshold, timing_mult, ofi_mult, cooldown_str,
+        fallback_considered, fallback_used, anti_deadlock, size_mult, reason
+    )
+
+
+def log_cycle_result(
+    n_symbols: int,
+    n_passed: int,
+    unblock_mode: bool,
+    idle_seconds: float,
+    redis_available: bool = True
+) -> None:
+    """
+    V10.12g: Log cycle-level result when zero candidates pass.
+    
+    Helps diagnose why pipeline is stuck with no passthrough.
+    """
+    log.info(
+        "cycle_result=%s symbols=%d passed=%d unblock=%s idle=%.1f redis=%s",
+        "no_candidate" if n_passed == 0 else "has_candidate",
+        n_symbols, n_passed, unblock_mode, idle_seconds,
+        "available" if redis_available else "unavailable"
+    )
+
+
+def get_current_status() -> dict:
+    """
+    V10.12g: Return current system status for dashboard display.
+    
+    Includes real thresholds, unblock mode, idle time, Redis status.
+    """
+    try:
+        from src.services.state_manager import is_redis_available
+    except Exception:
+        is_redis_available = lambda: False
+    
+    idle_sec = safe_idle_seconds()
+    unblock = is_unblock_mode()
+    
+    return {
+        'idle_seconds': idle_sec,
+        'unblock_mode': unblock,
+        'ev_threshold': 0.015 if unblock else 0.025,
+        'score_threshold': 0.12 if unblock else 0.18,
+        'redis_available': is_redis_available(),
+        'last_trade_ts': _last_trade_ts[0],
+    }
+
+
+def format_status_for_display() -> str:
+    """
+    V10.12g: Format status as human-readable string for dashboard.
+    """
+    status = get_current_status()
+    
+    redis_status = "OK" if status['redis_available'] else "OFFLINE"
+    unblock_str = "UNBLOCK" if status['unblock_mode'] else "NORMAL"
+    
+    return (
+        f"EV threshold: {status['ev_threshold']:.3f} ({unblock_str})  "
+        f"Score threshold: {status['score_threshold']:.2f}  "
+        f"Idle: {status['idle_seconds']:.0f}s  "
+        f"Redis: {redis_status}"
+    )
+
+
+
 # ── Anti-deadlock state ───────────────────────────────────────────────────────
 # Mutable scalar — updated on every trade close via update_calibrator().
-_last_trade_ts: list[float] = [0.0]
+_last_trade_ts: list[float] = [_time.time()]  # V10.12g: init to now, not 0.0
 
 _TP_MULT = {"BULL_TREND": 0.6, "BEAR_TREND": 0.6, "RANGING": 0.5, "QUIET_RANGE": 0.4}
 _SL_MULT = {"BULL_TREND": 0.4, "BEAR_TREND": 0.4, "RANGING": 0.4, "QUIET_RANGE": 0.35}
@@ -481,7 +627,7 @@ def is_unblock_mode(no_trades_seconds: float = None, no_signals_cycles: int = No
     """
     if no_trades_seconds is None:
         try:
-            no_trades_seconds = _time.time() - _last_trade_ts[0] if _last_trade_ts[0] > 0 else 0.0
+            no_trades_seconds = safe_idle_seconds(_last_trade_ts[0])
         except:
             no_trades_seconds = 0.0
     
@@ -525,7 +671,7 @@ def unblock_size_multiplier(no_trades_sec: float = None, no_signals: int = None)
     """V10.12d: Position size reduction during unblock. 900s+ → 0.25x, 40+ cycles → 0.35x."""
     if no_trades_sec is None:
         try:
-            no_trades_sec = _time.time() - _last_trade_ts[0] if _last_trade_ts[0] > 0 else 0.0
+            no_trades_sec = safe_idle_seconds(_last_trade_ts[0])
         except:
             no_trades_sec = 0.0
     
