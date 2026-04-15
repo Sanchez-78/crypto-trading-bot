@@ -1,5 +1,51 @@
 import threading, time
 
+# ────────────────────────────────────────────────────────────────────────────
+# V10.12i: Safe idle computation helper
+# ────────────────────────────────────────────────────────────────────────────
+def safe_idle_seconds(last_trade_ts, now=None):
+    """
+    Compute idle seconds safely, preventing unix-time-sized values.
+
+    V10.12i: Validates timestamps and clamps unrealistic values to 0.0
+    to prevent false STALL/self-heal triggers from invalid timestamps.
+
+    Args:
+        last_trade_ts: float or int timestamp of last trade, or None
+        now: current time (defaults to time.time())
+
+    Returns:
+        float: idle seconds (0.0 if invalid, otherwise max(0, now - last_trade_ts))
+    """
+    if now is None:
+        now = time.time()
+
+    # Invalid timestamp → 0 idle
+    if not last_trade_ts:
+        return 0.0
+
+    try:
+        ts = float(last_trade_ts)
+    except (ValueError, TypeError):
+        return 0.0
+
+    # Zero or negative timestamp → 0 idle
+    if ts <= 0:
+        return 0.0
+
+    # Future timestamp → 0 idle
+    if ts > now:
+        return 0.0
+
+    idle = max(0.0, now - ts)
+
+    # Unix-time-sized or corrupted value → clamp to 0
+    if idle > 86400:
+        return 0.0
+
+    return idle
+
+
 from src.services.market_stream import start
 from src.services.firebase_client import init_firebase, daily_budget_report, load_history, save_metrics_full
 from src.services.learning_event import get_metrics, bootstrap_from_history
@@ -152,23 +198,28 @@ def atomic_render(snapshot_data, component_name=""):
 # ────────────────────────────────────────────────────────────────────────────
 # PATCH 5 & 6: Watchdog + Last Trade Tracking
 # ────────────────────────────────────────────────────────────────────────────
-last_trade_ts = [0.0]  # use list for mutability in watchdog function
+last_trade_ts = [time.time()]  # V10.12i: Initialize to current time, not 0.0
 
 
 def watchdog(now, agent=None):
     """PATCH 5 & ZERO BUG V2: Watchdog — boost exploration if no trades in 600 seconds.
-    
+
     Monitors trade frequency and increases exploration rate if system is idle.
     This maintains signal flow during market downturns or poor conditions.
-    
+
+    V10.12i: Use safe idle computation to prevent unix-time-sized STALL values.
+
     Uses event_bus.emit() instead of direct print() calls (Zero Bug Migration).
     """
     bus = get_event_bus()
-    
-    if now - last_trade_ts[0] > 600:
+
+    # V10.12i: Use safe idle computation instead of raw timestamp arithmetic
+    idle_sec = safe_idle_seconds(last_trade_ts[0], now)
+
+    if idle_sec > 600:
         msg = "[WATCHDOG] No trades for 600s → boosting exploration"
         bus.emit("LOG_OUTPUT", {"message": msg}, now)
-        
+
         if agent and hasattr(agent, 'exploration_rate'):
             agent.exploration_rate = min(1.0, agent.exploration_rate + 0.2)
         else:
@@ -179,14 +230,14 @@ def watchdog(now, agent=None):
                     rde._exploration_boost = min(1.0, rde._exploration_boost + 0.2)
             except Exception:
                 pass
-    
+
     # ────────────────────────────────────────────────────────────────────────
     # PATCH 3.4 + ZERO BUG V2: Watchdog micro-trades — Allow small trades when idle
     # ────────────────────────────────────────────────────────────────────────
-    if now - last_trade_ts[0] > 900:  # 15 minutes idle
+    if idle_sec > 900:  # 15 minutes idle
         msg = "[WATCHDOG] Critical idle (15min) → enabling micro-trades"
         bus.emit("LOG_OUTPUT", {"message": msg}, now)
-        
+
         try:
             import src.services.trade_executor as te
             # Flag to allow smaller, exploratory positions
@@ -1099,11 +1150,14 @@ def main():
         # This is the CRITICAL POSITION: after all operations, before audit
         if _anomaly_detector and _state_history:
             try:
+                # V10.12i: Use safe idle computation instead of raw timestamp arithmetic
+                safe_no_trade_duration = safe_idle_seconds(last_trade_ts[0], now)
+
                 # Build current state snapshot from metrics
                 current_state = type('State', (), {
                     'equity': float(get_metrics().get('equity', 1.0)),
                     'drawdown': float(get_metrics().get('max_dd', 0.0)),
-                    'no_trade_duration': time.time() - last_trade_ts[0],
+                    'no_trade_duration': safe_no_trade_duration,
                     'signal_count': 0,  # Will be updated by signal generator
                 })()
                 

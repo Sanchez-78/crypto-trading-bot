@@ -200,9 +200,15 @@ async def _async_flush_lm_update(
     sym_pnl: list[float],
     feature_stats: dict[str, tuple[float, float]],
 ) -> None:
-    """Persist all learning_monitor state after a single lm_update() call."""
+    """Persist all learning_monitor state after a single lm_update() call.
+
+    V10.12i: Gracefully skip if Redis unavailable (no-op write).
+    """
     try:
-        r = await _get_client()
+        # V10.12i: Use safe client for graceful Redis absence
+        r = await _safe_client()
+        if r is None:
+            return  # Redis unavailable; skip write silently
         pipe = r.pipeline()
 
         # Per-(sym, reg) lists — push fresh snapshot
@@ -261,6 +267,8 @@ async def _async_hydrate_lm() -> dict[str, Any]:
         "sym_recent_pnl": {sym: [float, ...]},
         "lm_feature_stats": {name: (w, t)},
       }
+
+    V10.12i: Return empty dict if Redis unavailable.
     """
     empty: dict[str, Any] = {
         "lm_pnl_hist": {}, "lm_wr_hist": {}, "lm_ev_hist": {},
@@ -268,7 +276,10 @@ async def _async_hydrate_lm() -> dict[str, Any]:
         "lm_feature_stats": {},
     }
     try:
-        r = await _get_client()
+        # V10.12i: Use safe client for graceful fallback
+        r = await _safe_client()
+        if r is None:
+            return empty
 
         # Scan for all lm:pnl_hist:* keys to discover which (sym, reg) pairs exist
         cursor: int = 0
@@ -333,9 +344,15 @@ async def _async_flush_rde_state(
     calibrator_buckets: dict[float, list[int]],
     edge_stats: dict[str, list[int]],
 ) -> None:
-    """Persist RDE state after calibrator/edge update."""
+    """Persist RDE state after calibrator/edge update.
+
+    V10.12i: Gracefully skip if Redis unavailable (no-op write).
+    """
     try:
-        r = await _get_client()
+        # V10.12i: Use safe client for graceful Redis absence
+        r = await _safe_client()
+        if r is None:
+            return  # Redis unavailable; skip write silently
 
         await _lpush_capped(r, "rde:ev_history",    ev_history,    _LIST_CAP)
         await _lpush_capped(r, "rde:score_history",  score_history, _LIST_CAP)
@@ -367,13 +384,19 @@ def flush_rde_state(
 
 
 async def _async_hydrate_rde_state() -> dict[str, Any]:
-    """Re-hydrate RDE state on boot."""
+    """Re-hydrate RDE state on boot.
+
+    V10.12i: Return empty dict if Redis unavailable.
+    """
     empty: dict[str, Any] = {
         "ev_history": [], "score_history": [],
         "combo_stats": {}, "calibrator_buckets": {}, "edge_stats": {},
     }
     try:
-        r = await _get_client()
+        # V10.12i: Use safe client for graceful fallback
+        r = await _safe_client()
+        if r is None:
+            return empty
 
         empty["ev_history"]    = await _lrange_floats(r, "rde:ev_history")
         empty["score_history"] = await _lrange_floats(r, "rde:score_history")
@@ -410,9 +433,16 @@ async def _async_flush_metrics(
     close_reasons: dict[str, int],
     regime_stats: dict[str, dict[str, int]],
 ) -> None:
-    """Persist METRICS dict + close_reasons + regime_stats to Redis."""
+    """Persist METRICS dict + close_reasons + regime_stats to Redis.
+
+    V10.12i: Gracefully skip if Redis unavailable (no-op write).
+    """
     try:
-        r = await _get_client()
+        # V10.12i: Use safe client for graceful Redis absence
+        r = await _safe_client()
+        if r is None:
+            return  # Redis unavailable; skip write silently
+
         # TTL=300s: le:metrics is Firestore-derived; bootstrap_from_history()
         # rebuilds it on cold start.  lm:* and rde:* keep TTL=0 (zero-loss).
         await r.set("le:metrics", json.dumps(metrics), ex=300)
@@ -437,12 +467,18 @@ def flush_metrics(
 
 
 async def _async_hydrate_metrics() -> dict[str, Any]:
-    """Re-hydrate METRICS + close_reasons + regime_stats on boot."""
+    """Re-hydrate METRICS + close_reasons + regime_stats on boot.
+
+    V10.12i: Return empty dict if Redis unavailable.
+    """
     empty: dict[str, Any] = {
         "metrics": {}, "close_reasons": {}, "regime_stats": {},
     }
     try:
-        r = await _get_client()
+        # V10.12i: Use safe client for graceful fallback
+        r = await _safe_client()
+        if r is None:
+            return empty
 
         m_raw = await r.get("le:metrics")
         if m_raw:
@@ -475,12 +511,16 @@ async def _async_get_cached(key: str, ttl: int, fetch_fn: Any) -> Any:
     Check Redis for *key*; on miss call fetch_fn() and cache the result for
     *ttl* seconds.  Redis unavailability is fully tolerated — falls through
     to fetch_fn every time.
+
+    V10.12i: Use safe client for consistent non-fatal Redis handling.
     """
+    # V10.12i: Try Redis read (safe, non-fatal on failure)
     try:
-        r = await _get_client()
-        raw = await r.get(key)
-        if raw is not None:
-            return json.loads(raw)
+        r = await _safe_client()
+        if r is not None:
+            raw = await r.get(key)
+            if raw is not None:
+                return json.loads(raw)
     except Exception as exc:
         log.debug("get_cached Redis read error: %s", exc)
 
@@ -489,8 +529,10 @@ async def _async_get_cached(key: str, ttl: int, fetch_fn: Any) -> Any:
         result = fetch_fn()
         if result is not None:
             try:
-                r = await _get_client()
-                await r.set(key, json.dumps(result), ex=ttl)
+                # V10.12i: Try Redis write (safe, non-fatal on failure)
+                r = await _safe_client()
+                if r is not None:
+                    await r.set(key, json.dumps(result), ex=ttl)
             except Exception as exc:
                 log.debug("get_cached Redis write error: %s", exc)
         return result
@@ -518,10 +560,17 @@ def get_cached(key: str, ttl: int, fetch_fn: Any) -> Any:
 # ══════════════════════════════════════════════════════════════════════════════
 
 async def _async_clear_redis_state() -> int:
-    """Delete all lm:*, rde:*, le:* keys from Redis. Returns count deleted."""
+    """Delete all lm:*, rde:*, le:* keys from Redis. Returns count deleted.
+
+    V10.12i: Return 0 if Redis unavailable (graceful skip).
+    """
     deleted = 0
     try:
-        r = await _get_client()
+        # V10.12i: Use safe client for graceful fallback
+        r = await _safe_client()
+        if r is None:
+            return 0  # Redis unavailable; return 0 deleted
+
         for pattern in ("lm:*", "rde:*", "le:*"):
             cursor: int = 0
             while True:
@@ -572,9 +621,14 @@ def is_redis_available() -> bool:
 # signal_engine.py (never touches a trade document).
 
 async def _async_increment_l2_rejected() -> None:
+    """Atomically increment L2 rejection counter.
+
+    V10.12i: Gracefully skip if Redis unavailable.
+    """
     try:
-        r = await _get_client()
-        await r.incr("exec:l2_rejected")
+        r = await _safe_client()
+        if r is not None:
+            await r.incr("exec:l2_rejected")
     except Exception as exc:
         log.debug("increment_l2_rejected error: %s", exc)
 
@@ -589,8 +643,14 @@ def increment_l2_rejected() -> None:
 
 
 async def _async_get_l2_rejected() -> int:
+    """Get L2 rejection counter.
+
+    V10.12i: Return 0 if Redis unavailable.
+    """
     try:
-        r = await _get_client()
+        r = await _safe_client()
+        if r is None:
+            return 0
         val = await r.get("exec:l2_rejected")
         return int(val) if val else 0
     except Exception:
@@ -604,9 +664,14 @@ def get_l2_rejected() -> int:
 
 
 async def _async_increment_corr_rejected() -> None:
+    """Atomically increment CORR rejection counter.
+
+    V10.12i: Gracefully skip if Redis unavailable.
+    """
     try:
-        r = await _get_client()
-        await r.incr("exec:corr_rejected")
+        r = await _safe_client()
+        if r is not None:
+            await r.incr("exec:corr_rejected")
     except Exception as exc:
         log.debug("increment_corr_rejected error: %s", exc)
 
@@ -621,8 +686,14 @@ def increment_corr_rejected() -> None:
 
 
 async def _async_get_corr_rejected() -> int:
+    """Get CORR rejection counter.
+
+    V10.12i: Return 0 if Redis unavailable.
+    """
     try:
-        r = await _get_client()
+        r = await _safe_client()
+        if r is None:
+            return 0
         val = await r.get("exec:corr_rejected")
         return int(val) if val else 0
     except Exception:

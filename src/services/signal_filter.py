@@ -19,6 +19,43 @@ from collections import deque
 
 log = logging.getLogger(__name__)
 
+
+# ════════════════════════════════════════════════════════════════════════════════
+# V10.12i: Safe idle computation helper
+# ════════════════════════════════════════════════════════════════════════════════
+def safe_idle_seconds(last_trade_ts, now=None):
+    """
+    Compute idle seconds safely, preventing unix-time-sized values.
+
+    V10.12i: Validates timestamps and clamps unrealistic values to 0.0.
+
+    Args:
+        last_trade_ts: float or int timestamp, or None
+        now: current time (defaults to time.time())
+
+    Returns:
+        float: idle seconds (0.0 if invalid)
+    """
+    if now is None:
+        now = time.time()
+
+    if not last_trade_ts:
+        return 0.0
+
+    try:
+        ts = float(last_trade_ts)
+    except (ValueError, TypeError):
+        return 0.0
+
+    if ts <= 0 or ts > now:
+        return 0.0
+
+    idle = max(0.0, now - ts)
+    if idle > 86400:
+        return 0.0
+
+    return idle
+
 # ══════════════════════════════════════════════════════════════════════════════
 # B15 — LossClusterGuard (regime-aware)
 # ══════════════════════════════════════════════════════════════════════════════
@@ -110,11 +147,12 @@ def loss_cluster_check(sym: str, regime: str) -> tuple[bool, str]:
         # Cap at max
         base = min(base, 420)
         
-        # V10.12d: CRITICAL — if system is idle (no trades for 15+ min), shrink cooldown
+        # V10.12d/i: CRITICAL — if system is idle (no trades for 15+ min), shrink cooldown
         # This prevents long symbol lockouts from blocking unblock-mode recovery
         try:
             from src.services.realtime_decision_engine import _last_trade_ts
-            no_trades_sec = time.time() - _last_trade_ts[0] if _last_trade_ts[0] > 0 else 0
+            # V10.12i: Use safe idle computation instead of raw arithmetic
+            no_trades_sec = safe_idle_seconds(_last_trade_ts[0] if _last_trade_ts else None)
             if no_trades_sec >= 900.0:
                 base = min(base, 120)  # Emergency shortening during stall
         except:
