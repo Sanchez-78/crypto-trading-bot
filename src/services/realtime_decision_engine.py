@@ -469,32 +469,105 @@ def decision_score(ev, ws):
     return 0.7 * ev + 0.3 * ws
 
 
+# ════════════════════════════════════════════════════════════════════════════════
+# V10.12d: CONTROLLED UNBLOCK MODE — Softens over-aggressive filters
+# ════════════════════════════════════════════════════════════════════════════════
+
+def is_unblock_mode(no_trades_seconds: float = None, no_signals_cycles: int = None) -> bool:
+    """
+    Detect if system should enter controlled unblock mode.
+    Unblock activates when system is idle (no trades for 15+ min OR no signals for 40+ cycles).
+    During unblock: lower thresholds, reduced position sizes, rate-limited.
+    """
+    if no_trades_seconds is None:
+        try:
+            no_trades_seconds = _time.time() - _last_trade_ts[0] if _last_trade_ts[0] > 0 else 0.0
+        except:
+            no_trades_seconds = 0.0
+    
+    if no_signals_cycles is None:
+        try:
+            from src.services.learning_event import METRICS
+            no_signals_cycles = METRICS.get("no_signals_cycles", 0)
+        except:
+            no_signals_cycles = 0
+    
+    return (no_trades_seconds >= 900.0) or (no_signals_cycles >= 40)
+
+
+def current_ev_threshold(no_trades_sec: float = None, no_signals: int = None) -> float:
+    """V10.12d: Unblock-aware EV threshold. Normal: 0.025, Unblock: 0.015."""
+    return 0.015 if is_unblock_mode(no_trades_sec, no_signals) else 0.025
+
+
+def current_score_threshold(no_trades_sec: float = None, no_signals: int = None) -> float:
+    """V10.12d: Unblock-aware score threshold. Normal: 0.18, Unblock: 0.12."""
+    return 0.12 if is_unblock_mode(no_trades_sec, no_signals) else 0.18
+
+
+def timing_penalty(candle_progress: float, atr_pct: float) -> tuple[float, bool]:
+    """
+    V10.12d: Graded timing penalty (replaces hard TIMING reject).
+    Instead of binary rejection, apply multiplier. Only hard-block if very late + tight spreads.
+    Returns: (multiplier ∈ [0,1.0], hard_block: bool)
+    """
+    late_hard = 0.88 if atr_pct < 0.012 else 0.93
+    if candle_progress <= 0.70:
+        return 1.00, False
+    elif candle_progress <= 0.82:
+        return 0.92, False
+    elif candle_progress <= late_hard:
+        return 0.80, False
+    return 0.0, True
+
+
+def unblock_size_multiplier(no_trades_sec: float = None, no_signals: int = None) -> float:
+    """V10.12d: Position size reduction during unblock. 900s+ → 0.25x, 40+ cycles → 0.35x."""
+    if no_trades_sec is None:
+        try:
+            no_trades_sec = _time.time() - _last_trade_ts[0] if _last_trade_ts[0] > 0 else 0.0
+        except:
+            no_trades_sec = 0.0
+    
+    if no_signals is None:
+        try:
+            from src.services.learning_event import METRICS
+            no_signals = METRICS.get("no_signals_cycles", 0)
+        except:
+            no_signals = 0
+    
+    return 0.25 if no_trades_sec >= 900.0 else (0.35 if no_signals >= 40 else 1.0)
+
+
 # ────────────────────────────────────────────────────────────────────────────
 # PATCH 2: Disable Hard EV Filter — Probabilistic exploration gate
 # ────────────────────────────────────────────────────────────────────────────
 def allow_trade(ev, ws, exploration=0.4):
-    """PATCH 2: Replace hard EV threshold with probabilistic gating.
+    """V10.12d: Score-gated entry with unblock-aware thresholds.
     
-    Always allow positive EV trades.
-    For others: random exploration (40% chance to trade anyway).
-    This unblocks signal flow and enables RL data collection.
+    Combines EV and win-score (WS) into decision_score.
+    Thresholds adapt based on system idle state:
+    - Normal: score ≥ 0.18
+    - Unblock: score ≥ 0.12
     
     Args:
         ev: Expected Value score
         ws: Win-score  
-        exploration: probability to trade even on negative EV (default 40%)
+        exploration: fallback probability when below threshold
     
     Returns: bool — should this signal proceed to execution?
     """
     import random
     
-    if ev > 0:
-        return True  # Always execute positive EV
+    # Compute combined score
+    score = decision_score(ev, ws)
+    threshold = current_score_threshold()
     
-    # ────────────────────────────────────────────────────────────────────────
-    # PATCH 3.3: Soft Filter — Reduce confidence instead of hard-blocking
-    # ────────────────────────────────────────────────────────────────────────
-    # Negative EV: probabilistic exploration
+    # V10.12d: Decision logic
+    if score >= threshold:
+        return True
+    
+    # Below threshold: probabilistic exploration (allows data collection)
     if random.random() < exploration:
         return True
     
@@ -712,17 +785,16 @@ def evaluate_signal(signal):
             print(f"    decision=SKIP_QUIET_RSI  rsi={_rsi_val:.1f}  side={_side}  regime={regime}")
             return None
 
-    # ── Entry timing — 1-tick momentum confirmation ──────────────────────────
-    # Require last price tick to move in signal direction (soft: 1 tick, not 3).
-    # Old 3-tick check blocked too many valid entries — requiring 3 consecutive
-    # moves in the same direction at 2s/tick is rare in sideways/ranging markets
-    # and was a large contributor to signal drop-out even with good EV.
+    # ── V10.12d: Entry timing — graded penalty (not hard block) ─────────────
+    # Instead of rejecting bad-timed entries, apply a soft penalty.
+    # This allows trades with good EV to proceed even with unfavorable timing.
     # Bypassed during bootstrap (<100 trades) to preserve learning data flow.
+    _timing_mult = 1.0
     try:
         _ph = _price_history.setdefault(sym, deque(maxlen=3))
         _ph.append(signal.get("price", 0))
         _t_boot = _M.get("trades", 0)
-        if _t_boot >= 30 and len(_ph) >= 2:   # lowered 100→30: timing only engages after enough data
+        if _t_boot >= 30 and len(_ph) >= 2:
             _side = signal.get("action", "BUY")
             _ph3  = list(_ph)
             _bad_timing = (
@@ -730,8 +802,10 @@ def evaluate_signal(signal):
                 (_side == "SELL" and not (_ph3[-1] < _ph3[-2]))
             )
             if _bad_timing:
-                track_blocked(reason="TIMING")
-                return None
+                # V10.12d: Apply 0.75× penalty instead of hard reject
+                # This allows bad-timed trades with strong EV to pass (data collection)
+                # while naturally reducing position sizes via auditor_factor reduction
+                _timing_mult = 0.75
     except Exception:
         pass
 
@@ -877,14 +951,17 @@ def evaluate_signal(signal):
     except Exception as _mc_err:
         log.debug("monte_council gate error: %s", _mc_err)
 
-    if not allow_trade(ev, _ws):
+    # V10.12d: Apply timing penalty to EV before score gate
+    _ev_adj = ev * _timing_mult
+    if not allow_trade(_ev_adj, _ws):
         track_blocked(reason="SKIP_SCORE")
         try:
             from src.services.signal_filter import log_signal_outcome as _lso2
             _lso2(sym, accepted=False, reason="SKIP_SCORE")
         except Exception:
             pass
-        print(f"    decision=SKIP_SCORE  ev={ev:.3f}  ws={_ws:.3f}  score={_sc:.3f}")
+        _timing_str = f" timing×{_timing_mult:.2f}" if _timing_mult < 1.0 else ""
+        print(f"    decision=SKIP_SCORE  ev={ev:.3f}{_timing_str}→{_ev_adj:.3f}  ws={_ws:.3f}  score={_sc:.3f}")
         return None
 
     # ── B17: direction bias guard ─────────────────────────────────────────────

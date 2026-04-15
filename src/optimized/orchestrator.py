@@ -195,6 +195,15 @@ class TradeOrchestrator:
         except Exception as e:
             logger.debug(f"V4 strategy update error: {e}")
         
+        # PATCH: Train V5 RL Agent (experience replay)
+        try:
+            from bot2.main import train_rl_agent
+            train_rl_agent(t)
+        except ImportError:
+            pass  # V5 not initialized yet; skip
+        except Exception as e:
+            logger.debug(f"V5 RL training error: {e}")
+        
         return t
 
     # ── Statistics ────────────────────────────────────────────────────────────

@@ -30,7 +30,7 @@ from collections import deque
 
 # Rolling tick window for OFI computation
 _WINDOW          = 30     # last N price ticks (~30 seconds at 1s polling)
-_BLOCK_THRESHOLD = 0.70   # |OFI| above this → hard block
+_BLOCK_THRESHOLD = 0.85   # V10.12d: raised 0.70→0.85 — only extreme OFI blocks (arXiv threshold)
 _WARN_THRESHOLD  = 0.40   # |OFI| above this → size reduction
 
 # Per-symbol rolling price history
@@ -85,21 +85,27 @@ def is_toxic(sym: str, action: str) -> tuple[bool, str]:
 
 def ofi_size_factor(sym: str, action: str) -> float:
     """
-    Soft size dampener for moderate adverse OFI.
+    V10.12d: Graduated OFI size penalty (was: binary hard block).
+    Only directional conflicts cause penalties.
+    
     Returns multiplier ∈ [0.5, 1.0]:
-      |OFI| < WARN_THRESHOLD          → 1.0 (no penalty)
-      WARN_THRESHOLD ≤ |OFI| < BLOCK  → 0.75 (reduce size)
-      Directional conflict only — same-direction OFI = no penalty.
+      |OFI| < 0.40                → 1.0   (no penalty)
+      0.40 ≤ |OFI| < 0.70         → 0.88  (slight)
+      0.70 ≤ |OFI| < 0.85         → 0.78  (moderate)
+      0.85 ≤ |OFI| (+ bad spread) → 0.50  (severe; hard block elsewhere)
     """
     flow = ofi(sym)
     against = (action == "BUY" and flow < 0) or (action == "SELL" and flow > 0)
     if not against:
         return 1.0
+    
     magnitude = abs(flow)
     if magnitude >= _BLOCK_THRESHOLD:
-        return 0.5   # extreme (should be blocked by is_toxic, but safety floor)
-    if magnitude >= _WARN_THRESHOLD:
-        return 0.75
+        return 0.50   # extreme adverse OFI (hard block in is_toxic)
+    elif magnitude >= 0.70:
+        return 0.78   # strong adverse
+    elif magnitude >= _WARN_THRESHOLD:
+        return 0.88   # moderate adverse
     return 1.0
 
 

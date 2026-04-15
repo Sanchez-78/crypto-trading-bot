@@ -35,8 +35,8 @@ _LOSS_THRESHOLDS = {
     "HIGH_VOL":    2,   # volatile = unpredictable → stricter
 }
 
-_BASE_COOLDOWN_S = 1200   # 20 min base
-_MAX_COOLDOWN_S  = 3600   # 1 h cap
+_BASE_COOLDOWN_S = 300   # V10.12d: lowered 1200→300 (5 min base)
+_MAX_COOLDOWN_S  = 420   # V10.12d: lowered 3600→420 (7 min cap)
 
 
 def loss_cluster_check(sym: str, regime: str) -> tuple[bool, str]:
@@ -81,9 +81,33 @@ def loss_cluster_check(sym: str, regime: str) -> tuple[bool, str]:
             break
 
     if consec >= max_consec:
-        # Scale cooldown: base × (1 + loss_magnitude)
-        cooldown = int(_BASE_COOLDOWN_S * (1 + total_loss * 10))
-        cooldown = min(cooldown, _MAX_COOLDOWN_S)
+        # V10.12d: Adaptive cooldown based on regime and idle state
+        base = {
+            "BULL_TREND": 180,
+            "BEAR_TREND": 240,
+            "RANGING": 300,
+            "QUIET_RANGE": 300,
+            "HIGH_VOL": 150,
+        }.get(regime, 240)
+        
+        # Extend for severe loss streaks
+        if consec >= 3:
+            base += 120
+        
+        # Cap at max
+        base = min(base, 420)
+        
+        # V10.12d: CRITICAL — if system is idle (no trades for 15+ min), shrink cooldown
+        # This prevents long symbol lockouts from blocking unblock-mode recovery
+        try:
+            from src.services.realtime_decision_engine import _last_trade_ts
+            no_trades_sec = time.time() - _last_trade_ts[0] if _last_trade_ts[0] > 0 else 0
+            if no_trades_sec >= 900.0:
+                base = min(base, 120)  # Emergency shortening during stall
+        except:
+            pass
+        
+        cooldown = int(base)
         _blocked_until[sym] = now + cooldown
         reason = (
             f"LOSS_CLUSTER:{consec}losses regime={regime} "

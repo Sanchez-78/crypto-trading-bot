@@ -70,6 +70,11 @@ _meta_state = {                                                        # V10.6b:
     "reduce_threshold":  -0.003, # default; updated by update_meta_mode()
 }
 
+# V10.12d: Unblock mode rate limiting
+_UNBLOCK_TRADES_MAX_HOUR = 6    # max 6 unblock trades per hour
+_UNBLOCK_POSITIONS_MAX   = 2    # max 2 concurrent unblock positions
+_unblock_trades_hour = []       # list of timestamps of unblock trades in last 60 min
+
 FEE_RT      = 0.0015    # 0.15% round-trip (Binance taker 0.075%×2)
 MIN_TP_PCT  = 0.008     # 0.80% — giving trades room to hit higher RRs
 MIN_SL_PCT  = 0.004     # 0.40% min SL — double the old size to survive spread + fee + noise
@@ -194,6 +199,58 @@ def volatility_adjustment(sym):
     std        = 0.7 * _std(recent) + 0.3 * _std(older)
     vol_factor = 0.01 / (std + 1e-6)
     return max(0.7, min(1.3, vol_factor))
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# V10.12d: Unblock Mode Rate Limiting
+# ════════════════════════════════════════════════════════════════════════════════
+
+def is_unblock_mode_trade() -> bool:
+    """Check if current system state indicates unblock mode."""
+    try:
+        from src.services.realtime_decision_engine import is_unblock_mode
+        return is_unblock_mode()
+    except:
+        return False
+
+
+def can_open_unblock_trade() -> tuple[bool, str]:
+    """
+    V10.12d: Check unblock rate limits before opening new position.
+    
+    Limits:
+    - Max 6 unblock trades per hour
+    - Max 2 concurrent unblock positions
+    
+    Returns: (allowed: bool, reason: str)
+    """
+    global _unblock_trades_hour
+    
+    if not is_unblock_mode_trade():
+        return True, "normal_mode"
+    
+    now = time.time()
+    
+    # Clean up trades older than 1 hour
+    _unblock_trades_hour = [t for t in _unblock_trades_hour if now - t < 3600.0]
+    
+    # Check hourly rate limit
+    if len(_unblock_trades_hour) >= _UNBLOCK_TRADES_MAX_HOUR:
+        return False, f"UNBLOCK_RATE_LIMIT: {len(_unblock_trades_hour)}/{_UNBLOCK_TRADES_MAX_HOUR} trades in last hour"
+    
+    # Check concurrent position limit
+    unblock_open = sum(1 for pos in _positions.values() 
+                       if pos.get("unblock_mode", False))
+    if unblock_open >= _UNBLOCK_POSITIONS_MAX:
+        return False, f"UNBLOCK_POS_LIMIT: {unblock_open}/{_UNBLOCK_POSITIONS_MAX} unblock positions open"
+    
+    return True, "unblock_allowed"
+
+
+def record_unblock_trade():
+    """Record that an unblock-mode trade was opened (for rate limiting)."""
+    global _unblock_trades_hour
+    _unblock_trades_hour.append(time.time())
 
 
 def dynamic_hold_extension(base_hold, ev, atr, entry):
@@ -1678,6 +1735,17 @@ def handle_signal(signal):
               f"mom={_mom_v1013:.2f}  dd={_dd_recycle:.1%}  → no bonus")
 
     # ────────────────────────────────────────────────────────────────────────
+    # V10.12d: Unblock mode rate limiting check
+    # ────────────────────────────────────────────────────────────────────────
+    _in_unblock = is_unblock_mode_trade()
+    if _in_unblock:
+        _can_open, _reason = can_open_unblock_trade()
+        if not _can_open:
+            log.warning(f"[UNBLOCK_LIMIT] {sym} {_reason} — signal skipped")
+            return None
+        record_unblock_trade()
+    
+    # ────────────────────────────────────────────────────────────────────────
     # PATCH 6: Track Last Trade Timestamp
     # ────────────────────────────────────────────────────────────────────────
     try:
@@ -1718,6 +1786,7 @@ def handle_signal(signal):
         "efficiency":       _efficiency,       # V10.10: EV / expected_hold at open
         "efficiency_live":  _efficiency,       # V10.10: decays each tick (exp decay)
         "expected_hold":    _expected_hold,    # V10.10: hold ticks used as decay tau
+        "unblock_mode":     _in_unblock,       # V10.12d: True if trade opened in unblock mode
     }
     tag = "[force]" if force else ""
     msg = (f"    exec{tag}: slip={fill_slip:.5f}  fee={actual_fee_rt:.5f}  fr={fill_rate(sym):.2f}  "

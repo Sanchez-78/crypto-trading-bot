@@ -1,1073 +1,423 @@
-2026-04-10T07:01:56.545020748Z [inf]  📁 SERVICES: ['auto_cleaner.py', 'retrainer.py', 'decision_engine.py', 'auto_filter.py', 'trailing_stop.py', 'correlation_shield.py', 'performance_tracker.py', 'fx_service.py', 'feature_extractor.py', 'realtime_decision_engine.py', 'state_manager.py', 'portfolio_risk.py', 'meta_controler.py', 'trade_guard.py', 'meta_evaluator.py', 'rl_agent.py', 'metrics_engine.py', 'signal_generator.py', 'model.py', 'portfolio_manager.py', 'evaluator_event.py', 'learning_event.py', 'meta_agent.py', 'config_event.py', 'data_cache.py', 'real_market.py', 'squeeze_guard.py', '__pycache__', 'portfolio_event.py', '__init__.py', 'market_data_service.py', 'trade_executor.py', 'price_feed.py', 'signal_engine.py', 'signal_coherence.py', 'firebase_client.py', 'dashboard.py', 'notification.py', 'dashboard_live.py', 'learning.py', 'pattern_cluster.py', 'auto_control.py', 'policy_layer.py', 'auto_walkforward.py', 'data_manager.py', 'pre_live_audit.py', 'risk_manager.py', 'execution.py', 'order_book_depth.py', 'auto_strategy.py', 'regime_predictor.py', 'dqn_agent.py', 'stripe_api.py', 'market_data.py', 'alert_system.py', 'learning_monitor.py', 'binance_client.py', 'lstm_model.py', 'feature_engine.py', 'brain.py', 'reward_system.py', 'ml_model.py', 'execution_quality.py', 'notifier.py', 'trade_filter.py', 'execution_engine.py', 'market_stream.py', 'portfolio_discovery.py', 'reset_db.py', 'macro_guard.py', 'multi_agent.py', 'feature_weights.py', 'evaluator.py', 'diagnostics.py', 'regime_filter.py', 'risk_engine.py', 'self_healing.py']
-2026-04-10T07:01:56.545047412Z [inf]  🚀 START.PY BOOTING...
-2026-04-10T07:01:56.545052635Z [inf]  📁 ROOT FILES: ['fast_wipe.py', 'ml_model.pkl', 'navod.txt', 'config.py', 'ml_model.json', '.github', '__pycache__', 'trading_impl.pdf', 'logs_extracted_tmp', 'logs.1774626511515.log', 'ml_meta.json', 'bot2', 'src', 'trading_bots_system.pdf', 'requirements.txt', 'railway.toml', 'prompts', '.gitignore', 'main.py', 'shared', 'TRADING_BOT_SKILL.md', 'reset_db.py', 'CLAUDE.md', 'procfile', '.nixpacks', '.claude', 'docs', 'start.py']
-2026-04-10T07:01:56.545057365Z [inf]  📁 SRC: ['__pycache__', '__init__.py', 'core', 'services', 'utils.py']
-2026-04-10T07:01:56.545732196Z [inf]  🚨 IMPORTING MAIN...
-2026-04-10T07:01:56.545737999Z [inf]  🔗 Subscribed: signal_created -> handle_signal
-2026-04-10T07:01:56.545745221Z [inf]  🔗 Subscribed: price_tick -> on_price
-2026-04-10T07:01:56.545751459Z [inf]  🔗 Subscribed: price_tick -> on_price
-2026-04-10T07:01:56.545757600Z [inf]  🚨 STARTING MAIN...
-2026-04-10T07:01:56.545764078Z [inf]  [Firebase] connected
-2026-04-10T07:01:56.545769738Z [inf]  📊 Firebase daily budget  [CONSERVATIVE]
-2026-04-10T07:01:56.545776081Z [inf]     Reads : load_history  ≤  14400/day  (100 docs, cache 600s)
-2026-04-10T07:01:56.545782163Z [inf]             load_weights  ≤    288/day
-2026-04-10T07:01:56.545788728Z [inf]             total reads   ≈  14688/day  (limit 50 000)  ✅
-2026-04-10T07:01:56.545795006Z [inf]     Writes: metrics/latest every 10s  =  8 640/day
-2026-04-10T07:01:56.545801102Z [inf]             save_batch    every 60s   =  1 440/day
-2026-04-10T07:01:56.545807767Z [inf]             save_last_trade (est.)    =    200/day
-2026-04-10T07:01:56.545813811Z [inf]     Total : ~10 280 writes/day  (limit 20 000)  ✅
-2026-04-10T07:01:56.545820792Z [inf]     ℹ️  Set PERF_MODE=True when WR>45% AND PF>1.5 for fresher calibration
-2026-04-10T07:01:56.570295058Z [inf]  📥 Firebase: loaded 37 trades
-2026-04-10T07:01:56.682388056Z [inf]  🔄 Model state restored (4min old): 2 cal buckets  0 ev_hist  13 bayes pairs  14 edge_stats  9 combos
-2026-04-10T07:01:56.682394347Z [inf]    + Redis RDE: 0 ev  0 combos
-2026-04-10T07:01:56.682399887Z [inf]  🎯 Calibrator bootstrap: 105 samples  buckets={'0.4': {'wr': 0.5, 'n': 4}, '0.5': {'wr': 0.495, 'n': 101}}
-2026-04-10T07:01:56.682405580Z [inf]  🧠 Edge stats bootstrap: 292.61169889433216 feature observations
-2026-04-10T07:01:56.683992367Z [inf]  📂 Bootstrap: 399 obchodů  WR:5.0%  zisk:-0.00007793  posledních 0 výsledků
-2026-04-10T07:01:56.684001008Z [inf]  🌡️  Indicator warmup from Binance klines...
-2026-04-10T07:01:57.102522178Z [inf]     BTC: 120 svíček načteno  (poslední: $71,829.1900)
-2026-04-10T07:01:57.213097411Z [inf]     ETH: 120 svíček načteno  (poslední: $2,187.3900)
-2026-04-10T07:01:57.317405596Z [inf]  Starting Container
-2026-04-10T07:01:57.552900400Z [inf]     ADA: 120 svíček načteno  (poslední: $0.2511)
-2026-04-10T07:01:57.706179797Z [inf]     BNB: 120 svíček načteno  (poslední: $600.6000)
-2026-04-10T07:01:57.951505937Z [inf]     DOT: 120 svíček načteno  (poslední: $1.2890)
-2026-04-10T07:01:58.202435322Z [inf]     SOL: 120 svíček načteno  (poslední: $83.2000)
-2026-04-10T07:01:58.579647348Z [inf]     XRP: 120 svíček načteno  (poslední: $1.3422)
-2026-04-10T07:01:59.199035469Z [inf]  📡 MARKET LIVE (WebSocket bookTicker) — BTC/ETH/ADA/BNB/DOT/SOL/XRP
-2026-04-10T07:01:59.639660154Z [inf]    🟢 BTC $71,829.1850 | [fake_breakout] sc:3/7  ws:0.50 | QUIET_RANGE | conf:0% [pullback,mom,wick]
-2026-04-10T07:01:59.639667537Z [inf]      decision=SKIP_QUIET_RSI  rsi=43.2  side=BUY
-2026-04-10T07:01:59.694639029Z [inf]    🔴 ETH $2,187.0750 | [fake_breakout] sc:3/7  ws:0.50 | QUIET_RANGE | conf:58% [trend,pullback,wick]
-2026-04-10T07:01:59.694643629Z [inf]      decision=SKIP_QUIET_RSI  rsi=58.9  side=SELL
-2026-04-10T07:01:59.734232094Z [inf]    🟢 ADA $0.2511 | [fake_breakout] sc:4/7  ws:0.50 | QUIET_RANGE | conf:16% [pullback,bounce,mom,wick]
-2026-04-10T07:01:59.734240685Z [inf]      decision=SKIP_QUIET_RSI  rsi=52.3  side=BUY
-2026-04-10T07:02:00.021650396Z [inf]    🔴 XRP $1.3422 | [trend_pullback] sc:4/7  ws:0.50 | QUIET_RANGE | conf:38% [trend,pullback,bounce,wick]
-2026-04-10T07:02:00.021663178Z [inf]      decision=SKIP_QUIET_RSI  rsi=57.5  side=SELL
-2026-04-10T07:02:00.036298775Z [inf]    🟢 SOL $83.2050 | [fake_breakout] sc:3/7  ws:0.50 | QUIET_RANGE | conf:16% [pullback,bounce,mom]
-2026-04-10T07:02:00.036307777Z [inf]      decision=SKIP_QUIET_RSI  rsi=52.6  side=BUY
-2026-04-10T07:02:01.083272981Z [inf]    🟢 DOT $1.2895 | [fake_breakout] sc:4/7  ws:0.50 | QUIET_RANGE | conf:16% [pullback,bounce,mom,wick]
-2026-04-10T07:02:01.083277871Z [inf]      decision=SKIP_QUIET_RSI  rsi=52.6  side=BUY
-2026-04-10T07:02:08.824498065Z [inf]    🔍 AUDITOR restored: sz=1.40
-2026-04-10T07:02:08.824503117Z [inf]    [!] LEARNING: NO LEARNING SIGNAL DETECTED
-2026-04-10T07:02:08.824508816Z [inf]  
-2026-04-10T07:02:08.824514455Z [inf]  [bot2] ── pre_live_audit ─────────────────────────────────────
-2026-04-10T07:02:08.824519210Z [inf]  ====================================================================
-2026-04-10T07:02:08.824523505Z [inf]  PRE-LIVE AUDIT  (V10.12c)  n=20  seed=42  mode=replay
-2026-04-10T07:02:08.824528205Z [inf]  ====================================================================
-2026-04-10T07:02:08.824533585Z [inf]      EV=0.050  p=0.50  rr=1.25  ws=0.438  score=0.166[n=399]  t15=0  spread=0.000  af=1.00
-2026-04-10T07:02:08.824538319Z [inf]      RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-2026-04-10T07:02:08.824543287Z [inf]      coherence[v10.12]: 0.697  ev 0.050→0.035
-2026-04-10T07:02:08.824547497Z [inf]      decision=TAKE  ev=0.0348  p=0.4950  af=1.00  coh=0.697
-2026-04-10T07:02:08.824551985Z [inf]      EV=0.050  p=0.50  rr=1.25  ws=0.415  score=0.159[n=399]  t15=0  spread=0.000  af=1.00
-2026-04-10T07:02:08.824556613Z [inf]      RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-2026-04-10T07:02:08.824562433Z [inf]      coherence[v10.12]: 0.522  ev 0.050→0.030
-2026-04-10T07:02:08.824567299Z [inf]      decision=TAKE  ev=0.0300  p=0.4950  af=1.00  coh=0.522
-2026-04-10T07:02:08.824572910Z [inf]      EV=0.050  p=0.50  rr=1.25  ws=0.516  score=0.190[n=399]  t15=0  spread=0.000  af=1.00
-2026-04-10T07:02:08.824577714Z [inf]      RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-2026-04-10T07:02:08.825566688Z [inf]      coherence[v10.12]: 0.697  ev 0.050→0.035
-2026-04-10T07:02:08.825570838Z [inf]      decision=TAKE  ev=0.0348  p=0.4950  af=1.00  coh=0.697
-2026-04-10T07:02:08.825575505Z [inf]      EV=0.050  p=0.50  rr=1.25  ws=0.530  score=0.194[n=399]  t15=0  spread=0.000  af=1.00
-2026-04-10T07:02:08.825581755Z [inf]      RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-2026-04-10T07:02:08.825585920Z [inf]      coherence[v10.12]: 0.697  ev 0.050→0.035
-2026-04-10T07:02:08.825590110Z [inf]      decision=TAKE  ev=0.0348  p=0.4950  af=1.00  coh=0.697
-2026-04-10T07:02:08.830268328Z [inf]      EV=0.050  p=0.50  rr=1.25  ws=0.517  score=0.190[n=399]  t15=0  spread=0.000  af=1.00
-2026-04-10T07:02:08.830273555Z [inf]      RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-2026-04-10T07:02:08.830277668Z [inf]      coherence[v10.12]: 0.697  ev 0.050→0.035
-2026-04-10T07:02:08.830282188Z [inf]      decision=TAKE  ev=0.0348  p=0.4950  af=1.00  coh=0.697
-2026-04-10T07:02:08.884688318Z [inf]      EV=0.050  p=0.50  rr=1.25  ws=0.520  score=0.191[n=399]  t15=0  spread=0.000  af=1.00
-2026-04-10T07:02:08.884692982Z [inf]      RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-2026-04-10T07:02:08.884699230Z [inf]      coherence[v10.12]: 0.697  ev 0.050→0.035
-2026-04-10T07:02:08.884705484Z [inf]      decision=TAKE  ev=0.0348  p=0.5000  af=1.00  coh=0.697
-2026-04-10T07:02:08.919583263Z [inf]      EV=0.050  p=0.50  rr=1.25  ws=0.506  score=0.187[n=399]  t15=0  spread=0.000  af=1.00
-2026-04-10T07:02:08.919589521Z [inf]      RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-2026-04-10T07:02:08.919594861Z [inf]      coherence[v10.12]: 0.522  ev 0.050→0.030
-2026-04-10T07:02:08.919599533Z [inf]      decision=TAKE  ev=0.0300  p=0.4950  af=1.00  coh=0.522
-2026-04-10T07:02:08.972702731Z [inf]      EV=0.050  p=0.50  rr=1.25  ws=0.518  score=0.191[n=399]  t15=0  spread=0.000  af=1.00
-2026-04-10T07:02:08.972709507Z [inf]      RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-2026-04-10T07:02:08.972714428Z [inf]      coherence[v10.12]: 0.500  ev 0.050→0.030
-2026-04-10T07:02:08.972718893Z [inf]      decision=TAKE  ev=0.0300  p=0.4950  af=1.00  coh=0.500
-2026-04-10T07:02:09.014139995Z [inf]      EV=0.050  p=0.50  rr=1.25  ws=0.446  score=0.169[n=399]  t15=0  spread=0.000  af=1.00
-2026-04-10T07:02:09.014146456Z [inf]      RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-2026-04-10T07:02:09.014152108Z [inf]      coherence[v10.12]: 0.950  ev 0.050→0.048
-2026-04-10T07:02:09.014156921Z [inf]      decision=TAKE  ev=0.0475  p=0.4950  af=1.00  coh=0.950
-2026-04-10T07:02:09.096181689Z [inf]      EV=0.050  p=0.50  rr=1.25  ws=0.448  score=0.170[n=399]  t15=0  spread=0.000  af=1.00
-2026-04-10T07:02:09.096185975Z [inf]      RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-2026-04-10T07:02:09.096190169Z [inf]      coherence[v10.12]: 0.697  ev 0.050→0.035
-2026-04-10T07:02:09.096194766Z [inf]      decision=TAKE  ev=0.0348  p=0.4950  af=1.00  coh=0.697
-2026-04-10T07:02:09.103729917Z [inf]      EV=0.050  p=0.50  rr=1.25  ws=0.493  score=0.183[n=399]  t15=0  spread=0.000  af=1.00
-2026-04-10T07:02:09.103736782Z [inf]      RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-2026-04-10T07:02:09.103744480Z [inf]      coherence[v10.12]: 0.797  ev 0.050→0.040
-2026-04-10T07:02:09.103748789Z [inf]      decision=TAKE  ev=0.0399  p=0.4950  af=1.00  coh=0.797
-2026-04-10T07:02:09.150579164Z [inf]      EV=0.050  p=0.50  rr=1.25  ws=0.547  score=0.199[n=399]  t15=0  spread=0.000  af=1.00
-2026-04-10T07:02:09.150585214Z [inf]      RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-2026-04-10T07:02:09.150590702Z [inf]      coherence[v10.12]: 0.893  ev 0.050→0.045
-2026-04-10T07:02:09.150595709Z [inf]      decision=TAKE  ev=0.0447  p=0.4950  af=1.00  coh=0.893
-2026-04-10T07:02:09.195633357Z [inf]      EV=0.050  p=0.50  rr=1.25  ws=0.529  score=0.194[n=399]  t15=0  spread=0.000  af=1.00
-2026-04-10T07:02:09.195639389Z [inf]      RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-2026-04-10T07:02:09.195643793Z [inf]      coherence[v10.12]: 0.500  ev 0.050→0.030
-2026-04-10T07:02:09.195648098Z [inf]      decision=TAKE  ev=0.0300  p=0.4950  af=1.00  coh=0.500
-2026-04-10T07:02:09.241792307Z [inf]      EV=0.050  p=0.50  rr=1.25  ws=0.499  score=0.185[n=399]  t15=0  spread=0.000  af=1.00
-2026-04-10T07:02:09.241800470Z [inf]      RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-2026-04-10T07:02:09.241807036Z [inf]      coherence[v10.12]: 0.797  ev 0.050→0.040
-2026-04-10T07:02:09.241814792Z [inf]      decision=TAKE  ev=0.0399  p=0.4950  af=1.00  coh=0.797
-2026-04-10T07:02:09.277852159Z [inf]      EV=0.050  p=0.50  rr=1.25  ws=0.538  score=0.196[n=399]  t15=0  spread=0.000  af=1.00
-2026-04-10T07:02:09.277860385Z [inf]      RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-2026-04-10T07:02:09.277866568Z [inf]      coherence[v10.12]: 0.522  ev 0.050→0.030
-2026-04-10T07:02:09.277873962Z [inf]      decision=TAKE  ev=0.0300  p=0.4950  af=1.00  coh=0.522
-2026-04-10T07:02:09.324808335Z [inf]      EV=0.050  p=0.50  rr=1.25  ws=0.499  score=0.185[n=399]  t15=0  spread=0.000  af=1.00
-2026-04-10T07:02:09.324817521Z [inf]      RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-2026-04-10T07:02:09.324823908Z [inf]      coherence[v10.12]: 0.522  ev 0.050→0.030
-2026-04-10T07:02:09.324830522Z [inf]      decision=TAKE  ev=0.0300  p=0.4950  af=1.00  coh=0.522
-2026-04-10T07:02:09.371981593Z [inf]      EV=0.050  p=0.50  rr=1.25  ws=0.566  score=0.205[n=399]  t15=0  spread=0.000  af=1.00
-2026-04-10T07:02:09.371990691Z [inf]      RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-2026-04-10T07:02:09.371999835Z [inf]      coherence[v10.12]: 0.522  ev 0.050→0.030
-2026-04-10T07:02:09.372006303Z [inf]      decision=TAKE  ev=0.0300  p=0.4950  af=1.00  coh=0.522
-2026-04-10T07:02:09.424928048Z [inf]      EV=0.050  p=0.50  rr=1.25  ws=0.534  score=0.195[n=399]  t15=0  spread=0.000  af=1.00
-2026-04-10T07:02:09.424933545Z [inf]      RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-2026-04-10T07:02:09.424940596Z [inf]      coherence[v10.12]: 0.797  ev 0.050→0.040
-2026-04-10T07:02:09.424945431Z [inf]      decision=TAKE  ev=0.0399  p=0.4950  af=1.00  coh=0.797
-2026-04-10T07:02:09.451780928Z [inf]      EV=0.050  p=0.50  rr=1.25  ws=0.533  score=0.195[n=399]  t15=0  spread=0.000  af=1.00
-2026-04-10T07:02:09.451792501Z [inf]      RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-2026-04-10T07:02:09.451800433Z [inf]      coherence[v10.12]: 0.893  ev 0.050→0.045
-2026-04-10T07:02:09.451807160Z [inf]      decision=TAKE  ev=0.0447  p=0.4950  af=1.00  coh=0.893
-2026-04-10T07:02:09.825298980Z [inf]  AUDIT SUMMARY REPORT
-2026-04-10T07:02:09.825310665Z [inf]      RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-2026-04-10T07:02:09.825312693Z [inf]  ====================================================================
-2026-04-10T07:02:09.825325420Z [inf]      coherence[v10.12]: 0.741  ev 0.050→0.037
-2026-04-10T07:02:09.825335251Z [inf]      decision=TAKE  ev=0.0370  p=0.4950  af=1.00  coh=0.741
-2026-04-10T07:02:09.825337147Z [inf]      EV=0.050  p=0.50  rr=1.25  ws=0.499  score=0.185[n=399]  t15=0  spread=0.000  af=1.00
-2026-04-10T07:02:09.825344887Z [inf]  
-2026-04-10T07:02:09.825347422Z [inf]      RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-2026-04-10T07:02:09.825349682Z [inf]    METRICS['drawdown']      = 0.000127
-2026-04-10T07:02:09.825355725Z [inf]      coherence[v10.12]: 0.624  ev 0.050→0.031
-2026-04-10T07:02:09.825365671Z [inf]      decision=TAKE  ev=0.0312  p=0.4950  af=1.00  coh=0.624
-2026-04-10T07:02:09.825366591Z [inf]    _rb_ema[0]               = current=0.3766  seed_expected≈0.9997  [drift normal after audit calls]
-2026-04-10T07:02:09.825375471Z [inf]      EV=0.050  p=0.50  rr=1.25  ws=0.545  score=0.199[n=399]  t15=0  spread=0.000  af=1.00
-2026-04-10T07:02:09.825377692Z [inf]  
-2026-04-10T07:02:09.825385930Z [inf]  ====================================================================
-2026-04-10T07:02:09.825404025Z [inf]  ====================================================================
-2026-04-10T07:02:09.825420617Z [inf]  WARM START VERIFICATION
-2026-04-10T07:02:09.825427875Z [inf]  ====================================================================
-2026-04-10T07:02:09.825433807Z [inf]    METRICS['equity_peak']   = 0.000034
-2026-04-10T07:02:09.825439137Z [inf]    _peak_equity[0]          = 0.000034  [OK]
-2026-04-10T07:02:09.826208438Z [inf]      [23] DOTUSDT SELL  eq=0.500  spread=0.00078
-2026-04-10T07:02:09.826210102Z [inf]    Avg exec_quality       : 0.827
-2026-04-10T07:02:09.826218505Z [inf]  
-2026-04-10T07:02:09.826218614Z [inf]    Min exec_quality       : 0.500
-2026-04-10T07:02:09.826221210Z [inf]  
-2026-04-10T07:02:09.826228945Z [inf]    Trades audited         : 37
-2026-04-10T07:02:09.826230105Z [inf]  
-2026-04-10T07:02:09.826231452Z [inf]    ── Soft penalties applied ──────────────────────────
-2026-04-10T07:02:09.826238592Z [inf]    Passed to execution    : 21
-2026-04-10T07:02:09.826241925Z [inf]    ── Heat violations (existing book) ─────────────────
-2026-04-10T07:02:09.826249400Z [inf]    Blocked                : 16
-2026-04-10T07:02:09.826249497Z [inf]    Avg final size         : 0.00411
-2026-04-10T07:02:09.826250780Z [inf]    heat > max_heat        : 0
-2026-04-10T07:02:09.826260512Z [inf]  
-2026-04-10T07:02:09.826261612Z [inf]    exec_quality < 0.60    : 1
-2026-04-10T07:02:09.826268932Z [inf]  
-2026-04-10T07:02:09.826271109Z [inf]    ── Size distribution ───────────────────────────────
-2026-04-10T07:02:09.826279615Z [inf]    ── Risk budget ─────────────────────────────────────
-2026-04-10T07:02:09.826279816Z [inf]    Min final size         : 0.00227
-2026-04-10T07:02:09.826289938Z [inf]    Avg risk_budget        : 0.567
-2026-04-10T07:02:09.826290017Z [inf]    Max final size         : 0.00794
-2026-04-10T07:02:09.826298122Z [inf]    Max risk_budget        : 0.930
-2026-04-10T07:02:09.826305574Z [inf]    Min risk_budget        : 0.377
-2026-04-10T07:02:09.826312260Z [inf]  
-2026-04-10T07:02:09.826318927Z [inf]    ── Execution quality ───────────────────────────────
-2026-04-10T07:02:09.828058597Z [inf]    velocity_pen < 1.0     : 0
-2026-04-10T07:02:09.828061620Z [inf]  [bot2] ─────────────────────────────────────────────────────────
-2026-04-10T07:02:09.828066032Z [inf]    size[min/avg/max]=0.0023 / 0.0041 / 0.0079
-2026-04-10T07:02:09.828074125Z [inf]    streak_pen < 1.0       : 0
-2026-04-10T07:02:09.828077813Z [inf]    risk_budget[avg/max]=0.57 / 0.93
-2026-04-10T07:02:09.828077967Z [inf]  ====================================================================
-2026-04-10T07:02:09.828083197Z [inf]    combo_pen < 1.0        : 0
-2026-04-10T07:02:09.828087415Z [inf]    blocked=16 (0.432)
-2026-04-10T07:02:09.828087983Z [inf]  
-2026-04-10T07:02:09.828093853Z [inf]    emergency mode         : 0
-2026-04-10T07:02:09.828097575Z [inf]    [CI] PASS
-2026-04-10T07:02:09.828097993Z [inf]    monotone_violations=0
-2026-04-10T07:02:09.828103384Z [inf]  
-2026-04-10T07:02:09.828105535Z [inf]  [bot2] pre_live_audit complete  ci=PASS
-2026-04-10T07:02:09.828111058Z [inf]    ── Block breakdown ─────────────────────────────────
-2026-04-10T07:02:09.828114051Z [inf]    net_edge               : 0
-2026-04-10T07:02:09.828119227Z [inf]  ====================================================================
-2026-04-10T07:02:09.828120822Z [inf]    RDE                    : 16
-2026-04-10T07:02:09.828124773Z [inf]    cost_guard             : 0
-2026-04-10T07:02:09.828128560Z [inf]  
-2026-04-10T07:02:09.828130390Z [inf]    exec_quality HARD_SKIP : 0
-2026-04-10T07:02:09.828135234Z [inf]    heat_limit             : 0
-2026-04-10T07:02:09.828138628Z [inf]  SUMMARY[v10.12c]:
-2026-04-10T07:02:09.828144931Z [inf]  
-2026-04-10T07:02:09.828147567Z [inf]    trades=37  mode=replay
-2026-04-10T07:02:09.828152790Z [inf]    ── Monotone check (reduce-only: corr→final) ────────
-2026-04-10T07:02:09.828158812Z [inf]    Violations             : 0
-2026-04-10T07:02:09.828165198Z [inf]  
-2026-04-10T07:02:09.829970544Z [inf]      [97m[1mDOT[0m  [97m$        1.2885[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:02:09.829979362Z [inf]      [97m[1mSOL[0m  [97m$       83.2050[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:02:09.829986721Z [inf]      [97m[1mXRP[0m  [97m$        1.3420[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:02:09.829996381Z [inf]  
-2026-04-10T07:02:09.830003911Z [inf]  
-2026-04-10T07:02:09.830006550Z [inf]      [1m[97mVYSLEDKY OBCHODOVANI[0m
-2026-04-10T07:02:09.830014034Z [inf]  [96m============================================================[0m
-2026-04-10T07:02:09.830015840Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:09.830021205Z [inf]  [1m[96m  CRYPTOMASTER  |  0h 0m 13s  |[93m TRENINK [0m[0m
-2026-04-10T07:02:09.830024013Z [inf]      [90mObchody[0m    [97m[1m399[0m  ([92mOK 20[0m  [91mX 0[0m  [90m~ 17[0m)
-2026-04-10T07:02:09.830029023Z [inf]  [96m============================================================[0m
-2026-04-10T07:02:09.830038807Z [inf]  
-2026-04-10T07:02:09.830046506Z [inf]      [1m[97mZIVE CENY  (Binance · kazde 2 s)[0m
-2026-04-10T07:02:09.830053530Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:09.830059849Z [inf]      [97m[1mBTC[0m  [97m$   71,826.6350[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:02:09.830065727Z [inf]      [97m[1mETH[0m  [97m$    2,187.0750[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:02:09.830072497Z [inf]      [97m[1mADA[0m  [97m$        0.2511[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:02:09.830079082Z [inf]      [97m[1mBNB[0m  [97m$      600.5950[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:02:09.831884306Z [inf]      [90mWinrate[0m     [92m[1m100.0%[0m  [92m━━━━━━━━━━━━━━━━━━━━━[92m●[90m [92m[1m100%[0m[0m  [90mcil 55%[0m  [90m(bez timeoutu)[0m
-2026-04-10T07:02:09.831895734Z [inf]      [90mZisk[0m        [91m[1m-0.00007793[0m  [91m◄[91m●[90m─────────────────────[0m
-2026-04-10T07:02:09.831903651Z [inf]      [90mDrawdown[0m    [92m0.00012749[0m  [90m(pokles od vrcholu)[0m
-2026-04-10T07:02:09.831910409Z [inf]      [90mSerie[0m       [92m[1mFIRE 4x vyhra v rade![0m
-2026-04-10T07:02:09.831916960Z [inf]      [90m----------------------------------------[0m
-2026-04-10T07:02:09.831924288Z [inf]      [90mProfit Factor[0m  [92m[1m99.00x[0m  [90m(zisk / ztrata, cil > 1.5)[0m
-2026-04-10T07:02:09.831930810Z [inf]      [90mExpectancy[0m     [92m+0.00000748[0m  [90m(prumerny vynos / obchod)[0m
-2026-04-10T07:02:09.831937341Z [inf]      [90mNejlepsi[0m      [92m+0.00003382[0m   [90mNejhorsi[0m  [91m0.00000000[0m
-2026-04-10T07:02:09.831944377Z [inf]      [90mPosledni obchod[0m  [97m3m 39s[0m [90mzpet[0m
-2026-04-10T07:02:09.831951786Z [inf]  
-2026-04-10T07:02:09.831958490Z [inf]      [1m[97mVYSLEDKY PO MENACH[0m
-2026-04-10T07:02:09.831964696Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:09.831971450Z [inf]      [90mMena[0m  [90mObch[0m  [90mWR[0m  [90mBar[0m          [90mZisk[0m
-2026-04-10T07:02:09.831978323Z [inf]      [90m--------------------------------------------------[0m
-2026-04-10T07:02:09.831986219Z [inf]      [97m[1mBTC[0m  [97m8[0m  [92m[1m62%[0m  [92m━━━━━━━━━━━━[92m●[90m───────── [92m[1m62%[0m[0m  [92m+0.00000510[0m  [92mOK[0m
-2026-04-10T07:02:09.834086145Z [inf]      [97m[1mETH[0m  [97m10[0m  [93m[1m50%[0m  [93m━━━━━━━━━━[93m●[90m─────────── [93m[1m50%[0m[0m  [91m-0.00001250[0m  [93m?[0m
-2026-04-10T07:02:09.834092625Z [inf]      [97m[1mADA[0m  [97m3[0m  [92m[1m67%[0m  [92m━━━━━━━━━━━━━[92m●[90m──────── [92m[1m67%[0m[0m  [92m+0.00000546[0m  [92mOK[0m
-2026-04-10T07:02:09.834097053Z [inf]      [97m[1mBNB[0m  [97m3[0m  [91m[1m33%[0m  [91m━━━━━━[91m●[90m─────────────── [91m[1m33%[0m[0m  [91m-0.00001279[0m  [91mX[0m
-2026-04-10T07:02:09.834101814Z [inf]      [97m[1mDOT[0m  [97m2[0m  [91m[1m0%[0m  [91m[91m●[90m───────────────────── [91m[1m0%[0m[0m  [91m-0.00006104[0m  [91mX[0m
-2026-04-10T07:02:09.834106657Z [inf]      [97m[1mSOL[0m  [97m8[0m  [92m[1m62%[0m  [92m━━━━━━━━━━━━[92m●[90m───────── [92m[1m62%[0m[0m  [91m-0.00000025[0m  [92mOK[0m
-2026-04-10T07:02:09.834112161Z [inf]      [97m[1mXRP[0m  [97m3[0m  [92m[1m67%[0m  [92m━━━━━━━━━━━━━[92m●[90m──────── [92m[1m67%[0m[0m  [91m-0.00000191[0m  [92mOK[0m
-2026-04-10T07:02:09.834116325Z [inf]  
-2026-04-10T07:02:09.834120480Z [inf]      [1m[97mUCENI – STAV A USPESNOST[0m
-2026-04-10T07:02:09.834126960Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:09.834131287Z [inf]      [90mKalibrace[0m      [92m[1mKALIBROVAN  ✓[0m  [96m━━━━━━━━━━━━━━━━━━━━━[96m●[90m [96m[1m100%[0m[0m  [90m(399 obchodu celkem)[0m
-2026-04-10T07:02:09.834135257Z [inf]      [90mTrend uceni[0m    [91m[1mZHORŠUJE SE 📉[0m
-2026-04-10T07:02:09.836513083Z [inf]      [90mPoslednich 0[0m    [97m0.0%[0m  vs  prumer [97m100.0%[0m  [91m(-100.0%)[0m
-2026-04-10T07:02:09.836519689Z [inf]      [90mEV vykon[0m       prumer [91m[1m0.036[0m  min [90m0.030[0m  max [90m0.048[0m  [90m(37 obch)[0m
-2026-04-10T07:02:09.836525062Z [inf]      [90mUzavreni[0m       TP [93m[1m0%[0m  SL [93m0%[0m  trail [90m0%[0m  timeout [91m100%[0m
-2026-04-10T07:02:09.836529417Z [inf]      [90mKalibrace p[0m    p=[97m49.1%[0m  WR=[97m100.0%[0m  odchylka [91m[1m50.9pp[0m  [91modkalibrovan[0m
-2026-04-10T07:02:09.836533316Z [inf]      [90mWR dle rezimu[0m
-2026-04-10T07:02:09.836539393Z [inf]        [97m[1mBULL [0m  [93m━━━━━━━━━━[93m●[90m─────────── [93m[1m50%[0m[0m  [93m[1m50%[0m  [90m(10 obch)[0m
-2026-04-10T07:02:09.836543583Z [inf]        [97m[1mBEAR [0m  [92m━━━━━━━━━━━[92m●[90m────────── [92m[1m56%[0m[0m  [92m[1m56%[0m  [90m(27 obch)[0m
-2026-04-10T07:02:09.836549414Z [inf]  
-2026-04-10T07:02:09.836554701Z [inf]      [1m[97mAUDITOR  (ochrana strategie)[0m
-2026-04-10T07:02:09.836559965Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:09.836564098Z [inf]      [90mEV prah[0m              [92m[1m0.000[0m  [90mt15=0  t60=0[0m[92m  aktivni[0m
-2026-04-10T07:02:09.836567933Z [inf]      [90mVelikost pozice[0m      [92m[1m1.40x[0m  [90mEV-only · loss streak → scale · DD halt 40%[0m
-2026-04-10T07:02:09.836572090Z [inf]  
-2026-04-10T07:02:09.836576387Z [inf]      [1m[97mSTRATEGIE  (ADX + EMA + MACD + BB + RSI)[0m
-2026-04-10T07:02:09.836580283Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:09.839409597Z [inf]      [90mRezim trhu[0m   [91mBEAR TREND  silny pokles  (63%)[0m
-2026-04-10T07:02:09.839420642Z [inf]      [90mSignaly[0m       [97m1622[0m zachyceno  [97m6[0m po filtru  [91m22[0m blokovano  [92m399[0m provedeno
-2026-04-10T07:02:09.839428822Z [inf]      [90mFiltrace[0m      [93m0.0%[0m  [90mprojde filtrem[0m  [90mTP: 1.2xATR  /  SL: 0.8xATR  (RR 1.5:1)  EV-only[0m
-2026-04-10T07:02:09.839434113Z [inf]  
-2026-04-10T07:02:09.839438970Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:09.839446017Z [inf]    [92mSbiram data[0m[92m ━━━ [0m[94m[1m● Trenink[0m[90m ─── [0m[90mAktivni[0m
-2026-04-10T07:02:09.839453417Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:09.839459297Z [inf]    [1mSTAV:[0m  [93m[1mTRENINK[0m  [90m([0m[93mzisk > 0[0m[90m)[0m
-2026-04-10T07:02:09.839466044Z [inf]  [96m============================================================[0m
-2026-04-10T07:02:09.839472558Z [inf]  
-2026-04-10T07:02:09.839479042Z [inf]  
-2026-04-10T07:02:09.839486249Z [inf]  === EXECUTION ENGINE ===
-2026-04-10T07:02:09.839492801Z [inf]    Equity:   1.000000  |  DD: 0.00%
-2026-04-10T07:02:09.839499027Z [inf]    Exposure: 0.000  |  Positions: 0
-2026-04-10T07:02:09.839505170Z [inf]    Sharpe:   0.000  |  WR: 0.00%  |  Edge: 0.00000  |  MaxDD: 0.00%
-2026-04-10T07:02:09.839511223Z [inf]    Failure:  0.000  [OK]
-2026-04-10T07:02:09.839517134Z [inf]  
-2026-04-10T07:02:09.839523374Z [inf]  === LEARNING MONITOR ===
-2026-04-10T07:02:09.844388160Z [inf]    BTC  BEAR_TREND  n:6     EV:+0.000  WR:83%  conv:-- (6/20)  bandit:0.00
-2026-04-10T07:02:09.844403456Z [inf]    ETH  BEAR_TREND  n:9     EV:+0.000  WR:44%  conv:-- (9/20)  bandit:0.00
-2026-04-10T07:02:09.844414649Z [inf]    SOL  BEAR_TREND  n:6     EV:+0.000  WR:67%  conv:-- (6/20)  bandit:0.00
-2026-04-10T07:02:09.844426505Z [inf]  
-2026-04-10T07:02:09.844433445Z [inf]    Features (WR per signal key):
-2026-04-10T07:02:09.844439412Z [inf]      is_weekend            [####--------]  34%  -
-2026-04-10T07:02:09.844445857Z [inf]      pullback              [####--------]  34%  -
-2026-04-10T07:02:09.844451545Z [inf]      mom                   [####--------]  34%  -
-2026-04-10T07:02:09.844457193Z [inf]      bounce                [####--------]  34%  -
-2026-04-10T07:02:09.844463002Z [inf]      trend                 [####--------]  34%  -
-2026-04-10T07:02:09.844470923Z [inf]      breakout              [####--------]  34%  -
-2026-04-10T07:02:09.844477031Z [inf]      wick                  [####--------]  34%  -
-2026-04-10T07:02:09.844483058Z [inf]      vol                   [####--------]  34%  -
-2026-04-10T07:02:09.844489071Z [inf]    [!] LEARNING: NO LEARNING SIGNAL DETECTED
-2026-04-10T07:02:09.844495013Z [inf]  
-2026-04-10T07:02:09.844503169Z [inf]    Health: 0.000  [BAD]
-2026-04-10T07:02:09.844522202Z [inf]  ========================
-2026-04-10T07:02:15.195562911Z [inf]    🔴 ETH $2,187.0850 | [fake_breakout] sc:4/7  ws:0.45 | BULL_TREND | conf:34% [trend,pullback,vol,wick]
-2026-04-10T07:02:15.195568303Z [inf]      EV=0.050  p=0.50  rr=1.25  ws=0.446  score=0.169[n=399]  t15=0  spread=0.000  af=1.00
-2026-04-10T07:02:15.195572710Z [inf]      RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-2026-04-10T07:02:15.195577264Z [inf]      coherence[v10.12]: 0.500  ev 0.050→0.030
-2026-04-10T07:02:15.195583579Z [inf]      decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-2026-04-10T07:02:15.253746979Z [inf]  🌍 Macro Guard: Staženo 8 úderových událostí z ekonomického kalendáře.
-2026-04-10T07:02:15.960564200Z [inf]      exec[force]: slip=0.00005  fee=0.00075  fr=0.50  ws_adj=0.446  0.0029@2186.9756  tp=2176.3469  sl=2192.2900
-2026-04-10T07:02:15.960583050Z [inf]      portfolio[v10.10]: positions=1  portfolio_efficiency=0.0000
-2026-04-10T07:02:15.960593696Z [inf]      ❌ ETH SELL $2,186.9756→$2,187.0850  -0.000002  [timeout] (fee: 0.00075)
-2026-04-10T07:02:15.960595221Z [inf]       fw=4.00  pred=BULL_TREND  max_pos=0.0401  ptp×=1.50  corr×=1.00  sxd=False
-2026-04-10T07:02:15.960602868Z [inf]  💾 Firebase: saved 1 trades (batch write)
-2026-04-10T07:02:15.960606140Z [inf]       eff=0.0000  eff_live=0.0000  repl=False  coh=0.500
-2026-04-10T07:02:15.960612658Z [inf]      max_pos[v10.8]: 0.0417→0.0401  mode=neutral  pred=BULL_TREND
-2026-04-10T07:02:15.960614735Z [inf]       pp=0.000  mom=0.000  mom_mult×1.00
-2026-04-10T07:02:15.960621964Z [inf]      exec_quality[v10.11]: exec_q=0.52 spread=0.0000 slip=0.0009 fill=0.75 lat=1.00
-2026-04-10T07:02:15.960622941Z [inf]      policy[v10.7/10.8/v10.9/v10.10/v10.12/v10.13]: mode=neutral  pm=1.000  policy_ev=0.0000  risk_ev=0.0000
-2026-04-10T07:02:15.960628448Z [inf]      risk_budget[v10.12c]: risk=0.37 dd=3.304 sharpe=0.00 ruin=0.000 heat=0.0000 max_heat=0.0369
-2026-04-10T07:02:19.948596578Z [inf]      [1m[97mVYSLEDKY OBCHODOVANI[0m
-2026-04-10T07:02:19.948606247Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:19.948612006Z [inf]      [90mObchody[0m    [97m[1m400[0m  ([92mOK 20[0m  [91mX 0[0m  [90m~ 18[0m)
-2026-04-10T07:02:19.948749324Z [inf]  
-2026-04-10T07:02:19.948754618Z [inf]  [96m============================================================[0m
-2026-04-10T07:02:19.948759406Z [inf]  [1m[96m  CRYPTOMASTER  |  0h 0m 23s  |[93m TRENINK [0m[0m
-2026-04-10T07:02:19.948763618Z [inf]  [96m============================================================[0m
-2026-04-10T07:02:19.948768413Z [inf]  
-2026-04-10T07:02:19.948772818Z [inf]      [1m[97mZIVE CENY  (Binance · kazde 2 s)[0m
-2026-04-10T07:02:19.948777542Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:19.948782432Z [inf]      [97m[1mBTC[0m  [97m$   71,826.6350[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:02:19.948786933Z [inf]      [97m[1mETH[0m  [97m$    2,187.0950[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:02:19.948791492Z [inf]      [97m[1mADA[0m  [97m$        0.2511[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:02:19.948795926Z [inf]      [97m[1mBNB[0m  [97m$      600.5850[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:02:19.948801648Z [inf]      [97m[1mDOT[0m  [97m$        1.2885[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:02:19.948806132Z [inf]      [97m[1mSOL[0m  [97m$       83.2050[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:02:19.948810035Z [inf]      [97m[1mXRP[0m  [97m$        1.3420[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:02:19.948815868Z [inf]  
-2026-04-10T07:02:19.949793673Z [inf]      [90mWinrate[0m     [92m[1m100.0%[0m  [92m━━━━━━━━━━━━━━━━━━━━━[92m●[90m [92m[1m100%[0m[0m  [90mcil 55%[0m  [90m(bez timeoutu)[0m
-2026-04-10T07:02:19.949803381Z [inf]      [90mZisk[0m        [91m[1m-0.00008026[0m  [91m◄[91m●[90m─────────────────────[0m
-2026-04-10T07:02:19.949811250Z [inf]      [90mDrawdown[0m    [92m0.00012749[0m  [90m(pokles od vrcholu)[0m
-2026-04-10T07:02:19.949816406Z [inf]      [90mSerie[0m       [92m[1mFIRE 4x vyhra v rade![0m
-2026-04-10T07:02:19.949821645Z [inf]      [90m----------------------------------------[0m
-2026-04-10T07:02:19.949826712Z [inf]      [90mProfit Factor[0m  [92m[1m99.00x[0m  [90m(zisk / ztrata, cil > 1.5)[0m
-2026-04-10T07:02:19.949831354Z [inf]      [90mExpectancy[0m     [92m+0.00000748[0m  [90m(prumerny vynos / obchod)[0m
-2026-04-10T07:02:19.949836209Z [inf]      [90mNejlepsi[0m      [92m+0.00003382[0m   [90mNejhorsi[0m  [91m0.00000000[0m
-2026-04-10T07:02:19.949841351Z [inf]      [90mPosledni obchod[0m  [97m4s[0m [90mzpet[0m
-2026-04-10T07:02:19.949847046Z [inf]  
-2026-04-10T07:02:19.949852564Z [inf]      [1m[97mVYSLEDKY PO MENACH[0m
-2026-04-10T07:02:19.949858100Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:19.949863113Z [inf]      [90mMena[0m  [90mObch[0m  [90mWR[0m  [90mBar[0m          [90mZisk[0m
-2026-04-10T07:02:19.949868537Z [inf]      [90m--------------------------------------------------[0m
-2026-04-10T07:02:19.949873048Z [inf]      [97m[1mBTC[0m  [97m8[0m  [92m[1m62%[0m  [92m━━━━━━━━━━━━[92m●[90m───────── [92m[1m62%[0m[0m  [92m+0.00000510[0m  [92mOK[0m
-2026-04-10T07:02:19.951637777Z [inf]      [97m[1mETH[0m  [97m11[0m  [93m[1m45%[0m  [93m━━━━━━━━━[93m●[90m──────────── [93m[1m45%[0m[0m  [91m-0.00001483[0m  [93m?[0m
-2026-04-10T07:02:19.951646842Z [inf]      [97m[1mADA[0m  [97m3[0m  [92m[1m67%[0m  [92m━━━━━━━━━━━━━[92m●[90m──────── [92m[1m67%[0m[0m  [92m+0.00000546[0m  [92mOK[0m
-2026-04-10T07:02:19.951653943Z [inf]      [97m[1mBNB[0m  [97m3[0m  [91m[1m33%[0m  [91m━━━━━━[91m●[90m─────────────── [91m[1m33%[0m[0m  [91m-0.00001279[0m  [91mX[0m
-2026-04-10T07:02:19.951662267Z [inf]      [97m[1mDOT[0m  [97m2[0m  [91m[1m0%[0m  [91m[91m●[90m───────────────────── [91m[1m0%[0m[0m  [91m-0.00006104[0m  [91mX[0m
-2026-04-10T07:02:19.951667515Z [inf]      [97m[1mSOL[0m  [97m8[0m  [92m[1m62%[0m  [92m━━━━━━━━━━━━[92m●[90m───────── [92m[1m62%[0m[0m  [91m-0.00000025[0m  [92mOK[0m
-2026-04-10T07:02:19.951673352Z [inf]      [97m[1mXRP[0m  [97m3[0m  [92m[1m67%[0m  [92m━━━━━━━━━━━━━[92m●[90m──────── [92m[1m67%[0m[0m  [91m-0.00000191[0m  [92mOK[0m
-2026-04-10T07:02:19.951678284Z [inf]  
-2026-04-10T07:02:19.951682756Z [inf]      [1m[97mUCENI – STAV A USPESNOST[0m
-2026-04-10T07:02:19.951687518Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:19.951693509Z [inf]      [90mKalibrace[0m      [92m[1mKALIBROVAN  ✓[0m  [96m━━━━━━━━━━━━━━━━━━━━━[96m●[90m [96m[1m100%[0m[0m  [90m(400 obchodu celkem)[0m
-2026-04-10T07:02:19.951698380Z [inf]      [90mTrend uceni[0m    [91m[1mZHORŠUJE SE 📉[0m
-2026-04-10T07:02:19.953684008Z [inf]  
-2026-04-10T07:02:19.953690929Z [inf]      [1m[97mSTRATEGIE  (ADX + EMA + MACD + BB + RSI)[0m
-2026-04-10T07:02:19.953696946Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:19.953709658Z [inf]      [90mPoslednich 1[0m    [97m0.0%[0m  vs  prumer [97m100.0%[0m  [91m(-100.0%)[0m
-2026-04-10T07:02:19.953715188Z [inf]      [90mEV vykon[0m       prumer [91m[1m0.035[0m  min [90m0.030[0m  max [90m0.048[0m  [90m(38 obch)[0m
-2026-04-10T07:02:19.953720104Z [inf]      [90mUzavreni[0m       TP [93m[1m0%[0m  SL [93m0%[0m  trail [90m0%[0m  timeout [91m100%[0m
-2026-04-10T07:02:19.953729894Z [inf]      [90mKalibrace p[0m    p=[97m49.2%[0m  WR=[97m100.0%[0m  odchylka [91m[1m50.8pp[0m  [91modkalibrovan[0m
-2026-04-10T07:02:19.953735644Z [inf]      [90mWR dle rezimu[0m
-2026-04-10T07:02:19.953740848Z [inf]        [97m[1mBULL [0m  [93m━━━━━━━━━[93m●[90m──────────── [93m[1m46%[0m[0m  [93m[1m46%[0m  [90m(11 obch)[0m
-2026-04-10T07:02:19.953745266Z [inf]        [97m[1mBEAR [0m  [92m━━━━━━━━━━━[92m●[90m────────── [92m[1m56%[0m[0m  [92m[1m56%[0m  [90m(27 obch)[0m
-2026-04-10T07:02:19.953750122Z [inf]  
-2026-04-10T07:02:19.953755526Z [inf]      [1m[97mAUDITOR  (ochrana strategie)[0m
-2026-04-10T07:02:19.953761317Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:19.953766359Z [inf]      [90mEV prah[0m              [92m[1m0.000[0m  [90mt15=1  t60=1[0m[92m  aktivni[0m
-2026-04-10T07:02:19.953771967Z [inf]      [90mVelikost pozice[0m      [92m[1m1.40x[0m  [90mEV-only · loss streak → scale · DD halt 40%[0m
-2026-04-10T07:02:19.955465371Z [inf]      [90mRezim trhu[0m   [91mBEAR TREND  silny pokles  (61%)[0m
-2026-04-10T07:02:19.955472998Z [inf]      [90mSignaly[0m       [97m2352[0m zachyceno  [97m7[0m po filtru  [91m22[0m blokovano  [92m400[0m provedeno
-2026-04-10T07:02:19.955475906Z [inf]      [97m[1mDOT[0m  [90mzadny signal[0m
-2026-04-10T07:02:19.955478661Z [inf]      [90mFiltrace[0m      [93m0.0%[0m  [90mprojde filtrem[0m  [90mTP: 1.2xATR  /  SL: 0.8xATR  (RR 1.5:1)  EV-only[0m
-2026-04-10T07:02:19.955484081Z [inf]  
-2026-04-10T07:02:19.955489306Z [inf]      [97m[1mSOL[0m  [90mzadny signal[0m
-2026-04-10T07:02:19.955490466Z [inf]      [1m[97mPOSLEDNI ROZHODNUTI[0m
-2026-04-10T07:02:19.955496661Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:19.955499194Z [inf]      [97m[1mXRP[0m  [90mzadny signal[0m
-2026-04-10T07:02:19.955503073Z [inf]      [97m[1mBTC[0m  [90mzadny signal[0m
-2026-04-10T07:02:19.955509236Z [inf]      [97m[1mETH[0m  [91m[1mPRODEJ[0m  [97m$2,187.0850[0m  [90mp:50%[0m[96m  ev:0.030[0m  [90mBULL[0m[91m[1m  PROHRA[0m
-2026-04-10T07:02:19.955509677Z [inf]  
-2026-04-10T07:02:19.955515659Z [inf]      [97m[1mADA[0m  [90mzadny signal[0m
-2026-04-10T07:02:19.955517542Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:19.955521638Z [inf]      [97m[1mBNB[0m  [90mzadny signal[0m
-2026-04-10T07:02:19.955526766Z [inf]    [92mSbiram data[0m[92m ━━━ [0m[94m[1m● Trenink[0m[90m ─── [0m[90mAktivni[0m
-2026-04-10T07:02:19.955531616Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:19.957512791Z [inf]    Features (WR per signal key):
-2026-04-10T07:02:19.957520656Z [inf]      is_weekend            [####--------]  34%  -
-2026-04-10T07:02:19.957521416Z [inf]    [1mSTAV:[0m  [93m[1mTRENINK[0m  [90m([0m[93mzisk > 0[0m[90m)[0m
-2026-04-10T07:02:19.957527368Z [inf]      pullback              [####--------]  34%  -
-2026-04-10T07:02:19.957527553Z [inf]  [96m============================================================[0m
-2026-04-10T07:02:19.957533697Z [inf]  
-2026-04-10T07:02:19.957534438Z [inf]      mom                   [####--------]  34%  -
-2026-04-10T07:02:19.957539586Z [inf]  
-2026-04-10T07:02:19.957540734Z [inf]      bounce                [####--------]  34%  -
-2026-04-10T07:02:19.957546384Z [inf]  === EXECUTION ENGINE ===
-2026-04-10T07:02:19.957546609Z [inf]      trend                 [####--------]  34%  -
-2026-04-10T07:02:19.957552512Z [inf]      breakout              [####--------]  34%  -
-2026-04-10T07:02:19.957552930Z [inf]    Equity:   0.999998  |  DD: 0.00%
-2026-04-10T07:02:19.957559702Z [inf]    Exposure: 0.000  |  Positions: 0
-2026-04-10T07:02:19.957560034Z [inf]      wick                  [####--------]  34%  -
-2026-04-10T07:02:19.957565452Z [inf]    Sharpe:   0.000  |  WR: 0.00%  |  Edge: 0.50000  |  MaxDD: 0.00%
-2026-04-10T07:02:19.957566341Z [inf]      vol                   [####--------]  34%  -
-2026-04-10T07:02:19.957571033Z [inf]    Failure:  0.000  [OK]
-2026-04-10T07:02:19.957576526Z [inf]  
-2026-04-10T07:02:19.957582506Z [inf]  === LEARNING MONITOR ===
-2026-04-10T07:02:19.957588142Z [inf]    BTC  BEAR_TREND  n:6     EV:+0.000  WR:83%  conv:-- (6/20)  bandit:0.00
-2026-04-10T07:02:19.957594344Z [inf]    ETH  BEAR_TREND  n:9     EV:+0.000  WR:44%  conv:-- (9/20)  bandit:0.00
-2026-04-10T07:02:19.957601602Z [inf]    SOL  BEAR_TREND  n:6     EV:+0.000  WR:67%  conv:-- (6/20)  bandit:0.00
-2026-04-10T07:02:19.957607154Z [inf]  
-2026-04-10T07:02:19.958613190Z [inf]    [!] LEARNING: NO LEARNING SIGNAL DETECTED
-2026-04-10T07:02:19.958618657Z [inf]  
-2026-04-10T07:02:19.958623257Z [inf]    Health: 0.000  [BAD]
-2026-04-10T07:02:19.958627131Z [inf]  ========================
-2026-04-10T07:02:25.259170791Z [inf]    🔴 BTC $71,826.0500 | [fake_breakout] sc:5/7  ws:0.56 | BEAR_TREND | conf:92% [trend,pullback,vol,mom,wick]
-2026-04-10T07:02:25.259178520Z [inf]      EV=0.050  p=0.50  rr=1.25  ws=0.561  score=0.203[n=400]  t15=1  spread=0.000  af=1.00
-2026-04-10T07:02:25.259184244Z [inf]      RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-2026-04-10T07:02:25.259190656Z [inf]      coherence[v10.12]: 0.797  ev 0.050→0.040
-2026-04-10T07:02:25.259195880Z [inf]      decision=TAKE  ev=0.0399  p=0.5000  af=1.00  coh=0.797
-2026-04-10T07:02:25.259214178Z [inf]      max_pos[v10.8]: 0.0510→0.0426  mode=neutral  pred=BEAR_TREND
-2026-04-10T07:02:25.259221157Z [inf]      policy[v10.7/10.8/v10.9/v10.10/v10.12/v10.13]: mode=neutral  pm=1.200  policy_ev=0.0000  risk_ev=0.0000
-2026-04-10T07:02:25.259226584Z [inf]       fw=5.00  pred=BEAR_TREND  max_pos=0.0426  ptp×=1.80  corr×=1.00  sxd=False
-2026-04-10T07:02:25.259232403Z [inf]       eff=0.0000  eff_live=0.0000  repl=False  coh=0.797
-2026-04-10T07:02:25.259238553Z [inf]       pp=0.000  mom=0.000  mom_mult×1.00
-2026-04-10T07:02:25.260828657Z [inf]      exec_quality[v10.11]: exec_q=0.99 spread=0.0000 slip=0.0009 fill=1.00 lat=1.00
-2026-04-10T07:02:25.306186612Z [inf]      risk_budget[v10.12c]: risk=0.36 dd=3.373 sharpe=0.00 ruin=0.000 heat=0.0000 max_heat=0.0362
-2026-04-10T07:02:25.306195406Z [inf]      exec[force]: slip=0.00005  fee=0.00075  fr=0.50  ws_adj=0.561  0.0193@71822.4587  tp=71473.4015  sl=71996.9873
-2026-04-10T07:02:25.306203522Z [inf]      portfolio[v10.10]: positions=1  portfolio_efficiency=0.0000
-2026-04-10T07:02:25.363365073Z [inf]      ❌ BTC SELL $71,822.4587→$71,824.0400  -0.000015  [timeout] (fee: 0.00075)
-2026-04-10T07:02:25.512716207Z [inf]    🔴 BNB $600.5650 | [fake_breakout] sc:4/7  ws:0.53 | BEAR_TREND | conf:72% [trend,pullback,vol,wick]
-2026-04-10T07:02:26.020073983Z [inf]      risk_budget[v10.12c]: risk=0.36 dd=3.813 sharpe=0.00 ruin=0.000 heat=0.0000 max_heat=0.0356
-2026-04-10T07:02:26.020086385Z [inf]      exec[force]: slip=-0.00040  fee=0.00000  fr=1.00  ws_adj=0.532  0.0133@0.2512  tp=0.2499  sl=0.2518
-2026-04-10T07:02:26.020095762Z [inf]      portfolio[v10.10]: positions=1  portfolio_efficiency=0.0000
-2026-04-10T07:02:26.020102738Z [inf]      ✅ ADA SELL $0.2512→$0.2510  +0.000005  [timeout] (fee: 0.00000)
-2026-04-10T07:02:26.020134817Z [inf]    🔴 ADA $0.2510 | [fake_breakout] sc:4/7  ws:0.53 | BEAR_TREND | conf:90% [trend,pullback,vol,wick]
-2026-04-10T07:02:26.020141580Z [inf]      EV=0.050  p=0.50  rr=1.25  ws=0.532  score=0.194[n=401]  t15=2  spread=0.000  af=1.00
-2026-04-10T07:02:26.020148121Z [inf]      RDE[v10.10b]: ev=0.050 thr=0.150 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-2026-04-10T07:02:26.020154734Z [inf]      coherence[v10.12]: 0.580  ev 0.050→0.030
-2026-04-10T07:02:26.020161565Z [inf]      decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.580
-2026-04-10T07:02:26.020168385Z [inf]      max_pos[v10.8]: 0.0458→0.0401  mode=neutral  pred=BEAR_TREND
-2026-04-10T07:02:26.020176012Z [inf]      policy[v10.7/10.8/v10.9/v10.10/v10.12/v10.13]: mode=neutral  pm=1.200  policy_ev=0.0000  risk_ev=0.0000
-2026-04-10T07:02:26.020183414Z [inf]       fw=4.00  pred=BEAR_TREND  max_pos=0.0401  ptp×=1.80  corr×=1.00  sxd=False
-2026-04-10T07:02:26.020190604Z [inf]       eff=0.0000  eff_live=0.0000  repl=False  coh=0.580
-2026-04-10T07:02:26.020200361Z [inf]       pp=0.000  mom=-0.058  mom_mult×0.99
-2026-04-10T07:02:26.020205908Z [inf]      exec_quality[v10.11]: exec_q=0.74 spread=0.0004 slip=0.0011 fill=0.75 lat=1.00
-2026-04-10T07:02:26.093883265Z [inf]    🔴 XRP $1.3420 | [fake_breakout] sc:4/7  ws:0.54 | BEAR_TREND | conf:90% [trend,pullback,vol,wick]
-2026-04-10T07:02:27.030657912Z [inf]    🔴 SOL $83.1950 | [fake_breakout] sc:4/7  ws:0.54 | BEAR_TREND | conf:72% [trend,pullback,vol,wick]
-2026-04-10T07:02:28.060665965Z [inf]       pp=0.000  mom=0.277  mom_mult×1.06
-2026-04-10T07:02:28.060677643Z [inf]      exec_quality[v10.11]: exec_q=0.74 spread=0.0008 slip=0.0013 fill=0.75 lat=1.00
-2026-04-10T07:02:28.060686080Z [inf]      risk_budget[v10.12c]: risk=0.35 dd=3.655 sharpe=0.00 ruin=0.000 heat=0.0000 max_heat=0.0350
-2026-04-10T07:02:28.060693647Z [inf]      exec[force]: slip=0.00005  fee=0.00075  fr=0.50  ws_adj=0.541  0.0131@1.2874  tp=1.2812  sl=1.2906
-2026-04-10T07:02:28.060701379Z [inf]      portfolio[v10.10]: positions=1  portfolio_efficiency=0.0000
-2026-04-10T07:02:28.060703798Z [inf]    🔴 DOT $1.2875 | [fake_breakout] sc:4/7  ws:0.54 | BEAR_TREND | conf:90% [trend,pullback,vol,wick]
-2026-04-10T07:02:28.060710920Z [inf]      ❌ DOT SELL $1.2874→$1.2875  -0.000010  [timeout] (fee: 0.00075)
-2026-04-10T07:02:28.060712909Z [inf]      EV=0.050  p=0.50  rr=1.25  ws=0.541  score=0.197[n=402]  t15=3  spread=0.000  af=1.00
-2026-04-10T07:02:28.060720109Z [inf]      RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-2026-04-10T07:02:28.060727161Z [inf]      coherence[v10.12]: 0.580  ev 0.050→0.030
-2026-04-10T07:02:28.060733501Z [inf]      decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.580
-2026-04-10T07:02:28.060740050Z [inf]      max_pos[v10.8]: 0.0495→0.0401  mode=neutral  pred=BEAR_TREND
-2026-04-10T07:02:28.060749395Z [inf]      policy[v10.7/10.8/v10.9/v10.10/v10.12/v10.13]: mode=neutral  pm=1.200  policy_ev=0.0000  risk_ev=0.0000
-2026-04-10T07:02:28.060756160Z [inf]       fw=4.00  pred=BEAR_TREND  max_pos=0.0401  ptp×=1.80  corr×=1.00  sxd=False
-2026-04-10T07:02:28.060761936Z [inf]       eff=0.0000  eff_live=0.0000  repl=False  coh=0.580
-2026-04-10T07:02:29.654173854Z [inf]  
-2026-04-10T07:02:29.654182322Z [inf]  [96m============================================================[0m
-2026-04-10T07:02:29.654187594Z [inf]  [1m[96m  CRYPTOMASTER  |  0h 0m 33s  |[93m TRENINK [0m[0m
-2026-04-10T07:02:29.654191988Z [inf]  [96m============================================================[0m
-2026-04-10T07:02:29.654196876Z [inf]  
-2026-04-10T07:02:29.654203052Z [inf]      [1m[97mZIVE CENY  (Binance · kazde 2 s)[0m
-2026-04-10T07:02:29.654208198Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:29.654212565Z [inf]      [97m[1mBTC[0m  [97m$   71,806.7850[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:02:29.654217833Z [inf]      [97m[1mETH[0m  [97m$    2,186.1850[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:02:29.654222874Z [inf]      [97m[1mADA[0m  [97m$        0.2510[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:02:29.656766054Z [inf]      [90m----------------------------------------[0m
-2026-04-10T07:02:29.656774680Z [inf]      [97m[1mBNB[0m  [97m$      600.4250[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:02:29.656776200Z [inf]      [90mProfit Factor[0m  [92m[1m99.00x[0m  [90m(zisk / ztrata, cil > 1.5)[0m
-2026-04-10T07:02:29.656783970Z [inf]      [97m[1mDOT[0m  [97m$        1.2875[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:02:29.656790265Z [inf]      [97m[1mSOL[0m  [97m$       83.1850[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:02:29.656795027Z [inf]      [97m[1mXRP[0m  [97m$        1.3415[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:02:29.656800268Z [inf]  
-2026-04-10T07:02:29.656805624Z [inf]      [1m[97mVYSLEDKY OBCHODOVANI[0m
-2026-04-10T07:02:29.656810101Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:29.656817292Z [inf]      [90mObchody[0m    [97m[1m403[0m  ([92mOK 21[0m  [91mX 0[0m  [90m~ 20[0m)
-2026-04-10T07:02:29.656825817Z [inf]      [90mWinrate[0m     [92m[1m100.0%[0m  [92m━━━━━━━━━━━━━━━━━━━━━[92m●[90m [92m[1m100%[0m[0m  [90mcil 55%[0m  [90m(bez timeoutu)[0m
-2026-04-10T07:02:29.656831574Z [inf]      [90mZisk[0m        [91m[1m-0.00010028[0m  [91m◄━[91m●[90m────────────────────[0m
-2026-04-10T07:02:29.656836078Z [inf]      [90mDrawdown[0m    [92m0.00013410[0m  [90m(pokles od vrcholu)[0m
-2026-04-10T07:02:29.656841747Z [inf]      [90mSerie[0m       [92m[1mFIRE 5x vyhra v rade![0m
-2026-04-10T07:02:29.658984482Z [inf]      [90mExpectancy[0m     [92m+0.00000737[0m  [90m(prumerny vynos / obchod)[0m
-2026-04-10T07:02:29.660997564Z [inf]      [90mNejlepsi[0m      [92m+0.00003382[0m   [90mNejhorsi[0m  [91m0.00000000[0m
-2026-04-10T07:02:29.661002927Z [inf]      [90mPosledni obchod[0m  [97m1s[0m [90mzpet[0m
-2026-04-10T07:02:29.677211528Z [inf]  
-2026-04-10T07:02:29.677216973Z [inf]      [1m[97mVYSLEDKY PO MENACH[0m
-2026-04-10T07:02:29.677223752Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:29.677230865Z [inf]      [90mMena[0m  [90mObch[0m  [90mWR[0m  [90mBar[0m          [90mZisk[0m
-2026-04-10T07:02:29.677236314Z [inf]      [90m--------------------------------------------------[0m
-2026-04-10T07:02:29.677241084Z [inf]      [97m[1mBTC[0m  [97m9[0m  [92m[1m56%[0m  [92m━━━━━━━━━━━[92m●[90m────────── [92m[1m56%[0m[0m  [91m-0.00000977[0m  [92mOK[0m
-2026-04-10T07:02:29.677245848Z [inf]      [97m[1mETH[0m  [97m11[0m  [93m[1m45%[0m  [93m━━━━━━━━━[93m●[90m──────────── [93m[1m45%[0m[0m  [91m-0.00001483[0m  [93m?[0m
-2026-04-10T07:02:29.677250278Z [inf]      [97m[1mADA[0m  [97m4[0m  [92m[1m75%[0m  [92m━━━━━━━━━━━━━━━[92m●[90m────── [92m[1m75%[0m[0m  [92m+0.00001079[0m  [92mOK[0m
-2026-04-10T07:02:29.677255177Z [inf]      [97m[1mBNB[0m  [97m3[0m  [91m[1m33%[0m  [91m━━━━━━[91m●[90m─────────────── [91m[1m33%[0m[0m  [91m-0.00001279[0m  [91mX[0m
-2026-04-10T07:02:29.677259896Z [inf]      [97m[1mDOT[0m  [97m3[0m  [91m[1m0%[0m  [91m[91m●[90m───────────────────── [91m[1m0%[0m[0m  [91m-0.00007152[0m  [91mX[0m
-2026-04-10T07:02:29.677264903Z [inf]      [97m[1mSOL[0m  [97m8[0m  [92m[1m62%[0m  [92m━━━━━━━━━━━━[92m●[90m───────── [92m[1m62%[0m[0m  [91m-0.00000025[0m  [92mOK[0m
-2026-04-10T07:02:29.679909156Z [inf]        [97m[1mBULL [0m  [93m━━━━━━━━━[93m●[90m──────────── [93m[1m46%[0m[0m  [93m[1m46%[0m  [90m(11 obch)[0m
-2026-04-10T07:02:29.679917563Z [inf]        [97m[1mBEAR [0m  [93m━━━━━━━━━━[93m●[90m─────────── [93m[1m53%[0m[0m  [93m[1m53%[0m  [90m(30 obch)[0m
-2026-04-10T07:02:29.679931217Z [inf]      [97m[1mXRP[0m  [97m3[0m  [92m[1m67%[0m  [92m━━━━━━━━━━━━━[92m●[90m──────── [92m[1m67%[0m[0m  [91m-0.00000191[0m  [92mOK[0m
-2026-04-10T07:02:29.679933410Z [inf]  
-2026-04-10T07:02:29.679937759Z [inf]  
-2026-04-10T07:02:29.679943324Z [inf]      [1m[97mUCENI – STAV A USPESNOST[0m
-2026-04-10T07:02:29.679949524Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:29.679954184Z [inf]      [90mKalibrace[0m      [92m[1mKALIBROVAN  ✓[0m  [96m━━━━━━━━━━━━━━━━━━━━━[96m●[90m [96m[1m100%[0m[0m  [90m(403 obchodu celkem)[0m
-2026-04-10T07:02:29.679959007Z [inf]      [90mTrend uceni[0m    [91m[1mZHORŠUJE SE 📉[0m
-2026-04-10T07:02:29.679963865Z [inf]      [90mPoslednich 4[0m    [97m25.0%[0m  vs  prumer [97m100.0%[0m  [91m(-75.0%)[0m
-2026-04-10T07:02:29.679968520Z [inf]      [90mEV vykon[0m       prumer [91m[1m0.035[0m  min [90m0.030[0m  max [90m0.048[0m  [90m(41 obch)[0m
-2026-04-10T07:02:29.679973050Z [inf]      [90mUzavreni[0m       TP [93m[1m0%[0m  SL [93m0%[0m  trail [90m0%[0m  timeout [91m100%[0m
-2026-04-10T07:02:29.679978104Z [inf]      [90mKalibrace p[0m    p=[97m49.4%[0m  WR=[97m100.0%[0m  odchylka [91m[1m50.6pp[0m  [91modkalibrovan[0m
-2026-04-10T07:02:29.679983111Z [inf]      [90mWR dle rezimu[0m
-2026-04-10T07:02:29.682682831Z [inf]      [1m[97mAUDITOR  (ochrana strategie)[0m
-2026-04-10T07:02:29.682688777Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:29.682693427Z [inf]      [90mEV prah[0m              [92m[1m0.000[0m  [90mt15=4  t60=4[0m[92m  aktivni[0m
-2026-04-10T07:02:29.682698112Z [inf]      [90mVelikost pozice[0m      [92m[1m1.40x[0m  [90mEV-only · loss streak → scale · DD halt 40%[0m
-2026-04-10T07:02:29.682704323Z [inf]  
-2026-04-10T07:02:29.682708848Z [inf]      [1m[97mSTRATEGIE  (ADX + EMA + MACD + BB + RSI)[0m
-2026-04-10T07:02:29.682713706Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:29.682717954Z [inf]      [90mRezim trhu[0m   [91mBEAR TREND  silny pokles  (66%)[0m
-2026-04-10T07:02:29.682722405Z [inf]      [90mSignaly[0m       [97m5094[0m zachyceno  [97m13[0m po filtru  [91m25[0m blokovano  [92m403[0m provedeno
-2026-04-10T07:02:29.682727886Z [inf]      [90mFiltrace[0m      [93m0.0%[0m  [90mprojde filtrem[0m  [90mTP: 1.2xATR  /  SL: 0.8xATR  (RR 1.5:1)  EV-only[0m
-2026-04-10T07:02:29.682733654Z [inf]  
-2026-04-10T07:02:29.682742489Z [inf]      [1m[97mPOSLEDNI ROZHODNUTI[0m
-2026-04-10T07:02:29.682748524Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:29.682758507Z [inf]      [97m[1mBTC[0m  [91m[1mPRODEJ[0m  [97m$71,826.0500[0m  [90mp:50%[0m[96m  ev:0.040[0m  [90mBEAR[0m[91m[1m  PROHRA[0m
-2026-04-10T07:02:29.682764680Z [inf]      [97m[1mETH[0m  [91m[1mPRODEJ[0m  [97m$2,187.0850[0m  [90mp:50%[0m[96m  ev:0.030[0m  [90mBULL[0m[91m[1m  PROHRA[0m
-2026-04-10T07:02:29.684776311Z [inf]      [97m[1mADA[0m  [91m[1mPRODEJ[0m  [97m$0.2510[0m  [90mp:50%[0m[96m  ev:0.030[0m  [90mBEAR[0m[92m[1m  VYHRA[0m
-2026-04-10T07:02:29.687855242Z [inf]      [97m[1mBNB[0m  [90mzadny signal[0m
-2026-04-10T07:02:29.687868653Z [inf]      [97m[1mDOT[0m  [91m[1mPRODEJ[0m  [97m$1.2875[0m  [90mp:50%[0m[96m  ev:0.030[0m  [90mBEAR[0m[91m[1m  PROHRA[0m
-2026-04-10T07:02:29.687876492Z [inf]      [97m[1mSOL[0m  [90mzadny signal[0m
-2026-04-10T07:02:29.687883472Z [inf]      [97m[1mXRP[0m  [90mzadny signal[0m
-2026-04-10T07:02:29.687898445Z [inf]  
-2026-04-10T07:02:29.687910863Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:29.687918045Z [inf]    [92mSbiram data[0m[92m ━━━ [0m[94m[1m● Trenink[0m[90m ─── [0m[90mAktivni[0m
-2026-04-10T07:02:29.687927227Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:29.687934034Z [inf]    [1mSTAV:[0m  [93m[1mTRENINK[0m  [90m([0m[93mzisk > 0[0m[90m)[0m
-2026-04-10T07:02:29.687941222Z [inf]  [96m============================================================[0m
-2026-04-10T07:02:29.687947825Z [inf]  
-2026-04-10T07:02:29.687954438Z [inf]  
-2026-04-10T07:02:29.687960552Z [inf]  === EXECUTION ENGINE ===
-2026-04-10T07:02:29.687965722Z [inf]    Equity:   0.999978  |  DD: 0.00%
-2026-04-10T07:02:29.687973132Z [inf]    Exposure: 0.000  |  Positions: 0
-2026-04-10T07:02:29.687979752Z [inf]    Sharpe:   0.000  |  WR: 25.00%  |  Edge: 0.50000  |  MaxDD: 0.00%
-2026-04-10T07:02:29.687986232Z [inf]    Failure:  0.000  [OK]
-2026-04-10T07:02:29.687992871Z [inf]  
-2026-04-10T07:02:29.687999190Z [inf]  === LEARNING MONITOR ===
-2026-04-10T07:02:29.688005489Z [inf]    ADA  BEAR_TREND  n:3     EV:+0.000  WR:33%  conv:-- (3/20)  bandit:0.00
-2026-04-10T07:02:29.688011845Z [inf]    BTC  BEAR_TREND  n:7     EV:+0.000  WR:71%  conv:-- (7/20)  bandit:0.00
-2026-04-10T07:02:29.690545189Z [inf]      wick                  [###---------]  33%  -
-2026-04-10T07:02:29.690555753Z [inf]      vol                   [###---------]  33%  -
-2026-04-10T07:02:29.690561713Z [inf]    [!] LEARNING: NO LEARNING SIGNAL DETECTED
-2026-04-10T07:02:29.690566465Z [inf]  
-2026-04-10T07:02:29.690572270Z [inf]    Health: 0.000  [BAD]
-2026-04-10T07:02:29.690578307Z [inf]  ========================
-2026-04-10T07:02:29.690580578Z [inf]    DOT  BEAR_TREND  n:3     EV:+0.000  WR:0%  conv:-- (3/20)  bandit:0.00
-2026-04-10T07:02:29.690589025Z [inf]    ETH  BEAR_TREND  n:9     EV:+0.000  WR:44%  conv:-- (9/20)  bandit:0.00
-2026-04-10T07:02:29.690595676Z [inf]    SOL  BEAR_TREND  n:6     EV:+0.000  WR:67%  conv:-- (6/20)  bandit:0.00
-2026-04-10T07:02:29.690602347Z [inf]  
-2026-04-10T07:02:29.690608497Z [inf]    Features (WR per signal key):
-2026-04-10T07:02:29.690614750Z [inf]      is_weekend            [###---------]  33%  -
-2026-04-10T07:02:29.690621230Z [inf]      pullback              [###---------]  33%  -
-2026-04-10T07:02:29.690627209Z [inf]      mom                   [###---------]  33%  -
-2026-04-10T07:02:29.690633277Z [inf]      bounce                [###---------]  33%  -
-2026-04-10T07:02:29.690639113Z [inf]      trend                 [###---------]  33%  -
-2026-04-10T07:02:29.690644616Z [inf]      breakout              [###---------]  33%  -
-2026-04-10T07:02:31.071797650Z [inf]  💾 Firebase: saved 3 trades (batch write)
-2026-04-10T07:02:39.697377521Z [inf]  🧠 Strategy weights: {'BULL_TREND': '0.48', 'BEAR_TREND': '0.52', 'RANGING': '1.00', 'QUIET_RANGE': '1.00', 'HIGH_VOL': '1.00'}
-2026-04-10T07:02:39.743057355Z [inf]    📊 AUDITOR: best=BEAR_TREND_BTCUSDT  w=1.21
-2026-04-10T07:02:39.743066946Z [inf]    🔍 AUDITOR: streak=0  WR:25%
-2026-04-10T07:02:40.142631019Z [inf]      [97m[1mBNB[0m  [97m$      600.4650[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:02:40.142642126Z [inf]      [97m[1mDOT[0m  [97m$        1.2875[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:02:40.142648743Z [inf]      [97m[1mSOL[0m  [97m$       83.1850[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:02:40.142654570Z [inf]      [97m[1mXRP[0m  [97m$        1.3415[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:02:40.142660670Z [inf]  
-2026-04-10T07:02:40.142666971Z [inf]      [1m[97mVYSLEDKY OBCHODOVANI[0m
-2026-04-10T07:02:40.142674857Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:40.142707570Z [inf]    [!] LEARNING: NO LEARNING SIGNAL DETECTED
-2026-04-10T07:02:40.142713705Z [inf]  
-2026-04-10T07:02:40.142725645Z [inf]  [96m============================================================[0m
-2026-04-10T07:02:40.142732019Z [inf]  [1m[96m  CRYPTOMASTER  |  0h 0m 43s  |[93m TRENINK [0m[0m
-2026-04-10T07:02:40.142737685Z [inf]  [96m============================================================[0m
-2026-04-10T07:02:40.142744443Z [inf]  
-2026-04-10T07:02:40.142751828Z [inf]      [1m[97mZIVE CENY  (Binance · kazde 2 s)[0m
-2026-04-10T07:02:40.142759693Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:40.142766070Z [inf]      [97m[1mBTC[0m  [97m$   71,817.1250[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:02:40.142772063Z [inf]      [97m[1mETH[0m  [97m$    2,186.4450[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:02:40.142778558Z [inf]      [97m[1mADA[0m  [97m$        0.2510[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:02:40.144078715Z [inf]      [90mObchody[0m    [97m[1m403[0m  ([92mOK 21[0m  [91mX 0[0m  [90m~ 20[0m)
-2026-04-10T07:02:40.144089951Z [inf]      [90mWinrate[0m     [92m[1m100.0%[0m  [92m━━━━━━━━━━━━━━━━━━━━━[92m●[90m [92m[1m100%[0m[0m  [90mcil 55%[0m  [90m(bez timeoutu)[0m
-2026-04-10T07:02:40.144098302Z [inf]      [90mZisk[0m        [91m[1m-0.00010028[0m  [91m◄━[91m●[90m────────────────────[0m
-2026-04-10T07:02:40.144105575Z [inf]      [90mDrawdown[0m    [92m0.00013410[0m  [90m(pokles od vrcholu)[0m
-2026-04-10T07:02:40.144113193Z [inf]      [90mSerie[0m       [92m[1mFIRE 5x vyhra v rade![0m
-2026-04-10T07:02:40.144120812Z [inf]      [90m----------------------------------------[0m
-2026-04-10T07:02:40.144126990Z [inf]      [90mProfit Factor[0m  [92m[1m99.00x[0m  [90m(zisk / ztrata, cil > 1.5)[0m
-2026-04-10T07:02:40.144133640Z [inf]      [90mExpectancy[0m     [92m+0.00000737[0m  [90m(prumerny vynos / obchod)[0m
-2026-04-10T07:02:40.144139740Z [inf]      [90mNejlepsi[0m      [92m+0.00003382[0m   [90mNejhorsi[0m  [91m0.00000000[0m
-2026-04-10T07:02:40.144146387Z [inf]      [90mPosledni obchod[0m  [97m11s[0m [90mzpet[0m
-2026-04-10T07:02:40.144152716Z [inf]  
-2026-04-10T07:02:40.144159364Z [inf]      [1m[97mVYSLEDKY PO MENACH[0m
-2026-04-10T07:02:40.144180621Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:40.144199502Z [inf]      [90mMena[0m  [90mObch[0m  [90mWR[0m  [90mBar[0m          [90mZisk[0m
-2026-04-10T07:02:40.144207709Z [inf]      [90m--------------------------------------------------[0m
-2026-04-10T07:02:40.144214260Z [inf]      [97m[1mBTC[0m  [97m9[0m  [92m[1m56%[0m  [92m━━━━━━━━━━━[92m●[90m────────── [92m[1m56%[0m[0m  [91m-0.00000977[0m  [92mOK[0m
-2026-04-10T07:02:40.146083035Z [inf]      [97m[1mETH[0m  [97m11[0m  [93m[1m45%[0m  [93m━━━━━━━━━[93m●[90m──────────── [93m[1m45%[0m[0m  [91m-0.00001483[0m  [93m?[0m
-2026-04-10T07:02:40.146092745Z [inf]      [97m[1mADA[0m  [97m4[0m  [92m[1m75%[0m  [92m━━━━━━━━━━━━━━━[92m●[90m────── [92m[1m75%[0m[0m  [92m+0.00001079[0m  [92mOK[0m
-2026-04-10T07:02:40.146099470Z [inf]      [97m[1mBNB[0m  [97m3[0m  [91m[1m33%[0m  [91m━━━━━━[91m●[90m─────────────── [91m[1m33%[0m[0m  [91m-0.00001279[0m  [91mX[0m
-2026-04-10T07:02:40.146104815Z [inf]      [97m[1mDOT[0m  [97m3[0m  [91m[1m0%[0m  [91m[91m●[90m───────────────────── [91m[1m0%[0m[0m  [91m-0.00007152[0m  [91mX[0m
-2026-04-10T07:02:40.146109990Z [inf]      [97m[1mSOL[0m  [97m8[0m  [92m[1m62%[0m  [92m━━━━━━━━━━━━[92m●[90m───────── [92m[1m62%[0m[0m  [91m-0.00000025[0m  [92mOK[0m
-2026-04-10T07:02:40.146121544Z [inf]      [97m[1mXRP[0m  [97m3[0m  [92m[1m67%[0m  [92m━━━━━━━━━━━━━[92m●[90m──────── [92m[1m67%[0m[0m  [91m-0.00000191[0m  [92mOK[0m
-2026-04-10T07:02:40.146126888Z [inf]  
-2026-04-10T07:02:40.146132050Z [inf]      [1m[97mUCENI – STAV A USPESNOST[0m
-2026-04-10T07:02:40.146137164Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:40.146144900Z [inf]      [90mKalibrace[0m      [92m[1mKALIBROVAN  ✓[0m  [96m━━━━━━━━━━━━━━━━━━━━━[96m●[90m [96m[1m100%[0m[0m  [90m(403 obchodu celkem)[0m
-2026-04-10T07:02:40.146149956Z [inf]      [90mTrend uceni[0m    [91m[1mZHORŠUJE SE 📉[0m
-2026-04-10T07:02:40.148043041Z [inf]      [90mPoslednich 4[0m    [97m25.0%[0m  vs  prumer [97m100.0%[0m  [91m(-75.0%)[0m
-2026-04-10T07:02:40.148047116Z [inf]      [1m[97mSTRATEGIE  (ADX + EMA + MACD + BB + RSI)[0m
-2026-04-10T07:02:40.148051839Z [inf]      [90mEV vykon[0m       prumer [91m[1m0.035[0m  min [90m0.030[0m  max [90m0.048[0m  [90m(41 obch)[0m
-2026-04-10T07:02:40.148056192Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:40.148058927Z [inf]      [90mUzavreni[0m       TP [93m[1m0%[0m  SL [93m0%[0m  trail [90m0%[0m  timeout [91m100%[0m
-2026-04-10T07:02:40.148063992Z [inf]      [90mKalibrace p[0m    p=[97m49.4%[0m  WR=[97m100.0%[0m  odchylka [91m[1m50.6pp[0m  [91modkalibrovan[0m
-2026-04-10T07:02:40.148069451Z [inf]      [90mWR dle rezimu[0m
-2026-04-10T07:02:40.148073542Z [inf]        [97m[1mBULL [0m  [93m━━━━━━━━━[93m●[90m──────────── [93m[1m46%[0m[0m  [93m[1m46%[0m  [90m(11 obch)[0m
-2026-04-10T07:02:40.148078705Z [inf]        [97m[1mBEAR [0m  [93m━━━━━━━━━━[93m●[90m─────────── [93m[1m53%[0m[0m  [93m[1m53%[0m  [90m(30 obch)[0m
-2026-04-10T07:02:40.148082824Z [inf]  
-2026-04-10T07:02:40.148086850Z [inf]      [1m[97mAUDITOR  (ochrana strategie)[0m
-2026-04-10T07:02:40.148090927Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:40.148094886Z [inf]      [90mEV prah[0m              [92m[1m0.000[0m  [90mt15=4  t60=4[0m[92m  aktivni[0m
-2026-04-10T07:02:40.148099440Z [inf]      [90mVelikost pozice[0m      [92m[1m1.40x[0m  [90mEV-only · loss streak → scale · DD halt 40%[0m
-2026-04-10T07:02:40.148103860Z [inf]  
-2026-04-10T07:02:40.149685269Z [inf]      [90mRezim trhu[0m   [91mBEAR TREND  silny pokles  (66%)[0m
-2026-04-10T07:02:40.149692480Z [inf]      [90mSignaly[0m       [97m7675[0m zachyceno  [97m13[0m po filtru  [91m25[0m blokovano  [92m403[0m provedeno
-2026-04-10T07:02:40.149699795Z [inf]      [90mFiltrace[0m      [93m0.0%[0m  [90mprojde filtrem[0m  [90mTP: 1.2xATR  /  SL: 0.8xATR  (RR 1.5:1)  EV-only[0m
-2026-04-10T07:02:40.149705499Z [inf]  
-2026-04-10T07:02:40.149710135Z [inf]      [1m[97mPOSLEDNI ROZHODNUTI[0m
-2026-04-10T07:02:40.149714886Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:40.149720641Z [inf]      [97m[1mBTC[0m  [91m[1mPRODEJ[0m  [97m$71,826.0500[0m  [90mp:50%[0m[96m  ev:0.040[0m  [90mBEAR[0m[91m[1m  PROHRA[0m
-2026-04-10T07:02:40.149724988Z [inf]      [97m[1mETH[0m  [91m[1mPRODEJ[0m  [97m$2,187.0850[0m  [90mp:50%[0m[96m  ev:0.030[0m  [90mBULL[0m[91m[1m  PROHRA[0m
-2026-04-10T07:02:40.149729381Z [inf]      [97m[1mADA[0m  [91m[1mPRODEJ[0m  [97m$0.2510[0m  [90mp:50%[0m[96m  ev:0.030[0m  [90mBEAR[0m[92m[1m  VYHRA[0m
-2026-04-10T07:02:40.149733916Z [inf]      [97m[1mBNB[0m  [90mzadny signal[0m
-2026-04-10T07:02:40.149746147Z [inf]      [97m[1mDOT[0m  [91m[1mPRODEJ[0m  [97m$1.2875[0m  [90mp:50%[0m[96m  ev:0.030[0m  [90mBEAR[0m[91m[1m  PROHRA[0m
-2026-04-10T07:02:40.149750392Z [inf]      [97m[1mSOL[0m  [90mzadny signal[0m
-2026-04-10T07:02:40.149757202Z [inf]      [97m[1mXRP[0m  [90mzadny signal[0m
-2026-04-10T07:02:40.149762192Z [inf]  
-2026-04-10T07:02:40.149766943Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:40.152510940Z [inf]    DOT  BEAR_TREND  n:3     EV:+0.000  WR:0%  conv:-- (3/20)  bandit:0.00
-2026-04-10T07:02:40.152520227Z [inf]    ETH  BEAR_TREND  n:9     EV:+0.000  WR:44%  conv:-- (9/20)  bandit:0.00
-2026-04-10T07:02:40.152523972Z [inf]    [92mSbiram data[0m[92m ━━━ [0m[94m[1m● Trenink[0m[90m ─── [0m[90mAktivni[0m
-2026-04-10T07:02:40.152526841Z [inf]    SOL  BEAR_TREND  n:6     EV:+0.000  WR:67%  conv:-- (6/20)  bandit:0.00
-2026-04-10T07:02:40.152533395Z [inf]  
-2026-04-10T07:02:40.152534718Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:40.152541240Z [inf]    Features (WR per signal key):
-2026-04-10T07:02:40.152541404Z [inf]    [1mSTAV:[0m  [93m[1mTRENINK[0m  [90m([0m[93mzisk > 0[0m[90m)[0m
-2026-04-10T07:02:40.152548786Z [inf]      is_weekend            [###---------]  33%  -
-2026-04-10T07:02:40.152550765Z [inf]  [96m============================================================[0m
-2026-04-10T07:02:40.152555607Z [inf]  
-2026-04-10T07:02:40.152560086Z [inf]  
-2026-04-10T07:02:40.152564795Z [inf]  === EXECUTION ENGINE ===
-2026-04-10T07:02:40.152569092Z [inf]    Equity:   0.999978  |  DD: 0.00%
-2026-04-10T07:02:40.152575243Z [inf]    Exposure: 0.000  |  Positions: 0
-2026-04-10T07:02:40.152579472Z [inf]    Sharpe:   0.000  |  WR: 25.00%  |  Edge: 0.50000  |  MaxDD: 0.00%
-2026-04-10T07:02:40.152583246Z [inf]    Failure:  0.000  [OK]
-2026-04-10T07:02:40.152587496Z [inf]  
-2026-04-10T07:02:40.152593675Z [inf]  === LEARNING MONITOR ===
-2026-04-10T07:02:40.152597742Z [inf]    ADA  BEAR_TREND  n:3     EV:+0.000  WR:33%  conv:-- (3/20)  bandit:0.00
-2026-04-10T07:02:40.152601715Z [inf]    BTC  BEAR_TREND  n:7     EV:+0.000  WR:71%  conv:-- (7/20)  bandit:0.00
-2026-04-10T07:02:40.154465300Z [inf]      pullback              [###---------]  33%  -
-2026-04-10T07:02:40.154473919Z [inf]      mom                   [###---------]  33%  -
-2026-04-10T07:02:40.154474893Z [inf]  
-2026-04-10T07:02:40.154484289Z [inf]    Health: 0.000  [BAD]
-2026-04-10T07:02:40.154487627Z [inf]      bounce                [###---------]  33%  -
-2026-04-10T07:02:40.154492272Z [inf]  ========================
-2026-04-10T07:02:40.154494205Z [inf]      trend                 [###---------]  33%  -
-2026-04-10T07:02:40.154499070Z [inf]      breakout              [###---------]  33%  -
-2026-04-10T07:02:40.154503040Z [inf]      wick                  [###---------]  33%  -
-2026-04-10T07:02:40.154510338Z [inf]      vol                   [###---------]  33%  -
-2026-04-10T07:02:40.154514880Z [inf]    [!] LEARNING: NO LEARNING SIGNAL DETECTED
-2026-04-10T07:02:41.672804832Z [inf]    🔴 BTC $71,816.8550 | [fake_breakout] sc:4/7  ws:0.53 | BEAR_TREND | conf:87% [trend,pullback,vol,wick]
-2026-04-10T07:02:41.672812308Z [inf]      EV=0.050  p=0.50  rr=1.25  ws=0.530  score=0.194[n=403]  t15=4  spread=0.000  af=1.00
-2026-04-10T07:02:41.672816446Z [inf]      RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-2026-04-10T07:02:41.672820306Z [inf]      coherence[v10.12]: 0.697  ev 0.050→0.035
-2026-04-10T07:02:41.672824305Z [inf]      decision=TAKE  ev=0.0348  p=0.5000  af=1.00  coh=0.697
-2026-04-10T07:02:41.672830061Z [inf]      max_pos[v10.8]: 0.0470→0.0401  mode=neutral  pred=BEAR_TREND
-2026-04-10T07:02:41.672835642Z [inf]      policy[v10.7/10.8/v10.9/v10.10/v10.12/v10.13]: mode=neutral  pm=1.200  policy_ev=0.0000  risk_ev=0.0000
-2026-04-10T07:02:41.672839445Z [inf]       fw=4.00  pred=BEAR_TREND  max_pos=0.0401  ptp×=1.80  corr×=1.00  sxd=False
-2026-04-10T07:02:41.672843544Z [inf]       eff=0.0000  eff_live=0.0000  repl=False  coh=0.697
-2026-04-10T07:02:41.672847438Z [inf]       pp=0.000  mom=0.085  mom_mult×1.02
-2026-04-10T07:02:41.672851766Z [inf]      exec_quality[v10.11]: exec_q=0.89 spread=0.0000 slip=0.0009 fill=0.90 lat=1.00
-2026-04-10T07:02:41.700410943Z [inf]      risk_budget[v10.12c]: risk=0.35 dd=3.965 sharpe=0.00 ruin=0.000 heat=0.0000 max_heat=0.0345
-2026-04-10T07:02:41.700414905Z [inf]      exec[force]: slip=-0.00040  fee=0.00000  fr=0.75  ws_adj=0.530  0.0156@71845.5817  tp=71496.4122  sl=72020.1665
-2026-04-10T07:02:41.700418803Z [inf]      portfolio[v10.10]: positions=1  portfolio_efficiency=0.0000
-2026-04-10T07:02:41.737613525Z [inf]      ✅ BTC SELL $71,845.5817→$71,816.8550  +0.000006  [timeout] (fee: 0.00000)
-2026-04-10T07:02:42.728618061Z [inf]    🔴 SOL $83.1750 | [fake_breakout] sc:4/7  ws:0.54 | BEAR_TREND | conf:84% [trend,pullback,vol,wick]
-2026-04-10T07:02:42.728627014Z [inf]      EV=0.050  p=0.50  rr=1.25  ws=0.539  score=0.197[n=404]  t15=5  spread=0.000  af=1.00
-2026-04-10T07:02:42.728649011Z [inf]      RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-2026-04-10T07:02:42.728654640Z [inf]      coherence[v10.12]: 0.580  ev 0.050→0.030
-2026-04-10T07:02:42.728660206Z [inf]      decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.580
-2026-04-10T07:02:42.730349007Z [inf]      max_pos[v10.8]: 0.0491→0.0401  mode=neutral  pred=BEAR_TREND
-2026-04-10T07:02:42.730354919Z [inf]      policy[v10.7/10.8/v10.9/v10.10/v10.12/v10.13]: mode=neutral  pm=1.200  policy_ev=0.0000  risk_ev=0.0000
-2026-04-10T07:02:42.730360010Z [inf]       fw=4.00  pred=BEAR_TREND  max_pos=0.0401  ptp×=1.80  corr×=1.00  sxd=False
-2026-04-10T07:02:42.730364216Z [inf]       eff=0.0000  eff_live=0.0000  repl=False  coh=0.580
-2026-04-10T07:02:42.730368430Z [inf]       pp=0.000  mom=0.251  mom_mult×1.05
-2026-04-10T07:02:42.730372643Z [inf]      exec_quality[v10.11]: exec_q=0.99 spread=0.0001 slip=0.0010 fill=1.00 lat=1.00
-2026-04-10T07:02:42.748427498Z [inf]      risk_budget[v10.12c]: risk=0.34 dd=3.781 sharpe=0.00 ruin=0.000 heat=0.0000 max_heat=0.0341
-2026-04-10T07:02:42.748433305Z [inf]      exec[force]: slip=0.00005  fee=0.00075  fr=0.50  ws_adj=0.539  0.0170@83.1708  tp=82.7666  sl=83.3729
-2026-04-10T07:02:42.748438700Z [inf]      portfolio[v10.10]: positions=1  portfolio_efficiency=0.0000
-2026-04-10T07:02:42.774917472Z [inf]      ❌ SOL SELL $83.1708→$83.1750  -0.000014  [timeout] (fee: 0.00075)
-2026-04-10T07:02:46.185015298Z [inf]  💾 Firebase: saved 2 trades (batch write)
-2026-04-10T07:02:50.239000150Z [inf]      [1m[97mVYSLEDKY OBCHODOVANI[0m
-2026-04-10T07:02:50.239012684Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:50.239020308Z [inf]      [90mObchody[0m    [97m[1m405[0m  ([92mOK 22[0m  [91mX 0[0m  [90m~ 21[0m)
-2026-04-10T07:02:50.239062166Z [inf]      [97m[1mETH[0m  [97m$    2,186.1050[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:02:50.239062808Z [inf]  
-2026-04-10T07:02:50.239068901Z [inf]  [96m============================================================[0m
-2026-04-10T07:02:50.239074257Z [inf]  [1m[96m  CRYPTOMASTER  |  0h 0m 53s  |[93m TRENINK [0m[0m
-2026-04-10T07:02:50.239079313Z [inf]      [97m[1mADA[0m  [97m$        0.2510[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:02:50.239081209Z [inf]  [96m============================================================[0m
-2026-04-10T07:02:50.239087782Z [inf]  
-2026-04-10T07:02:50.239090341Z [inf]      [97m[1mBNB[0m  [97m$      600.4650[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:02:50.239095286Z [inf]      [1m[97mZIVE CENY  (Binance · kazde 2 s)[0m
-2026-04-10T07:02:50.239100301Z [inf]      [97m[1mDOT[0m  [97m$        1.2875[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:02:50.239104028Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:50.239109806Z [inf]      [97m[1mSOL[0m  [97m$       83.1950[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:02:50.239111694Z [inf]      [97m[1mBTC[0m  [97m$   71,808.8750[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:02:50.239120589Z [inf]      [97m[1mXRP[0m  [97m$        1.3415[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:02:50.239130958Z [inf]  
-2026-04-10T07:02:50.240342517Z [inf]      [90m--------------------------------------------------[0m
-2026-04-10T07:02:50.240352099Z [inf]      [97m[1mBTC[0m  [97m10[0m  [92m[1m60%[0m  [92m━━━━━━━━━━━━[92m●[90m───────── [92m[1m60%[0m[0m  [91m-0.00000356[0m  [92mOK[0m
-2026-04-10T07:02:50.240402658Z [inf]      [90mWinrate[0m     [92m[1m100.0%[0m  [92m━━━━━━━━━━━━━━━━━━━━━[92m●[90m [92m[1m100%[0m[0m  [90mcil 55%[0m  [90m(bez timeoutu)[0m
-2026-04-10T07:02:50.240406857Z [inf]      [90mZisk[0m        [91m[1m-0.00010770[0m  [91m◄━[91m●[90m────────────────────[0m
-2026-04-10T07:02:50.240411529Z [inf]      [90mDrawdown[0m    [92m0.00014152[0m  [90m(pokles od vrcholu)[0m
-2026-04-10T07:02:50.240415976Z [inf]      [90mSerie[0m       [92m[1mFIRE 6x vyhra v rade![0m
-2026-04-10T07:02:50.240419919Z [inf]      [90m----------------------------------------[0m
-2026-04-10T07:02:50.240423947Z [inf]      [90mProfit Factor[0m  [92m[1m99.00x[0m  [90m(zisk / ztrata, cil > 1.5)[0m
-2026-04-10T07:02:50.240428209Z [inf]      [90mExpectancy[0m     [92m+0.00000732[0m  [90m(prumerny vynos / obchod)[0m
-2026-04-10T07:02:50.240432131Z [inf]      [90mNejlepsi[0m      [92m+0.00003382[0m   [90mNejhorsi[0m  [91m0.00000000[0m
-2026-04-10T07:02:50.240437075Z [inf]      [90mPosledni obchod[0m  [97m7s[0m [90mzpet[0m
-2026-04-10T07:02:50.240442162Z [inf]  
-2026-04-10T07:02:50.240446621Z [inf]      [1m[97mVYSLEDKY PO MENACH[0m
-2026-04-10T07:02:50.240451172Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:50.240455601Z [inf]      [90mMena[0m  [90mObch[0m  [90mWR[0m  [90mBar[0m          [90mZisk[0m
-2026-04-10T07:02:50.241948417Z [inf]  
-2026-04-10T07:02:50.241955020Z [inf]      [1m[97mUCENI – STAV A USPESNOST[0m
-2026-04-10T07:02:50.241960338Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:50.241966966Z [inf]      [90mKalibrace[0m      [92m[1mKALIBROVAN  ✓[0m  [96m━━━━━━━━━━━━━━━━━━━━━[96m●[90m [96m[1m100%[0m[0m  [90m(405 obchodu celkem)[0m
-2026-04-10T07:02:50.241967158Z [inf]      [97m[1mETH[0m  [97m11[0m  [93m[1m45%[0m  [93m━━━━━━━━━[93m●[90m──────────── [93m[1m45%[0m[0m  [91m-0.00001483[0m  [93m?[0m
-2026-04-10T07:02:50.241974554Z [inf]      [97m[1mADA[0m  [97m4[0m  [92m[1m75%[0m  [92m━━━━━━━━━━━━━━━[92m●[90m────── [92m[1m75%[0m[0m  [92m+0.00001079[0m  [92mOK[0m
-2026-04-10T07:02:50.241981595Z [inf]      [97m[1mBNB[0m  [97m3[0m  [91m[1m33%[0m  [91m━━━━━━[91m●[90m─────────────── [91m[1m33%[0m[0m  [91m-0.00001279[0m  [91mX[0m
-2026-04-10T07:02:50.241986104Z [inf]      [97m[1mDOT[0m  [97m3[0m  [91m[1m0%[0m  [91m[91m●[90m───────────────────── [91m[1m0%[0m[0m  [91m-0.00007152[0m  [91mX[0m
-2026-04-10T07:02:50.241991699Z [inf]      [97m[1mSOL[0m  [97m9[0m  [92m[1m56%[0m  [92m━━━━━━━━━━━[92m●[90m────────── [92m[1m56%[0m[0m  [91m-0.00001389[0m  [92mOK[0m
-2026-04-10T07:02:50.241997689Z [inf]      [97m[1mXRP[0m  [97m3[0m  [92m[1m67%[0m  [92m━━━━━━━━━━━━━[92m●[90m──────── [92m[1m67%[0m[0m  [91m-0.00000191[0m  [92mOK[0m
-2026-04-10T07:02:50.244194174Z [inf]      [90mTrend uceni[0m    [91m[1mZHORŠUJE SE 📉[0m
-2026-04-10T07:02:50.244206578Z [inf]      [90mPoslednich 6[0m    [97m33.3%[0m  vs  prumer [97m100.0%[0m  [91m(-66.7%)[0m
-2026-04-10T07:02:50.244214578Z [inf]      [90mEV vykon[0m       prumer [91m[1m0.035[0m  min [90m0.030[0m  max [90m0.048[0m  [90m(43 obch)[0m
-2026-04-10T07:02:50.244220848Z [inf]      [90mUzavreni[0m       TP [93m[1m0%[0m  SL [93m0%[0m  trail [90m0%[0m  timeout [91m100%[0m
-2026-04-10T07:02:50.244226640Z [inf]      [90mKalibrace p[0m    p=[97m49.5%[0m  WR=[97m100.0%[0m  odchylka [91m[1m50.5pp[0m  [91modkalibrovan[0m
-2026-04-10T07:02:50.244233602Z [inf]      [90mWR dle rezimu[0m
-2026-04-10T07:02:50.244239674Z [inf]        [97m[1mBULL [0m  [93m━━━━━━━━━[93m●[90m──────────── [93m[1m46%[0m[0m  [93m[1m46%[0m  [90m(11 obch)[0m
-2026-04-10T07:02:50.244246150Z [inf]        [97m[1mBEAR [0m  [93m━━━━━━━━━━[93m●[90m─────────── [93m[1m53%[0m[0m  [93m[1m53%[0m  [90m(32 obch)[0m
-2026-04-10T07:02:50.244252505Z [inf]  
-2026-04-10T07:02:50.244259104Z [inf]      [1m[97mAUDITOR  (ochrana strategie)[0m
-2026-04-10T07:02:50.244265155Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:50.244272750Z [inf]      [90mEV prah[0m              [92m[1m0.000[0m  [90mt15=6  t60=6[0m[92m  aktivni[0m
-2026-04-10T07:02:50.244278974Z [inf]      [90mVelikost pozice[0m      [92m[1m1.40x[0m  [90mEV-only · loss streak → scale · DD halt 40%[0m
-2026-04-10T07:02:50.244284331Z [inf]  
-2026-04-10T07:02:50.244289699Z [inf]      [1m[97mSTRATEGIE  (ADX + EMA + MACD + BB + RSI)[0m
-2026-04-10T07:02:50.246804877Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:50.246812618Z [inf]      [90mRezim trhu[0m   [91mBEAR TREND  silny pokles  (67%)[0m
-2026-04-10T07:02:50.246819721Z [inf]      [90mSignaly[0m       [97m9190[0m zachyceno  [97m15[0m po filtru  [91m25[0m blokovano  [92m405[0m provedeno
-2026-04-10T07:02:50.246825961Z [inf]      [90mFiltrace[0m      [93m0.0%[0m  [90mprojde filtrem[0m  [90mTP: 1.2xATR  /  SL: 0.8xATR  (RR 1.5:1)  EV-only[0m
-2026-04-10T07:02:50.246832656Z [inf]  
-2026-04-10T07:02:50.246839530Z [inf]      [1m[97mPOSLEDNI ROZHODNUTI[0m
-2026-04-10T07:02:50.246845665Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:50.246852076Z [inf]      [97m[1mBTC[0m  [91m[1mPRODEJ[0m  [97m$71,816.8550[0m  [90mp:50%[0m[96m  ev:0.035[0m  [90mBEAR[0m[92m[1m  VYHRA[0m
-2026-04-10T07:02:50.246858383Z [inf]      [97m[1mETH[0m  [91m[1mPRODEJ[0m  [97m$2,187.0850[0m  [90mp:50%[0m[96m  ev:0.030[0m  [90mBULL[0m[91m[1m  PROHRA[0m
-2026-04-10T07:02:50.246863654Z [inf]      [97m[1mADA[0m  [91m[1mPRODEJ[0m  [97m$0.2510[0m  [90mp:50%[0m[96m  ev:0.030[0m  [90mBEAR[0m[92m[1m  VYHRA[0m
-2026-04-10T07:02:50.246868003Z [inf]      [97m[1mBNB[0m  [90mzadny signal[0m
-2026-04-10T07:02:50.246874591Z [inf]      [97m[1mDOT[0m  [91m[1mPRODEJ[0m  [97m$1.2875[0m  [90mp:50%[0m[96m  ev:0.030[0m  [90mBEAR[0m[91m[1m  PROHRA[0m
-2026-04-10T07:02:50.246879311Z [inf]      [97m[1mSOL[0m  [91m[1mPRODEJ[0m  [97m$83.1750[0m  [90mp:50%[0m[96m  ev:0.030[0m  [90mBEAR[0m[91m[1m  PROHRA[0m
-2026-04-10T07:02:50.246883761Z [inf]      [97m[1mXRP[0m  [90mzadny signal[0m
-2026-04-10T07:02:50.246888341Z [inf]  
-2026-04-10T07:02:50.246892644Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:50.248657366Z [inf]    [92mSbiram data[0m[92m ━━━ [0m[94m[1m● Trenink[0m[90m ─── [0m[90mAktivni[0m
-2026-04-10T07:02:50.248666819Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:50.248672841Z [inf]    [1mSTAV:[0m  [93m[1mTRENINK[0m  [90m([0m[93mzisk > 0[0m[90m)[0m
-2026-04-10T07:02:50.248677875Z [inf]  [96m============================================================[0m
-2026-04-10T07:02:50.248683039Z [inf]  
-2026-04-10T07:02:50.248689010Z [inf]  
-2026-04-10T07:02:50.248694467Z [inf]  === EXECUTION ENGINE ===
-2026-04-10T07:02:50.248699032Z [inf]    Equity:   0.999970  |  DD: 0.00%
-2026-04-10T07:02:50.248703865Z [inf]    Exposure: 0.000  |  Positions: 0
-2026-04-10T07:02:50.248708935Z [inf]    Sharpe:   0.000  |  WR: 33.33%  |  Edge: 0.50000  |  MaxDD: 0.00%
-2026-04-10T07:02:50.248713857Z [inf]    Failure:  0.000  [OK]
-2026-04-10T07:02:50.248718843Z [inf]  
-2026-04-10T07:02:50.248723306Z [inf]  === LEARNING MONITOR ===
-2026-04-10T07:02:50.248728005Z [inf]    ADA  BEAR_TREND  n:3     EV:+0.000  WR:33%  conv:-- (3/20)  bandit:0.00
-2026-04-10T07:02:50.248732696Z [inf]    BTC  BEAR_TREND  n:8     EV:+0.000  WR:62%  conv:-- (8/20)  bandit:0.00
-2026-04-10T07:02:50.248737395Z [inf]    DOT  BEAR_TREND  n:3     EV:+0.000  WR:0%  conv:-- (3/20)  bandit:0.00
-2026-04-10T07:02:50.248741950Z [inf]    ETH  BEAR_TREND  n:9     EV:+0.000  WR:44%  conv:-- (9/20)  bandit:0.00
-2026-04-10T07:02:50.248746994Z [inf]    SOL  BEAR_TREND  n:7     EV:+0.000  WR:57%  conv:-- (7/20)  bandit:0.00
-2026-04-10T07:02:50.248751203Z [inf]  
-2026-04-10T07:02:50.248755893Z [inf]    Features (WR per signal key):
-2026-04-10T07:02:50.248760704Z [inf]      is_weekend            [###---------]  32%  -
-2026-04-10T07:02:50.250434099Z [inf]      pullback              [###---------]  32%  -
-2026-04-10T07:02:50.250440406Z [inf]      mom                   [###---------]  32%  -
-2026-04-10T07:02:50.250444912Z [inf]      bounce                [###---------]  32%  -
-2026-04-10T07:02:50.250699849Z [inf]      trend                 [###---------]  32%  -
-2026-04-10T07:02:50.250706339Z [inf]      breakout              [###---------]  32%  -
-2026-04-10T07:02:50.250711074Z [inf]      wick                  [###---------]  32%  -
-2026-04-10T07:02:50.250715782Z [inf]      vol                   [###---------]  32%  -
-2026-04-10T07:02:50.250720043Z [inf]    [!] LEARNING: NO LEARNING SIGNAL DETECTED
-2026-04-10T07:02:50.250724204Z [inf]  
-2026-04-10T07:02:50.250728790Z [inf]    Health: 0.000  [BAD]
-2026-04-10T07:02:50.250739492Z [inf]  ========================
-2026-04-10T07:02:59.393082471Z [inf]      exec_quality[v10.11]: exec_q=0.99 spread=0.0000 slip=0.0009 fill=1.00 lat=1.00
-2026-04-10T07:02:59.393097123Z [inf]      risk_budget[v10.12c]: risk=0.34 dd=4.184 sharpe=0.00 ruin=0.000 heat=0.0000 max_heat=0.0337
-2026-04-10T07:02:59.393104549Z [inf]      exec[force]: slip=-0.00040  fee=0.00000  fr=0.83  ws_adj=0.546  0.0179@71836.2780  tp=71487.1537  sl=72010.8402
-2026-04-10T07:02:59.393112822Z [inf]      portfolio[v10.10]: positions=1  portfolio_efficiency=0.0000
-2026-04-10T07:02:59.393127515Z [inf]    🔴 BTC $71,807.5550 | [fake_breakout] sc:5/7  ws:0.55 | BEAR_TREND | conf:87% [trend,pullback,vol,mom,wick]
-2026-04-10T07:02:59.393139262Z [inf]      EV=0.050  p=0.50  rr=1.25  ws=0.546  score=0.199[n=405]  t15=6  spread=0.000  af=1.00
-2026-04-10T07:02:59.393147435Z [inf]      RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-2026-04-10T07:02:59.393156897Z [inf]      coherence[v10.12]: 0.797  ev 0.050→0.040
-2026-04-10T07:02:59.393165579Z [inf]      decision=TAKE  ev=0.0399  p=0.5000  af=1.00  coh=0.797
-2026-04-10T07:02:59.393172693Z [inf]      max_pos[v10.8]: 0.0512→0.0426  mode=neutral  pred=BEAR_TREND
-2026-04-10T07:02:59.393181734Z [inf]      policy[v10.7/10.8/v10.9/v10.10/v10.12/v10.13]: mode=neutral  pm=1.200  policy_ev=0.0000  risk_ev=0.0000
-2026-04-10T07:02:59.393188191Z [inf]       fw=5.00  pred=BEAR_TREND  max_pos=0.0426  ptp×=1.80  corr×=1.00  sxd=False
-2026-04-10T07:02:59.393194339Z [inf]       eff=0.0000  eff_live=0.0000  repl=False  coh=0.797
-2026-04-10T07:02:59.393201027Z [inf]       pp=0.000  mom=0.117  mom_mult×1.02
-2026-04-10T07:02:59.439071143Z [inf]      ✅ BTC SELL $71,836.2780→$71,803.1450  +0.000008  [timeout] (fee: 0.00000)
-2026-04-10T07:02:59.684745478Z [inf]    🟢 BNB $600.4550 | [fake_breakout] sc:4/7  ws:0.54 | BEAR_TREND | conf:12% [trend,pullback,vol,wick]
-2026-04-10T07:02:59.712417697Z [inf]      exec_quality[v10.11]: exec_q=0.74 spread=0.0001 slip=0.0010 fill=0.75 lat=1.00
-2026-04-10T07:02:59.712427767Z [inf]    🟢 SOL $83.1850 | [fake_breakout] sc:4/7  ws:0.54 | BEAR_TREND | conf:28% [trend,pullback,vol,wick]
-2026-04-10T07:02:59.712444931Z [inf]      EV=0.050  p=0.50  rr=1.25  ws=0.538  score=0.196[n=406]  t15=7  spread=0.000  af=1.00
-2026-04-10T07:02:59.712451190Z [inf]      RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-2026-04-10T07:02:59.712456624Z [inf]      coherence[v10.12]: 0.500  ev 0.050→0.030
-2026-04-10T07:02:59.712462011Z [inf]      decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-2026-04-10T07:02:59.712467556Z [inf]      max_pos[v10.8]: 0.0483→0.0401  mode=neutral  pred=BEAR_TREND
-2026-04-10T07:02:59.712476203Z [inf]      policy[v10.7/10.8/v10.9/v10.10/v10.12/v10.13]: mode=neutral  pm=1.000  policy_ev=0.0000  risk_ev=0.0000
-2026-04-10T07:02:59.712482596Z [inf]       fw=4.00  pred=BEAR_TREND  max_pos=0.0401  ptp×=1.50  corr×=1.00  sxd=False
-2026-04-10T07:02:59.712488670Z [inf]       eff=0.0000  eff_live=0.0000  repl=False  coh=0.500
-2026-04-10T07:02:59.712494223Z [inf]       pp=0.000  mom=0.171  mom_mult×1.03
-2026-04-10T07:02:59.733103013Z [inf]      risk_budget[v10.12c]: risk=0.33 dd=3.940 sharpe=0.00 ruin=0.000 heat=0.0000 max_heat=0.0333
-2026-04-10T07:02:59.734872292Z [inf]      exec[force]: slip=-0.00040  fee=0.00000  fr=0.75  ws_adj=0.538  0.0125@83.1517  tp=83.5558  sl=82.9497
-2026-04-10T07:02:59.734880097Z [inf]      portfolio[v10.10]: positions=1  portfolio_efficiency=0.0000
-2026-04-10T07:02:59.901989926Z [inf]      ✅ SOL BUY $83.1517→$83.1850  +0.000005  [timeout] (fee: 0.00000)
-2026-04-10T07:02:59.958277524Z [inf]      [1m[97mOTEVRENE POZICE[0m
-2026-04-10T07:02:59.958282044Z [inf]  
-2026-04-10T07:02:59.958288024Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:59.958292902Z [inf]  [96m============================================================[0m
-2026-04-10T07:02:59.958298045Z [inf]      [97m[1mSOL[0m  [92mBUY[0m  [90m$83.1517[0m[90m->[0m[97m$83.1850[0m  [92m+0.000005[0m  [90mTP:0.49%  SL:0.24%[0m
-2026-04-10T07:02:59.958301360Z [inf]  [1m[96m  CRYPTOMASTER  |  0h 1m 3s  |[93m TRENINK [0m[0m
-2026-04-10T07:02:59.958306914Z [inf]  [96m============================================================[0m
-2026-04-10T07:02:59.958312483Z [inf]  
-2026-04-10T07:02:59.958317926Z [inf]      [1m[97mZIVE CENY  (Binance · kazde 2 s)[0m
-2026-04-10T07:02:59.958323022Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:59.958328369Z [inf]      [97m[1mBTC[0m  [97m$   71,796.2050[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:02:59.958333394Z [inf]      [97m[1mETH[0m  [97m$    2,185.9350[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:02:59.958338945Z [inf]      [97m[1mADA[0m  [97m$        0.2510[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:02:59.958344333Z [inf]      [97m[1mBNB[0m  [97m$      600.4100[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:02:59.958352026Z [inf]      [97m[1mDOT[0m  [97m$        1.2885[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:02:59.958356820Z [inf]      [97m[1mSOL[0m  [97m$       83.1850[0m   [90m─[0m  [90m+0.000%[0m[93m[1m  [OPEN][0m
-2026-04-10T07:02:59.958361613Z [inf]      [97m[1mXRP[0m  [97m$        1.3417[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:02:59.958365966Z [inf]  
-2026-04-10T07:02:59.959495136Z [inf]  
-2026-04-10T07:02:59.959501238Z [inf]      [1m[97mVYSLEDKY OBCHODOVANI[0m
-2026-04-10T07:02:59.959508191Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:59.959514534Z [inf]      [90mObchody[0m    [97m[1m407[0m  ([92mOK 24[0m  [91mX 0[0m  [90m~ 21[0m)
-2026-04-10T07:02:59.959521087Z [inf]      [90mWinrate[0m     [92m[1m100.0%[0m  [92m━━━━━━━━━━━━━━━━━━━━━[92m●[90m [92m[1m100%[0m[0m  [90mcil 55%[0m  [90m(bez timeoutu)[0m
-2026-04-10T07:02:59.959528271Z [inf]      [90mZisk[0m        [91m[1m-0.00009443[0m  [91m◄━[91m●[90m────────────────────[0m
-2026-04-10T07:02:59.959534702Z [inf]      [90mDrawdown[0m    [92m0.00014152[0m  [90m(pokles od vrcholu)[0m
-2026-04-10T07:02:59.959540078Z [inf]      [90mSerie[0m       [92m[1mFIRE 8x vyhra v rade![0m
-2026-04-10T07:02:59.959545621Z [inf]      [90m----------------------------------------[0m
-2026-04-10T07:02:59.959550150Z [inf]      [90mProfit Factor[0m  [92m[1m99.00x[0m  [90m(zisk / ztrata, cil > 1.5)[0m
-2026-04-10T07:02:59.959554497Z [inf]      [90mExpectancy[0m     [92m+0.00000726[0m  [90m(prumerny vynos / obchod)[0m
-2026-04-10T07:02:59.959558913Z [inf]      [90mNejlepsi[0m      [92m+0.00003382[0m   [90mNejhorsi[0m  [91m0.00000000[0m
-2026-04-10T07:02:59.959562881Z [inf]      [90mPosledni obchod[0m  [97m0s[0m [90mzpet[0m
-2026-04-10T07:02:59.959567822Z [inf]  
-2026-04-10T07:02:59.959572467Z [inf]      [1m[97mVYSLEDKY PO MENACH[0m
-2026-04-10T07:02:59.959576740Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:59.961083979Z [inf]      [90mMena[0m  [90mObch[0m  [90mWR[0m  [90mBar[0m          [90mZisk[0m
-2026-04-10T07:02:59.961097098Z [inf]      [90m--------------------------------------------------[0m
-2026-04-10T07:02:59.961103434Z [inf]      [97m[1mBTC[0m  [97m11[0m  [92m[1m64%[0m  [92m━━━━━━━━━━━━━[92m●[90m──────── [92m[1m64%[0m[0m  [92m+0.00000471[0m  [92mOK[0m
-2026-04-10T07:02:59.961108240Z [inf]      [97m[1mETH[0m  [97m11[0m  [93m[1m45%[0m  [93m━━━━━━━━━[93m●[90m──────────── [93m[1m45%[0m[0m  [91m-0.00001483[0m  [93m?[0m
-2026-04-10T07:02:59.961114253Z [inf]      [97m[1mADA[0m  [97m4[0m  [92m[1m75%[0m  [92m━━━━━━━━━━━━━━━[92m●[90m────── [92m[1m75%[0m[0m  [92m+0.00001079[0m  [92mOK[0m
-2026-04-10T07:02:59.961120354Z [inf]      [97m[1mBNB[0m  [97m3[0m  [91m[1m33%[0m  [91m━━━━━━[91m●[90m─────────────── [91m[1m33%[0m[0m  [91m-0.00001279[0m  [91mX[0m
-2026-04-10T07:02:59.961125556Z [inf]      [97m[1mDOT[0m  [97m3[0m  [91m[1m0%[0m  [91m[91m●[90m───────────────────── [91m[1m0%[0m[0m  [91m-0.00007152[0m  [91mX[0m
-2026-04-10T07:02:59.961130020Z [inf]      [97m[1mSOL[0m  [97m10[0m  [92m[1m60%[0m  [92m━━━━━━━━━━━━[92m●[90m───────── [92m[1m60%[0m[0m  [91m-0.00000889[0m  [92mOK[0m
-2026-04-10T07:02:59.961134824Z [inf]      [97m[1mXRP[0m  [97m3[0m  [92m[1m67%[0m  [92m━━━━━━━━━━━━━[92m●[90m──────── [92m[1m67%[0m[0m  [91m-0.00000191[0m  [92mOK[0m
-2026-04-10T07:02:59.961139881Z [inf]  
-2026-04-10T07:02:59.961144719Z [inf]      [1m[97mUCENI – STAV A USPESNOST[0m
-2026-04-10T07:02:59.961150974Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:59.962537190Z [inf]      [90mKalibrace[0m      [92m[1mKALIBROVAN  ✓[0m  [96m━━━━━━━━━━━━━━━━━━━━━[96m●[90m [96m[1m100%[0m[0m  [90m(407 obchodu celkem)[0m
-2026-04-10T07:02:59.962544301Z [inf]      [90mTrend uceni[0m    [91m[1mZHORŠUJE SE 📉[0m
-2026-04-10T07:02:59.962549611Z [inf]      [90mPoslednich 8[0m    [97m50.0%[0m  vs  prumer [97m100.0%[0m  [91m(-50.0%)[0m
-2026-04-10T07:02:59.962554226Z [inf]      [90mEV vykon[0m       prumer [91m[1m0.035[0m  min [90m0.030[0m  max [90m0.048[0m  [90m(45 obch)[0m
-2026-04-10T07:02:59.962558549Z [inf]      [90mUzavreni[0m       TP [93m[1m0%[0m  SL [93m0%[0m  trail [90m0%[0m  timeout [91m100%[0m
-2026-04-10T07:02:59.962563791Z [inf]      [90mKalibrace p[0m    p=[97m49.6%[0m  WR=[97m100.0%[0m  odchylka [91m[1m50.4pp[0m  [91modkalibrovan[0m
-2026-04-10T07:02:59.962568645Z [inf]      [90mWR dle rezimu[0m
-2026-04-10T07:02:59.962573334Z [inf]        [97m[1mBULL [0m  [93m━━━━━━━━━[93m●[90m──────────── [93m[1m46%[0m[0m  [93m[1m46%[0m  [90m(11 obch)[0m
-2026-04-10T07:02:59.962577892Z [inf]        [97m[1mBEAR [0m  [92m━━━━━━━━━━━[92m●[90m────────── [92m[1m56%[0m[0m  [92m[1m56%[0m  [90m(34 obch)[0m
-2026-04-10T07:02:59.962583375Z [inf]  
-2026-04-10T07:02:59.962588129Z [inf]      [1m[97mAUDITOR  (ochrana strategie)[0m
-2026-04-10T07:02:59.962592988Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:59.962597850Z [inf]      [90mEV prah[0m              [92m[1m0.000[0m  [90mt15=8  t60=8[0m[92m  aktivni[0m
-2026-04-10T07:02:59.962602272Z [inf]      [90mVelikost pozice[0m      [92m[1m1.40x[0m  [90mEV-only · loss streak → scale · DD halt 40%[0m
-2026-04-10T07:02:59.964052032Z [inf]  
-2026-04-10T07:02:59.964061330Z [inf]      [1m[97mSTRATEGIE  (ADX + EMA + MACD + BB + RSI)[0m
-2026-04-10T07:02:59.964067694Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:59.964073084Z [inf]      [90mRezim trhu[0m   [91mBEAR TREND  silny pokles  (69%)[0m
-2026-04-10T07:02:59.964078312Z [inf]      [90mSignaly[0m       [97m10026[0m zachyceno  [97m18[0m po filtru  [91m26[0m blokovano  [92m407[0m provedeno
-2026-04-10T07:02:59.964083399Z [inf]      [90mFiltrace[0m      [93m0.0%[0m  [90mprojde filtrem[0m  [90mTP: 1.2xATR  /  SL: 0.8xATR  (RR 1.5:1)  EV-only[0m
-2026-04-10T07:02:59.964088266Z [inf]  
-2026-04-10T07:02:59.964093238Z [inf]      [1m[97mPOSLEDNI ROZHODNUTI[0m
-2026-04-10T07:02:59.964097933Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:59.964102919Z [inf]      [97m[1mBTC[0m  [91m[1mPRODEJ[0m  [97m$71,807.5550[0m  [90mp:50%[0m[96m  ev:0.040[0m  [90mBEAR[0m[92m[1m  VYHRA[0m
-2026-04-10T07:02:59.964107691Z [inf]      [97m[1mETH[0m  [91m[1mPRODEJ[0m  [97m$2,187.0850[0m  [90mp:50%[0m[96m  ev:0.030[0m  [90mBULL[0m[91m[1m  PROHRA[0m
-2026-04-10T07:02:59.964114529Z [inf]      [97m[1mADA[0m  [91m[1mPRODEJ[0m  [97m$0.2510[0m  [90mp:50%[0m[96m  ev:0.030[0m  [90mBEAR[0m[92m[1m  VYHRA[0m
-2026-04-10T07:02:59.964119768Z [inf]      [97m[1mBNB[0m  [90mzadny signal[0m
-2026-04-10T07:02:59.964124706Z [inf]      [97m[1mDOT[0m  [91m[1mPRODEJ[0m  [97m$1.2875[0m  [90mp:50%[0m[96m  ev:0.030[0m  [90mBEAR[0m[91m[1m  PROHRA[0m
-2026-04-10T07:02:59.965660855Z [inf]      [97m[1mSOL[0m  [92m[1mKUPUJ [0m  [97m$83.1850[0m  [90mp:50%[0m[96m  ev:0.030[0m  [90mBEAR[0m[92m[1m  VYHRA[0m
-2026-04-10T07:02:59.965669929Z [inf]      [97m[1mXRP[0m  [90mzadny signal[0m
-2026-04-10T07:02:59.965676246Z [inf]  
-2026-04-10T07:02:59.965681689Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:59.965686153Z [inf]    [92mSbiram data[0m[92m ━━━ [0m[94m[1m● Trenink[0m[90m ─── [0m[90mAktivni[0m
-2026-04-10T07:02:59.965691014Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:02:59.965695644Z [inf]    [1mSTAV:[0m  [93m[1mTRENINK[0m  [90m([0m[93mzisk > 0[0m[90m)[0m
-2026-04-10T07:02:59.965699846Z [inf]  [96m============================================================[0m
-2026-04-10T07:02:59.965704706Z [inf]  
-2026-04-10T07:02:59.965709737Z [inf]  
-2026-04-10T07:02:59.965714103Z [inf]  === EXECUTION ENGINE ===
-2026-04-10T07:02:59.965718431Z [inf]    Equity:   0.999983  |  DD: 0.00%
-2026-04-10T07:02:59.965722735Z [inf]    Exposure: 0.012  |  Positions: 1
-2026-04-10T07:02:59.965727340Z [inf]    Sharpe:   0.000  |  WR: 50.00%  |  Edge: 0.50000  |  MaxDD: 0.00%
-2026-04-10T07:02:59.965731958Z [inf]    Failure:  0.000  [OK]
-2026-04-10T07:02:59.965736433Z [inf]      SOLUSDT      BEAR_TREND   EV:+0.0000  Size:0.0125
-2026-04-10T07:02:59.965742290Z [inf]  
-2026-04-10T07:02:59.965747036Z [inf]  === LEARNING MONITOR ===
-2026-04-10T07:02:59.965751433Z [inf]    ADA  BEAR_TREND  n:3     EV:+0.000  WR:33%  conv:-- (3/20)  bandit:0.00
-2026-04-10T07:02:59.965757015Z [inf]    BTC  BEAR_TREND  n:9     EV:+0.000  WR:56%  conv:-- (9/20)  bandit:0.00
-2026-04-10T07:02:59.967396618Z [inf]    DOT  BEAR_TREND  n:3     EV:+0.000  WR:0%  conv:-- (3/20)  bandit:0.00
-2026-04-10T07:02:59.967402874Z [inf]    ETH  BEAR_TREND  n:9     EV:+0.000  WR:44%  conv:-- (9/20)  bandit:0.00
-2026-04-10T07:02:59.967411404Z [inf]  ========================
-2026-04-10T07:02:59.967412383Z [inf]    SOL  BEAR_TREND  n:8     EV:+0.000  WR:50%  conv:-- (8/20)  bandit:0.00
-2026-04-10T07:02:59.967416345Z [inf]      mom                   [###---------]  32%  -
-2026-04-10T07:02:59.967419709Z [inf]  
-2026-04-10T07:02:59.967427313Z [inf]    Features (WR per signal key):
-2026-04-10T07:02:59.967429572Z [inf]      bounce                [###---------]  32%  -
-2026-04-10T07:02:59.967433621Z [inf]      is_weekend            [###---------]  32%  -
-2026-04-10T07:02:59.967440509Z [inf]      trend                 [###---------]  32%  -
-2026-04-10T07:02:59.967440708Z [inf]      pullback              [###---------]  32%  -
-2026-04-10T07:02:59.967448917Z [inf]      breakout              [###---------]  32%  -
-2026-04-10T07:02:59.967456425Z [inf]      wick                  [###---------]  32%  -
-2026-04-10T07:02:59.967463810Z [inf]      vol                   [###---------]  32%  -
-2026-04-10T07:02:59.967470211Z [inf]    [!] LEARNING: NO LEARNING SIGNAL DETECTED
-2026-04-10T07:02:59.967476846Z [inf]  
-2026-04-10T07:02:59.967483498Z [inf]    Health: 0.000  [BAD]
-2026-04-10T07:03:01.409631768Z [inf]  💾 Firebase: saved 2 trades (batch write)
-2026-04-10T07:03:09.956978621Z [inf]  🧠 Strategy weights: {'BULL_TREND': '0.48', 'BEAR_TREND': '0.53', 'RANGING': '1.00', 'QUIET_RANGE': '1.00', 'HIGH_VOL': '1.00'}
-2026-04-10T07:03:09.992735928Z [inf]    📊 AUDITOR: best=BEAR_TREND_BTCUSDT  w=1.28
-2026-04-10T07:03:09.992742440Z [inf]    🔍 AUDITOR: streak=0  WR:50%
-2026-04-10T07:03:10.084299038Z [inf]    [!] LEARNING: NO LEARNING SIGNAL DETECTED
-2026-04-10T07:03:10.419766485Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:03:10.419776325Z [inf]      [90mObchody[0m    [97m[1m407[0m  ([92mOK 24[0m  [91mX 0[0m  [90m~ 21[0m)
-2026-04-10T07:03:10.419791580Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:03:10.419794443Z [inf]  
-2026-04-10T07:03:10.419798746Z [inf]      [97m[1mBTC[0m  [97m$   71,796.0050[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:03:10.419801104Z [inf]  [96m============================================================[0m
-2026-04-10T07:03:10.419805379Z [inf]      [97m[1mETH[0m  [97m$    2,186.0550[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:03:10.419809829Z [inf]  [1m[96m  CRYPTOMASTER  |  0h 1m 13s  |[93m TRENINK [0m[0m
-2026-04-10T07:03:10.419812382Z [inf]      [97m[1mADA[0m  [97m$        0.2510[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:03:10.419816769Z [inf]  [96m============================================================[0m
-2026-04-10T07:03:10.419820320Z [inf]      [97m[1mBNB[0m  [97m$      600.4650[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:03:10.419823525Z [inf]  
-2026-04-10T07:03:10.419829236Z [inf]      [1m[97mZIVE CENY  (Binance · kazde 2 s)[0m
-2026-04-10T07:03:10.419837412Z [inf]      [97m[1mDOT[0m  [97m$        1.2885[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:03:10.419851987Z [inf]      [97m[1mSOL[0m  [97m$       83.1950[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:03:10.419860368Z [inf]      [97m[1mXRP[0m  [97m$        1.3417[0m   [90m─[0m  [90m+0.000%[0m
-2026-04-10T07:03:10.419868063Z [inf]  
-2026-04-10T07:03:10.419875630Z [inf]      [1m[97mVYSLEDKY OBCHODOVANI[0m
-2026-04-10T07:03:10.421834005Z [inf]      [1m[97mVYSLEDKY PO MENACH[0m
-2026-04-10T07:03:10.421846872Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:03:10.421852912Z [inf]      [90mMena[0m  [90mObch[0m  [90mWR[0m  [90mBar[0m          [90mZisk[0m
-2026-04-10T07:03:10.421858791Z [inf]      [90m--------------------------------------------------[0m
-2026-04-10T07:03:10.421864815Z [inf]      [97m[1mBTC[0m  [97m11[0m  [92m[1m64%[0m  [92m━━━━━━━━━━━━━[92m●[90m──────── [92m[1m64%[0m[0m  [92m+0.00000471[0m  [92mOK[0m
-2026-04-10T07:03:10.421883804Z [inf]      [90mWinrate[0m     [92m[1m100.0%[0m  [92m━━━━━━━━━━━━━━━━━━━━━[92m●[90m [92m[1m100%[0m[0m  [90mcil 55%[0m  [90m(bez timeoutu)[0m
-2026-04-10T07:03:10.421892392Z [inf]      [90mZisk[0m        [91m[1m-0.00009443[0m  [91m◄━[91m●[90m────────────────────[0m
-2026-04-10T07:03:10.421898672Z [inf]      [90mDrawdown[0m    [92m0.00014152[0m  [90m(pokles od vrcholu)[0m
-2026-04-10T07:03:10.421905239Z [inf]      [90mSerie[0m       [92m[1mFIRE 8x vyhra v rade![0m
-2026-04-10T07:03:10.421910124Z [inf]      [90m----------------------------------------[0m
-2026-04-10T07:03:10.421915057Z [inf]      [90mProfit Factor[0m  [92m[1m99.00x[0m  [90m(zisk / ztrata, cil > 1.5)[0m
-2026-04-10T07:03:10.421921387Z [inf]      [90mExpectancy[0m     [92m+0.00000726[0m  [90m(prumerny vynos / obchod)[0m
-2026-04-10T07:03:10.421928116Z [inf]      [90mNejlepsi[0m      [92m+0.00003382[0m   [90mNejhorsi[0m  [91m0.00000000[0m
-2026-04-10T07:03:10.421933627Z [inf]      [90mPosledni obchod[0m  [97m10s[0m [90mzpet[0m
-2026-04-10T07:03:10.421938488Z [inf]  
-2026-04-10T07:03:10.423694460Z [inf]      [97m[1mETH[0m  [97m11[0m  [93m[1m45%[0m  [93m━━━━━━━━━[93m●[90m──────────── [93m[1m45%[0m[0m  [91m-0.00001483[0m  [93m?[0m
-2026-04-10T07:03:10.423700925Z [inf]      [97m[1mADA[0m  [97m4[0m  [92m[1m75%[0m  [92m━━━━━━━━━━━━━━━[92m●[90m────── [92m[1m75%[0m[0m  [92m+0.00001079[0m  [92mOK[0m
-2026-04-10T07:03:10.423709064Z [inf]      [97m[1mBNB[0m  [97m3[0m  [91m[1m33%[0m  [91m━━━━━━[91m●[90m─────────────── [91m[1m33%[0m[0m  [91m-0.00001279[0m  [91mX[0m
-2026-04-10T07:03:10.423715667Z [inf]      [97m[1mDOT[0m  [97m3[0m  [91m[1m0%[0m  [91m[91m●[90m───────────────────── [91m[1m0%[0m[0m  [91m-0.00007152[0m  [91mX[0m
-2026-04-10T07:03:10.423722016Z [inf]      [97m[1mSOL[0m  [97m10[0m  [92m[1m60%[0m  [92m━━━━━━━━━━━━[92m●[90m───────── [92m[1m60%[0m[0m  [91m-0.00000889[0m  [92mOK[0m
-2026-04-10T07:03:10.423728760Z [inf]      [97m[1mXRP[0m  [97m3[0m  [92m[1m67%[0m  [92m━━━━━━━━━━━━━[92m●[90m──────── [92m[1m67%[0m[0m  [91m-0.00000191[0m  [92mOK[0m
-2026-04-10T07:03:10.423736430Z [inf]  
-2026-04-10T07:03:10.423743281Z [inf]      [1m[97mUCENI – STAV A USPESNOST[0m
-2026-04-10T07:03:10.423749337Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:03:10.423756222Z [inf]      [90mKalibrace[0m      [92m[1mKALIBROVAN  ✓[0m  [96m━━━━━━━━━━━━━━━━━━━━━[96m●[90m [96m[1m100%[0m[0m  [90m(407 obchodu celkem)[0m
-2026-04-10T07:03:10.423762295Z [inf]      [90mTrend uceni[0m    [91m[1mZHORŠUJE SE 📉[0m
-2026-04-10T07:03:10.426208025Z [inf]      [1m[97mAUDITOR  (ochrana strategie)[0m
-2026-04-10T07:03:10.426217889Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:03:10.426223607Z [inf]      [90mEV prah[0m              [92m[1m0.000[0m  [90mt15=8  t60=8[0m[92m  aktivni[0m
-2026-04-10T07:03:10.426229251Z [inf]      [90mVelikost pozice[0m      [92m[1m1.40x[0m  [90mEV-only · loss streak → scale · DD halt 40%[0m
-2026-04-10T07:03:10.426235949Z [inf]  
-2026-04-10T07:03:10.426236353Z [inf]      [90mPoslednich 8[0m    [97m50.0%[0m  vs  prumer [97m100.0%[0m  [91m(-50.0%)[0m
-2026-04-10T07:03:10.426241863Z [inf]      [1m[97mSTRATEGIE  (ADX + EMA + MACD + BB + RSI)[0m
-2026-04-10T07:03:10.426248451Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:03:10.426248949Z [inf]      [90mEV vykon[0m       prumer [91m[1m0.035[0m  min [90m0.030[0m  max [90m0.048[0m  [90m(45 obch)[0m
-2026-04-10T07:03:10.426256449Z [inf]      [90mUzavreni[0m       TP [93m[1m0%[0m  SL [93m0%[0m  trail [90m0%[0m  timeout [91m100%[0m
-2026-04-10T07:03:10.426262793Z [inf]      [90mKalibrace p[0m    p=[97m49.6%[0m  WR=[97m100.0%[0m  odchylka [91m[1m50.4pp[0m  [91modkalibrovan[0m
-2026-04-10T07:03:10.426269392Z [inf]      [90mWR dle rezimu[0m
-2026-04-10T07:03:10.426276327Z [inf]        [97m[1mBULL [0m  [93m━━━━━━━━━[93m●[90m──────────── [93m[1m46%[0m[0m  [93m[1m46%[0m  [90m(11 obch)[0m
-2026-04-10T07:03:10.426282523Z [inf]        [97m[1mBEAR [0m  [92m━━━━━━━━━━━[92m●[90m────────── [92m[1m56%[0m[0m  [92m[1m56%[0m  [90m(34 obch)[0m
-2026-04-10T07:03:10.426289009Z [inf]  
-2026-04-10T07:03:10.428763702Z [inf]      [90mRezim trhu[0m   [91mBEAR TREND  silny pokles  (69%)[0m
-2026-04-10T07:03:10.428771433Z [inf]      [90mSignaly[0m       [97m11678[0m zachyceno  [97m18[0m po filtru  [91m26[0m blokovano  [92m407[0m provedeno
-2026-04-10T07:03:10.428779632Z [inf]      [90mFiltrace[0m      [93m0.0%[0m  [90mprojde filtrem[0m  [90mTP: 1.2xATR  /  SL: 0.8xATR  (RR 1.5:1)  EV-only[0m
-2026-04-10T07:03:10.428787461Z [inf]  
-2026-04-10T07:03:10.428795550Z [inf]      [1m[97mPOSLEDNI ROZHODNUTI[0m
-2026-04-10T07:03:10.428801930Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:03:10.428809105Z [inf]      [97m[1mBTC[0m  [91m[1mPRODEJ[0m  [97m$71,807.5550[0m  [90mp:50%[0m[96m  ev:0.040[0m  [90mBEAR[0m[92m[1m  VYHRA[0m
-2026-04-10T07:03:10.428815672Z [inf]      [97m[1mETH[0m  [91m[1mPRODEJ[0m  [97m$2,187.0850[0m  [90mp:50%[0m[96m  ev:0.030[0m  [90mBULL[0m[91m[1m  PROHRA[0m
-2026-04-10T07:03:10.428821686Z [inf]      [97m[1mADA[0m  [91m[1mPRODEJ[0m  [97m$0.2510[0m  [90mp:50%[0m[96m  ev:0.030[0m  [90mBEAR[0m[92m[1m  VYHRA[0m
-2026-04-10T07:03:10.428827634Z [inf]      [97m[1mBNB[0m  [90mzadny signal[0m
-2026-04-10T07:03:10.428833490Z [inf]      [97m[1mDOT[0m  [91m[1mPRODEJ[0m  [97m$1.2875[0m  [90mp:50%[0m[96m  ev:0.030[0m  [90mBEAR[0m[91m[1m  PROHRA[0m
-2026-04-10T07:03:10.428840100Z [inf]      [97m[1mSOL[0m  [92m[1mKUPUJ [0m  [97m$83.1850[0m  [90mp:50%[0m[96m  ev:0.030[0m  [90mBEAR[0m[92m[1m  VYHRA[0m
-2026-04-10T07:03:10.428847044Z [inf]      [97m[1mXRP[0m  [90mzadny signal[0m
-2026-04-10T07:03:10.428854786Z [inf]  
-2026-04-10T07:03:10.428860887Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:03:10.431012851Z [inf]    [92mSbiram data[0m[92m ━━━ [0m[94m[1m● Trenink[0m[90m ─── [0m[90mAktivni[0m
-2026-04-10T07:03:10.431025344Z [inf]    [90m────────────────────────────────────────────────────────[0m
-2026-04-10T07:03:10.431032897Z [inf]    [1mSTAV:[0m  [93m[1mTRENINK[0m  [90m([0m[93mzisk > 0[0m[90m)[0m
-2026-04-10T07:03:10.431039446Z [inf]  [96m============================================================[0m
-2026-04-10T07:03:10.431046308Z [inf]  
-2026-04-10T07:03:10.431053584Z [inf]  
-2026-04-10T07:03:10.431060102Z [inf]  === EXECUTION ENGINE ===
-2026-04-10T07:03:10.431065966Z [inf]    Equity:   0.999983  |  DD: 0.00%
-2026-04-10T07:03:10.431073405Z [inf]    Exposure: 0.000  |  Positions: 0
-2026-04-10T07:03:10.431080577Z [inf]    Sharpe:   0.000  |  WR: 50.00%  |  Edge: 0.50000  |  MaxDD: 0.00%
-2026-04-10T07:03:10.431086683Z [inf]    Failure:  0.000  [OK]
-2026-04-10T07:03:10.431092948Z [inf]  
-2026-04-10T07:03:10.431098922Z [inf]  === LEARNING MONITOR ===
-2026-04-10T07:03:10.431104995Z [inf]    ADA  BEAR_TREND  n:3     EV:+0.000  WR:33%  conv:-- (3/20)  bandit:0.00
-2026-04-10T07:03:10.431111593Z [inf]    BTC  BEAR_TREND  n:9     EV:+0.000  WR:56%  conv:-- (9/20)  bandit:0.00
-2026-04-10T07:03:10.431118097Z [inf]    DOT  BEAR_TREND  n:3     EV:+0.000  WR:0%  conv:-- (3/20)  bandit:0.00
-2026-04-10T07:03:10.431124300Z [inf]    ETH  BEAR_TREND  n:9     EV:+0.000  WR:44%  conv:-- (9/20)  bandit:0.00
-2026-04-10T07:03:10.431130709Z [inf]    SOL  BEAR_TREND  n:8     EV:+0.000  WR:50%  conv:-- (8/20)  bandit:0.00
-2026-04-10T07:03:10.431138974Z [inf]  
-2026-04-10T07:03:10.431145066Z [inf]    Features (WR per signal key):
-2026-04-10T07:03:10.431151195Z [inf]      is_weekend            [###---------]  32%  -
-2026-04-10T07:03:10.433255280Z [inf]      pullback              [###---------]  32%  -
-2026-04-10T07:03:10.433263062Z [inf]      mom                   [###---------]  32%  -
-2026-04-10T07:03:10.433268654Z [inf]      bounce                [###---------]  32%  -
-2026-04-10T07:03:10.433275174Z [inf]      trend                 [###---------]  32%  -
-2026-04-10T07:03:10.433281377Z [inf]      breakout              [###---------]  32%  -
-2026-04-10T07:03:10.433287887Z [inf]      wick                  [###---------]  32%  -
-2026-04-10T07:03:10.433293763Z [inf]      vol                   [###---------]  32%  -
-2026-04-10T07:03:10.433299296Z [inf]    [!] LEARNING: NO LEARNING SIGNAL DETECTED
-2026-04-10T07:03:10.433305925Z [inf]  
-2026-04-10T07:03:10.433311689Z [inf]    Health: 0.000  [BAD]
-2026-04-10T07:03:10.433317546Z [inf]  ========================
+============================================================
+  CRYPTOMASTER  |  0h 7m 26s  | TRENINK 
+============================================================
+    ZIVE CENY  (Binance · kazde 1 s)
+  ────────────────────────────────────────────────────────
+    BTC  $   74,113.0000   ─  +0.000%
+    ETH  $    2,327.5100   ─  +0.000%
+    ADA  $        0.2400   ─  +0.000%
+    BNB  $      614.5700   ─  +0.000%
+    DOT  $        1.1600   ─  +0.000%
+    SOL  $       83.1800   ─  +0.000%
+    XRP  $        1.3600   ─  +0.000%
+    VYSLEDKY OBCHODOVANI
+  ────────────────────────────────────────────────────────
+    Obchody    1269  (OK 366  X 308  ~ 558)
+    Winrate     54.3%  ━━━━━━━━━━●─────────── 54%  cil 55%  (bez timeoutu)
+    Zisk        +0.00028453  ▶━━━━━●────────────────
+    Drawdown    0.00010185  (pokles od vrcholu)
+    ----------------------------------------
+    Profit Factor  99.00x  (zisk / ztrata, cil > 1.5)
+    Expectancy     +0.00000001  (prumerny vynos / obchod)
+    Nejlepsi      +0.00000650   Nejhorsi  0.00000000
+    Posledni obchod  8h 34m zpet
+    VYSLEDKY PO MENACH
+  ────────────────────────────────────────────────────────
+    Mena  Obch  WR  Bar          Zisk
+    --------------------------------------------------
+    BTC  19  37%  ━━━━━━━●────────────── 37%  -0.00003012  X
+    ETH  6  50%  ━━━━━━━━━━●─────────── 50%  -0.00002496  ?
+    ADA  24  62%  ━━━━━━━━━━━━●───────── 62%  +0.00009267  OK
+    BNB  22  59%  ━━━━━━━━━━━━●───────── 59%  +0.00024562  OK
+    DOT  4  100%  ━━━━━━━━━━━━━━━━━━━━━● 100%  +0.00001004  OK
+    SOL  21  48%  ━━━━━━━━━●──────────── 48%  -0.00002973  ?
+    XRP  4  50%  ━━━━━━━━━━●─────────── 50%  +0.00002101  ?
+    UCENI – STAV A USPESNOST
+  ────────────────────────────────────────────────────────
+    Kalibrace      KALIBROVAN  ✓  ━━━━━━━━━━━━━━━━━━━━━● 100%  (1269 obchodu celkem)
+    Trend uceni    SBÍRÁ DATA...
+    Poslednich 0    0.0%  vs  prumer 54.3%  (-54.3%)
+    EV vykon       prumer 0.036  min 0.030  max 0.048  (50 obch)
+    Uzavreni       TP 0%  SL 0%  trail 0%  timeout 99%
+    Kalibrace p    p=50.5%  WR=54.3%  odchylka 3.8pp  dobre
+    WR dle rezimu
+      BULL   ━━━━━━━━━━●─────────── 54%  54%  (87 obch)
+      BEAR   ━━━━━━━━━━━━●───────── 62%  62%  (8 obch)
+      RANGE  ━━━━━━━●────────────── 40%  40%  (5 obch)
+    AUDITOR  (ochrana strategie)
+  ────────────────────────────────────────────────────────
+    EV prah              0.000  t15=0  t60=0  aktivni
+    Velikost pozice      1.00x  EV-only · loss streak → scale · DD halt 40%
+    STRATEGIE  (ADX + EMA + MACD + BB + RSI)
+  ────────────────────────────────────────────────────────
+    Rezim trhu   BULL TREND  silny vzestup  (87%)
+    Signaly       0 zachyceno  0 po filtru  584 blokovano  1269 provedeno
+    Filtrace      0.0%  projde filtrem  TP: 1.2xATR  /  SL: 0.8xATR  (RR 1.5:1)  EV-only
+    POSLEDNI ROZHODNUTI
+  ────────────────────────────────────────────────────────
+    BTC  zadny signal
+    ETH  zadny signal
+    ADA  zadny signal
+    BNB  zadny signal
+    DOT  zadny signal
+    SOL  zadny signal
+    XRP  zadny signal
+  ────────────────────────────────────────────────────────
+  Sbiram data ━━━ ● Trenink ─── Aktivni
+  ────────────────────────────────────────────────────────
+  STAV:  TRENINK  (winrate 54%->55%)
+============================================================
+=== EXECUTION ENGINE ===
+  Equity:   1.000000  |  DD: 0.00%
+  Exposure: 0.000  |  Positions: 0
+  Sharpe:   0.000  |  WR: 0.00%  |  Edge: 0.00000  |  MaxDD: 0.00%
+  Failure:  0.000  [OK]
+=== LEARNING MONITOR ===
+  ADA  BULL_TREND  n:24    EV:+0.002  WR:62%  conv:0.70  bandit:0.38
+  BNB  BULL_TREND  n:18    EV:+0.007  WR:72%  conv:-- (18/20)  bandit:0.50
+  BNB  RANGING     n:3     EV:+0.000  WR:0%  conv:-- (3/20)  bandit:0.00
+  BTC  BULL_TREND  n:17    EV:-0.001  WR:35%  conv:-- (17/20)  bandit:0.41
+  ETH  BULL_TREND  n:5     EV:+0.000  WR:40%  conv:-- (5/20)  bandit:0.00
+  SOL  BULL_TREND  n:19    EV:-0.000  WR:47%  conv:-- (19/20)  bandit:0.51
+  XRP  BULL_TREND  n:3     EV:+0.000  WR:33%  conv:-- (3/20)  bandit:0.00
+  Features (WR per signal key):
+    breakout              [####--------]  33%  -
+    vol                   [####--------]  33%  -
+    bounce                [####--------]  33%  -
+    mom                   [####--------]  33%  -
+    is_weekend            [####--------]  33%  -
+    pullback              [####--------]  33%  -
+    wick                  [####--------]  33%  -
+    trend                 [####--------]  33%  -
+  [!] LEARNING: WEAK EDGE -- still converging
+  Health: 0.154  [WEAK]
+========================
+[WATCHDOG] No trades for 600s → boosting exploration
+[WATCHDOG] Critical idle (15min) → enabling micro-trades
+  [!] LEARNING: WEAK EDGE -- still converging
+[bot2] ── pre_live_audit ─────────────────────────────────────
+====================================================================
+PRE-LIVE AUDIT  (V10.12c)  n=20  seed=42  mode=replay
+====================================================================
+    decision=SKIP_CLUSTER  BTCUSDT  LOSS_CLUSTER:cooldown 761s
+    EV=0.050  p=0.53  rr=1.50  ws=0.555  score=0.201[n=1269]  t15=0  spread=0.008  af=1.00
+    RDE[v10.10b]: ev=0.050 thr=0.100 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
+    coherence[v10.12]: 0.609  ev 0.050→0.030
+    decision=OFI_TOXIC  OFI_TOXIC:flow=-1.00 heavy sell pressure vs BUY
+    EV=-0.050  p=0.53  rr=1.50  ws=0.540  score=0.127[n=1269]  t15=0  spread=0.008  af=1.00
+    RDE[v10.10b]: ev=-0.050 thr=0.100 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
+    coherence[v10.12]: 0.719  ev -0.050→-0.036
+    decision=SKIP_SCORE  ev=-0.036  ws=0.540  score=0.127
+    EV=0.050  p=0.53  rr=1.50  ws=0.555  score=0.201[n=1269]  t15=0  spread=0.008  af=1.00
+    RDE[v10.10b]: ev=0.050 thr=0.100 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
+    coherence[v10.12]: 0.841  ev 0.050→0.042
+    decision=TAKE  ev=0.0420  p=0.5312  af=1.00  coh=0.841
+    EV=0.050  p=0.53  rr=1.50  ws=0.567  score=0.205[n=1269]  t15=0  spread=0.008  af=1.00
+    RDE[v10.10b]: ev=0.050 thr=0.100 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
+    coherence[v10.12]: 0.893  ev 0.050→0.045
+    decision=OFI_TOXIC  OFI_TOXIC:flow=-1.00 heavy sell pressure vs BUY
+    EV=-0.050  p=0.53  rr=1.50  ws=0.521  score=0.121[n=1269]  t15=0  spread=0.008  af=1.00
+    RDE[v10.10b]: ev=-0.050 thr=0.100 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
+    coherence[v10.12]: 0.500  ev -0.050→-0.030
+    decision=SKIP_SCORE  ev=-0.030  ws=0.521  score=0.121
+    EV=-0.050  p=0.53  rr=1.50  ws=0.542  score=0.128[n=1269]  t15=0  spread=0.008  af=1.00
+    RDE[v10.10b]: ev=-0.050 thr=0.100 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
+    coherence[v10.12]: 0.544  ev -0.050→-0.030
+    decision=SKIP_SCORE  ev=-0.030  ws=0.542  score=0.128
+    EV=0.050  p=0.53  rr=1.50  ws=0.558  score=0.202[n=1269]  t15=0  spread=0.008  af=1.00
+    RDE[v10.10b]: ev=0.050 thr=0.100 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
+    coherence[v10.12]: 0.784  ev 0.050→0.039
+    decision=TAKE  ev=0.0392  p=0.5312  af=1.00  coh=0.784
+    EV=-0.050  p=0.53  rr=1.50  ws=0.556  score=0.132[n=1269]  t15=0  spread=0.008  af=1.00
+    RDE[v10.10b]: ev=-0.050 thr=0.100 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
+    coherence[v10.12]: 0.666  ev -0.050→-0.033
+    decision=TAKE  ev=-0.0333  p=0.5312  af=1.00  coh=0.666
+    EV=0.050  p=0.53  rr=1.50  ws=0.545  score=0.199[n=1269]  t15=0  spread=0.008  af=1.00
+    RDE[v10.10b]: ev=0.050 thr=0.100 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
+    coherence[v10.12]: 0.544  ev 0.050→0.030
+    decision=TAKE  ev=0.0300  p=0.5312  af=1.00  coh=0.544
+    decision=SKIP_CLUSTER  BTCUSDT  LOSS_CLUSTER:cooldown 761s
+    EV=0.050  p=0.53  rr=1.50  ws=0.563  score=0.204[n=1269]  t15=0  spread=0.008  af=1.00
+    RDE[v10.10b]: ev=0.050 thr=0.100 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
+    coherence[v10.12]: 0.600  ev 0.050→0.030
+    decision=TAKE  ev=0.0300  p=0.5312  af=1.00  coh=0.600
+    EV=0.050  p=0.53  rr=1.50  ws=0.572  score=0.207[n=1269]  t15=0  spread=0.008  af=1.00
+    RDE[v10.10b]: ev=0.050 thr=0.100 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
+    coherence[v10.12]: 0.841  ev 0.050→0.042
+    decision=TAKE  ev=0.0420  p=0.5312  af=1.00  coh=0.841
+    EV=-0.050  p=0.53  rr=1.50  ws=0.597  score=0.144[n=1269]  t15=0  spread=0.008  af=1.00
+    RDE[v10.10b]: ev=-0.050 thr=0.100 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
+    coherence[v10.12]: 0.784  ev -0.050→-0.039
+    decision=SKIP_SCORE  ev=-0.039  ws=0.597  score=0.144
+    EV=0.050  p=0.53  rr=1.50  ws=0.569  score=0.206[n=1269]  t15=0  spread=0.008  af=1.00
+    RDE[v10.10b]: ev=0.050 thr=0.100 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
+    coherence[v10.12]: 0.631  ev 0.050→0.032
+    decision=OFI_TOXIC  OFI_TOXIC:flow=-1.00 heavy sell pressure vs BUY
+    EV=-0.050  p=0.53  rr=1.50  ws=0.612  score=0.149[n=1269]  t15=0  spread=0.008  af=1.00
+    RDE[v10.10b]: ev=-0.050 thr=0.100 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
+    coherence[v10.12]: 0.784  ev -0.050→-0.039
+    decision=SKIP_SCORE  ev=-0.039  ws=0.612  score=0.149
+    EV=0.050  p=0.53  rr=1.50  ws=0.542  score=0.198[n=1269]  t15=0  spread=0.008  af=1.00
+    RDE[v10.10b]: ev=0.050 thr=0.100 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
+    coherence[v10.12]: 0.622  ev 0.050→0.031
+    decision=TAKE  ev=0.0311  p=0.5312  af=1.00  coh=0.622
+    decision=SKIP_CLUSTER  BTCUSDT  LOSS_CLUSTER:cooldown 760s
+    EV=0.050  p=0.53  rr=1.50  ws=0.586  score=0.211[n=1269]  t15=0  spread=0.008  af=1.00
+    RDE[v10.10b]: ev=0.050 thr=0.100 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
+    coherence[v10.12]: 0.609  ev 0.050→0.030
+    OFI soft penalty: size×0.75
+    decision=TAKE  ev=0.0305  p=0.5312  af=0.75  coh=0.609
+    decision=SKIP_CLUSTER  BTCUSDT  LOSS_CLUSTER:cooldown 760s
+    EV=0.050  p=0.53  rr=1.50  ws=0.560  score=0.203[n=1269]  t15=0  spread=0.008  af=1.00
+    RDE[v10.10b]: ev=0.050 thr=0.100 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
+    coherence[v10.12]: 0.893  ev 0.050→0.045
+    decision=TAKE  ev=0.0447  p=0.5312  af=1.00  coh=0.893
+    decision=SKIP_CLUSTER  BTCUSDT  LOSS_CLUSTER:cooldown 760s
+    EV=0.050  p=0.53  rr=1.50  ws=0.559  score=0.203[n=1269]  t15=0  spread=0.008  af=1.00
+    RDE[v10.10b]: ev=0.050 thr=0.100 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
+    coherence[v10.12]: 0.741  ev 0.050→0.037
+    decision=OFI_TOXIC  OFI_TOXIC:flow=-1.00 heavy sell pressure vs BUY
+    EV=0.050  p=0.53  rr=1.50  ws=0.595  score=0.214[n=1269]  t15=0  spread=0.008  af=1.00
+    RDE[v10.10b]: ev=0.050 thr=0.100 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
+    coherence[v10.12]: 0.893  ev 0.050→0.045
+    OFI soft penalty: size×0.75
+    decision=TAKE  ev=0.0447  p=0.5312  af=0.75  coh=0.893
+    decision=SKIP_CLUSTER  BTCUSDT  LOSS_CLUSTER:cooldown 760s
+    EV=0.050  p=0.53  rr=1.50  ws=0.470  score=0.176[n=1269]  t15=0  spread=0.008  af=1.00
+      },
+      "XRPUSDT_BULL_TREND": {
+        "sym": "XRPUSDT",
+        "reg": "BULL_TREND",
+        "n": 3,
+        "ev": 0.0,
+        "wr": 0.3333,
+        "conv": 0.0,
+        "bandit": 0.0
+      },
+      "BNBUSDT_RANGING": {
+        "sym": "BNBUSDT",
+        "reg": "RANGING",
+        "n": 3,
+        "ev": 0.0,
+        "wr": 0.0,
+        "conv": 0.0,
+        "bandit": 0.0
+      },
+      "DOTUSDT_RANGING": {
+        "sym": "DOTUSDT",
+        "reg": "RANGING",
+        "n": 1,
+        "ev": 0.0,
+        "wr": 1.0,
+        "conv": 0.0,
+        "bandit": 0.0
+      },
+      "BNBUSDT_BULL_TREND": {
+        "sym": "BNBUSDT",
+        "reg": "BULL_TREND",
+        "n": 18,
+        "ev": 0.0043,
+        "wr": 0.7222,
+        "conv": 0.218,
+        "bandit": 0.504
+      },
+      "BTCUSDT_BEAR_TREND": {
+        "sym": "BTCUSDT",
+        "reg": "BEAR_TREND",
+        "n": 1,
+        "ev": 0.0,
+        "wr": 0.0,
+        "conv": 0.0,
+        "bandit": 0.0
+      },
+      "DOTUSDT_BEAR_TREND": {
+        "sym": "DOTUSDT",
+        "reg": "BEAR_TREND",
+        "n": 2,
+        "ev": 0.0,
+        "wr": 1.0,
+        "conv": 0.0,
+        "bandit": 0.0
+      },
+      "ETHUSDT_BULL_TREND": {
+        "sym": "ETHUSDT",
+        "reg": "BULL_TREND",
+        "n": 5,
+        "ev": 0.0,
+        "wr": 0.4,
+        "conv": 0.0,
+        "bandit": 0.0
+      },
+      "SOLUSDT_BEAR_TREND": {
+        "sym": "SOLUSDT",
+        "reg": "BEAR_TREND",
+        "n": 2,
+        "ev": 0.0,
+        "wr": 0.5,
+        "conv": 0.0,
+        "bandit": 0.0
+      },
+      "ETHUSDT_BEAR_TREND": {
+        "sym": "ETHUSDT",
+        "reg": "BEAR_TREND",
+        "n": 1,
+        "ev": 0.0,
+        "wr": 1.0,
+        "conv": 0.0,
+        "bandit": 0.0
+      },
+      "BTCUSDT_RANGING": {
+        "sym": "BTCUSDT",
+        "reg": "RANGING",
+        "n": 1,
+        "ev": 0.0,
+        "wr": 1.0,
+        "conv": 0.0,
+        "bandit": 0.0
+      },
+      "XRPUSDT_BEAR_TREND": {
+        "sym": "XRPUSDT",
+        "reg": "BEAR_TREND",
+        "n": 1,
+        "ev": 0.0,
+        "wr": 1.0,
+        "conv": 0.0,
+        "bandit": 0.0
+      },
+      "BNBUSDT_BEAR_TREND": {
+        "sym": "BNBUSDT",
+        "reg": "BEAR_TREND",
+        "n": 1,
+        "ev": 0.0,
+        "wr": 0.0,
+        "conv": 0.0,
+        "bandit": 0.0
+      },
+      "DOTUSDT_BULL_TREND": {
+        "sym": "DOTUSDT",
+        "reg": "BULL_TREND",
+        "n": 1,
+        "ev": 0.0,
+        "wr": 1.0,
+        "conv": 0.0,
+        "bandit": 0.0
+      }
+    },
+    "features": {
+      "breakout": 0.3343,
+      "vol": 0.3343,
+      "bounce": 0.3343,
+      "mom": 0.3343,
+      "is_weekend": 0.3343,
+      "pullback": 0.3343,
+      "wick": 0.3343,
+      "trend": 0.3343
+    },
+    "block_reasons": {
+      "SKIP_SCORE": 37,
+      "TIMING": 645,
+      "LOSS_CLUSTER": 97,
+      "OFI_TOXIC": 55
+    },
+    "completed_trades": 1269,
+    "best_edge": "DOTUSDT (RANGING)",
+    "defense": {
+      "wall_exits": 0,
+      "timeouts": 0,
+      "l2_rejected": 0,
+      "corr_rejected": 0,
+      "defended": 0,
+      "efficiency": 0.0
+    },
+    "concept_drift": false
+  }
+}
+============================================================
+  CRYPTOMASTER  |  0h 10m 34s  | TRENINK 
+============================================================
+    ZIVE CENY  (Binance · kazde 1 s)
+  ────────────────────────────────────────────────────────
+    BTC  $   74,062.0000   ─  +0.000%
+    ETH  $    2,325.9000   ─  +0.000%
+    ADA  $        0.2398   ─  +0.000%
+    BNB  $      614.6400   ─  +0.000%
+    DOT  $        1.1600   ─  +0.000%
+    SOL  $       83.0700   ─  +0.000%
+    XRP  $        1.3600   ─  +0.000%
+    VYSLEDKY OBCHODOVANI
+  ────────────────────────────────────────────────────────
+    Obchody    1269  (OK 366  X 308  ~ 558)
+    Winrate     54.3%  ━━━━━━━━━━●─────────── 54%  cil 55%  (bez timeoutu)
+    Zisk        +0.00028453  ▶━━━━━●────────────────
+    Drawdown    0.00010185  (pokles od vrcholu)
+    ----------------------------------------
+    Profit Factor  99.00x  (zisk / ztrata, cil > 1.5)
+    Expectancy     +0.00000001  (prumerny vynos / obchod)
+    Nejlepsi      +0.00000650   Nejhorsi  0.00000000
+    Posledni obchod  8h 37m zpet
+    VYSLEDKY PO MENACH
+  ────────────────────────────────────────────────────────
+    Mena  Obch  WR  Bar          Zisk
+    --------------------------------------------------
+    BTC  19  37%  ━━━━━━━●────────────── 37%  -0.00003012  X
+    ETH  6  50%  ━━━━━━━━━━●─────────── 50%  -0.00002496  ?
+    ADA  24  62%  ━━━━━━━━━━━━●───────── 62%  +0.00009267  OK
+    BNB  22  59%  ━━━━━━━━━━━━●───────── 59%  +0.00024562  OK
+    DOT  4  100%  ━━━━━━━━━━━━━━━━━━━━━● 100%  +0.00001004  OK
+    SOL  21  48%  ━━━━━━━━━●──────────── 48%  -0.00002973  ?
+    XRP  4  50%  ━━━━━━━━━━●─────────── 50%  +0.00002101  ?
+    UCENI – STAV A USPESNOST
+  ────────────────────────────────────────────────────────
+    Kalibrace      KALIBROVAN  ✓  ━━━━━━━━━━━━━━━━━━━━━● 100%  (1269 obchodu celkem)
+    Trend uceni    SBÍRÁ DATA...
+    Poslednich 0    0.0%  vs  prumer 54.3%  (-54.3%)
+    EV vykon       prumer 0.036  min 0.030  max 0.048  (50 obch)
+    Uzavreni       TP 0%  SL 0%  trail 0%  timeout 99%
+    Kalibrace p    p=50.5%  WR=54.3%  odchylka 3.8pp  dobre
+    WR dle rezimu
+      BULL   ━━━━━━━━━━●─────────── 54%  54%  (87 obch)
+      BEAR   ━━━━━━━━━━━━●───────── 62%  62%  (8 obch)
+      RANGE  ━━━━━━━●────────────── 40%  40%  (5 obch)
+    AUDITOR  (ochrana strategie)
+  ────────────────────────────────────────────────────────
+    EV prah              0.000  t15=0  t60=0  aktivni
+    Velikost pozice      1.00x  EV-only · loss streak → scale · DD halt 40%
+    STRATEGIE  (ADX + EMA + MACD + BB + RSI)
+  ────────────────────────────────────────────────────────
+    Rezim trhu   BULL TREND  silny vzestup  (87%)
+    Signaly       0 zachyceno  0 po filtru  834 blokovano  1269 provedeno
+    Filtrace      0.0%  projde filtrem  TP: 1.2xATR  /  SL: 0.8xATR  (RR 1.5:1)  EV-only
+    POSLEDNI ROZHODNUTI
+  ────────────────────────────────────────────────────────
+    BTC  zadny signal
+    ETH  zadny signal
+    ADA  zadny signal
+    BNB  zadny signal
+    DOT  zadny signal
+    SOL  zadny signal
+    XRP  zadny signal
+  ────────────────────────────────────────────────────────
+  Sbiram data ━━━ ● Trenink ─── Aktivni
+  ────────────────────────────────────────────────────────
+  STAV:  TRENINK  (winrate 54%->55%)
+============================================================
+=== EXECUTION ENGINE ===
+  Equity:   1.000000  |  DD: 0.00%
+  Exposure: 0.000  |  Positions: 0
+  Sharpe:   0.000  |  WR: 0.00%  |  Edge: 0.00000  |  MaxDD: 0.00%
+  Failure:  0.000  [OK]
+=== LEARNING MONITOR ===
+  ADA  BULL_TREND  n:24    EV:+0.002  WR:62%  conv:0.70  bandit:0.38
+  BNB  BULL_TREND  n:18    EV:+0.007  WR:72%  conv:-- (18/20)  bandit:0.50
+  BNB  RANGING     n:3     EV:+0.000  WR:0%  conv:-- (3/20)  bandit:0.00
+  BTC  BULL_TREND  n:17    EV:-0.001  WR:35%  conv:-- (17/20)  bandit:0.41
+  ETH  BULL_TREND  n:5     EV:+0.000  WR:40%  conv:-- (5/20)  bandit:0.00
+  SOL  BULL_TREND  n:19    EV:-0.000  WR:47%  conv:-- (19/20)  bandit:0.51
+  XRP  BULL_TREND  n:3     EV:+0.000  WR:33%  conv:-- (3/20)  bandit:0.00
+  Features (WR per signal key):
+    breakout              [####--------]  33%  -
+    vol                   [####--------]  33%  -
+🚨 ANOMALY: STALL 1776243106.9705527s > 900s
+🚨 ANOMALY: NO_SIGNALS 62 cycles
+SELF_HEAL: STALL (no trades 900s) → boosting exploration
+SELF_HEAL: NO_SIGNALS (pipeline dead) → reducing filter thresholds
