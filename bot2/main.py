@@ -99,6 +99,13 @@ _last_audit      = 0
 _last_metrics    = 0
 _last_pre_audit  = 0
 
+# ════════════════════════════════════════════════════════════════════════════
+# INTERVAL CONSTANTS — Control audit and metrics frequency
+# ════════════════════════════════════════════════════════════════════════════
+AUDIT_INTERVAL      = 120      # Run audit every 2 minutes
+METRICS_INTERVAL    = 30       # Save metrics every 30 seconds
+PRE_AUDIT_INTERVAL  = 60       # Run pre_live_audit every minute
+
 # ────────────────────────────────────────────────────────────────────────────
 # PATCH 3.1: Renderer Lock — Atomic rendering with deduplication
 # ────────────────────────────────────────────────────────────────────────────
