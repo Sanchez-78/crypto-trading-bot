@@ -1005,9 +1005,10 @@ _state_history = None
 def main():
     # Initialize event bus handlers (Zero Bug V2 Migration Phase 1)
     _init_event_handlers()
-    
+
     # Initialize self-healing system (Autonomous Failure Detection)
-    global _anomaly_detector, _state_history
+    # V10.12i: Declare global last_trade_ts to avoid UnboundLocalError
+    global _anomaly_detector, _state_history, last_trade_ts
     try:
         if AnomalyDetector:
             _anomaly_detector = AnomalyDetector()
