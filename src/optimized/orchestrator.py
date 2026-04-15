@@ -7,6 +7,10 @@ from src.optimized.bot_types import BotConfig, Trade, TradeSignal, Direction, Cl
 from src.optimized.filter_pipeline import SignalFilterPipeline
 from src.optimized.position_manager import PositionManager, TradeClassifier
 
+# PATCH: Self-Healing System (check failsafe_halt before trading)
+from src.core.state_v2 import get_state_store
+from src.core.self_heal import failsafe_halt
+
 logger = logging.getLogger(__name__)
 
 
@@ -45,6 +49,15 @@ class TradeOrchestrator:
     ) -> tuple[str, dict]:
         if self.active:
             return "BLOCKED", {"reason": "position_open"}
+
+        # PATCH: Check failsafe_halt before processing (emergency circuit breaker)
+        try:
+            state_store = get_state_store()
+            state = state_store.get_state()
+            if failsafe_halt(state):
+                return "FAILSAFE_HALT", {"reason": "system_unsafe", "dd": state.drawdown, "safe_mode": getattr(state, 'safe_mode', False)}
+        except Exception as e:
+            logger.debug(f"Could not check failsafe: {e}")
 
         decision, meta = self.pipeline.evaluate(signal, market)
 

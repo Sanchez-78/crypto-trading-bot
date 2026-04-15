@@ -17,6 +17,10 @@ from src.services.skip_score_fix import AdaptiveScoreGate
 from src.services.ofi_toxic_calibrate import CalibratedOFIFilter
 from src.services.rejection_monitor import RejectionMonitor
 
+# PATCH: Self-Healing System (Autonomous Failure Recovery)
+from src.core.state_v2 import get_state_store
+from src.core.self_heal import apply_position_floor, apply_position_cap
+
 import logging
 logger = logging.getLogger(__name__)
 
@@ -190,6 +194,19 @@ class SignalFilterPipeline:
         # Apply learned sizing (feature weights × learning position size)
         feature_sz = self.learning.pos_size(signal.conviction if hasattr(signal, 'conviction') else 0.6)
         final_sz = round(timing_sz * mtf_sz * obi_r["size"] * dd_sz * max(feature_sz, 0.1), 2)
+        
+        # PATCH: Apply self-healing constraints to position size
+        # Get current state to check if system is in healing mode
+        try:
+            state_store = get_state_store()
+            state = state_store.get_state()
+            risk_mult = getattr(state, 'risk_multiplier', 1.0)  # Default: no reduction
+            final_sz = round(final_sz * risk_mult, 2)
+            
+            if risk_mult < 1.0:
+                logger.info(f"SAFE_MODE: Position size reduced by {(1-risk_mult)*100:.0f}% (risk_mult={risk_mult:.2f})")
+        except Exception as e:
+            logger.debug(f"Could not apply healing constraints: {e}")
         
         self.rej_mon.record_pass()
         
