@@ -246,6 +246,11 @@ _seeded    = [False]
 _last_restore_source = "pending"  # "redis", "empty", "error", "pending"
 _last_restore_ts = 0.0  # timestamp of last restoration attempt
 
+# V10.13b: Track active thresholds for live dashboard display
+_last_ev_threshold = 0.0  # actual EV threshold used in last evaluate_signal() call
+_last_score_threshold = 0.0  # actual score threshold used in last call
+_last_cycle_blocks = {}  # block reason counts from last cycle
+
 # ── Self-learning edge feature stats ──────────────────────────────────────────
 SCORE_MIN    = 3      # minimum base score (out of 7)
                       # was 4: BTC/ADA consistently score 3/7 in trending markets
@@ -856,6 +861,10 @@ def evaluate_signal(signal):
     rr      = max(tp_move / sl_move, MIN_RR)
     ev_threshold = get_ev_threshold()
 
+    # V10.13b: Track actual thresholds for live dashboard
+    global _last_ev_threshold
+    _last_ev_threshold = ev_threshold
+
     # ── Loss streak + velocity guard ──────────────────────────────────────────
     from src.services.learning_event import METRICS as _M, _recent_results as _rr
     try:
@@ -989,6 +998,11 @@ def evaluate_signal(signal):
     # not timeout zeros). Computed directly from pnl — no n≥10 guard — so it
     # can catch clear losers at n=5 to n=9 before pair_block fires at n≥25.
     # Bypassed during COLD phase (<30 total trades) to preserve bootstrap flow.
+    # V10.13b: FAST_FAIL split — HARD for hopeless, SOFT for borderline
+    _fast_fail_soft = False
+    _ff_score_mult = 1.0
+    _ff_conf_mult = 1.0
+
     if _M.get("trades", 0) >= 30:
         try:
             from src.services.learning_monitor import lm_pnl_hist as _lph2
@@ -999,16 +1013,26 @@ def evaluate_signal(signal):
                 _ff_m   = float(np.mean(_ff_pnl))
                 _ff_s   = max(float(np.std(_ff_pnl)), 0.002)
                 _ff_ev  = float(np.tanh(_ff_m / _ff_s))
-                if _ff_wr < 0.20 and _ff_ev <= 0.0:
-                    # <= 0.0 (not < 0.0): pure-timeout pairs have learning_pnl=0.0
-                    # so tanh(0/std)=0.0 exactly — EV never goes negative even at
-                    # 0% WR. ZEC BEAR_TREND (n=14, WR=0%) and BTC BEAR_TREND
-                    # (n=14, WR=0%) were permanently blocked from being caught
-                    # because their EV was exactly 0.0, not strictly negative.
-                    track_blocked(reason="FAST_FAIL")
-                    print(f"    decision=SKIP_FAST_FAIL  {sym}/{regime}  "
+
+                # V10.13b: HARD block only for truly hopeless (WR < 5% AND EV <= 0.0)
+                if _ff_wr < 0.05 and _ff_ev <= 0.0:
+                    track_blocked(reason="FAST_FAIL_HARD")
+                    print(f"    decision=SKIP_FAST_FAIL_HARD  {sym}/{regime}  "
                           f"wr={_ff_wr:.0%}  ev={_ff_ev:.3f}  n={_ff_n}")
                     return None
+
+                # V10.13b: SOFT penalty for borderline (5% <= WR < 20% AND EV <= 0.0)
+                elif _ff_wr < 0.20 and _ff_ev <= 0.0:
+                    _fast_fail_soft = True
+                    # Graduated penalty: worse stats → heavier reduction
+                    # WR 19% → 0.85x, WR 10% → 0.60x, WR 5% → 0.40x
+                    _ff_penalty = max(0.40, 0.85 - (_ff_wr * 4.5))
+                    _ff_conf_mult = _ff_penalty
+                    _ff_score_mult = max(0.50, _ff_penalty)
+                    track_blocked(reason="FAST_FAIL_SOFT")
+                    print(f"    decision=FAST_FAIL_SOFT  {sym}/{regime}  "
+                          f"wr={_ff_wr:.0%}  ev={_ff_ev:.3f}  n={_ff_n}  "
+                          f"penalty={_ff_penalty:.2f}")
         except Exception:
             pass
 
@@ -1048,6 +1072,12 @@ def evaluate_signal(signal):
         if isinstance(v, bool) and v
     ))
     combo_pen = get_combo_penalty(_combo)
+
+    # ── V10.13b: Apply FAST_FAIL_SOFT penalties to score and confidence ─────────────
+    if _fast_fail_soft:
+        ev *= _ff_score_mult  # Reduce EV for downstream gates
+        win_prob *= _ff_conf_mult  # Reduce confidence/probability
+        auditor_base *= max(0.5, _ff_score_mult)  # Also reduce auditor exposure
 
     # ── V10.10b: Fold all anti-deadlock penalties into auditor_factor ─────────
     # Penalties can only REDUCE risk — never increase it (min cap at 1.0).
@@ -1117,6 +1147,10 @@ def evaluate_signal(signal):
     _ev_adj = ev * _timing_mult
     _score_threshold = current_score_threshold()
     _score_adj = decision_score(_ev_adj, _ws)
+
+    # V10.13b: Track score threshold for live dashboard
+    global _last_score_threshold
+    _last_score_threshold = _score_threshold
     
     # V10.12e: Bounded unblock fallback TAKE path
     # If normal gate fails but we're in unblock mode and signal meets fallback criteria,
@@ -1169,25 +1203,31 @@ def evaluate_signal(signal):
         except Exception:
             pass
 
-    # ── V10.12f: OFI toxicity guard — soft penalty always, hard block only for normal trades ─
-    # V10.12f: Fallback unblock trades skip OFI hard block but keep soft size penalty
-    # Rationale: fallback is last resort when stalled; soft penalty still applied via auditor_factor
+    # ── V10.13b: OFI toxicity guard — hard block extreme, soft penalty moderate ─
+    # V10.13b: Split into HARD (0.90+) and SOFT (0.70-0.90) zones
+    # Fallback trades skip HARD block but keep SOFT size penalty
     _ofi_size = 1.0
+    _ofi_soft_blocked = False
     try:
         from src.services.ofi_guard import is_toxic as _ofi_toxic, ofi_size_factor as _ofi_sf
         _ofi_blocked, _ofi_reason = _ofi_toxic(sym, signal.get("action", "BUY"))
-        
-        # V10.12f: Hard OFI block only applied if not using unblock fallback
+
+        # V10.13b: Hard OFI block only for extreme OFI (0.90+)
         if _ofi_blocked and not _unblock_fallback_used:
-            track_blocked(reason="OFI_TOXIC")
-            print(f"    decision=OFI_TOXIC  {_ofi_reason}")
+            track_blocked(reason="OFI_TOXIC_HARD")
+            print(f"    decision=OFI_TOXIC_HARD  {_ofi_reason}")
             return None
-        
+
         # Always apply soft OFI size penalty (even for fallback)
         _ofi_size = _ofi_sf(sym, signal.get("action", "BUY"))
         if _ofi_size < 1.0:
+            # V10.13b: Track if this is from soft penalty zone (0.70-0.90)
+            # vs lighter penalty zone (0.40-0.70)
+            if _ofi_size <= 0.55:
+                _ofi_soft_blocked = True
+                track_blocked(reason="OFI_TOXIC_SOFT")
             _fallback_str = " (fallback_soften)" if _unblock_fallback_used else ""
-            print(f"    OFI soft penalty: size×{_ofi_size:.2f}{_fallback_str}")
+            print(f"    OFI penalty: size×{_ofi_size:.2f}{_fallback_str}")
     except Exception:
         pass
     # Apply OFI size factor to auditor_factor

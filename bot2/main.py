@@ -906,14 +906,24 @@ def print_status():
     sz_mult  = get_position_size_mult()
     t15      = trades_in_window(900)
     t1h      = trades_per_hour()
-    ev_thr   = 0.0
-    if t15 > 10: ev_thr = min(0.05, ev_thr + 0.005)
-    ev_col   = C.GRN if ev_thr == 0.0 else C.YLW
+
+    # V10.13b: Use actual RDE thresholds instead of auditor placeholders
+    try:
+        from src.services.realtime_decision_engine import _last_ev_threshold, _last_score_threshold
+        ev_thr = _last_ev_threshold
+        score_thr = _last_score_threshold
+    except Exception:
+        ev_thr = 0.0
+        score_thr = 0.0
+
+    ev_col   = C.GRN if ev_thr <= 0.05 else C.YLW
+    score_col = C.GRN if score_thr <= 0.5 else C.YLW
     sz_col   = C.GRN if sz_mult >= 1.0 else (C.YLW if sz_mult >= 0.5 else C.RED)
     cd_tag   = g("  COOLDOWN", C.RED + C.BLD) if in_cd else g("  aktivni", C.GRN)
     print(section("", "AUDITOR  (ochrana strategie)"))
     print(f"    {g('EV prah', C.GRY)}              "
           f"{g(f'{ev_thr:.3f}', ev_col + C.BLD)}  "
+          f"{g(f'score prah {score_thr:.3f}', score_col)}  "
           f"{g(f't15={t15}  t60={t1h}', C.GRY)}"
           f"{cd_tag}")
     print(f"    {g('Velikost pozice', C.GRY)}      "
@@ -1082,11 +1092,12 @@ def track_cycle_stats(candidates: int, passed: int, executed: int, block_reasons
 def print_cycle_summary(now: float) -> None:
     """Print authoritative cycle-level summary.
 
-    V10.13a: Makes visible:
-    - Whether candidates were generated
-    - How many passed each gate
-    - Which block reasons dominated
-    - Thresholds used by the active path
+    V10.13b: Enhanced breakdown of block reasons (hard vs soft).
+    Shows:
+    - Candidate generation and pass rates
+    - Hard vs soft blocks (FAST_FAIL_HARD/SOFT, OFI_TOXIC_HARD/SOFT)
+    - Active EV and score thresholds
+    - Unblock mode and idle state
     """
     global _cycle_stats, _symbol_block_reasons
 
@@ -1100,26 +1111,31 @@ def print_cycle_summary(now: float) -> None:
         unblock = is_unblock_mode()
         idle_sec = safe_idle_seconds(METRICS.get("last_trade_ts"), now)
 
-        # Count dominant block reason
+        # V10.13b: Count block reasons, separating hard and soft
         block_counts = _cycle_stats.get("block_reasons", {})
         top_block = max(block_counts.items(), key=lambda x: x[1])[0] if block_counts else "NONE"
 
-        # Per-symbol summary (show reason for each symbol)
-        sym_summary = []
-        for sym, (reason_code, reason_str, ts) in _symbol_block_reasons.items():
-            sym_summary.append(f"{sym}:{reason_code}")
+        # V10.13b: Extract hard vs soft block counts
+        fast_fail_hard = block_counts.get("FAST_FAIL_HARD", 0)
+        fast_fail_soft = block_counts.get("FAST_FAIL_SOFT", 0)
+        ofi_hard = block_counts.get("OFI_TOXIC_HARD", 0)
+        ofi_soft = block_counts.get("OFI_TOXIC_SOFT", 0)
+
+        hard_soft_str = ""
+        if fast_fail_hard > 0 or fast_fail_soft > 0 or ofi_hard > 0 or ofi_soft > 0:
+            hard_soft_str = (
+                f"  FF_hard={fast_fail_hard} FF_soft={fast_fail_soft} "
+                f"OFI_hard={ofi_hard} OFI_soft={ofi_soft}"
+            )
 
         print(
-            f"[V10.13a CYCLE] "
-            f"symbols={len(_symbol_block_reasons)} "
-            f"generated={_cycle_stats['candidates_generated']} "
-            f"passed={_cycle_stats['candidates_passed']} "
-            f"executed={_cycle_stats['candidates_executed']} "
+            f"[V10.13b CYCLE] "
+            f"gen={_cycle_stats['candidates_generated']} "
+            f"pass={_cycle_stats['candidates_passed']} "
+            f"exe={_cycle_stats['candidates_executed']} "
             f"top_block={top_block} "
             f"ev_thr={ev_thr:.4f} score_thr={score_thr:.4f} "
-            f"unblock={'YES' if unblock else 'NO'} "
-            f"idle={idle_sec:.1f}s | " +
-            " ".join(sym_summary[:10])  # Show first 10 symbols
+            f"unblock={'Y' if unblock else 'N'} idle={idle_sec:.0f}s{hard_soft_str}"
         )
     except Exception as e:
         import logging as _log

@@ -29,9 +29,10 @@ Called from:
 from collections import deque
 
 # Rolling tick window for OFI computation
-_WINDOW          = 30     # last N price ticks (~30 seconds at 1s polling)
-_BLOCK_THRESHOLD = 0.85   # V10.12d: raised 0.70→0.85 — only extreme OFI blocks (arXiv threshold)
-_WARN_THRESHOLD  = 0.40   # |OFI| above this → size reduction
+_WINDOW             = 30     # last N price ticks (~30 seconds at 1s polling)
+_BLOCK_THRESHOLD    = 0.90   # V10.13b: raised 0.85→0.90 — only extreme OFI blocks
+_WARN_THRESHOLD     = 0.40   # |OFI| above this → size reduction
+_SOFT_BLOCK_THRESHOLD = 0.70  # V10.13b: soft penalty zone (0.70-0.90)
 
 # Per-symbol rolling price history
 _price_ticks: dict[str, deque] = {}   # sym → deque(maxlen=_WINDOW+1)
@@ -67,45 +68,53 @@ def ofi(sym: str) -> float:
 
 def is_toxic(sym: str, action: str) -> tuple[bool, str]:
     """
-    Hard block: extreme OFI against intended direction.
+    V10.13b: Hard block only for extreme OFI; moderate OFI is handled via soft size penalty.
     Returns (blocked: bool, reason: str).
 
-    BUY  + OFI < −BLOCK_THRESHOLD → toxic sell flow → block
-    SELL + OFI >  BLOCK_THRESHOLD → toxic buy  flow → block
+    HARD block (extreme): |OFI| >= 0.90 against intended direction
+      BUY  + OFI < −0.90 → catastrophic sell flow → hard reject
+      SELL + OFI >  0.90 → catastrophic buy flow  → hard reject
+
+    Soft penalties are applied separately in ofi_size_factor().
     """
     flow = ofi(sym)
-    if abs(flow) < _BLOCK_THRESHOLD:
-        return False, ""
-    if action == "BUY"  and flow < -_BLOCK_THRESHOLD:
-        return True, f"OFI_TOXIC:flow={flow:+.2f} heavy sell pressure vs BUY"
-    if action == "SELL" and flow >  _BLOCK_THRESHOLD:
-        return True, f"OFI_TOXIC:flow={flow:+.2f} heavy buy pressure vs SELL"
+
+    # Only hard-block truly extreme cases
+    if action == "BUY" and flow < -_BLOCK_THRESHOLD:
+        return True, f"OFI_TOXIC_HARD:flow={flow:+.2f} extreme sell pressure vs BUY"
+    if action == "SELL" and flow > _BLOCK_THRESHOLD:
+        return True, f"OFI_TOXIC_HARD:flow={flow:+.2f} extreme buy pressure vs SELL"
+
     return False, ""
 
 
 def ofi_size_factor(sym: str, action: str) -> float:
     """
-    V10.12d: Graduated OFI size penalty (was: binary hard block).
+    V10.13b: Graduated OFI size penalty with soft block zone (0.70-0.90).
     Only directional conflicts cause penalties.
-    
+
     Returns multiplier ∈ [0.5, 1.0]:
-      |OFI| < 0.40                → 1.0   (no penalty)
-      0.40 ≤ |OFI| < 0.70         → 0.88  (slight)
-      0.70 ≤ |OFI| < 0.85         → 0.78  (moderate)
-      0.85 ≤ |OFI| (+ bad spread) → 0.50  (severe; hard block elsewhere)
+      |OFI| < 0.40                     → 1.0    (no penalty)
+      0.40 ≤ |OFI| < 0.70              → 0.88   (slight — warning zone)
+      0.70 ≤ |OFI| < 0.90              → 0.55   (strong — V10.13b SOFT_BLOCK)
+      0.90 ≤ |OFI| (hard block)        → 0.50   (extreme — hard block in is_toxic)
     """
     flow = ofi(sym)
     against = (action == "BUY" and flow < 0) or (action == "SELL" and flow > 0)
     if not against:
         return 1.0
-    
+
     magnitude = abs(flow)
     if magnitude >= _BLOCK_THRESHOLD:
-        return 0.50   # extreme adverse OFI (hard block in is_toxic)
-    elif magnitude >= 0.70:
-        return 0.78   # strong adverse
+        # Extreme OFI — hard block in is_toxic, but still apply severe size reduction here
+        return 0.50
+    elif magnitude >= _SOFT_BLOCK_THRESHOLD:
+        # V10.13b: Moderate-strong adverse OFI (0.70-0.90) → aggressive size reduction
+        # This is the soft penalty zone for cases that is_toxic() doesn't hard-block
+        return 0.55
     elif magnitude >= _WARN_THRESHOLD:
-        return 0.88   # moderate adverse
+        # Moderate adverse OFI (0.40-0.70) → lighter penalty
+        return 0.88
     return 1.0
 
 
