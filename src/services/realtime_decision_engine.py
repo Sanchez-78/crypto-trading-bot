@@ -710,34 +710,48 @@ def unblock_size_multiplier(no_trades_sec: float = None, no_signals: int = None)
 # PATCH 2: Disable Hard EV Filter — Probabilistic exploration gate
 # ────────────────────────────────────────────────────────────────────────────
 def allow_trade(ev, ws, exploration=0.4):
-    """V10.12d: Score-gated entry with unblock-aware thresholds.
-    
+    """V10.13c: Score-gated entry with hard/soft split for borderline cases.
+
     Combines EV and win-score (WS) into decision_score.
     Thresholds adapt based on system idle state:
-    - Normal: score ≥ 0.18
-    - Unblock: score ≥ 0.12
-    
+    - Normal: score ≥ 0.18 (HARD floor), 0.12-0.18 (SOFT zone)
+    - Unblock: score ≥ 0.12 (HARD floor), 0.08-0.12 (SOFT zone)
+
+    V10.13c: Split into hard vs soft:
+    - HARD: score < hard_floor → reject
+    - SOFT: hard_floor <= score < normal_threshold → apply penalties
+    - PASS: score >= normal_threshold → proceed normally
+
     Args:
         ev: Expected Value score
-        ws: Win-score  
+        ws: Win-score
         exploration: fallback probability when below threshold
-    
+
     Returns: bool — should this signal proceed to execution?
     """
     import random
-    
+
     # Compute combined score
     score = decision_score(ev, ws)
     threshold = current_score_threshold()
-    
-    # V10.12d: Decision logic
+
+    # V10.13c: Hard/soft floor split
+    hard_floor = threshold - 0.06  # 0.12 normal → 0.06 hard, 0.06 unblock → 0.00 hard
+    hard_floor = max(0.05, hard_floor)  # Never go below 0.05
+
+    # V10.12d/13c: Decision logic
     if score >= threshold:
         return True
-    
-    # Below threshold: probabilistic exploration (allows data collection)
+
+    # V10.13c: SOFT zone (borderline) - allow with penalties applied downstream
+    # This allows borderline cases to reach auditor/position sizing for soft penalties
+    if score >= hard_floor:
+        return True
+
+    # Below hard floor: probabilistic exploration (allows data collection)
     if random.random() < exploration:
         return True
-    
+
     return False
 
 
@@ -1073,6 +1087,12 @@ def evaluate_signal(signal):
     ))
     combo_pen = get_combo_penalty(_combo)
 
+    # ── V10.13c: Apply SKIP_SCORE_SOFT penalties ───────────────────────────────────
+    if _skip_score_soft:
+        ev *= _score_penalty  # Reduce EV for downstream gates
+        win_prob *= _score_penalty  # Reduce win probability
+        auditor_base *= _score_penalty  # Also reduce auditor exposure
+
     # ── V10.13b: Apply FAST_FAIL_SOFT penalties to score and confidence ─────────────
     if _fast_fail_soft:
         ev *= _ff_score_mult  # Reduce EV for downstream gates
@@ -1151,14 +1171,40 @@ def evaluate_signal(signal):
     # V10.13b: Track score threshold for live dashboard
     global _last_score_threshold
     _last_score_threshold = _score_threshold
-    
+
+    # V10.13c: SKIP_SCORE split into HARD and SOFT
+    _skip_score_soft = False
+    _score_penalty = 1.0
+    _score_hard_floor = max(0.05, _score_threshold - 0.06)
+
     # V10.12e: Bounded unblock fallback TAKE path
     # If normal gate fails but we're in unblock mode and signal meets fallback criteria,
     # accept as micro-trade to prevent infinite deadlock
     _unblock_fallback_used = False
     if not allow_trade(_ev_adj, _ws):
-        # Check fallback unblock path
-        if is_unblock_mode() and _ev_adj >= 0.020 and _score_adj >= 0.110:
+        # V10.13c: Check if this is a soft score case (in the hard_floor zone)
+        if _score_adj >= _score_hard_floor:
+            # SOFT zone: apply penalties instead of hard reject
+            _skip_score_soft = True
+            # Graduated penalty: closer to hard floor → heavier penalty
+            # score 0.05 → 0.3x, score 0.10 → 0.6x, score 0.12 → 0.85x
+            _score_penalty = max(0.30, (_score_adj - _score_hard_floor) / (_score_threshold - _score_hard_floor) * 0.85)
+            track_blocked(reason="SKIP_SCORE_SOFT")
+            print(f"    decision=SKIP_SCORE_SOFT  score={_score_adj:.3f} in soft_zone[{_score_hard_floor:.3f}-{_score_threshold:.3f}]  penalty={_score_penalty:.2f}")
+        else:
+            # HARD floor breached: hard reject
+            track_blocked(reason="SKIP_SCORE_HARD")
+            try:
+                from src.services.signal_filter import log_signal_outcome as _lso2
+                _lso2(sym, accepted=False, reason="SKIP_SCORE_HARD")
+            except Exception:
+                pass
+            _timing_str = f" timing×{_timing_mult:.2f}" if _timing_mult < 1.0 else ""
+            print(f"    decision=SKIP_SCORE_HARD  ev={_ev_adj:.3f}{_timing_str}  score={_score_adj:.3f}<{_score_hard_floor:.3f}")
+            return None
+
+        # Check fallback unblock path (only if not already soft-penalized)
+        if not _skip_score_soft and is_unblock_mode() and _ev_adj >= 0.020 and _score_adj >= 0.110:
             # V10.12e: Bounded fallback entry
             # Still respects rate limits, size limits, risk engine
             try:
@@ -1175,18 +1221,6 @@ def evaluate_signal(signal):
                     return None
             except Exception as _ub_err:
                 log.debug("unblock fallback error: %s", _ub_err)
-        
-        if not _unblock_fallback_used:
-            track_blocked(reason="SKIP_SCORE")
-            try:
-                from src.services.signal_filter import log_signal_outcome as _lso2
-                _lso2(sym, accepted=False, reason="SKIP_SCORE")
-            except Exception:
-                pass
-            _timing_str = f" timing×{_timing_mult:.2f}" if _timing_mult < 1.0 else ""
-            _unblock_str = " unblock_fallback_failed" if is_unblock_mode() else ""
-            print(f"    decision=SKIP_SCORE  ev={_ev_adj:.3f}{_timing_str}  score={_score_adj:.3f}<{_score_threshold:.3f}{_unblock_str}")
-            return None
 
     # ── V10.12f: B17 direction bias guard — skip for unblock fallback ─────────
     # V10.12f: Allow fallback unblock trades to bypass optional guards

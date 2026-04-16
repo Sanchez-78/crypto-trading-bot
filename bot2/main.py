@@ -1092,10 +1092,10 @@ def track_cycle_stats(candidates: int, passed: int, executed: int, block_reasons
 def print_cycle_summary(now: float) -> None:
     """Print authoritative cycle-level summary.
 
-    V10.13b: Enhanced breakdown of block reasons (hard vs soft).
+    V10.13c: Enhanced breakdown of block reasons (hard vs soft).
     Shows:
     - Candidate generation and pass rates
-    - Hard vs soft blocks (FAST_FAIL_HARD/SOFT, OFI_TOXIC_HARD/SOFT)
+    - Hard vs soft blocks (SKIP_SCORE_HARD/SOFT, FAST_FAIL_HARD/SOFT, OFI_TOXIC_HARD/SOFT)
     - Active EV and score thresholds
     - Unblock mode and idle state
     """
@@ -1111,29 +1111,33 @@ def print_cycle_summary(now: float) -> None:
         unblock = is_unblock_mode()
         idle_sec = safe_idle_seconds(METRICS.get("last_trade_ts"), now)
 
-        # V10.13b: Count block reasons, separating hard and soft
+        # V10.13c: Count block reasons, separating hard and soft
         block_counts = _cycle_stats.get("block_reasons", {})
         top_block = max(block_counts.items(), key=lambda x: x[1])[0] if block_counts else "NONE"
 
-        # V10.13b: Extract hard vs soft block counts
+        # V10.13c: Extract hard vs soft block counts for all blockers
+        score_hard = block_counts.get("SKIP_SCORE_HARD", 0)
+        score_soft = block_counts.get("SKIP_SCORE_SOFT", 0)
         fast_fail_hard = block_counts.get("FAST_FAIL_HARD", 0)
         fast_fail_soft = block_counts.get("FAST_FAIL_SOFT", 0)
         ofi_hard = block_counts.get("OFI_TOXIC_HARD", 0)
         ofi_soft = block_counts.get("OFI_TOXIC_SOFT", 0)
 
+        # Format breakdown string
         hard_soft_str = ""
-        if fast_fail_hard > 0 or fast_fail_soft > 0 or ofi_hard > 0 or ofi_soft > 0:
+        if any([score_hard, score_soft, fast_fail_hard, fast_fail_soft, ofi_hard, ofi_soft]):
             hard_soft_str = (
-                f"  FF_hard={fast_fail_hard} FF_soft={fast_fail_soft} "
-                f"OFI_hard={ofi_hard} OFI_soft={ofi_soft}"
+                f"  | score_hard={score_hard} score_soft={score_soft} "
+                f"ff_hard={fast_fail_hard} ff_soft={fast_fail_soft} "
+                f"ofi_hard={ofi_hard} ofi_soft={ofi_soft}"
             )
 
         print(
-            f"[V10.13b CYCLE] "
+            f"[V10.13c CYCLE] "
             f"gen={_cycle_stats['candidates_generated']} "
             f"pass={_cycle_stats['candidates_passed']} "
             f"exe={_cycle_stats['candidates_executed']} "
-            f"top_block={top_block} "
+            f"top={top_block} "
             f"ev_thr={ev_thr:.4f} score_thr={score_thr:.4f} "
             f"unblock={'Y' if unblock else 'N'} idle={idle_sec:.0f}s{hard_soft_str}"
         )
