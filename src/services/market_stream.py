@@ -238,19 +238,27 @@ def start():
     On HTTP 451 geo-block, switch to REST polling fallback automatically.
     """
     global _geo_blocked
+    import sys
+
+    print(f"📡 market_stream.start() — WebSocket available: {websocket is not None}", file=sys.stderr, flush=True)
 
     if websocket is None:
         print("⚠️  websocket-client not installed — using REST polling fallback")
         _geo_blocked = True
 
     if _geo_blocked:
+        print("📡 Starting REST polling fallback...", file=sys.stderr, flush=True)
         _rest_poll_loop()
         return
 
+    print(f"📡 Attempting WebSocket connection to Binance bookTicker...", file=sys.stderr, flush=True)
     backoff = 1
+    connection_attempts = 0
     while True:
+        connection_attempts += 1
         t_start = time.time()
         try:
+            print(f"📡 WebSocket attempt #{connection_attempts}...", file=sys.stderr, flush=True)
             ws = websocket.WebSocketApp(
                 _stream_url(get_active_symbols()),
                 on_open    = _on_open,
@@ -258,17 +266,22 @@ def start():
                 on_error   = _on_error,
                 on_close   = _on_close,
             )
+            print(f"📡 Calling ws.run_forever() (ping=30s, timeout=10s)...", file=sys.stderr, flush=True)
             ws.run_forever(ping_interval=30, ping_timeout=10)
+            print(f"📡 ws.run_forever() returned (closed)", file=sys.stderr, flush=True)
         except Exception as e:
-            print(f"⚠️  WebSocket exception: {e}")
+            print(f"⚠️  WebSocket exception (attempt #{connection_attempts}): {type(e).__name__}: {e}", file=sys.stderr, flush=True)
 
         if _geo_blocked:
+            print(f"📡 Geo-blocked detected — switching to REST polling fallback...", file=sys.stderr, flush=True)
             _rest_poll_loop()
             return
 
-        if time.time() - t_start > 60:
+        uptime = time.time() - t_start
+        if uptime > 60:
             backoff = 1
+            print(f"📡 WebSocket was healthy for {uptime:.1f}s — resetting backoff", file=sys.stderr, flush=True)
 
-        print(f"🔄 Reconnecting in {backoff} s …")
+        print(f"🔄 WebSocket reconnecting in {backoff} s (uptime={uptime:.1f}s, attempt #{connection_attempts})...", file=sys.stderr, flush=True)
         time.sleep(backoff)
         backoff = min(backoff * 2, 30)
