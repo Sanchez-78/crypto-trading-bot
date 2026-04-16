@@ -1516,6 +1516,26 @@ def main():
         # ────────────────────────────────────────────────────────────────────
         print_cycle_summary(now)
 
+        # ────────────────────────────────────────────────────────────────────
+        # V10.13f: Exit quality summary — shows if timeout dominance is shrinking
+        # ────────────────────────────────────────────────────────────────────
+        try:
+            from src.services.learning_event import _close_reasons as _cr
+            print(
+                f"[V10.13f EXIT] "
+                f"tp={_cr.get('TP', 0)} "
+                f"sl={_cr.get('SL', 0)} "
+                f"trail={_cr.get('TRAIL_SL', 0) + _cr.get('TRAIL_PROFIT', 0)} "
+                f"scratch={_cr.get('SCRATCH_EXIT', 0)} "
+                f"stag={_cr.get('STAGNATION_EXIT', 0)} "
+                f"t_profit={_cr.get('TIMEOUT_PROFIT', 0)} "
+                f"t_flat={_cr.get('TIMEOUT_FLAT', 0)} "
+                f"t_loss={_cr.get('TIMEOUT_LOSS', 0)} "
+                f"timeout={_cr.get('timeout', 0)}"
+            )
+        except Exception:
+            pass
+
 
 if __name__ == "__main__":
     main()

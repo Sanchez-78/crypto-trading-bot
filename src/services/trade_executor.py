@@ -2022,6 +2022,10 @@ def on_price(data):
             from src.services.smart_exit_engine import evaluate_position_exit
 
             age_seconds = int(time.time() - pos["open_ts"])
+            # V10.13f: direction from action (not current move) + pass peak MFE
+            _direction = "LONG" if pos["action"] == "BUY" else "SHORT"
+            _mfe = ((pos["max_price"] - entry) / entry if pos["action"] == "BUY"
+                    else (entry - pos["min_price"]) / entry)
             exit_eval = evaluate_position_exit(
                 symbol=sym,
                 entry_price=entry,
@@ -2029,7 +2033,8 @@ def on_price(data):
                 sl=pos.get("sl", entry),
                 current_price=curr,
                 age_seconds=age_seconds,
-                direction="LONG" if move >= 0 else "SHORT",
+                direction=_direction,
+                max_favorable_move=max(0.0, _mfe),
             )
 
             if exit_eval:
@@ -2053,7 +2058,13 @@ def on_price(data):
     # V10.14: switched from tick-based to time-based timeout calculation.
     # pos["ticks"] remains for diagnostics; exit uses absolute session time.
     if reason is None and (time.time() - pos["open_ts"]) >= timeout:
-        reason = "timeout"
+        # V10.13f: classify timeout by PnL state for diagnostics
+        if move > 0.001:
+            reason = "TIMEOUT_PROFIT"
+        elif move >= -0.001:
+            reason = "TIMEOUT_FLAT"
+        else:
+            reason = "TIMEOUT_LOSS"
 
     # V10.5b: store current price as prev for next tick's momentum check
     pos["prev_price"] = curr

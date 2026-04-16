@@ -50,7 +50,13 @@ METRICS = {
 _last_prices    = {}
 _last_signals   = {}
 _sym_stats      = {}
-_close_reasons  = {"TP": 0, "SL": 0, "trail": 0, "timeout": 0, "wall_exit": 0}
+_close_reasons  = {
+    "TP": 0, "SL": 0,
+    "TRAIL_SL": 0, "TRAIL_PROFIT": 0, "trail": 0,
+    "timeout": 0, "TIMEOUT_PROFIT": 0, "TIMEOUT_FLAT": 0, "TIMEOUT_LOSS": 0,
+    "SCRATCH_EXIT": 0, "STAGNATION_EXIT": 0,
+    "wall_exit": 0, "early_exit": 0,
+}
 _regime_stats   = {}   # regime -> {"wins": int, "trades": int}
 
 # Ring-buffers: O(1) append+auto-evict; no manual pop(0) needed
@@ -231,7 +237,9 @@ def _update_metrics_locked(signal, trade):
     # Firestore stores result="WIN" when pnl>0 (even tiny 0.0005), so a
     # tiny-positive timeout would be miscounted as a real win.
     _reason          = trade.get("close_reason", "")
-    _neutral_timeout = (_reason == "timeout" and abs(profit) < 0.001)
+    _TIMEOUT_REASONS = {"timeout", "TIMEOUT_PROFIT", "TIMEOUT_FLAT", "TIMEOUT_LOSS",
+                        "SCRATCH_EXIT", "STAGNATION_EXIT"}
+    _neutral_timeout = (_reason in _TIMEOUT_REASONS and abs(profit) < 0.001)
 
     if _neutral_timeout:
         m["timeouts"]   += 1
@@ -400,7 +408,9 @@ def bootstrap_from_history(trades):
         m["last_trade_time"] = float(trade.get("timestamp") or 0)
 
         _bs_reason   = trade.get("close_reason", "")
-        _bs_neutral  = (_bs_reason == "timeout" and abs(profit) < 0.001)
+        _BS_TIMEOUT_REASONS = {"timeout", "TIMEOUT_PROFIT", "TIMEOUT_FLAT", "TIMEOUT_LOSS",
+                               "SCRATCH_EXIT", "STAGNATION_EXIT"}
+        _bs_neutral  = (_bs_reason in _BS_TIMEOUT_REASONS and abs(profit) < 0.001)
         # neutral_timeout check MUST precede result=="WIN":
         # Firestore stores result="WIN" when pnl>0, even 0.0005 — a tiny-positive
         # timeout would otherwise be miscounted as a win and inflate WR.
