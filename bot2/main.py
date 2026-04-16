@@ -933,16 +933,24 @@ def print_status():
     # ── Strategy / Signals ────────────────────────────────────────────────────
     print(section("", "STRATEGIE  (ADX + EMA + MACD + BB + RSI)"))
 
+    # V10.13d: Get current-cycle stats
+    try:
+        from src.services.signal_generator import get_cycle_stats as get_sg_stats
+        sg_stats = get_sg_stats()
+        cycle_candidates = sg_stats.get("candidates_generated", 0)
+    except (ImportError, Exception):
+        cycle_candidates = 0
+
     passed = max(0, gen - flt - blk)
     eff = passed / gen * 100 if gen else 0
     eff_col = C.GRN if eff > 2 else C.YLW
 
     print(f"    {g('Rezim trhu', C.GRY)}   {regime_label(m['regimes'])}")
-    print(f"    {g('Signaly', C.GRY)}       "
-          f"{g(str(gen), C.WHT)} zachyceno  "
-          f"{g(str(gen - flt), C.WHT)} po filtru  "
-          f"{g(str(blk), C.RED)} blokovano  "
-          f"{g(str(exe), C.GRN)} provedeno")
+    # V10.13d: Show current-cycle candidates separately from historical
+    print(f"    {g('Signaly (THIS CYCLE)', C.GRY)}  "
+          f"{g(str(cycle_candidates), C.WHT)} kandidati  "
+          f"(cele: {g(str(gen), C.GRY)} zachyceno  "
+          f"{g(str(exe), C.GRN)} provedeno)")
     print(f"    {g('Filtrace', C.GRY)}      "
           f"{g(f'{eff:.1f}%', eff_col)}  "
           f"{g('projde filtrem', C.GRY)}  "
@@ -1092,8 +1100,10 @@ def track_cycle_stats(candidates: int, passed: int, executed: int, block_reasons
 def print_cycle_summary(now: float) -> None:
     """Print authoritative cycle-level summary.
 
-    V10.13c: Enhanced breakdown of block reasons (hard vs soft).
+    V10.13d: Enhanced with upstream signal generation diagnostics.
     Shows:
+    - Market data freshness (ticks, symbols updated)
+    - Pre-filter candidate tracking (prefilter drops with reasons)
     - Candidate generation and pass rates
     - Hard vs soft blocks (SKIP_SCORE_HARD/SOFT, FAST_FAIL_HARD/SOFT, OFI_TOXIC_HARD/SOFT)
     - Active EV and score thresholds
@@ -1105,11 +1115,18 @@ def print_cycle_summary(now: float) -> None:
         from src.services.realtime_decision_engine import get_ev_threshold, get_score_threshold
         from src.services.adaptive_recovery import is_unblock_mode
         from src.services.learning_event import METRICS
+        from src.services.signal_generator import get_cycle_stats as get_sg_stats
 
         ev_thr = get_ev_threshold()
         score_thr = get_score_threshold()
         unblock = is_unblock_mode()
         idle_sec = safe_idle_seconds(METRICS.get("last_trade_ts"), now)
+
+        # V10.13d: Get upstream signal generation stats
+        sg_stats = get_sg_stats()
+        ticks_received = sg_stats.get("ticks", 0)
+        symbols_updated = sg_stats.get("symbols_updated", 0)
+        prefilter_drops = sg_stats.get("prefilter_drops", {})
 
         # V10.13c: Count block reasons, separating hard and soft
         block_counts = _cycle_stats.get("block_reasons", {})
@@ -1132,14 +1149,20 @@ def print_cycle_summary(now: float) -> None:
                 f"ofi_hard={ofi_hard} ofi_soft={ofi_soft}"
             )
 
+        # V10.13d: Format upstream diagnostics
+        upstream_str = f"  | ticks={ticks_received} syms={symbols_updated}"
+        if prefilter_drops:
+            drop_summary = ", ".join(f"{sym}:{reason}" for sym, reason in sorted(prefilter_drops.items())[:5])
+            upstream_str += f" drops=[{drop_summary}]"
+
         print(
-            f"[V10.13c CYCLE] "
+            f"[V10.13d CYCLE] "
             f"gen={_cycle_stats['candidates_generated']} "
             f"pass={_cycle_stats['candidates_passed']} "
             f"exe={_cycle_stats['candidates_executed']} "
             f"top={top_block} "
             f"ev_thr={ev_thr:.4f} score_thr={score_thr:.4f} "
-            f"unblock={'Y' if unblock else 'N'} idle={idle_sec:.0f}s{hard_soft_str}"
+            f"unblock={'Y' if unblock else 'N'} idle={idle_sec:.0f}s{upstream_str}{hard_soft_str}"
         )
     except Exception as e:
         import logging as _log
@@ -1277,6 +1300,13 @@ def main():
 
         global _last_audit, _last_metrics, _last_pre_audit
         now = time.time()
+
+        # V10.13d: Reset per-cycle signal generation stats at start of cycle
+        try:
+            from src.services.signal_generator import reset_cycle_stats
+            reset_cycle_stats()
+        except (ImportError, Exception):
+            pass  # Fail silently if module not available
 
         # ────────────────────────────────────────────────────────────────────
         # PATCH 5: Call watchdog to monitor trade frequency

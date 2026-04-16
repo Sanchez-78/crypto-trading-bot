@@ -40,12 +40,20 @@ import math, time
 prices     = {}   # symbol -> list[float], capped at 600
 _macd_vals = {}   # symbol -> list[float]
 _last_ts   = {}   # symbol -> float (last signal timestamp, time-based debounce)
+_last_price_ts = {}   # symbol -> float (last price update timestamp for freshness check)
 _side_hist = {}   # symbol -> deque[action], last 10 actions
 _adx_hist      = {}   # symbol -> float (last adx, for slope)
 _rsi_hist      = {}   # symbol -> float (last rsi, for slope)
 _rsi_full_hist = {}   # symbol -> list[float], rolling RSI series for divergence
 _obi_hist      = {}   # symbol -> list[float], rolling OBI for z-score normalization
 _price_z_hist  = {}   # symbol -> list[float], rolling 20-price window for Z-score
+
+# ── V10.13d: Per-cycle signal generation tracking ──────────────────────────────
+_cycle_ticks          = 0          # fresh ticks received this cycle
+_cycle_symbols        = set()      # symbols updated this cycle
+_cycle_candidates     = 0          # candidates created before RDE
+_cycle_prefilter_drops = {}        # symbol -> reason (pre-filter drop tracking)
+_cycle_start_ts       = 0.0        # when current cycle started
 
 # Flat TP/SL (must match trade_executor._TP_MULT/_SL_MULT + realtime_decision_engine)
 _TP_MULT = {"BULL_TREND": 1.0, "BEAR_TREND": 1.0,
@@ -250,6 +258,28 @@ def _record_side(s, action):
 
 
 # ── Edge strategies ───────────────────────────────────────────────────────────
+
+# ── V10.13d: Cycle management ──────────────────────────────────────────────────
+
+def reset_cycle_stats():
+    """Call at start of each live cycle to reset current-cycle counters."""
+    global _cycle_ticks, _cycle_symbols, _cycle_candidates, _cycle_prefilter_drops, _cycle_start_ts
+    _cycle_ticks = 0
+    _cycle_symbols = set()
+    _cycle_candidates = 0
+    _cycle_prefilter_drops = {}
+    _cycle_start_ts = time.time()
+
+
+def get_cycle_stats():
+    """Return dict of current-cycle signal generation stats."""
+    return {
+        "ticks": _cycle_ticks,
+        "symbols_updated": len(_cycle_symbols),
+        "candidates_generated": _cycle_candidates,
+        "prefilter_drops": dict(_cycle_prefilter_drops),
+    }
+
 
 def _prefilter(hist, atr_v, price):
     """
@@ -477,8 +507,17 @@ def _relative_vol_ok(hist):
 # ── Main handler ──────────────────────────────────────────────────────────────
 
 def on_price(data):
+    global _cycle_ticks, _cycle_symbols, _cycle_candidates, _cycle_prefilter_drops
+
     s, p = data["symbol"], data["price"]
     obi  = data.get("obi", 0.0)
+
+    # V10.13d: Track market data freshness and tick arrival
+    _cycle_ticks += 1
+    _cycle_symbols.add(s)
+    now = time.time()
+    _last_price_ts[s] = now
+
     hist = prices.setdefault(s, [])
     hist.append(p)
     if len(hist) > 1800:   # 1800 ticks @ 2s/tick = 60 min of indicator history
@@ -486,9 +525,12 @@ def on_price(data):
                             # have 3× more data to converge; HTF trend detection
 
     if len(hist) < MIN_TICKS:
+        if s not in _cycle_prefilter_drops:
+            _cycle_prefilter_drops[s] = "INDICATORS_NOT_READY"
         return
 
-    track_generated()
+    # V10.13d: Moved track_generated() here — only count when we have enough data
+    # track_generated() counts all attempts; we move it to after edge generation
 
     # ── Indicators ────────────────────────────────────────────────────────────
     e10  = _ema(hist, 10)
@@ -533,11 +575,15 @@ def on_price(data):
     if len(hist) >= 6:
         recent_move = abs(hist[-1] - hist[-6]) / (hist[-6] or 1)
         if recent_move > 3 * (atr_v / p):
+            if s not in _cycle_prefilter_drops:
+                _cycle_prefilter_drops[s] = "FLASH_CRASH_DETECTED"
             track_filtered()
             return
 
     # ── Volatility prefilter (hard gate — no exploration bypass) ─────────────
     if not _prefilter(hist, atr_v, p):
+        if s not in _cycle_prefilter_drops:
+            _cycle_prefilter_drops[s] = "MARKET_DEAD_FLAT"
         track_filtered()
         return
 
@@ -546,6 +592,8 @@ def on_price(data):
     # Research (ScienceDirect 2018): vol regime filtering is highest-confidence
     # PF improvement. Always active — 24h trading, no session gate.
     if not _relative_vol_ok(hist):
+        if s not in _cycle_prefilter_drops:
+            _cycle_prefilter_drops[s] = "LOW_RELATIVE_VOLATILITY"
         track_filtered()
         return
 
@@ -570,6 +618,8 @@ def on_price(data):
     except Exception:
         _debounce_active = True
     if _debounce_active and time.time() - _last_ts.get(s, 0) < DEBOUNCE_S:
+        if s not in _cycle_prefilter_drops:
+            _cycle_prefilter_drops[s] = "DEBOUNCE_ACTIVE"
         track_filtered()
         return
     _last_ts[s] = time.time()   # stamp NOW
@@ -585,7 +635,7 @@ def on_price(data):
 
     base_sc, w_sc, action, edge, edge_features, explore = _get_scored_edge(
         hist, e50, e200, breakout_up, breakout_down, mom5, reg, regime_conf)
-    
+
     # ────────────────────────────────────────────────────────────────────────
     # PATCH 3: Force Signal Generation — Fallback when no signal detected
     # ────────────────────────────────────────────────────────────────────────
@@ -600,9 +650,18 @@ def on_price(data):
             edge = "FORCED_EXPLORE"
             edge_features = {}
             explore = True
+            # V10.13d: Track forced candidate generation
+            _cycle_candidates += 1
+            track_generated()  # Now only count actual/forced candidates
         else:
+            if s not in _cycle_prefilter_drops:
+                _cycle_prefilter_drops[s] = "NO_CANDIDATE_PATTERN"
             track_filtered()
             return
+    else:
+        # V10.13d: Track valid candidate generation
+        _cycle_candidates += 1
+        track_generated()  # Count valid edge generation
 
     # Confidence penalty flags (soft, EV gate is authoritative)
     _high_vol      = reg == "HIGH_VOL"
