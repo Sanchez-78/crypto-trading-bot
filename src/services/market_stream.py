@@ -245,12 +245,15 @@ def _rest_poll_loop() -> None:
         print(f"📡 Binance REST failed — testing CoinGecko...", file=sys.stderr, flush=True)
         if _coingecko_poll(symbols):
             print(f"📡 MARKET LIVE (REST polling — CoinGecko fallback) — {short}")
-            print(f"📡 CoinGecko working, poll_interval=2.0s", file=sys.stderr, flush=True)
-            poll_interval = 2.0
+            # V10.13e: CoinGecko has strict free tier rate limits (~10-15 req/min)
+            # 7 symbols × 2.0s = 3.5 req/s = 210 req/min → 429 Too Many Requests
+            # Increase to 30s = 14 req/min per symbol (safe margin)
+            print(f"📡 CoinGecko working, poll_interval=30.0s (rate limit: ~2 req/min per symbol)", file=sys.stderr, flush=True)
+            poll_interval = 30.0  # Was 2.0s → causing rate limiting
             use_cg        = True
         else:
             print(f"❌ Both Binance REST and CoinGecko failed!", file=sys.stderr, flush=True)
-            poll_interval = 2.0
+            poll_interval = 30.0  # Conservative interval even if both fail
             use_cg        = True
 
     consecutive_errors = 0
