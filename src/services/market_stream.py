@@ -321,8 +321,12 @@ def start():
                 on_error   = _on_error,
                 on_close   = _on_close,
             )
-            print(f"📡 Calling ws.run_forever() (ping=30s, timeout=10s)...", file=sys.stderr, flush=True)
-            ws.run_forever(ping_interval=30, ping_timeout=10)
+            # ping_interval=0: disable client-side pings — let Binance drive
+            # the heartbeat (they send a ping every ~3 min; websocket-client
+            # auto-responds). Client-side pings with a 10s timeout triggered
+            # false disconnects whenever Hetzner→Binance RTT spiked briefly.
+            print(f"📡 Calling ws.run_forever() (ping_interval=0, server-driven heartbeat)...", file=sys.stderr, flush=True)
+            ws.run_forever(ping_interval=0)
             print(f"📡 ws.run_forever() returned (closed)", file=sys.stderr, flush=True)
         except Exception as e:
             print(f"⚠️  WebSocket exception (attempt #{connection_attempts}): {type(e).__name__}: {e}", file=sys.stderr, flush=True)

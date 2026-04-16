@@ -1,740 +1,391 @@
-============================================================
-  CRYPTOMASTER  |  0h 2m 12s  | TRENINK 
-============================================================
-    ZIVE CENY  (Binance · kazde 1 s)
-  ────────────────────────────────────────────────────────
-    BTC  $   74,203.0000   ─  +0.000%
-    ETH  $    2,333.5400   ─  +0.000%
-    ADA  $        0.2416   ─  +0.000%
-    BNB  $      618.5300   ─  +0.000%
-    DOT  $        1.1700   ─  +0.000%
-    SOL  $       83.5300   ─  +0.000%
-    XRP  $        1.3600   ─  +0.000%
-    VYSLEDKY OBCHODOVANI
-  ────────────────────────────────────────────────────────
-    Zadne uzavrene obchody – robot se zahrива...
-    UCENI – STAV A USPESNOST
-  ────────────────────────────────────────────────────────
-    Kalibrace      0 / 50 obchodu  ●───────────────────── 0%  (50 zbyvа)
-    Sbiram data – potrebuji 50 obchodu pro plnou kalibraci.
-    EV vykon       zadna data
-    Uzavreni       zadna data
-    AUDITOR  (ochrana strategie)
-  ────────────────────────────────────────────────────────
-    EV prah              0.000  t15=0  t60=0  aktivni
-    Velikost pozice      1.00x  EV-only · loss streak → scale · DD halt 40%
-    STRATEGIE  (ADX + EMA + MACD + BB + RSI)
-  ────────────────────────────────────────────────────────
-    Rezim trhu   BEAR TREND  silny pokles  (35%)
-    Signaly       0 zachyceno  0 po filtru  7 blokovano  0 provedeno
-    Filtrace      0.0%  projde filtrem  TP: 1.2xATR  /  SL: 0.8xATR  (RR 1.5:1)  EV-only
-    POSLEDNI ROZHODNUTI
-  ────────────────────────────────────────────────────────
-    BTC  zadny signal
-    ETH  zadny signal
-    ADA  zadny signal
-    BNB  zadny signal
-    DOT  zadny signal
-    SOL  zadny signal
-    XRP  zadny signal
-  ────────────────────────────────────────────────────────
-  ● Sbiram data ─── Trenink ─── Aktivni
-  ────────────────────────────────────────────────────────
-  STAV:  TRENINK  (obchody 0/50,  winrate 0%->55%,  zisk > 0)
-============================================================
-=== EXECUTION ENGINE ===
-  Equity:   1.000000  |  DD: 0.00%
-  Exposure: 0.000  |  Positions: 0
-  Sharpe:   0.000  |  WR: 0.00%  |  Edge: 0.00000  |  MaxDD: 0.00%
-  Failure:  0.000  [OK]
-=== LEARNING MONITOR ===
-  (waiting for 10 closed trades per pair)
-  [!] LEARNING: NO LEARNING SIGNAL DETECTED
-  Health: 0.000  [BAD]
-========================
-[WATCHDOG] No trades for 600s → boosting exploration
-[WATCHDOG] Critical idle (15min) → enabling micro-trades
-  [!] LEARNING: NO LEARNING SIGNAL DETECTED
-[bot2] ── pre_live_audit ─────────────────────────────────────
-====================================================================
-PRE-LIVE AUDIT  (V10.12c)  n=20  seed=42  mode=replay
-====================================================================
-[audit] replay unavailable, using synthetic fallback (load_history returned empty)
-    EV=0.050  p=0.50  rr=1.25  ws=0.611  score=0.218[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=OFI_TOXIC  OFI_TOXIC:flow=-1.00 heavy sell pressure vs BUY
-    EV=0.050  p=0.50  rr=1.50  ws=0.539  score=0.197[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.50  ws=0.568  score=0.205[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.25  ws=0.861  score=0.293[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.50  ws=0.514  score=0.189[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=SKIP_SCORE  ev=0.030  score=0.175<0.180
-    EV=0.050  p=0.50  rr=1.25  ws=0.578  score=0.208[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.50  ws=0.535  score=0.195[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=OFI_TOXIC  OFI_TOXIC:flow=-1.00 heavy sell pressure vs BUY
-    EV=0.050  p=0.50  rr=1.50  ws=0.803  score=0.276[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.25  ws=0.721  score=0.251[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.25  ws=0.510  score=0.188[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=SKIP_SCORE  ev=0.030  score=0.174<0.180
-    EV=0.050  p=0.50  rr=1.50  ws=0.611  score=0.218[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=OFI_TOXIC  OFI_TOXIC:flow=-1.00 heavy sell pressure vs BUY
-    EV=0.050  p=0.50  rr=1.50  ws=0.668  score=0.236[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=OFI_TOXIC  OFI_TOXIC:flow=-1.00 heavy sell pressure vs BUY
-    EV=0.050  p=0.50  rr=1.25  ws=0.781  score=0.269[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.50  ws=0.481  score=0.179[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=SKIP_SCORE  ev=0.030  score=0.165<0.180
-    EV=0.050  p=0.50  rr=1.25  ws=0.816  score=0.280[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.50  ws=0.666  score=0.235[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.50  ws=0.778  score=0.268[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.25  ws=0.524  score=0.192[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=SKIP_SCORE  ev=0.030  score=0.178<0.180
-    EV=0.050  p=0.50  rr=1.50  ws=0.853  score=0.291[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.25  ws=0.521  score=0.191[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=SKIP_SCORE  ev=0.030  score=0.177<0.180
-====================================================================
-WARM START VERIFICATION
-====================================================================
-  METRICS['equity_peak']   = 0.000000
-  _peak_equity[0]          = 0.000000  [OK]
-  METRICS['drawdown']      = 0.000000
-  _rb_ema[0]               = current=0.7524
-====================================================================
-AUDIT SUMMARY REPORT
-====================================================================
-  Trades audited         : 20
-  Passed to execution    : 11
-  Blocked                : 9
-  ── Size distribution ───────────────────────────────
-  Min final size         : 0.00292
-  Max final size         : 0.00499
-  Avg final size         : 0.00400
-  ── Risk budget ─────────────────────────────────────
-  Avg risk_budget        : 0.754
-  Max risk_budget        : 0.757
-  Min risk_budget        : 0.752
-  ── Execution quality ───────────────────────────────
-  Avg exec_quality       : 0.504
-  Min exec_quality       : 0.500
-  ── Heat violations (existing book) ─────────────────
-  heat > max_heat        : 0
-  exec_quality < 0.60    : 11
-    [02] ETHUSDT SELL  eq=0.500  spread=0.00050
-    [03] SOLUSDT BUY  eq=0.505  spread=0.00050
-    [04] BNBUSDT SELL  eq=0.500  spread=0.00050
-    [06] BTCUSDT SELL  eq=0.500  spread=0.00050
-    [08] SOLUSDT BUY  eq=0.507  spread=0.00050
-  ── Soft penalties applied ──────────────────────────
-  velocity_pen < 1.0     : 0
-  streak_pen < 1.0       : 0
-  combo_pen < 1.0        : 0
-  emergency mode         : 0
-  ── Block breakdown ─────────────────────────────────
-  RDE                    : 9
-  exec_quality HARD_SKIP : 0
-  net_edge               : 0
-  cost_guard             : 0
-  heat_limit             : 0
-  ── Monotone check (reduce-only: corr→final) ────────
-  Violations             : 0
-====================================================================
-SUMMARY[v10.12c]:
-  trades=20  mode=synthetic
-  size[min/avg/max]=0.0029 / 0.0040 / 0.0050
-  risk_budget[avg/max]=0.75 / 0.76
-  blocked=9 (0.450)
-  monotone_violations=0
-====================================================================
-  [CI] PASS
-[bot2] pre_live_audit complete  ci=PASS
-[bot2] ─────────────────────────────────────────────────────────
-  [!] LEARNING: NO LEARNING SIGNAL DETECTED
-  ── CYCLE SNAPSHOT ────────────────────────────────────────
-{
-  "cycle_time": 1776256164.8699718,
-  "positions": 0,
-  "learning": {
-    "health": 0.0,
-    "alert": "BAD",
-    "mode": "COLD",
-    "pairs": {},
-    "features": {},
-    "block_reasons": {
-      "SKIP_SCORE": 12,
-      "OFI_TOXIC": 4
-    },
-    "completed_trades": 0,
-    "best_edge": "Unknown",
-    "defense": {
-      "wall_exits": 0,
-      "timeouts": 0,
-      "l2_rejected": 0,
-      "corr_rejected": 0,
-      "defended": 0,
-      "efficiency": 0.0
-    },
-    "concept_drift": false
-  }
-}
-============================================================
-  CRYPTOMASTER  |  0h 2m 24s  | TRENINK 
-============================================================
-    ZIVE CENY  (Binance · kazde 1 s)
-  ────────────────────────────────────────────────────────
-    BTC  $   74,203.0000   ─  +0.000%
-    ETH  $    2,333.5400   ─  +0.000%
-    ADA  $        0.2416   ─  +0.000%
-    BNB  $      618.5300   ─  +0.000%
-    DOT  $        1.1700   ─  +0.000%
-    SOL  $       83.5300   ─  +0.000%
-    XRP  $        1.3600   ─  +0.000%
-    VYSLEDKY OBCHODOVANI
-  ────────────────────────────────────────────────────────
-    Zadne uzavrene obchody – robot se zahrива...
-    UCENI – STAV A USPESNOST
-  ────────────────────────────────────────────────────────
-    Kalibrace      0 / 50 obchodu  ●───────────────────── 0%  (50 zbyvа)
-    Sbiram data – potrebuji 50 obchodu pro plnou kalibraci.
-    EV vykon       zadna data
-    Uzavreni       zadna data
-    AUDITOR  (ochrana strategie)
-  ────────────────────────────────────────────────────────
-    EV prah              0.000  t15=0  t60=0  aktivni
-    Velikost pozice      1.00x  EV-only · loss streak → scale · DD halt 40%
-    STRATEGIE  (ADX + EMA + MACD + BB + RSI)
-  ────────────────────────────────────────────────────────
-    Rezim trhu   BEAR TREND  silny pokles  (35%)
-    Signaly       0 zachyceno  0 po filtru  16 blokovano  0 provedeno
-    Filtrace      0.0%  projde filtrem  TP: 1.2xATR  /  SL: 0.8xATR  (RR 1.5:1)  EV-only
-    POSLEDNI ROZHODNUTI
-  ────────────────────────────────────────────────────────
-    BTC  zadny signal
-    ETH  zadny signal
-    ADA  zadny signal
-    BNB  zadny signal
-    DOT  zadny signal
-    SOL  zadny signal
-    XRP  zadny signal
-  ────────────────────────────────────────────────────────
-  ● Sbiram data ─── Trenink ─── Aktivni
-  ────────────────────────────────────────────────────────
-  STAV:  TRENINK  (obchody 0/50,  winrate 0%->55%,  zisk > 0)
-============================================================
-=== EXECUTION ENGINE ===
-  Equity:   1.000000  |  DD: 0.00%
-  Exposure: 0.000  |  Positions: 0
-  Sharpe:   0.000  |  WR: 0.00%  |  Edge: 0.00000  |  MaxDD: 0.00%
-  Failure:  0.000  [OK]
-=== LEARNING MONITOR ===
-  (waiting for 10 closed trades per pair)
-  [!] LEARNING: NO LEARNING SIGNAL DETECTED
-  Health: 0.000  [BAD]
-========================
-[WATCHDOG] No trades for 600s → boosting exploration
-[WATCHDOG] Critical idle (15min) → enabling micro-trades
-  [!] LEARNING: NO LEARNING SIGNAL DETECTED
-  ── CYCLE SNAPSHOT ────────────────────────────────────────
-{
-  "cycle_time": 1776256176.8272943,
-  "positions": 0,
-  "learning": {
-    "health": 0.0,
-    "alert": "BAD",
-    "mode": "COLD",
-    "pairs": {},
-    "features": {},
-    "block_reasons": {
-      "SKIP_SCORE": 12,
-      "OFI_TOXIC": 4
-    },
-    "completed_trades": 0,
-    "best_edge": "Unknown",
-    "defense": {
-      "wall_exits": 0,
-      "timeouts": 0,
-      "l2_rejected": 0,
-      "corr_rejected": 0,
-      "defended": 0,
-      "efficiency": 0.0
-    },
-    "concept_drift": false
-  }
-}
-============================================================
-  CRYPTOMASTER  |  0h 2m 34s  | TRENINK 
-============================================================
-    ZIVE CENY  (Binance · kazde 1 s)
-  ────────────────────────────────────────────────────────
-    BTC  $   74,203.0000   ─  +0.000%
-    ETH  $    2,333.5400   ─  +0.000%
-    ADA  $        0.2416   ─  +0.000%
-    BNB  $      618.5300   ─  +0.000%
-    DOT  $        1.1700   ─  +0.000%
-    SOL  $       83.5300   ─  +0.000%
-    XRP  $        1.3600   ─  +0.000%
-    VYSLEDKY OBCHODOVANI
-  ────────────────────────────────────────────────────────
-    Zadne uzavrene obchody – robot se zahrива...
-    UCENI – STAV A USPESNOST
-  ────────────────────────────────────────────────────────
-    Kalibrace      0 / 50 obchodu  ●───────────────────── 0%  (50 zbyvа)
-    Sbiram data – potrebuji 50 obchodu pro plnou kalibraci.
-    EV vykon       zadna data
-    Uzavreni       zadna data
-    AUDITOR  (ochrana strategie)
-  ────────────────────────────────────────────────────────
-    EV prah              0.000  t15=0  t60=0  aktivni
-    Velikost pozice      1.00x  EV-only · loss streak → scale · DD halt 40%
-    STRATEGIE  (ADX + EMA + MACD + BB + RSI)
-  ────────────────────────────────────────────────────────
-    Rezim trhu   BEAR TREND  silny pokles  (35%)
-    Signaly       0 zachyceno  0 po filtru  16 blokovano  0 provedeno
-    Filtrace      0.0%  projde filtrem  TP: 1.2xATR  /  SL: 0.8xATR  (RR 1.5:1)  EV-only
-    POSLEDNI ROZHODNUTI
-  ────────────────────────────────────────────────────────
-    BTC  zadny signal
-    ETH  zadny signal
-    ADA  zadny signal
-    BNB  zadny signal
-    DOT  zadny signal
-    SOL  zadny signal
-    XRP  zadny signal
-  ────────────────────────────────────────────────────────
-  ● Sbiram data ─── Trenink ─── Aktivni
-  ────────────────────────────────────────────────────────
-  STAV:  TRENINK  (obchody 0/50,  winrate 0%->55%,  zisk > 0)
-============================================================
-=== EXECUTION ENGINE ===
-  Equity:   1.000000  |  DD: 0.00%
-  Exposure: 0.000  |  Positions: 0
-  Sharpe:   0.000  |  WR: 0.00%  |  Edge: 0.00000  |  MaxDD: 0.00%
-  Failure:  0.000  [OK]
-=== LEARNING MONITOR ===
-  (waiting for 10 closed trades per pair)
-  [!] LEARNING: NO LEARNING SIGNAL DETECTED
-  Health: 0.000  [BAD]
-========================
-[WATCHDOG] No trades for 600s → boosting exploration
-[WATCHDOG] Critical idle (15min) → enabling micro-trades
-  [!] LEARNING: NO LEARNING SIGNAL DETECTED
-  ── CYCLE SNAPSHOT ────────────────────────────────────────
-{
-  "cycle_time": 1776256186.8285005,
-  "positions": 0,
-  "learning": {
-    "health": 0.0,
-    "alert": "BAD",
-    "mode": "COLD",
-    "pairs": {},
-    "features": {},
-    "block_reasons": {
-      "SKIP_SCORE": 12,
-      "OFI_TOXIC": 4
-    },
-    "completed_trades": 0,
-    "best_edge": "Unknown",
-    "defense": {
-      "wall_exits": 0,
-      "timeouts": 0,
-      "l2_rejected": 0,
-      "corr_rejected": 0,
-      "defended": 0,
-      "efficiency": 0.0
-    },
-    "concept_drift": false
-  }
-}
-============================================================
-  CRYPTOMASTER  |  0h 2m 44s  | TRENINK 
-============================================================
-    ZIVE CENY  (Binance · kazde 1 s)
-  ────────────────────────────────────────────────────────
-    BTC  $   74,203.0000   ─  +0.000%
-    ETH  $    2,333.5400   ─  +0.000%
-    ADA  $        0.2416   ─  +0.000%
-    BNB  $      618.5300   ─  +0.000%
-    DOT  $        1.1700   ─  +0.000%
-    SOL  $       83.5300   ─  +0.000%
-    XRP  $        1.3600   ─  +0.000%
-    VYSLEDKY OBCHODOVANI
-  ────────────────────────────────────────────────────────
-    Zadne uzavrene obchody – robot se zahrива...
-    UCENI – STAV A USPESNOST
-  ────────────────────────────────────────────────────────
-    Kalibrace      0 / 50 obchodu  ●───────────────────── 0%  (50 zbyvа)
-    Sbiram data – potrebuji 50 obchodu pro plnou kalibraci.
-    EV vykon       zadna data
-    Uzavreni       zadna data
-    AUDITOR  (ochrana strategie)
-  ────────────────────────────────────────────────────────
-    EV prah              0.000  t15=0  t60=0  aktivni
-    Velikost pozice      1.00x  EV-only · loss streak → scale · DD halt 40%
-    STRATEGIE  (ADX + EMA + MACD + BB + RSI)
-  ────────────────────────────────────────────────────────
-    Rezim trhu   BEAR TREND  silny pokles  (35%)
-    Signaly       0 zachyceno  0 po filtru  16 blokovano  0 provedeno
-    Filtrace      0.0%  projde filtrem  TP: 1.2xATR  /  SL: 0.8xATR  (RR 1.5:1)  EV-only
-    POSLEDNI ROZHODNUTI
-  ────────────────────────────────────────────────────────
-    BTC  zadny signal
-    ETH  zadny signal
-    ADA  zadny signal
-    BNB  zadny signal
-    DOT  zadny signal
-    SOL  zadny signal
-    XRP  zadny signal
-  ────────────────────────────────────────────────────────
-  ● Sbiram data ─── Trenink ─── Aktivni
-  ────────────────────────────────────────────────────────
-  STAV:  TRENINK  (obchody 0/50,  winrate 0%->55%,  zisk > 0)
-============================================================
-=== EXECUTION ENGINE ===
-  Equity:   1.000000  |  DD: 0.00%
-  Exposure: 0.000  |  Positions: 0
-  Sharpe:   0.000  |  WR: 0.00%  |  Edge: 0.00000  |  MaxDD: 0.00%
-  Failure:  0.000  [OK]
-=== LEARNING MONITOR ===
-  (waiting for 10 closed trades per pair)
-  [!] LEARNING: NO LEARNING SIGNAL DETECTED
-  Health: 0.000  [BAD]
-========================
-[WATCHDOG] No trades for 600s → boosting exploration
-[WATCHDOG] Critical idle (15min) → enabling micro-trades
-  [!] LEARNING: NO LEARNING SIGNAL DETECTED
-  [!] LEARNING: NO LEARNING SIGNAL DETECTED
-  ── CYCLE SNAPSHOT ────────────────────────────────────────
-{
-  "cycle_time": 1776256196.837524,
-  "positions": 0,
-  "learning": {
-    "health": 0.0,
-    "alert": "BAD",
-    "mode": "COLD",
-    "pairs": {},
-    "features": {},
-    "block_reasons": {
-      "SKIP_SCORE": 12,
-      "OFI_TOXIC": 4
-    },
-    "completed_trades": 0,
-    "best_edge": "Unknown",
-    "defense": {
-      "wall_exits": 0,
-      "timeouts": 0,
-      "l2_rejected": 0,
-      "corr_rejected": 0,
-      "defended": 0,
-      "efficiency": 0.0
-    },
-    "concept_drift": false
-  }
-}
-============================================================
-  CRYPTOMASTER  |  0h 2m 55s  | TRENINK 
-============================================================
-    ZIVE CENY  (Binance · kazde 1 s)
-  ────────────────────────────────────────────────────────
-    BTC  $   74,203.0000   ─  +0.000%
-    ETH  $    2,333.5400   ─  +0.000%
-    ADA  $        0.2416   ─  +0.000%
-    BNB  $      618.5300   ─  +0.000%
-    DOT  $        1.1700   ─  +0.000%
-    SOL  $       83.5300   ─  +0.000%
-    XRP  $        1.3600   ─  +0.000%
-    VYSLEDKY OBCHODOVANI
-  ────────────────────────────────────────────────────────
-    Zadne uzavrene obchody – robot se zahrива...
-    UCENI – STAV A USPESNOST
-  ────────────────────────────────────────────────────────
-    Kalibrace      0 / 50 obchodu  ●───────────────────── 0%  (50 zbyvа)
-    Sbiram data – potrebuji 50 obchodu pro plnou kalibraci.
-    EV vykon       zadna data
-    Uzavreni       zadna data
-    AUDITOR  (ochrana strategie)
-  ────────────────────────────────────────────────────────
-    EV prah              0.000  t15=0  t60=0  aktivni
-    Velikost pozice      1.00x  EV-only · loss streak → scale · DD halt 40%
-    STRATEGIE  (ADX + EMA + MACD + BB + RSI)
-  ────────────────────────────────────────────────────────
-    Rezim trhu   BEAR TREND  silny pokles  (35%)
-    Signaly       0 zachyceno  0 po filtru  16 blokovano  0 provedeno
-    Filtrace      0.0%  projde filtrem  TP: 1.2xATR  /  SL: 0.8xATR  (RR 1.5:1)  EV-only
-    POSLEDNI ROZHODNUTI
-  ────────────────────────────────────────────────────────
-    BTC  zadny signal
-    ETH  zadny signal
-    ADA  zadny signal
-    BNB  zadny signal
-    DOT  zadny signal
-    SOL  zadny signal
-    XRP  zadny signal
-  ────────────────────────────────────────────────────────
-  ● Sbiram data ─── Trenink ─── Aktivni
-  ────────────────────────────────────────────────────────
-  STAV:  TRENINK  (obchody 0/50,  winrate 0%->55%,  zisk > 0)
-============================================================
-=== EXECUTION ENGINE ===
-  Equity:   1.000000  |  DD: 0.00%
-  Exposure: 0.000  |  Positions: 0
-  Sharpe:   0.000  |  WR: 0.00%  |  Edge: 0.00000  |  MaxDD: 0.00%
-  Failure:  0.000  [OK]
-=== LEARNING MONITOR ===
-  (waiting for 10 closed trades per pair)
-  [!] LEARNING: NO LEARNING SIGNAL DETECTED
-  Health: 0.000  [BAD]
-========================
-[WATCHDOG] No trades for 600s → boosting exploration
-[WATCHDOG] Critical idle (15min) → enabling micro-trades
-  [!] LEARNING: NO LEARNING SIGNAL DETECTED
-  ── CYCLE SNAPSHOT ────────────────────────────────────────
-{
-  "cycle_time": 1776256207.0847404,
-  "positions": 0,
-  "learning": {
-    "health": 0.0,
-    "alert": "BAD",
-    "mode": "COLD",
-    "pairs": {},
-    "features": {},
-    "block_reasons": {
-      "SKIP_SCORE": 12,
-      "OFI_TOXIC": 4
-    },
-    "completed_trades": 0,
-    "best_edge": "Unknown",
-    "defense": {
-      "wall_exits": 0,
-      "timeouts": 0,
-      "l2_rejected": 0,
-      "corr_rejected": 0,
-      "defended": 0,
-      "efficiency": 0.0
-    },
-    "concept_drift": false
-  }
-}
-============================================================
-  CRYPTOMASTER  |  0h 3m 5s  | TRENINK 
-============================================================
-    ZIVE CENY  (Binance · kazde 1 s)
-  ────────────────────────────────────────────────────────
-    BTC  $   74,203.0000   ─  +0.000%
-    ETH  $    2,333.5400   ─  +0.000%
-    ADA  $        0.2416   ─  +0.000%
-    BNB  $      618.5300   ─  +0.000%
-    DOT  $        1.1700   ─  +0.000%
-    SOL  $       83.5300   ─  +0.000%
-    XRP  $        1.3600   ─  +0.000%
-    VYSLEDKY OBCHODOVANI
-  ────────────────────────────────────────────────────────
-    Zadne uzavrene obchody – robot se zahrива...
-    UCENI – STAV A USPESNOST
-  ────────────────────────────────────────────────────────
-    Kalibrace      0 / 50 obchodu  ●───────────────────── 0%  (50 zbyvа)
-    Sbiram data – potrebuji 50 obchodu pro plnou kalibraci.
-    EV vykon       zadna data
-    Uzavreni       zadna data
-    AUDITOR  (ochrana strategie)
-  ────────────────────────────────────────────────────────
-    EV prah              0.000  t15=0  t60=0  aktivni
-    Velikost pozice      1.00x  EV-only · loss streak → scale · DD halt 40%
-    STRATEGIE  (ADX + EMA + MACD + BB + RSI)
-  ────────────────────────────────────────────────────────
-    Rezim trhu   BEAR TREND  silny pokles  (35%)
-    Signaly       0 zachyceno  0 po filtru  16 blokovano  0 provedeno
-    Filtrace      0.0%  projde filtrem  TP: 1.2xATR  /  SL: 0.8xATR  (RR 1.5:1)  EV-only
-    POSLEDNI ROZHODNUTI
-  ────────────────────────────────────────────────────────
-    BTC  zadny signal
-    ETH  zadny signal
-    ADA  zadny signal
-    BNB  zadny signal
-    DOT  zadny signal
-    SOL  zadny signal
-    XRP  zadny signal
-  ────────────────────────────────────────────────────────
-  ● Sbiram data ─── Trenink ─── Aktivni
-  ────────────────────────────────────────────────────────
-  STAV:  TRENINK  (obchody 0/50,  winrate 0%->55%,  zisk > 0)
-============================================================
-=== EXECUTION ENGINE ===
-  Equity:   1.000000  |  DD: 0.00%
-  Exposure: 0.000  |  Positions: 0
-  Sharpe:   0.000  |  WR: 0.00%  |  Edge: 0.00000  |  MaxDD: 0.00%
-  Failure:  0.000  [OK]
-=== LEARNING MONITOR ===
-  (waiting for 10 closed trades per pair)
-  [!] LEARNING: NO LEARNING SIGNAL DETECTED
-  Health: 0.000  [BAD]
-========================
-[WATCHDOG] No trades for 600s → boosting exploration
-[WATCHDOG] Critical idle (15min) → enabling micro-trades
-  [!] LEARNING: NO LEARNING SIGNAL DETECTED
-  ── CYCLE SNAPSHOT ────────────────────────────────────────
-{
-  "cycle_time": 1776256217.088525,
-  "positions": 0,
-  "learning": {
-    "health": 0.0,
-    "alert": "BAD",
-    "mode": "COLD",
-    "pairs": {},
-    "features": {},
-    "block_reasons": {
-      "SKIP_SCORE": 12,
-      "OFI_TOXIC": 4
-    },
-    "completed_trades": 0,
-    "best_edge": "Unknown",
-    "defense": {
-      "wall_exits": 0,
-      "timeouts": 0,
-      "l2_rejected": 0,
-      "corr_rejected": 0,
-      "defended": 0,
-      "efficiency": 0.0
-    },
-    "concept_drift": false
-  }
-}
-============================================================
-  CRYPTOMASTER  |  0h 3m 15s  | TRENINK 
-============================================================
-    ZIVE CENY  (Binance · kazde 1 s)
-  ────────────────────────────────────────────────────────
-    BTC  $   74,203.0000   ─  +0.000%
-    ETH  $    2,333.5400   ─  +0.000%
-    ADA  $        0.2416   ─  +0.000%
-    BNB  $      618.5300   ─  +0.000%
-    DOT  $        1.1700   ─  +0.000%
-    SOL  $       83.5300   ─  +0.000%
-    XRP  $        1.3600   ─  +0.000%
-    VYSLEDKY OBCHODOVANI
-  ────────────────────────────────────────────────────────
-    Zadne uzavrene obchody – robot se zahrива...
-    UCENI – STAV A USPESNOST
-  ────────────────────────────────────────────────────────
-    Kalibrace      0 / 50 obchodu  ●───────────────────── 0%  (50 zbyvа)
-    Sbiram data – potrebuji 50 obchodu pro plnou kalibraci.
-    EV vykon       zadna data
-    Uzavreni       zadna data
-    AUDITOR  (ochrana strategie)
-  ────────────────────────────────────────────────────────
-    EV prah              0.000  t15=0  t60=0  aktivni
-    Velikost pozice      1.00x  EV-only · loss streak → scale · DD halt 40%
-    STRATEGIE  (ADX + EMA + MACD + BB + RSI)
-  ────────────────────────────────────────────────────────
-    Rezim trhu   BEAR TREND  silny pokles  (35%)
-    Signaly       0 zachyceno  0 po filtru  16 blokovano  0 provedeno
-    Filtrace      0.0%  projde filtrem  TP: 1.2xATR  /  SL: 0.8xATR  (RR 1.5:1)  EV-only
-    POSLEDNI ROZHODNUTI
-  ────────────────────────────────────────────────────────
-    BTC  zadny signal
-    ETH  zadny signal
-    ADA  zadny signal
-    BNB  zadny signal
-    DOT  zadny signal
-    SOL  zadny signal
-    XRP  zadny signal
-  ────────────────────────────────────────────────────────
-  ● Sbiram data ─── Trenink ─── Aktivni
-  ────────────────────────────────────────────────────────
-  STAV:  TRENINK  (obchody 0/50,  winrate 0%->55%,  zisk > 0)
-============================================================
-=== EXECUTION ENGINE ===
-  Equity:   1.000000  |  DD: 0.00%
-  Exposure: 0.000  |  Positions: 0
-  Sharpe:   0.000  |  WR: 0.00%  |  Edge: 0.00000  |  MaxDD: 0.00%
-  Failure:  0.000  [OK]
-=== LEARNING MONITOR ===
-  (waiting for 10 closed trades per pair)
-  [!] LEARNING: NO LEARNING SIGNAL DETECTED
-  Health: 0.000  [BAD]
-========================
-[WATCHDOG] No trades for 600s → boosting exploration
-[WATCHDOG] Critical idle (15min) → enabling micro-trades
-  [!] LEARNING: NO LEARNING SIGNAL DETECTED
-[bot2] ── pre_live_audit ─────────────────────────────────────
-====================================================================
-PRE-LIVE AUDIT  (V10.12c)  n=20  seed=42  mode=replay
-====================================================================
-[audit] replay unavailable, using synthetic fallback (load_history returned empty)
-    EV=0.050  p=0.50  rr=1.25  ws=0.611  score=0.218[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=OFI_TOXIC  OFI_TOXIC:flow=-1.00 heavy sell pressure vs BUY
-    EV=0.050  p=0.50  rr=1.50  ws=0.539  score=0.197[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.50  ws=0.568  score=0.205[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-    decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-    EV=0.050  p=0.50  rr=1.25  ws=0.861  score=0.293[n=0]  t15=0  spread=0.000  af=1.00
-    RDE[v10.10b]: ev=0.050 thr=-0.300 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-    coherence[v10.12]: 0.500  ev 0.050→0.030
-🚨 ANOMALY: STALL 1776256239.147902s > 900s
-🚨 ANOMALY: NO_SIGNALS 20 cycles
-SELF_HEAL: STALL (no trades 900s) → boosting exploration
-SELF_HEAL: NO_SIGNALS (pipeline dead) → reducing filter thresholds
-🚨 ANOMALY: STALL 1776256249.1499302s > 900s
-🚨 ANOMALY: NO_SIGNALS 21 cycles
-SELF_HEAL: STALL (no trades 900s) → boosting exploration
-SELF_HEAL: NO_SIGNALS (pipeline dead) → reducing filter thresholds
-🚨 ANOMALY: STALL 1776256259.1512673s > 900s
-🚨 ANOMALY: NO_SIGNALS 22 cycles
-SELF_HEAL: STALL (no trades 900s) → boosting exploration
-SELF_HEAL: NO_SIGNALS (pipeline dead) → reducing filter thresholds
-🚨 ANOMALY: STALL 1776256269.3544412s > 900s
-🚨 ANOMALY: NO_SIGNALS 23 cycles
-SELF_HEAL: STALL (no trades 900s) → boosting exploration
-SELF_HEAL: NO_SIGNALS (pipeline dead) → reducing filter thresholds
+
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "bandit": 0.0
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       },
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "ETHUSDT_RANGING": {
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "sym": "ETHUSDT",
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "reg": "RANGING",
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "n": 1,
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "ev": 0.0,
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "wr": 0.0,
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "conv": 0.0,
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "bandit": 0.0
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       }
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     },
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     "features": {
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "pullback": 0.3212,
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "trend": 0.3212,
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "mom": 0.3212,
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "breakout": 0.3212,
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "bounce": 0.3212,
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "wick": 0.3212,
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "vol": 0.3212,
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "is_weekend": 0.304
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     },
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     "block_reasons": {
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "OFI_TOXIC_HARD": 900,
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "OFI_TOXIC_SOFT": 8,
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "FAST_FAIL_HARD": 884,
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "FAST_FAIL_SOFT": 1741,
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "FREQ_CAP": 109
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     },
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     "completed_trades": 1445,
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     "best_edge": "BNBUSDT (RANGING)",
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     "defense": {
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "wall_exits": 0,
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "timeouts": 0,
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "l2_rejected": 0,
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "corr_rejected": 0,
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "defended": 0,
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "efficiency": 0.0
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     },
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     "concept_drift": false
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   }
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]: }
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]: ============================================================
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   CRYPTOMASTER  |  4h 38m 32s  | TRENINK
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]: ============================================================
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     ZIVE CENY  (Binance · kazde 1 s)
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   ────────────────────────────────────────────────────────
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     BTC  $   74,306.3550   ─  +0.000%  [OPEN]
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     ETH  $    2,329.3850   ─  +0.000%  [OPEN]
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     ADA  $        0.2518   ─  +0.000%  [OPEN]
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     BNB  $      620.5050   ─  +0.000%
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     DOT  $        1.2935   ─  +0.000%
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     SOL  $       85.2750   ─  +0.000%
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     XRP  $        1.4205   ─  +0.000%
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     OTEVRENE POZICE
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   ────────────────────────────────────────────────────────
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     BTC  SELL  $74,382.8763->$74,306.3550  +0.000015  TP:0.80%  SL:0.40%
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     ETH  BUY  $2,329.5728->$2,329.3850  -0.000000  TP:0.80%  SL:0.40%
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     ADA  SELL  $0.2520->$0.2518  +0.000004  TP:0.80%  SL:0.40%
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     VYSLEDKY OBCHODOVANI
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   ────────────────────────────────────────────────────────
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     Obchody    1445  (OK 442  X 356  ~ 531)
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     Winrate     55.4%  ━━━━━━━━━━━●────────── 55%  cil 55%  (bez timeoutu)
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     Zisk        -0.00014727  ◄━━●───────────────────
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     Drawdown    0.00027068  (pokles od vrcholu)
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     Serie       FIRE 4x vyhra v rade!
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     ----------------------------------------
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     Profit Factor  1.01x  (zisk / ztrata, cil > 1.5)
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     Expectancy     +0.00000001  (prumerny vynos / obchod)
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     Nejlepsi      +0.00002524   Nejhorsi  -0.00004916
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     Posledni obchod  1h 3m zpet
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     VYSLEDKY PO MENACH
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   ────────────────────────────────────────────────────────
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     Mena  Obch  WR  Bar          Zisk
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     --------------------------------------------------
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     BTC  13  77%  ━━━━━━━━━━━━━━━●────── 77%  +0.00004343  OK
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     ETH  26  81%  ━━━━━━━━━━━━━━━━●───── 81%  +0.00013988  OK
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     ADA  15  40%  ━━━━━━━●────────────── 40%  +0.00001513  X
+Apr 16 14:55:34 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     BNB  12  67%  ━━━━━━━━━━━━━●──────── 67%  +0.00000829  OK
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]: WARNING:src.core.anomaly:🚨 ANOMALY: STALL 3821.2855730056763s > 900s
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]: WARNING:src.core.self_heal:SELF_HEAL: STALL (no trades 900s) → boosting exploration
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     DOT  14  21%  ━━━●────────────────── 21%  -0.00015614  X
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     SOL  17  71%  ━━━━━━━━━━━━━━●─────── 71%  -0.00000900  OK
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     XRP  20  60%  ━━━━━━━━━━━━●───────── 60%  -0.00005328  OK
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     UCENI – STAV A USPESNOST
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   ────────────────────────────────────────────────────────
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     Kalibrace      KALIBROVAN  ✓  ━━━━━━━━━━━━━━━━━━━━━● 100%  (1445 obchodu celkem)
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     Trend uceni    ZHORŠUJE SE 📉
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     Poslednich 50    50.0%  vs  prumer 55.4%  (-5.4%)
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     EV vykon       prumer 0.034  min 0.017  max 0.048  (50 obch)
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     Uzavreni       TP 0%  SL 1%  trail 0%  timeout 8%
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     Kalibrace p    p=45.4%  WR=55.4%  odchylka 10.0pp  ok
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     WR dle rezimu
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       BULL   ━━━━━━━━━━●─────────── 53%  53%  (70 obch)
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       BEAR   ━━━━━━━━━━━●────────── 58%  58%  (93 obch)
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       RANGE  ━━━━━━━━━━━━━●──────── 67%  67%  (6 obch)
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     AUDITOR  (ochrana strategie)
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   ────────────────────────────────────────────────────────
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     EV prah              0.100  score prah 0.120  t15=0  t60=0  aktivni
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     Velikost pozice      1.20x  EV-only · loss streak → scale · DD halt 40%
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     STRATEGIE  (ADX + EMA + MACD + BB + RSI)
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   ────────────────────────────────────────────────────────
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     Rezim trhu   BEAR TREND  silny pokles  (57%)
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     Signaly (THIS CYCLE)  0 kandidati  (cele: 1710 zachyceno  1445 provedeno)
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     Filtrace      0.0%  projde filtrem  TP: 1.2xATR  /  SL: 0.8xATR  (RR 1.5:1)  EV-only
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     POSLEDNI ROZHODNUTI
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   ────────────────────────────────────────────────────────
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     BTC  PRODEJ  $74,353.1350  p:50%  ev:0.035  BEAR  VYHRA
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     ETH  PRODEJ  $2,329.6050  p:60%  ev:0.030  BEAR
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     ADA  PRODEJ  $0.2519  p:50%  ev:0.035  BEAR
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     BNB  PRODEJ  $620.5950  p:20%  ev:0.015  BULL
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     DOT  PRODEJ  $1.2965  p:50%  ev:-0.030  BULL
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     SOL  PRODEJ  $85.3450  p:50%  ev:-0.035  BEAR
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     XRP  PRODEJ  $1.4230  p:20%  ev:0.017  BEAR
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   ────────────────────────────────────────────────────────
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   Sbiram data ━━━ ● Trenink ─── Aktivni
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   ────────────────────────────────────────────────────────
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   STAV:  TRENINK  (zisk > 0)
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]: ============================================================
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]: === EXECUTION ENGINE ===
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   Equity:   0.999891  |  DD: 0.02%
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   Exposure: 0.024  |  Positions: 3
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   Sharpe:   0.000  |  WR: 52.53%  |  Edge: 0.50000  |  MaxDD: 0.00%
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   Failure:  0.626  [OK]
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     BTCUSDT      BEAR_TREND   EV:-0.0001  Size:0.0150
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     ETHUSDT      BULL_TREND   EV:-0.0000  Size:0.0035
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     ADAUSDT      BEAR_TREND   EV:-0.0001  Size:0.0054
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]: === LEARNING MONITOR ===
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   ADA  BEAR_TREND  n:9     EV:+0.000  WR:22%  conv:-- (9/20)  bandit:0.00
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   ADA  BULL_TREND  n:5     EV:+0.000  WR:0%  conv:-- (5/20)  bandit:0.00
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   ADA  RANGING     n:3     EV:+0.000  WR:33%  conv:-- (3/20)  bandit:0.00
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   BNB  BEAR_TREND  n:8     EV:+0.000  WR:12%  conv:-- (8/20)  bandit:0.00
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   BNB  BULL_TREND  n:7     EV:+0.000  WR:14%  conv:-- (7/20)  bandit:0.00
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   BTC  BEAR_TREND  n:24    EV:+0.000  WR:12%  conv:0.90  bandit:0.56
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   BTC  BULL_TREND  n:7     EV:+0.000  WR:29%  conv:-- (7/20)  bandit:0.00
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   DOT  BEAR_TREND  n:5     EV:+0.000  WR:0%  conv:-- (5/20)  bandit:0.00
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   DOT  BULL_TREND  n:12    EV:-0.000  WR:25%  conv:-- (12/20)  bandit:0.67
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   ETH  BEAR_TREND  n:22    EV:+0.000  WR:27%  conv:0.77  bandit:0.53
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   ETH  BULL_TREND  n:13    EV:+0.000  WR:31%  conv:-- (13/20)  bandit:0.66
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   SOL  BEAR_TREND  n:16    EV:-0.000  WR:38%  conv:-- (16/20)  bandit:0.65
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   SOL  BULL_TREND  n:10    EV:-0.000  WR:20%  conv:-- (10/20)  bandit:0.75
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   XRP  BEAR_TREND  n:9     EV:+0.000  WR:11%  conv:-- (9/20)  bandit:0.00
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   XRP  BULL_TREND  n:16    EV:-0.001  WR:56%  conv:-- (16/20)  bandit:0.47
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   Features (WR per signal key):
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     pullback              [###---------]  32%  -
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     trend                 [###---------]  32%  -
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     mom                   [###---------]  32%  -
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     breakout              [###---------]  32%  -
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     bounce                [###---------]  32%  -
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     wick                  [###---------]  32%  -
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     vol                   [###---------]  32%  -
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     is_weekend            [###---------]  30%  -
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   [!] LEARNING: NO LEARNING SIGNAL DETECTED
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   Health: 0.064  [BAD]
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]: ========================
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]: [V10.13f EXIT] tp=0 sl=1 trail=0 scratch=0 stag=0 t_profit=9 t_flat=42 t_loss=6 timeout=6
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]: [WATCHDOG] No trades for 600s → boosting exploration
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]: [WATCHDOG] Critical idle (15min) → enabling micro-trades
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   [!] LEARNING: NO LEARNING SIGNAL DETECTED
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   [!] LEARNING: NO LEARNING SIGNAL DETECTED
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   ── CYCLE SNAPSHOT ────────────────────────────────────────
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]: {
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   "cycle_time": 1776351344.3957455,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   "positions": 3,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   "learning": {
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     "health": 0.0637,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     "alert": "BAD",
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     "mode": "LIVE",
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     "pairs": {
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "XRPUSDT_BULL_TREND": {
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "sym": "XRPUSDT",
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "reg": "BULL_TREND",
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "n": 16,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "ev": -0.0003,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "wr": 0.5625,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "conv": 0.0,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "bandit": 0.469
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       },
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "BNBUSDT_RANGING": {
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "sym": "BNBUSDT",
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "reg": "RANGING",
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "n": 2,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "ev": 0.0,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "wr": 1.0,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "conv": 0.0,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "bandit": 0.0
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       },
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "BTCUSDT_BEAR_TREND": {
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "sym": "BTCUSDT",
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "reg": "BEAR_TREND",
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "n": 24,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "ev": 0.0001,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "wr": 0.125,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "conv": 0.896,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "bandit": 0.556
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       },
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "ADAUSDT_BULL_TREND": {
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "sym": "ADAUSDT",
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "reg": "BULL_TREND",
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "n": 5,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "ev": 0.0,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "wr": 0.0,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "conv": 0.0,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "bandit": 0.0
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       },
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "ETHUSDT_BULL_TREND": {
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "sym": "ETHUSDT",
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "reg": "BULL_TREND",
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "n": 13,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "ev": 0.0001,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "wr": 0.3077,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "conv": 0.0,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "bandit": 0.661
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       },
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "SOLUSDT_BULL_TREND": {
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "sym": "SOLUSDT",
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "reg": "BULL_TREND",
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "n": 10,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "ev": -0.0,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "wr": 0.2,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "conv": 0.082,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "bandit": 0.751
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       },
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "BNBUSDT_BEAR_TREND": {
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "sym": "BNBUSDT",
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "reg": "BEAR_TREND",
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "n": 8,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "ev": 0.0,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "wr": 0.125,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "conv": 0.0,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "bandit": 0.0
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       },
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "ETHUSDT_BEAR_TREND": {
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "sym": "ETHUSDT",
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "reg": "BEAR_TREND",
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "n": 22,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "ev": 0.0001,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "wr": 0.2727,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "conv": 0.771,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "bandit": 0.534
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       },
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "ADAUSDT_BEAR_TREND": {
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "sym": "ADAUSDT",
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "reg": "BEAR_TREND",
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "n": 9,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "ev": 0.0,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "wr": 0.2222,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "conv": 0.0,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "bandit": 0.0
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       },
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "DOTUSDT_BULL_TREND": {
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "sym": "DOTUSDT",
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "reg": "BULL_TREND",
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "n": 12,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "ev": -0.0,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "wr": 0.25,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "conv": 0.007,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "bandit": 0.671
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       },
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "ADAUSDT_RANGING": {
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "sym": "ADAUSDT",
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "reg": "RANGING",
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "n": 3,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "ev": 0.0,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "wr": 0.3333,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "conv": 0.0,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "bandit": 0.0
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       },
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "SOLUSDT_BEAR_TREND": {
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "sym": "SOLUSDT",
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "reg": "BEAR_TREND",
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "n": 16,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "ev": -0.0002,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "wr": 0.375,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "conv": 0.025,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "bandit": 0.647
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       },
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "DOTUSDT_BEAR_TREND": {
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "sym": "DOTUSDT",
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "reg": "BEAR_TREND",
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "n": 5,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "ev": 0.0,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "wr": 0.0,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "conv": 0.0,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "bandit": 0.0
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       },
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "XRPUSDT_BEAR_TREND": {
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "sym": "XRPUSDT",
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "reg": "BEAR_TREND",
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "n": 9,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "ev": 0.0,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "wr": 0.1111,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "conv": 0.0,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "bandit": 0.0
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       },
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "BTCUSDT_BULL_TREND": {
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "sym": "BTCUSDT",
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "reg": "BULL_TREND",
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "n": 7,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "ev": 0.0,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "wr": 0.2857,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "conv": 0.0,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "bandit": 0.0
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       },
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "BNBUSDT_BULL_TREND": {
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "sym": "BNBUSDT",
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "reg": "BULL_TREND",
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "n": 7,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "ev": 0.0,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "wr": 0.1429,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "conv": 0.0,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "bandit": 0.0
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       },
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "ETHUSDT_RANGING": {
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "sym": "ETHUSDT",
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "reg": "RANGING",
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "n": 1,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "ev": 0.0,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "wr": 0.0,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "conv": 0.0,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:         "bandit": 0.0
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       }
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     },
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     "features": {
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "pullback": 0.3212,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "trend": 0.3212,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "mom": 0.3212,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "breakout": 0.3212,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "bounce": 0.3212,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "wick": 0.3212,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "vol": 0.3212,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "is_weekend": 0.304
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     },
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     "block_reasons": {
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "OFI_TOXIC_HARD": 900,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "OFI_TOXIC_SOFT": 8,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "FAST_FAIL_HARD": 884,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "FAST_FAIL_SOFT": 1741,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "FREQ_CAP": 109
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     },
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     "completed_trades": 1445,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     "best_edge": "BNBUSDT (RANGING)",
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     "defense": {
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "wall_exits": 0,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "timeouts": 0,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "l2_rejected": 0,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "corr_rejected": 0,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "defended": 0,
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:       "efficiency": 0.0
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     },
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     "concept_drift": false
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   }
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]: }
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]: ============================================================
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   CRYPTOMASTER  |  4h 38m 42s  | TRENINK
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]: ============================================================
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     ZIVE CENY  (Binance · kazde 1 s)
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   ────────────────────────────────────────────────────────
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     BTC  $   74,306.3550   ─  +0.000%  [OPEN]
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     ETH  $    2,329.3850   ─  +0.000%  [OPEN]
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     ADA  $        0.2518   ─  +0.000%  [OPEN]
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     BNB  $      620.5050   ─  +0.000%
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     DOT  $        1.2935   ─  +0.000%
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     SOL  $       85.2750   ─  +0.000%
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     XRP  $        1.4205   ─  +0.000%
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     OTEVRENE POZICE
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   ────────────────────────────────────────────────────────
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     BTC  SELL  $74,382.8763->$74,306.3550  +0.000015  TP:0.80%  SL:0.40%
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     ETH  BUY  $2,329.5728->$2,329.3850  -0.000000  TP:0.80%  SL:0.40%
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     ADA  SELL  $0.2520->$0.2518  +0.000004  TP:0.80%  SL:0.40%
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     VYSLEDKY OBCHODOVANI
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   ────────────────────────────────────────────────────────
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     Obchody    1445  (OK 442  X 356  ~ 531)
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     Winrate     55.4%  ━━━━━━━━━━━●────────── 55%  cil 55%  (bez timeoutu)
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     Zisk        -0.00014727  ◄━━●───────────────────
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     Drawdown    0.00027068  (pokles od vrcholu)
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     Serie       FIRE 4x vyhra v rade!
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     ----------------------------------------
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     Profit Factor  1.01x  (zisk / ztrata, cil > 1.5)
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     Expectancy     +0.00000001  (prumerny vynos / obchod)
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     Nejlepsi      +0.00002524   Nejhorsi  -0.00004916
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     Posledni obchod  1h 3m zpet
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     VYSLEDKY PO MENACH
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:   ────────────────────────────────────────────────────────
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     Mena  Obch  WR  Bar          Zisk
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     --------------------------------------------------
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     BTC  13  77%  ━━━━━━━━━━━━━━━●────── 77%  +0.00004343  OK
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     ETH  26  81%  ━━━━━━━━━━━━━━━━●───── 81%  +0.00013988  OK
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     ADA  15  40%  ━━━━━━━●────────────── 40%  +0.00001513  X
+Apr 16 14:55:44 ubuntu-4gb-nbg1-1 cryptomaster[16669]:     BNB  12  67%  ━━━━━━━━━━━━━●──────── 67%  +0.00000829  OK

@@ -53,8 +53,10 @@ _sym_stats      = {}
 _close_reasons  = {
     "TP": 0, "SL": 0,
     "TRAIL_SL": 0, "TRAIL_PROFIT": 0, "trail": 0,
+    "MICRO_TP": 0, "PARTIAL_TP_25": 0, "PARTIAL_TP_50": 0, "PARTIAL_TP_75": 0,
+    "BREAKEVEN_STOP": 0, "SCRATCH_EXIT": 0, "STAGNATION_EXIT": 0,
     "timeout": 0, "TIMEOUT_PROFIT": 0, "TIMEOUT_FLAT": 0, "TIMEOUT_LOSS": 0,
-    "SCRATCH_EXIT": 0, "STAGNATION_EXIT": 0,
+    "HARVEST_PROFIT": 0,  # V10.13g: promoted timeout_profit exits (>3min)
     "wall_exit": 0, "early_exit": 0,
 }
 _regime_stats   = {}   # regime -> {"wins": int, "trades": int}
@@ -283,8 +285,19 @@ def _update_metrics_locked(signal, trade):
 
     # Close-reason breakdown
     reason = trade.get("close_reason", "")
-    if reason in _close_reasons:
+    
+    # V10.13g: Promote profitable stale exits to HARVEST_PROFIT
+    # If trade was held 3+ min AND profitable AND exited via timeout,
+    # reclassify as harvested profit (not just survived timeout)
+    hold_duration = trade.get("duration_seconds", 0)
+    if reason == "TIMEOUT_PROFIT" and hold_duration >= 180 and profit > 0:
+        reason = "HARVEST_PROFIT"  # Promote to harvest category
+        _close_reasons["HARVEST_PROFIT"] = _close_reasons.get("HARVEST_PROFIT", 0) + 1
+        _close_reasons["TIMEOUT_PROFIT"] -= 1  # Decrement old count
+    elif reason in _close_reasons:
         _close_reasons[reason] += 1
+    elif reason == "HARVEST_PROFIT":
+        _close_reasons["HARVEST_PROFIT"] = _close_reasons.get("HARVEST_PROFIT", 0) + 1
 
     # Regime-specific WR
     regime = signal.get("regime", "RANGING")

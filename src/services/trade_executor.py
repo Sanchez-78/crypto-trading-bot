@@ -2105,6 +2105,7 @@ def on_price(data):
         "close_reason":  reason,
         "timestamp":     pos["signal"].get("timestamp", time.time()),  # entry time
         "close_time":    time.time(),                                   # actual close time
+        "duration_seconds": int(time.time() - pos["open_ts"]),          # V10.13g: hold duration
         "fill_slippage": pos.get("fill_slippage", 0.0),
         "mae":           mae,
         "mfe":           mfe,

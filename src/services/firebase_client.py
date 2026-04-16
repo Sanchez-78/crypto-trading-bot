@@ -20,7 +20,7 @@ Switch: set PERF_MODE=True in this file; restart bot.
 
 import firebase_admin
 from firebase_admin import credentials, firestore
-import os, json, base64, time
+import os, json, base64, time, requests, threading
 
 PREFIX = os.getenv("COLLECTION_PREFIX", "")
 
@@ -458,8 +458,41 @@ def save_last_trade(trade):
             "reason":     trade.get("close_reason", ""),
             "timestamp":  trade.get("timestamp", time.time()),
         }, merge=False)
+        
+        # Fire and forget push notification
+        pnl_pct = round(float(trade.get("profit", 0) * 100), 2)
+        sym = trade.get("symbol", "")
+        res = trade.get("result", "")
+        sign = "+" if pnl_pct >= 0 else ""
+        msg = f"Bot uzavřel {sym} s výsledkem {res} ({sign}{pnl_pct}%)"
+        threading.Thread(target=send_push_notification, args=(f"Obchod uzavřen: {sym}", msg), daemon=True).start()
+
     except Exception as e:
         print(f"❌ save_last_trade: {e}")
+
+def send_push_notification(title, body):
+    """Fetch Expo push token and send notification."""
+    if db is None: return
+    try:
+        doc = db.collection(col("config")).document("push_tokens").get()
+        if not doc.exists: return
+        token = doc.to_dict().get("token")
+        if not token: return
+        
+        payload = {
+            "to": token,
+            "sound": "default",
+            "title": title,
+            "body": body,
+            "data": {"action": "trade_closed"}
+        }
+        resp = requests.post("https://exp.host/--/api/v2/push/send", json=payload, timeout=5)
+        if resp.status_code == 200:
+            print(f"📡 Push notifikace odeslána: {title}")
+        else:
+            print(f"⚠️  Push API chyba: {resp.text}")
+    except Exception as e:
+        print(f"⚠️  selhání push notifikace: {e}")
 
 
 def _build_open_positions(positions):

@@ -1517,24 +1517,49 @@ def main():
         print_cycle_summary(now)
 
         # ────────────────────────────────────────────────────────────────────
-        # V10.13f: Exit quality summary — shows if timeout dominance is shrinking
+        # V10.13g: Enhanced exit harvest summary — shows if harvests are working
         # ────────────────────────────────────────────────────────────────────
         try:
             from src.services.learning_event import _close_reasons as _cr
+            
+            # Core profit-harvest levels (V10.13g)
+            _tp = _cr.get('TP', 0)
+            _sl = _cr.get('SL', 0)
+            _micro = _cr.get('MICRO_TP', 0)
+            _be = _cr.get('BREAKEVEN_STOP', 0)
+            _p25 = _cr.get('PARTIAL_TP_25', 0)
+            _p50 = _cr.get('PARTIAL_TP_50', 0)
+            _p75 = _cr.get('PARTIAL_TP_75', 0)
+            _trail = _cr.get('TRAIL_SL', 0) + _cr.get('TRAIL_PROFIT', 0)
+            _scratch = _cr.get('SCRATCH_EXIT', 0)
+            _stag = _cr.get('STAGNATION_EXIT', 0)
+            _harvest = _cr.get('HARVEST_PROFIT', 0)
+            _tp_profit = _cr.get('TIMEOUT_PROFIT', 0)
+            _tp_flat = _cr.get('TIMEOUT_FLAT', 0)
+            _tp_loss = _cr.get('TIMEOUT_LOSS', 0)
+            
+            # Summary line with harvest breakdown
             print(
-                f"[V10.13f EXIT] "
-                f"tp={_cr.get('TP', 0)} "
-                f"sl={_cr.get('SL', 0)} "
-                f"trail={_cr.get('TRAIL_SL', 0) + _cr.get('TRAIL_PROFIT', 0)} "
-                f"scratch={_cr.get('SCRATCH_EXIT', 0)} "
-                f"stag={_cr.get('STAGNATION_EXIT', 0)} "
-                f"t_profit={_cr.get('TIMEOUT_PROFIT', 0)} "
-                f"t_flat={_cr.get('TIMEOUT_FLAT', 0)} "
-                f"t_loss={_cr.get('TIMEOUT_LOSS', 0)} "
-                f"timeout={_cr.get('timeout', 0)}"
+                f"[V10.13g EXIT] "
+                f"TP={_tp} SL={_sl} "
+                f"micro={_micro} be={_be} "
+                f"partial=({_p25},{_p50},{_p75}) "
+                f"trail={_trail} "
+                f"scratch={_scratch} stag={_stag} "
+                f"harvest={_harvest} "
+                f"t_profit={_tp_profit} t_flat={_tp_flat} t_loss={_tp_loss}"
             )
-        except Exception:
-            pass
+            
+            # Harvest rate calculation
+            total_exits = (_tp + _sl + _micro + _be + _p25 + _p50 + _p75 + _trail +
+                           _scratch + _stag + _harvest + _tp_profit + _tp_flat + _tp_loss)
+            if total_exits > 0:
+                harvested = _tp + _micro + _be + _p25 + _p50 + _p75 + _trail + _harvest
+                harvest_pct = (harvested / total_exits) * 100
+                print(f"  → Harvest rate: {harvest_pct:.1f}% ({harvested}/{total_exits})")
+        except Exception as e:
+            import logging
+            logging.debug(f"Exit summary error: {e}")
 
 
 if __name__ == "__main__":
