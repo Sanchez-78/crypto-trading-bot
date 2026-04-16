@@ -657,9 +657,14 @@ def daily_dd_factor() -> float:
     except Exception:
         return 1.0
     start = _daily_start_eq[0]
-    if start <= 0:
-        return 1.0   # insufficient baseline — don't block
-    daily_loss = (start - current) / max(abs(start), 1e-9)
+    if _daily_reset_day[0] < 0:
+        return 1.0   # not yet initialised
+    # daily_loss = absolute drop in cumulative profit since session start.
+    # METRICS["profit"] is a running sum of trade P&L fractions — so the
+    # difference IS the day's loss as a fraction of capital. Dividing by
+    # abs(start) was wrong: tiny start values caused 1000%+ "loss" on any
+    # small trade, triggering permanent HALT after the first tick.
+    daily_loss = start - current
     if daily_loss >= _DAILY_DD_LIMIT:
         return 0.0   # HALT
     if daily_loss >= _DAILY_DD_WARN:
