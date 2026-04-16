@@ -3,6 +3,40 @@ import threading, time
 # ────────────────────────────────────────────────────────────────────────────
 # V10.12i: Safe idle computation helper
 # ────────────────────────────────────────────────────────────────────────────
+def log_bootstrap_status():
+    """
+    V10.13b: Log comprehensive hydration status after all bootstrap steps complete.
+    Helps diagnose if learning state is properly loaded from Firebase/Redis.
+    """
+    print("\n[V10.13b] ── Bootstrap Hydration Status ────────────────────────────")
+
+    # Learning Monitor status
+    try:
+        from src.services.learning_monitor import _hydration_source as lm_source, lm_count
+        lm_status = f"source={lm_source} pairs={len(lm_count)}"
+        print(f"  Learning Monitor: {lm_status}")
+    except Exception as e:
+        print(f"  Learning Monitor: error → {e}")
+
+    # Metrics status
+    try:
+        from src.services.learning_event import _hydration_source as metrics_source, METRICS
+        metrics_status = f"source={metrics_source} trades={METRICS.get('trades', 0)}"
+        print(f"  Metrics:          {metrics_status}")
+    except Exception as e:
+        print(f"  Metrics:          error → {e}")
+
+    # RDE state status
+    try:
+        from src.services.realtime_decision_engine import _last_restore_source, _last_restore_ts
+        rde_status = f"source={_last_restore_source} ts={_last_restore_ts}"
+        print(f"  RDE State:        {rde_status}")
+    except Exception as e:
+        print(f"  RDE State:        (not tracked)")
+
+    print("─" * 70 + "\n")
+
+
 def safe_idle_seconds(last_trade_ts, now=None):
     """
     Compute idle seconds safely, preventing unix-time-sized values.
@@ -1144,9 +1178,32 @@ def main():
     if _rl_agent:
         msg = f"🧠 V5.1 RL Agent initialized: {_rl_agent}"
         bus.emit("LOG_OUTPUT", {"message": msg}, time.time())
-    
+
     init_firebase()
     daily_budget_report()
+
+    # V10.13b: Explicit hydration BEFORE bootstrap (after Firebase ready, before trades replayed)
+    print("\n[V10.13b] ── Hydrating learning state from Redis ────────────────────")
+    import asyncio
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        from src.services.learning_event import explicit_hydrate_from_redis as _hyd_metrics
+        metrics_hydration = loop.run_until_complete(_hyd_metrics())
+        print(f"  Metrics:  {metrics_hydration.get('source')} → {metrics_hydration.get('trades', 0)} trades")
+    except Exception as e:
+        print(f"  Metrics:  hydration error → {e}")
+        metrics_hydration = {"source": "error"}
+
+    try:
+        from src.services.learning_monitor import explicit_hydrate_from_redis as _hyd_lm
+        lm_hydration = loop.run_until_complete(_hyd_lm())
+        print(f"  Learning Monitor: {lm_hydration.get('source')} → {lm_hydration.get('pairs', 0)} pairs")
+    except Exception as e:
+        print(f"  Learning Monitor: hydration error → {e}")
+        lm_hydration = {"source": "error"}
+
+    print()
 
     _history = load_history()
 
@@ -1160,6 +1217,10 @@ def main():
         bus.emit("LOG_OUTPUT", {"message": msg}, time.time())
 
     bootstrap_from_history(_history)
+
+    # V10.13b: Log bootstrap status to confirm hydration completed
+    log_bootstrap_status()
+
     warmup()
 
     t = threading.Thread(target=start)

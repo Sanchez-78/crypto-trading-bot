@@ -62,9 +62,73 @@ def _hydrate_from_redis() -> None:
         print(f"⚠️  LM Redis hydration skipped: {exc}")
 
 
-_hydrate_from_redis()
+# V10.13b: Defer hydration until explicit call from bootstrap sequence
+# _hydrate_from_redis()  # REMOVED — now called explicitly from bot2/main.py
+
+async def explicit_hydrate_from_redis(redis_client=None):
+    """
+    V10.13b: Explicit hydration point called from bootstrap sequence, not at module import.
+    This ensures we load Redis state AFTER Firebase is ready and BEFORE replaying trades.
+
+    Returns: dict with hydration source and count of pairs loaded
+    """
+    global _hydration_source
+
+    if redis_client is None:
+        try:
+            from src.services.state_manager import get_redis_client
+            redis_client = await get_redis_client()
+        except Exception:
+            redis_client = None
+
+    if redis_client is None:
+        _hydration_source = "empty"
+        return {"source": "empty", "pairs": 0}
+
+    try:
+        data = _hydrate_from_redis_impl(redis_client)
+        if data and any(data.values()):
+            n_pairs = len(lm_count)
+            _hydration_source = "redis"
+            return {"source": "redis", "pairs": n_pairs}
+        else:
+            _hydration_source = "empty"
+            return {"source": "empty", "pairs": 0}
+    except Exception as exc:
+        import logging
+        logging.error(f"[LM] Explicit hydration failed: {exc}")
+        _hydration_source = "error"
+        return {"source": "error", "pairs": 0}
+
+
+def _hydrate_from_redis_impl(redis_client_unused=None):
+    """Internal: do the actual hydration (sync version)."""
+    try:
+        from src.services.state_manager import hydrate_lm
+        data = hydrate_lm()
+        if not data:
+            return {}
+        lm_pnl_hist.update(data.get("lm_pnl_hist", {}))
+        lm_wr_hist.update(data.get("lm_wr_hist", {}))
+        lm_ev_hist.update(data.get("lm_ev_hist", {}))
+        lm_bandit_hist.update(data.get("lm_bandit_hist", {}))
+        lm_count.update(data.get("lm_count", {}))
+        sym_recent_pnl.update(data.get("sym_recent_pnl", {}))
+        lm_feature_stats.update(data.get("lm_feature_stats", {}))
+        n_pairs = len(lm_count)
+        if n_pairs:
+            import logging
+            logging.info(f"[LM] Hydrated {n_pairs} pairs from Redis, "
+                        f"{sum(lm_count.values())} total trades")
+        return data
+    except Exception as exc:
+        import logging
+        logging.error(f"[LM] Hydration impl failed: {exc}")
+        return {}
+
 
 _HIST_CAP = 200
+_hydration_source = "pending"  # Track source for diagnostics
 
 
 def _cap(lst):

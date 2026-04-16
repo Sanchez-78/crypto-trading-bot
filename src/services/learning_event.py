@@ -90,7 +90,66 @@ def _worker():
 _worker_thread = _threading.Thread(target=_worker, daemon=True, name="metrics-worker")
 _worker_thread.start()
 
-_hydrate_from_redis()
+# V10.13b: Defer hydration until explicit call from bootstrap sequence
+# _hydrate_from_redis()  # REMOVED — now called explicitly from bot2/main.py
+
+async def explicit_hydrate_from_redis():
+    """
+    V10.13b: Explicit hydration point called from bootstrap sequence, not at module import.
+    This ensures we load Redis state AFTER Firebase is ready and BEFORE replaying trades.
+
+    Returns: dict with hydration source and metrics count
+    """
+    global _hydration_source
+
+    try:
+        from src.services.state_manager import get_redis_client
+        redis_client = await get_redis_client()
+    except Exception:
+        redis_client = None
+
+    if redis_client is None:
+        _hydration_source = "empty"
+        return {"source": "empty", "trades": METRICS.get("trades", 0)}
+
+    try:
+        data = _hydrate_from_redis_impl()
+        if data and data.get("metrics", {}).get("trades", 0) > 0:
+            _hydration_source = "redis"
+            return {"source": "redis", "trades": METRICS.get("trades", 0)}
+        else:
+            _hydration_source = "empty"
+            return {"source": "empty", "trades": 0}
+    except Exception as exc:
+        import logging
+        logging.error(f"[METRICS] Explicit hydration failed: {exc}")
+        _hydration_source = "error"
+        return {"source": "error", "trades": 0}
+
+
+def _hydrate_from_redis_impl():
+    """Internal: do the actual metrics hydration (sync version)."""
+    try:
+        from src.services.state_manager import hydrate_metrics
+        data = hydrate_metrics()
+        if not data:
+            return {}
+        m = data.get("metrics", {})
+        if m:
+            METRICS.update(m)
+        _close_reasons.update(data.get("close_reasons", {}))
+        _regime_stats.update(data.get("regime_stats", {}))
+        if m.get("trades", 0):
+            import logging
+            logging.info(f"[METRICS] Hydrated from Redis: {m['trades']} trades")
+        return data
+    except Exception as exc:
+        import logging
+        logging.error(f"[METRICS] Hydration impl failed: {exc}")
+        return {}
+
+
+_hydration_source = "pending"  # Track source for diagnostics
 
 
 def track_price(symbol, price):

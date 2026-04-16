@@ -242,6 +242,10 @@ calibrator = Calibrator()
 ev_history = deque(maxlen=200)   # ALL evaluated EVs (including skipped)
 _seeded    = [False]
 
+# V10.13b: Track RDE state restoration for bootstrap diagnostics
+_last_restore_source = "pending"  # "redis", "empty", "error", "pending"
+_last_restore_ts = 0.0  # timestamp of last restoration attempt
+
 # ── Self-learning edge feature stats ──────────────────────────────────────────
 SCORE_MIN    = 3      # minimum base score (out of 7)
                       # was 4: BTC/ADA consistently score 3/7 in trending markets
@@ -478,7 +482,12 @@ def _restore_full_state():
     Also restores edge_stats, combo_stats, lm_feature_stats — these were
     previously lost on every restart, cold-starting the weighted_score gate
     even when hundreds of historical trades already established feature WR.
+
+    V10.13b: Tracks restore source for bootstrap diagnostics.
     """
+    global _last_restore_source, _last_restore_ts
+    _last_restore_ts = _time.time()  # Track when restoration attempt began
+
     try:
         import time as _t
         from src.services.firebase_client import load_model_state
@@ -488,7 +497,10 @@ def _restore_full_state():
         state = load_model_state()
         if not state:
             print("📥 No persisted model state — starting fresh")
+            _last_restore_source = "empty"
             return
+
+        _last_restore_source = "firebase"  # Successfully loaded from Firebase
 
         rde = state.get("rde", {})
         # Calibrator buckets — keyed as floats in memory, strings in Firestore
@@ -537,6 +549,7 @@ def _restore_full_state():
               f"{len(combo_stats)} combos")
     except Exception as e:
         print(f"⚠️  model state restore: {e}")
+        _last_restore_source = "error"  # V10.13b: Mark as error
 
     # Also hydrate from Redis (faster, per-update granularity vs Firebase every-5th)
     try:
@@ -562,8 +575,11 @@ def _restore_full_state():
                 edge_stats[(fname, reg)] = list(v)
             print(f"  + Redis RDE: {len(rdata.get('ev_history', []))} ev  "
                   f"{len(rdata.get('combo_stats', {}))} combos")
+            if _last_restore_source == "firebase":
+                _last_restore_source = "firebase+redis"  # Both sources available
     except Exception as exc:
         print(f"⚠️  RDE Redis hydration skipped: {exc}")
+        # Keep _last_restore_source as "firebase" if that succeeded
 
 
 def update_calibrator(p, outcome):
