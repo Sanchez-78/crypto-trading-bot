@@ -1088,6 +1088,9 @@ def evaluate_signal(signal):
     combo_pen = get_combo_penalty(_combo)
 
     # ── V10.13c: Apply SKIP_SCORE_SOFT penalties ───────────────────────────────────
+    # Initialized here; re-assigned later in the score gate block (line ~1176)
+    _skip_score_soft = False
+    _score_penalty = 1.0
     if _skip_score_soft:
         ev *= _score_penalty  # Reduce EV for downstream gates
         win_prob *= _score_penalty  # Reduce win probability
