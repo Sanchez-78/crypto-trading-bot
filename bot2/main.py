@@ -1170,11 +1170,19 @@ def print_cycle_summary(now: float) -> None:
 
 
 def main():
+    # V10.13d: Explicit startup tracing
+    import sys
+    print("\n" + "="*80, file=sys.stderr, flush=True)
+    print("🚀 MAIN() STARTING — V10.13d Bootstrap Sequence", file=sys.stderr, flush=True)
+    print("="*80, file=sys.stderr, flush=True)
+
     # Initialize event bus handlers (Zero Bug V2 Migration Phase 1)
+    print("  [1/7] Initializing event bus handlers...", file=sys.stderr, flush=True)
     _init_event_handlers()
 
     # Initialize self-healing system (Autonomous Failure Detection)
     # V10.12i: Declare global last_trade_ts to avoid UnboundLocalError
+    print("  [2/7] Initializing self-healing system...", file=sys.stderr, flush=True)
     global _anomaly_detector, _state_history, last_trade_ts
     try:
         if AnomalyDetector:
@@ -1190,6 +1198,7 @@ def main():
         _state_history = None
 
     # Initialize V4 self-evolving strategy system (Genetic Algorithm)
+    print("  [3/7] Initializing genetic algorithm system...", file=sys.stderr, flush=True)
     global _genetic_pool, _strategy_selector, _current_strategy
     try:
         if GeneticPool:
@@ -1222,10 +1231,16 @@ def main():
         msg = f"🧠 V5.1 RL Agent initialized: {_rl_agent}"
         bus.emit("LOG_OUTPUT", {"message": msg}, time.time())
 
+    print("  [4/7] Initializing Firebase...", file=sys.stderr, flush=True)
     init_firebase()
+    print("  [4/7] Firebase initialized ✓", file=sys.stderr, flush=True)
+
+    print("  [5/7] Running daily budget report...", file=sys.stderr, flush=True)
     daily_budget_report()
+    print("  [5/7] Daily budget report done ✓", file=sys.stderr, flush=True)
 
     # V10.13b: Explicit hydration BEFORE bootstrap (after Firebase ready, before trades replayed)
+    print("  [6/7] Hydrating learning state from Redis...", file=sys.stderr, flush=True)
     print("\n[V10.13b] ── Hydrating learning state from Redis ────────────────────")
     import asyncio
     loop = asyncio.new_event_loop()
@@ -1246,9 +1261,12 @@ def main():
         print(f"  Learning Monitor: hydration error → {e}")
         lm_hydration = {"source": "error"}
 
+    print("  [6/7] Hydration complete ✓", file=sys.stderr, flush=True)
     print()
 
+    print("  [7/7a] Loading trade history from Firebase...", file=sys.stderr, flush=True)
     _history = load_history()
+    print(f"  [7/7a] Loaded {len(_history) if _history else 0} trades ✓", file=sys.stderr, flush=True)
 
     # DB-vanish detection: Firebase connected but zero trades returned.
     # Could be a genuine first run or a collection wipe.  Either way, the
@@ -1259,12 +1277,20 @@ def main():
         msg = "⚠️  [DB_WIPE] Firebase returned 0 trades — starting in full bootstrap mode. Session gate bypassed, debounce bypassed, force-trade guard active."
         bus.emit("LOG_OUTPUT", {"message": msg}, time.time())
 
+    print("  [7/7b] Bootstrapping from history...", file=sys.stderr, flush=True)
     bootstrap_from_history(_history)
+    print("  [7/7b] Bootstrap complete ✓", file=sys.stderr, flush=True)
 
     # V10.13b: Log bootstrap status to confirm hydration completed
+    print("  [7/7c] Logging bootstrap status...", file=sys.stderr, flush=True)
     log_bootstrap_status()
+    print("  [7/7c] Bootstrap status logged ✓", file=sys.stderr, flush=True)
 
+    print("  [8/8] Running warmup indicators...", file=sys.stderr, flush=True)
     warmup()
+    print("  [8/8] Warmup complete ✓", file=sys.stderr, flush=True)
+
+    print("\n✅ BOOTSTRAP COMPLETE — Starting main event loop...\n", file=sys.stderr, flush=True)
 
     t = threading.Thread(target=start)
     t.daemon = True
