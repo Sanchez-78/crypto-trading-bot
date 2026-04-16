@@ -36,6 +36,7 @@ _geo_blocked: bool = False
 
 def _dispatch(sym: str, bid: float, ask: float, bid_qty: float = 0.0, ask_qty: float = 0.0) -> None:
     """Compute OBI, publish price_tick, push into SignalEngine."""
+    import sys
     if not sym or bid <= 0 or ask <= 0:
         return
     p     = (bid + ask) / 2.0
@@ -43,6 +44,10 @@ def _dispatch(sym: str, bid: float, ask: float, bid_qty: float = 0.0, ask_qty: f
     vol_a = ask * ask_qty
     total = vol_b + vol_a
     obi   = (vol_b - vol_a) / total if total > 0 else 0.0
+
+    # V10.13d: Log dispatch to track price flow
+    import logging
+    logging.debug(f"_dispatch: {sym} bid={bid:.4f} ask={ask:.4f} p={p:.4f} obi={obi:.3f}")
 
     track_price(sym, p)
     publish("price_tick", {"symbol": sym, "price": p, "obi": obi})
@@ -52,8 +57,8 @@ def _dispatch(sym: str, bid: float, ask: float, bid_qty: float = 0.0, ask_qty: f
             push_tick({"symbol": sym, "price": p, "obi": obi,
                        "bid": bid, "ask": ask,
                        "bid_qty": bid_qty, "ask_qty": ask_qty})
-    except Exception:
-        pass
+    except Exception as e:
+        logging.warning(f"signal_engine push failed: {e}")
 
 
 # ── WebSocket helpers ─────────────────────────────────────────────────────────
@@ -122,27 +127,40 @@ def _binance_rest_poll(symbols: list[str]) -> bool:
     Poll Binance /api/v3/ticker/bookTicker for all symbols.
     Returns True on success, False on 451 / connection error.
     """
+    import sys
     sym_json = json.dumps(symbols).replace(" ", "")
     url = f"https://api.binance.com/api/v3/ticker/bookTicker?symbols={urllib.request.quote(sym_json)}"
     try:
         with urllib.request.urlopen(url, timeout=3) as resp:
             if resp.status == 451:
+                print(f"⚠️  Binance returned 451 Geo-blocked", file=sys.stderr, flush=True)
                 return False
             tickers = json.loads(resp.read())
+            dispatched = 0
             for t in tickers:
-                _dispatch(
-                    sym     = t.get("symbol", "").upper(),
-                    bid     = float(t.get("bidPrice", 0)),
-                    ask     = float(t.get("askPrice", 0)),
-                    bid_qty = float(t.get("bidQty", 0)),
-                    ask_qty = float(t.get("askQty", 0)),
-                )
+                sym = t.get("symbol", "").upper()
+                bid = float(t.get("bidPrice", 0))
+                ask = float(t.get("askPrice", 0))
+                if sym and bid > 0 and ask > 0:
+                    _dispatch(
+                        sym     = sym,
+                        bid     = bid,
+                        ask     = ask,
+                        bid_qty = float(t.get("bidQty", 0)),
+                        ask_qty = float(t.get("askQty", 0)),
+                    )
+                    dispatched += 1
+            if dispatched == 0:
+                print(f"⚠️  Binance poll: {len(tickers)} tickers received but 0 valid _dispatch() calls", file=sys.stderr, flush=True)
             return True
     except urllib.error.HTTPError as e:
         if e.code == 451:
+            print(f"⚠️  Binance HTTP 451 Geo-blocked", file=sys.stderr, flush=True)
             return False
+        print(f"⚠️  Binance HTTP {e.code}: {e.reason}", file=sys.stderr, flush=True)
         return False
-    except Exception:
+    except Exception as e:
+        print(f"⚠️  Binance REST poll failed: {type(e).__name__}: {e}", file=sys.stderr, flush=True)
         return False
 
 
@@ -195,35 +213,52 @@ def _rest_poll_loop() -> None:
     Priority: Binance REST (1 s) → CoinGecko (2 s)
     Prints source on first successful poll; retries silently on error.
     """
+    import sys
     symbols = get_active_symbols()
     short   = "/".join(s.replace("USDT", "") for s in symbols)
 
+    print(f"📡 Testing Binance REST polling... (symbols={len(symbols)})", file=sys.stderr, flush=True)
     # Test Binance REST first
     if _binance_rest_poll(symbols):
         print(f"📡 MARKET LIVE (REST polling — Binance) — {short}")
+        print(f"📡 Binance REST working, poll_interval=1.0s", file=sys.stderr, flush=True)
         poll_interval = 1.0
         use_cg        = False
     else:
-        print(f"📡 MARKET LIVE (REST polling — CoinGecko fallback) — {short}")
-        poll_interval = 2.0
-        use_cg        = True
+        print(f"📡 Binance REST failed — testing CoinGecko...", file=sys.stderr, flush=True)
+        if _coingecko_poll(symbols):
+            print(f"📡 MARKET LIVE (REST polling — CoinGecko fallback) — {short}")
+            print(f"📡 CoinGecko working, poll_interval=2.0s", file=sys.stderr, flush=True)
+            poll_interval = 2.0
+            use_cg        = True
+        else:
+            print(f"❌ Both Binance REST and CoinGecko failed!", file=sys.stderr, flush=True)
+            poll_interval = 2.0
+            use_cg        = True
 
     consecutive_errors = 0
+    poll_count = 0
     while True:
         t0 = time.time()
         try:
+            poll_count += 1
             ok = _coingecko_poll(symbols) if use_cg else _binance_rest_poll(symbols)
             if ok:
                 consecutive_errors = 0
+                if poll_count % 20 == 0:  # Log every 20 successful polls
+                    source_str = "CoinGecko" if use_cg else "Binance"
+                    print(f"📡 {source_str} poll #{poll_count} OK", file=sys.stderr, flush=True)
             else:
                 consecutive_errors += 1
+                print(f"⚠️  REST poll failed (errors={consecutive_errors})", file=sys.stderr, flush=True)
                 if consecutive_errors >= 5 and not use_cg:
-                    print("📡 Binance REST also blocked — switching to CoinGecko")
+                    print("📡 Binance REST failed 5× — switching to CoinGecko")
                     use_cg        = True
                     poll_interval = 2.0
                     consecutive_errors = 0
-        except Exception:
+        except Exception as e:
             consecutive_errors += 1
+            print(f"⚠️  REST poll exception: {type(e).__name__}: {e}", file=sys.stderr, flush=True)
 
         elapsed = time.time() - t0
         sleep_t = max(0.0, poll_interval - elapsed)
