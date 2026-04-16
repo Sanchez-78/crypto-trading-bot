@@ -61,7 +61,7 @@ class AnomalyDetector:
             self.consecutive_no_signals += 1
             if self.consecutive_no_signals >= 3:
                 anomalies.append("NO_SIGNALS")
-                logger.warning(f"🚨 ANOMALY: NO_SIGNALS {self.consecutive_no_signals} cycles")
+                logger.debug(f"anomaly: NO_SIGNALS {self.consecutive_no_signals} cycles")
         else:
             self.consecutive_no_signals = 0
 

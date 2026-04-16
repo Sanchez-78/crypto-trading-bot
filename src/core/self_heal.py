@@ -55,9 +55,7 @@ def handle_anomaly(anomaly: str, state):
     # NO SIGNALS: Pipeline might be stuck (reduce filter severity)
     # ────────────────────────────────────────────────────────────────────────
     elif anomaly == "NO_SIGNALS":
-        logger.warning(
-            f"SELF_HEAL: NO_SIGNALS (pipeline dead) → reducing filter thresholds"
-        )
+        logger.debug("self_heal: NO_SIGNALS → reducing filter thresholds")
         state.ev_threshold = getattr(state, "ev_threshold", 0.0) * 0.8
         state.filter_strength = getattr(state, "filter_strength", 1.0) * 0.8
         # Force some micro-trades to restart flow
