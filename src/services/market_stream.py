@@ -185,16 +185,25 @@ _CG_IDS: dict[str, str] = {
 
 def _coingecko_poll(symbols: list[str]) -> bool:
     """Poll CoinGecko /simple/price — price only, OBI=0. Returns True on success."""
+    import sys
     ids = [_CG_IDS[s] for s in symbols if s in _CG_IDS]
     if not ids:
+        print(f"⚠️  CoinGecko: no mapped symbols (have {len(symbols)}, mapped {len(ids)})", file=sys.stderr, flush=True)
         return False
     ids_str = ",".join(ids)
     url = f"https://api.coingecko.com/api/v3/simple/price?ids={ids_str}&vs_currencies=usd"
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "CryptoMaster/1.0"})
         with urllib.request.urlopen(req, timeout=5) as resp:
+            if resp.status == 451:
+                print(f"⚠️  CoinGecko HTTP 451 Geo-blocked", file=sys.stderr, flush=True)
+                return False
             data = json.loads(resp.read())
+            if not data:
+                print(f"⚠️  CoinGecko: empty response", file=sys.stderr, flush=True)
+                return False
             id_to_sym = {v: k for k, v in _CG_IDS.items()}
+            dispatched = 0
             for cg_id, vals in data.items():
                 sym = id_to_sym.get(cg_id)
                 if sym and sym in symbols:
@@ -202,8 +211,16 @@ def _coingecko_poll(symbols: list[str]) -> bool:
                     if p > 0:
                         # No bid/ask from CoinGecko — use midprice with zero spread proxy
                         _dispatch(sym=sym, bid=p * 0.9999, ask=p * 1.0001)
+                        dispatched += 1
+            if dispatched == 0:
+                print(f"⚠️  CoinGecko: {len(data)} prices received but 0 dispatched", file=sys.stderr, flush=True)
+                return False
             return True
-    except Exception:
+    except urllib.error.HTTPError as e:
+        print(f"⚠️  CoinGecko HTTP {e.code}: {e.reason}", file=sys.stderr, flush=True)
+        return False
+    except Exception as e:
+        print(f"⚠️  CoinGecko poll failed: {type(e).__name__}: {e}", file=sys.stderr, flush=True)
         return False
 
 

@@ -811,7 +811,22 @@ def warmup(symbols=None, candles=120):
                 params={"symbol": s, "interval": "1m", "limit": candles},
                 timeout=5,
             )
-            closes = [float(c[4]) for c in r.json()]
+            r.raise_for_status()  # Check for HTTP errors
+            data = r.json()
+
+            # Debug: Check what we got
+            if not data:
+                print(f"   ⚠️  warmup {s}: empty response", file=sys.stderr, flush=True)
+                continue
+            if isinstance(data, dict):  # Error response
+                print(f"   ⚠️  warmup {s}: API error: {data}", file=sys.stderr, flush=True)
+                continue
+            if not isinstance(data[0], list):  # Wrong structure
+                print(f"   ⚠️  warmup {s}: unexpected structure: {type(data[0])}", file=sys.stderr, flush=True)
+                continue
+
+            # Parse close prices (index 4 in kline)
+            closes = [float(c[4]) for c in data]
             if closes:
                 prices[s]     = closes
                 _macd_vals[s] = []
@@ -822,6 +837,8 @@ def warmup(symbols=None, candles=120):
                 continue
         except Exception as e:
             print(f"   ⚠️  warmup {s}: {type(e).__name__}: {e}", file=sys.stderr, flush=True)
+            import traceback
+            print(f"       {traceback.format_exc()}", file=sys.stderr, flush=True)
 
         # V10.13e: Fallback — use synthetic data if Binance fails
         # This prevents INDICATORS_NOT_READY blocks when warmup can't reach Binance
