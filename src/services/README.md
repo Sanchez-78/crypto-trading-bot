@@ -26,6 +26,19 @@ Safety layers to prevent catastrophic loss.
 - **[risk_engine.py](file:///c:/Projects/CryptoMaster_srv/src/services/risk_engine.py)**: Calculates position sizing and portfolio limits.
 - **[correlation_shield.py](file:///c:/Projects/CryptoMaster_srv/src/services/correlation_shield.py)**: Prevents over-exposure to correlated assets.
 - **[macro_guard.py](file:///c:/Projects/CryptoMaster_srv/src/services/macro_guard.py)**: Broad-market trend filtering.
+- **[ofi_guard.py](file:///c:/Projects/CryptoMaster_srv/src/services/ofi_guard.py)**: Order-flow imbalance toxicity detection (V10.13h).
+
+## 4b. Adaptive Blocking & Telemetry (V10.13i-j)
+Health-aware decision gating with comprehensive logging.
+- **[hardblock_adapter.py](file:///c:/Projects/CryptoMaster_srv/src/services/hardblock_adapter.py)**: Adapts hard/soft block thresholds based on system health and idle time (V10.13i).
+  - Provides dynamic zone boundaries (`hard_floor`, `soft_ceiling`)
+  - Relaxes constraints during system stress or long idle periods
+  - Prevents deadlock by transitioning signals from hard rejection to soft penalties
+- **[adaptive_block_telemetry.py](file:///c:/Projects/CryptoMaster_srv/src/services/adaptive_block_telemetry.py)**: Logs all block decisions with context (V10.13j).
+  - `log_adaptive_block()`: SKIP_SCORE, FAST_FAIL, and similar hard-block attempts
+  - `log_ofi_block()`: OFI toxicity blocks and soft penalties
+  - `log_pair_suppression()`: Pair-level toxicity suppression events
+  - `log_soft_penalty_applied()`: Tracks transitions from hard to soft penalties
 
 ## 5. Persistence & Observability
 System state and reporting.

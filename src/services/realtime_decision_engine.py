@@ -1181,6 +1181,7 @@ def evaluate_signal(signal):
     _score_penalty = 1.0
     
     # Get adaptive zone config (health-aware hard/soft boundaries)
+    _zone_type = "HEALTHY"  # For telemetry
     try:
         from src.services.hardblock_adapter import get_zone_config
         _idle_time = max(0.0, _time.time() - _last_trade_ts[0]) if _last_trade_ts[0] > 0 else 0.0
@@ -1188,6 +1189,7 @@ def evaluate_signal(signal):
         _zones = get_zone_config(_sys_health, _idle_time)
         _score_hard_floor = _zones["hard_floor"]
         _soft_ceiling = _zones["soft_ceiling"]
+        _zone_type = _zones.get("relaxation_level", "HEALTHY")
     except Exception:
         # Fallback to static zones if adapter fails
         _score_hard_floor = max(0.05, _score_threshold - 0.06)
@@ -1208,6 +1210,20 @@ def evaluate_signal(signal):
             progress = (_score_adj - _score_hard_floor) / soft_range
             _score_penalty = max(0.30, progress * 0.60 + 0.30)  # 0.30 → 0.90
             track_blocked(reason="SKIP_SCORE_SOFT")
+            
+            # V10.13j: Log adaptive zone telemetry
+            try:
+                from src.services.adaptive_block_telemetry import log_adaptive_block, log_soft_penalty_applied
+                _idle_time = max(0.0, _time.time() - _last_trade_ts[0]) if _last_trade_ts[0] > 0 else 0.0
+                log_adaptive_block(
+                    "SKIP_SCORE_SOFT", sym, _score_adj, _sys_health, _idle_time,
+                    _score_hard_floor, _soft_ceiling, _zone_type, "SOFT",
+                    f"In soft zone, applying penalty {_score_penalty:.2f}x",
+                    _score_penalty
+                )
+            except Exception:
+                pass
+            
             print(f"    decision=SKIP_SCORE_SOFT  score={_score_adj:.3f} in soft_zone[{_score_hard_floor:.3f}-{_soft_ceiling:.3f}]  penalty={_score_penalty:.2f}")
         else:
             # HARD floor breached: hard reject
@@ -1217,6 +1233,20 @@ def evaluate_signal(signal):
                 _lso2(sym, accepted=False, reason="SKIP_SCORE_HARD")
             except Exception:
                 pass
+            
+            # V10.13j: Log hard reject telemetry
+            try:
+                from src.services.adaptive_block_telemetry import log_adaptive_block
+                _idle_time = max(0.0, _time.time() - _last_trade_ts[0]) if _last_trade_ts[0] > 0 else 0.0
+                log_adaptive_block(
+                    "SKIP_SCORE_HARD", sym, _score_adj, _sys_health, _idle_time,
+                    _score_hard_floor, _soft_ceiling, _zone_type, "HARD",
+                    f"Below hard floor (score {_score_adj:.3f} < threshold {_score_hard_floor:.3f})",
+                    1.0
+                )
+            except Exception:
+                pass
+            
             _timing_str = f" timing×{_timing_mult:.2f}" if _timing_mult < 1.0 else ""
             print(f"    decision=SKIP_SCORE_HARD  ev={_ev_adj:.3f}{_timing_str}  score={_score_adj:.3f}<{_score_hard_floor:.3f}")
             return None
@@ -1268,6 +1298,17 @@ def evaluate_signal(signal):
         if _ofi_blocked and not _unblock_fallback_used:
             track_blocked(reason="OFI_TOXIC_HARD")
             print(f"    decision=OFI_TOXIC_HARD  {_ofi_reason}")
+            
+            # V10.13j: Log OFI hard block telemetry
+            try:
+                from src.services.adaptive_block_telemetry import log_ofi_block
+                log_ofi_block(
+                    "OFI_TOXIC_HARD", sym, signal.get("action", "BUY"), _ofi_reason,
+                    1.0, "HARD", "OFI toxicity exceeded 0.95 threshold (ultra-extreme)"
+                )
+            except Exception:
+                pass
+            
             return None
 
         # Always apply soft OFI size penalty (even for fallback)
@@ -1280,6 +1321,18 @@ def evaluate_signal(signal):
                 track_blocked(reason="OFI_TOXIC_SOFT")
             _fallback_str = " (fallback_soften)" if _unblock_fallback_used else ""
             print(f"    OFI penalty: size×{_ofi_size:.2f}{_fallback_str}")
+            
+            # V10.13j: Log OFI soft penalty telemetry
+            try:
+                from src.services.adaptive_block_telemetry import log_ofi_block
+                penalty_type = "SOFT_HARD" if _ofi_size <= 0.60 else "SOFT_LIGHT"
+                penalty_reason = f"OFI toxicity {_ofi_size:.2f}: applying size penalty"
+                log_ofi_block(
+                    f"OFI_SOFT_{penalty_type}", sym, signal.get("action", "BUY"), 
+                    _ofi_reason, _ofi_size, "SOFT", penalty_reason
+                )
+            except Exception:
+                pass
     except Exception:
         pass
     # Apply OFI size factor to auditor_factor
