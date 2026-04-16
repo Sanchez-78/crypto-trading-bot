@@ -518,6 +518,10 @@ def on_price(data):
     now = time.time()
     _last_price_ts[s] = now
 
+    # V10.13d: Critical logging to detect if on_price is being called
+    import logging
+    logging.debug(f"on_price({s}, {p:.4f})")
+
     hist = prices.setdefault(s, [])
     hist.append(p)
     if len(hist) > 1800:   # 1800 ticks @ 2s/tick = 60 min of indicator history
@@ -527,6 +531,7 @@ def on_price(data):
     if len(hist) < MIN_TICKS:
         if s not in _cycle_prefilter_drops:
             _cycle_prefilter_drops[s] = "INDICATORS_NOT_READY"
+            logging.warning(f"on_price({s}): INDICATORS_NOT_READY (have {len(hist)}/{MIN_TICKS} ticks)")
         return
 
     # V10.13d: Moved track_generated() here — only count when we have enough data
@@ -652,16 +657,19 @@ def on_price(data):
             explore = True
             # V10.13d: Track forced candidate generation
             _cycle_candidates += 1
-            track_generated()  # Now only count actual/forced candidates
+            track_generated()
+            logging.warning(f"on_price({s}): Generated FORCED signal {action}")
         else:
             if s not in _cycle_prefilter_drops:
                 _cycle_prefilter_drops[s] = "NO_CANDIDATE_PATTERN"
+                logging.warning(f"on_price({s}): NO_CANDIDATE_PATTERN (edge generation failed, forced signal failed 70% check)")
             track_filtered()
             return
     else:
         # V10.13d: Track valid candidate generation
         _cycle_candidates += 1
-        track_generated()  # Count valid edge generation
+        track_generated()
+        logging.info(f"on_price({s}): Generated valid signal {action} (edge={edge})")
 
     # Confidence penalty flags (soft, EV gate is authoritative)
     _high_vol      = reg == "HIGH_VOL"
