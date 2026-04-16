@@ -1240,16 +1240,16 @@ def evaluate_signal(signal):
         except Exception:
             pass
 
-    # ── V10.13b: OFI toxicity guard — hard block extreme, soft penalty moderate ─
-    # V10.13b: Split into HARD (0.90+) and SOFT (0.70-0.90) zones
-    # Fallback trades skip HARD block but keep SOFT size penalty
+    # ── V10.13h: OFI toxicity guard — ultra-selective hard block, bounded soft penalties ─
+    # V10.13h: Hard block 0.95+ (ultra-extreme) | Soft 0.70-0.95 (bounded penalty)
+    # This narrower split improves selectivity: fewer false hard rejects, more pass-through
     _ofi_size = 1.0
     _ofi_soft_blocked = False
     try:
         from src.services.ofi_guard import is_toxic as _ofi_toxic, ofi_size_factor as _ofi_sf
         _ofi_blocked, _ofi_reason = _ofi_toxic(sym, signal.get("action", "BUY"))
 
-        # V10.13b: Hard OFI block only for extreme OFI (0.90+)
+        # V10.13h: Hard OFI block ONLY for ultra-extreme OFI (0.95+)
         if _ofi_blocked and not _unblock_fallback_used:
             track_blocked(reason="OFI_TOXIC_HARD")
             print(f"    decision=OFI_TOXIC_HARD  {_ofi_reason}")
@@ -1258,9 +1258,9 @@ def evaluate_signal(signal):
         # Always apply soft OFI size penalty (even for fallback)
         _ofi_size = _ofi_sf(sym, signal.get("action", "BUY"))
         if _ofi_size < 1.0:
-            # V10.13b: Track if this is from soft penalty zone (0.70-0.90)
+            # V10.13h: Track if this is from soft penalty zone (0.70-0.95)
             # vs lighter penalty zone (0.40-0.70)
-            if _ofi_size <= 0.55:
+            if _ofi_size <= 0.60:
                 _ofi_soft_blocked = True
                 track_blocked(reason="OFI_TOXIC_SOFT")
             _fallback_str = " (fallback_soften)" if _unblock_fallback_used else ""
