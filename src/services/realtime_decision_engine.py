@@ -1175,25 +1175,40 @@ def evaluate_signal(signal):
     global _last_score_threshold
     _last_score_threshold = _score_threshold
 
-    # V10.13c: SKIP_SCORE split into HARD and SOFT
+    # V10.13c/V10.13i: SKIP_SCORE split into HARD and SOFT with adaptive zones
+    # V10.13i: Zone boundaries adapt based on system health & idle time
     _skip_score_soft = False
     _score_penalty = 1.0
-    _score_hard_floor = max(0.05, _score_threshold - 0.06)
+    
+    # Get adaptive zone config (health-aware hard/soft boundaries)
+    try:
+        from src.services.hardblock_adapter import get_zone_config
+        _idle_time = max(0.0, _time.time() - _last_trade_ts[0]) if _last_trade_ts[0] > 0 else 0.0
+        _sys_health = _M.get("health", 0.5)
+        _zones = get_zone_config(_sys_health, _idle_time)
+        _score_hard_floor = _zones["hard_floor"]
+        _soft_ceiling = _zones["soft_ceiling"]
+    except Exception:
+        # Fallback to static zones if adapter fails
+        _score_hard_floor = max(0.05, _score_threshold - 0.06)
+        _soft_ceiling = _score_threshold
 
     # V10.12e: Bounded unblock fallback TAKE path
     # If normal gate fails but we're in unblock mode and signal meets fallback criteria,
     # accept as micro-trade to prevent infinite deadlock
     _unblock_fallback_used = False
     if not allow_trade(_ev_adj, _ws):
-        # V10.13c: Check if this is a soft score case (in the hard_floor zone)
+        # V10.13c/V10.13i: Check if this is a soft score case (in the hard_floor zone)
         if _score_adj >= _score_hard_floor:
             # SOFT zone: apply penalties instead of hard reject
             _skip_score_soft = True
             # Graduated penalty: closer to hard floor → heavier penalty
-            # score 0.05 → 0.3x, score 0.10 → 0.6x, score 0.12 → 0.85x
-            _score_penalty = max(0.30, (_score_adj - _score_hard_floor) / (_score_threshold - _score_hard_floor) * 0.85)
+            # Normalize against adaptive soft zone size
+            soft_range = max(_soft_ceiling - _score_hard_floor, 0.001)
+            progress = (_score_adj - _score_hard_floor) / soft_range
+            _score_penalty = max(0.30, progress * 0.60 + 0.30)  # 0.30 → 0.90
             track_blocked(reason="SKIP_SCORE_SOFT")
-            print(f"    decision=SKIP_SCORE_SOFT  score={_score_adj:.3f} in soft_zone[{_score_hard_floor:.3f}-{_score_threshold:.3f}]  penalty={_score_penalty:.2f}")
+            print(f"    decision=SKIP_SCORE_SOFT  score={_score_adj:.3f} in soft_zone[{_score_hard_floor:.3f}-{_soft_ceiling:.3f}]  penalty={_score_penalty:.2f}")
         else:
             # HARD floor breached: hard reject
             track_blocked(reason="SKIP_SCORE_HARD")
