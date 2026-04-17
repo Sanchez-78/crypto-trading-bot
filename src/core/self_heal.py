@@ -19,8 +19,23 @@ def handle_anomaly(anomaly: str, state):
     """
     Auto-respond to detected anomaly.
     Modifies state in-place for fast response.
+
+    V10.13L: If runtime fault is active, skip threshold relaxations — fault
+    recovery is handled by fail-closed gates, not by lowering barriers.
     """
-    
+    # V10.13L: Check for runtime faults — don't mask them via threshold relaxation
+    is_runtime_faulted = False
+    try:
+        from src.services.runtime_fault_registry import has_hard_fault
+        is_runtime_faulted = has_hard_fault()
+    except Exception:
+        pass
+
+    if is_runtime_faulted:
+        logger.warning(f"SELF_HEAL: SKIPPED {anomaly} — runtime fault active, "
+                       f"using fail-closed gate instead")
+        return
+
     # ────────────────────────────────────────────────────────────────────────
     # EQUITY DROP: Hard defense (cut position size)
     # ────────────────────────────────────────────────────────────────────────

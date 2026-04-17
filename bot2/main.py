@@ -1334,6 +1334,13 @@ def main():
         except (ImportError, Exception):
             pass  # Fail silently if module not available
 
+        # V10.13L: Advance fault clear timers (fault persistence grace period)
+        try:
+            from src.services.runtime_fault_registry import _tick_clear_timers
+            _tick_clear_timers()
+        except (ImportError, Exception):
+            pass  # Fail silently if registry not available
+
         # ────────────────────────────────────────────────────────────────────
         # PATCH 5: Call watchdog to monitor trade frequency
         # ────────────────────────────────────────────────────────────────────
@@ -1560,6 +1567,35 @@ def main():
         except Exception as e:
             import logging
             logging.debug(f"Exit summary error: {e}")
+
+        # ────────────────────────────────────────────────────────────────────
+        # V10.13L: Runtime Safety State Dashboard
+        # ────────────────────────────────────────────────────────────────────
+        try:
+            from src.services.runtime_fault_registry import (
+                get_state as get_safety_state,
+                is_trading_allowed,
+                get_fault_snapshot,
+            )
+
+            safety_state = get_safety_state()
+            trading_ok = is_trading_allowed()
+
+            if safety_state != "OK":
+                faults = get_fault_snapshot()
+                print("\n⚠️  SAFETY STATE")
+                print(f"  State: {safety_state}")
+                print(f"  Trading: {'ENABLED' if trading_ok else 'DISABLED'}")
+
+                fault_dict = faults.get("faults", {})
+                if fault_dict:
+                    for comp, fault_info in fault_dict.items():
+                        error_msg = fault_info.get("error", "unknown error")
+                        print(f"  Fault: {comp} — {error_msg}")
+                else:
+                    print(f"  State: {safety_state} (no active faults)")
+        except Exception as e:
+            pass
 
 
 if __name__ == "__main__":

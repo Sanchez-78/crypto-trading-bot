@@ -1118,6 +1118,16 @@ def handle_signal(signal):
     global _last_replace_ts   # V10.10: written directly in efficiency replacement path
     sym     = signal["symbol"]
     regime  = signal.get("regime", "RANGING")
+
+    # V10.13L: Fail-closed gate — no new trades if runtime fault detected
+    try:
+        from src.services.runtime_fault_registry import is_trading_allowed
+        if not is_trading_allowed():
+            log.debug(f"[V10.13L] OPEN_BLOCKED: runtime fault active for {sym}")
+            return
+    except Exception:
+        pass  # Graceful degrade if registry unavailable
+
     allowed, reason = _allow_trade(sym, signal["action"], regime)
     if not allowed:
         if reason == "max_positions":
@@ -2047,6 +2057,12 @@ def on_price(data):
                 log.info(f"    🔥 Smart exit: {reason} | {exit_eval.get('reason')}")
         except Exception as e:
             log.debug(f"Smart exit check failed: {e}")
+            # V10.13L: Mark runtime fault for critical module
+            try:
+                from src.services.runtime_fault_registry import mark_fault
+                mark_fault("smart_exit_engine", f"Exception in evaluate_position_exit: {e}")
+            except Exception:
+                pass
 
     # Timeout fallback (V10.14): if no smart exit, use time-based timeout
     _adx_sig = pos["signal"].get("features", {}).get("adx", 0.0)
