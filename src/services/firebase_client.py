@@ -655,13 +655,16 @@ def save_metrics_full(metrics, open_positions=None, execution=None, monitor=None
         rg_st  = {k: {"trades": v["trades"], "winrate": round(v["winrate"], 4)}
                   for k, v in rg_raw.items() if v.get("trades", 0) > 0}
 
-        # FIX: Also use _local_stats for wins/losses to keep decisive + WR consistent.
-        _wins        = max(metrics.get("wins", 0),     _local_stats.get("wins", 0))
-        _losses      = max(metrics.get("losses", 0),   _local_stats.get("losses", 0))
-        _timeouts    = max(metrics.get("timeouts", 0), _local_stats.get("timeouts", 0))
+        # NOTE: wins/losses/timeouts/wr come ONLY from get_metrics() (METRICS dict).
+        # _update_metrics_locked() correctly excludes neutral timeouts from wins/losses.
+        # save_batch() counts all result=="WIN" into _local_stats.wins including those
+        # neutral timeouts — using max() here would inflate wins and DROP winrate.
+        # Only the TOTAL trade count `t` safely uses _local_stats (both paths count
+        # every trade the same way regardless of category).
+        _wins        = metrics.get("wins",     0)
+        _losses      = metrics.get("losses",   0)
+        _timeouts    = metrics.get("timeouts", 0)
         _decisive    = _wins + _losses      # neutral timeouts excluded from WR
-        # Recompute winrate from canonical counts (over async-queued values)
-        wr           = (_wins / _decisive) if _decisive > 0 else wr
         # Mark WR as unreliable below 10 decisive trades to avoid misleading 100%
         _wr_reliable = _decisive >= 10
 
