@@ -1,5 +1,12 @@
 """
-Smart Exit Engine V10.13g+j — Multi-level profit harvest + adaptive regime thresholds.
+Smart Exit Engine V10.13m+j — Exit attribution audit + regime-adaptive harvest.
+
+V10.13m enhancements:
+- Exit attribution telemetry: Why each branch PASS/FAIL for every position
+- Branch rejection counters: Track most common blockers (age, pnl, etc.)
+- Timeout pre-emption tracker: Detect near-miss exits that timeout beat
+- MFE/MAE/trailing state diagnostics: Verify state integrity
+- Debug toggle: EXIT_AUDIT_DEBUG env var to enable detailed logging
 
 V10.13j enhancements:
 - Exit evaluation telemetry: Log every exit condition checked and result
@@ -22,10 +29,15 @@ V10.13f fixes (inherited):
 """
 
 import logging
+import os
 from typing import Optional, Dict, Any
 from dataclasses import dataclass
 
 log = logging.getLogger(__name__)
+
+# V10.13m: Debug toggles
+EXIT_AUDIT_DEBUG = os.getenv("EXIT_AUDIT_DEBUG", "0") == "1"
+EXIT_AUDIT_VERBOSE = os.getenv("EXIT_AUDIT_VERBOSE", "0") == "1"
 
 # ── Thresholds (Regime-Independent Base) ────────────────────────────────────
 # V10.13j: Base thresholds used for RANGING/QUIET regimes
@@ -130,19 +142,90 @@ class SmartExitEngine:
     1. Micro-TP     — immediate 0.10% profit harvest (ultra-tight, regime-adaptive)
     2. Breakeven     — lock gains at 20% of TP progress (move SL to entry)
     3. Partial TP 25% — harvest 25% of TP move (early profit lock)
-    4. Partial TP 50% — harvest 50% of TP move  
+    4. Partial TP 50% — harvest 50% of TP move
     5. Partial TP 75% — harvest 75% of TP move
     6. Early stop    — cut losers at 60% of SL distance
     7. Trailing stop — retraced 50%+ from peak MFE (regime-adaptive activation)
     8. Scratch       — near flat after 3 min
     9. Stagnation    — completely stuck after 4 min
+
+    V10.13m: Each branch is audited — we track why it passed/failed.
     """
+
+    # V10.13m: Exit attribution audit counters
+    _exit_audit_rejections = {}    # {branch:reason: count}
+    _timeout_preemptions = {}      # {scratch/micro/trail/partial near_miss: count}
+    _exit_winners = {}             # {exit_type: count}
+
+    def __init__(self):
+        """Initialize audit counters."""
+        # Branch rejection counters: why positions didn't exit
+        self._exit_audit_rejections = {
+            "MICRO_TP:below_threshold": 0,
+            "MICRO_TP:negative_pnl": 0,
+            "BREAKEVEN_STOP:non_positive_pnl": 0,
+            "BREAKEVEN_STOP:below_trigger": 0,
+            "PARTIAL_TP_25:below_threshold": 0,
+            "PARTIAL_TP_50:below_threshold": 0,
+            "PARTIAL_TP_75:below_threshold": 0,
+            "EARLY_STOP:no_loss": 0,
+            "EARLY_STOP:below_threshold": 0,
+            "TRAILING_STOP:insufficient_peak": 0,
+            "TRAILING_STOP:insufficient_retrace": 0,
+            "SCRATCH_EXIT:too_young": 0,
+            "SCRATCH_EXIT:pnl_outside_band": 0,
+            "STAGNATION_EXIT:too_young": 0,
+            "STAGNATION_EXIT:below_stagnation_pnl": 0,
+        }
+
+        # Near-miss tracking: timeout won while branch was close
+        self._timeout_preemptions = {
+            "scratch_near_miss": 0,
+            "micro_near_miss": 0,
+            "trail_near_miss": 0,
+            "partial25_near_miss": 0,
+            "partial50_near_miss": 0,
+            "partial75_near_miss": 0,
+        }
+
+        # Exit winners: which branches actually fired
+        self._exit_winners = {
+            "MICRO_TP": 0,
+            "BREAKEVEN_STOP": 0,
+            "PARTIAL_TP_25": 0,
+            "PARTIAL_TP_50": 0,
+            "PARTIAL_TP_75": 0,
+            "EARLY_STOP": 0,
+            "TRAIL_PROFIT": 0,
+            "SCRATCH_EXIT": 0,
+            "STAGNATION_EXIT": 0,
+        }
+
+    def _log_exit_eval(self, symbol: str, direction: str, branch: str, decision: str,
+                      age_s: int, pnl_pct: float, mfe_pct: float,
+                      threshold: Optional[float] = None, observed: Optional[float] = None,
+                      reason: str = ""):
+        """
+        V10.13m: Log why a branch PASS/FAIL. Only logs if EXIT_AUDIT_DEBUG enabled.
+        Keeps output compact but informative.
+        """
+        if not EXIT_AUDIT_DEBUG:
+            return
+
+        threshold_str = f" threshold={threshold*100:.3f}%" if threshold is not None else ""
+        observed_str = f" observed={observed*100:.3f}%" if observed is not None else ""
+        reason_str = f" reason={reason}" if reason else ""
+
+        log.debug(f"[EXIT_AUDIT] {symbol} {direction} age={age_s}s pnl={pnl_pct*100:.4f}% "
+                 f"mfe={mfe_pct*100:.4f}% branch={branch} {decision}{threshold_str}"
+                 f"{observed_str}{reason_str}")
 
     def evaluate(self, position: Position, regime: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """
-        V10.13g+j: Evaluate in priority order — multi-level harvest path.
+        V10.13m+g+j: Evaluate in priority order — multi-level harvest path.
+        V10.13m: Track why branches PASS/FAIL for observability.
         Returns first matching exit condition or None.
-        
+
         Args:
             position: Position data
             regime: Market regime (for adaptive thresholds)
@@ -150,8 +233,9 @@ class SmartExitEngine:
         # Update regime for adaptive thresholds
         if regime:
             position.regime = regime
-        
-        return (
+
+        # V10.13m: Evaluate each branch and track results
+        exit_result = (
             self._check_micro_tp(position)
             or self._check_breakeven_stop(position)
             or self._check_partial_tp_25(position)
@@ -163,15 +247,53 @@ class SmartExitEngine:
             or self._check_stagnation(position)
         )
 
+        # V10.13m: Emit winner summary if exit found
+        if exit_result:
+            exit_type = exit_result.get("exit_type", "UNKNOWN")
+            self._exit_winners[exit_type] = self._exit_winners.get(exit_type, 0) + 1
+
+            tp_progress = 0.0
+            if position.direction == "LONG":
+                tp_move = (position.tp - position.entry_price) / position.entry_price
+            else:
+                tp_move = (position.entry_price - position.tp) / position.entry_price
+
+            if tp_move > 0:
+                tp_progress = position.pnl_pct / tp_move
+
+            log.debug(f"[EXIT_WINNER] {position.symbol} {position.direction} "
+                     f"reason={exit_type} age={position.age_seconds} "
+                     f"pnl={position.pnl_pct*100:.5f}% mfe={position.max_favorable_pnl*100:.5f}% "
+                     f"tp_prog={tp_progress*100:.1f}% regime={position.regime}")
+
+        return exit_result
+
     def _check_micro_tp(self, position: Position) -> Optional[Dict[str, Any]]:
         """
-        V10.13j: Ultra-tight profit harvest at regime-adaptive level.
+        V10.13m+j: Ultra-tight profit harvest at regime-adaptive level.
         Base 0.1%, but ranges use 0.08-0.12% depending on conditions.
+        V10.13m: Log why branch PASS/FAIL.
         """
         threshold = get_harvest_threshold(position.regime, "micro_tp")
+
+        # V10.13m: Log if below threshold
         if position.pnl_pct < threshold:
+            if position.pnl_pct >= 0:
+                self._exit_audit_rejections["MICRO_TP:below_threshold"] += 1
+                # Near-miss: if threshold is close (within 50% distance)
+                if position.pnl_pct >= threshold * 0.5:
+                    self._timeout_preemptions["micro_near_miss"] += 1
+                self._log_exit_eval(position.symbol, position.direction, "MICRO_TP", "FAIL",
+                                   position.age_seconds, position.pnl_pct, position.max_favorable_pnl,
+                                   threshold=threshold, observed=position.pnl_pct,
+                                   reason="below_threshold")
+            else:
+                self._exit_audit_rejections["MICRO_TP:negative_pnl"] += 1
+                self._log_exit_eval(position.symbol, position.direction, "MICRO_TP", "FAIL",
+                                   position.age_seconds, position.pnl_pct, position.max_favorable_pnl,
+                                   reason="negative_pnl")
             return None
-        
+
         return {
             "exit_type": "MICRO_TP",
             "reason": (f"Micro-TP harvest {position.pnl_pct*100:.3f}% "
@@ -182,24 +304,27 @@ class SmartExitEngine:
 
     def _check_breakeven_stop(self, position: Position) -> Optional[Dict[str, Any]]:
         """
-        Lock gains early by moving SL to break-even once trade reaches 20% of TP.
+        V10.13m+: Lock gains early by moving SL to break-even once trade reaches 20% of TP.
         This doesn't exit immediately but signals SL adjustment.
         Fires only once per position (marked in position state).
         Only for profitable trades — protects against loss swings.
         """
         if position.pnl_pct <= 0:
+            self._exit_audit_rejections["BREAKEVEN_STOP:non_positive_pnl"] += 1
             return None
-        
+
         if position.direction == "LONG":
             tp_move = (position.tp - position.entry_price) / position.entry_price
         else:
             tp_move = (position.entry_price - position.tp) / position.entry_price
-        
+
         if tp_move <= 0:
             return None
-        
+
+        trigger_level = BREAKEVEN_TRIGGER_PCT * tp_move
+
         # Trigger break-even once at 20% of TP progress
-        if position.pnl_pct >= BREAKEVEN_TRIGGER_PCT * tp_move:
+        if position.pnl_pct >= trigger_level:
             return {
                 "exit_type": "BREAKEVEN_STOP",
                 "reason": (f"Break-even lock: {position.pnl_pct*100:.2f}% "
@@ -208,22 +333,25 @@ class SmartExitEngine:
                 "adjusted_sl": position.entry_price,  # Move SL to entry (+ 1 tick in executor)
                 "confidence": 0.75,
             }
+
+        self._exit_audit_rejections["BREAKEVEN_STOP:below_trigger"] += 1
         return None
 
     def _check_partial_tp_25(self, position: Position) -> Optional[Dict[str, Any]]:
-        """Harvest 25% of TP target for early profit lock."""
+        """V10.13m+: Harvest 25% of TP target for early profit lock."""
         if position.pnl_pct <= 0:
             return None
-        
+
         if position.direction == "LONG":
             tp_move = (position.tp - position.entry_price) / position.entry_price
         else:
             tp_move = (position.entry_price - position.tp) / position.entry_price
-        
+
         if tp_move <= 0:
             return None
-        
-        if position.pnl_pct >= _PARTIAL_TP_25_BASE * tp_move:
+
+        threshold = _PARTIAL_TP_25_BASE * tp_move
+        if position.pnl_pct >= threshold:
             return {
                 "exit_type": "PARTIAL_TP_25",
                 "reason": (f"Partial TP (25%) {position.pnl_pct*100:.2f}% "
@@ -231,22 +359,28 @@ class SmartExitEngine:
                 "exit_pnl_pct": position.pnl_pct,
                 "confidence": 0.82,
             }
+
+        self._exit_audit_rejections["PARTIAL_TP_25:below_threshold"] += 1
+        # Near-miss if within 50% of threshold
+        if position.pnl_pct >= threshold * 0.5:
+            self._timeout_preemptions["partial25_near_miss"] += 1
         return None
 
     def _check_partial_tp_50(self, position: Position) -> Optional[Dict[str, Any]]:
-        """Harvest 50% of TP target — mid-point profit take."""
+        """V10.13m+: Harvest 50% of TP target — mid-point profit take."""
         if position.pnl_pct <= 0:
             return None
-        
+
         if position.direction == "LONG":
             tp_move = (position.tp - position.entry_price) / position.entry_price
         else:
             tp_move = (position.entry_price - position.tp) / position.entry_price
-        
+
         if tp_move <= 0:
             return None
-        
-        if position.pnl_pct >= _PARTIAL_TP_50_BASE * tp_move:
+
+        threshold = _PARTIAL_TP_50_BASE * tp_move
+        if position.pnl_pct >= threshold:
             return {
                 "exit_type": "PARTIAL_TP_50",
                 "reason": (f"Partial TP (50%) {position.pnl_pct*100:.2f}% "
@@ -254,22 +388,27 @@ class SmartExitEngine:
                 "exit_pnl_pct": position.pnl_pct,
                 "confidence": 0.85,
             }
+
+        self._exit_audit_rejections["PARTIAL_TP_50:below_threshold"] += 1
+        if position.pnl_pct >= threshold * 0.5:
+            self._timeout_preemptions["partial50_near_miss"] += 1
         return None
 
     def _check_partial_tp_75(self, position: Position) -> Optional[Dict[str, Any]]:
-        """Harvest 75% of TP target — late harvest before full TP."""
+        """V10.13m+: Harvest 75% of TP target — late harvest before full TP."""
         if position.pnl_pct <= 0:
             return None
-        
+
         if position.direction == "LONG":
             tp_move = (position.tp - position.entry_price) / position.entry_price
         else:
             tp_move = (position.entry_price - position.tp) / position.entry_price
-        
+
         if tp_move <= 0:
             return None
-        
-        if position.pnl_pct >= _PARTIAL_TP_75_BASE * tp_move:
+
+        threshold = _PARTIAL_TP_75_BASE * tp_move
+        if position.pnl_pct >= threshold:
             return {
                 "exit_type": "PARTIAL_TP_75",
                 "reason": (f"Partial TP (75%) {position.pnl_pct*100:.2f}% "
@@ -277,19 +416,28 @@ class SmartExitEngine:
                 "exit_pnl_pct": position.pnl_pct,
                 "confidence": 0.88,
             }
+
+        self._exit_audit_rejections["PARTIAL_TP_75:below_threshold"] += 1
+        if position.pnl_pct >= threshold * 0.5:
+            self._timeout_preemptions["partial75_near_miss"] += 1
         return None
 
     def _check_early_stop(self, position: Position) -> Optional[Dict[str, Any]]:
-        """Cut losers at 60% of SL distance — both directions."""
+        """V10.13m+: Cut losers at 60% of SL distance — both directions."""
         if position.pnl_pct >= 0:
+            self._exit_audit_rejections["EARLY_STOP:no_loss"] += 1
             return None
+
         if position.direction == "LONG":
             sl_dist = (position.entry_price - position.sl) / position.entry_price
         else:
             sl_dist = (position.sl - position.entry_price) / position.entry_price
+
         if sl_dist <= 0:
             return None
-        if abs(position.pnl_pct) >= EARLY_STOP_THRESHOLD * sl_dist:
+
+        threshold = EARLY_STOP_THRESHOLD * sl_dist
+        if abs(position.pnl_pct) >= threshold:
             return {
                 "exit_type": "EARLY_STOP",
                 "reason": (f"Early stop {position.pnl_pct*100:.2f}% "
@@ -297,16 +445,20 @@ class SmartExitEngine:
                 "exit_pnl_pct": position.pnl_pct,
                 "confidence": 0.90,
             }
+
+        self._exit_audit_rejections["EARLY_STOP:below_threshold"] += 1
         return None
 
     def _check_trailing_stop(self, position: Position) -> Optional[Dict[str, Any]]:
         """
-        V10.13j: Retracement-based trailing stop with regime-adaptive activation.
+        V10.13m+j: Retracement-based trailing stop with regime-adaptive activation.
         Activation threshold (0.20%-0.35% depending on regime).
         Requires trade to have been >= 0.1% profitable (max_favorable_pnl).
         Fires when current PnL retraces 50%+ from peak, or crosses back to 0.
+        V10.13m: Log why trailing PASS/FAIL.
         """
         if position.max_favorable_pnl < TRAILING_MIN_PEAK:
+            self._exit_audit_rejections["TRAILING_STOP:insufficient_peak"] += 1
             return None  # Never meaningfully profitable — skip
 
         # Retraced all the way back to flat or below
@@ -329,16 +481,24 @@ class SmartExitEngine:
                 "exit_pnl_pct": position.pnl_pct,
                 "confidence": 0.80,
             }
+
+        self._exit_audit_rejections["TRAILING_STOP:insufficient_retrace"] += 1
+        # Near-miss if within 10% of retrace threshold
+        if position.pnl_pct < retrace_threshold * 1.1:
+            self._timeout_preemptions["trail_near_miss"] += 1
         return None
 
     def _check_scratch(self, position: Position) -> Optional[Dict[str, Any]]:
         """
-        V10.13f: Scratch near-flat trades after 3 min.
+        V10.13m+f: Scratch near-flat trades after 3 min.
         Releases capital from stagnant non-directional positions without waiting for
-        the full timeout. Fires when |pnl| < 0.15% after 180 seconds.
+        the full timeout. Fires when |pnl| < 0.15% after 90 seconds.
+        V10.13m: Log why scratch PASS/FAIL.
         """
         if position.age_seconds < SCRATCH_MIN_AGE_S:
+            self._exit_audit_rejections["SCRATCH_EXIT:too_young"] += 1
             return None
+
         if abs(position.pnl_pct) < SCRATCH_MAX_PNL:
             return {
                 "exit_type": "SCRATCH_EXIT",
@@ -347,16 +507,24 @@ class SmartExitEngine:
                 "exit_pnl_pct": position.pnl_pct,
                 "confidence": 0.70,
             }
+
+        self._exit_audit_rejections["SCRATCH_EXIT:pnl_outside_band"] += 1
+        # Near-miss if within 10% of pnl band threshold
+        if abs(position.pnl_pct) < SCRATCH_MAX_PNL * 1.1:
+            self._timeout_preemptions["scratch_near_miss"] += 1
         return None
 
     def _check_stagnation(self, position: Position) -> Optional[Dict[str, Any]]:
         """
-        Exit completely stuck positions after 4 min.
+        V10.13m+f: Exit completely stuck positions after 4 min.
         V10.13f: reduced from 30 min (was dead code — timeout fires at 5 min max).
         Runs after scratch — only catches trades with |pnl| >= 0.15%.
+        V10.13m: Log why stagnation PASS/FAIL.
         """
         if position.age_seconds < STAGNATION_MIN_AGE_S:
+            self._exit_audit_rejections["STAGNATION_EXIT:too_young"] += 1
             return None
+
         if abs(position.pnl_pct) < STAGNATION_MAX_PNL:
             return {
                 "exit_type": "STAGNATION_EXIT",
@@ -365,7 +533,33 @@ class SmartExitEngine:
                 "exit_pnl_pct": position.pnl_pct,
                 "confidence": 0.80,
             }
+
+        self._exit_audit_rejections["STAGNATION_EXIT:below_stagnation_pnl"] += 1
         return None
+
+    def get_audit_summary(self) -> Dict[str, Any]:
+        """
+        V10.13m: Return exit audit telemetry for dashboard display.
+        Shows winners, near-misses, and top rejection reasons.
+        """
+        # Top rejections
+        top_rejects = sorted(
+            [(k, v) for k, v in self._exit_audit_rejections.items() if v > 0],
+            key=lambda x: x[1],
+            reverse=True
+        )[:5]
+
+        return {
+            "winners": {k: v for k, v in self._exit_winners.items() if v > 0},
+            "near_miss": {k: v for k, v in self._timeout_preemptions.items() if v > 0},
+            "top_rejects": dict(top_rejects),
+        }
+
+    def reset_audit_counters(self):
+        """V10.13m: Reset audit counters (useful for periodic snapshots)."""
+        self._exit_audit_rejections = {k: 0 for k in self._exit_audit_rejections.keys()}
+        self._timeout_preemptions = {k: 0 for k in self._timeout_preemptions.keys()}
+        self._exit_winners = {k: 0 for k in self._exit_winners.keys()}
 
 
 # Global instance

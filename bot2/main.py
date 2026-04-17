@@ -1597,6 +1597,41 @@ def main():
         except Exception as e:
             pass
 
+        # ────────────────────────────────────────────────────────────────────
+        # V10.13m: Exit Attribution Audit Dashboard
+        # ────────────────────────────────────────────────────────────────────
+        try:
+            from src.services.smart_exit_engine import smart_exit
+
+            audit = smart_exit.get_audit_summary()
+
+            if audit["winners"] or audit["near_miss"] or audit["top_rejects"]:
+                print("\n📊 [V10.13m EXIT_AUDIT]")
+
+                # Winners summary
+                if audit["winners"]:
+                    winner_str = " ".join(
+                        [f"{exit_type}={count}" for exit_type, count in
+                         sorted(audit["winners"].items(), key=lambda x: x[1], reverse=True)]
+                    )
+                    print(f"  winners: {winner_str}")
+
+                # Near-miss summary
+                if audit["near_miss"]:
+                    near_miss_str = " ".join(
+                        [f"{reason}={count}" for reason, count in
+                         sorted(audit["near_miss"].items(), key=lambda x: x[1], reverse=True)]
+                    )
+                    print(f"  near_miss: {near_miss_str}")
+
+                # Top rejection reasons
+                if audit["top_rejects"]:
+                    print("  top_rejects:")
+                    for reason, count in audit["top_rejects"]:
+                        print(f"    {reason}={count}")
+        except Exception as e:
+            pass
+
 
 if __name__ == "__main__":
     main()
