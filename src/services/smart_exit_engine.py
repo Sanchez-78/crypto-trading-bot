@@ -413,15 +413,6 @@ def evaluate_position_exit(
     )
 
     return smart_exit.evaluate(position, regime)
-            return None
-        
-        return {
-            "exit_type": "MICRO_TP",
-            "reason": (f"Micro-TP harvest {position.pnl_pct*100:.3f}% "
-                       f"(ultra-tight 0.10% target reached)"),
-            "exit_pnl_pct": position.pnl_pct,
-            "confidence": 0.90,
-        }
 
     def _check_breakeven_stop(self, position: Position) -> Optional[Dict[str, Any]]:
         """
