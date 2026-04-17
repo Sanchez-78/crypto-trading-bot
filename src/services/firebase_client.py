@@ -587,7 +587,11 @@ def save_metrics_full(metrics, open_positions=None, execution=None, monitor=None
     if db is None:
         return
     try:
-        t   = metrics.get("trades", 0)
+        # FIX: authority = max(in-memory METRICS, synchronously-updated _local_stats).
+        # _local_stats is incremented in increment_stats() which fires from save_batch()
+        # immediately upon trade close -- no async-worker delay. This eliminates the
+        # 0-30 s lag that caused the dashboard to show stale/flickering trade counts.
+        t   = max(metrics.get("trades", 0), _local_stats.get("trades", 0))
         wr  = metrics.get("winrate", 0.0)
         pf  = metrics.get("profit_factor", 1.0)
         exp = metrics.get("expectancy", 0.0)
@@ -651,10 +655,13 @@ def save_metrics_full(metrics, open_positions=None, execution=None, monitor=None
         rg_st  = {k: {"trades": v["trades"], "winrate": round(v["winrate"], 4)}
                   for k, v in rg_raw.items() if v.get("trades", 0) > 0}
 
-        _wins        = metrics.get("wins", 0)
-        _losses      = metrics.get("losses", 0)
-        _timeouts    = metrics.get("timeouts", 0)
+        # FIX: Also use _local_stats for wins/losses to keep decisive + WR consistent.
+        _wins        = max(metrics.get("wins", 0),     _local_stats.get("wins", 0))
+        _losses      = max(metrics.get("losses", 0),   _local_stats.get("losses", 0))
+        _timeouts    = max(metrics.get("timeouts", 0), _local_stats.get("timeouts", 0))
         _decisive    = _wins + _losses      # neutral timeouts excluded from WR
+        # Recompute winrate from canonical counts (over async-queued values)
+        wr           = (_wins / _decisive) if _decisive > 0 else wr
         # Mark WR as unreliable below 10 decisive trades to avoid misleading 100%
         _wr_reliable = _decisive >= 10
 

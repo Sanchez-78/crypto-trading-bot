@@ -1363,10 +1363,31 @@ def evaluate_signal(signal):
         except Exception as _ad_err:
             log.debug("anti-deadlock error: %s", _ad_err)
 
+    # ════════════════════════════════════════════════════════════════════════════════
+    # V10.13o: PAIR-LEVEL CAUTION — ADA size penalty
+    # ════════════════════════════════════════════════════════════════════════════════
+    # ADA has shown persistent weak performance (42% WR in live data) across multiple
+    # checkpoints. Apply a lightweight size penalty (0.75×) to restrict risk until
+    # pair-level performance improves. This is not a hard block — ADA can still trade
+    # but at reduced size, preserving learning opportunity while limiting downside.
+    if sym == "ADAUSDT":
+        try:
+            from src.services.learning_monitor import lm_pair_stats
+            # Check ADA's overall record
+            ada_record = lm_pair_stats.get(sym, {})
+            ada_wr = ada_record.get("wr", 0.5)
+
+            if ada_wr < 0.45:  # Well below target 54%
+                auditor_factor = min(1.0, auditor_factor * 0.75)  # 25% size penalty
+                print(f"    [V10.13o] ADA_PAIR_CAUTION: wr={ada_wr:.1%} → size×0.75")
+                log.info(f"[V10.13o] {sym}: applying 25% size penalty due to weak pair-level WR ({ada_wr:.1%})")
+        except Exception as _ada_err:
+            log.debug("ADA pair caution check failed: %s", _ada_err)
+
     # V10.12e: Add unblock state and size multiplier to signal
     _unblock_size_mult = unblock_size_multiplier()
     _is_unblock = is_unblock_mode()
-    
+
     signal["confidence"]      = round(win_prob, 4)
     signal["ev"]              = round(ev, 4)
     signal["auditor_factor"]  = round(auditor_factor, 4)

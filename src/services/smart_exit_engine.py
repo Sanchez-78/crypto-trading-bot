@@ -1,5 +1,14 @@
 """
-Smart Exit Engine V10.13n — Evidence-based threshold tuning from 2-hour audit.
+Smart Exit Engine V10.13o — Scratch rebalance patch (exit distribution correction).
+
+V10.13o enhancements (rebalance patch based on live data):
+- SCRATCH_MIN_AGE: 85s→105s (delay activation to let trades develop into higher-value exits)
+- SCRATCH_MAX_PNL: 0.0020→0.0016 (narrow band to prevent premature flat-release)
+- Keeps PARTIAL_TP thresholds (already working, now get more opportunity to fire)
+- Keeps TRAILING_ACTIVATION (starved by scratch, not broken; will improve with scratch delay)
+- Rationale: V10.13n achieved timeout elimination but scratch became dominant (79% of exits),
+  preventing PARTIAL_TP_50/75 and higher trailing from developing. V10.13o rebalances without
+  reintroducing timeout risk.
 
 V10.13n enhancements (evidence-based from V10.13m audit data):
 - MICRO_TP: 0.0010→0.0012 (widen to reduce near-miss threshold gap)
@@ -102,12 +111,13 @@ TRAILING_RETRACE_PCT = 0.50    # Fire when retraced 50%+ from peak
 
 STAGNATION_MIN_AGE_S = 110     # V10.13k: was 240 — must be < min_timeout(120s)
 STAGNATION_MAX_PNL   = 0.0005  # |pnl| < 0.05% = stagnant
-# V10.13n: Evidence-based tuning
-# SCRATCH now fires wider + earlier to catch more drift positions
-# V10.13k: was 180 — completely unreachable because min_timeout=120s fired first.
+# V10.13o: Scratch rebalance patch (exit distribution correction)
+# V10.13n's scratch optimization (85s, 0.0020) caused dominance (~79% of exits)
+# preventing higher-value exits (PARTIAL_TP_50/75) from developing
+# V10.13o: delay activation + narrow band to let trades mature before scratch release
 # V10.13n: 90→85 (earlier release) + band widened (0.0015→0.0020)
-SCRATCH_MIN_AGE_S    = 85      # V10.13n: 90→85 (activate 5s earlier to catch near-flat sooner)
-SCRATCH_MAX_PNL      = 0.0020  # V10.13n: 0.0015→0.0020 (widen band to catch more ±0.20% range)
+SCRATCH_MIN_AGE_S    = 105     # V10.13o: 85→105 (delay 20s to give trades room to develop into higher-value exits)
+SCRATCH_MAX_PNL      = 0.0016  # V10.13o: 0.0020→0.0016 (narrow band to prevent premature flat-release classification)
 
 
 def get_harvest_threshold(regime: Optional[str] = None, threshold_type: str = "micro_tp") -> float:
