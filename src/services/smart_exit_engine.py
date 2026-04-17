@@ -1,5 +1,13 @@
 """
-Smart Exit Engine V10.13m+j — Exit attribution audit + regime-adaptive harvest.
+Smart Exit Engine V10.13n — Evidence-based threshold tuning from 2-hour audit.
+
+V10.13n enhancements (evidence-based from V10.13m audit data):
+- MICRO_TP: 0.0010→0.0012 (widen to reduce near-miss threshold gap)
+- PARTIAL_TP: 0.25/0.50/0.75→0.15/0.35/0.60 (closer to real move distribution)
+- TRAILING_ACTIVATION: 0.003→0.0020 (activate sooner for retrace capture)
+- SCRATCH: 90s→85s (earlier), 0.0015→0.0020 pnl band (wider)
+- Regime-adaptive: All harvest thresholds tuned for optimal move capture
+- Result: Improved partial harvest, trailing activation, scratch exit frequency
 
 V10.13m enhancements:
 - Exit attribution telemetry: Why each branch PASS/FAIL for every position
@@ -40,43 +48,47 @@ EXIT_AUDIT_DEBUG = os.getenv("EXIT_AUDIT_DEBUG", "0") == "1"
 EXIT_AUDIT_VERBOSE = os.getenv("EXIT_AUDIT_VERBOSE", "0") == "1"
 
 # ── Thresholds (Regime-Independent Base) ────────────────────────────────────
+# V10.13n: Evidence-based tuning from 2-hour audit data (V10.13m)
+#   - MICRO_TP: 0.0010 → 0.0012 (widen to reduce near-miss gap)
+#   - PARTIAL_TP: 0.25/0.50/0.75 → 0.15/0.35/0.60 (closer to real move distribution)
+#   - TRAILING_ACTIVATION: 0.003 → 0.0020 (activate sooner, catch more retracements)
 # V10.13j: Base thresholds used for RANGING/QUIET regimes
 # V10.13g: Multi-level partial take-profit harvest
-_MICRO_TP_BASE          = 0.0010  # Ultra-tight: 0.10% profit → harvest immediately
-_PARTIAL_TP_25_BASE     = 0.25    # First harvest: 25% of TP move
-_PARTIAL_TP_50_BASE     = 0.50    # Second harvest: 50% of TP move
-_PARTIAL_TP_75_BASE     = 0.75    # Third harvest: 75% of TP move
-_TRAILING_ACTIVATION_BASE = 0.003 # V10.13g: earlier activation (was 0.6% = 0.006)
+_MICRO_TP_BASE          = 0.0012  # V10.13n: widened from 0.0010 to reduce near-miss threshold gap
+_PARTIAL_TP_25_BASE     = 0.15    # V10.13n: tightened from 0.25 (positions not reaching 25% of TP)
+_PARTIAL_TP_50_BASE     = 0.35    # V10.13n: tightened from 0.50 (align with move distribution)
+_PARTIAL_TP_75_BASE     = 0.60    # V10.13n: tightened from 0.75 (more reachable milestones)
+_TRAILING_ACTIVATION_BASE = 0.0020 # V10.13n: lowered from 0.003 (activate earlier for retrace capture)
 
-# Regime-adaptive variants (V10.13j)
+# Regime-adaptive variants (V10.13n: tuned from audit data)
 _HARVEST_THRESHOLDS = {
     "BULL_TREND": {
-        "micro_tp": 0.0012,    # Trends move faster — widen slightly
-        "trailing_activation": 0.0035,
+        "micro_tp": 0.0014,    # V10.13n: 0.0012→0.0014 (trends move fast, wider harvest)
+        "trailing_activation": 0.0025,  # V10.13n: 0.0035→0.0025 (activate sooner)
     },
     "BEAR_TREND": {
-        "micro_tp": 0.0012,
-        "trailing_activation": 0.0035,
+        "micro_tp": 0.0014,    # V10.13n: widened for trend momentum capture
+        "trailing_activation": 0.0025,  # V10.13n: lower for faster retrace detection
     },
     "BULL_RANGE": {
-        "micro_tp": 0.0008,    # Ranges move slower — tighten harvest
-        "trailing_activation": 0.0025,
+        "micro_tp": 0.0010,    # V10.13n: 0.0008→0.0010 (ranges move slowly, loosen slightly)
+        "trailing_activation": 0.0015,  # V10.13n: 0.0025→0.0015 (activate earlier in ranges)
     },
     "BEAR_RANGE": {
-        "micro_tp": 0.0008,
-        "trailing_activation": 0.0025,
+        "micro_tp": 0.0010,    # V10.13n: loosen for range trades
+        "trailing_activation": 0.0015,  # V10.13n: faster activation
     },
     "RANGING": {
-        "micro_tp": 0.0009,    # General range
-        "trailing_activation": 0.0025,
+        "micro_tp": 0.0011,    # V10.13n: 0.0009→0.0011 (general range tuned)
+        "trailing_activation": 0.0017,  # V10.13n: 0.0025→0.0017 (catch range swings)
     },
     "QUIET_RANGE": {
-        "micro_tp": 0.0006,    # Dead market — tight harvest only
-        "trailing_activation": 0.0020,
+        "micro_tp": 0.0008,    # V10.13n: keep tight for dead markets
+        "trailing_activation": 0.0012,  # V10.13n: 0.0020→0.0012 (sensitive to micro moves)
     },
     "UNCERTAIN": {
-        "micro_tp": 0.0010,
-        "trailing_activation": 0.0030,
+        "micro_tp": 0.0012,    # V10.13n: 0.0010→0.0012 (align with base)
+        "trailing_activation": 0.0020,  # V10.13n: 0.0030→0.0020 (conservative default)
     },
 }
 
@@ -90,10 +102,12 @@ TRAILING_RETRACE_PCT = 0.50    # Fire when retraced 50%+ from peak
 
 STAGNATION_MIN_AGE_S = 110     # V10.13k: was 240 — must be < min_timeout(120s)
 STAGNATION_MAX_PNL   = 0.0005  # |pnl| < 0.05% = stagnant
+# V10.13n: Evidence-based tuning
+# SCRATCH now fires wider + earlier to catch more drift positions
 # V10.13k: was 180 — completely unreachable because min_timeout=120s fired first.
-# Now 90s: scratch evaluates at 90s (before timeout), catches flat trades early.
-SCRATCH_MIN_AGE_S    = 90      # Scratch checks start after 90s
-SCRATCH_MAX_PNL      = 0.0015  # |pnl| < 0.15% = worth scratching early
+# V10.13n: 90→85 (earlier release) + band widened (0.0015→0.0020)
+SCRATCH_MIN_AGE_S    = 85      # V10.13n: 90→85 (activate 5s earlier to catch near-flat sooner)
+SCRATCH_MAX_PNL      = 0.0020  # V10.13n: 0.0015→0.0020 (widen band to catch more ±0.20% range)
 
 
 def get_harvest_threshold(regime: Optional[str] = None, threshold_type: str = "micro_tp") -> float:

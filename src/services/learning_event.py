@@ -74,7 +74,12 @@ _update_queue: _queue.Queue = _queue.Queue(maxsize=500)
 
 
 def _worker():
-    """Background thread: drain _update_queue and apply metrics updates."""
+    """Background thread: drain _update_queue and apply DERIVED metrics.
+
+    NOTE: _trade_times, trades, signals_executed, last_trade_time are
+    already updated synchronously in update_metrics() — do NOT append
+    _trade_times here to avoid double-counting (race condition fix).
+    """
     while True:
         try:
             signal, trade = _update_queue.get(timeout=1)
@@ -82,7 +87,7 @@ def _worker():
             continue
         try:
             with _lock:
-                _trade_times.append(_time.time())
+                # _trade_times already appended synchronously — skip it here
                 _update_metrics_locked(signal, trade)
             try:
                 from src.services.state_manager import flush_metrics
@@ -202,34 +207,62 @@ def trades_in_window(seconds=900):
 
 
 def update_metrics(signal, trade):
-    """Non-blocking: enqueue metrics update for background processing."""
+    """Non-blocking: enqueue metrics update for background processing.
+
+    FIX — Race condition patch:
+    METRICS['trades'], 'signals_executed', and 'last_trade_time' are now
+    updated SYNCHRONOUSLY here (under lock) before the payload is enqueued.
+    This guarantees save_metrics_full() sees the correct trade count
+    immediately — not 0-30 seconds later when the async worker drains.
+    _update_metrics_locked still handles all complex derived fields (WR,
+    streaks, drawdown etc.) but must NOT touch trades/signals_executed
+    to avoid double-counting.
+    """
+    with _lock:
+        METRICS["trades"]          += 1
+        METRICS["signals_executed"] += 1
+        METRICS["last_trade_time"]   = _time.time()
+        _trade_times.append(METRICS["last_trade_time"])
+
     try:
         _update_queue.put_nowait((signal, trade))
     except _queue.Full:
-        # Queue saturated (500 pending updates) — process inline to avoid data loss
+        # Queue saturated — process complex metrics inline to avoid data loss
         with _lock:
-            _trade_times.append(_time.time())
             _update_metrics_locked(signal, trade)
 
 
 def _update_metrics_locked(signal, trade):
+    """Process all DERIVED metrics (WR, streaks, drawdown).
+
+    NOTE: trades / signals_executed / last_trade_time are already
+    incremented synchronously in update_metrics() — do NOT touch them here
+    to avoid double-counting (race condition fix).
+    Handles both async-queue path AND bootstrap_from_history() path.
+    The bootstrap path passes _bootstrap=True to re-enable counter increments.
+    """
     m      = METRICS
     profit = float(trade["profit"])
-    
+
     # ────────────────────────────────────────────────────────────────────────
     # PATCH 7: Anti-Zero Reward — Convert zero/tiny PnL to penalty
     # ────────────────────────────────────────────────────────────────────────
     if abs(profit) < 1e-8:
         profit = -0.0001  # Assign a small penalty to prevent reward signal collapse
-    
+
     result = trade["result"]
     sym    = signal["symbol"]
     conf   = float(signal.get("confidence", 0.5))
 
-    m["trades"] += 1
-    m["signals_executed"] += 1
+    # trades / signals_executed / last_trade_time already set in update_metrics()
+    # Only increment here if called from bootstrap (replay) path
+    _is_bootstrap_call = trade.get("_bootstrap_replay", False)
+    if _is_bootstrap_call:
+        m["trades"]          += 1
+        m["signals_executed"] += 1
+        m["last_trade_time"]   = float(trade.get("timestamp", _time.time()))
+
     m["profit"] += profit
-    m["last_trade_time"] = _time.time()
 
     # Neutral timeout: close_reason=="timeout" + |profit| < 0.001
     # Learning system already maps these to 0.0 PnL — METRICS must match.

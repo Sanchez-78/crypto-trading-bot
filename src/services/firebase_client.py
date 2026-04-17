@@ -38,6 +38,13 @@ _WEIGHTS_CACHE  = {"data": None, "ts": 0}
 _SIGNALS_CACHE  = {"data": [],   "ts": 0}
 _RETRY_QUEUE    = []   # trades buffered after save_batch failure; flushed on next call
 
+# Local mirror of system/stats — updated synchronously in increment_stats().
+# save_metrics_full() uses this as the authoritative trade count so the
+# dashboard always shows the value that matches the Firestore atomic counter,
+# not the (potentially lagged) in-memory METRICS dict.
+_local_stats: dict = {"trades": 0, "wins": 0, "losses": 0, "timeouts": 0}
+
+
 # ── Performance tier ───────────────────────────────────────────────────────────
 # False = conservative (default).  True = performance (flip when WR>45%, PF>1.5)
 PERF_MODE = False
@@ -186,11 +193,21 @@ def save_batch(batch):
         _HISTORY_CACHE["ts"]   = time.time()
         
         # Count wins/losses/timeouts for atomic stats update
+        # FIX: use the SAME timeout reason set as learning_event._update_metrics_locked
+        # to keep system/stats.total_timeouts consistent with METRICS["timeouts"].
+        _BATCH_TIMEOUT_REASONS = {
+            "timeout", "TIMEOUT_PROFIT", "TIMEOUT_FLAT", "TIMEOUT_LOSS",
+            "SCRATCH_EXIT", "STAGNATION_EXIT",
+        }
         wins     = sum(1 for t in slimmed if t.get("result") == "WIN")
         losses   = sum(1 for t in slimmed if t.get("result") == "LOSS")
-        timeouts = sum(1 for t in slimmed
-                       if t.get("reason") in ("timeout",) or t.get("close_reason") == "timeout")
+        timeouts = sum(
+            1 for t in slimmed
+            if t.get("close_reason", t.get("reason", "")) in _BATCH_TIMEOUT_REASONS
+            and abs(float(t.get("profit", 0))) < 0.001
+        )
         increment_stats(len(batch), wins, losses, timeouts)
+
         print(f"💾 Firebase: saved {len(batch)} trades (batch write)")
         return len(batch)
     except Exception as e:
@@ -222,7 +239,18 @@ _STATS_DOC = col("system") + "/stats"
 
 
 def increment_stats(n: int = 1, wins: int = 0, losses: int = 0, timeouts: int = 0) -> None:
-    """Atomically update counters in system/stats."""
+    """Atomically update counters in system/stats AND _local_stats cache.
+
+    _local_stats is updated synchronously so save_metrics_full() can read
+    the correct trade count without making an extra Firestore call.
+    """
+    global _local_stats
+    # Always update local mirror synchronously — zero Firestore I/O
+    if n > 0:        _local_stats["trades"]   += n
+    if wins > 0:     _local_stats["wins"]     += wins
+    if losses > 0:   _local_stats["losses"]   += losses
+    if timeouts > 0: _local_stats["timeouts"] += timeouts
+
     if db is None or (n <= 0 and wins <= 0 and losses <= 0 and timeouts <= 0):
         return
     try:
@@ -236,23 +264,30 @@ def increment_stats(n: int = 1, wins: int = 0, losses: int = 0, timeouts: int = 
         print(f"⚠️  increment_stats: {e}")
 
 
+
 def load_stats() -> dict:
-    """Return stats from system/stats, or empty dict if unavailable."""
+    """Return stats from system/stats.  Seeds _local_stats on first load."""
+    global _local_stats
     if db is None:
         return {}
     try:
         doc = db.document(_STATS_DOC).get()
         if doc.exists:
             d = doc.to_dict()
-            return {
+            result = {
                 "trades":   int(d.get("total_trades",   0)),
                 "wins":     int(d.get("total_wins",     0)),
                 "losses":   int(d.get("total_losses",   0)),
                 "timeouts": int(d.get("total_timeouts", 0)),
             }
+            # Seed local mirror so save_metrics_full starts with the right value
+            for k in _local_stats:
+                _local_stats[k] = max(_local_stats[k], result[k])
+            return result
     except Exception as e:
         print(f"⚠️  load_stats: {e}")
     return {}
+
 
 
 def load_trade_count() -> int | None:
@@ -428,15 +463,22 @@ def save_portfolio(data):
 # ── Metrics ───────────────────────────────────────────────────────────────────
 
 def save_metrics(data):
-    """Write run statistics to metrics/latest (main.py batch mode)."""
+    """Write legacy run statistics (main.py batch mode).
+
+    FIX: redirected to metrics/run_status to prevent overwriting the
+    main metrics/latest document that bot2 manages via save_metrics_full().
+    If both processes were writing to metrics/latest (one with merge=False,
+    one with merge=True), the app could see stale or partial data.
+    """
     if db is None:
         return
     try:
-        db.collection(col("metrics")).document("latest").set(
+        db.collection(col("metrics")).document("run_status").set(
             {**data, "timestamp": time.time()}, merge=True
         )
     except Exception as e:
         print(f"❌ save_metrics: {e}")
+
 
 
 def save_last_trade(trade):
