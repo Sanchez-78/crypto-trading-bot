@@ -1364,6 +1364,42 @@ def evaluate_signal(signal):
             log.debug("anti-deadlock error: %s", _ad_err)
 
     # ════════════════════════════════════════════════════════════════════════════════
+    # V10.13p: REGIME-PAIR SUPPRESSION — Weak SOL/DOT BEAR_TREND segments
+    # ════════════════════════════════════════════════════════════════════════════════
+    # V10.13p adds stronger suppression for proven weak regime+pair combinations.
+    # Live audit data shows:
+    # - SOLUSDT_BEAR_TREND: 19% WR (extremely weak)
+    # - DOTUSDT_BEAR_TREND: 31% WR (very weak)
+    # Apply pair+regime suppression to reduce exposure to these toxic combinations
+    # while preserving learning in other regimes.
+    try:
+        from src.services.learning_monitor import lm_pair_stats, _last_regime
+
+        # V10.13p: Regime-aware pair suppression
+        current_regime = _last_regime or "UNCERTAIN"
+        regime_pair_key = f"{sym}_{current_regime}"
+
+        if sym == "SOLUSDT" and current_regime == "BEAR_TREND":
+            # SOL in BEAR_TREND: 19% WR — apply 50% size penalty
+            rp_record = lm_pair_stats.get(regime_pair_key, {})
+            rp_wr = rp_record.get("wr", 0.5)
+            if rp_wr < 0.30:  # Well below target
+                auditor_factor = min(1.0, auditor_factor * 0.50)  # 50% size penalty
+                print(f"    [V10.13p] SOL_BEAR_SUPPRESSION: wr={rp_wr:.1%} → size×0.50")
+                log.info(f"[V10.13p] {sym}_{current_regime}: 50% size penalty ({rp_wr:.1%} WR)")
+
+        elif sym == "DOTUSDT" and current_regime == "BEAR_TREND":
+            # DOT in BEAR_TREND: 31% WR — apply 40% size penalty
+            rp_record = lm_pair_stats.get(regime_pair_key, {})
+            rp_wr = rp_record.get("wr", 0.5)
+            if rp_wr < 0.35:  # Well below target
+                auditor_factor = min(1.0, auditor_factor * 0.60)  # 40% size penalty
+                print(f"    [V10.13p] DOT_BEAR_SUPPRESSION: wr={rp_wr:.1%} → size×0.60")
+                log.info(f"[V10.13p] {sym}_{current_regime}: 40% size penalty ({rp_wr:.1%} WR)")
+    except Exception as _regime_pair_err:
+        log.debug("Regime-pair suppression check failed: %s", _regime_pair_err)
+
+    # ════════════════════════════════════════════════════════════════════════════════
     # V10.13o: PAIR-LEVEL CAUTION — ADA size penalty
     # ════════════════════════════════════════════════════════════════════════════════
     # ADA has shown persistent weak performance (42% WR in live data) across multiple

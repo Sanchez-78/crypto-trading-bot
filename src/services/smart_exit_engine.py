@@ -1,11 +1,18 @@
 """
-Smart Exit Engine V10.13o — Scratch rebalance patch (exit distribution correction).
+Smart Exit Engine V10.13p — Harvest conversion patch (near-miss to real harvest).
+
+V10.13p enhancements (convert near-miss exits into real harvests):
+- PARTIAL_TP_25_BASE: 0.15→0.13 (convert 27,804 near-miss events into real exits)
+- TRAILING_ACTIVATION_BASE: 0.0020→0.0018 (lower activation for more trailing opportunities)
+- Leaves SCRATCH unchanged (V10.13o's 105s/0.0016 band working well)
+- Rationale: V10.13o fixed timeout problem and improved partial mix, but 27,804 partial25_near_miss
+  events show massive untapped harvest opportunity. Positions getting very close to 25% TP but not
+  quite converting. V10.13p tightens thresholds slightly to convert near-misses into real exits,
+  improving exit diversification without risking PF regression.
 
 V10.13o enhancements (rebalance patch based on live data):
 - SCRATCH_MIN_AGE: 85s→105s (delay activation to let trades develop into higher-value exits)
 - SCRATCH_MAX_PNL: 0.0020→0.0016 (narrow band to prevent premature flat-release)
-- Keeps PARTIAL_TP thresholds (already working, now get more opportunity to fire)
-- Keeps TRAILING_ACTIVATION (starved by scratch, not broken; will improve with scratch delay)
 - Rationale: V10.13n achieved timeout elimination but scratch became dominant (79% of exits),
   preventing PARTIAL_TP_50/75 and higher trailing from developing. V10.13o rebalances without
   reintroducing timeout risk.
@@ -57,6 +64,9 @@ EXIT_AUDIT_DEBUG = os.getenv("EXIT_AUDIT_DEBUG", "0") == "1"
 EXIT_AUDIT_VERBOSE = os.getenv("EXIT_AUDIT_VERBOSE", "0") == "1"
 
 # ── Thresholds (Regime-Independent Base) ────────────────────────────────────
+# V10.13p: Harvest conversion patch — convert near-miss exits into real harvests
+#   - PARTIAL_TP_25: 0.15 → 0.13 (27,804 near-miss events in logs → activate more conversions)
+#   - TRAILING_ACTIVATION: 0.0020 → 0.0018 (give trailing more chance to arm and manage exits)
 # V10.13n: Evidence-based tuning from 2-hour audit data (V10.13m)
 #   - MICRO_TP: 0.0010 → 0.0012 (widen to reduce near-miss gap)
 #   - PARTIAL_TP: 0.25/0.50/0.75 → 0.15/0.35/0.60 (closer to real move distribution)
@@ -64,40 +74,40 @@ EXIT_AUDIT_VERBOSE = os.getenv("EXIT_AUDIT_VERBOSE", "0") == "1"
 # V10.13j: Base thresholds used for RANGING/QUIET regimes
 # V10.13g: Multi-level partial take-profit harvest
 _MICRO_TP_BASE          = 0.0012  # V10.13n: widened from 0.0010 to reduce near-miss threshold gap
-_PARTIAL_TP_25_BASE     = 0.15    # V10.13n: tightened from 0.25 (positions not reaching 25% of TP)
+_PARTIAL_TP_25_BASE     = 0.13    # V10.13p: 0.15→0.13 (convert 27,804 near-miss events)
 _PARTIAL_TP_50_BASE     = 0.35    # V10.13n: tightened from 0.50 (align with move distribution)
 _PARTIAL_TP_75_BASE     = 0.60    # V10.13n: tightened from 0.75 (more reachable milestones)
-_TRAILING_ACTIVATION_BASE = 0.0020 # V10.13n: lowered from 0.003 (activate earlier for retrace capture)
+_TRAILING_ACTIVATION_BASE = 0.0018 # V10.13p: 0.0020→0.0018 (lower activation for more trail opportunities)
 
-# Regime-adaptive variants (V10.13n: tuned from audit data)
+# Regime-adaptive variants (V10.13p: adjusted for harvest conversion)
 _HARVEST_THRESHOLDS = {
     "BULL_TREND": {
         "micro_tp": 0.0014,    # V10.13n: 0.0012→0.0014 (trends move fast, wider harvest)
-        "trailing_activation": 0.0025,  # V10.13n: 0.0035→0.0025 (activate sooner)
+        "trailing_activation": 0.0022,  # V10.13p: 0.0025→0.0022 (match lower base for consistency)
     },
     "BEAR_TREND": {
         "micro_tp": 0.0014,    # V10.13n: widened for trend momentum capture
-        "trailing_activation": 0.0025,  # V10.13n: lower for faster retrace detection
+        "trailing_activation": 0.0022,  # V10.13p: 0.0025→0.0022 (lower to catch more retracements)
     },
     "BULL_RANGE": {
         "micro_tp": 0.0010,    # V10.13n: 0.0008→0.0010 (ranges move slowly, loosen slightly)
-        "trailing_activation": 0.0015,  # V10.13n: 0.0025→0.0015 (activate earlier in ranges)
+        "trailing_activation": 0.0013,  # V10.13p: 0.0015→0.0013 (activate earlier in ranges)
     },
     "BEAR_RANGE": {
         "micro_tp": 0.0010,    # V10.13n: loosen for range trades
-        "trailing_activation": 0.0015,  # V10.13n: faster activation
+        "trailing_activation": 0.0013,  # V10.13p: 0.0015→0.0013 (lower for faster activation)
     },
     "RANGING": {
         "micro_tp": 0.0011,    # V10.13n: 0.0009→0.0011 (general range tuned)
-        "trailing_activation": 0.0017,  # V10.13n: 0.0025→0.0017 (catch range swings)
+        "trailing_activation": 0.0015,  # V10.13p: 0.0017→0.0015 (catch range swings earlier)
     },
     "QUIET_RANGE": {
         "micro_tp": 0.0008,    # V10.13n: keep tight for dead markets
-        "trailing_activation": 0.0012,  # V10.13n: 0.0020→0.0012 (sensitive to micro moves)
+        "trailing_activation": 0.0010,  # V10.13p: 0.0012→0.0010 (sensitive to micro moves)
     },
     "UNCERTAIN": {
         "micro_tp": 0.0012,    # V10.13n: 0.0010→0.0012 (align with base)
-        "trailing_activation": 0.0020,  # V10.13n: 0.0030→0.0020 (conservative default)
+        "trailing_activation": 0.0018,  # V10.13p: 0.0020→0.0018 (match new base)
     },
 }
 
