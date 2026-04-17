@@ -2035,10 +2035,15 @@ def on_price(data):
                 age_seconds=age_seconds,
                 direction=_direction,
                 max_favorable_move=max(0.0, _mfe),
+                # V10.13k: pass regime so micro-TP threshold is regime-adaptive
+                regime=pos["signal"].get("regime"),
             )
 
             if exit_eval:
-                reason = exit_eval.get("exit_type", "smart_exit").lower()
+                # V10.13k fix: preserve uppercase — learning_event + bot2 counters
+                # use uppercase keys (MICRO_TP, SCRATCH_EXIT…). .lower() was silently
+                # zeroing all smart-exit counters while trades DID close correctly.
+                reason = exit_eval.get("exit_type", "SMART_EXIT")
                 log.info(f"    🔥 Smart exit: {reason} | {exit_eval.get('reason')}")
         except Exception as e:
             log.debug(f"Smart exit check failed: {e}")

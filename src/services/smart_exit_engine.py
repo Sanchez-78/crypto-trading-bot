@@ -76,9 +76,11 @@ EARLY_STOP_THRESHOLD = 0.60    # Cut losers at 60% of SL distance
 TRAILING_MIN_PEAK    = 0.001   # Must have been >= 0.1% profitable to trail
 TRAILING_RETRACE_PCT = 0.50    # Fire when retraced 50%+ from peak
 
-STAGNATION_MIN_AGE_S = 240     # 4 min — below 5 min timeout ceiling
+STAGNATION_MIN_AGE_S = 110     # V10.13k: was 240 — must be < min_timeout(120s)
 STAGNATION_MAX_PNL   = 0.0005  # |pnl| < 0.05% = stagnant
-SCRATCH_MIN_AGE_S    = 180     # Scratch checks start after 3 min
+# V10.13k: was 180 — completely unreachable because min_timeout=120s fired first.
+# Now 90s: scratch evaluates at 90s (before timeout), catches flat trades early.
+SCRATCH_MIN_AGE_S    = 90      # Scratch checks start after 90s
 SCRATCH_MAX_PNL      = 0.0015  # |pnl| < 0.15% = worth scratching early
 
 
