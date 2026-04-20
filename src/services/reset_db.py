@@ -26,7 +26,10 @@ PRESERVE = set()
 COLLECTIONS = [
     "trades",
     "trades_compressed",
-    "model_state",
+    # V10.13s: Preserve model_state in all modes except full-with-confirmation
+    # Model state (calibrator, EV histories, edge stats) contains learned patterns
+    # from hundreds of trades; destroying it on every deploy loses all learning.
+    # "model_state",  # ← now preserved by default
     "weights",
     "metrics",
     "signals",
@@ -172,11 +175,13 @@ def learning_reset():
     print("🧪 LEARNING RESET START\n")
     actually_deleted = 0
 
-    # Keep raw trade history, reset learning/runtime layers
+    # Keep raw trade history AND calibrator/model state, reset only runtime signals
+    # V10.13s: Preserve model_state (calibrator, EV/score histories, edge_stats)
+    # across learning resets to retain learned patterns from historical trades.
     actually_deleted += wipe_collection("signals")
     actually_deleted += wipe_collection("signals_compressed")
     actually_deleted += wipe_collection("portfolio")
-    actually_deleted += wipe_collection("model_state")
+    # actually_deleted += wipe_collection("model_state")  # ← PRESERVED
     actually_deleted += wipe_collection("weights")
     actually_deleted += wipe_collection("advice")
     actually_deleted += wipe_collection("meta")

@@ -2257,7 +2257,7 @@ def on_price(data):
     # BUG FIX: Define bool_f before try block to prevent NameError if import fails
     bool_f = {}  # default empty if try block fails
     try:
-        from src.services.learning_monitor import lm_update
+        from src.services.learning_monitor import lm_update, METRICS as _LM_METRICS
         raw_f  = pos["signal"].get("features", {})
         bool_f = {k: v for k, v in raw_f.items() if isinstance(v, bool)}
         # V7: micro-PnL mapping — preserve directional signal for mid-range trades.
@@ -2275,6 +2275,12 @@ def on_price(data):
         lm_update(sym, reg_sig, learning_pnl,
                   ws=pos["signal"].get("ws", 0.5),
                   features=bool_f)
+
+        # V10.13s: Log learning signal reception to verify flow
+        _lm_n = _LM_METRICS.get("trades", 0)
+        _lm_health = _LM_METRICS.get("Health", 0)
+        log.debug(f"[V10.13s_LEARNING] {sym}/{reg_sig} pnl={learning_pnl:.4f} "
+                  f"n={_lm_n} health={_lm_health:.3f}")
     except Exception:
         pass
 

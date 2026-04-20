@@ -737,11 +737,18 @@ def _restore_full_state():
 
         state = load_model_state()
         if not state:
-            print("📥 No persisted model state — starting fresh")
+            print("📥 [V10.13s] No persisted model state — starting fresh (Firebase collection empty or reset)")
             _last_restore_source = "empty"
             return
 
         _last_restore_source = "firebase"  # Successfully loaded from Firebase
+
+        # V10.13s: Log recovery success to verify learning state is restored
+        cal_size = len(state.get("rde", {}).get("calibrator", {}))
+        ev_hist_size = len(state.get("rde", {}).get("ev_history", []))
+        edge_stat_size = len(state.get("rde", {}).get("edge_stats", {}))
+        print(f"📥 [V10.13s] Model state restored: calibrator={cal_size} buckets, "
+              f"ev_history={ev_hist_size} samples, edge_stats={edge_stat_size} feature/regime pairs")
 
         rde = state.get("rde", {})
         # Calibrator buckets — keyed as floats in memory, strings in Firestore
@@ -1761,6 +1768,19 @@ def evaluate_signal(signal):
                 log.info(f"[V10.13p] {sym}_{current_regime}: 40% size penalty ({rp_wr:.1%} WR)")
     except Exception as _regime_pair_err:
         log.debug("Regime-pair suppression check failed: %s", _regime_pair_err)
+
+    # ════════════════════════════════════════════════════════════════════════════════
+    # V10.13s: ABSOLUTE MINIMUM EV FLOOR — Prevent negative-edge trades
+    # ════════════════════════════════════════════════════════════════════════════════
+    # Log analysis shows trades with EV=-0.2125 being forced through in recovery mode.
+    # This is dangerous: even with unblock mode active, reject materially negative EV.
+    # Unblock should soften filters, not eliminate edge sanity.
+    MIN_ABSOLUTE_EV = -0.05  # Reject if worse than -0.05 (5 bp edge loss)
+    if ev < MIN_ABSOLUTE_EV:
+        print(f"    decision=REJECT_EV_FLOOR  ev={ev:.4f} < {MIN_ABSOLUTE_EV}")
+        track_blocked(reason="EV_FLOOR")
+        log.warning(f"[V10.13s] {sym}: Rejected due to absolute EV floor (ev={ev:.4f})")
+        return None
 
     # ════════════════════════════════════════════════════════════════════════════════
     # V10.13o: PAIR-LEVEL CAUTION — ADA size penalty
