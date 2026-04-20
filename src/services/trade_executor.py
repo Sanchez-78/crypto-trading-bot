@@ -96,9 +96,23 @@ def _adaptive_tp_sl(ev, wr):
     At ev=0.5, wr=0.6: tp_k=1.55, sl_k=0.75  (proven winner).
     At ev=-0.5, wr=0.4: tp_k=0.75, sl_k=1.05  (clipped to 1.0/0.6).
     Clamps: tp_k ∈ [1.0, 2.0], sl_k ∈ [0.6, 1.0].
+
+    V10.13s: Widen TP targets during cold-start to reduce timeout-driven exits.
+    During bootstrap with sparse data, EV/WR estimates are unreliable. Widening
+    TP targets makes them more reachable within extended hold windows, reducing
+    forced timeouts and improving learning signal (more TP/SL, fewer timeouts).
     """
     tp_k = 1.1 + (ev * 0.8) + ((wr - 0.5) * 0.5)
     sl_k = 0.9 - (ev * 0.3)
+
+    # V10.13s: Boost TP multiplier during cold-start
+    try:
+        from src.services.realtime_decision_engine import is_cold_start as _is_cs
+        if _is_cs():
+            tp_k *= 1.3  # widen TP by 30% during bootstrap to improve reachability
+    except Exception:
+        pass
+
     return min(max(tp_k, 1.0), 2.0), min(max(sl_k, 0.6), 1.0)
 
 
@@ -779,6 +793,11 @@ def _dynamic_hold(atr_abs, entry, sym=None, reg=None, adx=0.0):
     ATR tunes up to base+4 (was +3 in V7 — slight expansion for patience).
     ADX trend bonus (+2): confirmed trend needs more room to develop.
     Hard ceiling 17 prevents runaway holds.
+
+    V10.13s: Extended hold during cold-start to reduce timeout dominance.
+    During bootstrap (sparse data), EV estimates are unreliable and TP targets
+    tight. Extending hold time gives trades more opportunity to reach targets
+    instead of timing out prematurely.
     """
     atr_pct     = atr_abs / max(entry, 1e-9)
     trend_bonus = 2 if adx > 25 else 0
@@ -799,7 +818,19 @@ def _dynamic_hold(atr_abs, entry, sym=None, reg=None, adx=0.0):
     # Adaptive ATR adjustment (seconds-scale).
     atr_adj_s = int(100 * max(0.002, 0.01 / max(atr_pct, 1e-9)))
     hold      = max(base, min(base + 90, atr_adj_s + trend_bonus * 30))
-    return max(120, min(hold, 300))   # absolute ceiling 300s (5 min)
+
+    # V10.13s: Extend hold time during cold-start to reduce timeout exits.
+    # Bootstrap trades have weaker EV estimates; TP targets are tighter relative
+    # to expected move. Longer hold windows reduce forced timeouts while entries
+    # are still learning signal quality.
+    try:
+        from src.services.realtime_decision_engine import is_cold_start as _is_cs
+        if _is_cs():
+            hold = int(hold * 1.5)  # extend by 50% during bootstrap
+    except Exception:
+        pass
+
+    return max(120, min(hold, 450))   # V10.13s: ceiling raised 300s → 450s (7.5 min) during bootstrap
 
 
 def _force_trade_guard():
