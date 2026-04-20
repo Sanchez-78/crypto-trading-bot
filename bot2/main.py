@@ -1345,7 +1345,8 @@ def main():
     try:
         from src.services.realtime_decision_engine import (
             validate_runtime_state_consistency,
-            apply_reset_integrity_corrections
+            apply_reset_integrity_corrections,
+            compute_effective_maturity
         )
         _val_result = validate_runtime_state_consistency()
         if _val_result.get("mismatch"):
@@ -1354,6 +1355,13 @@ def main():
             print(f"  [V10.13s] ✅ Stale metrics cleared", file=sys.stderr, flush=True)
         else:
             print(f"  [V10.13s] ✅ State consistency validated", file=sys.stderr, flush=True)
+
+        # V10.13s: Compute unified maturity oracle — all modules read from this now
+        print("  [V10.13s] Computing unified maturity oracle...", file=sys.stderr, flush=True)
+        _maturity = compute_effective_maturity()
+        print(f"  [V10.13s] ✅ Maturity computed: trades={_maturity.get('effective_trade_count')} "
+              f"bootstrap={_maturity.get('bootstrap_mode')} cold_start={_maturity.get('cold_start_mode')}",
+              file=sys.stderr, flush=True)
     except Exception as _v13s_err:
         import logging as _log_v13s
         _log_v13s.getLogger(__name__).debug(f"V10.13s validation error: {_v13s_err}")

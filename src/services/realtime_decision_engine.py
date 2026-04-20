@@ -474,6 +474,66 @@ class Calibrator:
                 for b, v in sorted(self.buckets.items()) if v[1] > 0}
 
 
+# ════════════════════════════════════════════════════════════════════════════════
+# V10.13s: UNIFIED MATURITY ORACLE
+# All modules read maturity from here to prevent state divergence
+# ════════════════════════════════════════════════════════════════════════════════
+_MATURITY_CACHE = {
+    "effective_trade_count": 0,
+    "bootstrap_mode": True,
+    "cold_start_mode": True,
+    "cache_ts": 0,
+}
+
+def compute_effective_maturity():
+    """
+    V10.13s: Compute effective maturity after all hydration complete.
+
+    Source priority:
+    1. Learning monitor pair counts (freshest after reset)
+    2. Global METRICS (fallback if LM empty)
+
+    Assigns bootstrap/cold-start flags based on unified trade count.
+    Call once during startup; all modules then read from get_effective_maturity().
+    """
+    import time as _t
+    now = _t.time()
+
+    # Use cache if fresh (< 5s)
+    if _MATURITY_CACHE["cache_ts"] > 0 and (now - _MATURITY_CACHE["cache_ts"]) < 5.0:
+        return _MATURITY_CACHE.copy()
+
+    try:
+        from src.services.learning_monitor import lm_count
+        from src.services.learning_event import METRICS as _M
+
+        lm_total = sum(s.get("n", 0) for s in lm_count.values()) if lm_count else 0
+        global_total = _M.get("trades", 0)
+        effective_n = lm_total if lm_total > 0 else global_total
+
+        # Bootstrap: sparse learning data
+        bootstrap = effective_n < 100
+        cold_start = effective_n < 100 or (lm_total > 0 and max((s.get("n", 0) for s in lm_count.values()), default=0) < 15)
+
+        _MATURITY_CACHE.update({
+            "effective_trade_count": effective_n,
+            "bootstrap_mode": bootstrap,
+            "cold_start_mode": cold_start,
+            "cache_ts": now,
+            "lm_total": lm_total,
+            "global_total": global_total,
+        })
+    except Exception as _e:
+        pass
+
+    return _MATURITY_CACHE.copy()
+
+
+def get_effective_maturity() -> dict:
+    """V10.13s: Read unified maturity state (call compute_effective_maturity() once at startup)."""
+    return _MATURITY_CACHE.copy()
+
+
 calibrator = Calibrator()
 ev_history = deque(maxlen=200)   # ALL evaluated EVs (including skipped)
 _seeded    = [False]
