@@ -467,7 +467,7 @@ def bootstrap_from_history(trades):
         # Firestore stores result="WIN" when pnl>0, even 0.0005 — a tiny-positive
         # timeout would otherwise be miscounted as a win and inflate WR.
         if _bs_neutral:
-            m["timeouts"] = m.get("timeouts", 0) + 1
+            if not _count_seeded: m["timeouts"] = m.get("timeouts", 0) + 1
         elif result == "WIN":
             if not _count_seeded: m["wins"] += 1
             m["win_streak"] += 1; m["loss_streak"] = 0
