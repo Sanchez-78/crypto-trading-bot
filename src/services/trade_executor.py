@@ -37,6 +37,15 @@ import logging
 import random
 import time
 from src.core.guard import guard, FailureLevel
+try:
+    from src.services.learning_instrumentation import (
+        increment_trades_closed, increment_lm_update_called, increment_lm_update_success
+    )
+except ImportError:
+    # Fallback if instrumentation module not available
+    increment_trades_closed = lambda: None
+    increment_lm_update_called = lambda: None
+    increment_lm_update_success = lambda: None
 
 log = logging.getLogger(__name__)
 
@@ -2253,6 +2262,7 @@ def on_price(data):
     bayes_update(sym, reg_sig, profit)
     bandit_update(sym, reg_sig, max(-0.05, min(0.05, profit)))
     record_trade_close(sym, reg_sig, profit)
+    increment_trades_closed()  # V10.13s Phase 2: Track trade close event
 
     # BUG FIX: Define bool_f before try block to prevent NameError if import fails
     bool_f = {}  # default empty if try block fails
@@ -2277,7 +2287,8 @@ def on_price(data):
                   features=bool_f)
 
         # V10.13s: Log learning signal reception to verify flow
-        _lm_n = _LM_METRICS.get("trades", 0)
+        increment_lm_update_success()  # V10.13s Phase 2: Track lm_update success
+    _lm_n = _LM_METRICS.get("trades", 0)
         _lm_health = _LM_METRICS.get("Health", 0)
         log.debug(f"[V10.13s_LEARNING] {sym}/{reg_sig} pnl={learning_pnl:.4f} "
                   f"n={_lm_n} health={_lm_health:.3f}")

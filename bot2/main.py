@@ -1223,11 +1223,19 @@ def main():
     # V10.13s: Explicit startup tracing with canonical version
     import sys
     from src.core.version import get_version_string
+    from src.services.learning_instrumentation import format_lm_counters
 
     version_str = get_version_string()
     print("\n" + "="*80, file=sys.stderr, flush=True)
     print(f"🚀 MAIN() STARTING — {version_str}", file=sys.stderr, flush=True)
     print("="*80, file=sys.stderr, flush=True)
+    
+    # V10.13s Phase 2: Print learning pipeline instrumentation counters
+    try:
+        counters_str = format_lm_counters()
+        print(f"{counters_str}", file=sys.stderr, flush=True)
+    except Exception as _lm_counter_err:
+        print(f"[WARNING] Failed to print LM counters: {_lm_counter_err}", file=sys.stderr, flush=True)
 
     # Initialize event bus handlers (Zero Bug V2 Migration Phase 1)
     print("  [1/7] Initializing event bus handlers...", file=sys.stderr, flush=True)
