@@ -1168,6 +1168,30 @@ def print_cycle_summary(now: float) -> None:
         else:
             rescue_str = ""
 
+        # V10.13r: Add bootstrap telemetry if cold-start mode is active
+        bootstrap_str = ""
+        try:
+            from src.services.realtime_decision_engine import is_cold_start, get_bootstrap_summary
+            if is_cold_start():
+                bs_summary = get_bootstrap_summary()
+                if bs_summary.get("relaxed_ofi") or bs_summary.get("softened_fast_fail") or bs_summary.get("freq_relief") or bs_summary.get("threshold_relief"):
+                    uptime_min = (_curr_time - bs_summary.get("start_ts", _curr_time)) / 60.0
+                    global_n = 0
+                    try:
+                        from src.services.learning_event import METRICS as _M_bs
+                        global_n = _M_bs.get("trades", 0)
+                    except Exception:
+                        pass
+                    bootstrap_str = (
+                        f"  | [V10.13r_BOOTSTRAP] active=True global_n={global_n} uptime_min={uptime_min:.1f} "
+                        f"relaxed_ofi={bs_summary.get('relaxed_ofi', 0)} "
+                        f"softened_ff={bs_summary.get('softened_fast_fail', 0)} "
+                        f"freq_relief={bs_summary.get('freq_relief', 0)} "
+                        f"threshold_relief={bs_summary.get('threshold_relief', 0)}"
+                    )
+        except Exception:
+            pass
+
         print(
             f"[V10.13q CYCLE] "
             f"gen={_cycle_stats['candidates_generated']} "
@@ -1175,7 +1199,7 @@ def print_cycle_summary(now: float) -> None:
             f"exe={_cycle_stats['candidates_executed']} "
             f"top={top_block} "
             f"ev_thr={ev_thr:.4f} score_thr={score_thr:.4f} "
-            f"unblock={'Y' if unblock else 'N'} idle={idle_sec:.0f}s{upstream_str}{hard_soft_str}{kill_str}{rescue_str}"
+            f"unblock={'Y' if unblock else 'N'} idle={idle_sec:.0f}s{upstream_str}{hard_soft_str}{kill_str}{rescue_str}{bootstrap_str}"
         )
     except Exception as e:
         import logging as _log
@@ -1349,8 +1373,9 @@ def main():
 
         # V10.13q: Reset per-cycle kill audit (entry rejection telemetry)
         try:
-            from src.services.realtime_decision_engine import reset_kill_audit
+            from src.services.realtime_decision_engine import reset_kill_audit, reset_bootstrap_state
             reset_kill_audit()
+            reset_bootstrap_state()  # V10.13r: Reset cycle-level bootstrap counters
         except (ImportError, Exception):
             pass  # Fail silently if not available
 

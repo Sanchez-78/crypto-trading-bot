@@ -76,6 +76,74 @@ def get_kill_audit_summary() -> dict:
     }
 
 
+# ── V10.13r: Cold-start recovery telemetry (bootstrap deadlock relief) ────────────
+# Track bootstrap recovery activities to verify patch effectiveness
+_bootstrap_state = {
+    "active": False,
+    "start_ts": _time.time(),
+    "global_n_at_start": 0,
+    "relaxed_ofi": 0,          # OFI_HARD softened to soft
+    "softened_fast_fail": 0,   # FAST_FAIL_HARD demoted to soft
+    "freq_relief": 0,          # FREQ_CAP relaxed
+    "threshold_relief": 0,     # EV/score thresholds reduced
+    "bootstrap_entries": 0,    # Entries enabled by bootstrap mode
+}
+
+def get_bootstrap_summary() -> dict:
+    """Return cold-start bootstrap telemetry."""
+    return dict(_bootstrap_state)
+
+def reset_bootstrap_state():
+    """Reset cycle counters (call at start of each cycle)."""
+    global _bootstrap_state
+    _bootstrap_state["relaxed_ofi"] = 0
+    _bootstrap_state["softened_fast_fail"] = 0
+    _bootstrap_state["freq_relief"] = 0
+    _bootstrap_state["threshold_relief"] = 0
+
+
+def is_cold_start() -> bool:
+    """
+    V10.13r: Detect if bot is in cold-start phase (sparse learning data).
+    
+    Returns True if:
+    - global completed trades < 100 (learning phase)
+    OR
+    - pair/regime sample counts immature < 15 (insufficient pair history)
+    OR
+    - uptime < 60 min AND completed trades still low
+    
+    This enables bootstrap-tolerant filtering during early phase.
+    Auto-exits when data accumulates.
+    """
+    try:
+        from src.services.learning_event import METRICS as _M2
+        from src.services.learning_monitor import lm_count as _lc2
+        
+        _global_n = _M2.get("trades", 0)
+        
+        # Condition 1: global trades < 100 (immature)
+        if _global_n < 100:
+            return True
+        
+        # Condition 2: Check if any pair/regime has very few samples
+        if _lc2:
+            _min_pair_n = min(_lc2.values()) if _lc2 else 0
+            if _min_pair_n < 15:
+                return True
+        
+        # Condition 3: Recent restart (uptime < 60 min) + low trades
+        _uptime_min = (_time.time() - _bootstrap_state["start_ts"]) / 60.0
+        if _uptime_min < 60 and _global_n < 150:
+            return True
+            
+        return False
+        
+    except Exception as _cse:
+        log.debug("cold_start check error: %s", _cse)
+        return False  # Default to False (use mature filters)
+
+
 # ── V10.13q: Improved idle time calculation (fixed timestamp source issues) ─────
 
 def safe_idle_seconds(last_trade_ts: float | None = None, now: float | None = None) -> float:
@@ -928,6 +996,13 @@ def evaluate_signal(signal):
     sl_move = max(atr * _SL_MULT.get(regime, 0.8) / price, MIN_SL)
     rr      = max(tp_move / sl_move, MIN_RR)
     ev_threshold = get_ev_threshold()
+    
+    # V10.13r: Slightly relax thresholds during cold-start (enable more learning flow)
+    _cold_start_threshold_relief = False
+    if is_cold_start():
+        ev_threshold *= 0.95  # Reduce by 5% (e.g., 0.050 → 0.0475)
+        _cold_start_threshold_relief = True
+        _bootstrap_state["threshold_relief"] += 1
 
     # V10.13b: Track actual thresholds for live dashboard
     global _last_ev_threshold
@@ -996,10 +1071,22 @@ def evaluate_signal(signal):
         # of clean data before rate-limiting makes sense
     except Exception:
         _freq_active = True
-    if _freq_active and t15 > MAX_TRADES_15:
+    
+    # V10.13r: Relax FREQ_CAP during cold-start (enables more learning flow)
+    _freq_cap_threshold = MAX_TRADES_15
+    _cold_freq_relief = False
+    if is_cold_start() and _freq_active:
+        _freq_cap_threshold = int(MAX_TRADES_15 * 1.5)  # Allow 22 instead of 15
+        _cold_freq_relief = True
+    
+    if _freq_active and t15 > _freq_cap_threshold:
         track_blocked(reason="FREQ_CAP")
-        print(f"    decision=SKIP_FREQ  t15={t15}>{MAX_TRADES_15}")
+        _relief_str = " (cold_start_relaxed)" if _cold_freq_relief else ""
+        print(f"    decision=SKIP_FREQ  t15={t15}>{_freq_cap_threshold}{_relief_str}")
         return None
+    
+    if _cold_freq_relief:
+        _bootstrap_state["freq_relief"] += 1
 
     # ── B19: regime-aware RSI neutrality gate ────────────────────────────────
     # RANGING / QUIET_RANGE: neutral RSI (40-60) is FINE — mean reversion valid.
@@ -1082,12 +1169,31 @@ def evaluate_signal(signal):
                 _ff_s   = max(float(np.std(_ff_pnl)), 0.002)
                 _ff_ev  = float(np.tanh(_ff_m / _ff_s))
 
+                # V10.13r: HARD block softening during cold-start (immature samples)
+                # During bootstrap, immature pairs (n < 15) should be soft, not hard
+                # This prevents premature rejection of underdeveloped pairs
+                _cold_start_active = is_cold_start()
+                _immature_samples = _ff_n < 15
+                
                 # HARD block only for truly hopeless (WR < 5% AND EV <= 0.0)
+                # UNLESS in cold-start + immature samples (downgrade to SOFT)
                 if _ff_wr < 0.05 and _ff_ev <= 0.0:
-                    track_blocked(reason="FAST_FAIL_HARD")
-                    print(f"    decision=SKIP_FAST_FAIL_HARD  {sym}/{regime}  "
-                          f"wr={_ff_wr:.0%}  ev={_ff_ev:.3f}  n={_ff_n}")
-                    return None
+                    if _cold_start_active and _immature_samples:
+                        # V10.13r: Downgrade HARD to SOFT during cold-start
+                        _fast_fail_soft = True
+                        _ff_penalty = 0.50  # Moderate penalty for immature losers
+                        _ff_conf_mult = _ff_penalty
+                        _ff_score_mult = _ff_penalty
+                        _bootstrap_state["softened_fast_fail"] += 1
+                        track_blocked(reason="FAST_FAIL_SOFT_BOOTSTRAP")
+                        print(f"    [V10.13r] FAST_FAIL_SOFT_BOOTSTRAP  {sym}/{regime}  "
+                              f"wr={_ff_wr:.0%}  ev={_ff_ev:.3f}  n={_ff_n}  "
+                              f"(immature, cold_start, softened from HARD)")
+                    else:
+                        track_blocked(reason="FAST_FAIL_HARD")
+                        print(f"    decision=SKIP_FAST_FAIL_HARD  {sym}/{regime}  "
+                              f"wr={_ff_wr:.0%}  ev={_ff_ev:.3f}  n={_ff_n}")
+                        return None
 
                 # V10.13q: SOFT — never blocks, only applies confidence penalty
                 # This prevents FAST_FAIL_SOFT from acting as a shadow hard filter
@@ -1288,6 +1394,11 @@ def evaluate_signal(signal):
     # V10.12d: Apply timing penalty to EV before score gate
     _ev_adj = ev * _timing_mult
     _score_threshold = current_score_threshold()
+    
+    # V10.13r: Slightly relax score threshold during cold-start
+    if is_cold_start():
+        _score_threshold *= 0.96  # Reduce by 4% to make gate easier during bootstrap
+        print(f"    [V10.13r] SCORE_THRESHOLD_COLD_START: relaxed to {_score_threshold:.4f}")
 
     # V10.13q: Apply pair-block score uplift (harder threshold for weak pairs)
     if _pair_score_uplift > 0:
@@ -1413,28 +1524,41 @@ def evaluate_signal(signal):
     # ── V10.13h: OFI toxicity guard — ultra-selective hard block, bounded soft penalties ─
     # V10.13h: Hard block 0.95+ (ultra-extreme) | Soft 0.70-0.95 (bounded penalty)
     # This narrower split improves selectivity: fewer false hard rejects, more pass-through
+    # V10.13r: During cold-start, downgrade OFI hard to soft (preserve learning flow)
     _ofi_size = 1.0
     _ofi_soft_blocked = False
     try:
         from src.services.ofi_guard import is_toxic as _ofi_toxic, ofi_size_factor as _ofi_sf
         _ofi_blocked, _ofi_reason = _ofi_toxic(sym, signal.get("action", "BUY"))
 
-        # V10.13h: Hard OFI block ONLY for ultra-extreme OFI (0.95+)
+        # V10.13r: Hard OFI block ONLY for ultra-extreme OFI (0.95+)
+        # UNLESS in cold-start mode, then apply soft penalty instead
         if _ofi_blocked and not _unblock_fallback_used:
-            track_blocked(reason="OFI_TOXIC_HARD")
-            print(f"    decision=OFI_TOXIC_HARD  {_ofi_reason}")
-            
-            # V10.13j: Log OFI hard block telemetry
-            try:
-                from src.services.adaptive_block_telemetry import log_ofi_block
-                log_ofi_block(
-                    "OFI_TOXIC_HARD", sym, signal.get("action", "BUY"), _ofi_reason,
-                    1.0, "HARD", "OFI toxicity exceeded 0.95 threshold (ultra-extreme)"
-                )
-            except Exception:
-                pass
-            
-            return None
+            _cold_start_ofi = is_cold_start()
+            if _cold_start_ofi:
+                # V10.13r: Soften OFI hard block during bootstrap
+                # Apply moderate penalty but don't kill the trade
+                _ofi_size = 0.70  # Significant size reduction, but allows through
+                _ofi_soft_blocked = True
+                _bootstrap_state["relaxed_ofi"] += 1
+                track_blocked(reason="OFI_TOXIC_SOFT_BOOTSTRAP")
+                print(f"    [V10.13r] OFI_SOFT_BOOTSTRAP  {_ofi_reason}  size×0.70 (cold_start, normally HARD)")
+            else:
+                # Mature mode: hard block ultra-extreme OFI
+                track_blocked(reason="OFI_TOXIC_HARD")
+                print(f"    decision=OFI_TOXIC_HARD  {_ofi_reason}")
+                
+                # V10.13j: Log OFI hard block telemetry
+                try:
+                    from src.services.adaptive_block_telemetry import log_ofi_block
+                    log_ofi_block(
+                        "OFI_TOXIC_HARD", sym, signal.get("action", "BUY"), _ofi_reason,
+                        1.0, "HARD", "OFI toxicity exceeded 0.95 threshold (ultra-extreme)"
+                    )
+                except Exception:
+                    pass
+                
+                return None
 
         # Always apply soft OFI size penalty (even for fallback)
         _ofi_size = _ofi_sf(sym, signal.get("action", "BUY"))
