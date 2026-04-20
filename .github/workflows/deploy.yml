@@ -1,24 +1,50 @@
+cat > .github/workflows/deploy.yml << 'WORKFLOW_EOF'
 name: Deploy to Hetzner
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    
     steps:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.HETZNER_HOST }}
-          username: cryptomaster
+          username: ${{ secrets.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_KEY }}
           script: |
             set -e
             cd /opt/cryptomaster
-            git pull origin main
-            venv/bin/pip install -r requirements.txt -q
-            sudo systemctl restart cryptomaster
-            sleep 3
-            sudo systemctl is-active cryptomaster
+            
+            # V10.13s FIX: Configure git safe directory FIRST
+            git config --global --add safe.directory /opt/cryptomaster
+            
+            # Check for updates
+            git fetch origin main
+            LOCAL=$(git rev-parse HEAD)
+            REMOTE=$(git rev-parse origin/main)
+            
+            if [ "$LOCAL" != "$REMOTE" ]; then
+              echo "[$(date)] Pulling update: $LOCAL → $REMOTE"
+              git pull origin main
+              
+              # Kill old bot
+              pkill -f "python.*start.py" || true
+              sleep 2
+              
+              # Clear Firebase state
+              /opt/cryptomaster/venv/bin/python -m src.services.reset_db 2>/dev/null || true
+              sleep 1
+              
+              # Start bot
+              nohup /opt/cryptomaster/venv/bin/python start.py > /opt/cryptomaster/logs/trading.log 2>&1 &
+              echo "[$(date)] ✅ Bot restarted (PID: $!)"
+            else
+              echo "[$(date)] ✓ Already up-to-date"
+            fi
+WORKFLOW_EOF
