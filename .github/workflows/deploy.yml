@@ -9,7 +9,6 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    
     steps:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
@@ -20,31 +19,20 @@ jobs:
           script: |
             set -e
             cd /opt/cryptomaster
-            
-            # V10.13s FIX: Configure git safe directory FIRST
             git config --global --add safe.directory /opt/cryptomaster
-            
-            # Check for updates
             git fetch origin main
             LOCAL=$(git rev-parse HEAD)
             REMOTE=$(git rev-parse origin/main)
-            
             if [ "$LOCAL" != "$REMOTE" ]; then
-              echo "[$(date)] Pulling update: $LOCAL → $REMOTE"
+              echo "[$(date)] Deploying: $LOCAL → $REMOTE"
               git pull origin main
-              
-              # Kill old bot
               pkill -f "python.*start.py" || true
               sleep 2
-              
-              # Clear Firebase state
               /opt/cryptomaster/venv/bin/python -m src.services.reset_db 2>/dev/null || true
               sleep 1
-              
-              # Start bot
               nohup /opt/cryptomaster/venv/bin/python start.py > /opt/cryptomaster/logs/trading.log 2>&1 &
-              echo "[$(date)] ✅ Bot restarted (PID: $!)"
+              echo "[$(date)] ✅ Bot restarted"
             else
-              echo "[$(date)] ✓ Already up-to-date"
+              echo "[$(date)] ✓ Up-to-date"
             fi
 WORKFLOW_EOF
