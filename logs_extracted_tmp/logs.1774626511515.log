@@ -1,583 +1,506 @@
-   Nejhorsi  -0.00003487
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Posledni obchod  33s zpet
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     VYSLEDKY PO MENACH
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   ────────────────────────────────────────────────────────
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Mena  Obch  WR  Bar          Zisk
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     --------------------------------------------------
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     BTC  2  50%  ━━━━━━━━━━●─────────── 50%  -0.00000162  ?
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     ETH  4  100%  ━━━━━━━━━━━━━━━━━━━━━● 100%  +0.00001907  OK
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     ADA  4  50%  ━━━━━━━━━━●─────────── 50%  -0.00000345  ?
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     BNB  2  50%  ━━━━━━━━━━●─────────── 50%  -0.00000031  ?
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     DOT  4  50%  ━━━━━━━━━━●─────────── 50%  -0.00001710  ?
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     SOL  7  71%  ━━━━━━━━━━━━━━●─────── 71%  +0.00004296  OK
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     XRP  2  0%  ●───────────────────── 0%  -0.00001505  X
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     UCENI – STAV A USPESNOST
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   ────────────────────────────────────────────────────────
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Kalibrace      KALIBROVAN  ✓  ━━━━━━━━━━━━━━━━━━━━━● 100%  (61 obchodu celkem)
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Trend uceni    ZHORŠUJE SE 📉
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Poslednich 50    32.0%  vs  prumer 60.0%  (-28.0%)
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     EV vykon       prumer 0.033  min 0.030  max 0.040  (50 obch)
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Uzavreni       TP 0%  SL 0%  trail 0%  timeout 0%
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Kalibrace p    p=49.7%  WR=60.0%  odchylka 10.3pp  ok
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     WR dle rezimu
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       BULL   ━━━━━━━━━●──────────── 47%  47%  (38 obch)
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       BEAR   ━━━━━━●─────────────── 35%  35%  (23 obch)
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     AUDITOR  (ochrana strategie)
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   ────────────────────────────────────────────────────────
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     EV prah              -0.285  score prah 0.173  t15=24  t60=61  aktivni
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Velikost pozice      0.60x  EV-only · loss streak → scale · DD halt 40%
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     STRATEGIE  (ADX + EMA + MACD + BB + RSI)
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   ────────────────────────────────────────────────────────
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Rezim trhu   BULL TREND  silny vzestup  (71%)
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Signaly (THIS CYCLE)  0 kandidati  (cele: 10574 zachyceno  61 provedeno)
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Filtrace      0.0%  projde filtrem  TP: 1.2xATR  /  SL: 0.8xATR  (RR 1.5:1)  EV-only
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     POSLEDNI ROZHODNUTI
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   ────────────────────────────────────────────────────────
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     BTC  PRODEJ  $75,155.4550  p:50%  ev:0.034  BEAR
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     ETH  PRODEJ  $2,307.4450  p:50%  ev:0.035  BEAR  PROHRA
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     ADA  KUPUJ   $0.2467  p:50%  ev:0.030  BULL
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     BNB  PRODEJ  $624.6150  p:50%  ev:0.030  BULL
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     DOT  KUPUJ   $1.2585  p:50%  ev:0.030  BULL
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     SOL  PRODEJ  $84.9450  p:50%  ev:0.030  BULL
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     XRP  KUPUJ   $1.4190  p:50%  ev:0.030  BEAR
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   ────────────────────────────────────────────────────────
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   Sbiram data ━━━ ● Trenink ─── Aktivni
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   ────────────────────────────────────────────────────────
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   STAV:  TRENINK  (zisk > 0)
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]: ============================================================
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]: === EXECUTION ENGINE ===
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   Equity:   0.999922  |  DD: 0.02%
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   Exposure: 0.003  |  Positions: 1
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   Sharpe:   0.000  |  WR: 42.62%  |  Edge: 0.50000  |  MaxDD: 0.00%
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   Failure:  0.000  [OK]
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     XRPUSDT      BEAR_TREND   EV:+0.0000  Size:0.0032
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]: === LEARNING MONITOR ===
-Apr 20 12:43:33 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   (waiting for 10 closed trades per pair)
-Apr 20 12:43:35 ubuntu-4gb-nbg1-1 cryptomaster[480649]: WARNING:root:on_price(BNBUSDT): Generated FORCED signal SHORT
-Apr 20 12:43:39 ubuntu-4gb-nbg1-1 cryptomaster[480649]: WARNING:root:on_price(BTCUSDT): Generated FORCED signal SHORT
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]: WARNING:root:on_price(SOLUSDT): Generated FORCED signal LONG
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   Features (WR per signal key):
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     is_weekend            [------------]  0%  -
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   [!] LEARNING: NO LEARNING SIGNAL DETECTED
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   Health: 0.000  [BAD]
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]: ========================
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]: [V10.13g EXIT] TP=0 SL=0 micro=2 be=0 partial=(16,0,0) trail=0 scratch=36 stag=0 harvest=0 t_profit=0 t_flat=0 t_loss=0
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   → Harvest rate: 33.3% (18/54)
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]: 📊 [V10.13m EXIT_AUDIT]
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   winners: SCRATCH_EXIT=36 PARTIAL_TP_25=16 EARLY_STOP=4 MICRO_TP=2
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   near_miss: partial25_near_miss=57742 micro_near_miss=28471 scratch_near_miss=780
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   top_rejects:
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   🔴 BNB $624.5050 | [FORCED_EXPLORE] sc:3/7  ws:0.50 | BEAR_TREND | conf:47% []
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     EV=0.050  p=0.44  rr=1.25  ws=0.500  score=0.185[n=61]  t15=24  spread=0.000  af=0.70
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     RDE[v10.10b]: ev=0.050 thr=-0.285 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     coherence[v10.12]: 0.675  ev 0.050→0.034
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     [V10.13r] SCORE_THRESHOLD_COLD_START: relaxed to 0.1728
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     decision=TAKE  ev=0.0338  p=0.4369  af=0.70  coh=0.675
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   🔴 BTC $75,179.9950 | [FORCED_EXPLORE] sc:3/7  ws:0.50 | BULL_TREND | conf:23% []
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=61]  t15=24  spread=0.000  af=0.70
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     RDE[v10.10b]: ev=0.050 thr=-0.285 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     coherence[v10.12]: 0.500  ev 0.050→0.030
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     [V10.13r] SCORE_THRESHOLD_COLD_START: relaxed to 0.1728
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     decision=TAKE  ev=0.0300  p=0.5000  af=0.70  coh=0.500
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   🔴 SOL $84.9550 | [FORCED_EXPLORE] sc:3/7  ws:0.50 | BULL_TREND | conf:25% []
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=61]  t15=24  spread=0.000  af=0.70
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     RDE[v10.10b]: ev=0.050 thr=-0.285 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     coherence[v10.12]: 0.500  ev 0.050→0.030
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     [V10.13r] SCORE_THRESHOLD_COLD_START: relaxed to 0.1728
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     decision=TAKE  ev=0.0300  p=0.5000  af=0.70  coh=0.500
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   [!] LEARNING: NO LEARNING SIGNAL DETECTED
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   ── CYCLE SNAPSHOT ────────────────────────────────────────
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]: {
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   "cycle_time": 1776689023.8146122,
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   "positions": 1,
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   "learning": {
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     "health": 0.0,
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     "alert": "BAD",
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     "mode": "WARM",
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     "pairs": {},
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     "features": {
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       "is_weekend": 0.0
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     },
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     "block_reasons": {
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       "OFI_TOXIC_SOFT": 824,
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       "OFI_TOXIC_SOFT_BOOTSTRAP": 803,
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       "SKIP_SCORE_SOFT": 116
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     },
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     "completed_trades": 61,
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     "best_edge": "Unknown",
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     "defense": {
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       "wall_exits": 0,
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       "timeouts": 0,
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       "l2_rejected": 0,
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       "corr_rejected": 0,
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       "defended": 0,
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       "efficiency": 0.0
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     },
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     "concept_drift": false
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   }
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]: }
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]: ============================================================
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   CRYPTOMASTER  |  0h 23m 30s  | TRENINK
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]: ============================================================
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     ZIVE CENY  (Binance · kazde 1 s)
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   ────────────────────────────────────────────────────────
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     BTC  $   75,192.1450   ─  +0.000%
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     ETH  $    2,310.3750   ─  +0.000%
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     ADA  $        0.2465   ─  +0.000%
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     BNB  $      624.5050   ─  +0.000%
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     DOT  $        1.2595   ─  +0.000%
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     SOL  $       84.9550   ─  +0.000%
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     XRP  $        1.4192   ─  +0.000%  [OPEN]
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     OTEVRENE POZICE
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   ────────────────────────────────────────────────────────
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     XRP  BUY  $1.4198->$1.4192  -0.000001  TP:0.80%  SL:0.40%
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     VYSLEDKY OBCHODOVANI
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   ────────────────────────────────────────────────────────
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Obchody    61  (OK 15  X 10  ~ 36)
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Winrate     60.0%  ━━━━━━━━━━━━●───────── 60%  cil 55%  (bez timeoutu)
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Zisk        -0.00007783  ◄●─────────────────────
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Drawdown    0.00017264  (pokles od vrcholu)
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Serie       STOP 3x prohra v rade
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     ----------------------------------------
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Profit Factor  1.28x  (zisk / ztrata, cil > 1.5)
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Expectancy     +0.00000098  (prumerny vynos / obchod)
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Nejlepsi      +0.00002829   Nejhorsi  -0.00003487
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Posledni obchod  43s zpet
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     VYSLEDKY PO MENACH
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   ────────────────────────────────────────────────────────
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Mena  Obch  WR  Bar          Zisk
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     --------------------------------------------------
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     BTC  2  50%  ━━━━━━━━━━●─────────── 50%  -0.00000162  ?
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     ETH  4  100%  ━━━━━━━━━━━━━━━━━━━━━● 100%  +0.00001907  OK
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     ADA  4  50%  ━━━━━━━━━━●─────────── 50%  -0.00000345  ?
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     BNB  2  50%  ━━━━━━━━━━●─────────── 50%  -0.00000031  ?
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     DOT  4  50%  ━━━━━━━━━━●─────────── 50%  -0.00001710  ?
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     SOL  7  71%  ━━━━━━━━━━━━━━●─────── 71%  +0.00004296  OK
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     XRP  2  0%  ●───────────────────── 0%  -0.00001505  X
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     UCENI – STAV A USPESNOST
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   ────────────────────────────────────────────────────────
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Kalibrace      KALIBROVAN  ✓  ━━━━━━━━━━━━━━━━━━━━━● 100%  (61 obchodu celkem)
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Trend uceni    ZHORŠUJE SE 📉
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Poslednich 50    32.0%  vs  prumer 60.0%  (-28.0%)
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     EV vykon       prumer 0.033  min 0.030  max 0.040  (50 obch)
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Uzavreni       TP 0%  SL 0%  trail 0%  timeout 0%
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Kalibrace p    p=49.7%  WR=60.0%  odchylka 10.3pp  ok
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     WR dle rezimu
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       BULL   ━━━━━━━━━●──────────── 47%  47%  (38 obch)
-Apr 20 12:43:43 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       BEAR   ━━━━━━●─────────────── 35%  35%  (23 obch)
-Apr 20 12:43:46 ubuntu-4gb-nbg1-1 cryptomaster[480649]: WARNING:root:on_price(DOTUSDT): Generated FORCED signal SHORT
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     AUDITOR  (ochrana strategie)
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   ────────────────────────────────────────────────────────
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     EV prah              -0.285  score prah 0.173  t15=24  t60=61  aktivni
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Velikost pozice      0.60x  EV-only · loss streak → scale · DD halt 40%
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     STRATEGIE  (ADX + EMA + MACD + BB + RSI)
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   ────────────────────────────────────────────────────────
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Rezim trhu   BULL TREND  silny vzestup  (71%)
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Signaly (THIS CYCLE)  0 kandidati  (cele: 10577 zachyceno  61 provedeno)
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Filtrace      0.0%  projde filtrem  TP: 1.2xATR  /  SL: 0.8xATR  (RR 1.5:1)  EV-only
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     POSLEDNI ROZHODNUTI
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   ────────────────────────────────────────────────────────
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     BTC  PRODEJ  $75,179.9950  p:50%  ev:0.030  BULL
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     ETH  PRODEJ  $2,307.4450  p:50%  ev:0.035  BEAR  PROHRA
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     ADA  KUPUJ   $0.2467  p:50%  ev:0.030  BULL
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     BNB  PRODEJ  $624.5050  p:44%  ev:0.034  BEAR
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     DOT  KUPUJ   $1.2585  p:50%  ev:0.030  BULL
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     SOL  PRODEJ  $84.9550  p:50%  ev:0.030  BULL
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     XRP  KUPUJ   $1.4190  p:50%  ev:0.030  BEAR
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   ────────────────────────────────────────────────────────
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   Sbiram data ━━━ ● Trenink ─── Aktivni
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   ────────────────────────────────────────────────────────
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   STAV:  TRENINK  (zisk > 0)
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]: ============================================================
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]: === EXECUTION ENGINE ===
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   Equity:   0.999922  |  DD: 0.02%
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   Exposure: 0.003  |  Positions: 1
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   Sharpe:   0.000  |  WR: 42.62%  |  Edge: 0.50000  |  MaxDD: 0.00%
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   Failure:  0.000  [OK]
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     XRPUSDT      BEAR_TREND   EV:+0.0000  Size:0.0032
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]: === LEARNING MONITOR ===
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   (waiting for 10 closed trades per pair)
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   Features (WR per signal key):
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     is_weekend            [------------]  0%  -
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   [!] LEARNING: NO LEARNING SIGNAL DETECTED
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   Health: 0.000  [BAD]
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]: ========================
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]: [V10.13g EXIT] TP=0 SL=0 micro=2 be=0 partial=(16,0,0) trail=0 scratch=36 stag=0 harvest=0 t_profit=0 t_flat=0 t_loss=0
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   → Harvest rate: 33.3% (18/54)
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]: 📊 [V10.13m EXIT_AUDIT]
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   winners: SCRATCH_EXIT=36 PARTIAL_TP_25=16 EARLY_STOP=4 MICRO_TP=2
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   near_miss: partial25_near_miss=57742 micro_near_miss=28471 scratch_near_miss=780
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   top_rejects:
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   🔴 DOT $1.2605 | [FORCED_EXPLORE] sc:3/7  ws:0.50 | BULL_TREND | conf:35% []
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=61]  t15=24  spread=0.000  af=0.70
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     RDE[v10.10b]: ev=0.050 thr=-0.285 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     coherence[v10.12]: 0.500  ev 0.050→0.030
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     [V10.13r] SCORE_THRESHOLD_COLD_START: relaxed to 0.1728
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     decision=TAKE  ev=0.0300  p=0.5000  af=0.70  coh=0.500
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   [!] LEARNING: NO LEARNING SIGNAL DETECTED
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   🟢 BNB $624.7500 | [fake_breakout] sc:4/7  ws:0.50 | RANGING | conf:74% [trend,pullback,vol,mom]
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=61]  t15=24  spread=0.000  af=0.70
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     RDE[v10.10b]: ev=0.050 thr=-0.285 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     coherence[v10.12]: 0.522  ev 0.050→0.030
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     [V10.13r] SCORE_THRESHOLD_COLD_START: relaxed to 0.1728
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     decision=TAKE  ev=0.0300  p=0.5000  af=0.70  coh=0.522
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]: [EXEC] regime=RANGING TP=629.77949 SL=622.28211
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     exec[force]: slip=0.00005  fee=0.00075  fr=0.75  ws_adj=0.500  0.0136@624.7812  tp=629.7795  sl=622.2821
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   [!] LEARNING: NO LEARNING SIGNAL DETECTED
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   ── CYCLE SNAPSHOT ────────────────────────────────────────
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]: {
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   "cycle_time": 1776689033.8623846,
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   "positions": 2,
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   "learning": {
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     "health": 0.0,
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     "alert": "BAD",
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     "mode": "WARM",
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     "pairs": {},
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     "features": {
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       "is_weekend": 0.0
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     },
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     "block_reasons": {
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       "OFI_TOXIC_SOFT": 824,
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       "OFI_TOXIC_SOFT_BOOTSTRAP": 803,
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       "SKIP_SCORE_SOFT": 116
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     },
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     "completed_trades": 61,
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     "best_edge": "Unknown",
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     "defense": {
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       "wall_exits": 0,
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       "timeouts": 0,
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       "l2_rejected": 0,
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       "corr_rejected": 0,
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       "defended": 0,
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       "efficiency": 0.0
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     },
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     "concept_drift": false
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   }
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]: }
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]: ============================================================
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   CRYPTOMASTER  |  0h 23m 40s  | TRENINK
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]: ============================================================
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     ZIVE CENY  (Binance · kazde 1 s)
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   ────────────────────────────────────────────────────────
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     BTC  $   75,216.9250   ─  +0.000%
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     ETH  $    2,311.2550   ─  +0.000%
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     ADA  $        0.2467   ─  +0.000%
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     BNB  $      624.7750   ─  +0.000%  [OPEN]
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     DOT  $        1.2605   ─  +0.000%
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     SOL  $       85.0650   ─  +0.000%
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     XRP  $        1.4200   ─  +0.000%  [OPEN]
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     OTEVRENE POZICE
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   ────────────────────────────────────────────────────────
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     XRP  BUY  $1.4198->$1.4200  +0.000000  TP:0.80%  SL:0.40%
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     BNB  BUY  $624.7812->$624.7750  -0.000000  TP:0.80%  SL:0.40%
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     VYSLEDKY OBCHODOVANI
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   ────────────────────────────────────────────────────────
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Obchody    61  (OK 15  X 10  ~ 36)
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Winrate     60.0%  ━━━━━━━━━━━━●───────── 60%  cil 55%  (bez timeoutu)
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Zisk        -0.00007783  ◄●─────────────────────
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Drawdown    0.00017264  (pokles od vrcholu)
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Serie       STOP 3x prohra v rade
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     ----------------------------------------
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Profit Factor  1.28x  (zisk / ztrata, cil > 1.5)
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Expectancy     +0.00000098  (prumerny vynos / obchod)
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Nejlepsi      +0.00002829   Nejhorsi  -0.00003487
-Apr 20 12:43:54 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Posledni obchod  53s zpet
-Apr 20 12:43:59 ubuntu-4gb-nbg1-1 cryptomaster[480649]: WARNING:root:on_price(ADAUSDT): Generated FORCED signal LONG
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     VYSLEDKY PO MENACH
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   ────────────────────────────────────────────────────────
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Mena  Obch  WR  Bar          Zisk
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     --------------------------------------------------
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     BTC  2  50%  ━━━━━━━━━━●─────────── 50%  -0.00000162  ?
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     ETH  4  100%  ━━━━━━━━━━━━━━━━━━━━━● 100%  +0.00001907  OK
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     ADA  4  50%  ━━━━━━━━━━●─────────── 50%  -0.00000345  ?
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     BNB  2  50%  ━━━━━━━━━━●─────────── 50%  -0.00000031  ?
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     DOT  4  50%  ━━━━━━━━━━●─────────── 50%  -0.00001710  ?
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     SOL  7  71%  ━━━━━━━━━━━━━━●─────── 71%  +0.00004296  OK
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     XRP  2  0%  ●───────────────────── 0%  -0.00001505  X
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     UCENI – STAV A USPESNOST
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   ────────────────────────────────────────────────────────
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Kalibrace      KALIBROVAN  ✓  ━━━━━━━━━━━━━━━━━━━━━● 100%  (61 obchodu celkem)
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Trend uceni    ZHORŠUJE SE 📉
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Poslednich 50    32.0%  vs  prumer 60.0%  (-28.0%)
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     EV vykon       prumer 0.033  min 0.030  max 0.040  (50 obch)
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Uzavreni       TP 0%  SL 0%  trail 0%  timeout 0%
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Kalibrace p    p=49.7%  WR=60.0%  odchylka 10.3pp  ok
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     WR dle rezimu
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       BULL   ━━━━━━━━━●──────────── 47%  47%  (38 obch)
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       BEAR   ━━━━━━●─────────────── 35%  35%  (23 obch)
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     AUDITOR  (ochrana strategie)
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   ────────────────────────────────────────────────────────
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     EV prah              -0.285  score prah 0.173  t15=24  t60=61  aktivni
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Velikost pozice      0.60x  EV-only · loss streak → scale · DD halt 40%
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     STRATEGIE  (ADX + EMA + MACD + BB + RSI)
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   ────────────────────────────────────────────────────────
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Rezim trhu   BULL TREND  silny vzestup  (71%)
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Signaly (THIS CYCLE)  1 kandidati  (cele: 10579 zachyceno  61 provedeno)
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Filtrace      0.0%  projde filtrem  TP: 1.2xATR  /  SL: 0.8xATR  (RR 1.5:1)  EV-only
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     POSLEDNI ROZHODNUTI
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   ────────────────────────────────────────────────────────
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     BTC  PRODEJ  $75,179.9950  p:50%  ev:0.030  BULL
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     ETH  PRODEJ  $2,307.4450  p:50%  ev:0.035  BEAR  PROHRA
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     ADA  KUPUJ   $0.2467  p:50%  ev:0.030  BULL
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     BNB  KUPUJ   $624.7500  p:50%  ev:0.030  RANGE
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     DOT  PRODEJ  $1.2605  p:50%  ev:0.030  BULL
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     SOL  PRODEJ  $84.9550  p:50%  ev:0.030  BULL
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     XRP  KUPUJ   $1.4190  p:50%  ev:0.030  BEAR
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   ────────────────────────────────────────────────────────
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   Sbiram data ━━━ ● Trenink ─── Aktivni
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   ────────────────────────────────────────────────────────
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   STAV:  TRENINK  (zisk > 0)
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]: ============================================================
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]: === EXECUTION ENGINE ===
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   Equity:   0.999922  |  DD: 0.02%
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   Exposure: 0.017  |  Positions: 2
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   Sharpe:   0.000  |  WR: 42.62%  |  Edge: 0.50000  |  MaxDD: 0.00%
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   Failure:  0.000  [OK]
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     XRPUSDT      BEAR_TREND   EV:+0.0000  Size:0.0032
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     BNBUSDT      RANGING      EV:+0.0000  Size:0.0136
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]: === LEARNING MONITOR ===
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   (waiting for 10 closed trades per pair)
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   Features (WR per signal key):
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     is_weekend            [------------]  0%  -
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   [!] LEARNING: NO LEARNING SIGNAL DETECTED
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   Health: 0.000  [BAD]
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]: ========================
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]: [V10.13g EXIT] TP=0 SL=0 micro=2 be=0 partial=(16,0,0) trail=0 scratch=36 stag=0 harvest=0 t_profit=0 t_flat=0 t_loss=0
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   → Harvest rate: 33.3% (18/54)
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]: 📊 [V10.13m EXIT_AUDIT]
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   winners: SCRATCH_EXIT=36 PARTIAL_TP_25=16 EARLY_STOP=4 MICRO_TP=2
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   near_miss: partial25_near_miss=57742 micro_near_miss=28471 scratch_near_miss=780
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   top_rejects:
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   🟢 XRP $1.4200 | [fake_breakout] sc:4/7  ws:0.47 | BULL_TREND | conf:36% [trend,pullback,vol,wick]
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     EV=0.050  p=0.50  rr=1.25  ws=0.469  score=0.176[n=61]  t15=24  spread=0.000  af=0.70
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     RDE[v10.10b]: ev=0.050 thr=-0.285 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     coherence[v10.12]: 0.580  ev 0.050→0.030
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     [V10.13r] SCORE_THRESHOLD_COLD_START: relaxed to 0.1728
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     decision=TAKE  ev=0.0300  p=0.5000  af=0.70  coh=0.580
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   🟢 ETH $2,311.2650 | [fake_breakout] sc:4/7  ws:0.47 | BULL_TREND | conf:81% [trend,pullback,vol,wick]
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     EV=0.050  p=0.50  rr=1.25  ws=0.469  score=0.176[n=61]  t15=24  spread=0.000  af=0.70
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     RDE[v10.10b]: ev=0.050 thr=-0.285 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     coherence[v10.12]: 0.580  ev 0.050→0.030
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     [V10.13r] SCORE_THRESHOLD_COLD_START: relaxed to 0.1728
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     decision=TAKE  ev=0.0300  p=0.5000  af=0.70  coh=0.580
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   🔴 ADA $0.2467 | [FORCED_EXPLORE] sc:3/7  ws:0.50 | BULL_TREND | conf:26% []
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=61]  t15=24  spread=0.000  af=0.70
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     RDE[v10.10b]: ev=0.050 thr=-0.285 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     coherence[v10.12]: 0.500  ev 0.050→0.030
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     [V10.13r] SCORE_THRESHOLD_COLD_START: relaxed to 0.1728
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     decision=TAKE  ev=0.0300  p=0.5000  af=0.70  coh=0.500
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   [!] LEARNING: NO LEARNING SIGNAL DETECTED
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   ── CYCLE SNAPSHOT ────────────────────────────────────────
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]: {
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   "cycle_time": 1776689044.1571894,
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   "positions": 2,
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   "learning": {
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     "health": 0.0,
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     "alert": "BAD",
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     "mode": "WARM",
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     "pairs": {},
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     "features": {
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       "is_weekend": 0.0
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     },
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     "block_reasons": {
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       "OFI_TOXIC_SOFT": 824,
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       "OFI_TOXIC_SOFT_BOOTSTRAP": 803,
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       "SKIP_SCORE_SOFT": 116
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     },
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     "completed_trades": 61,
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     "best_edge": "Unknown",
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     "defense": {
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       "wall_exits": 0,
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       "timeouts": 0,
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       "l2_rejected": 0,
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       "corr_rejected": 0,
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       "defended": 0,
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       "efficiency": 0.0
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     },
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     "concept_drift": false
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   }
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]: }
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]: ============================================================
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   CRYPTOMASTER  |  0h 23m 50s  | TRENINK
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]: ============================================================
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     ZIVE CENY  (Binance · kazde 1 s)
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   ────────────────────────────────────────────────────────
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     BTC  $   75,231.2450   ─  +0.000%
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     ETH  $    2,311.6750   ─  +0.000%
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     ADA  $        0.2467   ─  +0.000%
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     BNB  $      624.7850   ─  +0.000%  [OPEN]
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     DOT  $        1.2615   ─  +0.000%
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     SOL  $       85.0750   ─  +0.000%
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     XRP  $        1.4205   ─  +0.000%  [OPEN]
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     OTEVRENE POZICE
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   ────────────────────────────────────────────────────────
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     XRP  BUY  $1.4198->$1.4205  +0.000002  TP:0.80%  SL:0.40%
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     BNB  BUY  $624.7812->$624.7850  +0.000000  TP:0.80%  SL:0.40%
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     VYSLEDKY OBCHODOVANI
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   ────────────────────────────────────────────────────────
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Obchody    61  (OK 15  X 10  ~ 36)
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Winrate     60.0%  ━━━━━━━━━━━━●───────── 60%  cil 55%  (bez timeoutu)
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Zisk        -0.00007783  ◄●─────────────────────
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Drawdown    0.00017264  (pokles od vrcholu)
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Serie       STOP 3x prohra v rade
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     ----------------------------------------
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Profit Factor  1.28x  (zisk / ztrata, cil > 1.5)
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Expectancy     +0.00000098  (prumerny vynos / obchod)
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Nejlepsi      +0.00002829   Nejhorsi  -0.00003487
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Posledni obchod  1m 3s zpet
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     VYSLEDKY PO MENACH
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   ────────────────────────────────────────────────────────
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Mena  Obch  WR  Bar          Zisk
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     --------------------------------------------------
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     BTC  2  50%  ━━━━━━━━━━●─────────── 50%  -0.00000162  ?
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     ETH  4  100%  ━━━━━━━━━━━━━━━━━━━━━● 100%  +0.00001907  OK
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     ADA  4  50%  ━━━━━━━━━━●─────────── 50%  -0.00000345  ?
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     BNB  2  50%  ━━━━━━━━━━●─────────── 50%  -0.00000031  ?
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     DOT  4  50%  ━━━━━━━━━━●─────────── 50%  -0.00001710  ?
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     SOL  7  71%  ━━━━━━━━━━━━━━●─────── 71%  +0.00004296  OK
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     XRP  2  0%  ●───────────────────── 0%  -0.00001505  X
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     UCENI – STAV A USPESNOST
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   ────────────────────────────────────────────────────────
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Kalibrace      KALIBROVAN  ✓  ━━━━━━━━━━━━━━━━━━━━━● 100%  (61 obchodu celkem)
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Trend uceni    ZHORŠUJE SE 📉
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Poslednich 50    32.0%  vs  prumer 60.0%  (-28.0%)
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     EV vykon       prumer 0.033  min 0.030  max 0.040  (50 obch)
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Uzavreni       TP 0%  SL 0%  trail 0%  timeout 0%
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Kalibrace p    p=49.7%  WR=60.0%  odchylka 10.3pp  ok
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     WR dle rezimu
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       BULL   ━━━━━━━━━●──────────── 47%  47%  (38 obch)
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       BEAR   ━━━━━━●─────────────── 35%  35%  (23 obch)
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     AUDITOR  (ochrana strategie)
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   ────────────────────────────────────────────────────────
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     EV prah              -0.285  score prah 0.173  t15=24  t60=61  aktivni
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Velikost pozice      0.60x  EV-only · loss streak → scale · DD halt 40%
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     STRATEGIE  (ADX + EMA + MACD + BB + RSI)
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   ────────────────────────────────────────────────────────
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Rezim trhu   BULL TREND  silny vzestup  (71%)
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Signaly (THIS CYCLE)  0 kandidati  (cele: 10582 zachyceno  61 provedeno)
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Filtrace      0.0%  projde filtrem  TP: 1.2xATR  /  SL: 0.8xATR  (RR 1.5:1)  EV-only
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     POSLEDNI ROZHODNUTI
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   ────────────────────────────────────────────────────────
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     BTC  PRODEJ  $75,179.9950  p:50%  ev:0.030  BULL
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     ETH  KUPUJ   $2,311.2650  p:50%  ev:0.030  BULL
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     ADA  PRODEJ  $0.2467  p:50%  ev:0.030  BULL
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     BNB  KUPUJ   $624.7500  p:50%  ev:0.030  RANGE
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     DOT  PRODEJ  $1.2605  p:50%  ev:0.030  BULL
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     SOL  PRODEJ  $84.9550  p:50%  ev:0.030  BULL
-Apr 20 12:44:04 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     XRP  KUPUJ   $1.4200  p:50%  ev:0.030  BULL
-Apr 20 12:44:07 ubuntu-4gb-nbg1-1 cryptomaster[480649]: WARNING:root:on_price(SOLUSDT): Generated FORCED signal LONG
-Apr 20 12:44:07 ubuntu-4gb-nbg1-1 cryptomaster[480649]: WARNING:src.services.hardblock_adapter:🔄 HardBlock zone adjustment: MODERATE (idle=67s, health=0.50) buffer: 0.060 → 0.090
-Apr 20 12:44:09 ubuntu-4gb-nbg1-1 cryptomaster[480649]: WARNING:root:on_price(BNBUSDT): Generated FORCED signal SHORT
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   ────────────────────────────────────────────────────────
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   Sbiram data ━━━ ● Trenink ─── Aktivni
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   ────────────────────────────────────────────────────────
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   STAV:  TRENINK  (zisk > 0)
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]: ============================================================
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]: === EXECUTION ENGINE ===
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   Equity:   0.999922  |  DD: 0.02%
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   Exposure: 0.017  |  Positions: 2
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   Sharpe:   0.000  |  WR: 42.62%  |  Edge: 0.50000  |  MaxDD: 0.00%
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   Failure:  0.000  [OK]
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     XRPUSDT      BEAR_TREND   EV:+0.0000  Size:0.0032
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     BNBUSDT      RANGING      EV:+0.0000  Size:0.0136
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]: === LEARNING MONITOR ===
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   (waiting for 10 closed trades per pair)
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   Features (WR per signal key):
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     is_weekend            [------------]  0%  -
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   [!] LEARNING: NO LEARNING SIGNAL DETECTED
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   Health: 0.000  [BAD]
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]: ========================
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]: [V10.13g EXIT] TP=0 SL=0 micro=2 be=0 partial=(16,0,0) trail=0 scratch=36 stag=0 harvest=0 t_profit=0 t_flat=0 t_loss=0
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   → Harvest rate: 33.3% (18/54)
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]: 📊 [V10.13m EXIT_AUDIT]
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   winners: SCRATCH_EXIT=36 PARTIAL_TP_25=16 EARLY_STOP=4 MICRO_TP=2
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   near_miss: partial25_near_miss=57742 micro_near_miss=28471 scratch_near_miss=780
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   top_rejects:
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   🔴 SOL $85.0850 | [FORCED_EXPLORE] sc:3/7  ws:0.50 | BULL_TREND | conf:25% []
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=61]  t15=24  spread=0.000  af=0.70
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     RDE[v10.10b]: ev=0.050 thr=-0.285 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     coherence[v10.12]: 0.500  ev 0.050→0.030
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     [V10.13r] SCORE_THRESHOLD_COLD_START: relaxed to 0.1728
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     decision=TAKE  ev=0.0300  p=0.5000  af=0.70  coh=0.500
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   🔴 BNB $624.8050 | [FORCED_EXPLORE] sc:3/7  ws:0.50 | BULL_TREND | conf:23% []
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=61]  t15=24  spread=0.000  af=0.70
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     RDE[v10.10b]: ev=0.050 thr=-0.285 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     coherence[v10.12]: 0.500  ev 0.050→0.030
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     [V10.13r] SCORE_THRESHOLD_COLD_START: relaxed to 0.1728
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     decision=TAKE  ev=0.0300  p=0.5000  af=0.70  coh=0.500
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   [!] LEARNING: NO LEARNING SIGNAL DETECTED
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   ── CYCLE SNAPSHOT ────────────────────────────────────────
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]: {
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   "cycle_time": 1776689054.1995642,
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   "positions": 2,
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   "learning": {
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     "health": 0.0,
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     "alert": "BAD",
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     "mode": "WARM",
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     "pairs": {},
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     "features": {
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       "is_weekend": 0.0
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     },
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     "block_reasons": {
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       "OFI_TOXIC_SOFT": 824,
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       "OFI_TOXIC_SOFT_BOOTSTRAP": 803,
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       "SKIP_SCORE_SOFT": 116
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     },
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     "completed_trades": 61,
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     "best_edge": "Unknown",
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     "defense": {
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       "wall_exits": 0,
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       "timeouts": 0,
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       "l2_rejected": 0,
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       "corr_rejected": 0,
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       "defended": 0,
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:       "efficiency": 0.0
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     },
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     "concept_drift": false
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   }
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]: }
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]: ============================================================
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   CRYPTOMASTER  |  0h 24m 0s  | TRENINK
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]: ============================================================
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     ZIVE CENY  (Binance · kazde 1 s)
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   ────────────────────────────────────────────────────────
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     BTC  $   75,236.1950   ─  +0.000%
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     ETH  $    2,311.7450   ─  +0.000%
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     ADA  $        0.2470   ─  +0.000%
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     BNB  $      624.8950   ─  +0.000%  [OPEN]
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     DOT  $        1.2615   ─  +0.000%
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     SOL  $       85.1150   ─  +0.000%
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     XRP  $        1.4202   ─  +0.000%  [OPEN]
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     OTEVRENE POZICE
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   ────────────────────────────────────────────────────────
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     XRP  BUY  $1.4198->$1.4202  +0.000001  TP:0.80%  SL:0.40%
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     BNB  BUY  $624.7812->$624.8950  +0.000002  TP:0.80%  SL:0.40%
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     VYSLEDKY OBCHODOVANI
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   ────────────────────────────────────────────────────────
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Obchody    61  (OK 15  X 10  ~ 36)
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Winrate     60.0%  ━━━━━━━━━━━━●───────── 60%  cil 55%  (bez timeoutu)
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Zisk        -0.00007783  ◄●─────────────────────
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Drawdown    0.00017264  (pokles od vrcholu)
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Serie       STOP 3x prohra v rade
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     ----------------------------------------
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Profit Factor  1.28x  (zisk / ztrata, cil > 1.5)
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Expectancy     +0.00000098  (prumerny vynos / obchod)
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Nejlepsi      +0.00002829   Nejhorsi  -0.00003487
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Posledni obchod  1m 13s zpet
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     VYSLEDKY PO MENACH
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   ────────────────────────────────────────────────────────
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Mena  Obch  WR  Bar          Zisk
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     --------------------------------------------------
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     BTC  2  50%  ━━━━━━━━━━●─────────── 50%  -0.00000162  ?
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     ETH  4  100%  ━━━━━━━━━━━━━━━━━━━━━● 100%  +0.00001907  OK
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     ADA  4  50%  ━━━━━━━━━━●─────────── 50%  -0.00000345  ?
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     BNB  2  50%  ━━━━━━━━━━●─────────── 50%  -0.00000031  ?
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     DOT  4  50%  ━━━━━━━━━━●─────────── 50%  -0.00001710  ?
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     SOL  7  71%  ━━━━━━━━━━━━━━●─────── 71%  +0.00004296  OK
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     XRP  2  0%  ●───────────────────── 0%  -0.00001505  X
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     UCENI – STAV A USPESNOST
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:   ────────────────────────────────────────────────────────
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Kalibrace      KALIBROVAN  ✓  ━━━━━━━━━━━━━━━━━━━━━● 100%  (61 obchodu celkem)
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Trend uceni    ZHORŠUJE SE 📉
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     Poslednich 50    32.0%  vs  prumer 60.0%  (-28.0%)
-Apr 20 12:44:14 ubuntu-4gb-nbg1-1 cryptomaster[480649]:     EV vykon       prumer 0.033  min 0.030  max 0.040  (50 obch)
+────── 75%  +0.00000885  OK
+Apr 20 13:23:21 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BNB  1  100%  ━━━━━━━━━━━━━━━━━━━━━● 100%  +0.00000208  OK
+Apr 20 13:23:25 ubuntu-4gb-nbg1-1 cryptomaster[492198]: WARNING:root:on_price(ADAUSDT): Generated FORCED signal SHORT
+Apr 20 13:23:28 ubuntu-4gb-nbg1-1 cryptomaster[492198]: WARNING:root:on_price(SOLUSDT): Generated FORCED signal LONG
+Apr 20 13:23:30 ubuntu-4gb-nbg1-1 cryptomaster[492198]: WARNING:root:on_price(BNBUSDT): Generated FORCED signal SHORT
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     DOT  4  25%  ━━━━●───────────────── 25%  -0.00000928  X
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     SOL  5  20%  ━━━●────────────────── 20%  -0.00001800  X
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     XRP  5  40%  ━━━━━━━●────────────── 40%  -0.00000201  X
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     UCENI – STAV A USPESNOST
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Kalibrace      KALIBROVAN  ✓  ━━━━━━━━━━━━━━━━━━━━━● 100%  (52 obchodu celkem)
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Trend uceni    STABILNÍ ➡️
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Poslednich 50    42.0%  vs  prumer 44.0%  (-2.0%)
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     EV vykon       prumer 0.032  min 0.030  max 0.048  (50 obch)
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Uzavreni       TP 0%  SL 0%  trail 0%  timeout 0%
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Kalibrace p    p=49.5%  WR=44.0%  odchylka 5.5pp  dobre
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     WR dle rezimu
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       BULL   ━━━━━━━●────────────── 39%  39%  (28 obch)
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       BEAR   ━━━━━━━━━●──────────── 46%  46%  (24 obch)
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     AUDITOR  (ochrana strategie)
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     EV prah              -0.285  score prah 0.173  t15=41  t60=52  aktivni
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Velikost pozice      1.20x  EV-only · loss streak → scale · DD halt 40%
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     STRATEGIE  (ADX + EMA + MACD + BB + RSI)
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Rezim trhu   BULL TREND  silny vzestup  (47%)
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Signaly (THIS CYCLE)  0 kandidati  (cele: 6514 zachyceno  52 provedeno)
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Filtrace      0.0%  projde filtrem  TP: 1.2xATR  /  SL: 0.8xATR  (RR 1.5:1)  EV-only
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     POSLEDNI ROZHODNUTI
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BTC  PRODEJ  $75,083.7850  p:50%  ev:0.030  BULL
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ETH  PRODEJ  $2,315.7650  p:42%  ev:0.034  BEAR
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ADA  PRODEJ  $0.2470  p:50%  ev:0.030  BULL
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BNB  PRODEJ  $624.9850  p:50%  ev:0.030  BULL
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     DOT  PRODEJ  $1.2605  p:50%  ev:0.030  BEAR  VYHRA
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     SOL  PRODEJ  $85.1950  p:50%  ev:0.030  BULL
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     XRP  KUPUJ   $1.4226  p:50%  ev:0.030  BEAR  PROHRA
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Sbiram data ━━━ ● Trenink ─── Aktivni
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   STAV:  TRENINK  (winrate 44%->55%,  zisk > 0)
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]: ============================================================
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]: === EXECUTION ENGINE ===
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Equity:   0.999957  |  DD: 0.00%
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Exposure: 0.006  |  Positions: 1
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Sharpe:   0.000  |  WR: 42.31%  |  Edge: 0.50000  |  MaxDD: 0.00%
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Failure:  0.000  [OK]
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BTCUSDT      BEAR_TREND   EV:+0.0000  Size:0.0060
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]: === LEARNING MONITOR ===
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   (waiting for 10 closed trades per pair)
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   [!] LEARNING: NO LEARNING SIGNAL DETECTED
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Health: 0.000  [BAD]
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]: ========================
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]: [V10.13g EXIT] TP=0 SL=0 micro=0 be=0 partial=(18,0,0) trail=1 scratch=27 stag=0 harvest=0 t_profit=0 t_flat=0 t_loss=0
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   → Harvest rate: 41.3% (19/46)
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]: 📊 [V10.13m EXIT_AUDIT]
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   winners: SCRATCH_EXIT=27 PARTIAL_TP_25=18 EARLY_STOP=6 TRAIL_PROFIT=1
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   near_miss: partial25_near_miss=23777 micro_near_miss=11589 trail_near_miss=47
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   top_rejects:
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   🔴 ADA $0.2470 | [FORCED_EXPLORE] sc:3/7  ws:0.50 | BULL_TREND | conf:31% []
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=52]  t15=41  spread=0.000  af=1.00
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     RDE[v10.10b]: ev=0.050 thr=-0.285 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     coherence[v10.12]: 0.500  ev 0.050→0.030
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     [V10.13r] SCORE_THRESHOLD_COLD_START: relaxed to 0.1728
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   🔴 SOL $85.2450 | [FORCED_EXPLORE] sc:3/7  ws:0.50 | BEAR_TREND | conf:40% []
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=52]  t15=40  spread=0.000  af=1.00
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     RDE[v10.10b]: ev=0.050 thr=-0.285 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     coherence[v10.12]: 0.675  ev 0.050→0.034
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     [V10.13r] SCORE_THRESHOLD_COLD_START: relaxed to 0.1728
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     decision=TAKE  ev=0.0338  p=0.5000  af=1.00  coh=0.675
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   🔴 BNB $625.1550 | [FORCED_EXPLORE] sc:3/7  ws:0.50 | BEAR_TREND | conf:52% []
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     EV=0.050  p=0.42  rr=1.25  ws=0.500  score=0.185[n=52]  t15=39  spread=0.000  af=1.00
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     RDE[v10.10b]: ev=0.050 thr=-0.285 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     coherence[v10.12]: 0.675  ev 0.050→0.034
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     [V10.13r] SCORE_THRESHOLD_COLD_START: relaxed to 0.1728
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     decision=TAKE  ev=0.0338  p=0.4173  af=1.00  coh=0.675
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   [!] LEARNING: NO LEARNING SIGNAL DETECTED
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ── CYCLE SNAPSHOT ────────────────────────────────────────
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]: {
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   "cycle_time": 1776691411.4642012,
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   "positions": 1,
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   "learning": {
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "health": 0.0,
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "alert": "BAD",
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "mode": "WARM",
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "pairs": {},
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "features": {},
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "block_reasons": {
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "SKIP_SCORE_SOFT": 149,
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "OFI_TOXIC_SOFT_BOOTSTRAP": 232,
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "OFI_TOXIC_SOFT": 250
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     },
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "completed_trades": 52,
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "best_edge": "Unknown",
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "defense": {
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "wall_exits": 0,
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "timeouts": 0,
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "l2_rejected": 0,
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "corr_rejected": 0,
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "defended": 0,
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "efficiency": 0.0
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     },
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "concept_drift": false
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   }
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]: }
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]: ============================================================
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   CRYPTOMASTER  |  0h 18m 17s  | TRENINK
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]: ============================================================
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ZIVE CENY  (Binance · kazde 1 s)
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BTC  $   75,108.3850   ─  +0.000%  [OPEN]
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ETH  $    2,314.8150   ─  +0.000%
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ADA  $        0.2470   ─  +0.000%
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BNB  $      625.1550   ─  +0.000%
+Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     DOT  $        1.2615   ─  +0.000%
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     SOL  $       85.2350   ─  +0.000%
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     XRP  $        1.4226   ─  +0.000%
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     OTEVRENE POZICE
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BTC  SELL  $75,119.4608->$75,108.3850  +0.000001  TP:0.80%  SL:0.40%
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     VYSLEDKY OBCHODOVANI
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Obchody    52  (OK 11  X 14  ~ 27)
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Winrate     44.0%  ━━━━━━━━●───────────── 44%  cil 55%  (bez timeoutu)
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Zisk        -0.00004279  ◄●─────────────────────
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Drawdown    0.00005433  (pokles od vrcholu)
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Serie       FIRE 4x vyhra v rade!
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ----------------------------------------
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Profit Factor  0.57x  (zisk / ztrata, cil > 1.5)
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Expectancy     -0.00000107  (prumerny vynos / obchod)
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Nejlepsi      +0.00000744   Nejhorsi  -0.00000748
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Posledni obchod  1m 3s zpet
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     VYSLEDKY PO MENACH
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Mena  Obch  WR  Bar          Zisk
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     --------------------------------------------------
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BTC  1  0%  ●───────────────────── 0%  -0.00000703  X
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ETH  5  60%  ━━━━━━━━━━━━●───────── 60%  -0.00000145  OK
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ADA  4  75%  ━━━━━━━━━━━━━━━●────── 75%  +0.00000885  OK
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BNB  1  100%  ━━━━━━━━━━━━━━━━━━━━━● 100%  +0.00000208  OK
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     DOT  4  25%  ━━━━●───────────────── 25%  -0.00000928  X
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     SOL  5  20%  ━━━●────────────────── 20%  -0.00001800  X
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     XRP  5  40%  ━━━━━━━●────────────── 40%  -0.00000201  X
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     UCENI – STAV A USPESNOST
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Kalibrace      KALIBROVAN  ✓  ━━━━━━━━━━━━━━━━━━━━━● 100%  (52 obchodu celkem)
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Trend uceni    STABILNÍ ➡️
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Poslednich 50    42.0%  vs  prumer 44.0%  (-2.0%)
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     EV vykon       prumer 0.032  min 0.030  max 0.048  (50 obch)
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Uzavreni       TP 0%  SL 0%  trail 0%  timeout 0%
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Kalibrace p    p=49.5%  WR=44.0%  odchylka 5.5pp  dobre
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     WR dle rezimu
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       BULL   ━━━━━━━●────────────── 39%  39%  (28 obch)
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       BEAR   ━━━━━━━━━●──────────── 46%  46%  (24 obch)
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     AUDITOR  (ochrana strategie)
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     EV prah              -0.285  score prah 0.173  t15=39  t60=52  aktivni
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Velikost pozice      1.20x  EV-only · loss streak → scale · DD halt 40%
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     STRATEGIE  (ADX + EMA + MACD + BB + RSI)
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Rezim trhu   BULL TREND  silny vzestup  (47%)
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Signaly (THIS CYCLE)  0 kandidati  (cele: 6517 zachyceno  52 provedeno)
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Filtrace      0.0%  projde filtrem  TP: 1.2xATR  /  SL: 0.8xATR  (RR 1.5:1)  EV-only
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     POSLEDNI ROZHODNUTI
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BTC  PRODEJ  $75,083.7850  p:50%  ev:0.030  BULL
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ETH  PRODEJ  $2,315.7650  p:42%  ev:0.034  BEAR
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ADA  PRODEJ  $0.2470  p:50%  ev:0.030  BULL
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BNB  PRODEJ  $625.1550  p:42%  ev:0.034  BEAR
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     DOT  PRODEJ  $1.2605  p:50%  ev:0.030  BEAR  VYHRA
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     SOL  PRODEJ  $85.2450  p:50%  ev:0.034  BEAR
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     XRP  KUPUJ   $1.4226  p:50%  ev:0.030  BEAR  PROHRA
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Sbiram data ━━━ ● Trenink ─── Aktivni
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   STAV:  TRENINK  (winrate 44%->55%,  zisk > 0)
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]: ============================================================
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]: === EXECUTION ENGINE ===
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Equity:   0.999957  |  DD: 0.00%
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Exposure: 0.006  |  Positions: 1
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Sharpe:   0.000  |  WR: 42.31%  |  Edge: 0.50000  |  MaxDD: 0.00%
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Failure:  0.000  [OK]
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BTCUSDT      BEAR_TREND   EV:+0.0000  Size:0.0060
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]: === LEARNING MONITOR ===
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   (waiting for 10 closed trades per pair)
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   [!] LEARNING: NO LEARNING SIGNAL DETECTED
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Health: 0.000  [BAD]
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]: ========================
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]: [V10.13g EXIT] TP=0 SL=0 micro=0 be=0 partial=(18,0,0) trail=1 scratch=27 stag=0 harvest=0 t_profit=0 t_flat=0 t_loss=0
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   → Harvest rate: 41.3% (19/46)
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]: 📊 [V10.13m EXIT_AUDIT]
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   winners: SCRATCH_EXIT=27 PARTIAL_TP_25=18 EARLY_STOP=6 TRAIL_PROFIT=1
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   near_miss: partial25_near_miss=23777 micro_near_miss=11589 trail_near_miss=47
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   top_rejects:
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   [!] LEARNING: NO LEARNING SIGNAL DETECTED
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   [!] LEARNING: NO LEARNING SIGNAL DETECTED
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ── CYCLE SNAPSHOT ────────────────────────────────────────
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]: {
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   "cycle_time": 1776691421.4854434,
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   "positions": 1,
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   "learning": {
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "health": 0.0,
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "alert": "BAD",
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "mode": "WARM",
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "pairs": {},
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "features": {},
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "block_reasons": {
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "SKIP_SCORE_SOFT": 149,
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "OFI_TOXIC_SOFT_BOOTSTRAP": 232,
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "OFI_TOXIC_SOFT": 250
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     },
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "completed_trades": 52,
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "best_edge": "Unknown",
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "defense": {
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "wall_exits": 0,
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "timeouts": 0,
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "l2_rejected": 0,
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "corr_rejected": 0,
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "defended": 0,
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "efficiency": 0.0
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     },
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "concept_drift": false
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   }
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]: }
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]: ============================================================
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   CRYPTOMASTER  |  0h 18m 27s  | TRENINK
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]: ============================================================
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ZIVE CENY  (Binance · kazde 1 s)
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BTC  $   75,096.2750   ─  +0.000%  [OPEN]
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ETH  $    2,314.1850   ─  +0.000%
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ADA  $        0.2470   ─  +0.000%
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BNB  $      625.0150   ─  +0.000%
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     DOT  $        1.2615   ─  +0.000%
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     SOL  $       85.2050   ─  +0.000%
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     XRP  $        1.4224   ─  +0.000%
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     OTEVRENE POZICE
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BTC  SELL  $75,119.4608->$75,096.2750  +0.000002  TP:0.80%  SL:0.40%
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     VYSLEDKY OBCHODOVANI
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Obchody    52  (OK 11  X 14  ~ 27)
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Winrate     44.0%  ━━━━━━━━●───────────── 44%  cil 55%  (bez timeoutu)
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Zisk        -0.00004279  ◄●─────────────────────
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Drawdown    0.00005433  (pokles od vrcholu)
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Serie       FIRE 4x vyhra v rade!
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ----------------------------------------
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Profit Factor  0.57x  (zisk / ztrata, cil > 1.5)
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Expectancy     -0.00000107  (prumerny vynos / obchod)
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Nejlepsi      +0.00000744   Nejhorsi  -0.00000748
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Posledni obchod  1m 14s zpet
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     VYSLEDKY PO MENACH
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Mena  Obch  WR  Bar          Zisk
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     --------------------------------------------------
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BTC  1  0%  ●───────────────────── 0%  -0.00000703  X
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ETH  5  60%  ━━━━━━━━━━━━●───────── 60%  -0.00000145  OK
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ADA  4  75%  ━━━━━━━━━━━━━━━●────── 75%  +0.00000885  OK
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BNB  1  100%  ━━━━━━━━━━━━━━━━━━━━━● 100%  +0.00000208  OK
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     DOT  4  25%  ━━━━●───────────────── 25%  -0.00000928  X
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     SOL  5  20%  ━━━●────────────────── 20%  -0.00001800  X
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     XRP  5  40%  ━━━━━━━●────────────── 40%  -0.00000201  X
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     UCENI – STAV A USPESNOST
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Kalibrace      KALIBROVAN  ✓  ━━━━━━━━━━━━━━━━━━━━━● 100%  (52 obchodu celkem)
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Trend uceni    STABILNÍ ➡️
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Poslednich 50    42.0%  vs  prumer 44.0%  (-2.0%)
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     EV vykon       prumer 0.032  min 0.030  max 0.048  (50 obch)
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Uzavreni       TP 0%  SL 0%  trail 0%  timeout 0%
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Kalibrace p    p=49.5%  WR=44.0%  odchylka 5.5pp  dobre
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     WR dle rezimu
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       BULL   ━━━━━━━●────────────── 39%  39%  (28 obch)
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       BEAR   ━━━━━━━━━●──────────── 46%  46%  (24 obch)
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     AUDITOR  (ochrana strategie)
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     EV prah              -0.285  score prah 0.173  t15=38  t60=52  aktivni
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Velikost pozice      1.20x  EV-only · loss streak → scale · DD halt 40%
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     STRATEGIE  (ADX + EMA + MACD + BB + RSI)
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Rezim trhu   BULL TREND  silny vzestup  (47%)
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Signaly (THIS CYCLE)  0 kandidati  (cele: 6517 zachyceno  52 provedeno)
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Filtrace      0.0%  projde filtrem  TP: 1.2xATR  /  SL: 0.8xATR  (RR 1.5:1)  EV-only
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     POSLEDNI ROZHODNUTI
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BTC  PRODEJ  $75,083.7850  p:50%  ev:0.030  BULL
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ETH  PRODEJ  $2,315.7650  p:42%  ev:0.034  BEAR
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ADA  PRODEJ  $0.2470  p:50%  ev:0.030  BULL
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BNB  PRODEJ  $625.1550  p:42%  ev:0.034  BEAR
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     DOT  PRODEJ  $1.2605  p:50%  ev:0.030  BEAR  VYHRA
+Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     SOL  PRODEJ  $85.2450  p:50%  ev:0.034  BEAR
+Apr 20 13:23:46 ubuntu-4gb-nbg1-1 cryptomaster[492198]: WARNING:root:on_price(BNBUSDT): Generated FORCED signal LONG
+Apr 20 13:23:46 ubuntu-4gb-nbg1-1 cryptomaster[492198]: WARNING:src.services.hardblock_adapter:🔄 HardBlock zone adjustment: MODERATE (idle=79s, health=0.50) buffer: 0.060 → 0.090
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     XRP  KUPUJ   $1.4226  p:50%  ev:0.030  BEAR  PROHRA
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Sbiram data ━━━ ● Trenink ─── Aktivni
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   STAV:  TRENINK  (winrate 44%->55%,  zisk > 0)
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]: ============================================================
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]: === EXECUTION ENGINE ===
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Equity:   0.999957  |  DD: 0.00%
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Exposure: 0.006  |  Positions: 1
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Sharpe:   0.000  |  WR: 42.31%  |  Edge: 0.50000  |  MaxDD: 0.00%
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Failure:  0.000  [OK]
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BTCUSDT      BEAR_TREND   EV:+0.0000  Size:0.0060
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]: === LEARNING MONITOR ===
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   (waiting for 10 closed trades per pair)
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   [!] LEARNING: NO LEARNING SIGNAL DETECTED
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Health: 0.000  [BAD]
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]: ========================
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]: [V10.13g EXIT] TP=0 SL=0 micro=0 be=0 partial=(18,0,0) trail=1 scratch=27 stag=0 harvest=0 t_profit=0 t_flat=0 t_loss=0
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   → Harvest rate: 41.3% (19/46)
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]: 📊 [V10.13m EXIT_AUDIT]
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   winners: SCRATCH_EXIT=27 PARTIAL_TP_25=18 EARLY_STOP=6 TRAIL_PROFIT=1
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   near_miss: partial25_near_miss=23777 micro_near_miss=11589 trail_near_miss=47
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   top_rejects:
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   🔴 BNB $624.8550 | [FORCED_EXPLORE] sc:3/7  ws:0.50 | BEAR_TREND | conf:40% []
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=52]  t15=38  spread=0.000  af=1.00
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     RDE[v10.10b]: ev=0.050 thr=-0.285 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     coherence[v10.12]: 0.675  ev 0.050→0.034
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     [V10.13r] SCORE_THRESHOLD_COLD_START: relaxed to 0.1728
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     decision=TAKE  ev=0.0338  p=0.5000  af=1.00  coh=0.675
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   [!] LEARNING: NO LEARNING SIGNAL DETECTED
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ── CYCLE SNAPSHOT ────────────────────────────────────────
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]: {
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   "cycle_time": 1776691431.697285,
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   "positions": 1,
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   "learning": {
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "health": 0.0,
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "alert": "BAD",
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "mode": "WARM",
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "pairs": {},
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "features": {},
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "block_reasons": {
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "SKIP_SCORE_SOFT": 149,
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "OFI_TOXIC_SOFT_BOOTSTRAP": 232,
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "OFI_TOXIC_SOFT": 250
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     },
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "completed_trades": 52,
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "best_edge": "Unknown",
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "defense": {
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "wall_exits": 0,
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "timeouts": 0,
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "l2_rejected": 0,
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "corr_rejected": 0,
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "defended": 0,
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "efficiency": 0.0
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     },
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "concept_drift": false
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   }
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]: }
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]: ============================================================
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   CRYPTOMASTER  |  0h 18m 37s  | TRENINK
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]: ============================================================
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ZIVE CENY  (Binance · kazde 1 s)
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BTC  $   75,106.6150   ─  +0.000%  [OPEN]
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ETH  $    2,314.4550   ─  +0.000%
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ADA  $        0.2470   ─  +0.000%
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BNB  $      624.9050   ─  +0.000%
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     DOT  $        1.2605   ─  +0.000%
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     SOL  $       85.1950   ─  +0.000%
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     XRP  $        1.4226   ─  +0.000%
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     OTEVRENE POZICE
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BTC  SELL  $75,119.4608->$75,106.6150  +0.000001  TP:0.80%  SL:0.40%
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     VYSLEDKY OBCHODOVANI
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Obchody    52  (OK 11  X 14  ~ 27)
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Winrate     44.0%  ━━━━━━━━●───────────── 44%  cil 55%  (bez timeoutu)
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Zisk        -0.00004279  ◄●─────────────────────
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Drawdown    0.00005433  (pokles od vrcholu)
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Serie       FIRE 4x vyhra v rade!
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ----------------------------------------
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Profit Factor  0.57x  (zisk / ztrata, cil > 1.5)
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Expectancy     -0.00000107  (prumerny vynos / obchod)
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Nejlepsi      +0.00000744   Nejhorsi  -0.00000748
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Posledni obchod  1m 24s zpet
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     VYSLEDKY PO MENACH
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Mena  Obch  WR  Bar          Zisk
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     --------------------------------------------------
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BTC  1  0%  ●───────────────────── 0%  -0.00000703  X
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ETH  5  60%  ━━━━━━━━━━━━●───────── 60%  -0.00000145  OK
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ADA  4  75%  ━━━━━━━━━━━━━━━●────── 75%  +0.00000885  OK
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BNB  1  100%  ━━━━━━━━━━━━━━━━━━━━━● 100%  +0.00000208  OK
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     DOT  4  25%  ━━━━●───────────────── 25%  -0.00000928  X
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     SOL  5  20%  ━━━●────────────────── 20%  -0.00001800  X
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     XRP  5  40%  ━━━━━━━●────────────── 40%  -0.00000201  X
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     UCENI – STAV A USPESNOST
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Kalibrace      KALIBROVAN  ✓  ━━━━━━━━━━━━━━━━━━━━━● 100%  (52 obchodu celkem)
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Trend uceni    STABILNÍ ➡️
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Poslednich 50    42.0%  vs  prumer 44.0%  (-2.0%)
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     EV vykon       prumer 0.032  min 0.030  max 0.048  (50 obch)
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Uzavreni       TP 0%  SL 0%  trail 0%  timeout 0%
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Kalibrace p    p=49.5%  WR=44.0%  odchylka 5.5pp  dobre
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     WR dle rezimu
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       BULL   ━━━━━━━●────────────── 39%  39%  (28 obch)
+Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       BEAR   ━━━━━━━━━●──────────── 46%  46%  (24 obch)
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     AUDITOR  (ochrana strategie)
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     EV prah              -0.285  score prah 0.173  t15=38  t60=52  aktivni
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Velikost pozice      1.20x  EV-only · loss streak → scale · DD halt 40%
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     STRATEGIE  (ADX + EMA + MACD + BB + RSI)
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Rezim trhu   BULL TREND  silny vzestup  (47%)
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Signaly (THIS CYCLE)  0 kandidati  (cele: 6518 zachyceno  52 provedeno)
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Filtrace      0.0%  projde filtrem  TP: 1.2xATR  /  SL: 0.8xATR  (RR 1.5:1)  EV-only
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     POSLEDNI ROZHODNUTI
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BTC  PRODEJ  $75,083.7850  p:50%  ev:0.030  BULL
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ETH  PRODEJ  $2,315.7650  p:42%  ev:0.034  BEAR
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ADA  PRODEJ  $0.2470  p:50%  ev:0.030  BULL
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BNB  PRODEJ  $624.8550  p:50%  ev:0.034  BEAR
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     DOT  PRODEJ  $1.2605  p:50%  ev:0.030  BEAR  VYHRA
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     SOL  PRODEJ  $85.2450  p:50%  ev:0.034  BEAR
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     XRP  KUPUJ   $1.4226  p:50%  ev:0.030  BEAR  PROHRA
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Sbiram data ━━━ ● Trenink ─── Aktivni
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   STAV:  TRENINK  (winrate 44%->55%,  zisk > 0)
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]: ============================================================
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]: === EXECUTION ENGINE ===
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Equity:   0.999957  |  DD: 0.00%
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Exposure: 0.006  |  Positions: 1
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Sharpe:   0.000  |  WR: 42.31%  |  Edge: 0.50000  |  MaxDD: 0.00%
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Failure:  0.000  [OK]
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BTCUSDT      BEAR_TREND   EV:+0.0000  Size:0.0060
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]: === LEARNING MONITOR ===
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   (waiting for 10 closed trades per pair)
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   [!] LEARNING: NO LEARNING SIGNAL DETECTED
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Health: 0.000  [BAD]
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]: ========================
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]: [V10.13g EXIT] TP=0 SL=0 micro=0 be=0 partial=(18,0,0) trail=1 scratch=27 stag=0 harvest=0 t_profit=0 t_flat=0 t_loss=0
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   → Harvest rate: 41.3% (19/46)
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]: 📊 [V10.13m EXIT_AUDIT]
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   winners: SCRATCH_EXIT=27 PARTIAL_TP_25=18 EARLY_STOP=6 TRAIL_PROFIT=1
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   near_miss: partial25_near_miss=23777 micro_near_miss=11589 trail_near_miss=47
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   top_rejects:
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   [!] LEARNING: NO LEARNING SIGNAL DETECTED
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ── CYCLE SNAPSHOT ────────────────────────────────────────
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]: {
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   "cycle_time": 1776691441.7207398,
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   "positions": 1,
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   "learning": {
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "health": 0.0,
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "alert": "BAD",
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "mode": "WARM",
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "pairs": {},
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "features": {},
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "block_reasons": {
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "SKIP_SCORE_SOFT": 149,
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "OFI_TOXIC_SOFT_BOOTSTRAP": 232,
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "OFI_TOXIC_SOFT": 250
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     },
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "completed_trades": 52,
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "best_edge": "Unknown",
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "defense": {
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "wall_exits": 0,
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "timeouts": 0,
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "l2_rejected": 0,
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "corr_rejected": 0,
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "defended": 0,
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "efficiency": 0.0
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     },
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "concept_drift": false
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   }
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]: }
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]: ============================================================
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   CRYPTOMASTER  |  0h 18m 47s  | TRENINK
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]: ============================================================
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ZIVE CENY  (Binance · kazde 1 s)
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BTC  $   75,103.4850   ─  +0.000%  [OPEN]
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ETH  $    2,314.5450   ─  +0.000%
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ADA  $        0.2470   ─  +0.000%
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BNB  $      624.9350   ─  +0.000%
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     DOT  $        1.2605   ─  +0.000%
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     SOL  $       85.2050   ─  +0.000%
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     XRP  $        1.4226   ─  +0.000%
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     OTEVRENE POZICE
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BTC  SELL  $75,119.4608->$75,103.4850  +0.000001  TP:0.80%  SL:0.40%
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     VYSLEDKY OBCHODOVANI
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Obchody    52  (OK 11  X 14  ~ 27)
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Winrate     44.0%  ━━━━━━━━●───────────── 44%  cil 55%  (bez timeoutu)
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Zisk        -0.00004279  ◄●─────────────────────
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Drawdown    0.00005433  (pokles od vrcholu)
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Serie       FIRE 4x vyhra v rade!
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ----------------------------------------
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Profit Factor  0.57x  (zisk / ztrata, cil > 1.5)
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Expectancy     -0.00000107  (prumerny vynos / obchod)
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Nejlepsi      +0.00000744   Nejhorsi  -0.00000748
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Posledni obchod  1m 34s zpet
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     VYSLEDKY PO MENACH
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Mena  Obch  WR  Bar          Zisk
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     --------------------------------------------------
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BTC  1  0%  ●───────────────────── 0%  -0.00000703  X
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ETH  5  60%  ━━━━━━━━━━━━●───────── 60%  -0.00000145  OK
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ADA  4  75%  ━━━━━━━━━━━━━━━●────── 75%  +0.00000885  OK
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BNB  1  100%  ━━━━━━━━━━━━━━━━━━━━━● 100%  +0.00000208  OK
+Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     DOT  4  25%  ━━━━●───────────────── 25%  -0.00000928  X
+Apr 20 13:24:06 ubuntu-4gb-nbg1-1 cryptomaster[492198]: WARNING:root:on_price(BNBUSDT): Generated FORCED signal LONG

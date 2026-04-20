@@ -1220,10 +1220,13 @@ def print_cycle_summary(now: float) -> None:
 
 
 def main():
-    # V10.13d: Explicit startup tracing
+    # V10.13s: Explicit startup tracing with canonical version
     import sys
+    from src.core.version import get_version_string
+
+    version_str = get_version_string()
     print("\n" + "="*80, file=sys.stderr, flush=True)
-    print("🚀 MAIN() STARTING — V10.13d Bootstrap Sequence", file=sys.stderr, flush=True)
+    print(f"🚀 MAIN() STARTING — {version_str}", file=sys.stderr, flush=True)
     print("="*80, file=sys.stderr, flush=True)
 
     # Initialize event bus handlers (Zero Bug V2 Migration Phase 1)
