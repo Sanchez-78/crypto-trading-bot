@@ -37,12 +37,13 @@ METRICS = {
     "regimes": {"BULL_TREND": 0, "BEAR_TREND": 0, "RANGING": 0,
                 "QUIET_RANGE": 0, "HIGH_VOL": 0},
     # Extended performance metrics
-    "gross_wins":      0.0,
-    "gross_losses":    0.0,
-    "avg_win":         0.0,
-    "avg_loss":        0.0,
-    "best_trade":      0.0,
-    "worst_trade":     0.0,
+    "gross_wins":       0.0,
+    "gross_losses":     0.0,
+    "avg_win":          0.0,
+    "avg_loss":         0.0,
+    "best_trade":       float("-inf"),
+    "worst_trade":      float("inf"),
+    "current_drawdown": 0.0,
     "last_trade_time": 0.0,
     "block_reasons":   {},
 }
@@ -296,9 +297,10 @@ def _update_metrics_locked(signal, trade):
         if profit < m["worst_trade"]:
             m["worst_trade"] = profit
 
-    m["equity_peak"] = max(m["equity_peak"], m["profit"])
-    m["drawdown"]    = max(m["drawdown"], m["equity_peak"] - m["profit"])
-    m["confidence_avg"] = m["confidence_avg"] * 0.9 + conf * 0.1
+    m["equity_peak"]      = max(m["equity_peak"], m["profit"])
+    m["current_drawdown"] = m["equity_peak"] - m["profit"]
+    m["drawdown"]         = max(m["drawdown"], m["current_drawdown"])
+    m["confidence_avg"]   = m["confidence_avg"] * 0.9 + conf * 0.1
 
     # Neutral timeouts are excluded from per-symbol WR — they carry no
     # directional signal and would inflate sym_stats.winrate just like METRICS.winrate.
@@ -324,9 +326,9 @@ def _update_metrics_locked(signal, trade):
     # reclassify as harvested profit (not just survived timeout)
     hold_duration = trade.get("duration_seconds", 0)
     if reason == "TIMEOUT_PROFIT" and hold_duration >= 180 and profit > 0:
-        reason = "HARVEST_PROFIT"  # Promote to harvest category
+        reason = "HARVEST_PROFIT"
         _close_reasons["HARVEST_PROFIT"] = _close_reasons.get("HARVEST_PROFIT", 0) + 1
-        _close_reasons["TIMEOUT_PROFIT"] -= 1  # Decrement old count
+        _close_reasons["TIMEOUT_PROFIT"] = max(0, _close_reasons.get("TIMEOUT_PROFIT", 0) - 1)
     elif reason in _close_reasons:
         _close_reasons[reason] += 1
     elif reason == "HARVEST_PROFIT":
@@ -377,7 +379,7 @@ def get_metrics():
     # Derived
     gw = m["gross_wins"]
     gl = m["gross_losses"]
-    profit_factor = gw / gl if gl > 0 else (99.0 if gw > 0 else 1.0)
+    profit_factor = gw / gl if gl > 0 else (99.0 if gw > 0 else 0.0)
     expectancy    = (wr * m["avg_win"]) - ((1 - wr) * m["avg_loss"])
 
     # Time since last trade
@@ -391,9 +393,13 @@ def get_metrics():
     _timeouts     = m.get("timeouts", 0)
     _timeout_rate = _timeouts / t if t else 0.0
 
+    import math
     return {
         **m,
-        "winrate":        wr,           # wins / (wins + real_losses) — excludes neutral timeouts
+        # Sanitize sentinel values for serialization/display
+        "best_trade":     m["best_trade"]  if not math.isinf(m["best_trade"])  else 0.0,
+        "worst_trade":    m["worst_trade"] if not math.isinf(m["worst_trade"]) else 0.0,
+        "winrate":        wr,
         "timeout_rate":   _timeout_rate,
         "ready":          t > 50 and wr > 0.55 and m["profit"] > 0,
         "recent_winrate": recent_wr,
@@ -473,22 +479,27 @@ def bootstrap_from_history(trades):
             m["gross_losses"] += abs(profit)
             if profit < m["worst_trade"]: m["worst_trade"] = profit
 
-        m["equity_peak"] = max(m["equity_peak"], m["profit"])
-        m["drawdown"]    = max(m["drawdown"], m["equity_peak"] - m["profit"])
-        m["confidence_avg"] = m["confidence_avg"] * 0.9 + conf * 0.1
-        _update_sym(sym, result, profit)
+        m["equity_peak"]      = max(m["equity_peak"], m["profit"])
+        m["current_drawdown"] = m["equity_peak"] - m["profit"]
+        m["drawdown"]         = max(m["drawdown"], m["current_drawdown"])
+        m["confidence_avg"]   = m["confidence_avg"] * 0.9 + conf * 0.1
+
+        if not _bs_neutral:
+            _update_sym(sym, result, profit)
 
         # Bootstrap new trackers
         ev = float(trade.get("ev", 0))
         if ev > 0:
-            _ev_history.append(ev)   # deque handles cap automatically
+            _ev_history.append(ev)
         reason = trade.get("close_reason", "")
         if reason in _close_reasons:
             _close_reasons[reason] += 1
         regime = trade.get("regime", "RANGING")
         rs = _regime_stats.setdefault(regime, {"wins": 0, "trades": 0})
-        rs["trades"] += 1
-        if result == "WIN": rs["wins"] += 1
+        if not _bs_neutral:
+            rs["trades"] += 1
+            if result == "WIN":
+                rs["wins"] += 1
 
     # Seed online calibrator from closed trades (must be after loop)
     try:

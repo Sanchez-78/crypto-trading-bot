@@ -702,9 +702,10 @@ def save_metrics_full(metrics, open_positions=None, execution=None, monitor=None
                 "regime_stats":   rg_st,
             },
             "equity": {
-                "equity":      round(pr, 8),
-                "drawdown":    round(dd, 8),
-                "equity_peak": round(ep, 8),
+                "equity":           round(pr, 8),
+                "drawdown":         round(dd, 8),
+                "current_drawdown": round(metrics.get("current_drawdown", 0.0), 8),
+                "equity_peak":      round(ep, 8),
             },
             "system": {
                 "trading_enabled": True,
