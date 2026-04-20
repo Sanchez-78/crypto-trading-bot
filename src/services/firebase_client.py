@@ -668,64 +668,71 @@ def save_metrics_full(metrics, open_positions=None, execution=None, monitor=None
         # Mark WR as unreliable below 10 decisive trades to avoid misleading 100%
         _wr_reliable = _decisive >= 10
 
+        _cur_dd = metrics.get("current_drawdown", 0.0)
+        _cur_dd_pct = round(_cur_dd / ep, 4) if ep > 0 else 0.0
+
         data = {
+            # ── Portfolio: equity & drawdown ──────────────────────────────────
+            "portfolio": {
+                "equity_abs":           round(pr, 8),
+                "equity_peak_abs":      round(ep, 8),
+                "drawdown_max_abs":     round(dd, 8),
+                "drawdown_current_abs": round(_cur_dd, 8),
+                "drawdown_current_pct": _cur_dd_pct,
+            },
+            # ── Performance: winrate, PF, EV, trade quality ───────────────────
             "performance": {
-                "trades":          t,
-                "wins":            _wins,
-                "losses":          _losses,
-                "timeouts":        _timeouts,
-                "decisive":        _decisive,
-                "winrate":         round(wr, 4),
-                "winrate_reliable": _wr_reliable,   # False → app should show "N/A"
-                "avg_profit":      round(exp, 8),
-                "profit_factor":   round(pf, 4),
-                "profit":          round(pr, 8),
-                "best_trade":      round(metrics.get("best_trade", 0.0), 8),
-                "worst_trade":     round(metrics.get("worst_trade", 0.0), 8),
+                "winrate_ratio":       round(wr, 4),
+                "winrate_reliable":    _wr_reliable,
+                "profit_factor_ratio": round(pf, 4),
+                "expectancy_abs":      round(exp, 8),
+                "avg_win_abs":         round(metrics.get("avg_win", 0.0), 8),
+                "avg_loss_abs":        round(metrics.get("avg_loss", 0.0), 8),
+                "best_trade_abs":      round(metrics.get("best_trade", 0.0), 8),
+                "worst_trade_abs":     round(metrics.get("worst_trade", 0.0), 8),
+                "win_streak_count":    metrics.get("win_streak", 0),
+                "loss_streak_count":   metrics.get("loss_streak", 0),
+                "recent_winrate_ratio": round(rwr, 4),
+                "recent_count":        rc,
+                "trend":               trend_en,
+                "trend_cs":            lt,
             },
-            "health": {
-                "score":  score,
-                "status": status,
-                "ready":  rdy,
+            # ── Strategy: trade counts, regime/symbol/exit breakdown ──────────
+            "strategy": {
+                "trades_count":       t,
+                "wins_count":         _wins,
+                "losses_count":       _losses,
+                "timeouts_count":     _timeouts,
+                "decisive_count":     _decisive,
+                "timeout_rate_ratio": round(_timeouts / t, 4) if t else 0.0,
+                "confidence_avg":     round(ca, 4),
+                "ev_stats":           ev_st,
+                "close_stats":        cl_st,
+                "regime_stats":       rg_st,
+                "sym_stats":          metrics.get("sym_stats", {}),
             },
-            "learning": {
-                "trend":          trend_en,
-                "trend_cs":       lt,
-                "state":          learn_state,
-                "confidence":     round(ca, 4),
-                "recent_winrate": round(rwr, 4),
-                "recent_count":   rc,
-                "win_streak":     metrics.get("win_streak", 0),
-                "loss_streak":    metrics.get("loss_streak", 0),
-                "ev_stats":       ev_st,
-                "close_stats":    cl_st,
-                "regime_stats":   rg_st,
-            },
-            "equity": {
-                "equity":           round(pr, 8),
-                "drawdown":         round(dd, 8),
-                "current_drawdown": round(metrics.get("current_drawdown", 0.0), 8),
-                "equity_peak":      round(ep, 8),
-            },
+            # ── System: health, signals, positions, meta ──────────────────────
             "system": {
-                "trading_enabled": True,
-                "dominant_regime": dominant_regime,
-                "regimes":         regimes,
-                "signals": {
-                    "generated": gen,
-                    "filtered":  flt,
-                    "executed":  exe,
-                    "blocked":   blk,
-                },
+                "health_score":             score,
+                "health_status":            status,
+                "ready":                    rdy,
+                "learning_state":           learn_state,
+                "trading_enabled":          True,
+                "dominant_regime":          dominant_regime,
+                "regimes":                  regimes,
+                "signals_generated_count":  gen,
+                "signals_filtered_count":   flt,
+                "signals_executed_count":   exe,
+                "signals_blocked_count":    blk,
+                "last_trade_ts":            metrics.get("last_trade_time", 0.0),
+                "last_prices":              prices_clean,
+                "last_signals":             metrics.get("last_signals", {}),
+                "open_positions":           _build_open_positions(open_positions),
+                "execution":                execution,
+                "monitor":                  monitor,
+                "fx_usd_czk":               round(float(fx_usd_czk), 4) if fx_usd_czk else None,
+                "timestamp_ts":             time.time(),
             },
-            "sym_stats":    metrics.get("sym_stats", {}),
-            "last_prices":  prices_clean,
-            "last_signals": metrics.get("last_signals", {}),
-            "open_positions": _build_open_positions(open_positions),
-            "execution":    execution,   # EV/failure/sharpe/control from execution engine
-            "monitor":      monitor,     # learning quality/convergence/feature WR snapshot
-            "fx_usd_czk":   round(float(fx_usd_czk), 4) if fx_usd_czk else None,
-            "timestamp":    time.time(),
         }
         db.collection(col("metrics")).document("latest").set(_sanitize_doc(data), merge=False)
     except Exception as e:
