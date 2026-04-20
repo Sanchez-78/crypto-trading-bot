@@ -1192,6 +1192,19 @@ def print_cycle_summary(now: float) -> None:
         except Exception:
             pass
 
+        # V10.13s: Add reset integrity telemetry if mismatch was detected/corrected
+        reset_integrity_str = ""
+        try:
+            from src.services.realtime_decision_engine import _reset_integrity_state
+            if _reset_integrity_state.get("validation_run") and _reset_integrity_state.get("mismatch_detected"):
+                reset_integrity_str = (
+                    f"  | [V10.13s_RESET_INTEGRITY] mismatch_detected=True "
+                    f"effective_n={_reset_integrity_state.get('effective_completed_trades', 0)} "
+                    f"stale_cleared={'True' if _reset_integrity_state.get('stale_metrics_cleared') else 'False'}"
+                )
+        except Exception:
+            pass
+
         print(
             f"[V10.13q CYCLE] "
             f"gen={_cycle_stats['candidates_generated']} "
@@ -1199,7 +1212,7 @@ def print_cycle_summary(now: float) -> None:
             f"exe={_cycle_stats['candidates_executed']} "
             f"top={top_block} "
             f"ev_thr={ev_thr:.4f} score_thr={score_thr:.4f} "
-            f"unblock={'Y' if unblock else 'N'} idle={idle_sec:.0f}s{upstream_str}{hard_soft_str}{kill_str}{rescue_str}{bootstrap_str}"
+            f"unblock={'Y' if unblock else 'N'} idle={idle_sec:.0f}s{upstream_str}{hard_soft_str}{kill_str}{rescue_str}{bootstrap_str}{reset_integrity_str}"
         )
     except Exception as e:
         import logging as _log
@@ -1326,6 +1339,24 @@ def main():
     print("  [8/8] Running warmup indicators...", file=sys.stderr, flush=True)
     warmup()
     print("  [8/8] Warmup complete ✓", file=sys.stderr, flush=True)
+
+    # V10.13s: Detect and correct stale warm-start contamination after reset
+    print("  [V10.13s] Validating runtime state consistency...", file=sys.stderr, flush=True)
+    try:
+        from src.services.realtime_decision_engine import (
+            validate_runtime_state_consistency,
+            apply_reset_integrity_corrections
+        )
+        _val_result = validate_runtime_state_consistency()
+        if _val_result.get("mismatch"):
+            print(f"  [V10.13s] ⚠️  State mismatch detected — applying corrections", file=sys.stderr, flush=True)
+            apply_reset_integrity_corrections()
+            print(f"  [V10.13s] ✅ Stale metrics cleared", file=sys.stderr, flush=True)
+        else:
+            print(f"  [V10.13s] ✅ State consistency validated", file=sys.stderr, flush=True)
+    except Exception as _v13s_err:
+        import logging as _log_v13s
+        _log_v13s.getLogger(__name__).debug(f"V10.13s validation error: {_v13s_err}")
 
     print("\n✅ BOOTSTRAP COMPLETE — Starting main event loop...\n", file=sys.stderr, flush=True)
 

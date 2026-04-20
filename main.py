@@ -1,3 +1,11 @@
+# Přidání REST API pro metriky (bez zásahu do hlavní logiky)
+try:
+    from src.services.metrics_api import router as metrics_router
+    from fastapi import FastAPI
+    app = FastAPI()
+    app.include_router(metrics_router)
+except Exception as e:
+    print(f"[INFO] Metrics API not loaded: {e}")
 import sys
 import time
 from config import SYMBOLS, INTERVAL

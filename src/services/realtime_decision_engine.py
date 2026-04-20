@@ -76,6 +76,120 @@ def get_kill_audit_summary() -> dict:
     }
 
 
+# ── V10.13s: Reset integrity state validation (detect stale warm-start contamination) ──
+# After DB wipe, detect if global metrics are stale but learning state is fresh
+_reset_integrity_state = {
+    "mismatch_detected": False,
+    "mismatch_log": [],
+    "effective_completed_trades": 0,
+    "stale_metrics_cleared": False,
+    "validation_run": False,
+}
+
+def validate_runtime_state_consistency() -> dict:
+    """
+    V10.13s: Detect stale warm-start contamination after DB wipe/reset.
+    
+    After reset, global metrics (completed_trades, calibration flags) may be 
+    stale while learning state (pair/regime counts) is fresh. This creates
+    contradictory bot state that confuses thresholds and dashboard.
+    
+    Returns validation result dict with mismatch detection.
+    """
+    global _reset_integrity_state
+    
+    try:
+        from src.services.learning_event import METRICS as _M_val
+        from src.services.learning_monitor import lm_count as _lc_val, lm_pnl_hist as _lph_val
+        
+        _global_n = _M_val.get("trades", 0)
+        
+        # Calculate effective sample count from learning state
+        _pair_counts = list(_lc_val.values()) if _lc_val else []
+        _median_pair_n = sorted(_pair_counts)[len(_pair_counts)//2] if _pair_counts else 0
+        _max_pair_n = max(_pair_counts) if _pair_counts else 0
+        _sum_pair_n = sum(_pair_counts)
+        _num_pairs = len(_lc_val)
+        
+        # Detect mismatch: high global trades but sparse local learning
+        _mismatch = (
+            _global_n >= 100  # Global says mature
+            and _num_pairs > 0
+            and (_max_pair_n < 15 or _median_pair_n < 5)  # But local is immature
+        )
+        
+        result = {
+            "mismatch": _mismatch,
+            "global_completed_trades": _global_n,
+            "effective_completed_trades": _sum_pair_n,
+            "num_pairs": _num_pairs,
+            "median_pair_n": _median_pair_n,
+            "max_pair_n": _max_pair_n,
+            "sum_pair_n": _sum_pair_n,
+        }
+        
+        if _mismatch:
+            log.warning(
+                f"[V10.13s] STATE MISMATCH DETECTED — stale global state after reset:\n"
+                f"    global_completed_trades={_global_n} (stale)\n"
+                f"    effective_completed_trades={_sum_pair_n} (from learning state)\n"
+                f"    num_pairs={_num_pairs} median_n={_median_pair_n} max_n={_max_pair_n}\n"
+                f"    → Clearing stale global metrics"
+            )
+            _reset_integrity_state["mismatch_detected"] = True
+            _reset_integrity_state["mismatch_log"].append({
+                "ts": _time.time(),
+                "result": result
+            })
+        
+        _reset_integrity_state["validation_run"] = True
+        _reset_integrity_state["effective_completed_trades"] = _sum_pair_n
+        
+        return result
+        
+    except Exception as _vsc_err:
+        log.debug(f"State consistency validation error: {_vsc_err}")
+        return {"mismatch": False, "error": str(_vsc_err)}
+
+
+def apply_reset_integrity_corrections():
+    """
+    V10.13s: Apply corrections when stale warm-start contamination is detected.
+    
+    Clears or resets stale global metrics that contradict fresh learning state,
+    ensuring calibration status and thresholds reflect reality.
+    """
+    global _reset_integrity_state
+    
+    if not _reset_integrity_state.get("mismatch_detected"):
+        return  # No mismatch, no action needed
+    
+    try:
+        from src.services.learning_event import METRICS as _M_corr
+        from src.services.learning_monitor import lm_count as _lc_corr
+        
+        # Recompute effective completed trades from trustworthy learning state
+        _effective_n = sum(_lc_corr.values()) if _lc_corr else 0
+        
+        # Update METRICS to reflect real current state
+        old_n = _M_corr.get("trades", 0)
+        _M_corr["trades"] = _effective_n
+        
+        # Force recalibration status - cannot claim mature if learning is sparse
+        # This will be checked in current_ev_threshold() and current_score_threshold()
+        
+        log.info(
+            f"[V10.13s] RESET_INTEGRITY CORRECTIONS APPLIED:\n"
+            f"    completed_trades: {old_n} → {_effective_n}\n"
+            f"    action: STALE_GLOBAL_STATE_CORRECTED"
+        )
+        
+        _reset_integrity_state["stale_metrics_cleared"] = True
+        
+    except Exception as _arc_err:
+        log.debug(f"Reset integrity corrections error: {_arc_err}")
+
+
 # ── V10.13r: Cold-start recovery telemetry (bootstrap deadlock relief) ────────────
 # Track bootstrap recovery activities to verify patch effectiveness
 _bootstrap_state = {
