@@ -2282,13 +2282,14 @@ def on_price(data):
         # Timeout = neutral: no TP/SL reached → no directional signal.
         # Penalty removed — in QUIET market 57% timeout rate drove pair EVs
         # negative rapidly → pair_block deadlock after bootstrap wipe.
+        increment_lm_update_called()  # V10.13s Phase 2: Track lm_update call
         lm_update(sym, reg_sig, learning_pnl,
                   ws=pos["signal"].get("ws", 0.5),
                   features=bool_f)
 
         # V10.13s: Log learning signal reception to verify flow
         increment_lm_update_success()  # V10.13s Phase 2: Track lm_update success
-    _lm_n = _LM_METRICS.get("trades", 0)
+        _lm_n = _LM_METRICS.get("trades", 0)
         _lm_health = _LM_METRICS.get("Health", 0)
         log.debug(f"[V10.13s_LEARNING] {sym}/{reg_sig} pnl={learning_pnl:.4f} "
                   f"n={_lm_n} health={_lm_health:.3f}")
