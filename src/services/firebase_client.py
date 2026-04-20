@@ -211,16 +211,12 @@ def save_batch(batch):
         print(f"💾 Firebase: saved {len(batch)} trades (batch write)")
         return len(batch)
     except Exception as e:
-        print(f"⚠️  save_batch failed ({e}) — retrying in 3 s …")
-        time.sleep(3)
-        try:
-            n = _attempt(batch)
-            print(f"💾 Firebase: saved {n} trades (retry OK)")
-            return n
-        except Exception as e2:
-            _RETRY_QUEUE.extend(batch)
-            print(f"❌ save_batch retry failed ({e2}) — {len(batch)} trades queued for next flush")
-            return 0
+        print(f"⚠️  save_batch failed ({e}) — queuing for retry (no blocking sleep)")
+        # BUG FIX: Removed time.sleep(3) that blocked market stream thread
+        # If Firebase fails, queue batch and return immediately instead of blocking
+        # Market stream must stay responsive to price ticks
+        _RETRY_QUEUE.extend(batch)  # Queue for next flush cycle
+        return 0
 
 
 def save_trade(trade, result):

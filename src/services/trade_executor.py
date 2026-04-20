@@ -1449,8 +1449,8 @@ def handle_signal(signal):
     # V10: meta_controller — system-health aggression multiplier.
     # V10 adds volatility param (atr_pct already computed above) and hard 0.0 stop.
     # Applied after Kelly/base sizing; trade_freq from tick-rate window.
-    _dd_mc    = _gm().get("max_drawdown", 0.0)
-    _sharpe   = _gm().get("sharpe", 0.0)
+    _dd_mc    = _gm().get("drawdown", 0.0)  # BUG FIX: key is "drawdown" not "max_drawdown"
+    _sharpe   = _gm().get("sharpe", 0.5)   # BUG FIX: sharpe not in METRICS, use reasonable default
     _recent_n = sum(1 for t in _trades_at_tick if _tick_counter[0] - t <= 100)
     _meta     = meta_controller(_sharpe, _dd_mc, _wr_ps, _recent_n / 100.0,
                                 volatility=atr_pct)
@@ -1600,7 +1600,7 @@ def handle_signal(signal):
         _reg_wr = _reg_stats.get("winrate", 1.0)
         if _reg_n >= 25 and _reg_wr < 0.35:
             log.info(f"    regime BLOCK  regime={reg}  wr={_reg_wr:.1%}  n={_reg_n}")
-            return None
+            return  # BUG FIX: return (not return None) for clarity
         elif _reg_n >= 20 and _reg_wr < 0.40:
             size *= 0.5
             log.info(f"    regime penalty x0.5  regime={reg}  wr={_reg_wr:.1%}  n={_reg_n}")
@@ -2126,10 +2126,8 @@ def on_price(data):
     short    = sym.replace("USDT", "")
     icon     = "✅" if result == "WIN" else "❌"
 
-    print(f"    {icon} {short} {pos['action']} "
-          f"${entry:,.4f}→${curr:,.4f}  {profit:+.6f}  [{reason}] (fee: {fee_used:.5f})")
-    
-    # PATCH: Zero Bug V2 - Log via event_bus
+    # BUG FIX: Removed duplicate direct print (was logging trade twice)
+    # Keep only event_bus emit for single log entry
     msg = (f"    {icon} {short} {pos['action']} "
            f"${entry:,.4f}→${curr:,.4f}  {profit:+.6f}  [{reason}] (fee: {fee_used:.5f})")
     get_event_bus().emit("LOG_OUTPUT", {"message": msg}, time.time())
@@ -2225,6 +2223,8 @@ def on_price(data):
     bandit_update(sym, reg_sig, max(-0.05, min(0.05, profit)))
     record_trade_close(sym, reg_sig, profit)
 
+    # BUG FIX: Define bool_f before try block to prevent NameError if import fails
+    bool_f = {}  # default empty if try block fails
     try:
         from src.services.learning_monitor import lm_update
         raw_f  = pos["signal"].get("features", {})

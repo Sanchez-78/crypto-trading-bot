@@ -1121,7 +1121,7 @@ def print_cycle_summary(now: float) -> None:
         ev_thr = get_ev_threshold()
         score_thr = get_score_threshold()
         unblock = is_unblock_mode()
-        idle_sec = safe_idle_seconds(METRICS.get("last_trade_ts"), now)
+        idle_sec = safe_idle_seconds(METRICS.get("last_trade_time"), now)  # BUG FIX: last_trade_time (not last_trade_ts)
 
         # V10.13d: Get upstream signal generation stats
         sg_stats = get_sg_stats()
@@ -1381,7 +1381,7 @@ def main():
             signals_gen = METRICS.get("signals_generated", 0)
             # V10.12h: Use safe idle computation to prevent unix-time-sized values
             # Note: Use local var name to avoid shadowing global last_trade_ts list
-            last_trade_ts_value = METRICS.get("last_trade_ts") or now
+            last_trade_ts_value = METRICS.get("last_trade_time") or now  # BUG FIX: last_trade_time (not last_trade_ts)
             no_trade_time = safe_idle_seconds(last_trade_ts_value, now)
 
             # Update adaptive systems
