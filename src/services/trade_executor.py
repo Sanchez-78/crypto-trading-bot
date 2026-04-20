@@ -1771,6 +1771,28 @@ def handle_signal(signal):
     except Exception:
         pass
 
+    # ── V11: Capture learning state and decision context at trade open ──
+    learning_at_open = {}
+    decision_engine_context = {}
+    adaptive_zones_at_open = {}
+    try:
+        from src.services.learning_monitor import get_learning_state
+        learning_at_open = get_learning_state() or {}
+    except Exception:
+        pass
+
+    try:
+        from src.services.realtime_decision_engine import get_last_decision_context
+        decision_engine_context = get_last_decision_context(sym) or {}
+    except Exception:
+        pass
+
+    try:
+        from src.optimized.mtf_filter import get_zone_snapshot
+        adaptive_zones_at_open = get_zone_snapshot(sym) or {}
+    except Exception:
+        pass
+
     _positions[sym] = {
         "action":        signal["action"],
         "entry":         actual_entry,
@@ -1804,6 +1826,11 @@ def handle_signal(signal):
         "efficiency_live":  _efficiency,       # V10.10: decays each tick (exp decay)
         "expected_hold":    _expected_hold,    # V10.10: hold ticks used as decay tau
         "unblock_mode":     _in_unblock,       # V10.12d: True if trade opened in unblock mode
+        
+        # V11: Learning and decision context at open
+        "learning_at_open": learning_at_open,
+        "decision_engine": decision_engine_context,
+        "adaptive_zones_at_open": adaptive_zones_at_open,
     }
     tag = "[force]" if force else ""
     msg = (f"    exec{tag}: slip={fill_slip:.5f}  fee={actual_fee_rt:.5f}  fr={fill_rate(sym):.2f}  "
@@ -2118,6 +2145,33 @@ def on_price(data):
     except Exception as e:
         log.info(f"    [Warn: Notifikace error] {e}")
 
+    # ── V11: Extract learning snapshot and decision context at trade close ──
+    learning_snapshot = None
+    decision_context = None
+    adaptive_zones_snapshot = None
+    try:
+        from src.services.learning_monitor import get_learning_state
+        learning_snapshot = get_learning_state()
+    except Exception:
+        pass
+
+    try:
+        from src.services.realtime_decision_engine import get_last_decision_context
+        decision_context = get_last_decision_context(sym)
+    except Exception:
+        pass
+
+    try:
+        from src.optimized.mtf_filter import get_zone_snapshot
+        adaptive_zones_snapshot = get_zone_snapshot(sym)
+    except Exception:
+        pass
+
+    # ── V11: Calculate reward scores ──
+    signal_quality_score = (1.0 if mfe / max(mae, 1e-6) >= 1.5 else 0.7 if mfe > 0 else 0.3)
+    time_efficiency_score = (1.0 if pos.get("ticks", 60) < 30 else 0.7 if pos.get("ticks", 60) < 60 else 0.4)
+    risk_management_score = (1.0 if abs(move) >= 0.01 else 0.7 if abs(move) >= 0.005 else 0.4)
+    
     trade = {
         **pos["signal"],
         "profit":        profit,
@@ -2130,8 +2184,37 @@ def on_price(data):
         "fill_slippage": pos.get("fill_slippage", 0.0),
         "mae":           mae,
         "mfe":           mfe,
+        "mfe_pct":       mfe * 100,
+        "mae_pct":       mae * 100,
         "stop_loss":     pos.get("stop_loss",   pos["signal"].get("stop_loss")),
         "take_profit":   pos.get("take_profit", pos["signal"].get("take_profit")),
+        
+        # V11: Learning context at trade open
+        "learning_at_open": learning_snapshot or {},
+        
+        # V11: Decision engine context
+        "decision_engine": decision_context or {},
+        
+        # V11: Adaptive zones at open
+        "adaptive_zones_at_open": adaptive_zones_snapshot or {},
+        
+        # V11: Smart exit trigger analysis
+        "smart_exit_trigger": {
+            "exit_reason": reason,
+            "tp_hit": "TP_HIT" in reason if reason else False,
+            "sl_hit": "SL_HIT" in reason or "STOP_LOSS" in reason if reason else False,
+            "breakeven_time": int(time.time() - pos["open_ts"]) if move >= 0 else None,
+            "risk_adjusted": pos.get("reduced", False),
+            "reason": f"{reason} - MFE/MAE ratio: {mfe/max(mae, 1e-6):.2f}",
+        },
+        
+        # V11: Reward scoring
+        "rewards": {
+            "signal_quality": signal_quality_score,
+            "time_efficiency": time_efficiency_score,
+            "risk_management": risk_management_score,
+            "total": (signal_quality_score + time_efficiency_score + risk_management_score) / 3,
+        },
     }
 
     update_metrics(pos["signal"], trade)
