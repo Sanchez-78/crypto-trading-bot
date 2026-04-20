@@ -1100,19 +1100,20 @@ def track_cycle_stats(candidates: int, passed: int, executed: int, block_reasons
 def print_cycle_summary(now: float) -> None:
     """Print authoritative cycle-level summary.
 
-    V10.13d: Enhanced with upstream signal generation diagnostics.
+    V10.13q: Enhanced with entry kill attribution telemetry.
     Shows:
     - Market data freshness (ticks, symbols updated)
     - Pre-filter candidate tracking (prefilter drops with reasons)
     - Candidate generation and pass rates
     - Hard vs soft blocks (SKIP_SCORE_HARD/SOFT, FAST_FAIL_HARD/SOFT, OFI_TOXIC_HARD/SOFT)
+    - V10.13q: Final kill attribution (which layer actually rejected each candidate)
     - Active EV and score thresholds
     - Unblock mode and idle state
     """
     global _cycle_stats, _symbol_block_reasons
 
     try:
-        from src.services.realtime_decision_engine import get_ev_threshold, get_score_threshold
+        from src.services.realtime_decision_engine import get_ev_threshold, get_score_threshold, get_kill_audit_summary
         from src.services.adaptive_recovery import is_unblock_mode
         from src.services.learning_event import METRICS
         from src.services.signal_generator import get_cycle_stats as get_sg_stats
@@ -1155,14 +1156,26 @@ def print_cycle_summary(now: float) -> None:
             drop_summary = ", ".join(f"{sym}:{reason}" for sym, reason in sorted(prefilter_drops.items())[:5])
             upstream_str += f" drops=[{drop_summary}]"
 
+        # V10.13q: Add kill attribution summary
+        kill_audit = get_kill_audit_summary()
+        kill_str = ""
+        if kill_audit["cycle_kills"]:
+            top_kills = sorted(kill_audit["cycle_kills"].items(), key=lambda x: -x[1])[:3]
+            kill_str = "  | kills=[" + ", ".join(f"{r}={c}" for r, c in top_kills) + "]"
+
+        if kill_audit["cycle_rescues"]:
+            rescue_str = "  | rescues=[" + ", ".join(f"{r}={c}" for r, c in kill_audit["cycle_rescues"].items()) + "]"
+        else:
+            rescue_str = ""
+
         print(
-            f"[V10.13d CYCLE] "
+            f"[V10.13q CYCLE] "
             f"gen={_cycle_stats['candidates_generated']} "
             f"pass={_cycle_stats['candidates_passed']} "
             f"exe={_cycle_stats['candidates_executed']} "
             f"top={top_block} "
             f"ev_thr={ev_thr:.4f} score_thr={score_thr:.4f} "
-            f"unblock={'Y' if unblock else 'N'} idle={idle_sec:.0f}s{upstream_str}{hard_soft_str}"
+            f"unblock={'Y' if unblock else 'N'} idle={idle_sec:.0f}s{upstream_str}{hard_soft_str}{kill_str}{rescue_str}"
         )
     except Exception as e:
         import logging as _log
@@ -1333,6 +1346,13 @@ def main():
             reset_cycle_stats()
         except (ImportError, Exception):
             pass  # Fail silently if module not available
+
+        # V10.13q: Reset per-cycle kill audit (entry rejection telemetry)
+        try:
+            from src.services.realtime_decision_engine import reset_kill_audit
+            reset_kill_audit()
+        except (ImportError, Exception):
+            pass  # Fail silently if not available
 
         # V10.13L: Advance fault clear timers (fault persistence grace period)
         try:

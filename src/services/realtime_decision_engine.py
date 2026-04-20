@@ -38,42 +38,96 @@ from src.services.smart_exit_engine import evaluate_position_exit
 from src.services.reward_system import compute_reward
 
 
-# ── V10.12g: Safe idle time calculation ─────────────────────────────────────
+# ── V10.13q: Final kill attribution telemetry (observability for tuning) ────────
+# Track the FINAL terminal reason each candidate is rejected
+_entry_kill_audit = {
+    "cycle_kills": {},        # Current cycle: reason → count
+    "cycle_rescues": {},      # Current cycle: rescue_type → count
+    "session_kills": {},      # Session totals
+    "session_rescues": {},
+    "last_summary_ts": _time.time(),
+}
+
+def reset_kill_audit():
+    """Reset cycle-level kill audit (call at start of each cycle)."""
+    global _entry_kill_audit
+    _entry_kill_audit["cycle_kills"] = {}
+    _entry_kill_audit["cycle_rescues"] = {}
+
+def track_kill(reason: str):
+    """Log a final rejection with its terminal reason."""
+    global _entry_kill_audit
+    _entry_kill_audit["cycle_kills"][reason] = _entry_kill_audit["cycle_kills"].get(reason, 0) + 1
+    _entry_kill_audit["session_kills"][reason] = _entry_kill_audit["session_kills"].get(reason, 0) + 1
+
+def track_rescue(rescue_type: str):
+    """Log when emergency recovery allows a candidate through."""
+    global _entry_kill_audit
+    _entry_kill_audit["cycle_rescues"][rescue_type] = _entry_kill_audit["cycle_rescues"].get(rescue_type, 0) + 1
+    _entry_kill_audit["session_rescues"][rescue_type] = _entry_kill_audit["session_rescues"].get(rescue_type, 0) + 1
+
+def get_kill_audit_summary() -> dict:
+    """Return current cycle kill audit for dashboard."""
+    return {
+        "cycle_kills": dict(_entry_kill_audit["cycle_kills"]),
+        "cycle_rescues": dict(_entry_kill_audit["cycle_rescues"]),
+        "session_kills": dict(_entry_kill_audit["session_kills"]),
+        "session_rescues": dict(_entry_kill_audit["session_rescues"]),
+    }
+
+
+# ── V10.13q: Improved idle time calculation (fixed timestamp source issues) ─────
 
 def safe_idle_seconds(last_trade_ts: float | None = None, now: float | None = None) -> float:
     """
-    V10.12g: Calculate safe idle seconds, preventing unix-time-sized values.
-    
-    If last_trade_ts is None/0/invalid, returns 0.0 (not idle yet).
-    Never returns values > 1 day (prevents timestamp bugs from exploding).
+    V10.13q: Calculate safe idle seconds with better validation and logging.
+
+    Preferred source order:
+    1. last_trade_ts param (explicit source of truth)
+    2. _last_trade_ts[0] module state (fallback)
+    3. 0.0 (safe default when unknown)
+
+    If idle is unrealistic, log once per process uptime and safely clamp.
+    Never returns values > 1 day (prevents timestamp contamination from exploding).
     """
     if last_trade_ts is None:
         last_trade_ts = _last_trade_ts[0]
-    
+
     if now is None:
         now = _time.time()
-    
-    # Invalid cases
+
+    # Invalid cases → return 0 (assume just started)
     if not last_trade_ts:
         return 0.0
-    
+
     try:
         ts = float(last_trade_ts)
     except (ValueError, TypeError):
         return 0.0
-    
-    if ts <= 0:
+
+    # Negative or future timestamp → safety fallback
+    if ts <= 0 or ts > now:
         return 0.0
-    
-    if ts > now:
-        return 0.0
-    
+
     idle = now - ts
-    # Sanity check: if > 86400s (1 day) probably a bug
+
+    # V10.13q: Better detection and one-time logging
+    # If idle > 1 day (86400s), log ONCE and clamp
     if idle > 86400:
-        log.warning("safe_idle_seconds: unrealistic idle=%.0fs, resetting", idle)
+        # Check if we've already warned about this in this session
+        # (avoid log spam by clamping the warning frequency)
+        _idle_warnings = getattr(safe_idle_seconds, '_warned_count', [0])
+        if len(_idle_warnings) < 1:  # Log max 1 time per session
+            log.warning(
+                "safe_idle_seconds: unrealistic idle=%.0fs (ts=%.0f, now=%.0f). "
+                "Timestamp source may be stale or mixed. Clamping to 0. "
+                "Check: (1) last_trade_ts derivation (2) timestamp persistence (3) boot state",
+                idle, ts, now
+            )
+            _idle_warnings.append(1)
+            safe_idle_seconds._warned_count = _idle_warnings
         return 0.0
-    
+
     return max(0.0, idle)
 
 
@@ -1006,13 +1060,13 @@ def evaluate_signal(signal):
     except Exception:
         pass
 
-    # ── Fast-fail: structural losers (WR<20% + negative EV) ─────────────────
-    # Dual condition reduces false positives at small n: WR<20% alone can be a
-    # bad-luck run; WR<20% + EV<0 signals a structural loser (losses are real,
-    # not timeout zeros). Computed directly from pnl — no n≥10 guard — so it
-    # can catch clear losers at n=5 to n=9 before pair_block fires at n≥25.
-    # Bypassed during COLD phase (<30 total trades) to preserve bootstrap flow.
-    # V10.13b: FAST_FAIL split — HARD for hopeless, SOFT for borderline
+    # ── V10.13q: Fast-fail reworked — HARD only for hopeless, SOFT is penalty-only ──
+    # Root cause: FAST_FAIL_SOFT was dominant killer (114k times in logs).
+    # V10.13q: SOFT is truly soft — confidence/size penalty only, never hard kill.
+    # HARD only for: WR < 5% AND EV <= 0.0 (truly structural losers).
+    # SOFT for: WR < 20% AND EV <= 0.0 (borderline, apply penalty, allow through).
+    #
+    # Penalty is confidence reduction → softens EV gate but doesn't block.
     _fast_fail_soft = False
     _ff_score_mult = 1.0
     _ff_conf_mult = 1.0
@@ -1028,48 +1082,102 @@ def evaluate_signal(signal):
                 _ff_s   = max(float(np.std(_ff_pnl)), 0.002)
                 _ff_ev  = float(np.tanh(_ff_m / _ff_s))
 
-                # V10.13b: HARD block only for truly hopeless (WR < 5% AND EV <= 0.0)
+                # HARD block only for truly hopeless (WR < 5% AND EV <= 0.0)
                 if _ff_wr < 0.05 and _ff_ev <= 0.0:
                     track_blocked(reason="FAST_FAIL_HARD")
                     print(f"    decision=SKIP_FAST_FAIL_HARD  {sym}/{regime}  "
                           f"wr={_ff_wr:.0%}  ev={_ff_ev:.3f}  n={_ff_n}")
                     return None
 
-                # V10.13b: SOFT penalty for borderline (5% <= WR < 20% AND EV <= 0.0)
+                # V10.13q: SOFT — never blocks, only applies confidence penalty
+                # This prevents FAST_FAIL_SOFT from acting as a shadow hard filter
                 elif _ff_wr < 0.20 and _ff_ev <= 0.0:
                     _fast_fail_soft = True
-                    # Graduated penalty: worse stats → heavier reduction
-                    # WR 19% → 0.85x, WR 10% → 0.60x, WR 5% → 0.40x
-                    _ff_penalty = max(0.40, 0.85 - (_ff_wr * 4.5))
+                    # Graduated penalty: worse stats → lighter multiplier (more aggressive penalty)
+                    # WR 19% → 0.60x, WR 10% → 0.45x, WR 5% → 0.30x
+                    # The penalty softens EV and win_prob, making gate harder, but never kills
+                    _ff_penalty = max(0.30, 0.60 - (_ff_wr * 3.0))
                     _ff_conf_mult = _ff_penalty
-                    _ff_score_mult = max(0.50, _ff_penalty)
-                    track_blocked(reason="FAST_FAIL_SOFT")
-                    print(f"    decision=FAST_FAIL_SOFT  {sym}/{regime}  "
+                    _ff_score_mult = _ff_penalty  # Score also reduced, but not as hard
+                    track_blocked(reason="FAST_FAIL_SOFT")  # Track for diagnostics only
+                    print(f"    [V10.13q] FAST_FAIL_SOFT  {sym}/{regime}  "
                           f"wr={_ff_wr:.0%}  ev={_ff_ev:.3f}  n={_ff_n}  "
-                          f"penalty={_ff_penalty:.2f}")
+                          f"conf_penalty={_ff_penalty:.2f} (NOT KILLING, allowing through with reduced confidence)")
         except Exception:
             pass
 
-    # ── Pair+regime block — two tiers ────────────────────────────────────────
-    # Tier 1 (extreme): n≥15, WR<10% — statistically certain loser.
-    #   P(0 wins in 15 at 50% true WR) = 0.003%. No reasonable edge produces
-    #   this. Catches pure-timeout pairs (ZEC/BTC BEAR_TREND WR=0%, n=14)
-    #   one trade after the fast_fail gap closes.
-    # Tier 2 (standard): n≥25, WR<30% — statistical loser with more evidence.
-    #   Leaves room for genuine low-WR high-RR pairs if truly profitable.
+    # ── V10.13q: Pair+regime block → staged penalty system (CRITICAL FIX) ──────────
+    # Root cause: hard blocks were killing entry pipeline entirely. V10.13q converts
+    # to graduated penalties with emergency override capability.
+    #
+    # Tier 1 (Warning): n≥15, WR<40% → pair_penalty×0.75 (keep tradable, reduce size)
+    # Tier 2 (Strong):  n≥20, WR<30% → pair_penalty×0.50 + ev_threshold +0.01
+    # Tier 3 (Severe):  n≥25, WR<20% → pair_penalty×0.25 + score_threshold +0.02
+    # Tier 4 (Extreme): n≥30, WR<10% + no emergency → hard block allowed (rare)
+    #
+    # Emergency override: when idle+recovery+0-positions, pair penalties soften
+    _pair_penalty = 1.0
+    _pair_ev_uplift = 0.0
+    _pair_score_uplift = 0.0
+    _pair_hard_blocked = False
+    _pair_block_reason = ""
+
     try:
         from src.services.learning_monitor import lm_pnl_hist as _lph, lm_count as _lc
+        from src.services.adaptive_recovery import is_unblock_mode as _is_recovery
+        from src.services.trade_executor import get_open_positions as _get_positions
+
         _pk = (sym, regime)
         _pn = _lc.get(_pk, 0)
         if _pn > 0:
             _pp  = _lph.get(_pk, [])
             _pwr = sum(1 for x in _pp if x > 0) / len(_pp) if _pp else 0.0
-            if (_pn >= 15 and _pwr < 0.10) or (_pn >= 25 and _pwr < 0.30):
-                track_blocked(reason="PAIR_BLOCK")
-                print(f"    decision=SKIP_PAIR  {sym}/{regime}  wr={_pwr:.0%}  n={_pn}")
-                return None
-    except Exception:
-        pass
+
+            # Tier evaluation (all penalties are soft unless emergency is OFF)
+            _emergency_active = _is_recovery()
+            _no_positions = len(_get_positions()) == 0
+
+            # Tier 4 (Extreme): only hard block if emergency OFF
+            if _pn >= 30 and _pwr < 0.10:
+                if not _emergency_active:
+                    _pair_hard_blocked = True
+                    _pair_block_reason = f"TIER4_EXTREME (n={_pn}, wr={_pwr:.0%})"
+                    track_blocked(reason="PAIR_BLOCK")
+                    print(f"    decision=PAIR_BLOCK_HARD  {sym}/{regime}  wr={_pwr:.0%}  n={_pn}  [no_emergency_override]")
+                    return None
+                else:
+                    # Emergency override: allow but with severe penalty
+                    _pair_penalty = 0.20  # 80% size reduction
+                    _pair_score_uplift = 0.05  # require stronger confirmation
+                    _pair_block_reason = f"TIER4_EMERGENCY_OVERRIDE (n={_pn}, wr={_pwr:.0%})"
+                    track_blocked(reason="PAIR_BLOCK_SOFT_EMERGENCY")
+                    print(f"    [V10.13q] PAIR_BLOCK_TIER4_OVERRIDE  {sym}/{regime}  wr={_pwr:.0%}  n={_pn}  penalty=0.20 score+0.05")
+
+            # Tier 3 (Severe): n≥25, WR<20%
+            elif _pn >= 25 and _pwr < 0.20:
+                _pair_penalty = 0.25
+                _pair_score_uplift = 0.02
+                _pair_block_reason = f"TIER3_SEVERE (n={_pn}, wr={_pwr:.0%})"
+                track_blocked(reason="PAIR_BLOCK_SOFT")
+                print(f"    [V10.13q] PAIR_BLOCK_TIER3  {sym}/{regime}  wr={_pwr:.0%}  n={_pn}  penalty=0.25 score+0.02")
+
+            # Tier 2 (Strong): n≥20, WR<30%
+            elif _pn >= 20 and _pwr < 0.30:
+                _pair_penalty = 0.50
+                _pair_ev_uplift = 0.01
+                _pair_block_reason = f"TIER2_STRONG (n={_pn}, wr={_pwr:.0%})"
+                track_blocked(reason="PAIR_BLOCK_SOFT")
+                print(f"    [V10.13q] PAIR_BLOCK_TIER2  {sym}/{regime}  wr={_pwr:.0%}  n={_pn}  penalty=0.50 ev+0.01")
+
+            # Tier 1 (Warning): n≥15, WR<40%
+            elif _pn >= 15 and _pwr < 0.40:
+                _pair_penalty = 0.75
+                _pair_block_reason = f"TIER1_WARNING (n={_pn}, wr={_pwr:.0%})"
+                track_blocked(reason="PAIR_BLOCK_SOFT")
+                print(f"    [V10.13q] PAIR_BLOCK_TIER1  {sym}/{regime}  wr={_pwr:.0%}  n={_pn}  penalty=0.75")
+
+    except Exception as _pbe:
+        log.debug("pair block eval error: %s", _pbe)
 
     # ── Auditor: floor 0.7 ────────────────────────────────────────────────────
     af_raw = 1.0
@@ -1079,6 +1187,17 @@ def evaluate_signal(signal):
     except Exception:
         pass
     auditor_base = min(1.0, max(0.7, af_raw))
+
+    # ── V10.13q: Apply pair block penalties to auditor_factor (not hard kill) ──
+    # Staged penalties reduce size, EV threshold, and score threshold instead of kill
+    if _pair_penalty < 1.0:
+        auditor_base *= _pair_penalty
+        print(f"    [V10.13q_PAIR] {_pair_block_reason} → auditor×{_pair_penalty:.2f}")
+
+    # Apply EV threshold uplift (harder to pass)
+    if _pair_ev_uplift > 0:
+        ev_threshold += _pair_ev_uplift
+        print(f"    [V10.13q_PAIR] EV threshold uplift +{_pair_ev_uplift:.3f}")
 
     # ── V10.10b: Combo saturation penalty ────────────────────────────────────
     _combo = tuple(sorted(
@@ -1169,6 +1288,12 @@ def evaluate_signal(signal):
     # V10.12d: Apply timing penalty to EV before score gate
     _ev_adj = ev * _timing_mult
     _score_threshold = current_score_threshold()
+
+    # V10.13q: Apply pair-block score uplift (harder threshold for weak pairs)
+    if _pair_score_uplift > 0:
+        _score_threshold += _pair_score_uplift
+        print(f"    [V10.13q_PAIR] Score threshold uplift +{_pair_score_uplift:.3f} → {_score_threshold:.3f}")
+
     _score_adj = decision_score(_ev_adj, _ws)
 
     # V10.13b: Track score threshold for live dashboard
