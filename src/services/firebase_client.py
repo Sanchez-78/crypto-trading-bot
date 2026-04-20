@@ -671,7 +671,20 @@ def save_metrics_full(metrics, open_positions=None, execution=None, monitor=None
         _cur_dd = metrics.get("current_drawdown", 0.0)
         _cur_dd_pct = round(_cur_dd / ep, 4) if ep > 0 else 0.0
 
+        _now = time.time()
+        _last_trade_ts = metrics.get("last_trade_time", 0.0)
+
         data = {
+            # ── Envelope metadata ─────────────────────────────────────────────
+            "schema_version":  "v2",
+            "generated_at_ts": _now,
+            "freshness": {
+                "portfolio_age_s":    0,           # always current — computed per flush
+                "performance_age_s":  0,
+                "strategy_age_s":     0,
+                "last_trade_age_s":   round(_now - _last_trade_ts, 1) if _last_trade_ts else None,
+            },
+
             # ── Portfolio: equity & drawdown ──────────────────────────────────
             "portfolio": {
                 "equity_abs":           round(pr, 8),
@@ -680,23 +693,25 @@ def save_metrics_full(metrics, open_positions=None, execution=None, monitor=None
                 "drawdown_current_abs": round(_cur_dd, 8),
                 "drawdown_current_pct": _cur_dd_pct,
             },
+
             # ── Performance: winrate, PF, EV, trade quality ───────────────────
             "performance": {
-                "winrate_ratio":       round(wr, 4),
-                "winrate_reliable":    _wr_reliable,
-                "profit_factor_ratio": round(pf, 4),
-                "expectancy_abs":      round(exp, 8),
-                "avg_win_abs":         round(metrics.get("avg_win", 0.0), 8),
-                "avg_loss_abs":        round(metrics.get("avg_loss", 0.0), 8),
-                "best_trade_abs":      round(metrics.get("best_trade", 0.0), 8),
-                "worst_trade_abs":     round(metrics.get("worst_trade", 0.0), 8),
-                "win_streak_count":    metrics.get("win_streak", 0),
-                "loss_streak_count":   metrics.get("loss_streak", 0),
+                "winrate_ratio":        round(wr, 4),
+                "winrate_reliable":     _wr_reliable,
+                "profit_factor_ratio":  round(pf, 4),
+                "expectancy_abs":       round(exp, 8),
+                "avg_win_abs":          round(metrics.get("avg_win", 0.0), 8),
+                "avg_loss_abs":         round(metrics.get("avg_loss", 0.0), 8),
+                "best_trade_abs":       round(metrics.get("best_trade", 0.0), 8),
+                "worst_trade_abs":      round(metrics.get("worst_trade", 0.0), 8),
+                "win_streak_count":     metrics.get("win_streak", 0),
+                "loss_streak_count":    metrics.get("loss_streak", 0),
                 "recent_winrate_ratio": round(rwr, 4),
-                "recent_count":        rc,
-                "trend":               trend_en,
-                "trend_cs":            lt,
+                "recent_count":         rc,
+                "trend":                trend_en,
+                "trend_cs":             lt,
             },
+
             # ── Strategy: trade counts, regime/symbol/exit breakdown ──────────
             "strategy": {
                 "trades_count":       t,
@@ -711,12 +726,17 @@ def save_metrics_full(metrics, open_positions=None, execution=None, monitor=None
                 "regime_stats":       rg_st,
                 "sym_stats":          metrics.get("sym_stats", {}),
             },
-            # ── System: health, signals, positions, meta ──────────────────────
+
+            # ── Health: bot state & learning quality ──────────────────────────
+            "health": {
+                "score":          score,
+                "status":         status,
+                "ready":          rdy,
+                "learning_state": learn_state,
+            },
+
+            # ── System: runtime, signals, positions, fx ───────────────────────
             "system": {
-                "health_score":             score,
-                "health_status":            status,
-                "ready":                    rdy,
-                "learning_state":           learn_state,
                 "trading_enabled":          True,
                 "dominant_regime":          dominant_regime,
                 "regimes":                  regimes,
@@ -724,14 +744,13 @@ def save_metrics_full(metrics, open_positions=None, execution=None, monitor=None
                 "signals_filtered_count":   flt,
                 "signals_executed_count":   exe,
                 "signals_blocked_count":    blk,
-                "last_trade_ts":            metrics.get("last_trade_time", 0.0),
+                "last_trade_ts":            _last_trade_ts,
                 "last_prices":              prices_clean,
                 "last_signals":             metrics.get("last_signals", {}),
                 "open_positions":           _build_open_positions(open_positions),
                 "execution":                execution,
                 "monitor":                  monitor,
                 "fx_usd_czk":               round(float(fx_usd_czk), 4) if fx_usd_czk else None,
-                "timestamp_ts":             time.time(),
             },
         }
         db.collection(col("metrics")).document("latest").set(_sanitize_doc(data), merge=False)
