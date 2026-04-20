@@ -1,4 +1,4 @@
-cat > .github/workflows/deploy.yml << 'WORKFLOW_EOF'
+cat > .github/workflows/deploy.yml << 'EOF'
 name: Deploy to Hetzner
 
 on:
@@ -24,15 +24,11 @@ jobs:
             LOCAL=$(git rev-parse HEAD)
             REMOTE=$(git rev-parse origin/main)
             if [ "$LOCAL" != "$REMOTE" ]; then
-              echo "[$(date)] Deploying: $LOCAL → $REMOTE"
               git pull origin main
               pkill -f "python.*start.py" || true
               sleep 2
               /opt/cryptomaster/venv/bin/python -m src.services.reset_db 2>/dev/null || true
               sleep 1
               nohup /opt/cryptomaster/venv/bin/python start.py > /opt/cryptomaster/logs/trading.log 2>&1 &
-              echo "[$(date)] ✅ Bot restarted"
-            else
-              echo "[$(date)] ✓ Up-to-date"
             fi
-WORKFLOW_EOF
+EOF
