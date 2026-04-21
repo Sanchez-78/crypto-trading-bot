@@ -2266,16 +2266,11 @@ def on_price(data):
     record_trade_close(sym, reg_sig, profit)
     increment_trades_closed()  # V10.13s Phase 2: Track trade close event
 
-    # CRITICAL DEBUG: Log immediately after increment_trades_closed to verify code path
-    log.critical(f"[CRITICAL_DEBUG] Code reached line 2268 after increment_trades_closed for {sym}/{reg_sig}")
-
     # BUG FIX: Define bool_f before try block to prevent NameError if import fails
     bool_f = {}  # default empty if try block fails
     try:
-        log.critical(f"[CRITICAL_DEBUG] Entering try block at line 2274 for {sym}/{reg_sig}")
-        log.critical(f"[CRITICAL_DEBUG] About to import lm_update from learning_monitor")
-        from src.services.learning_monitor import lm_update, METRICS as _LM_METRICS
-        log.critical(f"[CRITICAL_DEBUG] Import successful, about to process features for {sym}/{reg_sig}")
+        from src.services.learning_monitor import lm_update
+        from src.services.learning_event import METRICS as _LM_METRICS
         raw_f  = pos["signal"].get("features", {})
         bool_f = {k: v for k, v in raw_f.items() if isinstance(v, bool)}
         # V7: micro-PnL mapping — preserve directional signal for mid-range trades.
@@ -2284,15 +2279,12 @@ def on_price(data):
         # ≥ 0.001: real trade → use as-is
         # Timeout trades typically have |profit| < 0.0005 (fee×tiny_size) → still zeroed.
         _ap = abs(profit)
-        log.critical(f"[CRITICAL_DEBUG] Calculating learning_pnl for {sym}/{reg_sig}, _ap={_ap:.6f}")
         if   _ap < 0.0005: learning_pnl = 0.0
         elif _ap < 0.001:  learning_pnl = 0.0003 if profit > 0 else -0.0003
         else:              learning_pnl = profit
-        log.critical(f"[CRITICAL_DEBUG] learning_pnl calculated: {learning_pnl:.6f} for {sym}/{reg_sig}")
         # Timeout = neutral: no TP/SL reached → no directional signal.
         # Penalty removed — in QUIET market 57% timeout rate drove pair EVs
         # negative rapidly → pair_block deadlock after bootstrap wipe.
-        log.critical(f"[CRITICAL_DEBUG] About to call increment_lm_update_called() for {sym}/{reg_sig}, learning_pnl={learning_pnl:.6f}")
         increment_lm_update_called()  # V10.13s Phase 2: Track lm_update call
         lm_update(sym, reg_sig, learning_pnl,
                   ws=pos["signal"].get("ws", 0.5),
@@ -2305,7 +2297,6 @@ def on_price(data):
         log.debug(f"[V10.13s_LEARNING] {sym}/{reg_sig} pnl={learning_pnl:.4f} "
                   f"n={_lm_n} health={_lm_health:.3f}")
     except Exception as e:
-        log.critical(f"[CRITICAL_DEBUG] EXCEPTION CAUGHT at line 2306 for {sym}/{reg_sig}: {type(e).__name__}: {e}")
         log.error(f"[LM_ERROR] lm_update() failed for {sym}/{reg_sig}: {type(e).__name__}: {e}", exc_info=True)
 
     # ── V10.9: Adapt feature weights from closed position ─────────────────────
