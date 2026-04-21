@@ -196,7 +196,7 @@ _cycle_stats = {
 # INTERVAL CONSTANTS — Control audit and metrics frequency
 # ════════════════════════════════════════════════════════════════════════════
 AUDIT_INTERVAL      = 120      # Run audit every 2 minutes
-METRICS_INTERVAL    = 30       # Save metrics every 30 seconds
+METRICS_INTERVAL    = 300      # Save metrics every 5 minutes (reduced from 30s to prevent quota exhaustion)
 PRE_AUDIT_INTERVAL  = 60       # Run pre_live_audit every minute
 
 # ────────────────────────────────────────────────────────────────────────────
