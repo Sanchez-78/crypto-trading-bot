@@ -2273,6 +2273,7 @@ def on_price(data):
     bool_f = {}  # default empty if try block fails
     try:
         log.critical(f"[CRITICAL_DEBUG] Entering try block at line 2274 for {sym}/{reg_sig}")
+        log.critical(f"[CRITICAL_DEBUG] About to import lm_update from learning_monitor")
         from src.services.learning_monitor import lm_update, METRICS as _LM_METRICS
         log.critical(f"[CRITICAL_DEBUG] Import successful, about to process features for {sym}/{reg_sig}")
         raw_f  = pos["signal"].get("features", {})
