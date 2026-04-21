@@ -2295,8 +2295,8 @@ def on_price(data):
         _lm_health = _LM_METRICS.get("Health", 0)
         log.debug(f"[V10.13s_LEARNING] {sym}/{reg_sig} pnl={learning_pnl:.4f} "
                   f"n={_lm_n} health={_lm_health:.3f}")
-    except Exception:
-        pass
+    except Exception as e:
+        log.error(f"[LM_ERROR] lm_update() failed for {sym}/{reg_sig}: {type(e).__name__}: {e}", exc_info=True)
 
     # ── V10.9: Adapt feature weights from closed position ─────────────────────
     # EV contribution per active feature = learning_pnl / n_active.
