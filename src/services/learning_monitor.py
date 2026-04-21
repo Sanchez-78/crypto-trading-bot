@@ -24,9 +24,12 @@ Alerts:
   else          → GOOD
 """
 
+import logging
 import numpy as np
 
 from src.services.execution import bandit_score
+
+log = logging.getLogger(__name__)
 
 # ── Per-(sym, reg) state ───────────────────────────────────────────────────────
 
