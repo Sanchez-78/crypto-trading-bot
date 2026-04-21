@@ -58,7 +58,7 @@ def count_total_records(collections=None) -> tuple[int, dict]:
     per_collection = {}
     total = 0
 
-    print("📊 COUNTING RECORDS...\n")
+    print("[*] COUNTING RECORDS...\n")
     for col_name in collections:
         try:
             cnt = count_collection(col_name)
@@ -167,7 +167,7 @@ def smart_reset():
 
     safe_clear_redis()
 
-    print("\n✅ SMART RESET COMPLETE")
+    print("\n[OK] SMART RESET COMPLETE")
     return actually_deleted
 
 
@@ -202,7 +202,7 @@ def learning_reset():
 
     safe_clear_redis()
 
-    print("\n✅ LEARNING RESET COMPLETE")
+    print("\n[OK] LEARNING RESET COMPLETE")
     return actually_deleted
 
 
@@ -217,11 +217,11 @@ def reset_firestore():
         try:
             actually_deleted += wipe_collection(collection)
         except Exception as e:
-            print(f"❌ ERROR in {collection}: {e}")
+            print(f"[ERROR] ERROR in {collection}: {e}")
 
     safe_clear_redis()
 
-    print("✅ FULL RESET COMPLETE")
+    print("[OK] FULL RESET COMPLETE")
     return actually_deleted
 
 
@@ -248,7 +248,7 @@ def debug_reset():
 
     safe_clear_redis()
 
-    print("\n✅ DEBUG RESET COMPLETE")
+    print("\n[OK] DEBUG RESET COMPLETE")
     return actually_deleted
 
 

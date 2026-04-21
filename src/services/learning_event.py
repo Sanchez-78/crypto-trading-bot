@@ -44,7 +44,7 @@ METRICS = {
     "best_trade":       float("-inf"),
     "worst_trade":      float("inf"),
     "current_drawdown": 0.0,
-    "last_trade_time": 0.0,
+    "last_trade_ts": 0.0,  # Aligned with firebase_client save + app read
     "block_reasons":   {},
 }
 
@@ -222,8 +222,8 @@ def update_metrics(signal, trade):
     with _lock:
         METRICS["trades"]          += 1
         METRICS["signals_executed"] += 1
-        METRICS["last_trade_time"]   = _time.time()
-        _trade_times.append(METRICS["last_trade_time"])
+        METRICS["last_trade_ts"]   = _time.time()
+        _trade_times.append(METRICS["last_trade_ts"])
 
     try:
         _update_queue.put_nowait((signal, trade))

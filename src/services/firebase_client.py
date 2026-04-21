@@ -498,7 +498,7 @@ def save_last_trade(trade):
             "mfe":        round(float(trade.get("mfe", 0)), 6),
             "regime":     trade.get("regime", "RANGING"),
             "reason":     trade.get("close_reason", ""),
-            "timestamp":  trade.get("timestamp", time.time()),
+            "timestamp":  trade.get("close_time", trade.get("timestamp", time.time())),  # CONSISTENCY FIX: use close_time for sorting
         }, merge=False)
         
         # Fire and forget push notification
@@ -672,7 +672,7 @@ def save_metrics_full(metrics, open_positions=None, execution=None, monitor=None
         _cur_dd_pct = round(_cur_dd / ep, 4) if ep > 0 else 0.0
 
         _now = time.time()
-        _last_trade_ts = metrics.get("last_trade_time", 0.0)
+        _last_trade_ts = metrics.get("last_trade_ts", 0.0)  # CONSISTENCY FIX: unified key name
 
         data = {
             # ── Envelope metadata ─────────────────────────────────────────────
