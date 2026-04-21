@@ -777,10 +777,10 @@ def on_price(data):
         try:
             publish("signal_created", result)
             import logging
-            logging.debug(f"[SIGNAL_PUBLISHED] {sym} {result.get('action', '?')} published to handle_signal")
+            logging.debug(f"[SIGNAL_PUBLISHED] {s} {result.get('action', '?')} published to handle_signal")
         except Exception as e:
             import logging
-            logging.error(f"[PUBLISH_ERROR] Failed to publish signal_created for {sym}: {e}", exc_info=True)
+            logging.error(f"[PUBLISH_ERROR] Failed to publish signal_created for {s}: {e}", exc_info=True)
     else:
         # V10.13a: Track RDE rejection for per-symbol block reason reporting
         try:
