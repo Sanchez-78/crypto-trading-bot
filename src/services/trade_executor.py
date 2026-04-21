@@ -1775,7 +1775,7 @@ def handle_signal(signal):
     #   - portfolio_momentum ≥ -0.30 (trajectory not actively worsening)
     #   - drawdown < 12%            (not in defensive mode)
     _recycling_pnl = signal.get("_recycling_pnl", None)
-    _dd_recycle    = _gm().get("max_drawdown", 0.0)
+    _dd_recycle    = _gm().get("drawdown", 0.0)  # BUG FIX: key is "drawdown" not "max_drawdown"
     _recycle_ok    = (
         _recycling_pnl is not None
         and _recycling_pnl >= 0
