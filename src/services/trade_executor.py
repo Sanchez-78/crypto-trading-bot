@@ -2304,6 +2304,7 @@ def on_price(data):
         log.debug(f"[V10.13s_LEARNING] {sym}/{reg_sig} pnl={learning_pnl:.4f} "
                   f"n={_lm_n} health={_lm_health:.3f}")
     except Exception as e:
+        log.critical(f"[CRITICAL_DEBUG] EXCEPTION CAUGHT at line 2306 for {sym}/{reg_sig}: {type(e).__name__}: {e}")
         log.error(f"[LM_ERROR] lm_update() failed for {sym}/{reg_sig}: {type(e).__name__}: {e}", exc_info=True)
 
     # ── V10.9: Adapt feature weights from closed position ─────────────────────
