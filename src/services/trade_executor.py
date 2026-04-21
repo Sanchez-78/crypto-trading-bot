@@ -1168,6 +1168,34 @@ def handle_signal(signal):
     except Exception:
         pass  # Graceful degrade if registry unavailable
 
+    # ── V10.14: CORRECTNESS GUARD — Candidate Deduplication ──────────────────
+    # Prevent repeated identical setups during cold start.
+    # This is a high-priority correctness fix, not a tuning knob.
+    try:
+        from src.services.candidate_dedup import (
+            check_duplicate, check_symbol_side_cooldown, check_bootstrap_frequency
+        )
+
+        # Check 1: Exact duplicate fingerprint in last 20 seconds
+        allowed, reason = check_duplicate(signal)
+        if not allowed:
+            log.info(f"    candidate_gate: {reason}  sym={sym}")
+            return
+
+        # Check 2: Same symbol + same side in last 30 seconds
+        allowed, reason = check_symbol_side_cooldown(signal)
+        if not allowed:
+            log.info(f"    candidate_gate: {reason}  sym={sym}")
+            return
+
+        # Check 3: Bootstrap frequency cap (max 6 opens per 60s during cold start)
+        allowed, reason = check_bootstrap_frequency(signal)
+        if not allowed:
+            log.info(f"    candidate_gate: {reason}  sym={sym}")
+            return
+    except Exception as e:
+        log.warning(f"[DEDUP_GUARD_FAIL] {e} — proceeding without dedup checks")
+
     allowed, reason = _allow_trade(sym, signal["action"], regime)
     if not allowed:
         if reason == "max_positions":
@@ -1841,6 +1869,7 @@ def handle_signal(signal):
         "sl":            sl,
         "tp_move":       abs(tp - actual_entry) / actual_entry,
         "sl_move":       abs(sl - actual_entry) / actual_entry,
+        "open_regime":   regime,  # V10.14: Freeze regime at open time
         "signal":        signal,
         "ticks":         0,
         "fill_slippage": fill_slip,
@@ -1880,6 +1909,13 @@ def handle_signal(signal):
     
     _regime_exposure[regime] = _regime_exposure.get(regime, 0) + 1
     _risk_guard()
+
+    # ── V10.14: Record the open for deduplication tracking ────────────────────
+    try:
+        from src.services.candidate_dedup import record_open
+        record_open(signal)
+    except Exception as e:
+        log.debug(f"[DEDUP_RECORD_FAIL] {e}")
 
     # V10.10: portfolio efficiency snapshot (diagnostic — not persisted)
     if _positions:
@@ -2260,7 +2296,8 @@ def on_price(data):
     update_metrics(pos["signal"], trade)
     update_returns(sym, profit)
     update_equity(profit)
-    reg_sig = pos["signal"].get("regime", "RANGING")
+    # V10.14: Use frozen open_regime instead of current regime for consistency
+    reg_sig = pos.get("open_regime", pos["signal"].get("regime", "RANGING"))
     bayes_update(sym, reg_sig, profit)
     bandit_update(sym, reg_sig, max(-0.05, min(0.05, profit)))
     record_trade_close(sym, reg_sig, profit)

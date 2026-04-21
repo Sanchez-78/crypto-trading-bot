@@ -1,0 +1,15 @@
+Phase 3D: Add comprehensive learning pipeline diagnostics
+
+Instrumentation to prove canonical learning path (Regression Analysis Priority 1):
+- lm_update() logs state before mutation and before persistence
+- state_manager logs all persistence attempts (start/success/error)
+- hydration logs pair counts loaded from Redis
+- health/snapshot functions log why pairs dict empty
+
+Diagnostic markers added:
+[LM_UPDATE_CALLED], [LM_STATE_BEFORE], [LM_PRE_PERSIST]
+[FLUSH_LM_START], [FLUSH_LM_REDIS_NONE], [FLUSH_LM_OK], [FLUSH_LM_ERROR]
+[HYDRATE_LM_START], [HYDRATE_LM_OK], [HYDRATE_LM_ERROR]
+[LM_HEALTH_CHECK], [LM_HEALTH_ZERO], [LM_SNAPSHOT]
+
+Addresses: pairs={} despite 5000+ trades
