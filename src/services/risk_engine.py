@@ -678,7 +678,9 @@ def is_daily_dd_safe() -> bool:
 
 # Cache for prob_ruin from Monte Carlo (Firebase I/O — refresh every 5 min)
 _mc_cache: dict[str, Any] = {"prob_ruin": None, "ts": 0.0}
-_MC_TTL = 300.0   # seconds
+_MC_TTL = 3600.0   # V10.14: Increased from 300s to 1 hour to reduce Firebase reads
+                    # At 50k reads/day limit, 86k ticks/min would exhaust quota in <1 hour
+                    # Cache auditor state for 1 hour unless explicitly cleared
 
 
 # ── Internal helpers ───────────────────────────────────────────────────────────
