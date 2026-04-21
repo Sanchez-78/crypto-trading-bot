@@ -2266,6 +2266,9 @@ def on_price(data):
     record_trade_close(sym, reg_sig, profit)
     increment_trades_closed()  # V10.13s Phase 2: Track trade close event
 
+    # CRITICAL DEBUG: Log immediately after increment_trades_closed to verify code path
+    log.critical(f"[CRITICAL_DEBUG] Code reached line 2268 after increment_trades_closed for {sym}/{reg_sig}")
+
     # BUG FIX: Define bool_f before try block to prevent NameError if import fails
     bool_f = {}  # default empty if try block fails
     try:
@@ -2284,6 +2287,7 @@ def on_price(data):
         # Timeout = neutral: no TP/SL reached → no directional signal.
         # Penalty removed — in QUIET market 57% timeout rate drove pair EVs
         # negative rapidly → pair_block deadlock after bootstrap wipe.
+        log.critical(f"[CRITICAL_DEBUG] About to call increment_lm_update_called() for {sym}/{reg_sig}, learning_pnl={learning_pnl:.6f}")
         increment_lm_update_called()  # V10.13s Phase 2: Track lm_update call
         lm_update(sym, reg_sig, learning_pnl,
                   ws=pos["signal"].get("ws", 0.5),
