@@ -37,6 +37,7 @@ _HISTORY_CACHE  = {"data": [],   "ts": 0}
 _WEIGHTS_CACHE  = {"data": None, "ts": 0}
 _SIGNALS_CACHE  = {"data": [],   "ts": 0}
 _RETRY_QUEUE    = []   # trades buffered after save_batch failure; flushed on next call
+_MAX_RETRY_SIZE = 50000  # BUG FIX: prevent unbounded growth during Firebase outage (OOM risk)
 
 # Local mirror of system/stats — updated synchronously in increment_stats().
 # save_metrics_full() uses this as the authoritative trade count so the
@@ -215,7 +216,10 @@ def save_batch(batch):
         # BUG FIX: Removed time.sleep(3) that blocked market stream thread
         # If Firebase fails, queue batch and return immediately instead of blocking
         # Market stream must stay responsive to price ticks
-        _RETRY_QUEUE.extend(batch)  # Queue for next flush cycle
+        if len(_RETRY_QUEUE) < _MAX_RETRY_SIZE:  # BUG FIX: prevent unbounded growth
+            _RETRY_QUEUE.extend(batch)  # Queue for next flush cycle
+        else:
+            print(f"⚠️  _RETRY_QUEUE full ({len(_RETRY_QUEUE)} >= {_MAX_RETRY_SIZE}) — dropping batch")
         return 0
 
 

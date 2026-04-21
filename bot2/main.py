@@ -73,8 +73,9 @@ def safe_idle_seconds(last_trade_ts, now=None):
 
     idle = max(0.0, now - ts)
 
-    # Unix-time-sized or corrupted value → clamp to 0
-    if idle > 86400:
+    # BUG FIX: Only clamp unix-timestamp-sized corrupted values (>10 years)
+    # Do NOT clamp legitimate long idles (24+ hour market close, weekend)
+    if idle > 315360000:  # ~10 years in seconds
         return 0.0
 
     return idle
@@ -217,12 +218,17 @@ def atomic_render(snapshot_data, component_name=""):
         component_name: Optional label for the component being rendered
     """
     with _render_lock:
-        current_hash = hash(str(snapshot_data))
-        
+        # BUG FIX: Exclude 'cycle_time' from hash to prevent false diffs
+        # cycle_time always changes but doesn't affect content meaningfully
+        hashable = {k: v for k, v in (snapshot_data.items() if isinstance(snapshot_data, dict) else {})} if isinstance(snapshot_data, dict) else snapshot_data
+        if isinstance(hashable, dict):
+            hashable = {k: v for k, v in hashable.items() if k != "cycle_time"}
+        current_hash = hash(str(hashable))
+
         # Skip if identical to last render
         if current_hash == _last_snapshot_hash[0]:
             return
-        
+
         _last_snapshot_hash[0] = current_hash
         
         # Render via event_bus (PATCH: Zero Bug V2 Migration)

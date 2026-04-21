@@ -1799,7 +1799,7 @@ def handle_signal(signal):
         _can_open, _reason = can_open_unblock_trade()
         if not _can_open:
             log.warning(f"[UNBLOCK_LIMIT] {sym} {_reason} — signal skipped")
-            return None
+            return  # BUG FIX: return (not return None) for consistency
         record_unblock_trade()
     
     # ────────────────────────────────────────────────────────────────────────
@@ -1893,9 +1893,11 @@ def handle_signal(signal):
 
 
 def on_price(data):
-    _t_start = time.perf_counter()
     if time.time() - _last_flush[0] >= FLUSH_EVERY and BATCH:
         _flush()
+
+    # BUG FIX: Start latency timer AFTER flush to measure only trade logic, not I/O
+    _t_start = time.perf_counter()
 
     _tick_counter[0] += 1   # global tick — drives force_trade_guard rate
 
@@ -2353,7 +2355,7 @@ def on_price(data):
 
     closed_regime = pos["signal"].get("regime", "RANGING")
     _regime_exposure[closed_regime] = max(
-        0, _regime_exposure.get(closed_regime, 1) - 1)
+        0, _regime_exposure.get(closed_regime, 0) - 1)  # BUG FIX: default 0 not 1
     del _positions[sym]
 
     if _pending_open:
