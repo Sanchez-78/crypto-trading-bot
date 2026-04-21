@@ -204,10 +204,12 @@ async def _async_flush_lm_update(
 
     V10.12i: Gracefully skip if Redis unavailable (no-op write).
     """
+    log.debug(f"[FLUSH_LM_START] {sym}/{reg} count={count} pnl_len={len(pnl_hist)} wr_len={len(wr_hist)} ev_len={len(ev_hist)}")
     try:
         # V10.12i: Use safe client for graceful Redis absence
         r = await _safe_client()
         if r is None:
+            log.warning(f"[FLUSH_LM_REDIS_NONE] {sym}/{reg} - Redis client is None, data LOST")
             return  # Redis unavailable; skip write silently
         pipe = r.pipeline()
 
@@ -231,9 +233,11 @@ async def _async_flush_lm_update(
         # Feature stats HASH  field=name  val=JSON[w, t]
         for fname, (w, t) in feature_stats.items():
             await r.hset("lm:feature_stats", fname, json.dumps([w, t]))
+        
+        log.debug(f"[FLUSH_LM_OK] {sym}/{reg} wrote count={count} to Redis")
 
     except Exception as exc:
-        log.debug("flush_lm_update error: %s", exc)
+        log.error(f"[FLUSH_LM_ERROR] {sym}/{reg}: {type(exc).__name__}: {exc}", exc_info=True)
 
 
 def flush_lm_update(
@@ -270,6 +274,7 @@ async def _async_hydrate_lm() -> dict[str, Any]:
 
     V10.12i: Return empty dict if Redis unavailable.
     """
+    log.debug("[HYDRATE_LM_START] Starting learning state hydration from Redis")
     empty: dict[str, Any] = {
         "lm_pnl_hist": {}, "lm_wr_hist": {}, "lm_ev_hist": {},
         "lm_bandit_hist": {}, "lm_count": {}, "sym_recent_pnl": {},
@@ -321,9 +326,13 @@ async def _async_hydrate_lm() -> dict[str, Any]:
         for name, val in fs_raw.items():
             if isinstance(val, list) and len(val) == 2:
                 empty["lm_feature_stats"][name] = (float(val[0]), float(val[1]))
+        
+        n_pairs = len(empty["lm_count"])
+        n_features = len(empty["lm_feature_stats"])
+        log.debug(f"[HYDRATE_LM_OK] Loaded pairs={n_pairs} features={n_features} trades={sum(empty['lm_count'].values())}")
 
     except Exception as exc:
-        log.debug("hydrate_lm error: %s", exc)
+        log.error(f"[HYDRATE_LM_ERROR] {type(exc).__name__}: {exc}", exc_info=True)
 
     return empty
 

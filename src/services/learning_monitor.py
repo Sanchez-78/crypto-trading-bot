@@ -333,6 +333,7 @@ def lm_update(sym, reg, pnl, ws, features, window=None):
     key = (sym, reg)
     # V10.13s Phase 3B: Log lm_update invocation for diagnostics
     log.debug(f"[LM_UPDATE_CALLED] {sym}/{reg} pnl={pnl:.6f} ws={ws:.4f} features={len(features)}")
+    log.debug(f"[LM_STATE_BEFORE] key={key} count_keys={list(lm_count.keys())}")
 
     # Trade count
     lm_count[key] = lm_count.get(key, 0) + 1
@@ -399,6 +400,10 @@ def lm_update(sym, reg, pnl, ws, features, window=None):
     # Persist to Redis (zero-loss cold start)
     try:
         from src.services.state_manager import flush_lm_update
+        log.debug(f"[LM_PRE_PERSIST] {sym}/{reg} count={lm_count.get(key, 0)} "
+                  f"pnl_len={len(lm_pnl_hist.get(key, []))} "
+                  f"ev_len={len(lm_ev_hist.get(key, []))} "
+                  f"wr_len={len(lm_wr_hist.get(key, []))}")
         flush_lm_update(
             sym, reg,
             pnl_lst,
