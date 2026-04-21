@@ -45,6 +45,8 @@ METRICS = {
     "worst_trade":      float("inf"),
     "current_drawdown": 0.0,
     "last_trade_ts": 0.0,  # Aligned with firebase_client save + app read
+    # Rejection and filtering breakdown
+    "rejection_breakdown": {},  # reason → count for display in SystemScreen
     "block_reasons":   {},
 }
 
@@ -255,13 +257,13 @@ def _update_metrics_locked(signal, trade):
     sym    = signal["symbol"]
     conf   = float(signal.get("confidence", 0.5))
 
-    # trades / signals_executed / last_trade_time already set in update_metrics()
+    # trades / signals_executed / last_trade_ts already set in update_metrics()
     # Only increment here if called from bootstrap (replay) path
     _is_bootstrap_call = trade.get("_bootstrap_replay", False)
     if _is_bootstrap_call:
         m["trades"]          += 1
         m["signals_executed"] += 1
-        m["last_trade_time"]   = float(trade.get("timestamp", _time.time()))
+        m["last_trade_ts"]   = float(trade.get("timestamp", _time.time()))
 
     m["profit"] += profit
 
@@ -383,7 +385,7 @@ def get_metrics():
     expectancy    = (wr * m["avg_win"]) - ((1 - wr) * m["avg_loss"])
 
     # Time since last trade
-    since = _time.time() - m["last_trade_time"] if m["last_trade_time"] else None
+    since = _time.time() - m["last_trade_ts"] if m["last_trade_ts"] else None
 
     sym_stats = {
         sym: {**s, "winrate": s["wins"] / s["trades"] if s["trades"] else 0.0}
@@ -392,6 +394,49 @@ def get_metrics():
 
     _timeouts     = m.get("timeouts", 0)
     _timeout_rate = _timeouts / t if t else 0.0
+
+    # ── Learning Block Metrics ──────────────────────────────────────────────
+    # Progress to ready: WR ≥ 0.55 AND PF > 1.5 are the gates
+    ready_gates = 0
+    if wr >= 0.55: ready_gates += 1
+    if profit_factor > 1.5: ready_gates += 1
+    progress_to_ready = ready_gates / 2.0  # 0.0 to 1.0
+
+    # Confidence momentum: compare recent to overall confidence
+    # If recent confidence > avg, momentum is improving
+    recent_conf_sum = sum((
+        float(r.get("confidence", 0.5)) for r in
+        list(_last_signals.values())[:10]
+    ), 0.0)
+    recent_conf_avg = (recent_conf_sum / min(10, len(_last_signals))
+                       if _last_signals else m.get("confidence_avg", 0.5))
+    conf_delta = recent_conf_avg - m.get("confidence_avg", 0.5)
+    if conf_delta > 0.02:
+        confidence_momentum = "IMPROVING"
+    elif conf_delta < -0.02:
+        confidence_momentum = "DEGRADING"
+    else:
+        confidence_momentum = "STABLE"
+
+    # Data maturity: progress from bootstrap to confident (min 60 decisive trades)
+    data_maturity = min(1.0, max(0.0, (_decisive - 20) / 40.0))
+
+    # Edge detection: system found exploitable pattern (high PF + steady confidence)
+    edge_detected = (
+        _decisive >= 30 and
+        profit_factor > 1.4 and
+        confidence_momentum in ("IMPROVING", "STABLE")
+    )
+
+    # Next milestone: readable English/Czech message based on readiness
+    if progress_to_ready >= 1.0:
+        next_milestone = "System je READY — připraveno na agresivní sizing"
+    elif _decisive < 20:
+        next_milestone = f"Sbírá data ({_decisive}/60 rozhodnutí)"
+    elif progress_to_ready < 0.5:
+        next_milestone = "Čeká na stabilizaci (WR/PF musí být >0.55/>1.5)"
+    else:
+        next_milestone = f"Blíží se READY ({int(progress_to_ready*100)}% hotovo)"
 
     import math
     return {
@@ -414,6 +459,16 @@ def get_metrics():
         "ev_stats":       get_ev_stats(),
         "close_stats":    get_close_stats(),
         "regime_stats":   get_regime_stats(),
+        # Learning block
+        "learning": {
+            "progress_to_ready": round(progress_to_ready, 2),
+            "confidence_momentum": confidence_momentum,
+            "edge_detected": edge_detected,
+            "data_maturity": round(data_maturity, 2),
+            "next_milestone": next_milestone,
+        },
+        # Rejection breakdown (mirrors block_reasons for Firebase serialization)
+        "rejection_breakdown": dict(m.get("block_reasons", {})),
     }
 
 
@@ -457,7 +512,7 @@ def bootstrap_from_history(trades):
             m["trades"] += 1
             m["signals_executed"] += 1
         m["profit"] += profit
-        m["last_trade_time"] = float(trade.get("timestamp") or 0)
+        m["last_trade_ts"] = float(trade.get("timestamp") or 0)
 
         _bs_reason   = trade.get("close_reason", "")
         _BS_TIMEOUT_REASONS = {"timeout", "TIMEOUT_PROFIT", "TIMEOUT_FLAT", "TIMEOUT_LOSS",

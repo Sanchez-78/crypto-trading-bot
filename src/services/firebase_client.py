@@ -733,6 +733,7 @@ def save_metrics_full(metrics, open_positions=None, execution=None, monitor=None
                 "status":         status,
                 "ready":          rdy,
                 "learning_state": learn_state,
+                "learning":       metrics.get("learning", {}),  # learning block from get_metrics()
             },
 
             # ── System: runtime, signals, positions, fx ───────────────────────
@@ -751,6 +752,7 @@ def save_metrics_full(metrics, open_positions=None, execution=None, monitor=None
                 "execution":                execution,
                 "monitor":                  monitor,
                 "fx_usd_czk":               round(float(fx_usd_czk), 4) if fx_usd_czk else None,
+                "rejection_breakdown":      metrics.get("rejection_breakdown", {}),  # Signal filtering breakdown
             },
         }
         db.collection(col("metrics")).document("latest").set(_sanitize_doc(data), merge=False)
