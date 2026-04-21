@@ -55,9 +55,12 @@ def _hydrate_from_redis() -> None:
         sym_recent_pnl.update(data.get("sym_recent_pnl", {}))
         lm_feature_stats.update(data.get("lm_feature_stats", {}))
         n_pairs = len(lm_count)
+        n_features = len(lm_feature_stats)
         if n_pairs:
-            print(f"🔄 LM hydrated from Redis: {n_pairs} pairs, "
-                  f"{sum(lm_count.values())} total trades")
+            print(f"[LM_HYDRATE] loaded pairs={n_pairs} features={n_features} "
+                  f"trades={sum(lm_count.values())} source=redis")
+        else:
+            print(f"[LM_HYDRATE] WARNING: no pairs loaded from Redis (empty state)")
     except Exception as exc:
         print(f"⚠️  LM Redis hydration skipped: {exc}")
 
@@ -315,7 +318,7 @@ def _pnl_weighted_label(pnl: float) -> float:
 def lm_update(sym, reg, pnl, ws, features, window=None):
     """
     PATCH 3.5: Record one closed trade with incremental averaging.
-    
+
     sym:      symbol string ("BTCUSDT")
     reg:      regime string ("RANGING")
     pnl:      realised profit/loss (float)
@@ -323,11 +326,13 @@ def lm_update(sym, reg, pnl, ws, features, window=None):
     features: dict of signal features (may be empty)
     window:   np.ndarray shape (SEQ_LEN, INPUT_SIZE) — LSTM training window
               Optional; if provided, triggers a PnL-weighted online update.
-    
+
     Key change: Use incremental averaging instead of list append for EV/PnL
     to prevent stale data from dominating convergence metrics.
     """
     key = (sym, reg)
+    # V10.13s Phase 3B: Log lm_update invocation for diagnostics
+    log.debug(f"[LM_UPDATE_CALLED] {sym}/{reg} pnl={pnl:.6f} ws={ws:.4f} features={len(features)}")
 
     # Trade count
     lm_count[key] = lm_count.get(key, 0) + 1
@@ -404,8 +409,12 @@ def lm_update(sym, reg, pnl, ws, features, window=None):
             sym_recent_pnl.get(sym, []),
             lm_feature_stats,
         )
-    except Exception:
-        pass
+        # V10.13s Phase 3B: Log successful persistence
+        _n = lm_count.get(key, 0)
+        _ev = lm_ev_hist.get(key, [None])[-1] if lm_ev_hist.get(key) else None
+        log.debug(f"[LM_PERSIST_OK] {sym}/{reg} n={_n} ev={_ev:.6f}" if _ev else f"[LM_PERSIST_OK] {sym}/{reg} n={_n}")
+    except Exception as _persist_err:
+        log.debug(f"[LM_PERSIST_ERROR] {sym}/{reg}: {_persist_err}")
 
 
 # ── Convergence & edge metrics ─────────────────────────────────────────────────
