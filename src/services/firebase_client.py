@@ -39,32 +39,77 @@ _SIGNALS_CACHE  = {"data": [],   "ts": 0}
 _RETRY_QUEUE    = []   # trades buffered after save_batch failure; flushed on next call
 _MAX_RETRY_SIZE = 50000  # BUG FIX: prevent unbounded growth during Firebase outage (OOM risk)
 
-# V10.14: Emergency quota guard — if we get 429 errors, disable reads for rest of day
-_QUOTA_EXHAUSTED = False
-_QUOTA_EXHAUSTED_AT = 0.0
+# V10.14: Proactive quota tracking — track reads/writes against 50k/20k daily limits
+_QUOTA_WINDOW_START = time.time()  # Midnight UTC of current quota day
+_QUOTA_READS = 0    # Current day read count
+_QUOTA_WRITES = 0   # Current day write count
+_QUOTA_MAX_READS = 50000
+_QUOTA_MAX_WRITES = 20000
+
+def _reset_quota_if_new_day():
+    """Reset counters at midnight UTC each day."""
+    global _QUOTA_WINDOW_START, _QUOTA_READS, _QUOTA_WRITES
+    now = time.time()
+    if now - _QUOTA_WINDOW_START > 86400:  # 24 hours elapsed
+        _QUOTA_WINDOW_START = now
+        _QUOTA_READS = 0
+        _QUOTA_WRITES = 0
+        import logging
+        logging.info("✅ Firebase quota window reset at midnight UTC (50k reads, 20k writes available)")
+
+def _can_read(count=1):
+    """Check if read quota available. Returns (allowed, current_usage, limit)."""
+    _reset_quota_if_new_day()
+    allowed = (_QUOTA_READS + count) <= _QUOTA_MAX_READS
+    return allowed, _QUOTA_READS, _QUOTA_MAX_READS
+
+def _record_read(count=1):
+    """Record read operation(s)."""
+    global _QUOTA_READS
+    _QUOTA_READS += count
+    if _QUOTA_READS > _QUOTA_MAX_READS * 0.9:  # Warn at 90%
+        import logging
+        logging.warning(f"⚠️  Firebase reads: {_QUOTA_READS:,}/{_QUOTA_MAX_READS:,} ({_QUOTA_READS/_QUOTA_MAX_READS*100:.1f}%)")
+
+def _can_write(count=1):
+    """Check if write quota available. Returns (allowed, current_usage, limit)."""
+    _reset_quota_if_new_day()
+    allowed = (_QUOTA_WRITES + count) <= _QUOTA_MAX_WRITES
+    return allowed, _QUOTA_WRITES, _QUOTA_MAX_WRITES
+
+def _record_write(count=1):
+    """Record write operation(s)."""
+    global _QUOTA_WRITES
+    _QUOTA_WRITES += count
+    if _QUOTA_WRITES > _QUOTA_MAX_WRITES * 0.9:  # Warn at 90%
+        import logging
+        logging.warning(f"⚠️  Firebase writes: {_QUOTA_WRITES:,}/{_QUOTA_MAX_WRITES:,} ({_QUOTA_WRITES/_QUOTA_MAX_WRITES*100:.1f}%)")
+
+def get_quota_status():
+    """Return current quota usage as dict for monitoring."""
+    _reset_quota_if_new_day()
+    return {
+        "reads": _QUOTA_READS,
+        "reads_limit": _QUOTA_MAX_READS,
+        "reads_pct": f"{_QUOTA_READS/_QUOTA_MAX_READS*100:.1f}%",
+        "writes": _QUOTA_WRITES,
+        "writes_limit": _QUOTA_MAX_WRITES,
+        "writes_pct": f"{_QUOTA_WRITES/_QUOTA_MAX_WRITES*100:.1f}%",
+    }
 
 def _check_quota_status():
-    """Check if quota was exhausted; reset at midnight UTC."""
-    global _QUOTA_EXHAUSTED, _QUOTA_EXHAUSTED_AT
-    if _QUOTA_EXHAUSTED:
-        now = time.time()
-        # Reset at midnight UTC (86400 seconds in a day)
-        if now - _QUOTA_EXHAUSTED_AT > 86400:
-            _QUOTA_EXHAUSTED = False
-            _QUOTA_EXHAUSTED_AT = 0.0
-            import logging
-            logging.info("✅ Firebase quota reset at midnight — reads re-enabled")
-            return False
-        return True  # Still exhausted
-    return False  # Not exhausted
+    """Check if quota exhausted (legacy, kept for compatibility)."""
+    allowed_read, _, _ = _can_read()
+    return not allowed_read
 
 def _mark_quota_exhausted(error_msg: str):
-    """Mark quota as exhausted and log warning."""
-    global _QUOTA_EXHAUSTED, _QUOTA_EXHAUSTED_AT
-    _QUOTA_EXHAUSTED = True
-    _QUOTA_EXHAUSTED_AT = time.time()
+    """Mark quota as exhausted via 429 error (reactive)."""
+    global _QUOTA_READS, _QUOTA_WRITES
     import logging
-    logging.warning(f"⚠️  QUOTA EXHAUSTED: {error_msg} — Firebase reads disabled until midnight UTC")
+    # Set quotas to their limits to immediately prevent further operations
+    _QUOTA_READS = _QUOTA_MAX_READS
+    _QUOTA_WRITES = _QUOTA_MAX_WRITES
+    logging.warning(f"⚠️  Firebase 429 error: {error_msg} — marked quota exhausted until midnight UTC reset")
 
 # Local mirror of system/stats — updated synchronously in increment_stats().
 # save_metrics_full() uses this as the authoritative trade count so the
@@ -172,15 +217,18 @@ def load_history(limit=HISTORY_LIMIT):
     Cached for HISTORY_TTL seconds.
     Cache is kept warm after every save_batch, so real fetches are rare.
 
-    V10.14: If quota exhausted, return cached data to stay under 50k reads/day limit.
+    V10.14: Proactive quota check — prevent reads if approaching 50k/day limit.
     """
     if db is None:
         return []
     if time.time() - _HISTORY_CACHE["ts"] < HISTORY_TTL:
         return _HISTORY_CACHE["data"]
 
-    # V10.14: Skip read if quota exhausted
-    if _check_quota_status():
+    # V10.14: Proactive quota check — skip if quota almost exhausted
+    allowed, current, limit_quota = _can_read(1)
+    if not allowed:
+        import logging
+        logging.debug(f"Skipping history fetch: quota limit reached ({current}/{limit_quota})")
         return _HISTORY_CACHE["data"]  # Return stale cache
 
     try:
@@ -192,9 +240,10 @@ def load_history(limit=HISTORY_LIMIT):
         )
         _HISTORY_CACHE["data"] = [d.to_dict() for d in docs]
         _HISTORY_CACHE["ts"]   = time.time()
+        _record_read(1)  # Count this read
         print(f"📥 Firebase: loaded {len(_HISTORY_CACHE['data'])} trades")
     except Exception as e:
-        # Detect 429 Quota Exceeded errors
+        # Detect 429 Quota Exceeded errors (reactive fallback)
         if "429" in str(e) or "Quota" in str(e):
             _mark_quota_exhausted(str(e))
         else:
@@ -225,13 +274,23 @@ def save_batch(batch):
 
     try:
         slimmed  = [_slim_trade(t) for t in batch]
+
+        # V10.14: Check write quota before committing
+        allowed, current, limit_writes = _can_write(len(slimmed))
+        if not allowed:
+            import logging
+            logging.warning(f"Write quota limit approaching ({current + len(slimmed)}/{limit_writes}) — queuing instead")
+            _RETRY_QUEUE.extend(batch)
+            return 0  # No writes committed
+
         fb_batch = db.batch()
         for item in slimmed:
             fb_batch.set(db.collection(col("trades")).document(), item)
         fb_batch.commit()
+        _record_write(len(slimmed))  # V10.14: Track writes against quota
         _HISTORY_CACHE["data"] = (slimmed + _HISTORY_CACHE["data"])[:HISTORY_LIMIT]
         _HISTORY_CACHE["ts"]   = time.time()
-        
+
         # Count wins/losses/timeouts for atomic stats update
         # FIX: use the SAME timeout reason set as learning_event._update_metrics_locked
         # to keep system/stats.total_timeouts consistent with METRICS["timeouts"].
@@ -251,6 +310,9 @@ def save_batch(batch):
         print(f"💾 Firebase: saved {len(batch)} trades (batch write)")
         return len(batch)
     except Exception as e:
+        # Detect 429 Quota Exceeded errors (reactive fallback) — mark quota exhausted immediately
+        if "429" in str(e) or "Quota" in str(e):
+            _mark_quota_exhausted(str(e))
         print(f"⚠️  save_batch failed ({e}) — queuing for retry (no blocking sleep)")
         # BUG FIX: Removed time.sleep(3) that blocked market stream thread
         # If Firebase fails, queue batch and return immediately instead of blocking
@@ -815,17 +877,21 @@ def save_auditor_state(data):
 
 def load_auditor_state():
     """Load persisted auditor state; returns {} if not found or quota exhausted."""
-    # V10.14: Emergency quota guard — skip reads if quota exhausted today
-    if _check_quota_status():
-        return {}  # Quota exhausted, return empty
+    # V10.14: Proactive quota check — prevent read if quota almost exhausted
+    allowed, current, limit = _can_read(1)
+    if not allowed:
+        import logging
+        logging.debug(f"Skipping auditor_state read: quota limit reached ({current}/{limit})")
+        return {}
 
     if db is None:
         return {}
     try:
         doc = db.collection(col("metrics")).document("auditor").get()
+        _record_read(1)  # Count this read
         return doc.to_dict() or {}
     except Exception as e:
-        # Detect 429 Quota Exceeded errors
+        # Detect 429 Quota Exceeded errors (reactive fallback)
         if "429" in str(e) or "Quota" in str(e):
             _mark_quota_exhausted(str(e))
             return {}
