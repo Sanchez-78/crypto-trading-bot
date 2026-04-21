@@ -1159,9 +1159,6 @@ def handle_signal(signal):
     sym     = signal["symbol"]
     regime  = signal.get("regime", "RANGING")
 
-    # V10.14: DEBUG — verify handle_signal is being called
-    log.debug(f"[HANDLE_SIGNAL_ENTRY] {sym}/{regime} action={signal.get('action', '?')} ev={signal.get('ev', 0):.4f}")
-
     # V10.13L: Fail-closed gate — no new trades if runtime fault detected
     try:
         from src.services.runtime_fault_registry import is_trading_allowed
