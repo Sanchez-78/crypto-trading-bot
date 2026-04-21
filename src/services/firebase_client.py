@@ -39,6 +39,33 @@ _SIGNALS_CACHE  = {"data": [],   "ts": 0}
 _RETRY_QUEUE    = []   # trades buffered after save_batch failure; flushed on next call
 _MAX_RETRY_SIZE = 50000  # BUG FIX: prevent unbounded growth during Firebase outage (OOM risk)
 
+# V10.14: Emergency quota guard — if we get 429 errors, disable reads for rest of day
+_QUOTA_EXHAUSTED = False
+_QUOTA_EXHAUSTED_AT = 0.0
+
+def _check_quota_status():
+    """Check if quota was exhausted; reset at midnight UTC."""
+    global _QUOTA_EXHAUSTED, _QUOTA_EXHAUSTED_AT
+    if _QUOTA_EXHAUSTED:
+        now = time.time()
+        # Reset at midnight UTC (86400 seconds in a day)
+        if now - _QUOTA_EXHAUSTED_AT > 86400:
+            _QUOTA_EXHAUSTED = False
+            _QUOTA_EXHAUSTED_AT = 0.0
+            import logging
+            logging.info("✅ Firebase quota reset at midnight — reads re-enabled")
+            return False
+        return True  # Still exhausted
+    return False  # Not exhausted
+
+def _mark_quota_exhausted(error_msg: str):
+    """Mark quota as exhausted and log warning."""
+    global _QUOTA_EXHAUSTED, _QUOTA_EXHAUSTED_AT
+    _QUOTA_EXHAUSTED = True
+    _QUOTA_EXHAUSTED_AT = time.time()
+    import logging
+    logging.warning(f"⚠️  QUOTA EXHAUSTED: {error_msg} — Firebase reads disabled until midnight UTC")
+
 # Local mirror of system/stats — updated synchronously in increment_stats().
 # save_metrics_full() uses this as the authoritative trade count so the
 # dashboard always shows the value that matches the Firestore atomic counter,
@@ -144,11 +171,18 @@ def load_history(limit=HISTORY_LIMIT):
     Return last `limit` trades (slim dicts).
     Cached for HISTORY_TTL seconds.
     Cache is kept warm after every save_batch, so real fetches are rare.
+
+    V10.14: If quota exhausted, return cached data to stay under 50k reads/day limit.
     """
     if db is None:
         return []
     if time.time() - _HISTORY_CACHE["ts"] < HISTORY_TTL:
         return _HISTORY_CACHE["data"]
+
+    # V10.14: Skip read if quota exhausted
+    if _check_quota_status():
+        return _HISTORY_CACHE["data"]  # Return stale cache
+
     try:
         docs = (
             db.collection(col("trades"))
@@ -160,7 +194,12 @@ def load_history(limit=HISTORY_LIMIT):
         _HISTORY_CACHE["ts"]   = time.time()
         print(f"📥 Firebase: loaded {len(_HISTORY_CACHE['data'])} trades")
     except Exception as e:
-        print(f"❌ load_history: {e}")
+        # Detect 429 Quota Exceeded errors
+        if "429" in str(e) or "Quota" in str(e):
+            _mark_quota_exhausted(str(e))
+        else:
+            import logging
+            logging.error(f"load_history: {e}")
     return _HISTORY_CACHE["data"]
 
 
@@ -775,14 +814,23 @@ def save_auditor_state(data):
 
 
 def load_auditor_state():
-    """Load persisted auditor state; returns {} if not found."""
+    """Load persisted auditor state; returns {} if not found or quota exhausted."""
+    # V10.14: Emergency quota guard — skip reads if quota exhausted today
+    if _check_quota_status():
+        return {}  # Quota exhausted, return empty
+
     if db is None:
         return {}
     try:
         doc = db.collection(col("metrics")).document("auditor").get()
         return doc.to_dict() or {}
     except Exception as e:
-        print(f"❌ load_auditor_state: {e}")
+        # Detect 429 Quota Exceeded errors
+        if "429" in str(e) or "Quota" in str(e):
+            _mark_quota_exhausted(str(e))
+            return {}
+        import logging
+        logging.error(f"load_auditor_state: {e}")
         return {}
 
 
