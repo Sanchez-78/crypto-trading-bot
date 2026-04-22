@@ -8,7 +8,11 @@ This script demonstrates the expected log output format for:
 """
 
 import sys
-sys.path.insert(0, '/root/CryptoMaster_srv')
+import os
+
+# Add project root to path
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, project_root)
 
 from src.services.realtime_decision_engine import (
     validate_decision_ctx, build_decision_ctx
