@@ -1608,11 +1608,49 @@ def evaluate_signal(signal):
     # V10.12d: Apply timing penalty to EV before score gate
     _ev_adj = ev * _timing_mult
     _score_threshold = current_score_threshold()
-    
-    # V10.13r: Slightly relax score threshold during cold-start
-    if is_cold_start():
-        _score_threshold *= 0.96  # Reduce by 4% to make gate easier during bootstrap
-        print(f"    [V10.13r] SCORE_THRESHOLD_COLD_START: relaxed to {_score_threshold:.4f}")
+
+    # V10.13u: Explicit bootstrap state tracking (Fix 3)
+    _bootstrap_global = False
+    _bootstrap_pair = False
+    _bootstrap_reasons = []
+    _score_threshold_source = "normal"
+    _score_threshold_original = _score_threshold
+
+    try:
+        from src.services.learning_event import METRICS as _M3
+        from src.services.learning_monitor import lm_count as _lc3
+
+        _global_n = _M3.get("trades", 0)
+
+        # Detect GLOBAL bootstrap
+        if _global_n < 100:
+            _bootstrap_global = True
+            _bootstrap_reasons.append(f"global_trades={_global_n}<100")
+
+        # Detect PAIR-level bootstrap (even if global is mature)
+        if _lc3:
+            _min_pair_n = min(_lc3.values()) if _lc3 else 0
+            if _min_pair_n < 15:
+                _bootstrap_pair = True
+                _bootstrap_reasons.append(f"min_pair_n={_min_pair_n}<15")
+
+        # Recent restart condition
+        _uptime_min = (_time.time() - _bootstrap_state["start_ts"]) / 60.0
+        if _uptime_min < 60 and _global_n < 150:
+            _bootstrap_global = True
+            _bootstrap_reasons.append(f"uptime={_uptime_min:.0f}min<60,trades={_global_n}<150")
+    except Exception as _bs_err:
+        log.debug("bootstrap state detection error: %s", _bs_err)
+
+    # V10.13r/V10.13u: Apply bootstrap-aware threshold relaxation
+    if _bootstrap_global or _bootstrap_pair:
+        _score_threshold *= 0.96  # Reduce by 4% during bootstrap
+        _score_threshold_source = "bootstrap_relaxed"
+
+        # Only print if actually in bootstrap (not misleading when mature)
+        if _bootstrap_reasons:
+            reason_str = " | ".join(_bootstrap_reasons)
+            print(f"    [V10.13u] SCORE_THRESHOLD: bootstrap active ({reason_str}) → relaxed from {_score_threshold_original:.4f} to {_score_threshold:.4f}")
 
     # V10.13q: Apply pair-block score uplift (harder threshold for weak pairs)
     if _pair_score_uplift > 0:
