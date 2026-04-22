@@ -402,12 +402,12 @@ def lm_update(sym, reg, pnl, ws, features, window=None):
 
     # Persist to Redis (zero-loss cold start)
     try:
-        from src.services.state_manager import flush_lm_update
+        from src.services.state_manager import flush_lm_update_async
         log.debug(f"[LM_PRE_PERSIST] {sym}/{reg} count={lm_count.get(key, 0)} "
                   f"pnl_len={len(lm_pnl_hist.get(key, []))} "
                   f"ev_len={len(lm_ev_hist.get(key, []))} "
                   f"wr_len={len(lm_wr_hist.get(key, []))}")
-        flush_lm_update(
+        flush_lm_update_async(
             sym, reg,
             pnl_lst,
             lm_wr_hist[key],

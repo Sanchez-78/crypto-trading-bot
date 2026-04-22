@@ -56,6 +56,8 @@ import asyncio
 import json
 import logging
 import os
+import queue
+import threading
 import time as _time
 from typing import Any
 
@@ -68,6 +70,15 @@ REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 # List length caps — mirror the in-memory caps in each module
 _LIST_CAP = 200
 _SYM_PNL_CAP = 8
+
+# ── Async learning update queue (V10.13n - Performance Fix) ────────────────────
+# LATENCY FIX: Instead of synchronous blocking flush from on_price() critical path,
+# queue learning updates and flush asynchronously in background worker.
+# This prevents 100+ ms latency spikes that caused signal flippování (LONG/SHORT chatter).
+
+_learning_update_queue: queue.Queue = queue.Queue(maxsize=1000)
+_flush_worker_thread: Any = None
+_flush_worker_running: bool = False
 
 # ── Lazy async client with cooldown window (V10.13n) ────────────────────────────
 # FIXED: Event loop binding issue - create fresh client per call instead of persistent global
@@ -715,3 +726,124 @@ def get_corr_rejected() -> int:
     """Return the total number of correlation-rejected signals since last Redis reset."""
     result = _run(_async_get_corr_rejected())
     return int(result) if result else 0
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ASYNC LEARNING UPDATE QUEUE (V10.13n - Latency Fix)
+# ══════════════════════════════════════════════════════════════════════════════
+# Background worker thread flushes learning updates asynchronously.
+# Prevents 100+ ms latency spikes when on_price() called flush_lm_update() directly.
+# New flow: lm_update() → queue_learning_update() [FAST] → worker flushes async
+
+def start_learning_flush_worker() -> None:
+    """
+    Spawn background daemon thread to process learning update queue.
+    Call this once at bot startup (e.g., in bot2/main.py).
+    """
+    global _flush_worker_thread, _flush_worker_running
+    
+    if _flush_worker_thread is not None:
+        log.debug("[QUEUE_WORKER] Already running, skipping restart")
+        return
+    
+    _flush_worker_running = True
+    _flush_worker_thread = threading.Thread(
+        target=_learning_flush_worker_loop,
+        daemon=True,
+        name="LearningFlushWorker"
+    )
+    _flush_worker_thread.start()
+    log.info("[QUEUE_WORKER] Started background learning flush worker")
+
+
+def _learning_flush_worker_loop() -> None:
+    """
+    Background loop: continuously read from learning update queue and flush to Firebase.
+    Runs in separate daemon thread, never blocks main on_price() event loop.
+    """
+    global _flush_worker_running
+    
+    while _flush_worker_running:
+        try:
+            # Block with 1s timeout so we can check _flush_worker_running periodically
+            update_dict = _learning_update_queue.get(timeout=1)
+            
+            if update_dict is None:  # Stop signal
+                break
+            
+            # Unpack the update payload
+            sym = update_dict.get('sym', '?')
+            reg = update_dict.get('reg', '?')
+            pnl_hist = update_dict.get('pnl_hist', [])
+            wr_hist = update_dict.get('wr_hist', [])
+            ev_hist = update_dict.get('ev_hist', [])
+            bandit_hist = update_dict.get('bandit_hist', [])
+            count = update_dict.get('count', 0)
+            sym_pnl = update_dict.get('sym_pnl', [])
+            feature_stats = update_dict.get('feature_stats', {})
+            
+            # Flush asynchronously (in its own fresh event loop)
+            try:
+                _run(_async_flush_lm_update(
+                    sym, reg, pnl_hist, wr_hist, ev_hist,
+                    bandit_hist, count, sym_pnl, feature_stats
+                ))
+                log.debug(f"[QUEUE_FLUSH_OK] {sym}/{reg} queued update flushed")
+            except Exception as flush_err:
+                log.error(f"[QUEUE_FLUSH_ERROR] {sym}/{reg}: {type(flush_err).__name__}: {flush_err}")
+        
+        except queue.Empty:
+            # Timeout expired, loop continues and checks _flush_worker_running
+            continue
+        except Exception as e:
+            log.error(f"[QUEUE_WORKER_ERROR] Unexpected error: {type(e).__name__}: {e}")
+
+
+def queue_learning_update(update_dict: dict[str, Any]) -> None:
+    """
+    FAST: Queue a learning update for asynchronous flush.
+    Called from lm_update() instead of blocking flush_lm_update().
+    Returns immediately without waiting for Firebase.
+    
+    Args:
+        update_dict: Dict with keys {sym, reg, pnl_hist, wr_hist, ev_hist, 
+                     bandit_hist, count, sym_pnl, feature_stats}
+    """
+    try:
+        _learning_update_queue.put_nowait(update_dict)
+        log.debug(f"[QUEUE_UPDATE] {update_dict.get('sym')}/{update_dict.get('reg')} queued")
+    except queue.Full:
+        log.warning(f"[QUEUE_FULL] Learning update queue full - dropping update for "
+                   f"{update_dict.get('sym')}/{update_dict.get('reg')}")
+
+
+def flush_lm_update_async(
+    sym: str,
+    reg: str,
+    pnl_hist: list[float],
+    wr_hist: list[float],
+    ev_hist: list[float],
+    bandit_hist: list[float],
+    count: int,
+    sym_pnl: list[float],
+    feature_stats: dict[str, tuple[float, float]],
+) -> None:
+    """
+    Async wrapper for learning_monitor.lm_update() — queues instead of blocking.
+    
+    V10.13n: LATENCY FIX
+    Instead of calling flush_lm_update() which does asyncio.new_event_loop() (100+ ms),
+    queue the update and let background worker flush asynchronously.
+    on_price() returns immediately, no latency spike, no signal flippování.
+    """
+    queue_learning_update({
+        'sym': sym,
+        'reg': reg,
+        'pnl_hist': pnl_hist,
+        'wr_hist': wr_hist,
+        'ev_hist': ev_hist,
+        'bandit_hist': bandit_hist,
+        'count': count,
+        'sym_pnl': sym_pnl,
+        'feature_stats': feature_stats,
+    })

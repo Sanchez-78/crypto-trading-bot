@@ -1298,6 +1298,19 @@ def main():
         msg = f"🧠 V5.1 RL Agent initialized: {_rl_agent}"
         bus.emit("LOG_OUTPUT", {"message": msg}, time.time())
 
+    # Initialize async learning flush worker (V10.13n - Latency Fix)
+    # Background thread queues and flushes learning updates asynchronously
+    # Prevents 100+ ms latency spikes from on_price() critical path
+    print("  [3.5/7] Starting async learning flush worker...", file=sys.stderr, flush=True)
+    try:
+        from src.services.state_manager import start_learning_flush_worker
+        start_learning_flush_worker()
+        print("  [3.5/7] Learning flush worker started ✓", file=sys.stderr, flush=True)
+    except Exception as e:
+        import logging
+        logging.warning(f"Learning flush worker init failed: {e}")
+        print(f"  [3.5/7] Learning flush worker failed: {e}", file=sys.stderr, flush=True)
+
     print("  [4/7] Initializing Firebase...", file=sys.stderr, flush=True)
     init_firebase()
     print("  [4/7] Firebase initialized ✓", file=sys.stderr, flush=True)
