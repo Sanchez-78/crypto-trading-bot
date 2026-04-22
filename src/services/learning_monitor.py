@@ -632,17 +632,34 @@ def defense_efficiency() -> dict:
 
 def lm_alerts():
     """
-    Returns "BAD" / "WEAK" / "GOOD" and prints a warning when degraded.
-    BAD:  health < 0.10 — no measurable learning signal
+    Returns "BAD" / "WEAK" / "GOOD" and prints detailed learning state when degraded.
+    BAD:  health < 0.10 — poor convergence or edge strength
     WEAK: health < 0.30 — edge is thin, needs more data
     GOOD: system is converging with positive edge
+
+    V10.13u Fix 4: Replace vague "NO LEARNING SIGNAL" with grounded state showing
+    actual learned data, not just health metric.
     """
     h = lm_health()
+
+    # V10.13u: Compute detailed learning state (Fix 4)
+    pairs_with_n5 = sum(1 for n in lm_count.values() if n >= 5)
+    pairs_with_n10 = sum(1 for n in lm_count.values() if n >= 10)
+    pairs_with_positive_conv = sum(1 for (sym, reg) in lm_count.keys()
+                                    if lm_convergence(sym, reg) > 0)
+    total_trades_in_lm = sum(lm_count.values())
+
     if h < 0.10:
-        print("  [!] LEARNING: NO LEARNING SIGNAL DETECTED")
+        # V10.13u: Show grounded learning state instead of vague "NO SIGNAL"
+        print(f"  [!] LEARNING: health={h:.4f} [BAD]")
+        print(f"       Hydrated pairs: {pairs_with_n5} with n≥5, {pairs_with_n10} with n≥10, "
+              f"{pairs_with_positive_conv} with conv>0")
+        print(f"       Total trades in LM: {total_trades_in_lm}")
+        print(f"       → Edge too weak or low convergence — needs more data or better feature selection")
         return "BAD"
     if h < 0.30:
-        print("  [!] LEARNING: WEAK EDGE -- still converging")
+        print(f"  [!] LEARNING: WEAK EDGE health={h:.4f}")
+        print(f"       Pairs: {pairs_with_n10} with n≥10, {pairs_with_positive_conv} conv>0, {total_trades_in_lm} total trades")
         return "WEAK"
     return "GOOD"
 
