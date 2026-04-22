@@ -1835,11 +1835,13 @@ def evaluate_signal(signal):
     # Log analysis shows trades with EV=-0.2125 being forced through in recovery mode.
     # This is dangerous: even with unblock mode active, reject materially negative EV.
     # Unblock should soften filters, not eliminate edge sanity.
-    MIN_ABSOLUTE_EV = -0.05  # Reject if worse than -0.05 (5 bp edge loss)
-    if ev < MIN_ABSOLUTE_EV:
-        print(f"    decision=REJECT_EV_FLOOR  ev={ev:.4f} < {MIN_ABSOLUTE_EV}")
-        track_blocked(reason="EV_FLOOR")
-        log.warning(f"[V10.13s] {sym}: Rejected due to absolute EV floor (ev={ev:.4f})")
+    # V10.13t: HARD enforcement — only positive EV trades
+    # BUG FIX: Previous threshold of -0.05 allowed negative EV like -0.0399 through
+    # Core principle violation: EV-only means NO negative-expectation trades
+    if ev <= 0:
+        print(f"    decision=REJECT_NEGATIVE_EV  ev={ev:.4f} ≤ 0 (EV-only violation)")
+        track_blocked(reason="NEGATIVE_EV_REJECTION")
+        log.warning(f"[V10.13t] {sym}: Rejected negative/zero EV (ev={ev:.4f}) — hard enforcement of EV-only principle")
         return None
 
     # ════════════════════════════════════════════════════════════════════════════════
