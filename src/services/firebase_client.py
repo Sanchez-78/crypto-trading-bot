@@ -4,9 +4,9 @@ Firebase client – centralized Firestore access layer.
 Free-tier quotas: 50 000 reads/day · 20 000 writes/day · 1 GB storage
 
 PERF_MODE=False  conservative (default):
-  history  600 s / 100 docs  →  14 400 reads/day
-  weights  300 s             →     288 reads/day
-  signals  900 s             →  negligible
+  history  1800 s / 100 docs  →  4 800 reads/day (V10.13o: extended TTL)
+  weights  900 s              →    96 reads/day
+  signals  1800 s             →  negligible
   writes   ~10 300/day                           ✅ safe
 
 PERF_MODE=True  performance (enable when WR>45% AND PF>1.5):
@@ -125,9 +125,9 @@ PERF_MODE = False
 HISTORY_LIMIT  = 200 if PERF_MODE else 100   # docs per fetch
 SIGNALS_LIMIT  = 200
 
-HISTORY_TTL    = 300 if PERF_MODE else 600   # 5 min  vs  10 min
-WEIGHTS_TTL    = 120 if PERF_MODE else 300   # 2 min  vs   5 min
-SIGNALS_TTL    = 600 if PERF_MODE else 900   # 10 min vs  15 min
+HISTORY_TTL    = 300 if PERF_MODE else 1800  # 5 min  vs  30 min (V10.13o: reduced Firebase reads)
+WEIGHTS_TTL    = 120 if PERF_MODE else 900    # 2 min  vs  15 min
+SIGNALS_TTL    = 600 if PERF_MODE else 1800   # 10 min vs  30 min
 
 
 # ── Init ──────────────────────────────────────────────────────────────────────
