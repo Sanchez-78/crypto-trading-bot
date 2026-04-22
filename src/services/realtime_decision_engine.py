@@ -1128,6 +1128,38 @@ def _get_base_ev_threshold():
     return max(0.10, q75)
 
 
+def _log_canonical_decision(sym, action, regime, raw_ev, final_ev, raw_score, final_score_threshold,
+                            auditor_factor, decision, reject_reason=None, override_reason=None, confidence=0.0):
+    """V10.13u: Log a single canonical decision snapshot per candidate.
+
+    This replaces scattered decision prints with one structured log that captures:
+    - All relevant context (symbol, action, regime)
+    - All computed values (EV, score, factors)
+    - Final decision and reason
+
+    Acceptance proof: One candidate → exactly one canonical line with complete context.
+    """
+    import logging
+    log = logging.getLogger(__name__)
+
+    if decision == "TAKE":
+        log.info(
+            f"[V10.13u DECISION] {sym} {action} {regime} | "
+            f"ev_raw={raw_ev:.4f} ev_final={final_ev:.4f} "
+            f"score_raw={raw_score:.4f} score_threshold={final_score_threshold:.4f} "
+            f"auditor_factor={auditor_factor:.2f} confidence={confidence:.4f} | "
+            f"ACCEPT"
+        )
+    else:
+        reason_str = f"({reject_reason})" if reject_reason else ""
+        log.info(
+            f"[V10.13u DECISION] {sym} {action} {regime} | "
+            f"ev_raw={raw_ev:.4f} ev_final={final_ev:.4f} "
+            f"score_raw={raw_score:.4f} score_threshold={final_score_threshold:.4f} | "
+            f"REJECT {reason_str}"
+        )
+
+
 def evaluate_signal(signal):
     history = load_history()
     track_regime(signal.get("regime", "RANGING"))
@@ -1527,6 +1559,7 @@ def evaluate_signal(signal):
           f"combo_pen={combo_pen:.2f} emergency={emergency_mode}")
 
     # ── V10.12: Signal coherence — quality-weighted EV modulation ─────────────
+    raw_ev_before_coherence = ev  # V10.13u: Capture raw EV before coherence adjustment
     _coh = 1.0
     try:
         from src.services.signal_coherence import coherence_score as _coh_fn
@@ -1839,6 +1872,15 @@ def evaluate_signal(signal):
     # BUG FIX: Previous threshold of -0.05 allowed negative EV like -0.0399 through
     # Core principle violation: EV-only means NO negative-expectation trades
     if ev <= 0:
+        # V10.13u: Canonical decision logging for negative EV rejection
+        _log_canonical_decision(
+            sym=sym, action=signal.get("action", "HOLD"), regime=regime,
+            raw_ev=raw_ev_before_coherence, final_ev=ev,
+            raw_score=0.0, final_score_threshold=0.0,
+            auditor_factor=0.0,
+            decision="REJECT",
+            reject_reason=f"NEGATIVE_EV (ev={ev:.4f})"
+        )
         print(f"    decision=REJECT_NEGATIVE_EV  ev={ev:.4f} ≤ 0 (EV-only violation)")
         track_blocked(reason="NEGATIVE_EV_REJECTION")
         log.warning(f"[V10.13t] {sym}: Rejected negative/zero EV (ev={ev:.4f}) — hard enforcement of EV-only principle")
@@ -1879,7 +1921,18 @@ def evaluate_signal(signal):
     signal["unblock_fallback"] = _unblock_fallback_used
     signal["anti_deadlock"]    = _anti_deadlock_triggered
     signal["unblock_size_mult"] = _unblock_size_mult
-    
+
+    # V10.13u: Canonical decision logging
+    _log_canonical_decision(
+        sym=sym, action=signal.get("action", "HOLD"), regime=regime,
+        raw_ev=raw_ev_before_coherence, final_ev=ev,
+        raw_score=_score_before_adj if '_score_before_adj' in locals() else 0.0,
+        final_score_threshold=current_score_threshold(),
+        auditor_factor=auditor_factor,
+        decision="TAKE",
+        confidence=win_prob
+    )
+
     # V10.12f: Enhanced decision logging with unblock state and anti-deadlock info
     _ub_str = f" unblock=True fallback={_unblock_fallback_used} anti_deadlock={_anti_deadlock_triggered} size×{_unblock_size_mult:.2f}" if _is_unblock else ""
     print(f"    decision=TAKE  ev={ev:.4f}  p={win_prob:.4f}  "
