@@ -120,8 +120,27 @@ def _meta_mult(wr: float, dd: float) -> float:
     else:           return 1.00
 
 
-def _net_edge(ev: float, spread: float, fee_rt: float = 0.0015) -> float:
-    return ev - spread * 0.5 - fee_rt
+def _net_edge(ev: float, spread: float, fee_rt: float = 0.0015) -> dict[str, float]:
+    """V10.13u Fix 5: Return detailed net-edge decomposition instead of scalar.
+
+    Returns dict with:
+    - gross_ev: raw EV input
+    - spread_cost: cost of half-spread (one-way trade assumption)
+    - fee_cost: cost of exchange fees
+    - slippage_cost: estimated slippage (currently 0, but placeholder for future)
+    - net_ev: final EV after all costs
+    """
+    spread_cost = spread * 0.5
+    slippage_cost = 0.0  # Not directly modeled; spread proxy used
+    net_ev = ev - spread_cost - fee_rt - slippage_cost
+
+    return {
+        "gross_ev":      ev,
+        "spread_cost":   spread_cost,
+        "fee_cost":      fee_rt,
+        "slippage_cost": slippage_cost,
+        "net_ev":        net_ev,
+    }
 
 
 def _cost_ok(ev: float, fee_rt: float = 0.0015) -> bool:
@@ -198,6 +217,13 @@ class AuditResult:
     net_edge_blocked:   bool = False
     cost_guard_blocked: bool = False
     heat_blocked:       bool = False
+
+    # V10.13u Fix 5: Net-edge decomposition for transparency
+    net_edge_gross_ev:      float = 0.0
+    net_edge_spread_cost:   float = 0.0
+    net_edge_fee_cost:      float = 0.0
+    net_edge_slippage_cost: float = 0.0
+    net_edge_final:         float = 0.0
 
     # Monotone check
     monotone_ok:         bool      = True
@@ -372,12 +398,34 @@ def _audit_one(signal: dict, positions: dict, idx: int, verbose: bool) -> AuditR
               f"fill={r.fill:.2f} lat={r.lat:.2f}  post={s:.5f}")
 
     # ── 7. Net edge ───────────────────────────────────────────────────────────
-    net = _net_edge(ev, r.spread)
+    # V10.13u Fix 5: Detailed decomposition instead of scalar
+    net_decomp = _net_edge(ev, r.spread)
+    net = net_decomp["net_ev"]
+
+    # Store decomposition for audit insight
+    r.net_edge_gross_ev = net_decomp["gross_ev"]
+    r.net_edge_spread_cost = net_decomp["spread_cost"]
+    r.net_edge_fee_cost = net_decomp["fee_cost"]
+    r.net_edge_slippage_cost = net_decomp["slippage_cost"]
+    r.net_edge_final = net
+
     if net <= 0.0:
         r.net_edge_blocked = True
         if verbose:
-            print(f"    net_edge[audit]: BLOCKED  net={net:.5f}  "
-                  f"ev={ev:.3f}  spread={r.spread:.5f}")
+            print(f"    net_edge[audit]: BLOCKED  net={net:.5f}")
+            print(f"      Components: ev={net_decomp['gross_ev']:.4f} "
+                  f"- spread={net_decomp['spread_cost']:.4f} "
+                  f"- fee={net_decomp['fee_cost']:.4f} "
+                  f"- slip={net_decomp['slippage_cost']:.4f}")
+            # Identify which factor is the primary blocker
+            costs = [
+                ("spread", net_decomp['spread_cost']),
+                ("fee", net_decomp['fee_cost']),
+                ("slippage", net_decomp['slippage_cost']),
+            ]
+            primary = max(costs, key=lambda x: x[1])
+            print(f"      Primary block: {primary[0]} cost {primary[1]:.4f} "
+                  f"exceeds EV {net_decomp['gross_ev']:.4f}")
         return r
     if verbose:
         print(f"    net_edge[audit]: OK  net={net:.5f}")
@@ -820,11 +868,37 @@ def _print_summary(results: list[AuditResult], mode: str = "synthetic") -> None:
 
     # Block breakdown
     print(f"\n  ── Block breakdown ─────────────────────────────────")
-    print(f"  RDE                    : {sum(1 for r in results if not r.rde_pass)}")
-    print(f"  exec_quality HARD_SKIP : {sum(1 for r in results if r.eq_skip)}")
-    print(f"  net_edge               : {sum(1 for r in results if r.net_edge_blocked)}")
-    print(f"  cost_guard             : {sum(1 for r in results if r.cost_guard_blocked)}")
-    print(f"  heat_limit             : {sum(1 for r in results if r.heat_blocked)}")
+    rde_blocks = sum(1 for r in results if not r.rde_pass)
+    eq_blocks = sum(1 for r in results if r.eq_skip)
+    net_blocks = sum(1 for r in results if r.net_edge_blocked)
+    cost_blocks = sum(1 for r in results if r.cost_guard_blocked)
+    heat_blocks = sum(1 for r in results if r.heat_blocked)
+
+    print(f"  RDE                    : {rde_blocks}")
+    print(f"  exec_quality HARD_SKIP : {eq_blocks}")
+    print(f"  net_edge               : {net_blocks}")
+    print(f"  cost_guard             : {cost_blocks}")
+    print(f"  heat_limit             : {heat_blocks}")
+
+    # V10.13u Fix 5: Net-edge decomposition breakdown
+    if net_blocks > 0:
+        net_blocked = [r for r in results if r.net_edge_blocked]
+        spread_blocked = sum(1 for r in net_blocked if r.net_edge_spread_cost > r.net_edge_gross_ev)
+        fee_blocked = sum(1 for r in net_blocked if r.net_edge_fee_cost > (r.net_edge_gross_ev - r.net_edge_spread_cost))
+        slip_blocked = sum(1 for r in net_blocked if r.net_edge_slippage_cost > 0)
+
+        print(f"\n  ── Net-edge decomposition ({net_blocks} blocked) ──")
+        if spread_blocked > 0:
+            print(f"    Primary blocker: SPREAD  {spread_blocked}/{net_blocks}")
+        if fee_blocked > 0:
+            print(f"    Primary blocker: FEE     {fee_blocked}/{net_blocks}")
+        if slip_blocked > 0:
+            print(f"    Primary blocker: SLIP    {slip_blocked}/{net_blocks}")
+
+        avg_gross = sum(r.net_edge_gross_ev for r in net_blocked) / max(len(net_blocked), 1)
+        avg_spread = sum(r.net_edge_spread_cost for r in net_blocked) / max(len(net_blocked), 1)
+        avg_fee = sum(r.net_edge_fee_cost for r in net_blocked) / max(len(net_blocked), 1)
+        print(f"    Avg gross_ev={avg_gross:.5f}  spread_cost={avg_spread:.5f}  fee={avg_fee:.5f}")
 
     # Monotone violations (reduce-only from corr stage onward)
     mono_fail = [r for r in passed if not r.monotone_ok]
