@@ -38,6 +38,162 @@ from src.services.smart_exit_engine import evaluate_position_exit
 from src.services.reward_system import compute_reward
 
 
+# ════════════════════════════════════════════════════════════════════════════════
+# V10.13v: CANONICAL DECISION CONTEXT (Fix 6)
+# ════════════════════════════════════════════════════════════════════════════════
+# Single source of truth for decision logging with contradiction detection.
+
+def _determine_alignment(side: str, regime: str) -> str:
+    """Determine whether trade side aligns with market regime.
+
+    Returns: "WITH_REGIME" | "COUNTER_REGIME" | "NEUTRAL"
+    """
+    if regime in ("RANGING", "QUIET_RANGE"):
+        return "NEUTRAL"
+    if regime == "HIGH_VOL":
+        return "NEUTRAL"
+
+    with_regime = (
+        (side == "BUY" and regime == "BULL_TREND") or
+        (side == "SELL" and regime == "BEAR_TREND")
+    )
+
+    return "WITH_REGIME" if with_regime else "COUNTER_REGIME"
+
+
+def build_decision_ctx(
+    sym: str,
+    side: str,
+    regime: str,
+    ev_raw: float,
+    ev_after_coh: float,
+    ev_final: float,
+    score_raw: float,
+    score_final: float,
+    score_threshold: float,
+    prob: float,
+    rr: float,
+    ws: float,
+    auditor_factor: float,
+    coherence: float,
+    bootstrap_pair: bool,
+    bootstrap_global: bool,
+    decision: str,
+    decision_stage: str,
+    signal_tag: str = "",
+    reason_chain: list = None,
+) -> dict:
+    """V10.13v: Build canonical decision context object.
+
+    Returns structured dict with all decision metadata from single source of truth.
+    """
+    return {
+        "symbol": sym,
+        "side": side,
+        "regime": regime,
+        "alignment": _determine_alignment(side, regime),
+        "signal_tag": signal_tag,
+        "ev_raw": ev_raw,
+        "ev_after_coherence": ev_after_coh,
+        "ev_final": ev_final,
+        "score_raw": score_raw,
+        "score_final": score_final,
+        "score_threshold": score_threshold,
+        "prob": prob,
+        "rr": rr,
+        "ws": ws,
+        "auditor_factor": auditor_factor,
+        "coherence": coherence,
+        "bootstrap_pair": bootstrap_pair,
+        "bootstrap_global": bootstrap_global,
+        "decision": decision,
+        "decision_stage": decision_stage,
+        "reason_chain": reason_chain or [],
+    }
+
+
+def validate_decision_ctx(ctx: dict) -> tuple[bool, list[str]]:
+    """V10.13v: Validate decision context for consistency.
+
+    Returns (is_valid, list_of_errors)
+    """
+    errors = []
+
+    # Required fields
+    required = ["symbol", "side", "regime", "decision", "ev_final", "score_final"]
+    for field in required:
+        if field not in ctx or ctx[field] is None:
+            errors.append(f"Missing required field: {field}")
+
+    # Semantic checks
+    if ctx.get("decision") == "TAKE" and ctx.get("ev_final", 0) <= 0:
+        errors.append(f"TAKE decision with ev_final={ctx.get('ev_final'):.4f} ≤ 0 (EV-only violation)")
+
+    # Non-finite checks
+    for field in ["ev_raw", "ev_final", "score_raw", "score_final", "prob"]:
+        if field in ctx and ctx[field] is not None:
+            if not np.isfinite(float(ctx[field])):
+                errors.append(f"Non-finite value for {field}: {ctx[field]}")
+
+    # Side validation
+    if ctx.get("side") not in ("BUY", "SELL", "HOLD"):
+        errors.append(f"Invalid side: {ctx.get('side')}")
+
+    # Alignment validation
+    if ctx.get("alignment") not in ("WITH_REGIME", "COUNTER_REGIME", "NEUTRAL"):
+        errors.append(f"Invalid alignment: {ctx.get('alignment')}")
+
+    return len(errors) == 0, errors
+
+
+def log_canonical_decision(ctx: dict) -> None:
+    """V10.13v: Log canonical decision context as single authoritative line.
+
+    Validates context before logging. If validation fails, logs error and rejects.
+    """
+    is_valid, errors = validate_decision_ctx(ctx)
+
+    if not is_valid:
+        log.error(f"[V10.13v DECISION_INTEGRITY_ERROR] Validation failed for {ctx.get('symbol','?')}")
+        for err in errors:
+            log.error(f"  - {err}")
+        log.error(f"  Context: {ctx}")
+        return
+
+    sym = ctx.get("symbol", "?")
+    side = ctx.get("side", "?")
+    regime = ctx.get("regime", "?")
+    alignment = ctx.get("alignment", "?")
+    tag = ctx.get("signal_tag", "")
+    stage = ctx.get("decision_stage", "?")
+
+    ev_raw = ctx.get("ev_raw", 0.0)
+    ev_coh = ctx.get("ev_after_coherence", 0.0)
+    ev_final = ctx.get("ev_final", 0.0)
+    score_raw = ctx.get("score_raw", 0.0)
+    score_final = ctx.get("score_final", 0.0)
+    thr = ctx.get("score_threshold", 0.0)
+    p = ctx.get("prob", 0.0)
+    rr = ctx.get("rr", 0.0)
+    ws = ctx.get("ws", 0.0)
+    af = ctx.get("auditor_factor", 0.0)
+    coh = ctx.get("coherence", 0.0)
+
+    bp = ctx.get("bootstrap_pair", False)
+    bg = ctx.get("bootstrap_global", False)
+    decision = ctx.get("decision", "UNKNOWN")
+
+    tag_str = f" tag={tag}" if tag else ""
+    log.info(
+        f"[V10.13v DECISION] {sym} {side} {regime} {alignment}{tag_str} stage={stage} "
+        f"ev_raw={ev_raw:.4f} ev_coh={ev_coh:.4f} ev_final={ev_final:.4f} "
+        f"score_raw={score_raw:.4f} score_final={score_final:.4f} thr={thr:.4f} "
+        f"p={p:.3f} rr={rr:.2f} ws={ws:.3f} af={af:.2f} coh={coh:.3f} "
+        f"bootstrap=pair:{bp} global:{bg} "
+        f"result={decision}"
+    )
+
+
 # ── V10.13q: Final kill attribution telemetry (observability for tuning) ────────
 # Track the FINAL terminal reason each candidate is rejected
 _entry_kill_audit = {

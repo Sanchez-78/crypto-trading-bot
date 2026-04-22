@@ -37,6 +37,11 @@ import logging
 import random
 import time
 from src.core.guard import guard, FailureLevel
+from src.services.exit_attribution import (
+    build_exit_ctx, update_exit_attribution,
+    render_exit_attribution_summary, EXIT_TYPES
+)
+
 try:
     from src.services.learning_instrumentation import (
         increment_trades_closed, increment_lm_update_called, increment_lm_update_success
@@ -2377,6 +2382,32 @@ def on_price(data):
 
     from src.services.firebase_client import save_last_trade
     save_last_trade(trade)
+
+    # V10.13v (Fix 7): Exit outcome attribution
+    # Build and record exit context for exit type analysis
+    try:
+        exit_ctx = build_exit_ctx(
+            sym=sym,
+            regime=regime,
+            side=pos["action"],
+            entry_price=entry,
+            exit_price=curr,
+            size=pos["size"],
+            hold_seconds=int(time.time() - pos["open_ts"]),
+            gross_pnl=(move * pos["size"]),
+            fee_cost=(fee_used * pos["size"]),
+            slippage_cost=pos.get("fill_slippage", 0.0) * pos["size"],
+            net_pnl=profit,
+            mfe=mfe,
+            mae=mae,
+            final_exit_type=reason,
+            exit_reason_text=reason,
+            was_winner=(profit > 0),
+            was_forced=False,
+        )
+        update_exit_attribution(exit_ctx)
+    except Exception as e:
+        log.debug(f"[V10.13v] Exit attribution error: {e}")
 
     BATCH.append(trade)
     if len(BATCH) >= 5:   # lowered 20→5: flush sooner to minimise data loss on restart
