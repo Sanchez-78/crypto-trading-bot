@@ -478,26 +478,76 @@ def reset_if_toxic():
 
 # ── Global health score ────────────────────────────────────────────────────────
 
-def lm_health():
+def lm_health_components():
     """
-    Mean of (convergence × max(EV, 0)) across pairs with ≥10 trades.
-    0.0 when no pair has enough data.
-    Threshold lowered 20→10: with 3 symbols in slow markets,
-    accumulating 20 in-session trades per pair can take hours.
+    V10.13x: Return health with component breakdown for transparency.
+
+    Returns dict with components + final score.
     """
     scores = []
+    evs = []
+    convs = []
+
     for (sym, reg), n in lm_count.items():
         if n < 5:
             continue
         conv = lm_convergence(sym, reg)
         ev   = lm_edge_strength(sym, reg)
+        convs.append(conv)
+        evs.append(ev)
         # Shift range so losing systems (ev<0) still produce a non-zero score.
-        # previously max(ev, -1.0) led to zero for 2% win-rate systems, blocking them.
-        # Now we use abs(ev) because confidently predicting losses is also "learning".
         scores.append(conv * (0.5 + 0.5 * max(ev, -1.0)))
+
     if not scores:
-        return 0.0
-    return float(np.mean(scores))
+        return {
+            'final': 0.0,
+            'status': 'NO_DATA',
+            'components': {
+                'edge': 0.0,
+                'convergence': 0.0,
+                'calibration': 0.0,
+                'stability': 0.0,
+                'penalty': 0.0,
+            }
+        }
+
+    # Component 1: Edge strength (mean of positive EVs)
+    positive_evs = [e for e in evs if e > 0]
+    edge_component = float(np.mean(positive_evs)) if positive_evs else 0.0
+
+    # Component 2: Convergence (% of pairs with conv > 0.5)
+    converged = sum(1 for c in convs if c > 0.5)
+    convergence_component = converged / len(convs) if convs else 0.0
+
+    # Component 3: Calibration & 4: Stability (stubs for future enhancement)
+    calibration_component = 0.0
+    stability_component = 0.0
+
+    # Bootstrap penalty: system needs 50+ decisive trades to be confident
+    total_trades = sum(lm_count.values())
+    bootstrap_penalty = 0.0 if total_trades >= 50 else -0.3
+
+    final_health = float(np.mean(scores))
+
+    return {
+        'final': final_health,
+        'status': 'GOOD' if final_health >= 0.3 else ('WEAK' if final_health >= 0.1 else 'BAD'),
+        'components': {
+            'edge': edge_component,
+            'convergence': convergence_component,
+            'calibration': calibration_component,
+            'stability': stability_component,
+            'penalty': bootstrap_penalty,
+        }
+    }
+
+
+def lm_health():
+    """
+    Backward-compatible scalar health score.
+    For component breakdown, use lm_health_components().
+    """
+    return lm_health_components()['final']
 
 
 # ── Meta state + adaptive control ────────────────────────────────────────────

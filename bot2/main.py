@@ -87,6 +87,7 @@ from src.services.learning_event import get_metrics, bootstrap_from_history
 from src.services.trade_executor import get_open_positions
 from src.services.signal_generator import warmup
 from src.services.dashboard_live import dashboard_loop
+from src.services.metrics_engine import MetricsEngine
 from bot2.auditor import run_audit
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -647,14 +648,24 @@ def print_status():
     ls  = m.get("last_signals", {})
     ss  = m.get("sym_stats", {})
     ops = get_open_positions()
-    t   = m["trades"]
-    wr  = m["winrate"]
 
-    # pre-extract to avoid backslash-in-fstring errors
-    wins       = m["wins"]
-    losses     = m["losses"]
+    # ── V10.13x: Compute canonical trade stats from actual closed trades ────
+    engine = MetricsEngine()
+    recent_trades = load_history(limit=500)  # Load last 500 closed trades
+    canonical = engine.compute_canonical_trade_stats(recent_trades)
+
+    # Use canonical stats as primary source of truth
+    t   = canonical["trades_total"]
+    wins = canonical["wins"]
+    losses = canonical["losses"]
+    flats = canonical["flats"]
+    wr = canonical["winrate"]
+    profit = canonical["net_pnl"]
+    profit_factor = canonical["profit_factor"]
+    expectancy = canonical["expectancy"]
+
+    # Fallback to learning_event metrics for other fields (not yet canonicalized)
     timeouts   = m.get("timeouts", 0)
-    profit     = m["profit"]
     drawdown   = m["drawdown"]
     win_streak = m["win_streak"]
     los_streak = m["loss_streak"]
@@ -663,8 +674,8 @@ def print_status():
     exe        = m["signals_executed"]
     blk        = m["blocked"]
     flt        = m["signals_filtered"]
-    pf         = m.get("profit_factor", 1.0)
-    exp        = m.get("expectancy", 0.0)
+    pf         = profit_factor if t > 0 else 1.0
+    exp        = expectancy if t > 0 else 0.0
     best       = m.get("best_trade", 0.0)
     worst      = m.get("worst_trade", 0.0)
     since      = m.get("since_last")
@@ -740,22 +751,31 @@ def print_status():
         pf_col  = C.GRN if pf >= 1.5 else (C.YLW if pf >= 1.0 else C.RED)
         exp_col = C.GRN if exp > 0 else C.RED
 
+        # V10.13x: Use canonical stats with reconciliation validation
+        assert wins + losses + flats == t, f"[V10.13x] Trade count mismatch: {wins}+{losses}+{flats} != {t}"
         print(f"    {g('Obchody', C.GRY)}    {g(str(t), C.WHT + C.BLD)}  "
               f"({g(f'OK {wins}', C.GRN)}  {g(f'X {losses}', C.RED)}  "
-              f"{g(f'~ {timeouts}', C.GRY)})")
+              f"{g(f'~ {flats}', C.GRY)})")
 
+        # Log reconciliation status
+        if not canonical["reconciliation"]["verified"]:
+            alerts_str = "; ".join(canonical["reconciliation"]["alerts"])
+            print(f"    {g(f'⚠ RECON MISMATCH: {alerts_str}', C.RED + C.BLD)}")
+
+        # V10.13x: WR labeled with explicit scope (canonical_alltime, excluding flats)
         # WR is shown as "N/A" when fewer than 10 decisive trades exist —
         # with only 1-5 trades a 100% reading is meaningless noise.
+        _decisive = wins + losses  # Exclude flats from count
         if _decisive < 10:
             _wr_str  = g("N/A", C.GRY + C.BLD)
             _wr_note = g(f"(malo dat: {_decisive}/10 rozhodujicich)", C.GRY)
-            print(f"    {g('Winrate', C.GRY)}     {_wr_str}  {_wr_note}")
+            print(f"    {g('WR_canonical', C.GRY)}     {_wr_str}  {_wr_note}")
         else:
-            print(f"    {g('Winrate', C.GRY)}     "
+            print(f"    {g('WR_canonical', C.GRY)}     "
                   f"{g(f'{w_pct:.1f}%', wr_col + C.BLD)}  "
                   f"{cbar(wr, 1.0, lo=0.45, hi=0.55)}  "
                   f"{g('cil 55%', C.GRY)}  "
-                  f"{g(f'(bez timeoutu)', C.GRY)}")
+                  f"{g(f'(vsechny uzavrene, bez remiz)', C.GRY)}")
 
         print(f"    {g('Zisk', C.GRY)}        "
               f"{g(f'{profit:+.8f}', pr_col + C.BLD)}  "

@@ -46,6 +46,10 @@ _QUOTA_WRITES = 0   # Current day write count
 _QUOTA_MAX_READS = 50000
 _QUOTA_MAX_WRITES = 20000
 
+# V10.13x: Reconciliation logging (periodic, every 300s = 5min to conserve quota)
+_LAST_RECON_TS = 0
+_RECON_INTERVAL = 300  # seconds between reconciliation checks (quota-safe: ~288 reads/day)
+
 def _reset_quota_if_new_day():
     """Reset counters at midnight UTC each day."""
     global _QUOTA_WINDOW_START, _QUOTA_READS, _QUOTA_WRITES
@@ -774,6 +778,34 @@ def save_metrics_full(metrics, open_positions=None, execution=None, monitor=None
 
         _now = time.time()
         _last_trade_ts = metrics.get("last_trade_ts", 0.0)  # CONSISTENCY FIX: unified key name
+
+        # V10.13x: Periodic reconciliation check (every 60s) to validate metrics integrity
+        global _LAST_RECON_TS
+        if _now - _LAST_RECON_TS >= _RECON_INTERVAL:
+            try:
+                from src.services.metrics_engine import MetricsEngine
+                engine = MetricsEngine()
+                recent_trades = load_history(limit=500)
+                canonical = engine.compute_canonical_trade_stats(recent_trades)
+
+                # Log reconciliation status
+                recon_msg = f"[V10.13x RECON] trades={canonical['trades_total']} " \
+                            f"(wins={canonical['wins']} losses={canonical['losses']} flats={canonical['flats']}) " \
+                            f"net_pnl={canonical['net_pnl']:+.8f} status={'OK' if canonical['reconciliation']['verified'] else 'MISMATCH'}"
+
+                if not canonical['reconciliation']['verified']:
+                    alerts = "; ".join(canonical['reconciliation']['alerts'])
+                    print(f"⚠️  {recon_msg} — alerts: {alerts}")
+                    import logging
+                    logging.warning(recon_msg + f" — {alerts}")
+                else:
+                    print(recon_msg)
+
+                _LAST_RECON_TS = _now
+            except Exception as e:
+                # Don't let reconciliation errors block metrics saving
+                import logging
+                logging.error(f"V10.13x reconciliation failed: {e}")
 
         data = {
             # ── Envelope metadata ─────────────────────────────────────────────
