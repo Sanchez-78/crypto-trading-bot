@@ -46,7 +46,11 @@ try:
     from src.services.learning_instrumentation import (
         increment_trades_closed, increment_lm_update_called, increment_lm_update_success
     )
-except ImportError:
+except (ImportError, Exception) as e:
+    # Log the actual error for debugging
+    import traceback
+    print(f"[IMPORT_ERROR] Failed to import learning_instrumentation: {type(e).__name__}: {e}")
+    print(f"[TRACEBACK]\n{traceback.format_exc()}")
     # Fallback if instrumentation module not available
     increment_trades_closed = lambda: None
     increment_lm_update_called = lambda: None
