@@ -2318,8 +2318,9 @@ def on_price(data):
         log.error(f"[TRADE_CLOSE_ERROR] update_equity failed: {e}")
 
     # V10.14: Use frozen open_regime instead of current regime for consistency
+    # BUG FIX: Define reg_sig before try block to prevent NameError in next try block
+    reg_sig = pos.get("open_regime", pos["signal"].get("regime", "RANGING"))
     try:
-        reg_sig = pos.get("open_regime", pos["signal"].get("regime", "RANGING"))
         bayes_update(sym, reg_sig, profit)
         bandit_update(sym, reg_sig, max(-0.05, min(0.05, profit)))
         record_trade_close(sym, reg_sig, profit)
@@ -2328,30 +2329,23 @@ def on_price(data):
 
     increment_trades_closed()  # V10.13s Phase 2: Track trade close event
 
-    # BUG FIX: Define bool_f before try block to prevent NameError if import fails
+    # BUG FIX: Define all learning vars before try block to prevent NameError if import fails
     bool_f = {}  # default empty if try block fails
+    _ap = abs(profit)
+    if   _ap < 0.0005: learning_pnl = 0.0
+    elif _ap < 0.001:  learning_pnl = 0.0003 if profit > 0 else -0.0003
+    else:              learning_pnl = profit
+    _fee_cost = fee_used * pos["size"]
+    _slip_cost = pos.get("fill_slippage", 0.0) * pos["size"]
+    _gross_pnl = move * pos["size"]
+    _net_pnl = _gross_pnl - _fee_cost - _slip_cost
     try:
         from src.services.learning_monitor import lm_update, lm_count, lm_health
         raw_f  = pos["signal"].get("features", {})
         bool_f = {k: v for k, v in raw_f.items() if isinstance(v, bool)}
-        # V7: micro-PnL mapping — preserve directional signal for mid-range trades.
-        # < 0.0005: pure noise / timeout → 0.0 (no signal either way)
-        # [0.0005, 0.001): real but tiny → ±0.0003 (preserve direction, reduce magnitude)
-        # ≥ 0.001: real trade → use as-is
-        # Timeout trades typically have |profit| < 0.0005 (fee×tiny_size) → still zeroed.
-        _ap = abs(profit)
-        if   _ap < 0.0005: learning_pnl = 0.0
-        elif _ap < 0.001:  learning_pnl = 0.0003 if profit > 0 else -0.0003
-        else:              learning_pnl = profit
         # Timeout = neutral: no TP/SL reached → no directional signal.
         # Penalty removed — in QUIET market 57% timeout rate drove pair EVs
         # negative rapidly → pair_block deadlock after bootstrap wipe.
-
-        # V10.13w Fix A: Log detailed close audit BEFORE lm_update to verify integration
-        _fee_cost = fee_used * pos["size"]
-        _slip_cost = pos.get("fill_slippage", 0.0) * pos["size"]
-        _gross_pnl = move * pos["size"]
-        _net_pnl = _gross_pnl - _fee_cost - _slip_cost
         log.info(f"[V10.13w LM_CLOSE] {sym} {reg_sig} {pos['action']} "
                  f"close={reason} gross={_gross_pnl:+.8f} fee={-_fee_cost:.8f} "
                  f"slip={-_slip_cost:.8f} net={_net_pnl:+.8f} "
