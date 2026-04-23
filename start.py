@@ -2,32 +2,32 @@ import sys
 import os
 import traceback
 
-print("🚀 START.PY BOOTING...")
+print("[START] START.PY BOOTING...")
 
 # =========================
 # FIX PYTHON PATH
 # =========================
 sys.path.append(os.getcwd())
 
-print("📁 ROOT FILES:", os.listdir())
+print("[PATH] ROOT FILES:", os.listdir())
 
 if os.path.exists("src"):
-    print("📁 SRC:", os.listdir("src"))
+    print("[PATH] SRC:", os.listdir("src"))
 
 if os.path.exists("src/services"):
-    print("📁 SERVICES:", os.listdir("src/services"))
+    print("[PATH] SERVICES:", os.listdir("src/services"))
 
 # =========================
 # SAFE START
 # =========================
 try:
-    print("🚨 IMPORTING MAIN...")
+    print("[IMPORT] IMPORTING MAIN...")
     from bot2.main import main
 
-    print("🚨 STARTING MAIN...")
+    print("[START] STARTING MAIN...")
     main()
 
 except Exception as e:
-    print("💥 CRASH DETECTED:")
+    print("[ERROR] CRASH DETECTED:")
     print(e)
     traceback.print_exc()
