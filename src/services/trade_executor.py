@@ -2207,7 +2207,7 @@ def on_price(data):
     if reason is None:
         return
 
-    log.info(f"[CLOSE_LOGIC_START] {sym} reason={reason} entering close logic")
+    get_event_bus().emit("LOG_OUTPUT", {"message": f"[CLOSE_LOGIC_START] {sym} reason={reason} entering close logic"}, time.time())
 
     fee_used = pos.get("fee_rt", FEE_RT)
     profit   = (move - fee_used) * pos["size"] + pos.get("realized_pnl", 0.0)
@@ -2220,7 +2220,7 @@ def on_price(data):
     msg = (f"    {icon} {short} {pos['action']} "
            f"${entry:,.4f}→${curr:,.4f}  {profit:+.6f}  [{reason}] (fee: {fee_used:.5f})")
     get_event_bus().emit("LOG_OUTPUT", {"message": msg}, time.time())
-    log.info(f"[CLOSE_LOGIC_MSG_SENT] {sym} reason={reason} before notifier")
+    get_event_bus().emit("LOG_OUTPUT", {"message": f"[CLOSE_LOGIC_MSG_SENT] {sym} reason={reason} before notifier"}, time.time())
 
     mfe = ((pos["max_price"] - entry) / entry if pos["action"] == "BUY"
            else (entry - pos["min_price"]) / entry)
@@ -2331,7 +2331,7 @@ def on_price(data):
         log.error(f"[TRADE_CLOSE_ERROR] regime/bayes/bandit updates failed: {e}")
 
     increment_trades_closed()  # V10.13s Phase 2: Track trade close event
-    log.info(f"[TRADE_CLOSE_DEBUG] increment_trades_closed called for {sym} (reason={reason})")
+    get_event_bus().emit("LOG_OUTPUT", {"message": f"[TRADE_CLOSE_DEBUG] increment_trades_closed called for {sym} (reason={reason})"}, time.time())
 
     # BUG FIX: Define all learning vars before try block to prevent NameError if import fails
     bool_f = {}  # default empty if try block fails
@@ -2456,9 +2456,9 @@ def on_price(data):
     closed_regime = pos["signal"].get("regime", "RANGING")
     _regime_exposure[closed_regime] = max(
         0, _regime_exposure.get(closed_regime, 0) - 1)  # BUG FIX: default 0 not 1
-    log.info(f"[CLOSE_LOGIC_END] {sym} regime={closed_regime} about to delete position")
+    get_event_bus().emit("LOG_OUTPUT", {"message": f"[CLOSE_LOGIC_END] {sym} regime={closed_regime} about to delete position"}, time.time())
     del _positions[sym]
-    log.info(f"[CLOSE_LOGIC_DELETED] {sym} position deleted")
+    get_event_bus().emit("LOG_OUTPUT", {"message": f"[CLOSE_LOGIC_DELETED] {sym} position deleted"}, time.time())
 
     if _pending_open:
         pending = _pending_open.pop(0)
