@@ -2328,6 +2328,7 @@ def on_price(data):
         log.error(f"[TRADE_CLOSE_ERROR] regime/bayes/bandit updates failed: {e}")
 
     increment_trades_closed()  # V10.13s Phase 2: Track trade close event
+    log.info(f"[TRADE_CLOSE_DEBUG] increment_trades_closed called for {sym} (reason={reason})")
 
     # BUG FIX: Define all learning vars before try block to prevent NameError if import fails
     bool_f = {}  # default empty if try block fails
