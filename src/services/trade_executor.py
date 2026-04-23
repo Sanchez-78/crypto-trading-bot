@@ -2311,8 +2311,7 @@ def on_price(data):
     # BUG FIX: Define bool_f before try block to prevent NameError if import fails
     bool_f = {}  # default empty if try block fails
     try:
-        from src.services.learning_monitor import lm_update
-        from src.services.learning_event import METRICS as _LM_METRICS
+        from src.services.learning_monitor import lm_update, lm_count, lm_health
         raw_f  = pos["signal"].get("features", {})
         bool_f = {k: v for k, v in raw_f.items() if isinstance(v, bool)}
         # V7: micro-PnL mapping — preserve directional signal for mid-range trades.
@@ -2327,19 +2326,33 @@ def on_price(data):
         # Timeout = neutral: no TP/SL reached → no directional signal.
         # Penalty removed — in QUIET market 57% timeout rate drove pair EVs
         # negative rapidly → pair_block deadlock after bootstrap wipe.
+
+        # V10.13w Fix A: Log detailed close audit BEFORE lm_update to verify integration
+        _fee_cost = fee_used * pos["size"]
+        _slip_cost = pos.get("fill_slippage", 0.0) * pos["size"]
+        _gross_pnl = move * pos["size"]
+        _net_pnl = _gross_pnl - _fee_cost - _slip_cost
+        log.info(f"[V10.13w LM_CLOSE] {sym} {reg_sig} {pos['action']} "
+                 f"close={reason} gross={_gross_pnl:+.8f} fee={-_fee_cost:.8f} "
+                 f"slip={-_slip_cost:.8f} net={_net_pnl:+.8f} "
+                 f"outcome={'WIN' if _net_pnl > 0 else 'LOSS' if _net_pnl < 0 else 'FLAT'} "
+                 f"lm_pair=yes lm_features={len(bool_f)}")
+
         increment_lm_update_called()  # V10.13s Phase 2: Track lm_update call
         lm_update(sym, reg_sig, learning_pnl,
                   ws=pos["signal"].get("ws", 0.5),
                   features=bool_f)
 
-        # V10.13s: Log learning signal reception to verify flow
+        # V10.13w Fix A: Log learning signal reception with correct LM state
         increment_lm_update_success()  # V10.13s Phase 2: Track lm_update success
-        _lm_n = _LM_METRICS.get("trades", 0)
-        _lm_health = _LM_METRICS.get("Health", 0)
-        log.debug(f"[V10.13s_LEARNING] {sym}/{reg_sig} pnl={learning_pnl:.4f} "
-                  f"n={_lm_n} health={_lm_health:.3f}")
+        _lm_key = (sym, reg_sig)
+        _lm_n = lm_count.get(_lm_key, 0)
+        _lm_h = lm_health()
+        log.info(f"[V10.13w LM_SUCCESS] {sym}/{reg_sig} pnl={learning_pnl:+.8f} "
+                 f"n={_lm_n} health={_lm_h:.4f}")
     except Exception as e:
         log.error(f"[LM_ERROR] lm_update() failed for {sym}/{reg_sig}: {type(e).__name__}: {e}", exc_info=True)
+        log.error(f"[V10.13w LM_SKIP] {sym} close={reason} reason=lm_update_exception")
 
     # ── V10.9: Adapt feature weights from closed position ─────────────────────
     # EV contribution per active feature = learning_pnl / n_active.

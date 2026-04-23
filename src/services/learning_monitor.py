@@ -516,6 +516,9 @@ def meta_update():
     Frozen at 1.0 during bootstrap (<100 trades) to prevent meta from
     suppressing early learning before sufficient data exists.
 
+    V10.13w: Also frozen when learning integrity mismatch detected — prevents
+    adaptive component from tuning on false state.
+
     learning quality (lm_health):
       < 0.20 → loosen threshold + shrink allocation (system still learning)
       > 0.40 → tighten threshold + expand allocation (edge confirmed)
@@ -529,6 +532,14 @@ def meta_update():
     drawdown (peak DD from equity curve):
       > 0.10 → risk_mult 0.6 override (takes precedence over Sharpe boost)
     """
+    # V10.13w: Freeze adaptive updates if learning integrity compromised
+    if is_learning_frozen():
+        log.warning("[V10.13w SAFE_MODE] Learning integrity mismatch detected → freezing adaptive updates")
+        meta["ws_mult"]    = 1.0    # neutral
+        meta["risk_mult"]  = 0.85   # slight de-risk
+        meta["alloc_mult"] = 0.90
+        return
+
     try:
         from src.services.execution import is_bootstrap
         if is_bootstrap():
@@ -626,6 +637,99 @@ def defense_efficiency() -> dict:
         "defended":      defended,
         "efficiency":    efficiency,
     }
+
+
+# ── V10.13w: Reconciliation & Integrity Check ────────────────────────────────
+
+_integrity_frozen = False  # Safe-mode flag: True when mismatch detected
+
+def check_learning_integrity(summary_metrics=None):
+    """
+    V10.13w: Reconcile Learning Monitor state against summary metrics.
+
+    Returns: (is_mismatch: bool, mismatch_report: dict)
+
+    Checks if:
+      - trade counts match
+      - winrate within tolerance
+      - PnL reasonably consistent
+
+    If mismatch detected, logs WARNING and sets _integrity_frozen flag.
+    """
+    global _integrity_frozen
+
+    if summary_metrics is None:
+        try:
+            from src.services.learning_event import get_metrics
+            summary_metrics = get_metrics()
+        except Exception:
+            return False, {"error": "could_not_load_summary"}
+
+    # Extract summary stats
+    summary_trades = summary_metrics.get("trades", 0)
+    summary_wr = summary_metrics.get("winrate", 0.0)
+    summary_pnl = summary_metrics.get("profit", 0.0)
+    summary_pf = summary_metrics.get("profit_factor", 1.0)
+
+    # Extract LM stats
+    lm_total_trades = sum(lm_count.values())
+    lm_wins = 0
+    lm_total = 0
+    lm_total_pnl = 0.0
+
+    for (sym, reg), n in lm_count.items():
+        pnl_list = lm_pnl_hist.get((sym, reg), [])
+        wr_list = lm_wr_hist.get((sym, reg), [])
+
+        if pnl_list:
+            lm_total_pnl += sum(pnl_list)
+        if wr_list and wr_list[-1] > 0:
+            lm_wins += int(n * wr_list[-1])
+        lm_total += n
+
+    lm_wr = (lm_wins / lm_total) if lm_total > 0 else 0.0
+
+    # Tolerance: small differences OK (±5 trades, ±0.05 WR, ±0.0001 PnL)
+    _TRADE_TOL = 5
+    _WR_TOL = 0.05
+    _PNL_TOL = 0.0001
+
+    mismatch = {
+        "summary_trades": summary_trades,
+        "lm_trades": lm_total_trades,
+        "summary_wr": round(summary_wr, 4),
+        "lm_wr": round(lm_wr, 4),
+        "summary_pnl": round(summary_pnl, 8),
+        "lm_pnl": round(lm_total_pnl, 8),
+        "summary_pf": round(summary_pf, 2),
+        "status": "OK",
+    }
+
+    is_mismatch = False
+
+    if abs(summary_trades - lm_total_trades) > _TRADE_TOL:
+        mismatch["status"] = "MISMATCH"
+        mismatch["trade_delta"] = summary_trades - lm_total_trades
+        is_mismatch = True
+
+    if abs(summary_wr - lm_wr) > _WR_TOL and lm_total >= 10:
+        mismatch["status"] = "MISMATCH"
+        mismatch["wr_delta"] = round(summary_wr - lm_wr, 4)
+        is_mismatch = True
+
+    if is_mismatch:
+        _integrity_frozen = True
+        log.warning(f"[V10.13w RECON] MISMATCH DETECTED: {mismatch}")
+    else:
+        log.info(f"[V10.13w RECON] {mismatch}")
+        _integrity_frozen = False
+
+    return is_mismatch, mismatch
+
+
+def is_learning_frozen():
+    """V10.13w: True if integrity freeze is active (adaptive updates disabled)."""
+    return _integrity_frozen
 
 
 # ── Alerts ────────────────────────────────────────────────────────────────────

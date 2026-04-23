@@ -1285,12 +1285,14 @@ def _get_base_ev_threshold():
 
 
 def _log_canonical_decision(sym, action, regime, raw_ev, final_ev, raw_score, final_score_threshold,
-                            auditor_factor, decision, reject_reason=None, override_reason=None, confidence=0.0):
-    """V10.13u: Log a single canonical decision snapshot per candidate.
+                            auditor_factor, decision, reject_reason=None, override_reason=None, confidence=0.0,
+                            setup_tag="", direction_source="", regime_source="", countertrend=False):
+    """V10.13w (Fix F): Log canonical decision with explainability context.
 
-    This replaces scattered decision prints with one structured log that captures:
-    - All relevant context (symbol, action, regime)
+    Captures:
+    - All decision context (symbol, action, regime, alignment)
     - All computed values (EV, score, factors)
+    - Explainability (setup tag, direction source, regime source, countertrend flag)
     - Final decision and reason
 
     Acceptance proof: One candidate → exactly one canonical line with complete context.
@@ -1298,9 +1300,20 @@ def _log_canonical_decision(sym, action, regime, raw_ev, final_ev, raw_score, fi
     import logging
     log = logging.getLogger(__name__)
 
+    # Determine alignment
+    alignment = "WITH_REGIME" if (
+        (action == "BUY" and regime == "BULL_TREND") or
+        (action == "SELL" and regime == "BEAR_TREND")
+    ) else "COUNTER_REGIME" if regime not in ("RANGING", "QUIET_RANGE", "HIGH_VOL") else "NEUTRAL"
+
+    setup_str = f" setup={setup_tag}" if setup_tag else ""
+    dir_src_str = f" dir_src={direction_source}" if direction_source else ""
+    regime_src_str = f" regime_src={regime_source}" if regime_source else ""
+    countertrend_str = " countertrend=yes" if countertrend else ""
+
     if decision == "TAKE":
         log.info(
-            f"[V10.13u DECISION] {sym} {action} {regime} | "
+            f"[V10.13w DECISION] {sym} {action} {regime} {alignment}{setup_str}{dir_src_str}{regime_src_str}{countertrend_str} | "
             f"ev_raw={raw_ev:.4f} ev_final={final_ev:.4f} "
             f"score_raw={raw_score:.4f} score_threshold={final_score_threshold:.4f} "
             f"auditor_factor={auditor_factor:.2f} confidence={confidence:.4f} | "
@@ -1309,7 +1322,7 @@ def _log_canonical_decision(sym, action, regime, raw_ev, final_ev, raw_score, fi
     else:
         reason_str = f"({reject_reason})" if reject_reason else ""
         log.info(
-            f"[V10.13u DECISION] {sym} {action} {regime} | "
+            f"[V10.13w DECISION] {sym} {action} {regime} {alignment}{setup_str}{dir_src_str}{countertrend_str} | "
             f"ev_raw={raw_ev:.4f} ev_final={final_ev:.4f} "
             f"score_raw={raw_score:.4f} score_threshold={final_score_threshold:.4f} | "
             f"REJECT {reason_str}"
@@ -1706,6 +1719,7 @@ def evaluate_signal(signal):
     _t_ef = _M.get("trades", 0)
     _ws   = signal.get("ws", 0.5)
     _sc   = decision_score(ev, _ws)
+    _score_before_adj = _sc  # V10.13w: Capture raw score for canonical logging
     _ev_spread = (max(ev_history) - min(ev_history)) if len(ev_history) >= 2 else 0.0
     print(f"    EV={ev:.3f}  p={win_prob:.2f}  rr={rr:.2f}  ws={_ws:.3f}  "
           f"score={_sc:.3f}[n={_t_ef}]  "
@@ -2066,14 +2080,24 @@ def evaluate_signal(signal):
     # BUG FIX: Previous threshold of -0.05 allowed negative EV like -0.0399 through
     # Core principle violation: EV-only means NO negative-expectation trades
     if ev <= 0:
-        # V10.13u: Canonical decision logging for negative EV rejection
+        # V10.13w: Canonical decision logging for negative EV rejection with explainability
+        _setup_tag_rej = signal.get("setup_tag", signal.get("signal_tag", ""))
+        _direction_source_rej = signal.get("direction_source", "signal_engine")
+        _is_countertrend_rej = (
+            (signal.get("action", "BUY") == "BUY" and regime == "BEAR_TREND") or
+            (signal.get("action", "BUY") == "SELL" and regime == "BULL_TREND")
+        )
+
         _log_canonical_decision(
             sym=sym, action=signal.get("action", "HOLD"), regime=regime,
             raw_ev=raw_ev_before_coherence, final_ev=ev,
             raw_score=0.0, final_score_threshold=0.0,
             auditor_factor=0.0,
             decision="REJECT",
-            reject_reason=f"NEGATIVE_EV (ev={ev:.4f})"
+            reject_reason=f"NEGATIVE_EV (ev={ev:.4f})",
+            setup_tag=_setup_tag_rej,
+            direction_source=_direction_source_rej,
+            countertrend=_is_countertrend_rej
         )
         print(f"    decision=REJECT_NEGATIVE_EV  ev={ev:.4f} ≤ 0 (EV-only violation)")
         track_blocked(reason="NEGATIVE_EV_REJECTION")
@@ -2116,15 +2140,27 @@ def evaluate_signal(signal):
     signal["anti_deadlock"]    = _anti_deadlock_triggered
     signal["unblock_size_mult"] = _unblock_size_mult
 
-    # V10.13u: Canonical decision logging
+    # V10.13w: Canonical decision logging — wire actual score values + explainability
+    _setup_tag = signal.get("setup_tag", signal.get("signal_tag", ""))
+    _direction_source = signal.get("direction_source", "signal_engine")
+    _regime_source = signal.get("regime_source", "regime_detector")
+    _is_countertrend = (
+        (signal.get("action", "BUY") == "BUY" and regime == "BEAR_TREND") or
+        (signal.get("action", "BUY") == "SELL" and regime == "BULL_TREND")
+    )
+
     _log_canonical_decision(
         sym=sym, action=signal.get("action", "HOLD"), regime=regime,
         raw_ev=raw_ev_before_coherence, final_ev=ev,
-        raw_score=_score_before_adj if '_score_before_adj' in locals() else 0.0,
-        final_score_threshold=current_score_threshold(),
+        raw_score=_score_before_adj,  # V10.13w: Real score before adjustments
+        final_score_threshold=_score_threshold,  # V10.13w: Actual threshold used
         auditor_factor=auditor_factor,
         decision="TAKE",
-        confidence=win_prob
+        confidence=win_prob,
+        setup_tag=_setup_tag,  # V10.13w: Fix F explainability
+        direction_source=_direction_source,  # V10.13w: Fix F explainability
+        regime_source=_regime_source,  # V10.13w: Fix F explainability
+        countertrend=_is_countertrend  # V10.13w: Fix F explainability
     )
 
     # V10.12f: Enhanced decision logging with unblock state and anti-deadlock info

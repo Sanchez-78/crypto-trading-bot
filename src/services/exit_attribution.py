@@ -48,7 +48,10 @@ def _init_exit_type_stats(exit_type: str) -> None:
             "count": 0,
             "win_count": 0,
             "loss_count": 0,
+            "flat_count": 0,
             "total_gross_pnl": 0.0,
+            "total_fee": 0.0,
+            "total_slippage": 0.0,
             "total_net_pnl": 0.0,
             "total_hold_seconds": 0,
             "symbols": {},
@@ -157,14 +160,26 @@ def update_exit_attribution(exit_ctx: dict) -> None:
     net_pnl = exit_ctx.get("net_pnl", 0.0)
     hold_sec = exit_ctx.get("hold_seconds", 0)
     was_winner = exit_ctx.get("was_winner", False)
-    
+    gross_pnl = exit_ctx.get("gross_pnl", 0.0)
+    fee_cost = exit_ctx.get("fee_cost", 0.0)
+    slippage_cost = exit_ctx.get("slippage_cost", 0.0)
+
     _init_exit_type_stats(exit_type)
-    
+
+    # Classify outcome: WIN if net_pnl > 0, FLAT if net_pnl ~= 0, LOSS if net_pnl < 0
+    if abs(net_pnl) < 0.00000001:
+        is_flat = True
+    else:
+        is_flat = False
+
     stats = _exit_stats[exit_type]
     stats["count"] += 1
     stats["win_count"] += (1 if was_winner else 0)
-    stats["loss_count"] += (0 if was_winner else 1)
-    stats["total_gross_pnl"] += exit_ctx.get("gross_pnl", 0.0)
+    stats["loss_count"] += (1 if not was_winner and not is_flat else 0)
+    stats["flat_count"] += (1 if is_flat else 0)
+    stats["total_gross_pnl"] += gross_pnl
+    stats["total_fee"] += fee_cost
+    stats["total_slippage"] += slippage_cost
     stats["total_net_pnl"] += net_pnl
     stats["total_hold_seconds"] += hold_sec
     
@@ -186,53 +201,70 @@ def update_exit_attribution(exit_ctx: dict) -> None:
 # ════════════════════════════════════════════════════════════════════════════════
 
 def render_exit_attribution_summary() -> str:
-    """V10.13v (Fix 7): Generate exit attribution dashboard summary."""
+    """V10.13w (Fix E): Generate exit attribution dashboard with net PnL contribution."""
     if not _exit_stats:
-        return "[V10.13v EXIT] No trades closed yet."
-    
+        return "[V10.13w EXIT_ATTRIBUTION] No trades closed yet."
+
     total_trades = sum(s["count"] for s in _exit_stats.values())
     total_net_pnl = sum(s["total_net_pnl"] for s in _exit_stats.values())
-    
+
     lines = [
-        "[V10.13v EXIT_ATTRIBUTION]",
-        f"  Total trades: {total_trades}  |  Net PnL: {total_net_pnl:+.6f}",
+        "[V10.13w EXIT_ATTRIBUTION]",
+        f"  Total exits: {total_trades}  |  Total Net PnL: {total_net_pnl:+.8f}",
+        "",
     ]
-    
+
     sorted_exits = sorted(
         _exit_stats.items(),
-        key=lambda x: x[1]["count"],
+        key=lambda x: x[1]["total_net_pnl"],
         reverse=True
     )
-    
+
     for exit_type, stats in sorted_exits:
         count = stats["count"]
         wins = stats["win_count"]
+        losses = stats["loss_count"]
+        flats = stats["flat_count"]
         pct_wins = (wins / count * 100) if count > 0 else 0
         total_pnl = stats["total_net_pnl"]
         avg_pnl = total_pnl / count if count > 0 else 0
+        pct_contribution = (total_pnl / total_net_pnl * 100) if total_net_pnl != 0 else 0
         avg_hold = stats["total_hold_seconds"] / count if count > 0 else 0
         share = (count / total_trades * 100) if total_trades > 0 else 0
-        
+
         lines.append(
             f"  {exit_type:20s}  count={count:3d}  share={share:5.1f}%  "
-            f"wr={pct_wins:5.1f}%  net={total_pnl:+.6f}  avg={avg_pnl:+.6f}  "
-            f"hold={avg_hold:6.0f}s"
+            f"w/l/f={wins:2d}/{losses:2d}/{flats:1d}  wr={pct_wins:5.1f}%"
         )
-    
+        lines.append(
+            f"  {'':20s}  net={total_pnl:+.8f}  pct={pct_contribution:+6.1f}%  "
+            f"avg={avg_pnl:+.8f}  hold={avg_hold:6.0f}s"
+        )
+
+    lines.append("")
+
     scratch_micro = sum(
         s["count"] for et, s in _exit_stats.items()
+        if "SCRATCH" in et or "MICRO" in et
+    )
+    scratch_micro_pnl = sum(
+        s["total_net_pnl"] for et, s in _exit_stats.items()
         if "SCRATCH" in et or "MICRO" in et
     )
     tp_trail = sum(
         s["count"] for et, s in _exit_stats.items()
         if "TP" in et or "TRAIL" in et
     )
-    
+    tp_trail_pnl = sum(
+        s["total_net_pnl"] for et, s in _exit_stats.items()
+        if "TP" in et or "TRAIL" in et
+    )
+
     lines.extend([
-        f"  [Summary] Scratch+Micro: {scratch_micro}/{total_trades} ({scratch_micro/total_trades*100:.1f}%)",
-        f"  [Summary] TP+Trail: {tp_trail}/{total_trades} ({tp_trail/total_trades*100:.1f}%)",
+        f"  [Grouping] Scratch+Micro: {scratch_micro}/{total_trades} trades, {scratch_micro_pnl:+.8f} PnL ({scratch_micro_pnl/total_net_pnl*100 if total_net_pnl != 0 else 0:+.1f}%)",
+        f"  [Grouping] TP+Trail:      {tp_trail}/{total_trades} trades, {tp_trail_pnl:+.8f} PnL ({tp_trail_pnl/total_net_pnl*100 if total_net_pnl != 0 else 0:+.1f}%)",
     ])
-    
+
     return "\n".join(lines)
 
 
