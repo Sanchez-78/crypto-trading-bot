@@ -942,7 +942,23 @@ def print_learning_monitor():
             tag = "+" if wr >= 0.55 else ("~" if wr >= 0.45 else "-")
             print(f"    {fname:<20}  [{bar}]  {wr:.0%}  {tag}")
 
+    # V10.13x: Consolidated health output (no duplicate prints from lm_alerts)
     h = lm_health()
-    alert = lm_alerts()
+
+    # Get alert status without printing (lm_alerts has side effects)
+    h_comp = lm_health_components()
+    if h < 0.10:
+        alert = "BAD"
+    elif h < 0.30:
+        alert = "WEAK"
+    else:
+        alert = "GOOD"
+
+    pairs_with_n5 = sum(1 for n in lm_count.values() if n >= 5)
+    total_trades = sum(lm_count.values())
+
     print(f"\n  Health: {h:.3f}  [{alert}]")
+    print(f"    Edge: {h_comp['components']['edge']:.3f}  "
+          f"Conv: {h_comp['components']['convergence']:.3f}  "
+          f"Pairs: {pairs_with_n5}  Trades: {total_trades}")
     print("=" * 24)
