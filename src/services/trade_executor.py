@@ -2298,14 +2298,30 @@ def on_price(data):
         },
     }
 
-    update_metrics(pos["signal"], trade)
-    update_returns(sym, profit)
-    update_equity(profit)
+    try:
+        update_metrics(pos["signal"], trade)
+    except Exception as e:
+        log.error(f"[TRADE_CLOSE_ERROR] update_metrics failed: {e}")
+
+    try:
+        update_returns(sym, profit)
+    except Exception as e:
+        log.error(f"[TRADE_CLOSE_ERROR] update_returns failed: {e}")
+
+    try:
+        update_equity(profit)
+    except Exception as e:
+        log.error(f"[TRADE_CLOSE_ERROR] update_equity failed: {e}")
+
     # V10.14: Use frozen open_regime instead of current regime for consistency
-    reg_sig = pos.get("open_regime", pos["signal"].get("regime", "RANGING"))
-    bayes_update(sym, reg_sig, profit)
-    bandit_update(sym, reg_sig, max(-0.05, min(0.05, profit)))
-    record_trade_close(sym, reg_sig, profit)
+    try:
+        reg_sig = pos.get("open_regime", pos["signal"].get("regime", "RANGING"))
+        bayes_update(sym, reg_sig, profit)
+        bandit_update(sym, reg_sig, max(-0.05, min(0.05, profit)))
+        record_trade_close(sym, reg_sig, profit)
+    except Exception as e:
+        log.error(f"[TRADE_CLOSE_ERROR] regime/bayes/bandit updates failed: {e}")
+
     increment_trades_closed()  # V10.13s Phase 2: Track trade close event
 
     # BUG FIX: Define bool_f before try block to prevent NameError if import fails
