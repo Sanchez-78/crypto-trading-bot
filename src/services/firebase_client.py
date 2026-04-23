@@ -125,7 +125,7 @@ PERF_MODE = False
 HISTORY_LIMIT  = 200 if PERF_MODE else 100   # docs per fetch
 SIGNALS_LIMIT  = 200
 
-HISTORY_TTL    = 300 if PERF_MODE else 1800  # 5 min  vs  30 min (V10.13o: reduced Firebase reads)
+HISTORY_TTL    = 300 if PERF_MODE else 3600  # 5 min vs 1 hour (V10.14: increased to reduce read spike from 9.5k/hour to <2k/hour)
 WEIGHTS_TTL    = 120 if PERF_MODE else 900    # 2 min  vs  15 min
 SIGNALS_TTL    = 600 if PERF_MODE else 1800   # 10 min vs  30 min
 
