@@ -2207,6 +2207,8 @@ def on_price(data):
     if reason is None:
         return
 
+    log.info(f"[CLOSE_LOGIC_START] {sym} reason={reason} entering close logic")
+
     fee_used = pos.get("fee_rt", FEE_RT)
     profit   = (move - fee_used) * pos["size"] + pos.get("realized_pnl", 0.0)
     result   = "WIN" if profit > 0 else "LOSS"
@@ -2218,6 +2220,7 @@ def on_price(data):
     msg = (f"    {icon} {short} {pos['action']} "
            f"${entry:,.4f}→${curr:,.4f}  {profit:+.6f}  [{reason}] (fee: {fee_used:.5f})")
     get_event_bus().emit("LOG_OUTPUT", {"message": msg}, time.time())
+    log.info(f"[CLOSE_LOGIC_MSG_SENT] {sym} reason={reason} before notifier")
 
     mfe = ((pos["max_price"] - entry) / entry if pos["action"] == "BUY"
            else (entry - pos["min_price"]) / entry)
@@ -2453,7 +2456,9 @@ def on_price(data):
     closed_regime = pos["signal"].get("regime", "RANGING")
     _regime_exposure[closed_regime] = max(
         0, _regime_exposure.get(closed_regime, 0) - 1)  # BUG FIX: default 0 not 1
+    log.info(f"[CLOSE_LOGIC_END] {sym} regime={closed_regime} about to delete position")
     del _positions[sym]
+    log.info(f"[CLOSE_LOGIC_DELETED] {sym} position deleted")
 
     if _pending_open:
         pending = _pending_open.pop(0)
