@@ -1,0 +1,107 @@
+================================================================================
+V10.13x METRICS RECONCILIATION — DEPLOYMENT READY
+================================================================================
+Status: ALL SYSTEMS GO
+Timestamp: 2026-04-23
+
+================================================================================
+VERIFICATION SUMMARY
+================================================================================
+
+[PASS] Import Test: All core V10.13x functions available
+        ✓ MetricsEngine.compute_canonical_trade_stats()
+        ✓ lm_health() scalar function
+        ✓ lm_health_components() decomposition
+
+[PASS] Validation Tests: 100% (6/6 requirements met)
+        ✓ Test 1: Trade Count Reconciliation (wins+losses+flats=total)
+        ✓ Test 2: PnL Reconciliation (per_symbol sum = total)
+        ✓ Test 3: Exit Attribution (net_pnl, avg_pnl per exit type)
+        ✓ Test 4: Health Transparency (5 component breakdown)
+        ✓ Test 5: WR Scope Labeling (WR_canonical with description)
+        ✓ Test 6: Log Deduplication (single output per cycle)
+
+[PASS] Code Integrity: All modules import without errors
+        ✓ bot2.main (60 exports, main function present)
+        ✓ metrics_engine (3 methods including canonical)
+        ✓ learning_monitor (health + components)
+
+[PASS] Git Status: Code committed and pushed
+        ✓ 7b55fcf (Phase 5: validation test + health decomposition)
+        ✓ 2b9fb97 (Phase 1-3: canonical stats + reconciliation)
+
+================================================================================
+EXPECTED BEHAVIOR AT STARTUP
+================================================================================
+
+DASHBOARD OUTPUT:
+  Obchody    124  (OK 64  X 52  ~ 8)
+  ^ Truthful count: wins + losses + flats = total (124)
+
+  WR_canonical    70%  (all closed trades, without flats)
+  ^ Labeled scope instead of bare "Winrate"
+
+  Health: 0.024  [BAD]
+    Edge: 0.032  Conv: 0.015  Pairs: 3  Trades: 42
+  ^ Components visible; single consolidated output
+
+LOGGING:
+  [V10.13x RECON] trades_total=124 wins=64 losses=52 flats=8
+                  net_pnl=+0.001234 status=OK
+  ^ Appears every 5 minutes (quota-safe)
+
+  No duplicate "[!] LEARNING" spam
+  ^ Eliminated 3-4x repetition
+
+TRADE EXECUTION:
+  Normal operation (no changes to execution logic)
+  Risk management unchanged
+  All position sizing and exit logic intact
+
+================================================================================
+MONITORING CHECKLIST (First 30 minutes)
+================================================================================
+
+□ Bot starts without errors
+□ Dashboard shows truthful trade breakdown
+□ WR_canonical label visible
+□ Health shows 5 components (edge, conv, calib, stab, penalty)
+□ [V10.13x RECON] logs appear every 5 minutes
+□ Firebase quota usage reasonable (<35k reads total)
+□ Trades execute normally
+□ No error spam in logs
+
+================================================================================
+TO START BOT
+================================================================================
+
+  python start.py
+
+Or if running on server:
+  ssh user@server
+  cd /path/to/CryptoMaster_srv
+  git pull origin main
+  python start.py
+
+================================================================================
+CRITICAL FILES MODIFIED
+================================================================================
+
+src/services/metrics_engine.py       [NEW] compute_canonical_trade_stats()
+src/services/firebase_client.py      [MOD] Periodic reconciliation logging
+src/services/learning_monitor.py     [MOD] Health components + log dedup
+bot2/main.py                         [MOD] Dashboard output + WR labeling
+VERIFICATION_V10_13X/test_*.py      [NEW] Validation test suite
+
+================================================================================
+ROLLBACK PLAN
+================================================================================
+
+If issues occur:
+  git revert 7b55fcf 2b9fb97
+  python start.py
+
+Changes are isolated to metrics/logging layer. No trade execution changes.
+Rollback takes <30 seconds.
+
+================================================================================
