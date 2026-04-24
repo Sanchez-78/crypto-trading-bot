@@ -1447,6 +1447,16 @@ def main():
     t_audit.daemon = True
     t_audit.start()
 
+    def _run_signal_engine():
+        import asyncio
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(src.services.signal_engine.start())
+
+    t_sig = threading.Thread(target=_run_signal_engine)
+    t_sig.daemon = True
+    t_sig.start()
+
     while True:
         time.sleep(10)
 

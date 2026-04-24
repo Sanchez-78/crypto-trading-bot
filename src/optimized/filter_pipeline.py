@@ -192,7 +192,7 @@ class SignalFilterPipeline:
         )
         
         # Apply learned sizing (feature weights × learning position size)
-        feature_sz = self.learning.pos_size(signal.conviction if hasattr(signal, 'conviction') else 0.6)
+        feature_sz = self.learning.pos_size(signal.probability)
         final_sz = round(timing_sz * mtf_sz * obi_r["size"] * dd_sz * max(feature_sz, 0.1), 2)
         
         # PATCH: Apply self-healing constraints to position size

@@ -218,9 +218,9 @@ async def _evaluate_tick(data: dict[str, Any]) -> Optional[TradeSignal]:
             if not _captured:
                 return None
 
-            raw_sig = _captured[0]
-            # Run through RDE gate (EV scoring, coherence, all guards)
-            evaluated = evaluate_signal(raw_sig)
+            # signal_generator.on_price already ran evaluate_signal before
+            # publishing to signal_created — use the captured result directly.
+            evaluated = _captured[0]
             if evaluated is None:
                 return None
 
