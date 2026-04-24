@@ -61,6 +61,7 @@ log = logging.getLogger(__name__)
 
 BATCH             = []
 _positions        = {}
+_positions_lock   = threading.RLock()   # guards _positions and _regime_exposure
 _last_flush       = [0.0]
 _regime_exposure  = {}   # regime -> count of open positions
 _pending_open     = []   # signals queued after replace_if_better triggers
@@ -437,8 +438,9 @@ def should_replace(new_score, positions, now_ts=None):
 
 def rotate_position(sym):
     """V10.4: Flag an open position for immediate close so capital is freed."""
-    if sym in _positions:
-        _positions[sym]["force_close"] = True
+    with _positions_lock:
+        if sym in _positions:
+            _positions[sym]["force_close"] = True
 
 
 # ── V10.5 helpers — position scaling & pyramiding ─────────────────────────────
@@ -944,13 +946,25 @@ def _risk_guard():
             p["size"] *= 0.7
 
 
+def _sync_regime_exposure():
+    """Rebuild _regime_exposure from current _positions to eliminate counter drift.
+    Must be called under _positions_lock.
+    """
+    _regime_exposure.clear()
+    for pos in _positions.values():
+        r = pos.get("open_regime", pos.get("signal", {}).get("regime", "RANGING"))
+        _regime_exposure[r] = _regime_exposure.get(r, 0) + 1
+
+
 def get_open_positions():
-    return dict(_positions)
+    with _positions_lock:
+        return dict(_positions)
 
 
 def capital_usage():
     """Fraction of normalised capital currently deployed."""
-    return sum(p["size"] for p in _positions.values()) / _TOTAL_CAPITAL
+    with _positions_lock:
+        return sum(p["size"] for p in _positions.values()) / _TOTAL_CAPITAL
 
 
 def _effective_ws(signal):
@@ -1871,53 +1885,53 @@ def handle_signal(signal):
     except Exception:
         pass
 
-    _positions[sym] = {
-        "action":        signal["action"],
-        "entry":         actual_entry,
-        "size":          size,
-        "tp":            tp,
-        "sl":            sl,
-        "tp_move":       abs(tp - actual_entry) / actual_entry,
-        "sl_move":       abs(sl - actual_entry) / actual_entry,
-        "open_regime":   regime,  # V10.14: Freeze regime at open time
-        "signal":        signal,
-        "ticks":         0,
-        "fill_slippage": fill_slip,
-        "fee_rt":        actual_fee_rt,
-        "trail_price":   actual_entry,
-        "max_price":     actual_entry,
-        "min_price":     actual_entry,
-        "is_trailing":   False,
-        "partial_taken": False,   # True after partial TP exit fires
-        "realized_pnl":  0.0,    # accumulated profit from partial exits
-        "risk_ev":       _ev_open,  # V10.4: stored for position_score comparisons
-        "open_ts":       time.time(),  # V10.4b: for time-decay in position_score
-        "live_pnl":      0.0,    # V10.4b: updated each tick for profit protection
-        "original_size": size,   # V10.5: pyramid cap — total size ≤ 2× this
-        "adds":          0,      # V10.5: number of scale-ins so far (max 2)
-        "reduced":       False,  # V10.5: True once de-risk cut has fired
-        "policy_mult":      _pm,               # V10.7: policy multiplier at open
-        "partial_tp_mult":  _partial_tp_mult,  # V10.8: scaled TP ATR multiplier
-        "pred_regime":      _pred_reg,         # V10.8: predicted regime at open
-        "soft_exit_done":   False,             # V10.8: one-shot soft preemptive exit
-        "fw_score":         _fw_score,         # V10.9: feature-weighted score at open
-        "efficiency":       _efficiency,       # V10.10: EV / expected_hold at open
-        "efficiency_live":  _efficiency,       # V10.10: decays each tick (exp decay)
-        "expected_hold":    _expected_hold,    # V10.10: hold ticks used as decay tau
-        "unblock_mode":     _in_unblock,       # V10.12d: True if trade opened in unblock mode
-        
-        # V11: Learning and decision context at open
-        "learning_at_open": learning_at_open,
-        "decision_engine": decision_engine_context,
-        "adaptive_zones_at_open": adaptive_zones_at_open,
-    }
+    with _positions_lock:
+        _positions[sym] = {
+            "action":        signal["action"],
+            "entry":         actual_entry,
+            "size":          size,
+            "tp":            tp,
+            "sl":            sl,
+            "tp_move":       abs(tp - actual_entry) / actual_entry,
+            "sl_move":       abs(sl - actual_entry) / actual_entry,
+            "open_regime":   regime,  # V10.14: Freeze regime at open time
+            "signal":        signal,
+            "ticks":         0,
+            "fill_slippage": fill_slip,
+            "fee_rt":        actual_fee_rt,
+            "trail_price":   actual_entry,
+            "max_price":     actual_entry,
+            "min_price":     actual_entry,
+            "is_trailing":   False,
+            "partial_taken": False,   # True after partial TP exit fires
+            "realized_pnl":  0.0,    # accumulated profit from partial exits
+            "risk_ev":       _ev_open,  # V10.4: stored for position_score comparisons
+            "open_ts":       time.time(),  # V10.4b: for time-decay in position_score
+            "live_pnl":      0.0,    # V10.4b: updated each tick for profit protection
+            "original_size": size,   # V10.5: pyramid cap — total size ≤ 2× this
+            "adds":          0,      # V10.5: number of scale-ins so far (max 2)
+            "reduced":       False,  # V10.5: True once de-risk cut has fired
+            "policy_mult":      _pm,               # V10.7: policy multiplier at open
+            "partial_tp_mult":  _partial_tp_mult,  # V10.8: scaled TP ATR multiplier
+            "pred_regime":      _pred_reg,         # V10.8: predicted regime at open
+            "soft_exit_done":   False,             # V10.8: one-shot soft preemptive exit
+            "fw_score":         _fw_score,         # V10.9: feature-weighted score at open
+            "efficiency":       _efficiency,       # V10.10: EV / expected_hold at open
+            "efficiency_live":  _efficiency,       # V10.10: decays each tick (exp decay)
+            "expected_hold":    _expected_hold,    # V10.10: hold ticks used as decay tau
+            "unblock_mode":     _in_unblock,       # V10.12d: True if trade opened in unblock mode
+
+            # V11: Learning and decision context at open
+            "learning_at_open": learning_at_open,
+            "decision_engine": decision_engine_context,
+            "adaptive_zones_at_open": adaptive_zones_at_open,
+        }
+        _sync_regime_exposure()   # Fix 5: recount from positions to prevent drift
     tag = "[force]" if force else ""
     msg = (f"    exec{tag}: slip={fill_slip:.5f}  fee={actual_fee_rt:.5f}  fr={fill_rate(sym):.2f}  "
            f"ws_adj={ws_adj:.3f}  {size:.4f}@{actual_entry:.4f}  "
            f"tp={tp:.4f}  sl={sl:.4f}")
     get_event_bus().emit("LOG_OUTPUT", {"message": msg}, time.time())
-    
-    _regime_exposure[regime] = _regime_exposure.get(regime, 0) + 1
     _risk_guard()
 
     # ── V10.14: Record the open for deduplication tracking ────────────────────
@@ -1948,10 +1962,10 @@ def on_price(data):
     _tick_counter[0] += 1   # global tick — drives force_trade_guard rate
 
     sym = data["symbol"]
-    if sym not in _positions:
-        return
-
-    pos = _positions[sym]
+    with _positions_lock:
+        if sym not in _positions:
+            return
+        pos = _positions[sym]
     pos["ticks"] += 1
     curr  = data["price"]
     entry = pos["entry"]
@@ -2230,9 +2244,15 @@ def on_price(data):
 
     try:
         from src.services.notifier import send_trade_notification as _notify
-        threading.Thread(target=_notify, args=(sym, pos["action"], move - fee_used, reason), daemon=True).start()
+        _n_args = (sym, pos["action"], move - fee_used, reason)
+        def _notify_safe(*a):
+            try:
+                _notify(*a)
+            except Exception as _ne:
+                log.warning("[NOTIFY_FAIL] send_trade_notification: %s", _ne)
+        threading.Thread(target=_notify_safe, args=_n_args, daemon=True).start()
     except Exception as e:
-        log.info(f"    [Warn: Notifikace error] {e}")
+        log.info("    [Warn: Notifikace error] %s", e)
 
     # ── V11: Extract learning snapshot and decision context at trade close ──
     learning_snapshot = None
@@ -2454,11 +2474,10 @@ def on_price(data):
     except Exception:
         pass
 
-    closed_regime = pos["signal"].get("regime", "RANGING")
-    _regime_exposure[closed_regime] = max(
-        0, _regime_exposure.get(closed_regime, 0) - 1)  # BUG FIX: default 0 not 1
-    get_event_bus().emit("LOG_OUTPUT", {"message": f"[CLOSE_LOGIC_END] {sym} regime={closed_regime} about to delete position"}, time.time())
-    del _positions[sym]
+    get_event_bus().emit("LOG_OUTPUT", {"message": f"[CLOSE_LOGIC_END] {sym} about to delete position"}, time.time())
+    with _positions_lock:
+        _positions.pop(sym, None)
+        _sync_regime_exposure()   # Fix 5: recount eliminates decrement drift
     get_event_bus().emit("LOG_OUTPUT", {"message": f"[CLOSE_LOGIC_DELETED] {sym} position deleted"}, time.time())
 
     if _pending_open:

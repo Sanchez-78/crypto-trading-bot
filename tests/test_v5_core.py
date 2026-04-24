@@ -438,6 +438,82 @@ class TestIntegration:
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# BUG-FIX REGRESSION TESTS (V10.15x)
+# ─────────────────────────────────────────────────────────────────────────
+
+class TestBugFixes:
+    """Regression tests for the five-fix batch."""
+
+    def test_positions_lock_exists(self):
+        """trade_executor must expose _positions_lock as an RLock."""
+        import threading
+        import src.services.trade_executor as te
+        assert hasattr(te, "_positions_lock"), "_positions_lock missing"
+        assert isinstance(te._positions_lock, type(threading.RLock()))
+
+    def test_processed_events_is_deque(self):
+        """event_bus.py must declare _processed_events as a deque."""
+        import os
+        src = open(os.path.join(os.path.dirname(__file__), "..", "src", "core", "event_bus.py")).read()
+        assert "deque" in src, "event_bus must import and use deque"
+        assert "_processed_events: deque" in src, "_processed_events must be typed as deque"
+
+    def test_processed_events_evicts_oldest(self):
+        """A deque(maxlen=N) must evict the oldest entry on overflow."""
+        from collections import deque
+        d = deque(maxlen=3)
+        d.append("A"); d.append("B"); d.append("C"); d.append("D")
+        assert "A" not in d
+        assert "D" in d
+
+    def test_lm_pnl_hist_snapshot_safe_concurrent(self):
+        """Iterating a list() snapshot of lm_pnl_hist must not raise even if
+        another thread appends to the source list at the same time."""
+        import threading
+        from src.services.learning_monitor import lm_pnl_hist
+
+        key = ("SNAP_TEST", "RANGING")
+        lm_pnl_hist[key] = [0.01, -0.005, 0.02]
+        errors = []
+
+        def _reader():
+            try:
+                snap = list(lm_pnl_hist.get(key, []))
+                _ = sum(1 for x in snap if x > 0)
+            except Exception as e:
+                errors.append(e)
+
+        def _writer():
+            for _ in range(100):
+                lm_pnl_hist[key].append(0.001)
+
+        t_r = threading.Thread(target=_reader)
+        t_w = threading.Thread(target=_writer)
+        t_r.start(); t_w.start()
+        t_r.join();  t_w.join()
+        assert not errors, f"Reader raised during concurrent write: {errors}"
+        lm_pnl_hist.pop(key, None)
+
+    def test_sync_regime_exposure_matches_positions(self):
+        """_sync_regime_exposure must rebuild _regime_exposure to match positions."""
+        import src.services.trade_executor as te
+        orig_pos = dict(te._positions)
+        orig_exp = dict(te._regime_exposure)
+        try:
+            te._positions = {
+                "BTCUSDT": {"open_regime": "RANGING",    "signal": {}, "action": "BUY",  "size": 1},
+                "ETHUSDT": {"open_regime": "RANGING",    "signal": {}, "action": "SELL", "size": 1},
+                "SOLUSDT": {"open_regime": "BULL_TREND", "signal": {}, "action": "BUY",  "size": 1},
+            }
+            te._sync_regime_exposure()
+            assert te._regime_exposure.get("RANGING",    0) == 2
+            assert te._regime_exposure.get("BULL_TREND", 0) == 1
+        finally:
+            te._positions       = orig_pos
+            te._regime_exposure = orig_exp
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # PYTEST CONFIGURATION
 # ─────────────────────────────────────────────────────────────────────────
 

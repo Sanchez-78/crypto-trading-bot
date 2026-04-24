@@ -149,7 +149,7 @@ def true_ev(sym, reg):
     streaks (e.g. 5 identical small wins → std≈0 → raw ratio → ±∞).
     Returns 0.0 until at least 10 samples are available.
     """
-    pnl = lm_pnl_hist.get((sym, reg), [])
+    pnl = list(lm_pnl_hist.get((sym, reg), []))   # snapshot; list is safe against concurrent append
     if len(pnl) < 10:
         return 0.0
     arr  = pnl[-20:]
@@ -212,7 +212,7 @@ def ev_decay(sym, reg):
     map zeroes noise trades), or insufficient non-zero data. No premature
     penalty during early data collection.
     """
-    pnl = lm_pnl_hist.get((sym, reg), [])
+    pnl = list(lm_pnl_hist.get((sym, reg), []))   # snapshot
     if len(pnl) < 20:
         return 1.0
     recent = [p for p in pnl[-5:]    if p != 0.0]
@@ -263,7 +263,7 @@ def ev_stability(sym, reg):
     Manual variance — no numpy call needed for 15-element window.
     Range: [0.6, 1.2].
     """
-    pnl = lm_pnl_hist.get((sym, reg), [])
+    pnl = list(lm_pnl_hist.get((sym, reg), []))   # snapshot
     if len(pnl) < 15:
         return 1.0
     recent = pnl[-15:]
@@ -367,9 +367,10 @@ def lm_update(sym, reg, pnl, ws, features, window=None):
     if len(s_lst) > 8:
         del s_lst[:-8]
 
-    # Rolling win rate
-    wins  = sum(1 for x in pnl_lst if x > 0)
-    total = len(pnl_lst)
+    # Rolling win rate — snapshot before iteration; trade-close thread may append concurrently
+    pnl_snap = list(pnl_lst)
+    wins  = sum(1 for x in pnl_snap if x > 0)
+    total = len(pnl_snap)
     wr    = wins / total
     wr_lst = lm_wr_hist.setdefault(key, [])
     wr_lst.append(wr)
@@ -728,7 +729,7 @@ def check_learning_integrity(summary_metrics=None):
     lm_total_pnl = 0.0
 
     for (sym, reg), n in lm_count.items():
-        pnl_list = lm_pnl_hist.get((sym, reg), [])
+        pnl_list = list(lm_pnl_hist.get((sym, reg), []))   # snapshot
         wr_list = lm_wr_hist.get((sym, reg), [])
 
         if pnl_list:

@@ -1,4 +1,5 @@
 import sys as _sys
+from collections import deque
 
 # Windows cp1250 consoles crash on emoji — force utf-8 stdout/stderr at import time.
 if hasattr(_sys.stdout, "reconfigure"):
@@ -15,8 +16,10 @@ _subscription_keys  = set()
 # Handlers that set data["_event_id"] = <unique_id> are deduplicated.
 # Delivery guarantee: AT-LEAST-ONCE per symbol; no global ordering guarantee.
 # Handlers MUST be idempotent and tolerate delivery without _event_id.
-_processed_events: set = set()
-_MAX_PROCESSED_EVENTS = 2000    # bounded; evict oldest half on overflow
+# deque(maxlen=2000) auto-evicts the *oldest* entry on overflow — a plain set
+# had no insertion-order guarantee, so eviction was random (could drop recent
+# IDs and pass duplicates through).
+_processed_events: deque = deque(maxlen=2000)
 
 
 def subscribe(event, handler):
@@ -41,11 +44,7 @@ def publish(event, data=None):
         if eid is not None:
             if eid in _processed_events:
                 return
-            _processed_events.add(eid)
-            if len(_processed_events) > _MAX_PROCESSED_EVENTS:
-                keep = list(_processed_events)[-(  _MAX_PROCESSED_EVENTS // 2):]
-                _processed_events.clear()
-                _processed_events.update(keep)
+            _processed_events.append(eid)   # deque drops oldest entry automatically
 
     for h in _subscribers.get(event, []):
         try:
