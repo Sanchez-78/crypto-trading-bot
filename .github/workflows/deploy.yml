@@ -22,11 +22,7 @@ jobs:
             git fetch origin main
             LOCAL=$(git rev-parse HEAD)
             REMOTE=$(git rev-parse origin/main)
-            if [ "$LOCAL" != "$REMOTE" ]; then
-              git pull origin main
-              pkill -f "python.*start.py" || true
-              sleep 2
-              /opt/cryptomaster/venv/bin/python -m src.services.reset_db 2>/dev/null || true
-              sleep 1
-              nohup /opt/cryptomaster/venv/bin/python start.py > /opt/cryptomaster/logs/trading.log 2>&1 &
-            fi
+            git pull origin main
+            systemctl restart cryptomaster
+            sleep 3
+            systemctl is-active cryptomaster
