@@ -161,205 +161,118 @@ class RedisPublisher:
             self._client = None
 
 
-# ── Feature + EV evaluation (thin async wrapper over existing sync modules) ───
+# ── L2 entry gate (order-book depth check) ────────────────────────────────────
 
-async def _evaluate_tick(data: dict[str, Any]) -> Optional[TradeSignal]:
+def _apply_l2_gate(
+    sig_dict: dict[str, Any],
+    publisher: Optional[Any] = None,
+    loop: Optional[asyncio.AbstractEventLoop] = None,
+) -> Optional[dict[str, Any]]:
     """
-    Run feature extraction and EV scoring for one price tick.
-
-    This wraps the *existing* synchronous signal_generator + realtime_decision_engine
-    pipeline in an executor so it doesn't block the event loop.
-    The result is a TradeSignal or None (filtered).
-
-    The sync pipeline is called in a ThreadPoolExecutor to avoid blocking the
-    async event loop during heavy numpy/pandas work.
+    Reject a signal if a liquidity wall sits between entry and estimated TP.
+    Returns sig_dict unchanged if the path is clear, None if rejected.
+    Fully synchronous — reads from the shared in-memory order_book_depth.
     """
-    loop = asyncio.get_running_loop()
+    try:
+        from src.services.order_book_depth import (
+            is_sell_wall_between as _ob_sell_wall,
+            is_buy_wall_between  as _ob_buy_wall,
+        )
+        sym    = sig_dict.get("symbol", "")
+        price  = float(sig_dict.get("price", 0.0))
+        atr    = float(sig_dict.get("atr", 0.0))
+        action = sig_dict.get("action", "BUY")
 
-    # Access singleton publisher if it exists to send audits
-    publisher = None
-    from src.services.signal_engine import _engine
-    if _engine:
-        publisher = _engine._publisher
+        atr_pct = max(atr, price * 0.003) / max(price, 1e-9)
+        if action == "BUY":
+            tp_est = price * (1.0 + 1.1 * atr_pct)
+            wall   = _ob_sell_wall(sym, price, tp_est)
+        else:
+            tp_est = price * (1.0 - 1.1 * atr_pct)
+            wall   = _ob_buy_wall(sym, price, tp_est)
 
-    def _sync_evaluate() -> Optional[dict[str, Any]]:
-        """
-        Re-uses the existing synchronous evaluation path.
-        Returns a signal dict if accepted, None if filtered.
-        """
-        try:
-            from src.services.signal_generator import on_price as sg_on_price
-            from src.services.realtime_decision_engine import evaluate_signal
-            from src.services.learning_event import track_price
-
-            sym = data.get("symbol", "")
-            p   = data.get("price",  0.0)
-            if not sym or p <= 0:
-                return None
-
-            track_price(sym, p)
-
-            # signal_generator.on_price publishes via event_bus — we intercept
-            # by temporarily capturing the last published signal.
-            _captured: list[dict] = []
-
-            def _capture(signal: dict) -> None:
-                _captured.append(signal)
-
-            from src.core.event_bus import _subscribers
-            old_handlers = _subscribers.get("signal_created", [])[:]
-            _subscribers["signal_created"] = [_capture]
-
+        if wall:
+            import src.services.signal_engine as _sm
+            _sm._l2_rejected += 1
+            log.info(
+                "REJECTED_L2_WALL %s %s price=%.4f tp_est=%.4f (total_rejected=%d)",
+                sym, action, price, tp_est, _sm._l2_rejected,
+            )
             try:
-                sg_on_price(data)
-            finally:
-                _subscribers["signal_created"] = old_handlers
-
-            if not _captured:
-                return None
-
-            # signal_generator.on_price already ran evaluate_signal before
-            # publishing to signal_created — use the captured result directly.
-            evaluated = _captured[0]
-            if evaluated is None:
-                return None
-
-            # ── Phase 4 Task 1: L2 entry gate ────────────────────────────────
-            # Reject signals that would run head-first into a liquidity wall
-            # before reaching their TP.  Uses the shared order_book_depth
-            # singleton which is fed by the depth WebSocket in market_stream.
-            try:
-                from src.services.order_book_depth import (
-                    is_sell_wall_between as _ob_sell_wall,
-                    is_buy_wall_between  as _ob_buy_wall,
-                )
-                _e_sym    = evaluated.get("symbol", "")
-                _e_price  = float(evaluated.get("price", 0.0))
-                _e_atr    = float(evaluated.get("atr", 0.0))
-                _e_action = evaluated.get("action", "BUY")
-
-                # Estimate TP the same way execution_engine does
-                _atr_pct = max(_e_atr, _e_price * 0.003) / max(_e_price, 1e-9)
-                if _e_action == "BUY":
-                    _tp_est = _e_price * (1.0 + 1.1 * _atr_pct)
-                    _wall   = _ob_sell_wall(_e_sym, _e_price, _tp_est)  # scans entry→TP
-                else:
-                    _tp_est = _e_price * (1.0 - 1.1 * _atr_pct)
-                    _wall   = _ob_buy_wall(_e_sym, _e_price, _tp_est)  # scans entry→TP
-
-                if _wall:
-                    # Increment process-lifetime counter (non-blocking global write)
-                    import src.services.signal_engine as _self_mod
-                    _self_mod._l2_rejected += 1
-                    log.info(
-                        "REJECTED_L2_WALL %s %s price=%.4f tp_est=%.4f "
-                        "(total_rejected=%d)",
-                        _e_sym, _e_action, _e_price, _tp_est,
-                        _self_mod._l2_rejected,
+                from src.services.state_manager import increment_l2_rejected
+                increment_l2_rejected()
+            except Exception:
+                pass
+            if publisher and loop and loop.is_running():
+                _audit = {
+                    "symbol": sym, "action": action, "reason": "REJECTED_L2_WALL",
+                    "info": f"Likviditni zed u TP ({tp_est:.4f})", "price": price,
+                }
+                loop.call_soon_threadsafe(
+                    lambda m=_audit: asyncio.ensure_future(
+                        publisher.publish_raw(AUDIT_CHANNEL, m)
                     )
-                    # Flush counter to Redis for cross-restart persistence
-                    try:
-                        from src.services.state_manager import increment_l2_rejected
-                        increment_l2_rejected()
-                    except Exception:
-                        pass
-
-                    # ── Phase 5: Publish Audit ──
-                    if publisher:
-                        _audit_msg = {
-                            "symbol": _e_sym,
-                            "action": _e_action,
-                            "reason": "REJECTED_L2_WALL",
-                            "info":   f"Likviditni zed u TP ({_tp_est:.4f})",
-                            "price":  _e_price
-                        }
-                        loop.call_soon_threadsafe(
-                            lambda m=_audit_msg: asyncio.ensure_future(
-                                publisher.publish_raw(AUDIT_CHANNEL, m)
-                            )
-                        )
-
-                    return None
-
-            except Exception as _gate_exc:
-                log.debug("L2 gate error (non-fatal): %s", _gate_exc)
-
-            return evaluated
-
-        except Exception as exc:
-            log.debug("_sync_evaluate error: %s", exc)
+                )
             return None
+    except Exception as exc:
+        log.debug("L2 gate error (non-fatal): %s", exc)
+    return sig_dict
 
-    sig_dict = await loop.run_in_executor(None, _sync_evaluate)
 
-    if sig_dict is None:
-        return None
+# ── Welford online concept-drift monitor ──────────────────────────────────────
 
-    sig = TradeSignal(
-        symbol         = sig_dict.get("symbol", ""),
-        action         = sig_dict.get("action", "BUY"),
-        price          = float(sig_dict.get("price", 0.0)),
-        atr            = float(sig_dict.get("atr", 0.0)),
-        regime         = sig_dict.get("regime", "RANGING"),
-        confidence     = float(sig_dict.get("confidence", 0.5)),
-        ev             = float(sig_dict.get("ev", 0.0)),
-        ws             = float(sig_dict.get("ws", 0.5)),
-        coherence      = float(sig_dict.get("coherence", 1.0)),
-        auditor_factor = float(sig_dict.get("auditor_factor", 1.0)),
-        explore        = bool(sig_dict.get("explore", False)),
-        features       = sig_dict.get("features", {}),
-        timestamp      = time.time(),
-    )
-
-    # ── Phase 5 Task 3: Concept Drift Detection ────────────────────────────
-    # Update rolling mean/std of feature vector magnitude using Welford's
-    # online algorithm.  Flags concept_drift when z-score > 3.0.
+def _track_concept_drift(sig: "TradeSignal") -> None:
+    """Update rolling z-score on feature-vector magnitude; set _drift_detected flag."""
     try:
         feats = sig.features
-        if feats:
-            mag = sum(v**2 for v in feats.values() if isinstance(v, (int, float)))**0.5
+        if not feats:
+            return
+        mag = sum(v ** 2 for v in feats.values() if isinstance(v, (int, float))) ** 0.5
 
-            import src.services.signal_engine as _sm
-            _sm._feat_count += 1
-            n = _sm._feat_count
+        import src.services.signal_engine as _sm
+        _sm._feat_count += 1
+        n = _sm._feat_count
+        old_mean = _sm._feat_mean
+        _sm._feat_mean += (mag - old_mean) / n
+        new_mean = _sm._feat_mean
+        _sm._feat_std += (mag - old_mean) * (mag - new_mean)
 
-            old_mean = _sm._feat_mean
-            _sm._feat_mean += (mag - old_mean) / n
-            new_mean = _sm._feat_mean
-
-            _sm._feat_std += (mag - old_mean) * (mag - new_mean)
-
-            if n > 50:
-                current_std = (_sm._feat_std / (n - 1))**0.5
-                if current_std > 0:
-                    z_score = abs(mag - new_mean) / current_std
-                    if z_score > 3.0:
-                        _sm._drift_consecutive += 1
-                        if _sm._drift_consecutive >= 5:
-                            if not _sm._drift_detected:
-                                log.warning("CONCEPT DRIFT detected! z_score=%.2f magnitude=%.2f",
-                                            z_score, mag)
-                            _sm._drift_detected = True
-                    else:
-                        _sm._drift_consecutive = 0
-                        _sm._drift_detected = False
+        if n > 50:
+            current_std = (_sm._feat_std / (n - 1)) ** 0.5
+            if current_std > 0:
+                z_score = abs(mag - new_mean) / current_std
+                if z_score > 3.0:
+                    _sm._drift_consecutive += 1
+                    if _sm._drift_consecutive >= 5:
+                        if not _sm._drift_detected:
+                            log.warning(
+                                "CONCEPT DRIFT detected! z_score=%.2f magnitude=%.2f",
+                                z_score, mag,
+                            )
+                        _sm._drift_detected = True
+                else:
+                    _sm._drift_consecutive = 0
+                    _sm._drift_detected = False
     except Exception as exc:
         log.debug("Concept drift detection error: %s", exc)
-
-    return sig
 
 
 # ── Main engine ────────────────────────────────────────────────────────────────
 
 class SignalEngine:
     """
-    Async signal evaluation engine.
+    Async signal forwarder: consumes already-evaluated signal dicts from the
+    synchronous event_bus and publishes typed TradeSignal objects to Redis.
 
-    Lifecycle:
-      engine = SignalEngine()
-      await engine.start()           # blocks forever — run as a task
-      await engine.enqueue_tick(data)  # called from market_stream WebSocket handler
-      await engine.stop()
+    Design:
+      - Subscribes to the "signal_created" event at start() time.
+      - The subscription callback is synchronous (called by the WebSocket thread)
+        and uses call_soon_threadsafe to hand the signal dict to the async queue.
+      - _process_loop applies the L2 gate, converts to TradeSignal, and publishes.
+
+    This replaces the previous design that called signal_generator.on_price()
+    a second time and patched _subscribers directly, both of which caused double
+    evaluation and a race condition on the subscriber list.
     """
 
     def __init__(self) -> None:
@@ -368,44 +281,63 @@ class SignalEngine:
         self._publisher = RedisPublisher(REDIS_URL, PUBSUB_CHANNEL)
         self._running   = False
 
-    async def enqueue_tick(self, tick: dict[str, Any]) -> None:
+    def _on_signal_created(self, sig_dict: dict[str, Any]) -> None:
         """
-        Non-blocking tick ingestion. Drops ticks when queue is full
-        (back-pressure) rather than blocking the WebSocket receive loop.
+        Synchronous event_bus callback — called from the WebSocket thread.
+        Thread-safe: uses call_soon_threadsafe to enqueue into the async queue.
         """
-        try:
-            self._queue.put_nowait(tick)
-        except asyncio.QueueFull:
-            log.debug("SignalEngine: tick queue full — dropping %s",
-                      tick.get("symbol"))
+        if not self._running:
+            return
+        if _loop is not None and _loop.is_running():
+            try:
+                _loop.call_soon_threadsafe(self._queue.put_nowait, sig_dict)
+            except Exception as exc:
+                log.debug("_on_signal_created enqueue error: %s", exc)
 
     async def _process_loop(self) -> None:
-        """Drain tick queue, evaluate, publish."""
+        """Drain signal queue, apply L2 gate, publish to Redis."""
+        loop = asyncio.get_running_loop()
         while self._running:
             try:
-                tick = await asyncio.wait_for(self._queue.get(), timeout=1.0)
+                sig_dict = await asyncio.wait_for(self._queue.get(), timeout=1.0)
             except asyncio.TimeoutError:
                 continue
 
-            signal = await _evaluate_tick(tick)
+            sig_dict = _apply_l2_gate(sig_dict, self._publisher, loop)
+            if sig_dict is None:
+                self._queue.task_done()
+                continue
 
-            if signal is not None:
-                published = await self._publisher.publish(signal)
-                if not published:
-                    # Fallback: inject directly into the local event_bus so
-                    # the synchronous execution path still handles the signal.
-                    try:
-                        from src.core.event_bus import publish as eb_publish
-                        import json as _json
-                        eb_publish("signal_created", _json.loads(signal.to_json()))
-                    except Exception as exc:
-                        log.warning("event_bus fallback error: %s", exc)
+            sig = TradeSignal(
+                symbol         = sig_dict.get("symbol", ""),
+                action         = sig_dict.get("action", "BUY"),
+                price          = float(sig_dict.get("price", 0.0)),
+                atr            = float(sig_dict.get("atr", 0.0)),
+                regime         = sig_dict.get("regime", "RANGING"),
+                confidence     = float(sig_dict.get("confidence", 0.5)),
+                ev             = float(sig_dict.get("ev", 0.0)),
+                ws             = float(sig_dict.get("ws", 0.5)),
+                coherence      = float(sig_dict.get("coherence", 1.0)),
+                auditor_factor = float(sig_dict.get("auditor_factor", 1.0)),
+                explore        = bool(sig_dict.get("explore", False)),
+                features       = sig_dict.get("features", {}),
+                timestamp      = time.time(),
+            )
+
+            _track_concept_drift(sig)
+
+            await self._publisher.publish(sig)
+            # No event_bus fallback: the sync path (trade_executor.handle_signal)
+            # already received this signal before we did. A second publish would
+            # re-enter _on_signal_created and create an infinite enqueue loop.
 
             self._queue.task_done()
 
     async def start(self) -> None:
-        """Start the processing loop. Runs until stop() is called."""
+        """Subscribe to signal_created, then run the processing loop."""
         self._running = True
+        from src.core.event_bus import subscribe_once
+        subscribe_once("signal_created", self._on_signal_created)
         log.info("SignalEngine started (channel=%s)", PUBSUB_CHANNEL)
         await self._process_loop()
 
@@ -423,10 +355,11 @@ _loop:   Optional[asyncio.AbstractEventLoop] = None
 
 async def start() -> None:
     """
-    Entry point — call from main.py:
-        import asyncio
-        from src.services.signal_engine import start as signal_engine_start
-        asyncio.create_task(signal_engine_start())
+    Entry point — wired from bot2/main.py in a dedicated daemon thread:
+        def _run_signal_engine():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(src.services.signal_engine.start())
     """
     global _engine, _loop
     if not SIGNAL_ENGINE_ENABLED:
@@ -438,22 +371,12 @@ async def start() -> None:
 
 
 async def enqueue_tick(tick: dict[str, Any]) -> None:
-    """Push a price tick into the engine. No-op if engine is not running."""
-    if _engine is not None:
-        await _engine.enqueue_tick(tick)
+    """No-op: signal ingestion now happens via signal_created subscription."""
 
 
 def push_tick(tick: dict[str, Any]) -> None:
     """
-    Thread-safe sync entry point for non-async callers (e.g. WebSocket callbacks).
-
-    Called from market_stream._on_message when SIGNAL_ENGINE_ENABLED=1.
-    Uses call_soon_threadsafe to inject the tick into the asyncio event loop
-    without blocking the WebSocket receive thread.
-    No-op when the engine or loop is not initialised.
+    No-op: kept for API compatibility with market_stream._dispatch().
+    Signal ingestion now happens via the signal_created event_bus subscription
+    installed by SignalEngine.start() — no separate tick queue needed.
     """
-    if _engine is not None and _loop is not None and _loop.is_running():
-        try:
-            _loop.call_soon_threadsafe(_engine._queue.put_nowait, tick)
-        except Exception as exc:
-            log.debug("push_tick error: %s", exc)
