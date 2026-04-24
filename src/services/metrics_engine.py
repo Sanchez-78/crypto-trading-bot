@@ -2,11 +2,26 @@ import numpy as np
 
 class MetricsEngine:
 
+    @staticmethod
+    def _trade_profit(trade):
+        """
+        Read profit from both legacy replay payloads and live Firestore history.
+
+        Firestore trade history stores pnl at top level (`profit` / `pnl`),
+        while some legacy evaluator/replay payloads nest it under
+        `evaluation.profit`.
+        """
+        if "profit" in trade:
+            return float(trade.get("profit") or 0.0)
+        if "pnl" in trade:
+            return float(trade.get("pnl") or 0.0)
+        return float(trade.get("evaluation", {}).get("profit", 0.0) or 0.0)
+
     def compute(self, trades):
         if not trades:
             return {}
 
-        profits = [t["evaluation"]["profit"] for t in trades]
+        profits = [self._trade_profit(t) for t in trades]
         wins = [p for p in profits if p > 0]
 
         # -------------------------
@@ -43,7 +58,7 @@ class MetricsEngine:
         strategy_perf = {}
         for t in trades:
             s = t.get("strategy","UNKNOWN")
-            strategy_perf.setdefault(s, []).append(t["evaluation"]["profit"])
+            strategy_perf.setdefault(s, []).append(self._trade_profit(t))
         strategy_stats = {s: {"winrate":sum(1 for x in v if x>0)/len(v),
                               "avg_profit":np.mean(v),
                               "trades":len(v)} for s,v in strategy_perf.items()}
@@ -51,7 +66,7 @@ class MetricsEngine:
         regime_perf = {}
         for t in trades:
             r = t.get("regime","UNKNOWN")
-            regime_perf.setdefault(r, []).append(t["evaluation"]["profit"])
+            regime_perf.setdefault(r, []).append(self._trade_profit(t))
         regime_stats = {r: {"winrate":sum(1 for x in v if x>0)/len(v),
                             "avg_profit":np.mean(v),
                             "trades":len(v)} for r,v in regime_perf.items()}
@@ -62,7 +77,7 @@ class MetricsEngine:
         conf_bins = {"low":[],"mid":[],"high":[]}
         for t in trades:
             c = t.get("confidence_used",0)
-            p = t["evaluation"]["profit"]
+            p = self._trade_profit(t)
             if c<0.4: conf_bins["low"].append(p)
             elif c<0.7: conf_bins["mid"].append(p)
             else: conf_bins["high"].append(p)
@@ -100,168 +115,170 @@ class MetricsEngine:
                 current = 0
         return max_streak
 
-    def compute_canonical_trade_stats(self, trades):
+    # Reasons classified as neutral exits (not WIN/LOSS in WR denominator)
+    _NEUTRAL_REASONS = frozenset({
+        "timeout", "TIMEOUT_PROFIT", "TIMEOUT_FLAT", "TIMEOUT_LOSS",
+        "SCRATCH_EXIT", "STAGNATION_EXIT",
+    })
+
+    def _classify_outcome(self, trade, profit):
+        """Classify a closed trade as WIN / LOSS / FLAT.
+
+        Uses the stored result field (authoritative) and applies the same
+        neutral-timeout exclusion as learning_event.bootstrap_from_history.
+        Avoids the old eps=0.0001 threshold that misclassified all BTC-scale
+        profits (~1e-6 BTC) as FLAT.
         """
-        Single canonical source of truth for all metrics.
+        result = trade.get("result", "")
+        close_reason = trade.get("close_reason", "")
+        is_neutral = close_reason in self._NEUTRAL_REASONS and abs(profit) < 0.001
+        if is_neutral:
+            return "FLAT"
+        if result == "WIN":
+            return "WIN"
+        if result == "LOSS":
+            return "LOSS"
+        return "FLAT"
 
-        Input: List of closed trade dicts with 'evaluation.profit' field
-        Outcome Classification:
-        - WIN if profit > +0.0001
-        - LOSS if profit < -0.0001
-        - FLAT otherwise
+    def compute_canonical_trade_stats(self, trades):
+        """Single canonical source of truth for all dashboard metrics.
 
-        Returns comprehensive stats dict with reconciliation validation.
+        Outcome classification uses the stored result field + neutral-timeout
+        detection (matching learning_event logic) instead of an eps threshold.
+        Returns comprehensive stats with reconciliation validation.
         """
         if not trades:
             return {
-                'trades_total': 0,
-                'wins': 0,
-                'losses': 0,
-                'flats': 0,
-                'winrate': 0.0,
-                'net_pnl': 0.0,
-                'gross_pnl': 0.0,
-                'avg_profit': 0.0,
-                'profit_factor': 0.0,
-                'expectancy': 0.0,
-                'per_symbol': {},
-                'per_regime': {},
-                'per_exit_type': {},
-                'reconciliation': {'verified': True, 'alerts': []}
+                'trades_total': 0, 'wins': 0, 'losses': 0, 'flats': 0,
+                'winrate': 0.0, 'net_pnl': 0.0, 'gross_pnl': 0.0,
+                'avg_profit': 0.0, 'profit_factor': 0.0, 'expectancy': 0.0,
+                'best_trade': 0.0, 'worst_trade': 0.0,
+                'per_symbol': {}, 'per_regime': {}, 'per_exit_type': {},
+                'reconciliation': {'verified': True, 'alerts': []},
             }
 
-        # Extract profits and classify outcomes
-        eps = 0.0001
-        outcomes = {}
         profits = []
+        outcomes = []   # parallel list — same index as trades/profits
 
         for trade in trades:
-            profit = trade.get('evaluation', {}).get('profit', 0)
-            profits.append(profit)
+            p = self._trade_profit(trade)
+            profits.append(p)
+            outcomes.append(self._classify_outcome(trade, p))
 
-            if profit > eps:
-                outcomes[id(trade)] = 'WIN'
-            elif profit < -eps:
-                outcomes[id(trade)] = 'LOSS'
-            else:
-                outcomes[id(trade)] = 'FLAT'
+        wins   = outcomes.count("WIN")
+        losses = outcomes.count("LOSS")
+        flats  = outcomes.count("FLAT")
 
-        # Count outcomes
-        wins = sum(1 for o in outcomes.values() if o == 'WIN')
-        losses = sum(1 for o in outcomes.values() if o == 'LOSS')
-        flats = sum(1 for o in outcomes.values() if o == 'FLAT')
-
-        # Basic stats
-        net_pnl = sum(profits)
-        gross_pnl = sum(p for p in profits if p > 0)
+        net_pnl      = sum(profits)
+        gross_pnl    = sum(p for p in profits if p > 0)
         trades_total = len(trades)
-        avg_profit = np.mean(profits) if profits else 0.0
+        avg_profit   = np.mean(profits) if profits else 0.0
+        best_trade   = max(profits) if profits else 0.0
+        worst_trade  = min(profits) if profits else 0.0
 
-        # Winrate (exclude flats from denominator)
-        trades_with_outcome = wins + losses
-        winrate = wins / trades_with_outcome if trades_with_outcome > 0 else 0.0
+        decisive = wins + losses
+        winrate  = wins / decisive if decisive > 0 else 0.0
 
-        # Profit factor
-        loss_sum = abs(sum(p for p in profits if p < 0))
+        loss_sum      = abs(sum(p for p in profits if p < 0))
         profit_factor = gross_pnl / loss_sum if loss_sum > 0 else (gross_pnl if gross_pnl > 0 else 1.0)
 
-        # Expectancy
-        expectancy = (winrate * np.mean([p for p in profits if p > eps] or [0])) + \
-                     ((1 - winrate) * np.mean([p for p in profits if p < -eps] or [0]))
+        win_profits  = [p for p, o in zip(profits, outcomes) if o == "WIN"]
+        loss_profits = [p for p, o in zip(profits, outcomes) if o == "LOSS"]
+        expectancy   = (winrate * np.mean(win_profits or [0])) + \
+                       ((1 - winrate) * np.mean(loss_profits or [0]))
 
-        # Per-symbol stats
         per_symbol = {}
-        for trade in trades:
-            symbol = trade.get('symbol', 'UNKNOWN')
-            profit = trade.get('evaluation', {}).get('profit', 0)
-            outcome = outcomes[id(trade)]
-
-            if symbol not in per_symbol:
-                per_symbol[symbol] = {'count': 0, 'wins': 0, 'losses': 0, 'flats': 0, 'net_pnl': 0}
-
-            per_symbol[symbol]['count'] += 1
-            per_symbol[symbol]['net_pnl'] += profit
-            if outcome == 'WIN':
-                per_symbol[symbol]['wins'] += 1
-            elif outcome == 'LOSS':
-                per_symbol[symbol]['losses'] += 1
-            else:
-                per_symbol[symbol]['flats'] += 1
-
-        # Per-regime stats
         per_regime = {}
-        for trade in trades:
-            regime = trade.get('regime', 'UNKNOWN')
-            profit = trade.get('evaluation', {}).get('profit', 0)
-            outcome = outcomes[id(trade)]
-
-            if regime not in per_regime:
-                per_regime[regime] = {'count': 0, 'wins': 0, 'losses': 0, 'flats': 0, 'net_pnl': 0}
-
-            per_regime[regime]['count'] += 1
-            per_regime[regime]['net_pnl'] += profit
-            if outcome == 'WIN':
-                per_regime[regime]['wins'] += 1
-            elif outcome == 'LOSS':
-                per_regime[regime]['losses'] += 1
-            else:
-                per_regime[regime]['flats'] += 1
-
-        # Per-exit-type stats
         per_exit_type = {}
-        for trade in trades:
-            exit_type = trade.get('close_reason', 'UNKNOWN')
-            profit = trade.get('evaluation', {}).get('profit', 0)
-            outcome = outcomes[id(trade)]
 
-            if exit_type not in per_exit_type:
-                per_exit_type[exit_type] = {'count': 0, 'wins': 0, 'losses': 0, 'flats': 0, 'net_pnl': 0, 'avg_pnl': 0}
+        for i, trade in enumerate(trades):
+            p       = profits[i]
+            outcome = outcomes[i]
 
-            per_exit_type[exit_type]['count'] += 1
-            per_exit_type[exit_type]['net_pnl'] += profit
-            if outcome == 'WIN':
-                per_exit_type[exit_type]['wins'] += 1
-            elif outcome == 'LOSS':
-                per_exit_type[exit_type]['losses'] += 1
-            else:
-                per_exit_type[exit_type]['flats'] += 1
+            sym = trade.get("symbol", "UNKNOWN")
+            if sym not in per_symbol:
+                per_symbol[sym] = {"count": 0, "wins": 0, "losses": 0, "flats": 0, "net_pnl": 0.0}
+            per_symbol[sym]["count"]  += 1
+            per_symbol[sym]["net_pnl"] += p
+            per_symbol[sym][outcome.lower() + "s"] += 1
 
-        # Calculate average PnL and contribution % for exit types
-        for exit_type in per_exit_type:
-            count = per_exit_type[exit_type]['count']
-            per_exit_type[exit_type]['avg_pnl'] = per_exit_type[exit_type]['net_pnl'] / count if count > 0 else 0
-            per_exit_type[exit_type]['pct_of_total'] = (count / trades_total * 100) if trades_total > 0 else 0
+            reg = trade.get("regime", "UNKNOWN")
+            if reg not in per_regime:
+                per_regime[reg] = {"count": 0, "wins": 0, "losses": 0, "flats": 0, "net_pnl": 0.0}
+            per_regime[reg]["count"]  += 1
+            per_regime[reg]["net_pnl"] += p
+            per_regime[reg][outcome.lower() + "s"] += 1
 
-        # Reconciliation validation
+            et = trade.get("close_reason", "UNKNOWN")
+            if et not in per_exit_type:
+                per_exit_type[et] = {"count": 0, "wins": 0, "losses": 0, "flats": 0,
+                                     "net_pnl": 0.0, "avg_pnl": 0.0,
+                                     "pct_of_total": 0.0, "pct_of_total_pnl": 0.0}
+            per_exit_type[et]["count"]  += 1
+            per_exit_type[et]["net_pnl"] += p
+            per_exit_type[et][outcome.lower() + "s"] += 1
+
+        abs_net = abs(net_pnl) or 1.0
+        for et, s in per_exit_type.items():
+            c = s["count"]
+            s["avg_pnl"]          = s["net_pnl"] / c if c > 0 else 0.0
+            s["pct_of_total"]     = c / trades_total * 100 if trades_total > 0 else 0.0
+            s["pct_of_total_pnl"] = abs(s["net_pnl"]) / abs_net * 100
+
+        # Reconciliation
         alerts = []
-        sum_symbol_pnl = sum(s['net_pnl'] for s in per_symbol.values())
-        sum_regime_pnl = sum(r['net_pnl'] for r in per_regime.values())
+        sym_sum  = sum(s["net_pnl"] for s in per_symbol.values())
+        reg_sum  = sum(r["net_pnl"] for r in per_regime.values())
+        sym_cnt  = sum(s["count"]   for s in per_symbol.values())
+        reg_cnt  = sum(r["count"]   for r in per_regime.values())
+        exit_cnt = sum(s["count"]   for s in per_exit_type.values())
 
-        if abs(sum_symbol_pnl - net_pnl) > 0.00001:
-            alerts.append(f"per_symbol_pnl_mismatch: {sum_symbol_pnl} vs {net_pnl}")
-
-        if abs(sum_regime_pnl - net_pnl) > 0.00001:
-            alerts.append(f"per_regime_pnl_mismatch: {sum_regime_pnl} vs {net_pnl}")
-
+        if abs(sym_sum - net_pnl) > 1e-9:
+            alerts.append(f"symbol_pnl_mismatch:{sym_sum:.8f} vs {net_pnl:.8f}")
+        if abs(reg_sum - net_pnl) > 1e-9:
+            alerts.append(f"regime_pnl_mismatch:{reg_sum:.8f} vs {net_pnl:.8f}")
+        if sym_cnt  != trades_total:
+            alerts.append(f"symbol_count_mismatch:{sym_cnt} vs {trades_total}")
+        if reg_cnt  != trades_total:
+            alerts.append(f"regime_count_mismatch:{reg_cnt} vs {trades_total}")
+        if exit_cnt != trades_total:
+            alerts.append(f"exit_count_mismatch:{exit_cnt} vs {trades_total}")
         if wins + losses + flats != trades_total:
-            alerts.append(f"outcome_count_mismatch: {wins + losses + flats} vs {trades_total}")
+            alerts.append(f"outcome_sum_mismatch:{wins+losses+flats} vs {trades_total}")
 
         return {
-            'trades_total': trades_total,
-            'wins': wins,
-            'losses': losses,
-            'flats': flats,
-            'winrate': winrate,
-            'net_pnl': net_pnl,
-            'gross_pnl': gross_pnl,
-            'avg_profit': avg_profit,
-            'profit_factor': profit_factor,
-            'expectancy': expectancy,
-            'per_symbol': per_symbol,
-            'per_regime': per_regime,
-            'per_exit_type': per_exit_type,
-            'reconciliation': {
-                'verified': len(alerts) == 0,
-                'alerts': alerts,
-            }
+            "trades_total": trades_total,
+            "wins": wins, "losses": losses, "flats": flats,
+            "winrate": winrate,
+            "net_pnl": net_pnl, "gross_pnl": gross_pnl,
+            "avg_profit": avg_profit,
+            "best_trade": best_trade, "worst_trade": worst_trade,
+            "profit_factor": profit_factor, "expectancy": expectancy,
+            "per_symbol": per_symbol, "per_regime": per_regime,
+            "per_exit_type": per_exit_type,
+            "reconciliation": {"verified": not alerts, "alerts": alerts},
+        }
+
+    def compute_recent_window_stats(self, closed_trades, window=24):
+        """Compute recent-window WR from canonical closed trades.
+
+        Returns a dict with 'known' flag — callers must check known before
+        rendering any metric to avoid printing fake zeros.
+        """
+        decisive = [
+            t for t in closed_trades
+            if t.get("result") in ("WIN", "LOSS")
+            and not (t.get("close_reason", "") in self._NEUTRAL_REASONS
+                     and abs(self._trade_profit(t)) < 0.001)
+        ]
+        recent = decisive[-window:]
+        if not recent:
+            return {"known": False, "window": 0, "wr": None, "avg_ev": None}
+        wins   = sum(1 for t in recent if t.get("result") == "WIN")
+        avg_ev = sum(float(t.get("ev", 0.0)) for t in recent) / len(recent)
+        return {
+            "known": True,
+            "window": len(recent),
+            "wr":     wins / len(recent),
+            "avg_ev": avg_ev,
         }

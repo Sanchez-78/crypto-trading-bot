@@ -643,29 +643,33 @@ def regime_label(regimes):
 # ── Status ────────────────────────────────────────────────────────────────────
 
 def print_status():
+    import logging as _log
+    _dashboard_log = logging.getLogger("dashboard") if "logging" in dir() else _log.getLogger("dashboard")
+
     m   = get_metrics()
     lp  = m.get("last_prices", {})
     ls  = m.get("last_signals", {})
-    ss  = m.get("sym_stats", {})
     ops = get_open_positions()
 
-    # ── V10.13x: Compute canonical trade stats from actual closed trades ────
-    engine = MetricsEngine()
-    recent_trades = load_history(limit=500)  # Load last 500 closed trades
-    canonical = engine.compute_canonical_trade_stats(recent_trades)
+    # ── V10.13x.1: Canonical trade stats — single source of truth ────────────
+    engine        = MetricsEngine()
+    recent_trades = load_history(limit=500)
+    canonical     = engine.compute_canonical_trade_stats(recent_trades)
+    recent_stats  = engine.compute_recent_window_stats(recent_trades)
 
-    # Use canonical stats as primary source of truth
-    t   = canonical["trades_total"]
-    wins = canonical["wins"]
-    losses = canonical["losses"]
-    flats = canonical["flats"]
-    wr = canonical["winrate"]
-    profit = canonical["net_pnl"]
+    t             = canonical["trades_total"]
+    wins          = canonical["wins"]
+    losses        = canonical["losses"]
+    flats         = canonical["flats"]
+    wr            = canonical["winrate"]
+    profit        = canonical["net_pnl"]
     profit_factor = canonical["profit_factor"]
-    expectancy = canonical["expectancy"]
+    expectancy    = canonical["expectancy"]
+    best          = canonical["best_trade"]
+    worst         = canonical["worst_trade"]
+    _decisive     = wins + losses
 
-    # Fallback to learning_event metrics for other fields (not yet canonicalized)
-    timeouts   = m.get("timeouts", 0)
+    # Operational fields still from learning_event (not closed-trade derived)
     drawdown   = m["drawdown"]
     win_streak = m["win_streak"]
     los_streak = m["loss_streak"]
@@ -674,14 +678,38 @@ def print_status():
     exe        = m["signals_executed"]
     blk        = m["blocked"]
     flt        = m["signals_filtered"]
-    pf         = profit_factor if t > 0 else 1.0
-    exp        = expectancy if t > 0 else 0.0
-    best       = m.get("best_trade", 0.0)
-    worst      = m.get("worst_trade", 0.0)
     since      = m.get("since_last")
-    rc         = m.get("recent_count", 0)
-    rwr        = m.get("recent_winrate", 0.0)
-    trend      = m.get("learning_trend", "SBIRA DATA...")
+    pf         = profit_factor if t > 0 else 1.0
+    exp        = expectancy    if t > 0 else 0.0
+
+    # ── V10.13x.1 Source + Reconciliation logs ─────────────────────────────
+    _rs_src = "canonical_recent_window" if recent_stats["known"] else "unavailable"
+    _log.getLogger("dashboard").info(
+        "[V10.13x.1 SRC] header=canonical_closed_trades symbols=canonical_closed_trades "
+        "regimes=canonical_closed_trades exits=canonical_closed_trades "
+        "recent=%s calibration=%s", _rs_src, _rs_src)
+
+    _sym_cnt  = sum(s["count"]   for s in canonical["per_symbol"].values())
+    _reg_cnt  = sum(r["count"]   for r in canonical["per_regime"].values())
+    _exit_cnt = sum(s["count"]   for s in canonical["per_exit_type"].values())
+    _sym_pnl  = sum(s["net_pnl"] for s in canonical["per_symbol"].values())
+    _counts_ok = (t == 0) or (wins + losses + flats == t)
+    _sym_ok    = (t == 0) or (_sym_cnt  == t)
+    _reg_ok    = (t == 0) or (_reg_cnt  == t)
+    _exit_ok   = (t == 0) or (_exit_cnt == t)
+    _pnl_ok    = (t == 0) or (abs(_sym_pnl - profit) < 1e-9)
+    _recent_ok = recent_stats["known"] or (t == 0)
+    _recon_ok  = all([_counts_ok, _sym_ok, _reg_ok, _exit_ok, _pnl_ok, _recent_ok])
+    _log.getLogger("dashboard").info(
+        "[V10.13x.1 RECON] counts_ok=%s symbol_ok=%s regime_ok=%s exit_ok=%s "
+        "recent_ok=%s status=%s",
+        _counts_ok, _sym_ok, _reg_ok, _exit_ok, _recent_ok,
+        "OK" if _recon_ok else "MISMATCH")
+    if not _recon_ok:
+        _log.getLogger("dashboard").warning(
+            "[V10.13x.1 RECON] total=%d sym_sum=%d reg_sum=%d exit_sum=%d "
+            "pnl_total=%.8f pnl_symbol=%.8f",
+            t, _sym_cnt, _reg_cnt, _exit_cnt, profit, _sym_pnl)
 
     # ── Header ────────────────────────────────────────────────────────────────
     status_tag = (g(" AKTIVNI ", C.BLD + C.GRN) if m["ready"]
@@ -741,9 +769,8 @@ def print_status():
     # ── Trading performance ───────────────────────────────────────────────────
     print(section("", "VYSLEDKY OBCHODOVANI"))
     if t == 0:
-        print(f"    {g('Zadne uzavrene obchody – robot se zahrива...', C.GRY)}")
+        print(f"    {g('Zadne uzavrene obchody – robot se zahriva...', C.GRY)}")
     else:
-        _decisive = wins + losses  # neutral timeouts excluded
         w_pct   = wr * 100
         wr_col  = C.GRN if wr >= 0.55 else (C.YLW if wr >= 0.45 else C.RED)
         pr_col  = C.GRN if profit >= 0 else C.RED
@@ -751,33 +778,25 @@ def print_status():
         pf_col  = C.GRN if pf >= 1.5 else (C.YLW if pf >= 1.0 else C.RED)
         exp_col = C.GRN if exp > 0 else C.RED
 
-        # V10.13x: Use canonical stats with reconciliation validation
-        assert wins + losses + flats == t, f"[V10.13x] Trade count mismatch: {wins}+{losses}+{flats} != {t}"
         print(f"    {g('Obchody', C.GRY)}    {g(str(t), C.WHT + C.BLD)}  "
               f"({g(f'OK {wins}', C.GRN)}  {g(f'X {losses}', C.RED)}  "
               f"{g(f'~ {flats}', C.GRY)})")
 
-        # Log reconciliation status
         if not canonical["reconciliation"]["verified"]:
             alerts_str = "; ".join(canonical["reconciliation"]["alerts"])
-            print(f"    {g(f'⚠ RECON MISMATCH: {alerts_str}', C.RED + C.BLD)}")
+            print(f"    {g(f'RECON MISMATCH: {alerts_str}', C.RED + C.BLD)}")
 
-        # V10.13x: WR labeled with explicit scope (canonical_alltime, excluding flats)
-        # WR is shown as "N/A" when fewer than 10 decisive trades exist —
-        # with only 1-5 trades a 100% reading is meaningless noise.
-        _decisive = wins + losses  # Exclude flats from count
         if _decisive < 10:
-            _wr_str  = g("N/A", C.GRY + C.BLD)
             _wr_note = g(f"(malo dat: {_decisive}/10 rozhodujicich)", C.GRY)
-            print(f"    {g('WR_canonical', C.GRY)}     {_wr_str}  {_wr_note}")
+            print(f"    {g('WR_canonical', C.GRY)}     {g('N/A', C.GRY + C.BLD)}  {_wr_note}")
         else:
             print(f"    {g('WR_canonical', C.GRY)}     "
                   f"{g(f'{w_pct:.1f}%', wr_col + C.BLD)}  "
                   f"{cbar(wr, 1.0, lo=0.45, hi=0.55)}  "
                   f"{g('cil 55%', C.GRY)}  "
-                  f"{g(f'(vsechny uzavrene, bez remiz)', C.GRY)}")
+                  f"{g('(vsechny uzavrene, bez remiz)', C.GRY)}")
 
-        print(f"    {g('Zisk', C.GRY)}        "
+        print(f"    {g('Zisk (uzavrene)', C.GRY)}  "
               f"{g(f'{profit:+.8f}', pr_col + C.BLD)}  "
               f"{pnl_bar(profit)}")
 
@@ -808,22 +827,32 @@ def print_status():
             print(f"    {g('Posledni obchod', C.GRY)}  "
                   f"{g(since_fmt(since), C.WHT)} {g('zpet', C.GRY)}")
 
-    # ── Exit Attribution (Economic) ────────────────────────────────────────────
-    try:
-        from src.services.exit_attribution import render_exit_attribution_summary
-        exit_attr_output = render_exit_attribution_summary()
-        if exit_attr_output and t > 0:
-            print(section("", "VYSLEDKY PODLE TYPU UZAVRENI"))
-            for line in exit_attr_output.split("\n"):
-                if line.strip() and not line.startswith("[V10.13w"):
-                    print(f"    {line}")
-                elif "[V10.13w EXIT_ATTR]" in line:
-                    print(f"    {line}")
-    except Exception as e:
-        pass  # Skip exit attribution if not available
+    # ── Exit Attribution (Economic, canonical source) ─────────────────────────
+    per_exit = canonical.get("per_exit_type", {})
+    if per_exit and t > 0:
+        print(section("", "VYSLEDKY PODLE TYPU UZAVRENI"))
+        _exit_total_pnl = sum(s["net_pnl"] for s in per_exit.values())
+        _abs_pnl        = abs(_exit_total_pnl) or 1.0
+        _exit_rows = sorted(per_exit.items(), key=lambda x: x[1]["net_pnl"], reverse=True)
+        for et, s in _exit_rows:
+            ec    = s["count"];  ew = s["wins"];  el = s["losses"]
+            epnl  = s["net_pnl"];  eavg = s["avg_pnl"]
+            epct  = s["pct_of_total"]
+            eppnl = abs(epnl) / _abs_pnl * 100
+            ewr   = ew / (ew + el) if (ew + el) > 0 else None
+            ewr_s = (g(f"WR {ewr*100:.0f}%", C.GRN if (ewr or 0) >= 0.55 else
+                       (C.YLW if (ewr or 0) >= 0.45 else C.RED)) if ewr is not None
+                     else g("WR N/A", C.GRY))
+            pcol  = C.GRN if epnl >= 0 else C.RED
+            print(f"    {g(et[:20], C.WHT + C.BLD):<22}  "
+                  f"{g(str(ec), C.WHT):>3}  {ewr_s}  "
+                  f"net {g(f'{epnl:+.8f}', pcol)}  "
+                  f"avg {g(f'{eavg:+.8f}', pcol)}  "
+                  f"{epct:.0f}% obch  {eppnl:.0f}% pnl")
 
-    # ── Per-symbol breakdown ──────────────────────────────────────────────────
-    if ss:
+    # ── Per-symbol breakdown (canonical) ──────────────────────────────────────
+    per_sym_c = canonical.get("per_symbol", {})
+    if per_sym_c and t > 0:
         print(section("", "VYSLEDKY PO MENACH"))
         print(f"    {g('Mena', C.GRY):<5}  "
               f"{g('Obch', C.GRY):>4}  "
@@ -833,56 +862,73 @@ def print_status():
         print(f"    {g('-' * 50, C.GRY)}")
         for sym in get_active_symbols():
             short = sym.replace("USDT", "")
-            s = ss.get(sym)
-            if not s:
+            cs = per_sym_c.get(sym)
+            if not cs:
                 print(f"    {g(short, C.GRY):<5}  {g('-', C.GRY)}")
                 continue
-            swr    = s["winrate"]
-            str_   = s["trades"]
-            swins  = s["wins"]
-            sproft = s["profit"]
-            wcol   = C.GRN if swr >= 0.55 else (C.YLW if swr >= 0.45 else C.RED)
-            pcol   = C.GRN if sproft >= 0 else C.RED
-            icon   = g("OK", C.GRN) if swr >= 0.55 else (g("?", C.YLW) if swr >= 0.45 else g("X", C.RED))
+            str_    = cs["count"]
+            swins   = cs["wins"]
+            slosses = cs["losses"]
+            sproft  = cs["net_pnl"]
+            s_dec   = swins + slosses
+            swr     = swins / s_dec if s_dec > 0 else None
+            if swr is None:
+                swr_s = g("N/A", C.GRY + C.BLD);  icon = g("-", C.GRY)
+            else:
+                wcol  = C.GRN if swr >= 0.55 else (C.YLW if swr >= 0.45 else C.RED)
+                swr_s = g(f"{swr*100:.0f}%", wcol + C.BLD)
+                icon  = g("OK", C.GRN) if swr >= 0.55 else (g("?", C.YLW) if swr >= 0.45 else g("X", C.RED))
+            pcol = C.GRN if sproft >= 0 else C.RED
             print(f"    {g(short, C.WHT + C.BLD):<5}  "
                   f"{g(str(str_), C.WHT):>4}  "
-                  f"{g(f'{swr*100:.0f}%', wcol + C.BLD):>5}  "
-                  f"{cbar(swr, 1.0, lo=0.45, hi=0.55)}  "
+                  f"{swr_s:>5}  "
+                  f"{cbar(swr or 0.0, 1.0, lo=0.45, hi=0.55)}  "
                   f"{g(f'{sproft:+.8f}', pcol):>12}  {icon}")
 
     # ── Learning ──────────────────────────────────────────────────────────────
-    from src.services.learning_event import get_ev_stats, get_close_stats, get_regime_stats
+    from src.services.learning_event import get_ev_stats, get_close_stats
     ev_st  = get_ev_stats()
     cl_st  = get_close_stats()
-    rg_st  = get_regime_stats()
 
     print(section("", "UCENI – STAV A USPESNOST"))
 
-    # Calibration progress
-    if t >= 50:
-        cal_label = g("KALIBROVAN  \u2713", C.GRN + C.BLD)
-        cal_note  = g(f"({t} obchodu celkem)", C.GRY)
+    # Calibration progress (canonical decisive count)
+    if _decisive >= 50:
+        cal_label = g("KALIBROVAN  ✓", C.GRN + C.BLD)
+        cal_note  = g(f"({_decisive} rozhodujicich obchodu)", C.GRY)
     else:
-        cal_label = g(f"{t} / 50 obchodu", C.BLU + C.BLD)
-        cal_note  = g(f"({50 - t} zbyvа)", C.GRY)
+        cal_label = g(f"{_decisive} / 50 rozhodujicich", C.BLU + C.BLD)
+        cal_note  = g(f"({50 - _decisive} zbyva)", C.GRY)
     print(f"    {g('Kalibrace', C.GRY)}      "
           f"{cal_label}  "
-          f"{blue_bar(t, 50)}  "
+          f"{blue_bar(_decisive, 50)}  "
           f"{cal_note}")
 
-    # Learning trend + recent vs overall WR
-    if t >= 10:
-        tcol  = C.GRN if "ZLEP" in trend else (C.RED if "ZHOR" in trend else C.YLW)
-        delta = rwr - wr
-        dcol  = C.GRN if delta > 0 else C.RED
-        print(f"    {g('Trend uceni', C.GRY)}    {g(trend, tcol + C.BLD)}")
-        print(f"    {g(f'Poslednich {rc}', C.GRY)}    "
-              f"{g(f'{rwr*100:.1f}%', C.WHT)}  vs  prumer {g(f'{wr*100:.1f}%', C.WHT)}  "
-              f"{g(f'({delta:+.1%})', dcol)}")
+    # Learning trend + recent-window (canonical only; N/A when unavailable)
+    if recent_stats["known"]:
+        _rc_w  = recent_stats["window"]
+        _rwr_w = recent_stats["wr"]
+        _delta = _rwr_w - wr if wr > 0 else 0.0
+        if _rc_w >= 10:
+            if _delta > 0.05:    _trend_s = "ZLEPŠUJE SE"
+            elif _delta < -0.05: _trend_s = "ZHORŠUJE SE"
+            else:                _trend_s = "STABILNÍ"
+            _tcol = C.GRN if "ZLEP" in _trend_s else (C.RED if "ZHOR" in _trend_s else C.YLW)
+        else:
+            _trend_s = "SBÍRÁ DATA...";  _tcol = C.GRY
+        _dcol = C.GRN if _delta >= 0 else C.RED
+        print(f"    {g('Trend uceni', C.GRY)}    {g(_trend_s, _tcol + C.BLD)}")
+        print(f"    {g(f'Poslednich {_rc_w}', C.GRY)}    "
+              f"{g(f'{_rwr_w*100:.1f}%', C.WHT)}  vs  prumer {g(f'{wr*100:.1f}%', C.WHT)}  "
+              f"{g(f'({_delta:+.1%})', _dcol)}")
     else:
-        print(f"    {g('Sbiram data – potrebuji 50 obchodu pro plnou kalibraci.', C.GRY)}")
+        print(f"    {g('Trend uceni', C.GRY)}    "
+              f"{g('N/A', C.GRY + C.BLD)}  "
+              f"{g('(zadne rozhodujici obchody)', C.GRY)}")
+        print(f"    {g('Poslednich', C.GRY)}       "
+              f"{g('N/A  (nedostatek recent dat)', C.GRY)}")
 
-    # EV performance
+    # EV performance (session ring-buffer)
     if ev_st["count"] > 0:
         ev_avg     = ev_st["avg"];  ev_min = ev_st["min"]
         ev_max     = ev_st["max"];  ev_cnt = ev_st["count"]
@@ -893,27 +939,31 @@ def print_status():
               f"max {g(f'{ev_max:.3f}', C.GRY)}  "
               f"{g(f'({ev_cnt} obch)', C.GRY)}")
     else:
-        print(f"    {g('EV vykon', C.GRY)}       {g('zadna data', C.GRY)}")
+        print(f"    {g('EV vykon', C.GRY)}       {g('N/A', C.GRY)}")
 
-    # Close-reason breakdown
+    # Close-reason summary (session ring-buffer)
     total_cl = sum(v["n"] for v in cl_st.values())
     if total_cl > 0:
-        tp_pct  = cl_st["TP"]["pct"];      sl_pct  = cl_st["SL"]["pct"]
-        tr_pct  = cl_st["trail"]["pct"];   to_pct  = cl_st["timeout"]["pct"]
-        tp_col  = C.GRN if tp_pct >= 40 else C.YLW
-        sl_col  = C.RED if sl_pct >= 40 else C.YLW
-        tr_col  = C.GRN if tr_pct >= 10 else C.GRY
-        to_col  = C.RED if to_pct >= 30 else C.YLW
+        def _pct(*keys):
+            return sum(cl_st.get(k, {}).get("pct", 0.0) for k in keys)
+        tp_pct = _pct("TP", "MICRO_TP", "PARTIAL_TP_25", "PARTIAL_TP_50",
+                      "PARTIAL_TP_75", "HARVEST_PROFIT", "TIMEOUT_PROFIT")
+        sl_pct = _pct("SL")
+        tr_pct = _pct("trail", "TRAIL_SL", "TRAIL_PROFIT")
+        sc_pct = _pct("SCRATCH_EXIT", "STAGNATION_EXIT", "BREAKEVEN_STOP",
+                      "early_exit", "wall_exit")
+        to_pct = _pct("timeout", "TIMEOUT_FLAT", "TIMEOUT_LOSS")
         print(f"    {g('Uzavreni', C.GRY)}       "
-              f"TP {g(f'{tp_pct:.0f}%', tp_col + C.BLD)}  "
-              f"SL {g(f'{sl_pct:.0f}%', sl_col)}  "
-              f"trail {g(f'{tr_pct:.0f}%', tr_col)}  "
-              f"timeout {g(f'{to_pct:.0f}%', to_col)}")
+              f"TP {g(f'{tp_pct:.0f}%', C.GRN if tp_pct >= 40 else C.YLW)}  "
+              f"SL {g(f'{sl_pct:.0f}%', C.RED if sl_pct >= 40 else C.YLW)}  "
+              f"trail {g(f'{tr_pct:.0f}%', C.GRN if tr_pct >= 10 else C.GRY)}  "
+              f"scratch {g(f'{sc_pct:.0f}%', C.RED if sc_pct >= 40 else C.YLW)}  "
+              f"timeout {g(f'{to_pct:.0f}%', C.RED if to_pct >= 30 else C.YLW)}")
     else:
-        print(f"    {g('Uzavreni', C.GRY)}       {g('zadna data', C.GRY)}")
+        print(f"    {g('Uzavreni', C.GRY)}       {g('N/A', C.GRY)}")
 
-    # Win-prob calibration quality: avg conf vs actual WR
-    if t >= 5:
+    # Win-prob calibration quality (gated on known recent-window + sufficient decisive count)
+    if recent_stats["known"] and _decisive >= 5:
         cal_drift = abs(conf - wr)
         cal_col   = C.GRN if cal_drift < 0.08 else (C.YLW if cal_drift < 0.15 else C.RED)
         cal_note2 = "dobre" if cal_drift < 0.08 else ("ok" if cal_drift < 0.15 else "odkalibrovan")
@@ -921,23 +971,34 @@ def print_status():
               f"p={g(f'{conf*100:.1f}%', C.WHT)}  WR={g(f'{wr*100:.1f}%', C.WHT)}  "
               f"odchylka {g(f'{cal_drift*100:.1f}pp', cal_col + C.BLD)}  "
               f"{g(cal_note2, cal_col)}")
+    elif not recent_stats["known"]:
+        print(f"    {g('Kalibrace p', C.GRY)}    "
+              f"{g('N/A  (chybi recent rozhodujici obchody)', C.GRY)}")
 
-    # Regime-specific WR table
-    if rg_st:
+    # Regime-specific WR table (canonical source)
+    per_reg_c = canonical.get("per_regime", {})
+    if per_reg_c and t > 0:
         print(f"    {g('WR dle rezimu', C.GRY)}")
         regime_order = ["BULL_TREND", "BEAR_TREND", "RANGING", "QUIET_RANGE", "HIGH_VOL"]
+        _rlabels = {"BULL_TREND": "BULL ", "BEAR_TREND": "BEAR ",
+                    "RANGING": "RANGE", "QUIET_RANGE": "QUIET", "HIGH_VOL": "HVOL "}
         for reg in regime_order:
-            if reg not in rg_st: continue
-            rs   = rg_st[reg]
-            rwr2 = rs["winrate"]
-            rcol = C.GRN if rwr2 >= 0.55 else (C.YLW if rwr2 >= 0.45 else C.RED)
-            label = {"BULL_TREND": "BULL ", "BEAR_TREND": "BEAR ",
-                     "RANGING": "RANGE", "QUIET_RANGE": "QUIET", "HIGH_VOL": "HVOL "}.get(reg, reg[:5])
-            rnt = rs["trades"]
-            print(f"      {g(label, C.WHT + C.BLD)}  "
-                  f"{cbar(rwr2, 1.0, lo=0.45, hi=0.55)}  "
-                  f"{g(f'{rwr2*100:.0f}%', rcol + C.BLD)}  "
-                  f"{g(f'({rnt} obch)', C.GRY)}")
+            if reg not in per_reg_c:
+                continue
+            rc_r  = per_reg_c[reg]
+            rnt   = rc_r["count"]
+            r_dec = rc_r["wins"] + rc_r["losses"]
+            rwr2  = rc_r["wins"] / r_dec if r_dec > 0 else None
+            label = _rlabels.get(reg, reg[:5])
+            if rwr2 is None:
+                print(f"      {g(label, C.WHT + C.BLD)}  {g('N/A', C.GRY)}  "
+                      f"{g(f'({rnt} obch)', C.GRY)}")
+            else:
+                rcol = C.GRN if rwr2 >= 0.55 else (C.YLW if rwr2 >= 0.45 else C.RED)
+                print(f"      {g(label, C.WHT + C.BLD)}  "
+                      f"{cbar(rwr2, 1.0, lo=0.45, hi=0.55)}  "
+                      f"{g(f'{rwr2*100:.0f}%', rcol + C.BLD)}  "
+                      f"{g(f'({rnt} obch)', C.GRY)}")
 
     # ── Auditor status ────────────────────────────────────────────────────────
     from bot2.auditor import is_in_cooldown, get_position_size_mult
