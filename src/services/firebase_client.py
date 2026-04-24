@@ -604,32 +604,34 @@ def save_last_trade(trade):
     """Write last closed trade summary to metrics/last_trade (TradesScreen)."""
     if db is None:
         return
-    try:
-        db.collection(col("metrics")).document("last_trade").set({
-            "symbol":     trade.get("symbol"),
-            "action":     trade.get("action"),
-            "result":     trade.get("result"),
-            "pnl":        round(float(trade.get("profit", 0)), 8),
-            "price":      round(float(trade.get("price", 0)), 4),
-            "exit_price": round(float(trade.get("exit_price", 0)), 4),
-            "confidence": round(float(trade.get("confidence", 0)), 4),
-            "mae":        round(float(trade.get("mae", 0)), 6),
-            "mfe":        round(float(trade.get("mfe", 0)), 6),
-            "regime":     trade.get("regime", "RANGING"),
-            "reason":     trade.get("close_reason", ""),
-            "timestamp":  trade.get("close_time", trade.get("timestamp", time.time())),  # CONSISTENCY FIX: use close_time for sorting
-        }, merge=False)
-        
-        # Fire and forget push notification
-        pnl_pct = round(float(trade.get("profit", 0) * 100), 2)
-        sym = trade.get("symbol", "")
-        res = trade.get("result", "")
-        sign = "+" if pnl_pct >= 0 else ""
-        msg = f"Bot uzavřel {sym} s výsledkem {res} ({sign}{pnl_pct}%)"
-        threading.Thread(target=send_push_notification, args=(f"Obchod uzavřen: {sym}", msg), daemon=True).start()
 
-    except Exception as e:
-        print(f"❌ save_last_trade: {e}")
+    def _write():
+        try:
+            db.collection(col("metrics")).document("last_trade").set({
+                "symbol":     trade.get("symbol"),
+                "action":     trade.get("action"),
+                "result":     trade.get("result"),
+                "pnl":        round(float(trade.get("profit", 0)), 8),
+                "price":      round(float(trade.get("price", 0)), 4),
+                "exit_price": round(float(trade.get("exit_price", 0)), 4),
+                "confidence": round(float(trade.get("confidence", 0)), 4),
+                "mae":        round(float(trade.get("mae", 0)), 6),
+                "mfe":        round(float(trade.get("mfe", 0)), 6),
+                "regime":     trade.get("regime", "RANGING"),
+                "reason":     trade.get("close_reason", ""),
+                "timestamp":  trade.get("close_time", trade.get("timestamp", time.time())),
+            }, merge=False)
+
+            pnl_pct = round(float(trade.get("profit", 0) * 100), 2)
+            sym = trade.get("symbol", "")
+            res = trade.get("result", "")
+            sign = "+" if pnl_pct >= 0 else ""
+            msg = f"Bot uzavřel {sym} s výsledkem {res} ({sign}{pnl_pct}%)"
+            send_push_notification(f"Obchod uzavřen: {sym}", msg)
+        except Exception as e:
+            print(f"❌ save_last_trade: {e}")
+
+    threading.Thread(target=_write, daemon=True).start()
 
 def send_push_notification(title, body):
     """Fetch Expo push token and send notification."""

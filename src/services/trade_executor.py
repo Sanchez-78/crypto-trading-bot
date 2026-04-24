@@ -36,6 +36,7 @@ import os
 import logging
 import random
 import time
+import threading
 from src.core.guard import guard, FailureLevel
 from src.services.exit_attribution import (
     build_exit_ctx, update_exit_attribution,
@@ -2228,8 +2229,8 @@ def on_price(data):
            else (pos["max_price"] - entry) / entry)
 
     try:
-        from src.services.notifier import send_trade_notification
-        send_trade_notification(sym, pos["action"], move - fee_used, reason)
+        from src.services.notifier import send_trade_notification as _notify
+        threading.Thread(target=_notify, args=(sym, pos["action"], move - fee_used, reason), daemon=True).start()
     except Exception as e:
         log.info(f"    [Warn: Notifikace error] {e}")
 
