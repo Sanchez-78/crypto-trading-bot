@@ -808,6 +808,20 @@ def print_status():
             print(f"    {g('Posledni obchod', C.GRY)}  "
                   f"{g(since_fmt(since), C.WHT)} {g('zpet', C.GRY)}")
 
+    # ── Exit Attribution (Economic) ────────────────────────────────────────────
+    try:
+        from src.services.exit_attribution import render_exit_attribution_summary
+        exit_attr_output = render_exit_attribution_summary()
+        if exit_attr_output and t > 0:
+            print(section("", "VYSLEDKY PODLE TYPU UZAVRENI"))
+            for line in exit_attr_output.split("\n"):
+                if line.strip() and not line.startswith("[V10.13w"):
+                    print(f"    {line}")
+                elif "[V10.13w EXIT_ATTR]" in line:
+                    print(f"    {line}")
+    except Exception as e:
+        pass  # Skip exit attribution if not available
+
     # ── Per-symbol breakdown ──────────────────────────────────────────────────
     if ss:
         print(section("", "VYSLEDKY PO MENACH"))

@@ -2350,11 +2350,11 @@ def on_price(data):
         # Timeout = neutral: no TP/SL reached → no directional signal.
         # Penalty removed — in QUIET market 57% timeout rate drove pair EVs
         # negative rapidly → pair_block deadlock after bootstrap wipe.
-        log.info(f"[V10.13w LM_CLOSE] {sym} {reg_sig} {pos['action']} "
-                 f"close={reason} gross={_gross_pnl:+.8f} fee={-_fee_cost:.8f} "
-                 f"slip={-_slip_cost:.8f} net={_net_pnl:+.8f} "
-                 f"outcome={'WIN' if _net_pnl > 0 else 'LOSS' if _net_pnl < 0 else 'FLAT'} "
-                 f"lm_pair=yes lm_features={len(bool_f)}")
+        print(f"[V10.13w LM_CLOSE] {sym} {reg_sig} {pos['action']} "
+              f"close={reason} gross={_gross_pnl:+.8f} fee={-_fee_cost:.8f} "
+              f"slip={-_slip_cost:.8f} net={_net_pnl:+.8f} "
+              f"outcome={'WIN' if _net_pnl > 0 else 'LOSS' if _net_pnl < 0 else 'FLAT'} "
+              f"lm_pair=yes lm_features={len(bool_f)}")
 
         increment_lm_update_called()  # V10.13s Phase 2: Track lm_update call
         lm_update(sym, reg_sig, learning_pnl,
@@ -2366,8 +2366,8 @@ def on_price(data):
         _lm_key = (sym, reg_sig)
         _lm_n = lm_count.get(_lm_key, 0)
         _lm_h = lm_health()
-        log.info(f"[V10.13w LM_SUCCESS] {sym}/{reg_sig} pnl={learning_pnl:+.8f} "
-                 f"n={_lm_n} health={_lm_h:.4f}")
+        print(f"[V10.13w LM_SUCCESS] {sym}/{reg_sig} pnl={learning_pnl:+.8f} "
+              f"n={_lm_n} health={_lm_h:.4f}")
     except Exception as e:
         log.error(f"[LM_ERROR] lm_update() failed for {sym}/{reg_sig}: {type(e).__name__}: {e}", exc_info=True)
         log.error(f"[V10.13w LM_SKIP] {sym} close={reason} reason=lm_update_exception")
