@@ -481,10 +481,22 @@ def reset_if_toxic():
 
 def lm_health_components():
     """
-    V10.13x: Return health with component breakdown for transparency.
+    V10.13x.2: Return health with granular component breakdown.
+    Uses new health_decomposition_v2 from scratch_forensics module.
 
-    Returns dict with components + final score.
+    Returns dict with 8 components + final score + warnings.
     """
+    try:
+        from src.services.scratch_forensics import health_decomposition_v2
+        return health_decomposition_v2()
+    except Exception as e:
+        log.warning(f"[LM_HEALTH] Could not use health_v2: {e}, falling back to legacy")
+        # Fallback to legacy if import fails
+        return _lm_health_components_legacy()
+
+
+def _lm_health_components_legacy():
+    """Legacy health calculation for fallback."""
     scores = []
     evs = []
     convs = []
@@ -496,7 +508,6 @@ def lm_health_components():
         ev   = lm_edge_strength(sym, reg)
         convs.append(conv)
         evs.append(ev)
-        # Shift range so losing systems (ev<0) still produce a non-zero score.
         scores.append(conv * (0.5 + 0.5 * max(ev, -1.0)))
 
     if not scores:
@@ -512,22 +523,12 @@ def lm_health_components():
             }
         }
 
-    # Component 1: Edge strength (mean of positive EVs)
     positive_evs = [e for e in evs if e > 0]
     edge_component = float(np.mean(positive_evs)) if positive_evs else 0.0
-
-    # Component 2: Convergence (% of pairs with conv > 0.5)
     converged = sum(1 for c in convs if c > 0.5)
     convergence_component = converged / len(convs) if convs else 0.0
-
-    # Component 3: Calibration & 4: Stability (stubs for future enhancement)
-    calibration_component = 0.0
-    stability_component = 0.0
-
-    # Bootstrap penalty: system needs 50+ decisive trades to be confident
     total_trades = sum(lm_count.values())
     bootstrap_penalty = 0.0 if total_trades >= 50 else -0.3
-
     final_health = float(np.mean(scores))
 
     return {
@@ -536,8 +537,8 @@ def lm_health_components():
         'components': {
             'edge': edge_component,
             'convergence': convergence_component,
-            'calibration': calibration_component,
-            'stability': stability_component,
+            'calibration': 0.0,
+            'stability': 0.0,
             'penalty': bootstrap_penalty,
         }
     }
@@ -548,7 +549,8 @@ def lm_health():
     Backward-compatible scalar health score.
     For component breakdown, use lm_health_components().
     """
-    return lm_health_components()['final']
+    h_dict = lm_health_components()
+    return h_dict.get('overall', h_dict.get('final', 0.0))
 
 
 # ── Meta state + adaptive control ────────────────────────────────────────────
@@ -910,6 +912,7 @@ def print_learning_monitor():
     """
     Prints a compact learning monitor to stdout.
     Shown automatically in the bot2 main loop alongside print_status().
+    V10.13x.2: Includes health decomposition v2 + scratch alerts.
     """
     print("\n=== LEARNING MONITOR ===")
 
@@ -943,23 +946,37 @@ def print_learning_monitor():
             tag = "+" if wr >= 0.55 else ("~" if wr >= 0.45 else "-")
             print(f"    {fname:<20}  [{bar}]  {wr:.0%}  {tag}")
 
-    # V10.13x: Consolidated health output (no duplicate prints from lm_alerts)
-    h = lm_health()
-
-    # Get alert status without printing (lm_alerts has side effects)
-    h_comp = lm_health_components()
-    if h < 0.10:
-        alert = "BAD"
-    elif h < 0.30:
-        alert = "WEAK"
-    else:
-        alert = "GOOD"
+    # V10.13x.2: Health decomposition v2 with component breakdown
+    h_dict = lm_health_components()
+    status = h_dict.get('status', 'UNKNOWN')
+    overall = h_dict.get('overall', h_dict.get('final', 0.0))
+    components = h_dict.get('components', {})
+    warnings = h_dict.get('warnings', [])
 
     pairs_with_n5 = sum(1 for n in lm_count.values() if n >= 5)
     total_trades = sum(lm_count.values())
 
-    print(f"\n  Health: {h:.3f}  [{alert}]")
-    print(f"    Edge: {h_comp['components']['edge']:.3f}  "
-          f"Conv: {h_comp['components']['convergence']:.3f}  "
-          f"Pairs: {pairs_with_n5}  Trades: {total_trades}")
+    print(f"\n  Health: {overall:.3f}  [{status}]")
+    print(f"    Edge: {components.get('edge_strength', 0):.3f}  "
+          f"Conv: {components.get('convergence', 0):.3f}  "
+          f"Stab: {components.get('stability', 0):.3f}  "
+          f"Breadth: {components.get('breadth', 0):.3f}")
+
+    if components.get('scratch_penalty', 0) < 0:
+        print(f"    ⚠️  Scratch Penalty: {components.get('scratch_penalty', 0):.3f}")
+
+    if warnings:
+        print(f"  Warnings:")
+        for w in warnings[:3]:
+            print(f"    - {w}")
+
+    # V10.13x.2: Scratch pressure alert
+    try:
+        from src.services.scratch_forensics import scratch_pressure_alert
+        alert = scratch_pressure_alert()
+        if alert.get('alert_level') in ('WARNING', 'CRITICAL'):
+            print(f"  {alert.get('scratch_impact', '')}")
+    except Exception:
+        pass
+
     print("=" * 24)

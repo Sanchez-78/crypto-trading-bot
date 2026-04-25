@@ -322,7 +322,7 @@ def _update_metrics_locked(signal, trade):
 
     # Close-reason breakdown
     reason = trade.get("close_reason", "")
-    
+
     # V10.13g: Promote profitable stale exits to HARVEST_PROFIT
     # If trade was held 3+ min AND profitable AND exited via timeout,
     # reclassify as harvested profit (not just survived timeout)
@@ -335,6 +335,26 @@ def _update_metrics_locked(signal, trade):
         _close_reasons[reason] += 1
     elif reason == "HARVEST_PROFIT":
         _close_reasons["HARVEST_PROFIT"] = _close_reasons.get("HARVEST_PROFIT", 0) + 1
+
+    # V10.13x.2: Record SCRATCH_EXIT details for forensic analysis
+    if reason == "SCRATCH_EXIT":
+        try:
+            from src.services.scratch_forensics import record_scratch_exit
+            mfe = trade.get("max_favorable_excursion", 0.0)
+            mae = trade.get("max_adverse_excursion", 0.0)
+            record_scratch_exit(
+                sym=sym,
+                reg=regime,
+                hold_time_sec=hold_duration,
+                pnl=profit,
+                mfe=mfe,
+                mae=mae,
+                reason=reason,
+                entry_price=trade.get("entry_price", 0.0),
+                exit_price=trade.get("exit_price", 0.0),
+            )
+        except Exception as e:
+            _logging.debug(f"[SCRATCH_FORENSICS] Failed to record: {e}")
 
     # Regime-specific WR
     regime = signal.get("regime", "RANGING")
