@@ -1,422 +1,143 @@
 """
-V10.13x.2: SCRATCH_EXIT forensic analytics & Health Decomposition v2
-
-Dává odpovědi na kritické otázky:
-1. Proč je SCRATCH_EXIT tak dominantní (76% obchodů)?
-2. Proč je ekonomicky destruktivní?
-3. Jaká je skutečná health rozložena do komponent?
-4. Kde přesně ztrácí systém peníze?
-
-Forensic breakdowns:
-- SCRATCH_EXIT by symbol, regime, hold time, PnL bucket, MFE/MAE
-- Expectancy decomposition (all vs decisive, by exit type, by symbol)
-- Health v2: 8 granulárních komponent místo jedné komprimované metriky
-- Scratch pressure alerts: upozornění když scratch > 60%, negative net
-
-Usage:
-  from src.services.scratch_forensics import scratch_report, health_decomposition_v2
-
-  report = scratch_report()  # Vrátí detailní analýzu SCRATCH_EXIT
-  health = health_decomposition_v2()  # Vrátí rozbitou health s komponentami
+V10.13s.4: Scratch Exit Forensics — Detailed Tracking and Classification
 """
 
 import logging
-import numpy as np
-from collections import defaultdict
+import time as _time
+from collections import deque
+from dataclasses import dataclass
 
 log = logging.getLogger(__name__)
 
-# Track scratch-exit details pro analýzu
-_scratch_details = []  # List of {sym, reg, hold_time_sec, pnl, mfe, mae, reason, ...}
+_scratch_events = deque(maxlen=500)
+
+@dataclass
+class ScratchEvent:
+    symbol: str
+    hold_time_s: int
+    mfe_pct: float
+    exit_pnl_pct: float
+    is_near_partial25: bool
+    is_near_micro_tp: bool
+    classification: str
+    timestamp: float
 
 
-def record_scratch_exit(sym: str, reg: str, hold_time_sec: float, pnl: float,
-                        mfe: float, mae: float, reason: str = "unknown", **kwargs):
-    """
-    Zaznamenat SCRATCH_EXIT pro forensic analýzu.
+def classify_scratch_exit(mfe_pct: float, exit_pnl_pct: float,
+                         is_near_partial: bool, is_near_micro: bool) -> str:
+    had_profit = mfe_pct >= 0.005
+    lost_at_exit = exit_pnl_pct < -0.0010
+    near_threshold = is_near_partial or is_near_micro
 
-    sym: symbol (BTCUSDT)
-    reg: režim (BULL_TREND)
-    hold_time_sec: jak dlouho byla pozice otevřená
-    pnl: uzavřený PnL
-    mfe: maximum favorable excursion (max pnl před uzavřením)
-    mae: maximum adverse excursion (max loss před uzavřením)
-    reason: důvod scratch close (e.g., "micro_close_hit", "flat_timeout", etc.)
-    **kwargs: další fields (entry_ws, exit_price, entry_price, etc.)
-    """
-    detail = {
-        "sym": sym,
-        "reg": reg,
-        "hold_time": hold_time_sec,
-        "pnl": float(pnl),
-        "mfe": float(mfe),
-        "mae": float(mae),
-        "reason": reason,
-    }
-    detail.update(kwargs)
-    _scratch_details.append(detail)
-
-    # Keep only last 500 scratch exits (don't bloat memory)
-    if len(_scratch_details) > 500:
-        del _scratch_details[:-500]
+    if had_profit and not lost_at_exit:
+        return "GOOD_DEFENSIVE"
+    elif had_profit and lost_at_exit and near_threshold:
+        return "LOSSY_PREMATURE"
+    elif had_profit and lost_at_exit:
+        return "NEUTRAL"
+    else:
+        return "NEUTRAL"
 
 
-def scratch_report() -> dict:
-    """
-    V10.13x.2 PRIORITY 1: Generate forensic report na SCRATCH_EXIT.
-
-    Returns dict:
-    {
-        "total_count": int,
-        "total_pct": float,  # % of all trades
-        "net_pnl": float,
-        "avg_pnl": float,
-        "median_pnl": float,
-        "avg_hold_time": float,
-        "avg_mfe": float,  # Avg MFE before scratch close
-        "avg_mae": float,
-        "by_symbol": {sym: {...breakdowns...}},
-        "by_regime": {reg: {...breakdowns...}},
-        "by_hold_bucket": {bucket: {...}},  # e.g., "0-30s", "30-60s", "1-5m", "5m+"
-        "by_pnl_bucket": {bucket: {...}},  # e.g., "loss", "micro", "small_win"
-        "mfe_follow_up": dict,  # Kolik scratch exitů bylo po pozitivní excursion?
-        "negative_after_positive": int,  # Scratch po MFE > 0.0001
-    }
-    """
-    if not _scratch_details:
-        return {
-            "total_count": 0,
-            "status": "NO_DATA",
-        }
-
-    # Basic stats
-    total = len(_scratch_details)
-    pnls = [d["pnl"] for d in _scratch_details]
-    net_pnl = sum(pnls)
-    avg_pnl = np.mean(pnls)
-    median_pnl = float(np.median(pnls))
-
-    # Hold times (in seconds)
-    hold_times = [d["hold_time"] for d in _scratch_details if d["hold_time"] > 0]
-    avg_hold_time = float(np.mean(hold_times)) if hold_times else 0.0
-
-    # MFE/MAE stats
-    mfes = [d["mfe"] for d in _scratch_details]
-    maes = [d["mae"] for d in _scratch_details]
-    avg_mfe = float(np.mean(mfes)) if mfes else 0.0
-    avg_mae = float(np.mean(maes)) if maes else 0.0
-
-    # By symbol breakdown
-    by_symbol = defaultdict(lambda: {"count": 0, "pnl": 0.0, "mfes": [], "hold": []})
-    for d in _scratch_details:
-        sym = d["sym"]
-        by_symbol[sym]["count"] += 1
-        by_symbol[sym]["pnl"] += d["pnl"]
-        by_symbol[sym]["mfes"].append(d["mfe"])
-        by_symbol[sym]["hold"].append(d["hold_time"])
-
-    by_sym_final = {}
-    for sym, data in by_symbol.items():
-        by_sym_final[sym] = {
-            "count": data["count"],
-            "net_pnl": round(data["pnl"], 8),
-            "avg_pnl": round(data["pnl"] / data["count"], 8) if data["count"] else 0.0,
-            "avg_mfe": round(float(np.mean(data["mfes"])), 8) if data["mfes"] else 0.0,
-            "avg_hold": round(float(np.mean(data["hold"])), 2) if data["hold"] else 0.0,
-        }
-
-    # By regime breakdown
-    by_regime = defaultdict(lambda: {"count": 0, "pnl": 0.0})
-    for d in _scratch_details:
-        reg = d.get("reg", "UNKNOWN")
-        by_regime[reg]["count"] += 1
-        by_regime[reg]["pnl"] += d["pnl"]
-
-    by_reg_final = {}
-    for reg, data in by_regime.items():
-        by_reg_final[reg] = {
-            "count": data["count"],
-            "net_pnl": round(data["pnl"], 8),
-            "avg_pnl": round(data["pnl"] / data["count"], 8) if data["count"] else 0.0,
-        }
-
-    # By hold time bucket (0-30s, 30-60s, 1-5m, 5m+)
-    def hold_bucket(t_sec: float) -> str:
-        if t_sec < 30:
-            return "0-30s"
-        elif t_sec < 60:
-            return "30-60s"
-        elif t_sec < 300:
-            return "1-5m"
-        else:
-            return "5m+"
-
-    by_hold = defaultdict(lambda: {"count": 0, "pnl": 0.0})
-    for d in _scratch_details:
-        bucket = hold_bucket(d["hold_time"])
-        by_hold[bucket]["count"] += 1
-        by_hold[bucket]["pnl"] += d["pnl"]
-
-    by_hold_final = {}
-    for bucket, data in by_hold.items():
-        by_hold_final[bucket] = {
-            "count": data["count"],
-            "net_pnl": round(data["pnl"], 8),
-            "avg_pnl": round(data["pnl"] / data["count"], 8) if data["count"] else 0.0,
-        }
-
-    # By PnL bucket (loss, micro [0-0.0005], small [0.0005-0.002], medium [0.002+])
-    def pnl_bucket(pnl_val: float) -> str:
-        if pnl_val < 0:
-            return "loss"
-        elif pnl_val < 0.0005:
-            return "micro"
-        elif pnl_val < 0.002:
-            return "small"
-        else:
-            return "medium"
-
-    by_pnl = defaultdict(lambda: {"count": 0, "pnl": 0.0})
-    for d in _scratch_details:
-        bucket = pnl_bucket(d["pnl"])
-        by_pnl[bucket]["count"] += 1
-        by_pnl[bucket]["pnl"] += d["pnl"]
-
-    by_pnl_final = {}
-    for bucket, data in by_pnl.items():
-        by_pnl_final[bucket] = {
-            "count": data["count"],
-            "net_pnl": round(data["pnl"], 8),
-            "avg_pnl": round(data["pnl"] / data["count"], 8) if data["count"] else 0.0,
-        }
-
-    # MFE follow-up: kolik scratch exitů bylo po pozitivní excursion?
-    negative_after_positive = sum(1 for d in _scratch_details if d["mfe"] > 0.0001 and d["pnl"] < 0)
-
-    return {
-        "total_count": total,
-        "total_pct": round(100.0 * total / max(total, 1), 1),  # would need total trades
-        "net_pnl": round(net_pnl, 8),
-        "avg_pnl": round(avg_pnl, 8),
-        "median_pnl": round(median_pnl, 8),
-        "avg_hold_time_sec": round(avg_hold_time, 2),
-        "avg_mfe": round(avg_mfe, 8),
-        "avg_mae": round(avg_mae, 8),
-        "by_symbol": by_sym_final,
-        "by_regime": by_reg_final,
-        "by_hold_bucket": by_hold_final,
-        "by_pnl_bucket": by_pnl_final,
-        "negative_after_positive": negative_after_positive,  # Scratch losses po MFE > 0
-    }
-
-
-def expectancy_decomposition(trades_data: dict = None) -> dict:
-    """
-    V10.13x.2 PRIORITY 2: Expectancy scope decomposition.
-
-    Rozdělit expectancy na:
-    - all_closed: všechny uzavřené trades
-    - decisive_only: trades kde WR je jasný (ne flats/timeouts)
-    - by_symbol: per symbol
-    - by_exit_type: per exit type (SCRATCH_EXIT, TP, SL, timeout, etc.)
-
-    Vysvětluje proč canonical WR=77% ale PnL je negativní.
-    """
-    # TODO: Integrate with learning_event.py data
-    # For now, return stub
-    return {
-        "status": "PENDING_INTEGRATION",
-        "note": "Requires trade-level PnL data from trade_executor and learning_event",
-    }
-
-
-def health_decomposition_v2() -> dict:
-    """
-    V10.13x.2 PRIORITY 3: Health decomposition v2 — 8 granulárních komponent.
-
-    Místo jedné komprimované metriky (0.001), vrátit strukturu:
-    {
-        "overall": float,  # Final health score
-        "status": "GOOD|WEAK|BAD",
-        "components": {
-            "edge_strength": float,        # Průměrný EV across pairs
-            "convergence": float,          # % pairs s conv > 0.5
-            "calibration": float,          # Signal quality consistency
-            "stability": float,            # Edge consistency WR
-            "breadth": float,              # % symbol coverage
-            "exit_quality": float,         # Win ratio on decisive exits
-            "scratch_penalty": float,      # -penalty if scratch > 60%
-            "bootstrap_penalty": float,    # -penalty if < 50 trades
-        },
-        "warnings": [list of strings],
-    }
-    """
+def instrument_scratch_exit(
+    symbol: str,
+    hold_time_s: int,
+    max_favorable_pnl_pct: float,
+    current_pnl_pct: float,
+    is_near_partial25: bool = False,
+    is_near_micro_tp: bool = False,
+) -> None:
     try:
-        from src.services.learning_monitor import (
-            lm_count, lm_ev_hist, lm_wr_hist, lm_pnl_hist, lm_convergence,
-            lm_edge_strength, lm_bandit_focus
+        classification = classify_scratch_exit(
+            max_favorable_pnl_pct,
+            current_pnl_pct,
+            is_near_partial25,
+            is_near_micro_tp
         )
+
+        event = ScratchEvent(
+            symbol=symbol,
+            hold_time_s=hold_time_s,
+            mfe_pct=max_favorable_pnl_pct,
+            exit_pnl_pct=current_pnl_pct,
+            is_near_partial25=is_near_partial25,
+            is_near_micro_tp=is_near_micro_tp,
+            classification=classification,
+            timestamp=_time.time(),
+        )
+
+        _scratch_events.append(event)
+
+        if classification == "LOSSY_PREMATURE":
+            log.warning(
+                f"[SCRATCH_FORENSICS] LOSSY_PREMATURE: {symbol} "
+                f"hold={hold_time_s}s mfe={max_favorable_pnl_pct*100:.2f}% "
+                f"exit_pnl={current_pnl_pct*100:.3f}%"
+            )
     except Exception as e:
-        log.warning(f"[HEALTH_V2] Could not import learning_monitor: {e}")
-        return {"status": "ERROR", "error": str(e)}
+        log.debug(f"[SCRATCH_FORENSICS] Error: {e}")
 
-    warnings = []
-    components = {}
 
-    # Component 1: Edge strength (mean of positive EVs)
-    positive_evs = []
-    for (sym, reg), n in lm_count.items():
-        if n >= 5:
-            ev = lm_edge_strength(sym, reg)
-            if ev > 0:
-                positive_evs.append(ev)
-    components["edge_strength"] = float(np.mean(positive_evs)) if positive_evs else 0.0
+def get_scratch_diagnostics() -> dict:
+    if not _scratch_events:
+        return {
+            "total": 0, "good_defensive": 0, "neutral": 0, "lossy_premature": 0,
+            "avg_mfe": 0.0, "avg_exit_pnl": 0.0, "avg_hold_time": 0, "near_miss_rate": 0.0,
+        }
 
-    if components["edge_strength"] < 0.001:
-        warnings.append("edge_too_weak: mean edge < 0.001")
-
-    # Component 2: Convergence (% pairs s convergence > 0.5)
-    pairs_converged = 0
-    pairs_total_n5 = 0
-    for (sym, reg), n in lm_count.items():
-        if n >= 5:
-            pairs_total_n5 += 1
-            conv = lm_convergence(sym, reg)
-            if conv > 0.5:
-                pairs_converged += 1
-
-    components["convergence"] = (pairs_converged / pairs_total_n5) if pairs_total_n5 > 0 else 0.0
-
-    if components["convergence"] < 0.3:
-        warnings.append(f"low_convergence: only {pairs_converged}/{pairs_total_n5} pairs converged")
-
-    # Component 3: Stability (Sharpe-like: mean/std of WR across pairs)
-    wr_values = []
-    for (sym, reg), n in lm_count.items():
-        if n >= 10:
-            wr_lst = lm_wr_hist.get((sym, reg), [])
-            if wr_lst:
-                wr_values.append(wr_lst[-1])
-
-    if wr_values:
-        wr_mean = float(np.mean(wr_values))
-        wr_std = float(np.std(wr_values))
-        # Stability: if std is low relative to mean, signal is stable
-        components["stability"] = min(1.0, wr_mean / max(wr_std + 0.01, 0.01))
-    else:
-        components["stability"] = 0.0
-
-    # Component 4: Breadth (how many unique symbols trading well)
-    pairs_n10 = sum(1 for n in lm_count.values() if n >= 10)
-    total_pairs = len(lm_count)
-    components["breadth"] = (pairs_n10 / max(total_pairs, 1)) if total_pairs > 0 else 0.0
-
-    if components["breadth"] < 0.3:
-        warnings.append(f"low_breadth: only {pairs_n10} pairs with n≥10")
-
-    # Component 5: Exit quality (ratio of profitable exits to total)
-    # TODO: Requires close_reasons and PnL breakdown
-    components["exit_quality"] = 0.0  # Stub
-
-    # Component 6: Calibration (signal consistency across regimes)
-    # TODO: Requires regime breakdown analysis
-    components["calibration"] = 0.0  # Stub
-
-    # Component 7: Scratch penalty
-    scratch_data = scratch_report()
-    scratch_penalty = 0.0
-    if scratch_data.get("total_count", 0) > 0:
-        total_trades = sum(lm_count.values())
-        scratch_pct = scratch_data["total_count"] / max(total_trades, 1)
-        if scratch_pct > 0.6:
-            scratch_penalty = -0.2  # Heavy penalty if > 60%
-            warnings.append(f"scratch_dominance: {scratch_pct:.1%} of trades are SCRATCH_EXIT")
-        if scratch_data["net_pnl"] < 0:
-            scratch_penalty = min(scratch_penalty - 0.1, -0.3)
-            warnings.append(f"scratch_losses: net PnL {scratch_data['net_pnl']:.8f}")
-    components["scratch_penalty"] = scratch_penalty
-
-    # Component 8: Bootstrap penalty
-    total_trades = sum(lm_count.values())
-    bootstrap_penalty = 0.0
-    if total_trades < 50:
-        bootstrap_penalty = -0.1
-        warnings.append(f"bootstrap_phase: only {total_trades} trades")
-    elif total_trades < 100:
-        bootstrap_penalty = -0.05
-    components["bootstrap_penalty"] = bootstrap_penalty
-
-    # Calculate overall health as weighted mean of positive components
-    # Skip penalty components in the base score, add them after
-    base_components = [
-        components["edge_strength"],
-        components["convergence"],
-        components["stability"],
-        components["breadth"],
-    ]
-    base_health = float(np.mean(base_components)) if base_components else 0.0
-
-    # Apply penalties
-    final_health = max(0.0, base_health + scratch_penalty + bootstrap_penalty)
-
-    # Determine status
-    if final_health >= 0.3:
-        status = "GOOD"
-    elif final_health >= 0.1:
-        status = "WEAK"
-    else:
-        status = "BAD"
+    events = list(_scratch_events)
+    total = len(events)
+    good = sum(1 for e in events if e.classification == "GOOD_DEFENSIVE")
+    neutral = sum(1 for e in events if e.classification == "NEUTRAL")
+    lossy = sum(1 for e in events if e.classification == "LOSSY_PREMATURE")
+    avg_mfe = sum(e.mfe_pct for e in events) / total if total > 0 else 0.0
+    avg_exit_pnl = sum(e.exit_pnl_pct for e in events) / total if total > 0 else 0.0
+    avg_hold = sum(e.hold_time_s for e in events) / total if total > 0 else 0
+    near_misses = sum(1 for e in events if e.is_near_partial25 or e.is_near_micro_tp)
+    near_miss_rate = near_misses / total if total > 0 else 0.0
 
     return {
-        "overall": round(final_health, 4),
-        "status": status,
-        "components": {k: round(v, 4) for k, v in components.items()},
-        "warnings": warnings,
+        "total": total, "good_defensive": good, "neutral": neutral, "lossy_premature": lossy,
+        "avg_mfe": round(avg_mfe, 4), "avg_exit_pnl": round(avg_exit_pnl, 4),
+        "avg_hold_time": int(avg_hold), "near_miss_rate": round(near_miss_rate, 2),
     }
 
 
 def scratch_pressure_alert() -> dict:
-    """
-    V10.13x.2 PRIORITY 4: Scratch pressure alerts.
-
-    Returns:
-    {
-        "alert_level": "OK|WARNING|CRITICAL",
-        "scratch_share": float,  # % of total
-        "scratch_net_pnl": float,
-        "scratch_impact": str,  # Description
-    }
-    """
     try:
-        from src.services.learning_monitor import lm_count
-    except Exception:
-        return {"alert_level": "ERROR"}
+        diag = get_scratch_diagnostics()
+        total = diag["total"]
+        if total < 10:
+            return {"alert_level": "OK", "scratch_impact": "", "lossy_rate": 0.0}
+        lossy = diag["lossy_premature"]
+        lossy_rate = lossy / total if total > 0 else 0.0
+        if lossy_rate >= 0.30:
+            alert_level = "CRITICAL"
+            impact = f"Scratch exits killing {lossy_rate*100:.0f}% (LOSSY_PREMATURE)"
+        elif lossy_rate >= 0.15:
+            alert_level = "WARNING"
+            impact = f"{lossy_rate*100:.0f}% of scratches premature"
+        else:
+            alert_level = "OK"
+            impact = ""
+        return {"alert_level": alert_level, "scratch_impact": impact, "lossy_rate": round(lossy_rate, 3)}
+    except Exception as e:
+        log.debug(f"[SCRATCH_PRESSURE_ALERT] Error: {e}")
+        return {"alert_level": "OK", "scratch_impact": "", "lossy_rate": 0.0}
 
-    total_trades = sum(lm_count.values())
-    if total_trades == 0:
-        return {"alert_level": "NO_DATA"}
 
-    scratch = scratch_report()
-    scratch_count = scratch.get("total_count", 0)
-    scratch_pct = scratch_count / total_trades
-    scratch_net = scratch.get("net_pnl", 0.0)
-
-    alert_level = "OK"
-    impact = ""
-
-    if scratch_pct > 0.75:
-        alert_level = "CRITICAL"
-        impact = f"CRITICAL: {scratch_pct:.0%} of trades are SCRATCH_EXIT (net {scratch_net:.8f})"
-    elif scratch_pct > 0.60:
-        alert_level = "WARNING"
-        impact = f"WARNING: {scratch_pct:.0%} scratch share (net {scratch_net:.8f})"
-    elif scratch_net < 0:
-        alert_level = "WARNING"
-        impact = f"WARNING: scratch net PnL negative ({scratch_net:.8f})"
-
-    return {
-        "alert_level": alert_level,
-        "scratch_share": round(scratch_pct, 3),
-        "scratch_net_pnl": round(scratch_net, 8),
-        "scratch_impact": impact,
-    }
+def health_decomposition_v2() -> dict:
+    try:
+        from src.services.learning_monitor import _lm_health_components_legacy
+        base = _lm_health_components_legacy()
+        scratch_alert = scratch_pressure_alert()
+        scratch_penalty = -0.15 if scratch_alert["alert_level"] == "CRITICAL" else (-0.08 if scratch_alert["alert_level"] == "WARNING" else 0.0)
+        overall = base.get("final", 0.0) + scratch_penalty
+        overall = max(0.0, min(1.0, overall))
+        status = "BAD" if overall < 0.10 else ("WEAK" if overall < 0.30 else "GOOD")
+        components = base.get("components", {})
+        components["scratch_penalty"] = scratch_penalty
+        return {"final": round(overall, 3), "overall": round(overall, 3), "status": status, "components": components, "warnings": base.get("warnings", []), "scratch_alert": scratch_alert}
+    except Exception as e:
+        log.debug(f"[HEALTH_V2] Error: {e}")
+        return {"final": 0.0, "overall": 0.0, "status": "ERROR", "components": {}, "warnings": [str(e)], "scratch_alert": {"alert_level": "OK", "scratch_impact": ""}}

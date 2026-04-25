@@ -1888,6 +1888,19 @@ def evaluate_signal(signal):
     except Exception as _bs_err:
         log.debug("bootstrap state detection error: %s", _bs_err)
 
+    # V10.13s.4: Forced-explore quality gates (for bootstrap pairs)
+    if _bootstrap_pair:
+        try:
+            from src.services.forced_explore_gates import is_forced_explore_allowed, format_forced_explore_result
+            _fe_allowed, _fe_results = is_forced_explore_allowed(sym, regime, signal, list(ev_history))
+            if not _fe_allowed:
+                track_blocked(reason="FORCED_EXPLORE_GATE")
+                _reason_str = format_forced_explore_result(_fe_allowed, _fe_results)
+                print(f"    decision=SKIP_FE_GATE  {sym}  {_reason_str}")
+                return None
+        except Exception as _fe_err:
+            log.debug(f"[FORCED_EXPLORE_GATE] Error: {_fe_err}")
+
     # V10.13r/V10.13u: Apply bootstrap-aware threshold relaxation
     if _bootstrap_global or _bootstrap_pair:
         _score_threshold *= 0.96  # Reduce by 4% during bootstrap
