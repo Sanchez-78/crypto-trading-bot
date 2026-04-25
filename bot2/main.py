@@ -719,14 +719,11 @@ def print_status():
     print(g("=" * W, C.CYN))
 
     # ── Live prices ───────────────────────────────────────────────────────────
-    _total_label = g(f"celkem {t}", C.WHT + C.BLD) if t > 0 else g("0 obchodu", C.GRY)
-    print(section("", f"ZIVE CENY  (Binance · kazde 1 s)   {_total_label}"))
+    print(section("", "ZIVE CENY  (Binance · kazde 1 s)"))
     for sym in get_active_symbols():
-        short   = sym.replace("USDT", "")
-        sym_cnt = canonical["per_symbol"].get(sym, {}).get("count", 0)
-        cnt_tag = g(f"  {sym_cnt} obch", C.GRY) if sym_cnt > 0 else ""
+        short = sym.replace("USDT", "")
         if sym not in lp:
-            print(f"    {g(short, C.WHT):<4}  {g('cekam...', C.GRY)}{cnt_tag}")
+            print(f"    {g(short, C.WHT):<4}  {g('cekam...', C.GRY)}")
             continue
         curr, prev = lp[sym]
         arr  = price_arrow(curr, prev)
@@ -736,7 +733,23 @@ def print_status():
         print(f"    {g(short, C.WHT + C.BLD):<4}  "
               f"{g(f'${curr:>14,.4f}', C.WHT)}   "
               f"{arr}  {g(f'{pct:+.3f}%', pcol)}"
-              f"{open_tag}{cnt_tag}")
+              f"{open_tag}")
+
+    # ── Trade count by symbol ─────────────────────────────────────────────────
+    per_sym_c = canonical.get("per_symbol", {})
+    if per_sym_c and t > 0:
+        print(section("", "POCET OBCHODU"))
+        print(f"    {g('Mena', C.GRY):<5}  {g('Pocet', C.GRY):>6}")
+        print(f"    {g('-' * 25, C.GRY)}")
+        for sym in sorted(get_active_symbols()):
+            short = sym.replace("USDT", "")
+            cs = per_sym_c.get(sym)
+            if cs and cs["count"] > 0:
+                cnt = cs["count"]
+                print(f"    {g(short, C.WHT + C.BLD):<5}  {g(str(cnt), C.WHT):>6}")
+        if t > 0:
+            print(f"    {g('-' * 25, C.GRY)}")
+            print(f"    {g('CELKEM', C.WHT + C.BLD):<5}  {g(str(t), C.WHT + C.BLD):>6}")
 
     # ── Open positions ────────────────────────────────────────────────────────
     if ops:
