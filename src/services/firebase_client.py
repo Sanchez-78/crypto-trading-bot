@@ -74,6 +74,9 @@ def _reset_quota_if_new_day():
 def _can_read(count=1):
     """Check if read quota available. Returns (allowed, current_usage, limit)."""
     _reset_quota_if_new_day()
+    # CRITICAL: Stop ALL reads if we hit 80% quota (emergency brake)
+    if _QUOTA_READS >= _QUOTA_MAX_READS * 0.8:
+        return False, _QUOTA_READS, _QUOTA_MAX_READS
     allowed = (_QUOTA_READS + count) <= _QUOTA_MAX_READS
     return allowed, _QUOTA_READS, _QUOTA_MAX_READS
 
@@ -81,9 +84,21 @@ def _record_read(count=1):
     """Record read operation(s)."""
     global _QUOTA_READS
     _QUOTA_READS += count
+    import logging
+    pct = _QUOTA_READS/_QUOTA_MAX_READS*100
+
+    # Log aggressively to track source of reads
+    if _QUOTA_READS % 100 == 0:  # Every 100 reads
+        logging.warning(f"🔴 CRITICAL: Firebase reads: {_QUOTA_READS:,}/{_QUOTA_MAX_READS:,} ({pct:.1f}%)")
+        import traceback
+        logging.warning("QUOTA USAGE TRACEBACK:")
+        for line in traceback.format_stack()[-5:-1]:
+            logging.warning(line.strip())
+
     if _QUOTA_READS > _QUOTA_MAX_READS * 0.9:  # Warn at 90%
-        import logging
-        logging.warning(f"⚠️  Firebase reads: {_QUOTA_READS:,}/{_QUOTA_MAX_READS:,} ({_QUOTA_READS/_QUOTA_MAX_READS*100:.1f}%)")
+        logging.warning(f"⚠️  EMERGENCY: Firebase reads at {pct:.1f}% — stopping further reads!")
+    elif _QUOTA_READS > _QUOTA_MAX_READS * 0.7:  # Warn at 70%
+        logging.warning(f"⚠️  Firebase reads: {_QUOTA_READS:,}/{_QUOTA_MAX_READS:,} ({pct:.1f}%)")
 
 def _can_write(count=1):
     """Check if write quota available. Returns (allowed, current_usage, limit)."""
@@ -192,9 +207,11 @@ PERF_MODE = False
 HISTORY_LIMIT  = 200 if PERF_MODE else 100   # docs per fetch
 SIGNALS_LIMIT  = 200
 
-HISTORY_TTL    = 300 if PERF_MODE else 3600  # 5 min vs 1 hour (V10.14: increased to reduce read spike from 9.5k/hour to <2k/hour)
-WEIGHTS_TTL    = 120 if PERF_MODE else 900    # 2 min  vs  15 min
-SIGNALS_TTL    = 600 if PERF_MODE else 1800   # 10 min vs  30 min
+# V10.15 QUOTA EMERGENCY: Increased TTL to 6 hours to prevent runaway reads (was 1h)
+# Runaway read rate detected: 6000 reads in 36 min = 240k/day vs 50k limit
+HISTORY_TTL    = 300 if PERF_MODE else 21600  # 5 min vs 6 hours (emergency: was 1 hour)
+WEIGHTS_TTL    = 120 if PERF_MODE else 3600    # 2 min vs 1 hour (emergency: was 15 min)
+SIGNALS_TTL    = 600 if PERF_MODE else 3600   # 10 min vs 1 hour (emergency: was 30 min)
 
 
 # ── Init ──────────────────────────────────────────────────────────────────────
