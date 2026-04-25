@@ -209,7 +209,10 @@ _cycle_stats = {
 # ════════════════════════════════════════════════════════════════════════════
 AUDIT_INTERVAL      = 120      # Run audit every 2 minutes
 METRICS_INTERVAL    = 300      # Save metrics every 5 minutes (reduced from 30s to prevent quota exhaustion)
-PRE_AUDIT_INTERVAL  = 60       # Run pre_live_audit every minute
+# EMERGENCY (2026-04-25): Disable pre_live_audit by default to prevent quota exhaustion
+# ~1,440 reads/day from audit loop at 60s interval; increased to 3600s + gated by env flag
+ENABLE_LIVE_AUDIT   = os.getenv("ENABLE_LIVE_AUDIT", "false").lower() == "true"
+PRE_AUDIT_INTERVAL  = 3600     # Run pre_live_audit every hour (was 60s)
 
 # ────────────────────────────────────────────────────────────────────────────
 # PATCH 3.1: Renderer Lock — Atomic rendering with deduplication
@@ -1741,8 +1744,19 @@ def main():
             # V10.13s.1: Invalidate canonical state cache after metrics flush
             invalidate_cache()
 
-        if now - _last_pre_audit >= PRE_AUDIT_INTERVAL:
-            _run_pre_live_audit()
+        # EMERGENCY (2026-04-25): Gate pre_live_audit on env flag + quota status
+        if ENABLE_LIVE_AUDIT and now - _last_pre_audit >= PRE_AUDIT_INTERVAL:
+            try:
+                from src.services.firebase_client import get_quota_status
+                quota = get_quota_status()
+                reads_pct = float(quota.get("reads_pct", "0%").rstrip("%"))
+                # Skip audit if Firebase reads are degraded (65%+) per Phase 1 patch
+                if reads_pct >= 65:
+                    logging.warning(f"[bot2] pre_live_audit skipped: quota degraded ({reads_pct:.1f}%)")
+                else:
+                    _run_pre_live_audit()
+            except Exception as audit_guard_exc:
+                logging.debug(f"[bot2] pre_live_audit guard check failed: {audit_guard_exc}")
             _last_pre_audit = now
 
         try:
