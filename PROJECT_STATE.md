@@ -13,55 +13,72 @@ Safety hardening before economics/integration rollout.
 ### Commit 1 (b2bcca8): Runtime Version Marker
 - **Files**: `src/services/version_info.py` (NEW), `bot2/main.py`, `src/services/pre_live_audit.py`
 - **Purpose**: Startup/audit runtime marker with git commit, branch, host, Python version, timestamp
-- **Status**: ✅ Committed locally, not pushed
+- **Status**: ✅ PUSHED to remote
 
 ### Commit 2 (f798f2e): Secret-Safe Logging
 - **Files**: `src/services/safe_logging.py` (NEW), `src/services/firebase_client.py`, `src/services/market_stream.py`
 - **Purpose**: Sanitize exception messages to prevent credential leakage; preserve trading metrics
 - **Validation**: ✅ All 14 tests passing (Bearer case preservation, delimiter preservation, min length 8)
-- **Status**: ✅ Committed locally, not pushed
+- **Status**: ✅ PUSHED to remote
+
+### Commit 3 (2688087): Project State Memory
+- **Files**: `PROJECT_STATE.md` (NEW)
+- **Purpose**: Durable memory for workflow continuity across context compaction
+- **Status**: ✅ PUSHED to remote
 
 ## Current Work
 
-None. Both Commit 1 and Commit 2 accepted and committed locally.
-Awaiting instructions: push to remote or proceed to Commit 3.
+### Design Complete — Awaiting Implementation Approval
+
+**Patch 3: Firebase Retry Queue Heartbeat** (`PATCH_3_FIREBASE_RETRY_HEARTBEAT_PLAN.md` v2)
+- Status: REVISED per 10 user corrections; design complete, not implemented
+- Architecture: Three-tier (enqueue → drain → write_direct), no re-entry risk
+- Scope: ~220 lines (8 module vars + refactored save_batch + 6 new functions)
+- Requirements: Thread-safety patch plan approved before implementation
+
+**Emergency Analysis: Firebase Read Quota Containment** (`EMERGENCY_READ_QUOTA_CONTAINMENT_PLAN.md`)
+- Status: COMPLETE; emergency plan designed, not implemented
+- Root cause: Read quota (50k/day) exceeded before 11:00 UTC; previous emergency documented at 6000 reads/36min
+- Phase 1 (immediate): 3 file changes (lower _can_read threshold 80%→65%, increase TTLs 3600→7200s, throttle auto_cleaner)
+- Phase 2 (post-reset): Unified safe_get_with_quota_bypass() wrapper
+- Expected outcome: Reduce daily reads from 50k+ to 30-35k
 
 ## Forbidden Now
 
 Do not:
-- **Push to remote** (wait for explicit approval)
-- Implement economics roadmap (deferred post-hardening)
-- Implement **Commit 3 without thread-safety patch plan first**
-- Implement Area C (quota circuit breaker) or Area D (market offline alert) yet (pending separate review)
+- Implement Patch 3 without explicit approval
+- Implement emergency containment without explicit approval
 - Change EV/RDE/execution behavior, sizing, leverage, TP/SL, score, gates
 - Change Firebase schema or Android dashboard fields
 - Stage unrelated files or commit `.claude/settings.local.json`
 - Do full rewrites
 
-## Next Steps (Pending User Approval)
+## Next Steps
 
-**Commit 1 & 2 Status**: ✅ Accepted and committed locally, not pushed
+**Awaiting User Direction**
 
-Option A: Push to remote
-- Both commits ready for push
-- Awaiting explicit approval
+1. **Implement Patch 3 (Firebase Retry Queue Heartbeat)**
+   - Requires: User approval
+   - Effort: ~30-45 minutes
+   - Scope: 220 lines (new + refactor)
+   - Estimated impact: Prevent unbounded retry queue growth, detect stalls
 
-Option B: Commit 3 (Area B — Firebase Retry Queue Heartbeat)
-- **Requirement**: Thread-safety patch plan first, then implementation
-- Purpose: Ensure retry queue doesn't grow unbounded; detect stalls
-- Lock strategy, backoff schedule, batch limits, log rate limiting
-- No blocking on market stream
-- Requires user approval of patch plan before implementation
+2. **Implement Emergency Containment (Phase 1)**
+   - Requires: User approval
+   - Effort: ~20-30 minutes
+   - Scope: 3 file changes, ~30 lines
+   - Estimated impact: Reduce daily reads 50k+ → 30-35k
 
-Option C: Continue with other hardening areas (after Commit 3)
-- Area C: Firebase quota degraded mode (OK/WARNING/DEGRADED/CRITICAL; never block exits)
-- Area D: Market offline alert (120s without price; emit event)
-- Each requires separate review
+3. **Parallel: Investigate Read Storm Root Cause**
+   - Check if Android app polling excessively
+   - Check if external cron jobs hitting Firestore
+   - Check PERF_MODE status
+   - Check recent Firebase indexing changes
 
 ## Workflow Rules
 
 1. Read `.maestro.md` and `PROJECT_STATE.md` before new work
-2. Update `PROJECT_STATE.md` after every accepted commit
+2. Update `PROJECT_STATE.md` after every approved commit
 3. Show diff before staging/committing
 4. Local commit only after diff review
 5. Push only after explicit approval

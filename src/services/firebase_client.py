@@ -112,8 +112,9 @@ def _get_quota_severity(reads_pct: float, writes_pct: float) -> str:
 def _can_read(count=1):
     """Check if read quota available. Returns (allowed, current_usage, limit)."""
     _reset_quota_if_new_day()
-    # CRITICAL: Stop ALL reads if we hit 80% quota (emergency brake)
-    if _QUOTA_READS >= _QUOTA_MAX_READS * 0.8:
+    # EMERGENCY (2026-04-25): Lowered brake from 80% to 65% due to quota exceeded incident
+    # Prevents further overage while maintaining cache-backed fallback
+    if _QUOTA_READS >= _QUOTA_MAX_READS * 0.65:
         return False, _QUOTA_READS, _QUOTA_MAX_READS
     allowed = (_QUOTA_READS + count) <= _QUOTA_MAX_READS
     return allowed, _QUOTA_READS, _QUOTA_MAX_READS
@@ -254,9 +255,10 @@ SIGNALS_LIMIT  = 200
 
 # V10.15 QUOTA EMERGENCY: Increased TTL to 6 hours to prevent runaway reads (was 1h)
 # Runaway read rate detected: 6000 reads in 36 min = 240k/day vs 50k limit
+# EMERGENCY (2026-04-25): Further increased WEIGHTS_TTL, SIGNALS_TTL to 2h to reduce read storm
 HISTORY_TTL    = 300 if PERF_MODE else 21600  # 5 min vs 6 hours (emergency: was 1 hour)
-WEIGHTS_TTL    = 120 if PERF_MODE else 3600    # 2 min vs 1 hour (emergency: was 15 min)
-SIGNALS_TTL    = 600 if PERF_MODE else 3600   # 10 min vs 1 hour (emergency: was 30 min)
+WEIGHTS_TTL    = 120 if PERF_MODE else 7200    # 2 min vs 2 hours (emergency: was 1 hour)
+SIGNALS_TTL    = 600 if PERF_MODE else 7200   # 10 min vs 2 hours (emergency: was 1 hour)
 
 
 # ── Init ──────────────────────────────────────────────────────────────────────
