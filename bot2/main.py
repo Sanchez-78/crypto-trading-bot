@@ -191,9 +191,7 @@ def _init_event_handlers():
 _last_audit      = 0
 _last_metrics    = 0
 _last_pre_audit  = 0
-
-# EMERGENCY (2026-04-25): Firebase safe degradation mode for quota exhaustion/unavailable
-DB_DEGRADED_SAFE_MODE = False  # Set when Firebase 429/unavailable; blocks new positions
+_last_health_check = 0  # Timestamp of last Firebase health check (refresh every 60s)
 
 # ════════════════════════════════════════════════════════════════════════════════
 # V10.13a: Per-symbol block reason tracking for observability
@@ -1457,13 +1455,12 @@ def main():
     # EMERGENCY (2026-04-25): Check Firebase health and activate safe mode if degraded
     # Prevents treating unavailable data as empty DB, which would trigger unsafe cold-start
     print("  [4.2/7] Checking Firebase health status...", file=sys.stderr, flush=True)
-    global DB_DEGRADED_SAFE_MODE
+    from src.services.runtime_flags import set_db_degraded_safe_mode
     health = get_firebase_health()
-    DB_DEGRADED_SAFE_MODE = health["read_degraded"] or health["write_degraded"]
-    if DB_DEGRADED_SAFE_MODE:
-        import logging
+    is_degraded = health["read_degraded"] or health["write_degraded"]
+    set_db_degraded_safe_mode(is_degraded, reason=health.get("reason"))
+    if is_degraded:
         reason = health.get("reason", "unknown")
-        logging.critical(f"[SAFE_MODE] Firebase degraded ({reason}); new position entries disabled, managing existing positions only")
         print(f"  [4.2/7] ⚠️  FIREBASE DEGRADED ({reason}) — safe mode active", file=sys.stderr, flush=True)
     else:
         print("  [4.2/7] Firebase health OK ✓", file=sys.stderr, flush=True)
@@ -1512,14 +1509,15 @@ def main():
     # bot enters bootstrap mode (trades=0 < 150 threshold) automatically.
     # Log clearly so the Railway log makes the cause obvious.
     # EMERGENCY (2026-04-25): Skip DB_WIPE detection if Firebase degraded — don't treat quota unavailable as collection wipe
-    if not DB_DEGRADED_SAFE_MODE and _history is not None and len(_history) == 0:
+    from src.services.runtime_flags import is_db_degraded_safe_mode
+    if not is_db_degraded_safe_mode() and _history is not None and len(_history) == 0:
         bus = get_event_bus()
         msg = "⚠️  [DB_WIPE] Firebase returned 0 trades — starting in full bootstrap mode. Session gate bypassed, debounce bypassed, force-trade guard active."
         bus.emit("LOG_OUTPUT", {"message": msg}, time.time())
 
     # EMERGENCY (2026-04-25): Skip canonical/bootstrap if Firebase degraded
     # Don't overwrite learning state with empty/unavailable data; preserve existing positions
-    if not DB_DEGRADED_SAFE_MODE:
+    if not is_db_degraded_safe_mode():
         print("  [7/7b-CANONICAL] Initializing canonical state from authoritative source...", file=sys.stderr, flush=True)
         initialize_canonical_state(_history)
         print("  [7/7b-CANONICAL] Canonical state initialized ✓", file=sys.stderr, flush=True)
@@ -1617,8 +1615,32 @@ def main():
         except (ImportError, AttributeError):
             pass  # if import fails, continue normally (fail-open for monitoring)
 
-        global _last_audit, _last_metrics, _last_pre_audit
+        global _last_audit, _last_metrics, _last_pre_audit, _last_health_check
         now = time.time()
+
+        # EMERGENCY (2026-04-25): Periodic Firebase health refresh
+        # Detects if Firebase has recovered from degradation and allows trading to resume
+        # Checks only every 60 seconds to avoid quota impact
+        if (now - _last_health_check) >= 60.0:
+            _last_health_check = now
+            try:
+                from src.services.firebase_client import get_firebase_health
+                from src.services.runtime_flags import set_db_degraded_safe_mode, is_db_degraded_safe_mode
+
+                health = get_firebase_health()
+                currently_degraded = health["read_degraded"] or health["write_degraded"]
+                was_degraded = is_db_degraded_safe_mode()
+
+                if was_degraded and not currently_degraded:
+                    # Firebase has recovered — clear safe mode
+                    set_db_degraded_safe_mode(False)
+                    logging.info("[SAFE_MODE] Firebase recovered; entries enabled")
+                elif not was_degraded and currently_degraded:
+                    # Firebase has degraded — activate safe mode
+                    set_db_degraded_safe_mode(True, reason=health.get("reason"))
+            except Exception as e:
+                import logging as _log
+                _log.getLogger(__name__).debug(f"Health check error: {e}")
 
         # V10.13d: Reset per-cycle signal generation stats at start of cycle
         try:

@@ -246,6 +246,42 @@ def get_firebase_health():
         "reason": _FIREBASE_DEGRADED_REASON if is_degraded else None,
     }
 
+
+_LAST_NONCRITICAL_SKIP_LOG = 0  # Throttle write-skip logging to once per 60s
+
+
+def should_skip_noncritical_write() -> tuple[bool, str]:
+    """
+    EMERGENCY (2026-04-25): Check if non-critical writes should be skipped.
+
+    Returns (should_skip, reason_code) when:
+    - Firebase write_degraded (429 quota exhausted)
+    - Write quota >= 95%
+
+    Logs once per 60 seconds to avoid spam.
+    Use for: metrics, advice, runtime_status, dashboards, debug snapshots.
+    Do NOT use for: trade persistence (save_batch), atomic counters (increment_stats).
+    """
+    global _LAST_NONCRITICAL_SKIP_LOG
+
+    allowed, current, limit_writes = _can_write(0)  # Check without incrementing
+    writes_pct = (current / limit_writes * 100) if limit_writes > 0 else 0
+
+    should_skip = _FIREBASE_WRITE_DEGRADED or writes_pct >= 95
+
+    if should_skip:
+        now = time.time()
+        should_log = (now - _LAST_NONCRITICAL_SKIP_LOG) >= 60.0
+        if should_log:
+            reason = "write_degraded" if _FIREBASE_WRITE_DEGRADED else "quota_95pct"
+            logging.warning(
+                f"[FIREBASE_DEGRADED] write skipped: {reason} "
+                f"({current}/{limit_writes} writes, {writes_pct:.1f}%)"
+            )
+            _LAST_NONCRITICAL_SKIP_LOG = now
+
+    return should_skip, "FIREBASE_QUOTA_EXHAUSTED" if should_skip else ""
+
 # Local mirror of system/stats — updated synchronously in increment_stats().
 # save_metrics_full() uses this as the authoritative trade count so the
 # dashboard always shows the value that matches the Firestore atomic counter,
@@ -772,8 +808,14 @@ def save_metrics(data):
     main metrics/latest document that bot2 manages via save_metrics_full().
     If both processes were writing to metrics/latest (one with merge=False,
     one with merge=True), the app could see stale or partial data.
+
+    EMERGENCY (2026-04-25): Skip on Firebase degradation (non-critical write).
     """
     if db is None:
+        return
+    # Skip non-critical write if Firebase degraded
+    should_skip, _ = should_skip_noncritical_write()
+    if should_skip:
         return
     try:
         db.collection(col("metrics")).document("run_status").set(
@@ -786,8 +828,16 @@ def save_metrics(data):
 
 
 def save_last_trade(trade):
-    """Write last closed trade summary to metrics/last_trade (TradesScreen)."""
+    """Write last closed trade summary to metrics/last_trade (TradesScreen).
+
+    EMERGENCY (2026-04-25): Skip on Firebase degradation (non-critical write).
+    """
     if db is None:
+        return
+
+    # Skip non-critical write if Firebase degraded
+    should_skip, _ = should_skip_noncritical_write()
+    if should_skip:
         return
 
     def _write():
@@ -902,8 +952,14 @@ def save_metrics_full(metrics, open_positions=None, execution=None, monitor=None
     App reads: performance, health, learning, equity, system, sym_stats,
                open_positions, execution (EV/failure/sharpe/control),
                fx_usd_czk (CZK/USD fallback for app when Frankfurter API is down).
+
+    EMERGENCY (2026-04-25): Skip on Firebase degradation (non-critical write).
     """
     if db is None:
+        return
+    # Skip non-critical write if Firebase degraded
+    should_skip, _ = should_skip_noncritical_write()
+    if should_skip:
         return
     try:
         # FIX: authority = max(in-memory METRICS, synchronously-updated _local_stats).

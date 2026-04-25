@@ -1183,6 +1183,17 @@ def handle_signal(signal):
     sym     = signal["symbol"]
     regime  = signal.get("regime", "RANGING")
 
+    # EMERGENCY (2026-04-25): Entry gate — block new positions when Firebase degraded
+    # Prevents unsafe trading when authoritative state unavailable
+    try:
+        from src.services.runtime_flags import should_skip_entry
+        should_skip, reason = should_skip_entry(sym)
+        if should_skip:
+            log.debug(f"[SAFE_MODE] ENTRY_BLOCKED: {sym} ({reason})")
+            return
+    except Exception:
+        pass  # Graceful degrade if flags service unavailable
+
     # V10.13L: Fail-closed gate — no new trades if runtime fault detected
     try:
         from src.services.runtime_fault_registry import is_trading_allowed
