@@ -1635,8 +1635,19 @@ def main():
                     # Firebase has recovered — one-shot rehydrate then clear safe mode
                     from src.services.firebase_recovery import attempt_recovery_rehydrate
                     success, trades_loaded, model_loaded = attempt_recovery_rehydrate()
-                    set_db_degraded_safe_mode(False)
-                    logging.info("[SAFE_MODE] Firebase recovered; entries enabled")
+                    if success:
+                        # Recovery rehydration succeeded — clear safe mode and resume entries
+                        set_db_degraded_safe_mode(False)
+                        logging.info(
+                            "[SAFE_MODE] Recovery rehydrate OK; entries enabled "
+                            f"(trades={trades_loaded} model_state={model_loaded})"
+                        )
+                    else:
+                        # Recovery rehydration failed — keep safe mode active, retry on next interval
+                        logging.warning(
+                            "[SAFE_MODE] Recovery rehydrate failed; keeping entries blocked "
+                            "(will retry after cooldown)"
+                        )
                 elif not was_degraded and currently_degraded:
                     # Firebase has degraded — activate safe mode
                     set_db_degraded_safe_mode(True, reason=health.get("reason"))

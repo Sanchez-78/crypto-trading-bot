@@ -87,8 +87,8 @@ def attempt_recovery_rehydrate():
 
                     initialize_canonical_state(history)
                     bootstrap_from_history(history)
-                    logging.info(
-                        f"[SAFE_MODE] Rehydrate OK: trades={trades_loaded} "
+                    logging.critical(
+                        f"[SAFE_MODE] Recovery rehydrate OK: trades={trades_loaded} "
                         f"model_state={model_state_loaded}"
                     )
                     return True, trades_loaded, model_state_loaded
@@ -109,5 +109,5 @@ def attempt_recovery_rehydrate():
             return False, 0, model_state_loaded
 
     except Exception as e:
-        logging.error(f"[SAFE_MODE] Rehydrate error: {e}")
+        logging.critical(f"[SAFE_MODE] Recovery rehydrate failed: {e}")
         return False, 0, False
