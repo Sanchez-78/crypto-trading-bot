@@ -719,11 +719,14 @@ def print_status():
     print(g("=" * W, C.CYN))
 
     # ── Live prices ───────────────────────────────────────────────────────────
-    print(section("", "ZIVE CENY  (Binance · kazde 1 s)"))
+    _total_label = g(f"celkem {t}", C.WHT + C.BLD) if t > 0 else g("0 obchodu", C.GRY)
+    print(section("", f"ZIVE CENY  (Binance · kazde 1 s)   {_total_label}"))
     for sym in get_active_symbols():
-        short = sym.replace("USDT", "")
+        short   = sym.replace("USDT", "")
+        sym_cnt = canonical["per_symbol"].get(sym, {}).get("count", 0)
+        cnt_tag = g(f"  {sym_cnt} obch", C.GRY) if sym_cnt > 0 else ""
         if sym not in lp:
-            print(f"    {g(short, C.WHT):<4}  {g('cekam...', C.GRY)}")
+            print(f"    {g(short, C.WHT):<4}  {g('cekam...', C.GRY)}{cnt_tag}")
             continue
         curr, prev = lp[sym]
         arr  = price_arrow(curr, prev)
@@ -733,7 +736,7 @@ def print_status():
         print(f"    {g(short, C.WHT + C.BLD):<4}  "
               f"{g(f'${curr:>14,.4f}', C.WHT)}   "
               f"{arr}  {g(f'{pct:+.3f}%', pcol)}"
-              f"{open_tag}")
+              f"{open_tag}{cnt_tag}")
 
     # ── Open positions ────────────────────────────────────────────────────────
     if ops:
