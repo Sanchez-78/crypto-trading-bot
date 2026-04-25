@@ -192,6 +192,9 @@ _last_audit      = 0
 _last_metrics    = 0
 _last_pre_audit  = 0
 
+# EMERGENCY (2026-04-25): Firebase safe degradation mode for quota exhaustion/unavailable
+DB_DEGRADED_SAFE_MODE = False  # Set when Firebase 429/unavailable; blocks new positions
+
 # ════════════════════════════════════════════════════════════════════════════════
 # V10.13a: Per-symbol block reason tracking for observability
 # ════════════════════════════════════════════════════════════════════════════════
@@ -1447,9 +1450,23 @@ def main():
     # HOTFIX (2026-04-25): Refresh quota window before first reads
     # Prevents stale quota counters from blocking hydration after reset
     print("  [4.1/7] Refreshing Firebase quota window...", file=sys.stderr, flush=True)
-    from src.services.firebase_client import refresh_quota_window_on_startup
+    from src.services.firebase_client import refresh_quota_window_on_startup, get_firebase_health
     refresh_quota_window_on_startup()
     print("  [4.1/7] Quota window refreshed ✓", file=sys.stderr, flush=True)
+
+    # EMERGENCY (2026-04-25): Check Firebase health and activate safe mode if degraded
+    # Prevents treating unavailable data as empty DB, which would trigger unsafe cold-start
+    print("  [4.2/7] Checking Firebase health status...", file=sys.stderr, flush=True)
+    global DB_DEGRADED_SAFE_MODE
+    health = get_firebase_health()
+    DB_DEGRADED_SAFE_MODE = health["read_degraded"] or health["write_degraded"]
+    if DB_DEGRADED_SAFE_MODE:
+        import logging
+        reason = health.get("reason", "unknown")
+        logging.critical(f"[SAFE_MODE] Firebase degraded ({reason}); new position entries disabled, managing existing positions only")
+        print(f"  [4.2/7] ⚠️  FIREBASE DEGRADED ({reason}) — safe mode active", file=sys.stderr, flush=True)
+    else:
+        print("  [4.2/7] Firebase health OK ✓", file=sys.stderr, flush=True)
 
     # V10.13u: Optional runtime status Firestore write (observability)
     if try_write_runtime_status_to_firestore(runtime_marker):
@@ -1494,18 +1511,25 @@ def main():
     # Could be a genuine first run or a collection wipe.  Either way, the
     # bot enters bootstrap mode (trades=0 < 150 threshold) automatically.
     # Log clearly so the Railway log makes the cause obvious.
-    if _history is not None and len(_history) == 0:
+    # EMERGENCY (2026-04-25): Skip DB_WIPE detection if Firebase degraded — don't treat quota unavailable as collection wipe
+    if not DB_DEGRADED_SAFE_MODE and _history is not None and len(_history) == 0:
         bus = get_event_bus()
         msg = "⚠️  [DB_WIPE] Firebase returned 0 trades — starting in full bootstrap mode. Session gate bypassed, debounce bypassed, force-trade guard active."
         bus.emit("LOG_OUTPUT", {"message": msg}, time.time())
 
-    print("  [7/7b-CANONICAL] Initializing canonical state from authoritative source...", file=sys.stderr, flush=True)
-    initialize_canonical_state(_history)
-    print("  [7/7b-CANONICAL] Canonical state initialized ✓", file=sys.stderr, flush=True)
+    # EMERGENCY (2026-04-25): Skip canonical/bootstrap if Firebase degraded
+    # Don't overwrite learning state with empty/unavailable data; preserve existing positions
+    if not DB_DEGRADED_SAFE_MODE:
+        print("  [7/7b-CANONICAL] Initializing canonical state from authoritative source...", file=sys.stderr, flush=True)
+        initialize_canonical_state(_history)
+        print("  [7/7b-CANONICAL] Canonical state initialized ✓", file=sys.stderr, flush=True)
 
-    print("  [7/7c] Bootstrapping from history...", file=sys.stderr, flush=True)
-    bootstrap_from_history(_history)
-    print("  [7/7c] Bootstrap complete ✓", file=sys.stderr, flush=True)
+        print("  [7/7c] Bootstrapping from history...", file=sys.stderr, flush=True)
+        bootstrap_from_history(_history)
+        print("  [7/7c] Bootstrap complete ✓", file=sys.stderr, flush=True)
+    else:
+        print("  [7/7b-CANONICAL] Skipping canonical init — Firebase degraded", file=sys.stderr, flush=True)
+        print("  [7/7c] Skipping bootstrap — Firebase degraded", file=sys.stderr, flush=True)
 
     print("  [7/7d] Printing canonical state audit...", file=sys.stderr, flush=True)
     try:

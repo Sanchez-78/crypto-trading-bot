@@ -58,6 +58,13 @@ _QUOTA_WRITES = 0   # Current day write count
 _QUOTA_MAX_READS = 50000
 _QUOTA_MAX_WRITES = 20000
 
+# EMERGENCY (2026-04-25): Firebase degradation tracking — safe mode on 429/unavailable
+_FIREBASE_READ_DEGRADED = False
+_FIREBASE_WRITE_DEGRADED = False
+_FIREBASE_DEGRADED_UNTIL = 0  # timestamp when degradation expires
+_FIREBASE_LAST_ERROR = None  # Last error message (429, timeout, etc)
+_FIREBASE_DEGRADED_REASON = None  # "quota_429" | "unavailable" | None
+
 # V10.13x: Reconciliation logging (periodic, every 300s = 5min to conserve quota)
 _LAST_RECON_TS = 0
 _RECON_INTERVAL = 300  # seconds between reconciliation checks (quota-safe: ~288 reads/day)
@@ -201,6 +208,43 @@ def _mark_quota_exhausted(error_msg: str):
     _QUOTA_READS = _QUOTA_MAX_READS
     _QUOTA_WRITES = _QUOTA_MAX_WRITES
     logging.warning(f"⚠️  Firebase 429 error: {error_msg} — marked quota exhausted until midnight Pacific reset (09:00 GMT+2)")
+    # Also set degradation flags
+    _set_firebase_degraded(is_read=True, is_write=True, reason="quota_429")
+
+def _set_firebase_degraded(is_read=False, is_write=False, reason=None):
+    """
+    EMERGENCY (2026-04-25): Mark Firebase as degraded due to 429/unavailable.
+    Sets safe mode flags to prevent treating unavailable data as empty DB.
+    """
+    global _FIREBASE_READ_DEGRADED, _FIREBASE_WRITE_DEGRADED, _FIREBASE_DEGRADED_UNTIL, _FIREBASE_LAST_ERROR, _FIREBASE_DEGRADED_REASON
+    import logging
+    now = time.time()
+    # Set degradation until midnight Pacific reset (allow 60s recovery window before next reset)
+    midnight_offset = 24 * 3600
+    _FIREBASE_DEGRADED_UNTIL = now + midnight_offset
+    if is_read:
+        _FIREBASE_READ_DEGRADED = True
+    if is_write:
+        _FIREBASE_WRITE_DEGRADED = True
+    _FIREBASE_DEGRADED_REASON = reason
+    _FIREBASE_LAST_ERROR = reason
+    logging.critical(f"[FIREBASE_DEGRADED] {reason} — safe mode active until quota reset")
+
+def get_firebase_health():
+    """
+    EMERGENCY (2026-04-25): Return Firebase health status.
+    Allows callers to detect degradation and avoid treating unavailable data as empty DB.
+    """
+    now = time.time()
+    is_degraded = (now < _FIREBASE_DEGRADED_UNTIL and (_FIREBASE_READ_DEGRADED or _FIREBASE_WRITE_DEGRADED))
+    return {
+        "available": not is_degraded,
+        "read_degraded": _FIREBASE_READ_DEGRADED and (now < _FIREBASE_DEGRADED_UNTIL),
+        "write_degraded": _FIREBASE_WRITE_DEGRADED and (now < _FIREBASE_DEGRADED_UNTIL),
+        "last_error": _FIREBASE_LAST_ERROR,
+        "degraded_until": _FIREBASE_DEGRADED_UNTIL if is_degraded else None,
+        "reason": _FIREBASE_DEGRADED_REASON if is_degraded else None,
+    }
 
 # Local mirror of system/stats — updated synchronously in increment_stats().
 # save_metrics_full() uses this as the authoritative trade count so the
@@ -378,8 +422,10 @@ def load_history(limit=HISTORY_LIMIT):
     estimated_reads = max(1, min(limit, _HISTORY_CACHE.get("limit", 0) or HISTORY_LIMIT))
     allowed, current, limit_quota = _can_read(estimated_reads)
     if not allowed:
-        logging.debug(f"Skipping history fetch: quota limit reached ({current}/{limit_quota})")
-        return list(_HISTORY_CACHE["data"][:limit])  # Return stale cache
+        cache_items = len(_HISTORY_CACHE.get("data", []))
+        # EMERGENCY (2026-04-25): Log clearly when returning cache due to quota degradation, not true empty DB
+        logging.warning(f"[FIREBASE_DEGRADED] load_history skipped: quota exhausted ({current}/{limit_quota}); returning cache ({cache_items} items)")
+        return list(_HISTORY_CACHE["data"][:limit])  # Return stale cache (may be empty on startup)
 
     try:
         docs = list(
