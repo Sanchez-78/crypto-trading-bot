@@ -1444,6 +1444,13 @@ def main():
     init_firebase()
     print("  [4/7] Firebase initialized ✓", file=sys.stderr, flush=True)
 
+    # HOTFIX (2026-04-25): Refresh quota window before first reads
+    # Prevents stale quota counters from blocking hydration after reset
+    print("  [4.1/7] Refreshing Firebase quota window...", file=sys.stderr, flush=True)
+    from src.services.firebase_client import refresh_quota_window_on_startup
+    refresh_quota_window_on_startup()
+    print("  [4.1/7] Quota window refreshed ✓", file=sys.stderr, flush=True)
+
     # V10.13u: Optional runtime status Firestore write (observability)
     if try_write_runtime_status_to_firestore(runtime_marker):
         print("  [4.5/7] Runtime status written to Firestore ✓", file=sys.stderr, flush=True)

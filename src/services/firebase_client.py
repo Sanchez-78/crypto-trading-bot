@@ -96,6 +96,22 @@ def _reset_quota_if_new_day():
         import logging
         logging.info("✅ Firebase quota RESET at midnight Pacific (09:00 GMT+2 / 07:00 UTC) — 50k reads, 20k writes available")
 
+def refresh_quota_window_on_startup():
+    """
+    HOTFIX (2026-04-25): Refresh local quota window at startup.
+
+    Prevents stale in-process quota counters from blocking hydration reads
+    after Firebase daily reset (09:00 GMT+2 / 07:00 UTC).
+
+    Call during bot startup BEFORE first Firebase reads. This ensures that
+    if the bot restarts before the daily reset, the local quota window is
+    refreshed to match the current calendar day.
+
+    Side effects: None. Only resets local counters if new day detected.
+    Does not ignore real 429 errors or increase actual Firebase quota.
+    """
+    _reset_quota_if_new_day()
+
 def _get_quota_severity(reads_pct: float, writes_pct: float) -> str:
     """Map quota % to severity level."""
     max_pct = max(reads_pct, writes_pct)
