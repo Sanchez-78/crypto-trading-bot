@@ -61,15 +61,33 @@ BOT2_METRICS_TTL = 300   # bot2 flushes metrics every 5 minutes
 PUSH_TOKEN_TTL   = 3600  # mobile push token is slow-moving
 
 def _reset_quota_if_new_day():
-    """Reset counters at midnight UTC each day."""
+    """Reset counters at midnight Pacific Time each day (= 07:00 UTC / 09:00 GMT+2).
+
+    Firebase quota resets at: Midnight PT = 09:00 GMT+2 = 07:00 UTC
+    """
     global _QUOTA_WINDOW_START, _QUOTA_READS, _QUOTA_WRITES
-    now = time.time()
-    if now - _QUOTA_WINDOW_START > 86400:  # 24 hours elapsed
-        _QUOTA_WINDOW_START = now
+    from datetime import datetime, timezone, timedelta
+
+    # Get current time in Pacific timezone (UTC-7 for PDT, UTC-8 for PST)
+    # Using UTC-7 (PDT) as the standard
+    pacific_tz = timezone(timedelta(hours=-7))
+    now_utc = datetime.now(timezone.utc)
+    now_pacific = now_utc.astimezone(pacific_tz)
+
+    # Get midnight Pacific today
+    midnight_pacific = now_pacific.replace(hour=0, minute=0, second=0, microsecond=0)
+    midnight_utc = midnight_pacific.astimezone(timezone.utc)
+
+    # Check if we've crossed midnight Pacific since last reset
+    last_reset_utc = datetime.fromtimestamp(_QUOTA_WINDOW_START, tz=timezone.utc)
+
+    if now_utc >= midnight_utc and last_reset_utc < midnight_utc:
+        # We've crossed midnight Pacific since last reset
+        _QUOTA_WINDOW_START = midnight_utc.timestamp()
         _QUOTA_READS = 0
         _QUOTA_WRITES = 0
         import logging
-        logging.info("✅ Firebase quota window reset at midnight UTC (50k reads, 20k writes available)")
+        logging.info("✅ Firebase quota RESET at midnight Pacific (09:00 GMT+2 / 07:00 UTC) — 50k reads, 20k writes available")
 
 def _can_read(count=1):
     """Check if read quota available. Returns (allowed, current_usage, limit)."""
@@ -138,7 +156,7 @@ def _mark_quota_exhausted(error_msg: str):
     # Set quotas to their limits to immediately prevent further operations
     _QUOTA_READS = _QUOTA_MAX_READS
     _QUOTA_WRITES = _QUOTA_MAX_WRITES
-    logging.warning(f"⚠️  Firebase 429 error: {error_msg} — marked quota exhausted until midnight UTC reset")
+    logging.warning(f"⚠️  Firebase 429 error: {error_msg} — marked quota exhausted until midnight Pacific reset (09:00 GMT+2)")
 
 # Local mirror of system/stats — updated synchronously in increment_stats().
 # save_metrics_full() uses this as the authoritative trade count so the
