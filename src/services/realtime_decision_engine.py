@@ -1942,11 +1942,38 @@ def evaluate_signal(signal):
     except Exception as _bs_err:
         log.debug("bootstrap state detection error: %s", _bs_err)
 
-    # V10.13s.4: Forced-explore quality gates (for bootstrap pairs)
+    # PATCH 5: Idle escalation context for forced-explore gates
+    _idle_seconds = safe_idle_seconds(_last_trade_ts[0])
+    _idle_mode = "NORMAL"
+    _idle_policy = None
+    try:
+        from src.services.idle_escalation import (
+            update_escalation_state,
+            get_admission_policy,
+        )
+        _esc_state = update_escalation_state(_idle_seconds)
+        _idle_mode = _esc_state["mode"]
+        _idle_policy = get_admission_policy(_idle_mode, "forced")
+        log.debug(f"[IDLE_ESCALATION] idle={_idle_seconds:.0f}s → mode={_idle_mode}")
+    except Exception as _esc_err:
+        log.debug(f"[IDLE_ESCALATION] Init error: {_esc_err}")
+
+    # V10.13s.4/PATCH 5: Forced-explore quality gates (context-aware)
     if _bootstrap_pair:
         try:
             from src.services.forced_explore_gates import is_forced_explore_allowed, format_forced_explore_result
-            _fe_allowed, _fe_results = is_forced_explore_allowed(sym, regime, signal, list(ev_history))
+            # PATCH 5: Pass context: market spread, branch, idle_mode
+            _market_spread = signal.get("spread_bps", None)
+            _fe_allowed, _fe_results = is_forced_explore_allowed(
+                sym,
+                regime,
+                signal,
+                ev_history=list(ev_history),
+                market_spread_bps=_market_spread,
+                branch="forced",
+                idle_mode=_idle_mode,
+                is_rate_limited=False
+            )
             if not _fe_allowed:
                 track_blocked(reason="FORCED_EXPLORE_GATE")
                 _reason_str = format_forced_explore_result(_fe_allowed, _fe_results)
@@ -1955,15 +1982,28 @@ def evaluate_signal(signal):
         except Exception as _fe_err:
             log.debug(f"[FORCED_EXPLORE_GATE] Error: {_fe_err}")
 
+    # PATCH 5: Idle-aware threshold relaxation (in addition to bootstrap relaxation)
     # V10.13r/V10.13u: Apply bootstrap-aware threshold relaxation
     if _bootstrap_global or _bootstrap_pair:
         _score_threshold *= 0.96  # Reduce by 4% during bootstrap
         _score_threshold_source = "bootstrap_relaxed"
 
+        # Additional relaxation based on idle escalation mode
+        if _idle_mode == "UNBLOCK_SOFT":
+            _score_threshold *= 0.95  # Additional 5% relaxation
+            _score_threshold_source = "bootstrap + unblock_soft"
+        elif _idle_mode == "UNBLOCK_MEDIUM":
+            _score_threshold *= 0.90  # Additional 10% relaxation
+            _score_threshold_source = "bootstrap + unblock_medium"
+        elif _idle_mode == "UNBLOCK_HARD":
+            _score_threshold *= 0.85  # Additional 15% relaxation
+            _score_threshold_source = "bootstrap + unblock_hard"
+
         # Only print if actually in bootstrap (not misleading when mature)
         if _bootstrap_reasons:
             reason_str = " | ".join(_bootstrap_reasons)
-            print(f"    [V10.13u] SCORE_THRESHOLD: bootstrap active ({reason_str}) → relaxed from {_score_threshold_original:.4f} to {_score_threshold:.4f}")
+            print(f"    [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active ({reason_str}) "
+                  f"+ idle_mode={_idle_mode} → relaxed from {_score_threshold_original:.4f} to {_score_threshold:.4f}")
 
     # V10.13q: Apply pair-block score uplift (harder threshold for weak pairs)
     if _pair_score_uplift > 0:

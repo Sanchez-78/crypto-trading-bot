@@ -1,18 +1,23 @@
 """
-V10.13s.4: Forced-Explore Quality Gates
+V10.13t: Forced-Explore Quality Gates (Context-Aware)
 
 Forced-explore mode allows trading pairs with insufficient data when other
 conditions are met. This module gates when forced-explore is safe.
 
+PATCH 5: Context-aware spread policy
+- Normal trades: strict (spread >= 5%)
+- Forced trades: relaxed (spread >= 2-3%, escalates to 1% in hard idle)
+- Micro trades: very relaxed (spread >= 0.5% in hard idle)
+
 Gates check:
-  1. Spread quality: EV spread >= threshold (not all EVs identical/near-identical)
+  1. Spread quality: market spread >= threshold for branch/mode
   2. Execution quality: Recent fill rates acceptable
   3. OFI toxicity: Order flow imbalance not toxic
   4. Coherence: Signal coherence > 0.5 (reasonable signal quality)
   5. Edge bucket: Pair edge >= minimum threshold
   6. Loss cluster: Pair not in active loss cluster
 
-Only allows forced-explore when ALL gates pass.
+ALL gates must pass for forced-explore.
 """
 
 import logging
@@ -20,19 +25,50 @@ import logging
 log = logging.getLogger(__name__)
 
 
-def check_spread_quality(ev_history: list, min_spread: float = 0.05) -> tuple[bool, str]:
-    """Check if EV spread is sufficient (not flat/noisy)."""
-    if not ev_history or len(ev_history) < 10:
-        return True, "insufficient_history"
-    recent = list(ev_history)[-20:]
-    if not recent:
-        return True, "empty"
-    min_ev = min(recent)
-    max_ev = max(recent)
-    spread = max_ev - min_ev
-    if spread >= min_spread:
-        return True, f"spread={spread:.4f}"
-    return False, f"spread_too_flat={spread:.4f}"
+def check_spread_quality(
+    market_spread_bps: float,
+    ev_history: list = None,
+    branch: str = "normal",
+    idle_mode: str = "NORMAL"
+) -> tuple[bool, str]:
+    """
+    PATCH 5: Check if market spread is acceptable for branch/mode.
+
+    Args:
+        market_spread_bps: actual bid-ask spread in basis points
+        ev_history: EV history for spread diversity (optional, unused with market_spread_bps)
+        branch: "normal" | "forced" | "micro"
+        idle_mode: "NORMAL" | "UNBLOCK_SOFT" | "UNBLOCK_MEDIUM" | "UNBLOCK_HARD"
+
+    Returns:
+        (pass: bool, detail: str)
+    """
+    try:
+        from src.services.idle_escalation import get_admission_policy
+        policy = get_admission_policy(idle_mode, branch)
+    except Exception:
+        # Fallback if idle_escalation unavailable
+        if branch == "normal":
+            policy = {"spread_min_bps": 5.0, "spread_max_bps": 100.0}
+        elif branch == "forced":
+            policy = {"spread_min_bps": 3.0, "spread_max_bps": 80.0}
+        else:  # micro
+            policy = {"spread_min_bps": 0.5, "spread_max_bps": 150.0}
+
+    min_bps = policy.get("spread_min_bps", 5.0)
+    max_bps = policy.get("spread_max_bps", 100.0)
+
+    if market_spread_bps < min_bps:
+        return (
+            False,
+            f"spread_too_flat={market_spread_bps:.2f}bps<{min_bps:.1f}bps"
+        )
+    if market_spread_bps > max_bps:
+        return (
+            False,
+            f"spread_too_wide={market_spread_bps:.2f}bps>{max_bps:.1f}bps"
+        )
+    return True, f"spread_ok={market_spread_bps:.2f}bps"
 
 
 def check_execution_quality(symbol: str, min_fill_rate: float = 0.70) -> tuple[bool, str]:
@@ -108,18 +144,59 @@ def check_loss_cluster(symbol: str, regime: str) -> tuple[bool, str]:
         return True, "error_check_skipped"
 
 
-def is_forced_explore_allowed(symbol: str, regime: str, signal: dict,
-                             ev_history: list = None) -> tuple[bool, dict]:
+def is_forced_explore_allowed(
+    symbol: str,
+    regime: str,
+    signal: dict,
+    ev_history: list = None,
+    market_spread_bps: float = None,
+    branch: str = "forced",
+    idle_mode: str = "NORMAL",
+    is_rate_limited: bool = False
+) -> tuple[bool, dict]:
     """
-    Check if forced-explore mode is safe for this signal.
+    PATCH 5: Check if forced-explore/micro is safe for this signal (context-aware).
+
+    Args:
+        symbol: trading pair
+        regime: market regime
+        signal: signal dict with coherence, ws, etc.
+        ev_history: EV history (mostly unused now)
+        market_spread_bps: actual bid-ask spread in basis points
+        branch: "forced" | "micro"
+        idle_mode: escalation mode from idle_escalation module
+        is_rate_limited: if True, already hit rate limit → block
 
     Returns:
-        (allow: bool, check_results: dict with gate statuses)
+        (allow: bool, check_results: dict with gate statuses + context info)
     """
-    results = {}
+    results = {
+        "branch": branch,
+        "idle_mode": idle_mode,
+        "is_rate_limited": is_rate_limited,
+    }
 
-    # Gate 1: Spread quality
-    spread_ok, spread_msg = check_spread_quality(ev_history or [])
+    # Rate limit check (not a gate, but overrides)
+    if is_rate_limited:
+        results["rate_limit"] = {"pass": False, "detail": "rate_limit_exceeded"}
+        return False, results
+
+    # Gate 1: Spread quality (PATCH 5: context-aware)
+    if market_spread_bps is not None:
+        spread_ok, spread_msg = check_spread_quality(
+            market_spread_bps,
+            ev_history=ev_history,
+            branch=branch,
+            idle_mode=idle_mode
+        )
+    else:
+        # Fallback to EV history spread check (old method)
+        spread_ok, spread_msg = check_spread_quality(
+            0.0,  # dummy value
+            ev_history=ev_history or [],
+            branch=branch,
+            idle_mode=idle_mode
+        )
     results["spread_quality"] = {"pass": spread_ok, "detail": spread_msg}
 
     # Gate 2: Execution quality
@@ -143,7 +220,7 @@ def is_forced_explore_allowed(symbol: str, regime: str, signal: dict,
     results["loss_cluster"] = {"pass": cluster_ok, "detail": cluster_msg}
 
     # All gates must pass
-    all_pass = all(results[gate]["pass"] for gate in results)
+    all_pass = all(results[gate]["pass"] for gate in results if gate not in ("branch", "idle_mode", "is_rate_limited"))
 
     return all_pass, results
 

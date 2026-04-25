@@ -231,6 +231,7 @@ class AuditResult:
 
     # Provenance
     source: str = "synthetic"   # "synthetic" | "replay"
+    branch: str = "normal"      # PATCH 6: "normal" | "forced" | "micro"
 
     @property
     def passed(self) -> bool:
@@ -544,7 +545,8 @@ def _verify_warm_start() -> None:
 # ── Summary metric builder ─────────────────────────────────────────────────────
 
 def _build_summary(results: list[AuditResult]) -> dict[str, Any]:
-    """Compute canonical summary metrics from a completed audit run."""
+    """PATCH 6: Compute canonical summary metrics split by branch (normal/forced/micro)."""
+    # Overall summary
     passed  = [r for r in results if r.passed]
     total   = len(results)
     blocked = total - len(passed)
@@ -554,7 +556,7 @@ def _build_summary(results: list[AuditResult]) -> dict[str, Any]:
     eqs   = [r.exec_quality for r in passed]
     mono_v = sum(len(r.monotone_violations) for r in results)
 
-    return {
+    overall_summary = {
         "total_trades":        total,
         "blocked_trades":      blocked,
         "blocked_ratio":       round(blocked / max(total, 1), 4),
@@ -566,6 +568,36 @@ def _build_summary(results: list[AuditResult]) -> dict[str, Any]:
         "max_risk_budget":     round(max(rbs, default=0.0), 4),
         "exec_quality_mean":   round(sum(eqs) / max(len(eqs), 1), 4),
     }
+
+    # PATCH 6: Branch-split summary (normal/forced/recovery)
+    normal_results = [r for r in results if r.branch in (None, "normal", "")]
+    forced_results = [r for r in results if r.branch == "forced"]
+    micro_results = [r for r in results if r.branch == "micro"]
+
+    def make_branch_summary(branch_results, branch_name):
+        """Build summary for a specific branch."""
+        if not branch_results:
+            return {f"{branch_name}_total": 0, f"{branch_name}_blocked": 0, f"{branch_name}_blocked_ratio": 0.0}
+        branch_passed = [r for r in branch_results if r.passed]
+        branch_total = len(branch_results)
+        branch_blocked = branch_total - len(branch_passed)
+        return {
+            f"{branch_name}_total": branch_total,
+            f"{branch_name}_passed": len(branch_passed),
+            f"{branch_name}_blocked": branch_blocked,
+            f"{branch_name}_blocked_ratio": round(branch_blocked / max(branch_total, 1), 4),
+        }
+
+    normal_summary = make_branch_summary(normal_results, "normal")
+    forced_summary = make_branch_summary(forced_results, "forced")
+    micro_summary = make_branch_summary(micro_results, "micro")
+
+    # Merge all summaries
+    overall_summary.update(normal_summary)
+    overall_summary.update(forced_summary)
+    overall_summary.update(micro_summary)
+
+    return overall_summary
 
 
 # ── JSON serialisation helper ──────────────────────────────────────────────────
