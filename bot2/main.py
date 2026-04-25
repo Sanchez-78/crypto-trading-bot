@@ -1,4 +1,4 @@
-import threading, time
+import os, threading, time
 
 # ────────────────────────────────────────────────────────────────────────────
 # V10.12i: Safe idle computation helper
