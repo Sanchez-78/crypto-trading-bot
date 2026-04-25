@@ -993,6 +993,13 @@ def run_audit(
     print(f"PRE-LIVE AUDIT  (V10.12c)  n={n_trades}  seed={seed}  mode={mode}")
     print(f"{'=' * 68}")
 
+    # V10.13u: Log runtime version for audit traceability
+    try:
+        from src.services.version_info import format_runtime_marker
+        print(f"{format_runtime_marker()}\n")
+    except Exception:
+        pass  # Fail silently if version_info unavailable
+
     # ── Signal acquisition ────────────────────────────────────────────────────
     signals: list[dict]
     if replay:

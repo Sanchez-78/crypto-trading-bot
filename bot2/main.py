@@ -1351,11 +1351,16 @@ def main():
     import sys
     from src.core.version import get_version_string
     from src.services.learning_instrumentation import format_lm_counters
+    from src.services.version_info import get_runtime_marker, format_runtime_marker, try_write_runtime_status_to_firestore
 
     version_str = get_version_string()
     print("\n" + "="*80, file=sys.stderr, flush=True)
     print(f"🚀 MAIN() STARTING — {version_str}", file=sys.stderr, flush=True)
     print("="*80, file=sys.stderr, flush=True)
+
+    # V10.13u: Log runtime version marker for deployment verification
+    runtime_marker = get_runtime_marker()
+    print(f"\n{format_runtime_marker(runtime_marker)}\n", file=sys.stderr, flush=True)
     
     # V10.13s Phase 2: Print learning pipeline instrumentation counters
     try:
@@ -1435,6 +1440,12 @@ def main():
     print("  [4/7] Initializing Firebase...", file=sys.stderr, flush=True)
     init_firebase()
     print("  [4/7] Firebase initialized ✓", file=sys.stderr, flush=True)
+
+    # V10.13u: Optional runtime status Firestore write (observability)
+    if try_write_runtime_status_to_firestore(runtime_marker):
+        print("  [4.5/7] Runtime status written to Firestore ✓", file=sys.stderr, flush=True)
+    else:
+        print("  [4.5/7] Runtime status Firestore write skipped (quota or unavailable)", file=sys.stderr, flush=True)
 
     print("  [5/7] Running daily budget report...", file=sys.stderr, flush=True)
     daily_budget_report()
