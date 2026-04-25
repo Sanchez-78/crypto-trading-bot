@@ -737,19 +737,18 @@ def print_status():
 
     # ── Trade count by symbol ─────────────────────────────────────────────────
     per_sym_c = canonical.get("per_symbol", {})
-    if per_sym_c and t > 0:
+    if t > 0:
         print(section("", "POCET OBCHODU"))
         print(f"    {g('Mena', C.GRY):<5}  {g('Pocet', C.GRY):>6}")
         print(f"    {g('-' * 25, C.GRY)}")
-        for sym in sorted(get_active_symbols()):
+        for sym in sorted(per_sym_c.keys()):
             short = sym.replace("USDT", "")
-            cs = per_sym_c.get(sym)
-            if cs and cs["count"] > 0:
-                cnt = cs["count"]
+            cs = per_sym_c[sym]
+            cnt = cs.get("count", 0)
+            if cnt > 0:
                 print(f"    {g(short, C.WHT + C.BLD):<5}  {g(str(cnt), C.WHT):>6}")
-        if t > 0:
-            print(f"    {g('-' * 25, C.GRY)}")
-            print(f"    {g('CELKEM', C.WHT + C.BLD):<5}  {g(str(t), C.WHT + C.BLD):>6}")
+        print(f"    {g('-' * 25, C.GRY)}")
+        print(f"    {g('CELKEM', C.WHT + C.BLD):<5}  {g(str(t), C.WHT + C.BLD):>6}")
 
     # ── Open positions ────────────────────────────────────────────────────────
     if ops:
