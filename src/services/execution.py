@@ -650,19 +650,26 @@ def final_size(sym, reg, base, positions, ob=None,
 
 def bootstrap_mode():
     """
-    Three-phase learning gate driven by total closed trades safely persisted.
+    V10.13s.1: Three-phase learning gate via canonical state.
     COLD  (<50):  no gates — collect data unconditionally.
     WARM  (<100): soft constraints — shape without blocking.
     LIVE  (≥100): full system active.
+
+    Uses canonical_state.get_authoritative_trade_count() for single source of truth.
     """
-    n = len(closed_trades)
     try:
-        import sys
-        if "src.services.learning_event" in sys.modules:
-            n = max(n, sys.modules["src.services.learning_event"].METRICS.get("trades", 0))
+        from src.services.canonical_state import get_authoritative_trade_count
+        n = get_authoritative_trade_count()
     except Exception:
-        pass
-        
+        # Fallback if canonical_state unavailable
+        n = len(closed_trades)
+        try:
+            import sys
+            if "src.services.learning_event" in sys.modules:
+                n = max(n, sys.modules["src.services.learning_event"].METRICS.get("trades", 0))
+        except Exception:
+            pass
+
     if n < 50:
         return "COLD"
     if n < 100:
@@ -672,16 +679,19 @@ def bootstrap_mode():
 
 def is_bootstrap():
     """
-    True until 100 trades have been completed (loaded from Firebase or live).
-    Uses METRICS["trades"] so the count survives restarts — closed_trades is
-    in-memory and resets to [] on every boot, causing is_bootstrap to always
-    return True even after 100+ historical trades were loaded.
+    V10.13s.1: True until 100 trades via canonical state.
+    Uses canonical_state for unified source of truth.
     """
     try:
-        from src.services.learning_event import METRICS
-        return METRICS.get("trades", 0) < 100
+        from src.services.canonical_state import get_authoritative_trade_count
+        return get_authoritative_trade_count() < 100
     except Exception:
-        return len(closed_trades) < 100
+        # Fallback to old logic if canonical_state unavailable
+        try:
+            from src.services.learning_event import METRICS
+            return METRICS.get("trades", 0) < 100
+        except Exception:
+            return len(closed_trades) < 100
 
 
 def entry_filter(ev):
