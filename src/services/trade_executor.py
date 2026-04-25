@@ -1186,10 +1186,17 @@ def handle_signal(signal):
     # EMERGENCY (2026-04-25): Entry gate — block new positions when Firebase degraded
     # Prevents unsafe trading when authoritative state unavailable
     try:
-        from src.services.runtime_flags import should_skip_entry
+        from src.services.runtime_flags import (
+            should_skip_entry,
+            get_db_degraded_reason,
+            log_suppressed_decision,
+        )
         should_skip, reason = should_skip_entry(sym)
         if should_skip:
             log.debug(f"[SAFE_MODE] ENTRY_BLOCKED: {sym} ({reason})")
+            # Log decision suppression (throttled to once per 60s)
+            reason_str = get_db_degraded_reason() or "unknown"
+            log_suppressed_decision(f"TAKE_BLOCKED_SAFE_MODE reason={reason_str}")
             return
     except Exception:
         pass  # Graceful degrade if flags service unavailable

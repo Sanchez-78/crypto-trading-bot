@@ -15,6 +15,8 @@ import time
 _DB_DEGRADED_SAFE_MODE = False
 _DB_DEGRADED_REASON = None
 _DB_DEGRADED_LAST_SKIP_LOG = 0  # Timestamp of last entry-block log (throttle to 60s)
+_LAST_FORCED_EXPLORE_LOG = 0  # Throttle forced explore suppression log
+_LAST_DECISION_BLOCK_LOG = 0  # Throttle decision block log
 
 
 def set_db_degraded_safe_mode(value: bool, reason: str = None):
@@ -68,3 +70,56 @@ def should_skip_entry(symbol: str) -> tuple[bool, str]:
         _DB_DEGRADED_LAST_SKIP_LOG = now
 
     return True, "FIREBASE_DEGRADED_SAFE_MODE"
+
+
+def log_suppressed_forced_explore():
+    """Log forced explore suppression (throttled to once per 60s)."""
+    global _LAST_FORCED_EXPLORE_LOG
+
+    if not _DB_DEGRADED_SAFE_MODE:
+        return
+
+    now = time.time()
+    should_log = (now - _LAST_FORCED_EXPLORE_LOG) >= 60.0
+
+    if should_log:
+        logging.warning(
+            f"[SAFE_MODE] forced explore suppressed reason={_DB_DEGRADED_REASON}"
+        )
+        _LAST_FORCED_EXPLORE_LOG = now
+
+
+def log_suppressed_decision(decision_code: str):
+    """Log suppressed trading decision (throttled to once per 60s)."""
+    global _LAST_DECISION_BLOCK_LOG
+
+    if not _DB_DEGRADED_SAFE_MODE:
+        return
+
+    now = time.time()
+    should_log = (now - _LAST_DECISION_BLOCK_LOG) >= 60.0
+
+    if should_log:
+        logging.warning(
+            f"[SAFE_MODE] decision={decision_code} reason={_DB_DEGRADED_REASON}"
+        )
+        _LAST_DECISION_BLOCK_LOG = now
+
+
+def get_dashboard_status() -> dict:
+    """
+    Get bot status for dashboard display.
+
+    Returns dict with:
+    - state: "SAFE_MODE_FIREBASE_DEGRADED" or operational state
+    - entries: "blocked" if safe mode, else normal
+    - reason: degradation reason if safe mode
+    """
+    if _DB_DEGRADED_SAFE_MODE:
+        return {
+            "state": "SAFE_MODE_FIREBASE_DEGRADED",
+            "entries": "blocked",
+            "reason": _DB_DEGRADED_REASON or "unknown",
+            "note": "existing positions managed normally",
+        }
+    return {}

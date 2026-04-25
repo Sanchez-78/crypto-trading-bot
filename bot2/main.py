@@ -1618,6 +1618,20 @@ def main():
         global _last_audit, _last_metrics, _last_pre_audit, _last_health_check
         now = time.time()
 
+        # EMERGENCY (2026-04-25): Periodic observability logging for safe mode status
+        # Logs dashboard state when safe mode is active
+        try:
+            from src.services.runtime_flags import get_dashboard_status, is_db_degraded_safe_mode
+            if is_db_degraded_safe_mode():
+                status = get_dashboard_status()
+                if status:
+                    logging.warning(
+                        f"[SAFE_MODE] dashboard state={status['state']} "
+                        f"entries={status['entries']} reason={status['reason']}"
+                    )
+        except Exception:
+            pass  # Graceful degrade if service unavailable
+
         # EMERGENCY (2026-04-25): Periodic Firebase health refresh
         # Detects if Firebase has recovered from degradation and allows trading to resume
         # Checks only every 60 seconds to avoid quota impact

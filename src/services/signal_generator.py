@@ -645,6 +645,22 @@ def on_price(data):
     # PATCH 3: Force Signal Generation — Fallback when no signal detected
     # ────────────────────────────────────────────────────────────────────────
     if action is None:
+        # EMERGENCY (2026-04-25): Suppress forced explore when Firebase degraded
+        # Do not attempt exploration when authoritative state unavailable
+        try:
+            from src.services.runtime_flags import (
+                is_db_degraded_safe_mode,
+                log_suppressed_forced_explore,
+            )
+            if is_db_degraded_safe_mode():
+                log_suppressed_forced_explore()
+                if s not in _cycle_prefilter_drops:
+                    _cycle_prefilter_drops[s] = "FORCED_EXPLORE_SUPPRESSED_SAFE_MODE"
+                track_filtered()
+                return
+        except Exception:
+            pass  # Graceful degrade if flags unavailable
+
         import random
         # 30% chance to force generate a signal to maintain data flow
         if random.random() < 0.3:
