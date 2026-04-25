@@ -28,6 +28,15 @@ from src.core.event_bus import publish
 from src.services.learning_event import track_price
 from src.services.portfolio_discovery import get_active_symbols
 
+# V10.13u: Safe logging for exception messages (prevent secret leakage)
+try:
+    from src.services.safe_logging import sanitize, safe_log_exception
+except ImportError:
+    def sanitize(text):
+        return str(text)
+    def safe_log_exception(e):
+        return f"{type(e).__name__}: {str(e)}"
+
 # ── Geo-block flag — set on HTTP 451; survives reconnect attempts ─────────────
 _geo_blocked: bool = False
 
@@ -114,8 +123,8 @@ def _on_error(ws, error):
         _geo_blocked = True
         logging.warning("⚠️  WebSocket geo-blocked (HTTP 451) — switching to REST polling fallback")
     else:
-        logging.error(f"⚠️  WebSocket error: {error}")
-        publish("market_error", {"type": "websocket_error", "error": str(error)})
+        logging.error(f"⚠️  WebSocket error: {safe_log_exception(error)}")
+        publish("market_error", {"type": "websocket_error", "error": sanitize(str(error))})
 
 
 def _on_close(ws, code, msg):
@@ -164,7 +173,7 @@ def _binance_rest_poll(symbols: list[str]) -> bool:
         print(f"⚠️  Binance HTTP {e.code}: {e.reason}", file=sys.stderr, flush=True)
         return False
     except Exception as e:
-        print(f"⚠️  Binance REST poll failed: {type(e).__name__}: {e}", file=sys.stderr, flush=True)
+        print(f"⚠️  Binance REST poll failed: {safe_log_exception(e)}", file=sys.stderr, flush=True)
         return False
 
 
@@ -224,7 +233,7 @@ def _coingecko_poll(symbols: list[str]) -> bool:
         print(f"⚠️  CoinGecko HTTP {e.code}: {e.reason}", file=sys.stderr, flush=True)
         return False
     except Exception as e:
-        print(f"⚠️  CoinGecko poll failed: {type(e).__name__}: {e}", file=sys.stderr, flush=True)
+        print(f"⚠️  CoinGecko poll failed: {safe_log_exception(e)}", file=sys.stderr, flush=True)
         return False
 
 

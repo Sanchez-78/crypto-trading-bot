@@ -23,6 +23,13 @@ from firebase_admin import credentials, firestore
 import logging
 import os, json, base64, time, requests, threading
 
+# V10.13u: Safe logging for exception messages (prevent secret leakage)
+try:
+    from src.services.safe_logging import safe_log_exception
+except ImportError:
+    def safe_log_exception(e):
+        return f"{type(e).__name__}: {str(e)}"
+
 PREFIX = os.getenv("COLLECTION_PREFIX", "")
 
 def col(name: str) -> str:
@@ -452,7 +459,7 @@ def save_batch(batch):
         # Detect 429 Quota Exceeded errors (reactive fallback) — mark quota exhausted immediately
         if "429" in str(e) or "Quota" in str(e):
             _mark_quota_exhausted(str(e))
-        print(f"⚠️  save_batch failed ({e}) — queuing for retry (no blocking sleep)")
+        print(f"⚠️  save_batch failed ({safe_log_exception(e)}) — queuing for retry (no blocking sleep)")
         # If Firebase fails, queue batch and return immediately instead of blocking
         # Market stream must stay responsive to price ticks
         if len(_RETRY_QUEUE) < _MAX_RETRY_SIZE:  # BUG FIX: prevent unbounded growth
@@ -500,7 +507,7 @@ def increment_stats(n: int = 1, wins: int = 0, losses: int = 0, timeouts: int = 
         if timeouts > 0: upd["total_timeouts"] = firestore.Increment(timeouts)
         db.document(_STATS_DOC).set(upd, merge=True)
     except Exception as e:
-        print(f"⚠️  increment_stats: {e}")
+        print(f"⚠️  increment_stats: {safe_log_exception(e)}")
 
 
 
@@ -524,7 +531,7 @@ def load_stats() -> dict:
                 _local_stats[k] = max(_local_stats[k], result[k])
             return result
     except Exception as e:
-        print(f"⚠️  load_stats: {e}")
+        print(f"⚠️  load_stats: {safe_log_exception(e)}")
     return {}
 
 
