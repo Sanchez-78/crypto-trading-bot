@@ -87,7 +87,7 @@ class ReportWriter:
 
 """
 
-        with open(output_path, "w") as f:
+        with open(output_path, "w", encoding="utf-8") as f:
             f.write(summary)
         log.info(f"Summary written to {output_path}")
 
@@ -183,6 +183,6 @@ Do not treat it as absolute truth. Use it as a starting point for investigation.
 
 """
 
-        with open(output_path, "w") as f:
+        with open(output_path, "w", encoding="utf-8") as f:
             f.write(prompt)
         log.info(f"Fix prompt written to {output_path}")

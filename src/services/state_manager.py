@@ -216,13 +216,14 @@ async def _async_flush_lm_update(
     """Persist all learning_monitor state after a single lm_update() call.
 
     V10.12i: Gracefully skip if Redis unavailable (no-op write).
+    V10.15: Enhanced logging for diagnostics.
     """
     log.debug(f"[FLUSH_LM_START] {sym}/{reg} count={count} pnl_len={len(pnl_hist)} wr_len={len(wr_hist)} ev_len={len(ev_hist)}")
     try:
         # V10.12i: Use safe client for graceful Redis absence
         r = await _safe_client()
         if r is None:
-            log.warning(f"[FLUSH_LM_REDIS_NONE] {sym}/{reg} - Redis client is None, data LOST")
+            log.warning(f"[FLUSH_LM_REDIS_UNAVAILABLE] {sym}/{reg} - Redis unavailable, skipping persist. Data will be lost on restart. Check Redis server status: redis-cli ping")
             return  # Redis unavailable; skip write silently
         pipe = r.pipeline()
 

@@ -2284,6 +2284,7 @@ def on_price(data):
     trade = {
         **pos["signal"],
         "profit":        profit,
+        "pnl":           profit,  # Alias for metrics compatibility
         "result":        result,
         "exit_price":    curr,
         "close_reason":  reason,
@@ -2462,6 +2463,7 @@ def on_price(data):
         log.debug(f"[V10.13v] Exit attribution error: {e}")
 
     BATCH.append(trade)
+    log.info(f"[TRADE_BATCH] {sym} profit={profit:+.8f} result={result} batch_size={len(BATCH)}")
     if len(BATCH) >= 5:   # lowered 20→5: flush sooner to minimise data loss on restart
         _flush()
 

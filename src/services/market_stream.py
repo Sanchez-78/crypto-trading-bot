@@ -109,15 +109,19 @@ def _on_message(ws, raw):
 def _on_error(ws, error):
     global _geo_blocked
     err_str = str(error)
+    import logging
     if "451" in err_str:
         _geo_blocked = True
-        print("⚠️  WebSocket geo-blocked (HTTP 451) — switching to REST polling fallback")
+        logging.warning("⚠️  WebSocket geo-blocked (HTTP 451) — switching to REST polling fallback")
     else:
-        print(f"⚠️  WebSocket error: {error}")
+        logging.error(f"⚠️  WebSocket error: {error}")
+        publish("market_error", {"type": "websocket_error", "error": str(error)})
 
 
 def _on_close(ws, code, msg):
-    print(f"📡 WebSocket closed (code={code})")
+    import logging
+    logging.warning(f"📡 WebSocket closed (code={code})")
+    publish("market_disconnected", {"code": code, "msg": msg})
 
 
 # ── REST polling fallback — Binance ───────────────────────────────────────────

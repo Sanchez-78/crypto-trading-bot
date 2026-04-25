@@ -51,7 +51,7 @@ BINANCE_BASE:    str           = "https://api.binance.com"
 FEE_RT:          float = 0.0015  # 0.15% round-trip
 MAX_TICKS:       int   = 80      # default max price ticks before timeout close
 MAX_TICKS_QUIET: int   = 150     # Phase 3 Task 4: extended timeout for QUIET_RANGE
-CMD_POLL_SEC:    float = 3.0     # Phase 3 Task 1: command polling interval (seconds)
+CMD_POLL_SEC:    float = float(os.getenv("CMD_POLL_SEC", "30"))  # Quota-safe default; override if lower latency is required.
 
 
 # ── Position state ─────────────────────────────────────────────────────────────
@@ -413,17 +413,8 @@ class ExecutionEngine:
         Returns documents from 'commands' collection with timestamp_ms > since_ms.
         """
         try:
-            from src.services.firebase_client import db
-            if db is None:
-                return []
-            snap = (
-                db.collection("commands")
-                .where("timestamp_ms", ">", since_ms)
-                .order_by("timestamp_ms")
-                .limit(10)
-                .get()
-            )
-            return [{"id": d.id, **d.to_dict()} for d in snap]
+            from src.services.firebase_client import load_commands_since
+            return load_commands_since(since_ms, limit=10)
         except Exception as exc:
             log.debug("_fetch_new_commands error: %s", exc)
             return []

@@ -20,6 +20,7 @@ Switch: set PERF_MODE=True in this file; restart bot.
 
 import firebase_admin
 from firebase_admin import credentials, firestore
+import logging
 import os, json, base64, time, requests, threading
 
 PREFIX = os.getenv("COLLECTION_PREFIX", "")
@@ -33,9 +34,13 @@ def col(name: str) -> str:
 
 db = None
 
-_HISTORY_CACHE  = {"data": [],   "ts": 0}
+_HISTORY_CACHE  = {"data": [],   "ts": 0, "limit": 0}
 _WEIGHTS_CACHE  = {"data": None, "ts": 0}
 _SIGNALS_CACHE  = {"data": [],   "ts": 0}
+_CONFIG_CACHE   = {"data": None, "ts": 0}
+_ADVICE_CACHE   = {"data": None, "ts": 0}
+_METRICS_CACHE  = {"data": None, "ts": 0}
+_PUSH_TOKEN_CACHE = {"data": None, "ts": 0}
 _RETRY_QUEUE    = []   # trades buffered after save_batch failure; flushed on next call
 _MAX_RETRY_SIZE = 50000  # BUG FIX: prevent unbounded growth during Firebase outage (OOM risk)
 
@@ -49,6 +54,11 @@ _QUOTA_MAX_WRITES = 20000
 # V10.13x: Reconciliation logging (periodic, every 300s = 5min to conserve quota)
 _LAST_RECON_TS = 0
 _RECON_INTERVAL = 300  # seconds between reconciliation checks (quota-safe: ~288 reads/day)
+
+CONFIG_TTL       = 300   # runtime config changes rarely
+ADVICE_TTL       = 120   # advice updates on the audit cadence
+BOT2_METRICS_TTL = 300   # bot2 flushes metrics every 5 minutes
+PUSH_TOKEN_TTL   = 3600  # mobile push token is slow-moving
 
 def _reset_quota_if_new_day():
     """Reset counters at midnight UTC each day."""
@@ -119,6 +129,59 @@ def _mark_quota_exhausted(error_msg: str):
 # save_metrics_full() uses this as the authoritative trade count so the
 # dashboard always shows the value that matches the Firestore atomic counter,
 # not the (potentially lagged) in-memory METRICS dict.
+def _clone_payload(data):
+    if isinstance(data, dict):
+        return dict(data)
+    if isinstance(data, list):
+        return list(data)
+    return data
+
+
+def _cache_get(cache: dict, ttl: int):
+    if cache.get("data") is not None and time.time() - cache.get("ts", 0) < ttl:
+        return _clone_payload(cache["data"])
+    return None
+
+
+def _cache_set(cache: dict, data) -> None:
+    cache["data"] = _clone_payload(data)
+    cache["ts"] = time.time()
+
+
+def _handle_quota_error(label: str, exc: Exception) -> None:
+    if "429" in str(exc) or "Quota" in str(exc):
+        _mark_quota_exhausted(str(exc))
+    else:
+        logging.error("%s: %s", label, exc)
+
+
+def _read_doc_dict(doc_ref, *, label: str, cache: dict | None = None,
+                   ttl: int = 0, default: dict | None = None) -> dict:
+    fallback = {} if default is None else dict(default)
+    cached = _cache_get(cache, ttl) if cache is not None and ttl > 0 else None
+    if cached is not None:
+        return cached
+    if db is None:
+        return dict(fallback)
+
+    allowed, current, limit_quota = _can_read(1)
+    if not allowed:
+        logging.debug("Skipping %s read: quota limit reached (%s/%s)",
+                      label, current, limit_quota)
+        return cached if cached is not None else dict(fallback)
+
+    try:
+        doc = doc_ref.get()
+        data = doc.to_dict() or dict(fallback)
+        _record_read(1)
+        if cache is not None and ttl > 0:
+            _cache_set(cache, data)
+        return dict(data)
+    except Exception as exc:
+        _handle_quota_error(label, exc)
+        return cached if cached is not None else dict(fallback)
+
+
 _local_stats: dict = {"trades": 0, "wins": 0, "losses": 0, "timeouts": 0}
 
 
@@ -225,18 +288,21 @@ def load_history(limit=HISTORY_LIMIT):
     """
     if db is None:
         return []
-    if time.time() - _HISTORY_CACHE["ts"] < HISTORY_TTL:
-        return _HISTORY_CACHE["data"]
+    if (
+        time.time() - _HISTORY_CACHE["ts"] < HISTORY_TTL
+        and _HISTORY_CACHE.get("limit", 0) >= limit
+    ):
+        return list(_HISTORY_CACHE["data"][:limit])
 
     # V10.14: Proactive quota check — skip if quota almost exhausted
-    allowed, current, limit_quota = _can_read(1)
+    estimated_reads = max(1, min(limit, _HISTORY_CACHE.get("limit", 0) or HISTORY_LIMIT))
+    allowed, current, limit_quota = _can_read(estimated_reads)
     if not allowed:
-        import logging
         logging.debug(f"Skipping history fetch: quota limit reached ({current}/{limit_quota})")
-        return _HISTORY_CACHE["data"]  # Return stale cache
+        return list(_HISTORY_CACHE["data"][:limit])  # Return stale cache
 
     try:
-        docs = (
+        docs = list(
             db.collection(col("trades"))
             .order_by("timestamp", direction=firestore.Query.DESCENDING)
             .limit(limit)
@@ -244,16 +310,12 @@ def load_history(limit=HISTORY_LIMIT):
         )
         _HISTORY_CACHE["data"] = [d.to_dict() for d in docs]
         _HISTORY_CACHE["ts"]   = time.time()
-        _record_read(1)  # Count this read
+        _HISTORY_CACHE["limit"] = max(limit, len(_HISTORY_CACHE["data"]))
+        _record_read(max(1, len(_HISTORY_CACHE["data"])))
         print(f"[FIREBASE] loaded {len(_HISTORY_CACHE['data'])} trades")
     except Exception as e:
-        # Detect 429 Quota Exceeded errors (reactive fallback)
-        if "429" in str(e) or "Quota" in str(e):
-            _mark_quota_exhausted(str(e))
-        else:
-            import logging
-            logging.error(f"load_history: {e}")
-    return _HISTORY_CACHE["data"]
+        _handle_quota_error("load_history", e)
+    return list(_HISTORY_CACHE["data"][:limit])
 
 
 def _async_firebase_write(slimmed, batch_size):
@@ -300,9 +362,12 @@ def save_batch(batch):
             _RETRY_QUEUE.extend(batch)
             return 0  # No writes committed
 
-        # V10.15x: Update local cache immediately (for consistency)
-        _HISTORY_CACHE["data"] = (slimmed + _HISTORY_CACHE["data"])[:HISTORY_LIMIT]
+        # Preserve the largest requested history window so callers asking for
+        # 500 trades do not silently collapse back to HISTORY_LIMIT after each save.
+        cache_limit = max(HISTORY_LIMIT, _HISTORY_CACHE.get("limit", 0) or HISTORY_LIMIT)
+        _HISTORY_CACHE["data"] = (slimmed + _HISTORY_CACHE["data"])[:cache_limit]
         _HISTORY_CACHE["ts"]   = time.time()
+        _HISTORY_CACHE["limit"] = cache_limit
 
         # Count wins/losses/timeouts for atomic stats update
         _BATCH_TIMEOUT_REASONS = {
@@ -491,6 +556,7 @@ def save_signal(signal):
         return None
     try:
         _, ref = db.collection(col("signals")).add(signal)
+        _record_write(1)
         # Invalidate signals cache so next load picks it up
         _SIGNALS_CACHE["ts"] = 0
         return ref.id
@@ -507,9 +573,9 @@ def load_all_signals(limit=SIGNALS_LIMIT):
     if db is None:
         return []
     if time.time() - _SIGNALS_CACHE["ts"] < SIGNALS_TTL:
-        return _SIGNALS_CACHE["data"]
+        return list(_SIGNALS_CACHE["data"][:limit])
     try:
-        docs = (
+        docs = list(
             db.collection(col("signals"))
             .order_by("timestamp", direction=firestore.Query.DESCENDING)
             .limit(limit)
@@ -517,33 +583,24 @@ def load_all_signals(limit=SIGNALS_LIMIT):
         )
         _SIGNALS_CACHE["data"] = [d.to_dict() for d in docs]
         _SIGNALS_CACHE["ts"]   = time.time()
+        _record_read(max(1, len(_SIGNALS_CACHE["data"])))
         print(f"📥 Firebase: loaded {len(_SIGNALS_CACHE['data'])} signals")
     except Exception as e:
         print(f"❌ load_all_signals: {e}")
-    return _SIGNALS_CACHE["data"]
+    return list(_SIGNALS_CACHE["data"][:limit])
 
 
 # ── Weights ───────────────────────────────────────────────────────────────────
 
 def load_weights():
-    """
-    Load ML model weights.
-    Cached for WEIGHTS_TTL seconds – avoids a Firestore read on every signal.
-    """
     if db is None:
         return {}
-    if _WEIGHTS_CACHE["data"] is not None and \
-       time.time() - _WEIGHTS_CACHE["ts"] < WEIGHTS_TTL:
-        return dict(_WEIGHTS_CACHE["data"])
-    try:
-        doc = db.collection(col("weights")).document("model").get()
-        _WEIGHTS_CACHE["data"] = doc.to_dict() or {}
-        _WEIGHTS_CACHE["ts"]   = time.time()
-    except Exception as e:
-        print(f"❌ load_weights: {e}")
-        return _WEIGHTS_CACHE["data"] or {}
-    return dict(_WEIGHTS_CACHE["data"])
-
+    return _read_doc_dict(
+        db.collection(col("weights")).document("model"),
+        label="load_weights",
+        cache=_WEIGHTS_CACHE,
+        ttl=WEIGHTS_TTL,
+    )
 
 def save_weights(data):
     """Persist model weights and update local cache."""
@@ -551,8 +608,8 @@ def save_weights(data):
         return
     try:
         db.collection(col("weights")).document("model").set(data, merge=True)
-        _WEIGHTS_CACHE["data"] = dict(data)
-        _WEIGHTS_CACHE["ts"]   = time.time()
+        _record_write(1)
+        _cache_set(_WEIGHTS_CACHE, data)
     except Exception as e:
         print(f"❌ save_weights: {e}")
 
@@ -574,6 +631,7 @@ def save_portfolio(data):
         db.collection(col("portfolio")).document("state").set(
             {**data, "updated_at": now}, merge=True
         )
+        _record_write(1)
         _last_portfolio_save = now
     except Exception as e:
         print(f"❌ save_portfolio: {e}")
@@ -595,6 +653,7 @@ def save_metrics(data):
         db.collection(col("metrics")).document("run_status").set(
             {**data, "timestamp": time.time()}, merge=True
         )
+        _record_write(1)
     except Exception as e:
         print(f"❌ save_metrics: {e}")
 
@@ -621,6 +680,7 @@ def save_last_trade(trade):
                 "reason":     trade.get("close_reason", ""),
                 "timestamp":  trade.get("close_time", trade.get("timestamp", time.time())),
             }, merge=False)
+            _record_write(1)
 
             pnl_pct = round(float(trade.get("profit", 0) * 100), 2)
             sym = trade.get("symbol", "")
@@ -633,13 +693,25 @@ def save_last_trade(trade):
 
     threading.Thread(target=_write, daemon=True).start()
 
+
+def load_push_token():
+    if db is None:
+        return None
+    data = _read_doc_dict(
+        db.collection(col("config")).document("push_tokens"),
+        label="load_push_token",
+        cache=_PUSH_TOKEN_CACHE,
+        ttl=PUSH_TOKEN_TTL,
+    )
+    token = data.get("token")
+    return token or None
+
+
 def send_push_notification(title, body):
     """Fetch Expo push token and send notification."""
     if db is None: return
     try:
-        doc = db.collection(col("config")).document("push_tokens").get()
-        if not doc.exists: return
-        token = doc.to_dict().get("token")
+        token = load_push_token()
         if not token: return
         
         payload = {
@@ -904,7 +976,10 @@ def save_metrics_full(metrics, open_positions=None, execution=None, monitor=None
                 "rejection_breakdown":      metrics.get("rejection_breakdown", {}),  # Signal filtering breakdown
             },
         }
-        db.collection(col("metrics")).document("latest").set(_sanitize_doc(data), merge=False)
+        data = _sanitize_doc(data)
+        db.collection(col("metrics")).document("latest").set(data, merge=False)
+        _record_write(1)
+        _cache_set(_METRICS_CACHE, data)
     except Exception as e:
         print(f"❌ save_metrics_full: {e}")
 
@@ -919,49 +994,29 @@ def save_auditor_state(data):
         db.collection(col("metrics")).document("auditor").set(
             {**data, "saved_at": time.time()}, merge=False
         )
+        _record_write(1)
     except Exception as e:
         print(f"❌ save_auditor_state: {e}")
 
 
 def load_auditor_state():
-    """Load persisted auditor state; returns {} if not found or quota exhausted."""
-    # V10.14: Proactive quota check — prevent read if quota almost exhausted
-    allowed, current, limit = _can_read(1)
-    if not allowed:
-        import logging
-        logging.debug(f"Skipping auditor_state read: quota limit reached ({current}/{limit})")
-        return {}
-
     if db is None:
         return {}
-    try:
-        doc = db.collection(col("metrics")).document("auditor").get()
-        _record_read(1)  # Count this read
-        return doc.to_dict() or {}
-    except Exception as e:
-        # Detect 429 Quota Exceeded errors (reactive fallback)
-        if "429" in str(e) or "Quota" in str(e):
-            _mark_quota_exhausted(str(e))
-            return {}
-        import logging
-        logging.error(f"load_auditor_state: {e}")
-        return {}
-
-
+    return _read_doc_dict(
+        db.collection(col("metrics")).document("auditor"),
+        label="load_auditor_state",
+    )
 # ── Config ────────────────────────────────────────────────────────────────────
 
 def load_config():
-    """Load runtime config from Firestore (execution_bot.py)."""
     if db is None:
         return {}
-    try:
-        doc = db.collection(col("config")).document("runtime").get()
-        return doc.to_dict() or {}
-    except Exception as e:
-        print(f"❌ load_config: {e}")
-        return {}
-
-
+    return _read_doc_dict(
+        db.collection(col("config")).document("runtime"),
+        label="load_config",
+        cache=_CONFIG_CACHE,
+        ttl=CONFIG_TTL,
+    )
 # ── Bot2 → Bot1 advice channel ────────────────────────────────────────────────
 # Bot2 writes a compact advice doc after every audit cycle.
 # Bot1 reads it before opening trades — skips blocked pairs, sizes up winners.
@@ -969,8 +1024,7 @@ def load_config():
 # Bot1 reads with 60s TTL = ~1 440 reads/day.
 
 _ADVICE_DOC   = col("advice") + "/latest"   # advice/latest
-_ADVICE_CACHE = {"data": None, "ts": 0}
-ADVICE_TTL    = 60  # seconds
+# _ADVICE_CACHE and ADVICE_TTL are defined with the other shared caches above.
 
 
 def save_bot2_advice(advice: dict) -> None:
@@ -989,53 +1043,91 @@ def save_bot2_advice(advice: dict) -> None:
     if db is None:
         return
     try:
-        db.document(_ADVICE_DOC).set({**advice, "timestamp": time.time()})
-        _ADVICE_CACHE["data"] = dict(advice)
-        _ADVICE_CACHE["ts"]   = time.time()
+        payload = {**advice, "timestamp": time.time()}
+        db.document(_ADVICE_DOC).set(payload)
+        _record_write(1)
+        _cache_set(_ADVICE_CACHE, payload)
     except Exception as e:
         print(f"⚠️  save_bot2_advice: {e}")
 
 
 def load_bot2_advice() -> dict:
-    """
-    Read bot2 advice with 60s TTL cache.
-    Returns {} if Firebase unavailable or no advice written yet.
-    """
     if db is None:
         return {}
-    if _ADVICE_CACHE["data"] is not None and \
-       time.time() - _ADVICE_CACHE["ts"] < ADVICE_TTL:
-        return dict(_ADVICE_CACHE["data"])
-    try:
-        doc = db.document(_ADVICE_DOC).get()
-        _ADVICE_CACHE["data"] = doc.to_dict() or {}
-        _ADVICE_CACHE["ts"]   = time.time()
-    except Exception as e:
-        print(f"⚠️  load_bot2_advice: {e}")
-        return _ADVICE_CACHE["data"] or {}
-    return dict(_ADVICE_CACHE["data"])
-
-
+    return _read_doc_dict(
+        db.document(_ADVICE_DOC),
+        label="load_bot2_advice",
+        cache=_ADVICE_CACHE,
+        ttl=ADVICE_TTL,
+    )
 def load_bot2_metrics() -> dict:
-    """
-    Read the live metrics/latest that bot2 writes every 30s.
-    Returns performance (winrate, profit_factor, drawdown) for bot1's
-    RiskEngine to use instead of hardcoded stubs.
-    TTL 60s — same as advice channel.
-    """
     if db is None:
         return {}
-    try:
-        doc = db.collection(col("metrics")).document("latest").get()
-        return doc.to_dict() or {}
-    except Exception as e:
-        print(f"⚠️  load_bot2_metrics: {e}")
-        return {}
-
-
+    return _read_doc_dict(
+        db.collection(col("metrics")).document("latest"),
+        label="load_bot2_metrics",
+        cache=_METRICS_CACHE,
+        ttl=BOT2_METRICS_TTL,
+    )
 # ── Daily budget report ───────────────────────────────────────────────────────
 
+def load_commands_since(since_ms: int, limit: int = 10) -> list[dict]:
+    """Load app commands newer than since_ms with quota accounting."""
+    if db is None:
+        return []
+
+    allowed, current, limit_quota = _can_read(1)
+    if not allowed:
+        logging.debug("Skipping commands read: quota limit reached (%s/%s)",
+                      current, limit_quota)
+        return []
+
+    try:
+        snap = (
+            db.collection(col("commands"))
+            .where("timestamp_ms", ">", since_ms)
+            .order_by("timestamp_ms")
+            .limit(limit)
+            .get()
+        )
+        commands = [{"id": d.id, **d.to_dict()} for d in snap]
+        _record_read(max(1, len(commands)))
+        return commands
+    except Exception as exc:
+        _handle_quota_error("load_commands_since", exc)
+        return []
+
+
 def daily_budget_report():
+    """Estimate daily Firebase operations with the current cache settings."""
+    mode = "PERFORMANCE" if PERF_MODE else "CONSERVATIVE"
+    ht = HISTORY_TTL
+    wt = WEIGHTS_TTL
+    cmd_poll = int(float(os.getenv("CMD_POLL_SEC", "30")))
+
+    r_hist = 500 * (86400 // ht)
+    r_wgt = 86400 // wt
+    r_cfg = 86400 // CONFIG_TTL
+    r_advice = 86400 // ADVICE_TTL
+    r_metrics = 86400 // BOT2_METRICS_TTL
+    r_commands = 86400 // max(cmd_poll, 1)
+    r_tot = r_hist + r_wgt + r_cfg + r_advice + r_metrics + r_commands
+
+    print(f"[Firebase] daily budget [{mode}]")
+    print(f"   Reads : history       <= {r_hist:>6}/day  (500 docs, cache {ht}s)")
+    print(f"           weights       <= {r_wgt:>6}/day  (cache {wt}s)")
+    print(f"           runtime cfg   <= {r_cfg:>6}/day  (cache {CONFIG_TTL}s)")
+    print(f"           bot2 advice   <= {r_advice:>6}/day  (cache {ADVICE_TTL}s)")
+    print(f"           bot2 metrics  <= {r_metrics:>6}/day  (cache {BOT2_METRICS_TTL}s)")
+    print(f"           commands poll <= {r_commands:>6}/day  (poll {cmd_poll}s)")
+    print(f"           total reads   ~= {r_tot:>6}/day  (limit 50 000)")
+    print("   Writes: metrics/latest every 300s =    288/day")
+    print("           save_batch    every 60s   =  1 440/day")
+    print("           save_last_trade (est.)    =    200/day")
+    print("   Total : ~1 928 writes/day  (limit 20 000)")
+
+
+def _daily_budget_report_legacy():
     """
     Estimate daily Firebase operation counts (call once at startup).
     Limit: 50 000 reads · 20 000 writes/day (free tier).
@@ -1045,9 +1137,15 @@ def daily_budget_report():
     ht   = HISTORY_TTL
     wt   = WEIGHTS_TTL
 
-    r_hist = hl * (86400 // ht)
-    r_wgt  = 86400 // wt
-    r_tot  = r_hist + r_wgt
+    cmd_poll = int(float(os.getenv("CMD_POLL_SEC", "30")))
+
+    r_hist     = 500 * (86400 // ht)
+    r_wgt      = 86400 // wt
+    r_cfg      = 86400 // CONFIG_TTL
+    r_advice   = 86400 // ADVICE_TTL
+    r_metrics  = 86400 // BOT2_METRICS_TTL
+    r_commands = 86400 // max(cmd_poll, 1)
+    r_tot      = r_hist + r_wgt + r_cfg + r_advice + r_metrics + r_commands
 
     print(f"📊 Firebase daily budget  [{mode}]")
     print(f"   Reads : load_history  ≤ {r_hist:>6}/day  ({hl} docs, cache {ht}s)")

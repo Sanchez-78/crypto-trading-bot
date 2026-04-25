@@ -1,10 +1,12 @@
 """Configuration for daily log fix prompt bot."""
 
 from pathlib import Path
-from pydantic import BaseSettings
+from dataclasses import dataclass
+import os
 
 
-class Settings(BaseSettings):
+@dataclass
+class Settings:
     """Bot configuration from environment."""
 
     hetzner_host: str = "127.0.0.1"
@@ -25,15 +27,17 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     anthropic_api_key: str = ""
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = False
-
 
 def load_config() -> Settings:
     """Load configuration from environment."""
-    return Settings()
+    return Settings(
+        hetzner_host=os.getenv("HETZNER_HOST", "127.0.0.1"),
+        hetzner_port=int(os.getenv("HETZNER_PORT", "22")),
+        hetzner_user=os.getenv("HETZNER_USER", "root"),
+        service_name=os.getenv("SERVICE_NAME", "cryptomaster"),
+        log_lookback_hours=int(os.getenv("LOG_LOOKBACK_HOURS", "24")),
+        local_report_dir=os.getenv("LOCAL_REPORT_DIR", "reports"),
+    )
 
 
 def get_report_dir(config: Settings) -> Path:

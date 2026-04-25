@@ -114,4 +114,4 @@ def run_daily_analysis() -> Path:
 
 if __name__ == "__main__":
     report_dir = run_daily_analysis()
-    print(f"\n✅ Daily analysis complete: {report_dir}\n")
+    print(f"\n[OK] Daily analysis complete: {report_dir}\n")

@@ -203,14 +203,15 @@ def update_exit_attribution(exit_ctx: dict) -> None:
 def render_exit_attribution_summary() -> str:
     """V10.13w (Fix E): Generate exit attribution dashboard with net PnL contribution."""
     if not _exit_stats:
-        return "[V10.13w EXIT_ATTRIBUTION] No trades closed yet."
+        return "[V10.13w EXIT_ATTRIBUTION] No session trades closed yet."
 
     total_trades = sum(s["count"] for s in _exit_stats.values())
     total_net_pnl = sum(s["total_net_pnl"] for s in _exit_stats.values())
+    total_abs_pnl = sum(abs(s["total_net_pnl"]) for s in _exit_stats.values())
 
     lines = [
         "[V10.13w EXIT_ATTRIBUTION]",
-        f"  Total exits: {total_trades}  |  Total Net PnL: {total_net_pnl:+.8f}",
+        f"  Session exits: {total_trades}  |  Session Net PnL: {total_net_pnl:+.8f}",
         "",
     ]
 
@@ -228,7 +229,7 @@ def render_exit_attribution_summary() -> str:
         pct_wins = (wins / count * 100) if count > 0 else 0
         total_pnl = stats["total_net_pnl"]
         avg_pnl = total_pnl / count if count > 0 else 0
-        pct_contribution = (total_pnl / total_net_pnl * 100) if total_net_pnl != 0 else 0
+        share_abs = (abs(total_pnl) / total_abs_pnl * 100) if total_abs_pnl != 0 else 0
         avg_hold = stats["total_hold_seconds"] / count if count > 0 else 0
         share = (count / total_trades * 100) if total_trades > 0 else 0
 
@@ -237,7 +238,7 @@ def render_exit_attribution_summary() -> str:
             f"w/l/f={wins:2d}/{losses:2d}/{flats:1d}  wr={pct_wins:5.1f}%"
         )
         lines.append(
-            f"  {'':20s}  net={total_pnl:+.8f}  pct={pct_contribution:+6.1f}%  "
+            f"  {'':20s}  net={total_pnl:+.8f}  share_abs={share_abs:5.1f}%  "
             f"avg={avg_pnl:+.8f}  hold={avg_hold:6.0f}s"
         )
 
@@ -261,8 +262,8 @@ def render_exit_attribution_summary() -> str:
     )
 
     lines.extend([
-        f"  [Grouping] Scratch+Micro: {scratch_micro}/{total_trades} trades, {scratch_micro_pnl:+.8f} PnL ({scratch_micro_pnl/total_net_pnl*100 if total_net_pnl != 0 else 0:+.1f}%)",
-        f"  [Grouping] TP+Trail:      {tp_trail}/{total_trades} trades, {tp_trail_pnl:+.8f} PnL ({tp_trail_pnl/total_net_pnl*100 if total_net_pnl != 0 else 0:+.1f}%)",
+        f"  [Grouping] Scratch+Micro: {scratch_micro}/{total_trades} trades, {scratch_micro_pnl:+.8f} PnL ({abs(scratch_micro_pnl)/total_abs_pnl*100 if total_abs_pnl != 0 else 0:.1f}% abs-share)",
+        f"  [Grouping] TP+Trail:      {tp_trail}/{total_trades} trades, {tp_trail_pnl:+.8f} PnL ({abs(tp_trail_pnl)/total_abs_pnl*100 if total_abs_pnl != 0 else 0:.1f}% abs-share)",
     ])
 
     return "\n".join(lines)

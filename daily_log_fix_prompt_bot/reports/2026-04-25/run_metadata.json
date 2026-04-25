@@ -1,0 +1,12 @@
+{
+  "run_date": "2026-04-25T09:18:38.240535",
+  "config": {
+    "service": "cryptomaster",
+    "lookback_hours": 24
+  },
+  "stats": {
+    "log_lines": 32034,
+    "events_detected": 2797,
+    "issues_detected": 5
+  }
+}

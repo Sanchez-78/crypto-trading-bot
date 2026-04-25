@@ -81,21 +81,22 @@ class AuditWorker:
                         
             except Exception as exc:
                 if "No module named 'redis'" in str(exc) or isinstance(exc, ImportError):
-                    log.error("❌ 'redis' module missing. Disabling AuditWorker.")
+                    log.error("❌ CRITICAL: 'redis' module missing. Disabling AuditWorker. Run: pip install redis")
                     self._running = False
                     break
-                
+
                 fail_count += 1
-                # Log as warning only once per failure cycle, then switch to debug
-                if fail_count == 1:
-                    log.warning("⚠️  AuditWorker: Redis connection lost/failed. Subsequent retries will be silent. Error: %s", exc)
-                else:
-                    log.debug("AuditWorker reconnection attempt #%d failed: %s", fail_count, exc)
-                
-                self._redis = None
-                
-                # Exponential backoff: 5s, 10s, 20s, up to 60s max
+                # Exponential backoff: 5s, 10s, 20s, 40s, up to 60s max
                 backoff = min(60, 5 * (2 ** (min(fail_count - 1, 4))))
+
+                if fail_count == 1:
+                    log.warning("⚠️  AuditWorker: Redis connection lost/failed. Retrying with exponential backoff (5s→60s). Error: %s", exc)
+                elif fail_count % 3 == 0:
+                    log.warning("⚠️  AuditWorker: Reconnection attempt #%d failed (backoff: %ds). Check Redis server: redis-cli ping", fail_count, int(backoff))
+                else:
+                    log.debug("AuditWorker reconnection attempt #%d failed (next retry: %ds): %s", fail_count, int(backoff), exc)
+
+                self._redis = None
                 await asyncio.sleep(backoff)
 
     async def stop(self) -> None:
