@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily CryptoMaster Log Analysis and Fix Prompt Bot Timer
+Requires=daily-log-fix-prompt-bot.service
+
+[Timer]
+# Run daily at 08:00 UTC (shifted +2h from original 06:00 UTC schedule)
+OnCalendar=*-*-* 08:00:00
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

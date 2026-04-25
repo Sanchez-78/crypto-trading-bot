@@ -43,7 +43,7 @@ sudo cp systemd/daily-log-fix-prompt-bot.timer /etc/systemd/system/
 sudo systemctl enable --now daily-log-fix-prompt-bot.timer
 ```
 
-Runs daily at 06:00 UTC.
+Runs daily at 08:00 UTC (shifted +2h from original 06:00 UTC schedule).
 
 ## Detectors
 

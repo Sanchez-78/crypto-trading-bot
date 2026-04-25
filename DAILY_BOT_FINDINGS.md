@@ -152,7 +152,7 @@ reports/2026-04-25/
 └── run_metadata.json     (timestamps, stats)
 ```
 
-Next run: ~06:00 UTC tomorrow
+Next run: ~08:00 UTC tomorrow (schedule shifted +2h)
 
 ---
 

@@ -1,0 +1,23 @@
+[Unit]
+Description=Daily CryptoMaster Log Analysis and Fix Prompt Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/CryptoMaster_srv/daily_log_fix_prompt_bot
+ExecStart=/usr/bin/python3 -m src.daily_log_fix_prompt_bot.main
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=daily-log-fix-prompt-bot
+
+# Environment variables (load from /root/.env if needed)
+EnvironmentFile=-/root/.env
+Environment="PYTHONUNBUFFERED=1"
+
+# User context
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target
