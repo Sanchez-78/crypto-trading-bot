@@ -24,6 +24,10 @@ import numpy as np
 log = logging.getLogger(__name__)
 from src.services.firebase_client import load_history
 from src.services.learning_event  import track_blocked, track_regime, trades_in_window
+
+# V10.15 QUOTA EMERGENCY FIX: Cache history at module level
+# Prevents calling load_history() on every signal (was causing 6000 reads/36min!)
+_cached_history = {"data": None, "ts": 0, "ttl": 21600}  # 6 hour cache
 from src.services.adaptive_recovery import (
     ev_gate,
     filter_relaxation,
@@ -36,6 +40,22 @@ from src.services.adaptive_recovery import (
 )
 from src.services.smart_exit_engine import evaluate_position_exit
 from src.services.reward_system import compute_reward
+
+
+def _get_cached_history():
+    """Get history with local caching - only refreshes every 6 hours.
+
+    QUOTA FIX: Prevents calling load_history() on every signal (was 6000/36min).
+    This function is called max once per 6 hours instead of per signal.
+    """
+    import time as _t
+    now = _t.time()
+    if _cached_history["data"] is None or (now - _cached_history["ts"]) > _cached_history["ttl"]:
+        # Cache miss or expired - fetch from Firebase (quota cost: ~100 reads max)
+        _cached_history["data"] = load_history() or []
+        _cached_history["ts"] = now
+        log.info(f"[QUOTA_FIX] Refreshed history cache ({len(_cached_history['data'])} trades, TTL=6h)")
+    return _cached_history["data"]
 
 
 # ════════════════════════════════════════════════════════════════════════════════
@@ -1330,7 +1350,8 @@ def _log_canonical_decision(sym, action, regime, raw_ev, final_ev, raw_score, fi
 
 
 def evaluate_signal(signal):
-    history = load_history()
+    # V10.15 QUOTA FIX: Use cached history instead of load_history() on every signal
+    history = _get_cached_history()
     track_regime(signal.get("regime", "RANGING"))
 
     # ── Lazy one-time bootstrap ────────────────────────────────────────────────
