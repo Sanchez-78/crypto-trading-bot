@@ -124,19 +124,25 @@ class MetricsEngine:
     def _classify_outcome(self, trade, profit):
         """Classify a closed trade as WIN / LOSS / FLAT.
 
-        Uses the stored result field (authoritative) and applies the same
-        neutral-timeout exclusion as learning_event.bootstrap_from_history.
-        Avoids the old eps=0.0001 threshold that misclassified all BTC-scale
-        profits (~1e-6 BTC) as FLAT.
+        For trades with a result field (authoritative Firestore records): apply
+        neutral-timeout exclusion first, then honour the stored result.
+        For trades without a result field (legacy/backfill records): classify
+        purely by profit direction — no neutral check (matches bootstrap_from_history
+        which skips result-less trades entirely).
         """
         result = trade.get("result", "")
-        close_reason = trade.get("close_reason", "")
-        is_neutral = close_reason in self._NEUTRAL_REASONS and abs(profit) < 0.001
-        if is_neutral:
-            return "FLAT"
-        if result == "WIN":
+        if result:
+            close_reason = trade.get("close_reason", "")
+            if close_reason in self._NEUTRAL_REASONS and abs(profit) < 0.001:
+                return "FLAT"
+            if result == "WIN":
+                return "WIN"
+            if result == "LOSS":
+                return "LOSS"
+        # Fallback for trades without result field: classify by profit direction
+        if profit > 0:
             return "WIN"
-        if result == "LOSS":
+        if profit < 0:
             return "LOSS"
         return "FLAT"
 
@@ -191,32 +197,35 @@ class MetricsEngine:
         per_regime = {}
         per_exit_type = {}
 
+        _okey = {"WIN": "wins", "LOSS": "losses", "FLAT": "flats"}
+
         for i, trade in enumerate(trades):
             p       = profits[i]
             outcome = outcomes[i]
+            ok      = _okey[outcome]
 
             sym = trade.get("symbol", "UNKNOWN")
             if sym not in per_symbol:
                 per_symbol[sym] = {"count": 0, "wins": 0, "losses": 0, "flats": 0, "net_pnl": 0.0}
-            per_symbol[sym]["count"]  += 1
+            per_symbol[sym]["count"]   += 1
             per_symbol[sym]["net_pnl"] += p
-            per_symbol[sym][outcome.lower() + "s"] += 1
+            per_symbol[sym][ok]        += 1
 
             reg = trade.get("regime", "UNKNOWN")
             if reg not in per_regime:
                 per_regime[reg] = {"count": 0, "wins": 0, "losses": 0, "flats": 0, "net_pnl": 0.0}
-            per_regime[reg]["count"]  += 1
+            per_regime[reg]["count"]   += 1
             per_regime[reg]["net_pnl"] += p
-            per_regime[reg][outcome.lower() + "s"] += 1
+            per_regime[reg][ok]        += 1
 
             et = trade.get("close_reason", "UNKNOWN")
             if et not in per_exit_type:
                 per_exit_type[et] = {"count": 0, "wins": 0, "losses": 0, "flats": 0,
                                      "net_pnl": 0.0, "avg_pnl": 0.0,
                                      "pct_of_total": 0.0, "pct_of_total_pnl": 0.0}
-            per_exit_type[et]["count"]  += 1
+            per_exit_type[et]["count"]   += 1
             per_exit_type[et]["net_pnl"] += p
-            per_exit_type[et][outcome.lower() + "s"] += 1
+            per_exit_type[et][ok] += 1
 
         abs_net = abs(net_pnl) or 1.0
         for et, s in per_exit_type.items():
@@ -275,7 +284,7 @@ class MetricsEngine:
         if not recent:
             return {"known": False, "window": 0, "wr": None, "avg_ev": None}
         wins   = sum(1 for t in recent if t.get("result") == "WIN")
-        avg_ev = sum(float(t.get("ev", 0.0)) for t in recent) / len(recent)
+        avg_ev = sum(float(t.get("ev") or 0.0) for t in recent) / len(recent)
         return {
             "known": True,
             "window": len(recent),
