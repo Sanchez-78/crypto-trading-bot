@@ -1080,6 +1080,34 @@ def print_learning_monitor():
         for w in warnings[:3]:
             print(f"    - {w}")
 
+    # V10.13s.4: Economic health display
+    print()
+    try:
+        eh = lm_economic_health()
+        eh_status = eh.get("status", "UNKNOWN")
+        eh_score = eh.get("overall_score", 0.0)
+        pf = eh.get("profit_factor", 0.0)
+        sr = eh.get("scratch_rate", 0.0)
+        trend = eh.get("recent_trend", "UNKNOWN")
+
+        print(f"  Economic: {eh_score:.3f}  [{eh_status}]")
+        print(f"    PF: {pf:.2f}  Scratch: {sr:.0%}  Trend: {trend}")
+
+        eh_warnings = eh.get("warnings", [])
+        if eh_warnings and eh_status != "GOOD":
+            for w in eh_warnings[:2]:
+                print(f"    ⚠️  {w}")
+    except Exception as e:
+        pass
+
+    # V10.13s.4: Bootstrap reduced-mode indicator
+    try:
+        from src.services.execution import is_bootstrap_reduced_mode
+        if is_bootstrap_reduced_mode():
+            print(f"  ⚡ BOOTSTRAP_REDUCED_MODE active (50% position sizing)")
+    except Exception:
+        pass
+
     # V10.13x.2: Scratch pressure alert
     try:
         from src.services.scratch_forensics import scratch_pressure_alert

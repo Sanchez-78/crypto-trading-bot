@@ -1349,6 +1349,52 @@ def _log_canonical_decision(sym, action, regime, raw_ev, final_ev, raw_score, fi
         )
 
 
+def economic_gate(symbol: str, regime: str) -> tuple[bool, str]:
+    """
+    V10.13s.4: Economic gate — throttle trading when economics degrade.
+
+    Returns: (allow_trade: bool, reason: str)
+
+    Blocks new entries when economic health is poor:
+    - Profit factor < 1.0 (net losing)
+    - Scratch rate > 75% (exit quality terrible)
+    - Recent trend declining (recent WR < overall WR by >5%)
+
+    This is a soft gate (returns reason, can be overridden by EV), but signals
+    system instability and suggests waiting for conditions to improve.
+    """
+    try:
+        from src.services.learning_monitor import lm_economic_health
+
+        health = lm_economic_health()
+        status = health.get("status", "ERROR")
+
+        # Allow trading unless health is actively bad
+        if status in ("GOOD", "CAUTION"):
+            return True, ""
+
+        # FRAGILE or DEGRADED: Apply caution
+        warnings = health.get("warnings", [])
+        reason = " & ".join(warnings[:2]) if warnings else status
+
+        # Hard block only if DEGRADED with multiple failures
+        if status == "DEGRADED" and len(warnings) >= 2:
+            return False, f"[ECONOMIC_GATE] {reason}"
+
+        # FRAGILE: soft block (70% chance) — allow some trading but reduce frequency
+        if status == "FRAGILE":
+            import random
+            if random.random() < 0.30:  # 30% get through to sustain data flow
+                return True, ""
+            return False, f"[ECONOMIC_GATE] {reason} (soft_block)"
+
+        return True, ""
+
+    except Exception as e:
+        log.debug(f"[ECONOMIC_GATE] Calculation failed: {e}, allowing trade")
+        return True, ""
+
+
 def evaluate_signal(signal):
     # V10.15 QUOTA FIX: Use cached history instead of load_history() on every signal
     history = _get_cached_history()
@@ -1464,6 +1510,15 @@ def evaluate_signal(signal):
             return None
     except Exception:
         pass
+
+    # ── V10.13s.4: Economic gate — throttle if trading economics degrade ──────
+    sym = signal.get("sym", signal.get("symbol", ""))
+    reg = signal.get("regime", "RANGING")
+    _eg_allow, _eg_reason = economic_gate(sym, reg)
+    if not _eg_allow:
+        track_blocked(reason="ECONOMIC_GATE")
+        print(f"    decision=SKIP_ECONOMIC  {_eg_reason}")
+        return None
 
     # ── Frequency cap ─────────────────────────────────────────────────────────
     t15 = trades_in_window(900)
