@@ -1,180 +1,205 @@
 """
-V10.13s.1 — Canonical State Oracle
+V10.13s.4: Canonical State Oracle — Single Source of Truth at Startup
 
-PROBLÉM:
-  Log ukazuje 4 různé počty obchodů zároveň:
-  - 100 (learning runtime)
-  - 500 (dashboard reconciliation)
-  - 7467 (stale global bootstrap)
-  - 0 (maturity oracle — BUG!)
+Initializes authoritative trade counts from Firestore before any decision logic
+runs. Eliminates stale/conflicting global state at startup.
 
-  Maturity neví která čísla věřit → vždycky vybere špatně
-
-ŘEŠENÍ:
-  Jedna funkce get_canonical_state() která vrátí single source of truth.
-  Všechny subsystémy se budou řídí JÍ.
-
-Priorita zdrojů:
-  1. Learning monitor (runtime accurate state)
-  2. Learning event metrics (live reconciliation)
-  3. Firebase last saved state
-  4. Redis hydrated state
-  5. NIKDY stale global state
+Structure:
+  {
+    "source": "firestore" | "redis" | "history" | "empty" | "error",
+    "trades_total": int,
+    "trades_won": int,
+    "trades_lost": int,
+    "validation": "ok" | "mismatch" | "error",
+    "mismatch_gap": int,  # if validation="mismatch"
+    "timestamp": float,
+  }
 """
 
 import logging
 import time as _time
 
-log = logging.getLogger(__name__)
-
-# Track last refresh
-_last_canonical_refresh = 0.0
-_canonical_cache = None
-_cache_ttl_sec = 5.0  # Recompute každých 5 sekund
+_canonical_state = {
+    "source": "empty",
+    "trades_total": 0,
+    "trades_won": 0,
+    "trades_lost": 0,
+    "validation": "pending",
+    "mismatch_gap": 0,
+    "timestamp": 0.0,
+}
 
 
 def get_canonical_state() -> dict:
-    """
-    V10.13s.1: Single source of truth pro trade counts a maturity.
-
-    Vrací:
-    {
-        "trades_runtime": int,           # Current session actual trades
-        "trades_dashboard": int,         # Historical reconciled count
-        "trades_historical_total": int,  # Full bootstrap history (WARNING: may be stale)
-        "trades_for_maturity": int,      # Authoritative count for logic
-        "source": "learning|firebase|redis|bootstrap",
-        "maturity": "cold_start|bootstrap|live",
-        "bootstrap_active": bool,
-        "state_consistent": bool,
-        "warnings": [str],
-        "ts": float,                     # Refresh timestamp
-    }
-
-    Procedura:
-      1. Get runtime count from learning_monitor
-      2. Get dashboard count from learning_event
-      3. Compare — if mismatch, log warning
-      4. Pick authoritative count based on priority
-      5. Determine maturity level
-      6. Return unified dict
-
-    NIKDY nevrátit stale data — vždy preferuj runtime.
-    """
-    global _last_canonical_refresh, _canonical_cache
-
-    now = _time.time()
-    if _canonical_cache and (now - _last_canonical_refresh) < _cache_ttl_sec:
-        return _canonical_cache  # Return cached if fresh
-
-    warnings = []
-
-    # Zdroj 1: Learning Monitor (runtime state)
-    runtime_trades = 0
-    try:
-        from src.services.learning_monitor import lm_count
-        runtime_trades = sum(lm_count.values())
-    except Exception as e:
-        warnings.append(f"learning_monitor unavailable: {e}")
-
-    # Zdroj 2: Learning Event (dashboard reconciliation)
-    dashboard_trades = 0
-    try:
-        from src.services.learning_event import METRICS
-        dashboard_trades = METRICS.get("trades", 0)
-    except Exception as e:
-        warnings.append(f"learning_event unavailable: {e}")
-
-    # Zdroj 3: Firebase (historical, may be stale)
-    firebase_trades = 0
-    try:
-        from src.services.firebase_client import load_latest_state
-        state = load_latest_state()
-        firebase_trades = state.get("trade_count", 0) if state else 0
-    except Exception:
-        pass  # Firebase unavailable, OK during offline
-
-    # Zdroj 4: Bootstrap (legacy, usually stale after runtime)
-    bootstrap_trades = runtime_trades  # Use runtime unless explicitly marked stale
-
-    # Determine which count to use (priority order)
-    # Authoritative: runtime + dashboard agreement, or runtime if dashboard not ready
-    state_consistent = abs(runtime_trades - dashboard_trades) <= 5
-
-    if not state_consistent:
-        warnings.append(
-            f"count_mismatch: runtime={runtime_trades} vs dashboard={dashboard_trades}"
-        )
-
-    # Prefer runtime (current session), fall back to dashboard
-    trades_for_maturity = runtime_trades if runtime_trades > 0 else dashboard_trades
-
-    # Determine maturity
-    if trades_for_maturity == 0:
-        maturity = "cold_start"
-        bootstrap_active = True
-    elif trades_for_maturity < 50:
-        maturity = "bootstrap"
-        bootstrap_active = True
-    else:
-        maturity = "live"
-        bootstrap_active = False
-
-    # Sanity check: if maturity logic would set trades=0 but we have runtime data, log bug
-    if trades_for_maturity > 0 and maturity == "cold_start":
-        warnings.append(
-            "BUG: maturity oracle logic error — trades>0 but cold_start selected"
-        )
-
-    _canonical_cache = {
-        "trades_runtime": runtime_trades,
-        "trades_dashboard": dashboard_trades,
-        "trades_historical_total": firebase_trades,
-        "trades_for_maturity": trades_for_maturity,
-        "source": "runtime" if runtime_trades > 0 else ("dashboard" if dashboard_trades > 0 else "bootstrap"),
-        "maturity": maturity,
-        "bootstrap_active": bootstrap_active,
-        "state_consistent": state_consistent,
-        "warnings": warnings,
-        "ts": now,
-    }
-
-    _last_canonical_refresh = now
-    return _canonical_cache
+    """Get current canonical state (read-only)."""
+    return _canonical_state.copy()
 
 
 def get_authoritative_trade_count() -> int:
-    """Shortcut: vrátí jen trade count pro logiku."""
-    return get_canonical_state()["trades_for_maturity"]
+    """Get authoritative total trade count (for execution.py bootstrap_mode)."""
+    return _canonical_state.get("trades_total", 0)
 
 
-def is_bootstrap_active() -> bool:
-    """Shortcut: je systém v bootstrap fázi?"""
-    return get_canonical_state()["bootstrap_active"]
+def _load_from_firestore() -> dict:
+    """Load metrics from Firestore metrics collection."""
+    try:
+        from src.services.firebase_client import db
+
+        if not db:
+            return None
+
+        doc = db.collection("metrics_full").document("global").get()
+        if not doc.exists:
+            return None
+
+        data = doc.to_dict() or {}
+        return {
+            "source": "firestore",
+            "trades_total": data.get("trades", 0),
+            "trades_won": data.get("trades_won", 0),
+            "trades_lost": data.get("trades_lost", 0),
+        }
+    except Exception as e:
+        logging.warning(f"[CANONICAL] Failed to load from Firestore: {e}")
+        return None
 
 
-def get_maturity() -> str:
-    """Shortcut: vrátí maturity level (cold_start|bootstrap|live)."""
-    return get_canonical_state()["maturity"]
+def _load_from_redis() -> dict:
+    """Load metrics from Redis cache (faster than Firestore on warm start)."""
+    try:
+        from src.services.redis_pool import get_redis
+        r = get_redis()
+        if not r:
+            return None
+
+        metrics_json = r.get("metrics:global")
+        if not metrics_json:
+            return None
+
+        import json
+        data = json.loads(metrics_json)
+        return {
+            "source": "redis",
+            "trades_total": data.get("trades", 0),
+            "trades_won": data.get("trades_won", 0),
+            "trades_lost": data.get("trades_lost", 0),
+        }
+    except Exception as e:
+        logging.debug(f"[CANONICAL] Failed to load from Redis: {e}")
+        return None
+
+
+def _load_from_history(history: list) -> dict:
+    """Compute canonical state from loaded trade history."""
+    if not history:
+        return {
+            "source": "history",
+            "trades_total": 0,
+            "trades_won": 0,
+            "trades_lost": 0,
+        }
+
+    won = sum(1 for t in history if t.get("pnl_closed", 0) > 0)
+    lost = sum(1 for t in history if t.get("pnl_closed", 0) <= 0)
+
+    return {
+        "source": "history",
+        "trades_total": len(history),
+        "trades_won": won,
+        "trades_lost": lost,
+    }
+
+
+def _validate_consistency(trades_total: int, trades_won: int, trades_lost: int) -> tuple[str, int]:
+    """
+    Validate trades_won + trades_lost ≈ trades_total.
+
+    Returns: (status: "ok" | "mismatch" | "error", gap: int)
+    """
+    if trades_total == 0:
+        return "ok", 0
+
+    computed_total = trades_won + trades_lost
+    gap = abs(computed_total - trades_total)
+
+    max_gap = max(1, int(trades_total * 0.05))
+
+    if gap > max_gap:
+        return "mismatch", gap
+
+    return "ok", 0
+
+
+def initialize_canonical_state(history: list = None) -> dict:
+    """
+    V10.13s.4: Initialize canonical state at startup.
+
+    Priority order:
+    1. Redis (fastest, warm start)
+    2. Firestore (authoritative, cold start)
+    3. History (computed from loaded trades)
+    4. Empty (first run)
+
+    Args:
+        history: Optional loaded trade history (fallback source)
+
+    Returns:
+        Initialized canonical state dict
+    """
+    global _canonical_state
+
+    logging.info("[CANONICAL] Initializing source-of-truth state...")
+
+    result = _load_from_redis()
+    if result:
+        logging.info(f"[CANONICAL] Loaded from Redis: {result['trades_total']} trades")
+    else:
+        result = _load_from_firestore()
+        if result:
+            logging.info(f"[CANONICAL] Loaded from Firestore: {result['trades_total']} trades")
+        else:
+            result = _load_from_history(history)
+            logging.info(f"[CANONICAL] Computed from history: {result['trades_total']} trades")
+
+    validation, gap = _validate_consistency(
+        result["trades_total"],
+        result["trades_won"],
+        result["trades_lost"]
+    )
+
+    if validation == "ok":
+        logging.info(f"[CANONICAL] OK - State consistent")
+    else:
+        logging.warning(
+            f"[CANONICAL] MISMATCH: total={result['trades_total']}, "
+            f"won+lost={result['trades_won']+result['trades_lost']}, gap={gap}"
+        )
+
+    _canonical_state.update({
+        "source": result["source"],
+        "trades_total": result["trades_total"],
+        "trades_won": result["trades_won"],
+        "trades_lost": result["trades_lost"],
+        "validation": validation,
+        "mismatch_gap": gap,
+        "timestamp": _time.time(),
+    })
+
+    return _canonical_state.copy()
 
 
 def print_canonical_state():
-    """Tiskne diagnostic state."""
+    """Log canonical state for diagnostics."""
     state = get_canonical_state()
-    print(f"\n[CANONICAL STATE]")
-    print(f"  Runtime:    {state['trades_runtime']}")
-    print(f"  Dashboard:  {state['trades_dashboard']}")
-    print(f"  For Logic:  {state['trades_for_maturity']}  [{state['maturity']}]")
-    print(f"  Consistent: {state['state_consistent']}")
-    print(f"  Source:     {state['source']}")
-    if state['warnings']:
-        print(f"  Warnings:")
-        for w in state['warnings']:
-            print(f"    - {w}")
 
-
-def invalidate_cache():
-    """Force recompute na příští volání (po state changes)."""
-    global _canonical_cache, _last_canonical_refresh
-    _canonical_cache = None
-    _last_canonical_refresh = 0.0
+    print("\n" + "="*70)
+    print("CANONICAL STATE AUDIT (Startup)")
+    print("="*70)
+    print(f"  Source:        {state['source']}")
+    print(f"  Trades Total:  {state['trades_total']}")
+    print(f"  Trades Won:    {state['trades_won']}")
+    print(f"  Trades Lost:   {state['trades_lost']}")
+    print(f"  Validation:    {state['validation']}")
+    if state['mismatch_gap'] > 0:
+        print(f"  Mismatch Gap:  {state['mismatch_gap']}")
+    print("="*70 + "\n")

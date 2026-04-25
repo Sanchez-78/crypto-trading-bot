@@ -638,6 +638,11 @@ def final_size(sym, reg, base, positions, ob=None,
     pressure_mult = max(0.50, 1.0 - 0.50 * portfolio_pressure)
     size *= pressure_mult
 
+    # ── V10.13s.4: Bootstrap reduced-mode scaling ────────────────────────────
+    # If learning data quality is low, reduce position sizes by 50%
+    if is_bootstrap_reduced_mode():
+        size *= 0.50
+
     # ── V10.13: Coherence-based size scaling ──────────────────────────────────
     # Floor at 0.75: coherence modulates, does not block.
     coherence_mult = max(0.75, coherence)
@@ -692,6 +697,53 @@ def is_bootstrap():
             return METRICS.get("trades", 0) < 100
         except Exception:
             return len(closed_trades) < 100
+
+
+def is_bootstrap_reduced_mode() -> bool:
+    """
+    V10.13s.4: Check if learning data quality is too low for normal risk.
+
+    Enter reduced-risk mode when ANY of these thresholds is breached:
+    - Total trades < 150 (insufficient sample size)
+    - Min pair count < 15 (unbalanced pair distribution)
+    - Converged pairs < 4 (weak convergence across pairs)
+    - Breadth < 6 (not enough usable pairs)
+
+    Returns: True if reduced mode should be active, False for normal operation.
+    """
+    try:
+        from src.services.learning_monitor import lm_count, lm_convergence
+
+        total_trades = sum(lm_count.values()) if lm_count else 0
+        if total_trades < 150:
+            return True
+
+        # Min pair count
+        min_pair_n = min(lm_count.values()) if lm_count else 0
+        if min_pair_n < 15:
+            return True
+
+        # Convergence check
+        converged_pairs = sum(1 for pair in lm_count.keys() if lm_convergence(*pair) > 0.5)
+        if converged_pairs < 4:
+            return True
+
+        # Breadth check
+        usable_pairs = sum(1 for sym_reg in lm_count.keys() if lm_count.get(sym_reg, 0) >= 10)
+        if usable_pairs < 6:
+            return True
+
+        return False
+
+    except Exception as e:
+        # Safe fallback: if we can't calculate, be conservative
+        import logging
+        logging.debug(f"[BOOTSTRAP_REDUCED] Calculation failed: {e}, defaulting to safe mode")
+        try:
+            from src.services.learning_event import METRICS
+            return METRICS.get("trades", 0) < 150
+        except Exception:
+            return True
 
 
 def entry_filter(ev):

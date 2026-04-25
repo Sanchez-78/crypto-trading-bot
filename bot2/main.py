@@ -88,6 +88,7 @@ from src.services.trade_executor import get_open_positions
 from src.services.signal_generator import warmup
 from src.services.dashboard_live import dashboard_loop
 from src.services.metrics_engine import MetricsEngine
+from src.services.canonical_state import initialize_canonical_state, print_canonical_state
 from bot2.auditor import run_audit
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -1477,14 +1478,25 @@ def main():
         msg = "⚠️  [DB_WIPE] Firebase returned 0 trades — starting in full bootstrap mode. Session gate bypassed, debounce bypassed, force-trade guard active."
         bus.emit("LOG_OUTPUT", {"message": msg}, time.time())
 
-    print("  [7/7b] Bootstrapping from history...", file=sys.stderr, flush=True)
+    print("  [7/7b-CANONICAL] Initializing canonical state from authoritative source...", file=sys.stderr, flush=True)
+    initialize_canonical_state(_history)
+    print("  [7/7b-CANONICAL] Canonical state initialized ✓", file=sys.stderr, flush=True)
+
+    print("  [7/7c] Bootstrapping from history...", file=sys.stderr, flush=True)
     bootstrap_from_history(_history)
-    print("  [7/7b] Bootstrap complete ✓", file=sys.stderr, flush=True)
+    print("  [7/7c] Bootstrap complete ✓", file=sys.stderr, flush=True)
+
+    print("  [7/7d] Printing canonical state audit...", file=sys.stderr, flush=True)
+    try:
+        print_canonical_state()
+    except Exception as e:
+        logging.warning(f"Failed to print canonical state: {e}")
+    print("  [7/7d] Canonical state audit printed ✓", file=sys.stderr, flush=True)
 
     # V10.13b: Log bootstrap status to confirm hydration completed
-    print("  [7/7c] Logging bootstrap status...", file=sys.stderr, flush=True)
+    print("  [7/7e] Logging bootstrap status...", file=sys.stderr, flush=True)
     log_bootstrap_status()
-    print("  [7/7c] Bootstrap status logged ✓", file=sys.stderr, flush=True)
+    print("  [7/7e] Bootstrap status logged ✓", file=sys.stderr, flush=True)
 
     print("  [8/8] Running warmup indicators...", file=sys.stderr, flush=True)
     warmup()

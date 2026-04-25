@@ -553,6 +553,116 @@ def lm_health():
     return h_dict.get('overall', h_dict.get('final', 0.0))
 
 
+def lm_economic_health() -> dict:
+    """
+    V10.13s.4: Calculate economic health (trading results, not learning state).
+
+    Separate from lm_health() which measures learning quality.
+    Economic health measures actual trading profitability and execution.
+
+    Returns dict with:
+      - profit_factor: gross_wins / gross_losses ratio
+      - scratch_rate: fraction of exits via SCRATCH_EXIT
+      - recent_trend: "IMPROVING" | "DECLINING" | "NEUTRAL"
+      - overall_score: 0.0-1.0 based on these components
+      - status: "GOOD" | "CAUTION" | "FRAGILE" | "DEGRADED"
+    """
+    try:
+        from src.services.learning_event import METRICS, _close_reasons, _recent_results
+
+        trades = METRICS.get("trades", 0)
+        if trades < 5:
+            return {
+                "profit_factor": 0.0,
+                "scratch_rate": 0.0,
+                "recent_trend": "INSUFFICIENT_DATA",
+                "overall_score": 0.0,
+                "status": "INSUFFICIENT_DATA",
+                "warnings": ["Need at least 5 trades to assess economic health"]
+            }
+
+        # Profit factor: gross_wins / gross_losses
+        gw = METRICS.get("gross_wins", 0.0)
+        gl = METRICS.get("gross_losses", 0.0)
+        profit_factor = gw / gl if gl > 0 else (99.0 if gw > 0 else 0.0)
+
+        # Scratch rate: SCRATCH_EXIT / total trades
+        scratch_exits = _close_reasons.get("SCRATCH_EXIT", 0)
+        scratch_rate = scratch_exits / trades if trades > 0 else 0.0
+
+        # Recent trend
+        wins = METRICS.get("wins", 0)
+        losses = METRICS.get("losses", 0)
+        decisive = wins + losses
+        overall_wr = wins / decisive if decisive > 0 else 0.0
+
+        rr = list(_recent_results)
+        recent_wins = sum(1 for r in rr if r == "WIN")
+        recent_wr = recent_wins / len(rr) if rr else 0.0
+
+        trend_delta = recent_wr - overall_wr
+        if trend_delta > 0.05:
+            recent_trend = "IMPROVING"
+            trend_score = 0.8
+        elif trend_delta < -0.05:
+            recent_trend = "DECLINING"
+            trend_score = 0.2
+        else:
+            recent_trend = "NEUTRAL"
+            trend_score = 0.5
+
+        # Overall score components (each 0.0-1.0)
+        # PF score: 1.5 is good, 1.0 is breakeven, < 0.5 is bad
+        pf_score = min(1.0, profit_factor / 1.5)
+        # Scratch rate score: 0% is good (1.0), 80%+ is bad (0.0)
+        scratch_score = max(0.0, 1.0 - (scratch_rate / 0.80))
+        # Trend score already computed above
+
+        overall_score = (pf_score + scratch_score + trend_score) / 3.0
+
+        # Status label
+        warnings = []
+        if profit_factor < 1.0:
+            warnings.append(f"Negative or break-even PF: {profit_factor:.2f}")
+        if scratch_rate > 0.70:
+            warnings.append(f"High scratch rate: {scratch_rate*100:.1f}%")
+        if recent_trend == "DECLINING":
+            warnings.append(f"Recent performance degrading ({recent_wr*100:.1f}% vs {overall_wr*100:.1f}%)")
+
+        if overall_score >= 0.7:
+            status = "GOOD"
+        elif overall_score >= 0.5:
+            status = "CAUTION"
+        elif overall_score >= 0.3:
+            status = "FRAGILE"
+        else:
+            status = "DEGRADED"
+
+        return {
+            "profit_factor": round(profit_factor, 3),
+            "scratch_rate": round(scratch_rate, 3),
+            "recent_trend": recent_trend,
+            "overall_score": round(overall_score, 3),
+            "status": status,
+            "warnings": warnings,
+            "components": {
+                "pf_score": round(pf_score, 3),
+                "scratch_score": round(scratch_score, 3),
+                "trend_score": round(trend_score, 3),
+            }
+        }
+    except Exception as e:
+        log.warning(f"[ECONOMIC_HEALTH] Calculation failed: {e}")
+        return {
+            "profit_factor": 0.0,
+            "scratch_rate": 0.0,
+            "recent_trend": "ERROR",
+            "overall_score": 0.0,
+            "status": "ERROR",
+            "warnings": [str(e)]
+        }
+
+
 # ── Meta state + adaptive control ────────────────────────────────────────────
 
 meta: dict = {

@@ -170,7 +170,9 @@
       "Bash(jobs -l)",
       "Skill(claude-api)",
       "Bash(git ls-remote *)",
-      "Bash(awk '{print $1}')"
+      "Bash(awk '{print $1}')",
+      "Bash(rtk --version)",
+      "Bash(rtk gain *)"
     ]
   }
 }
