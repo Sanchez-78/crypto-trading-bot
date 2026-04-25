@@ -29,3 +29,31 @@ For detailed context, logic, and architecture, refer to:
 
 ## DATA FLOW
 fetch → event_bus → signal_engine → calibrated_ev → risk_filter → execute → learn
+
+## RTK WORKFLOW (Token Optimization)
+For long/noisy outputs, use RTK to compress context for Claude/Codex analysis.
+
+**Quick Commands:**
+```bash
+rtk git status          # Compressed git status
+rtk git diff            # Filtered diff summary
+rtk pytest              # Test results condensed
+rtk ruff check .        # Lint issues summarized
+rtk grep "PATTERN" .    # Search results filtered
+rtk read path/file.py   # File summary
+rtk log logs/app.log    # Log analysis
+```
+
+**Before Commits:**
+```bash
+rtk git status
+rtk git diff
+rtk pytest
+rtk ruff check .
+```
+
+**Token Savings:** RTK has saved 1.2M+ tokens (98.7% efficiency) across this project.
+
+**Reference:** See [RTK_CONFIG.md](file:///c:/Projects/CryptoMaster_srv/RTK_CONFIG.md) for detailed workflow patterns and critical command examples for trade exit analysis, canonical state verification, Firebase quota monitoring, and event bus health checks.
+
+**Snapshot Tool:** Run `.\rtk_snapshot.ps1` to capture all diagnostics at once.
