@@ -553,6 +553,36 @@ def lm_health():
     return h_dict.get('overall', h_dict.get('final', 0.0))
 
 
+def canonical_profit_factor(closed_trades: list[dict] = None) -> float:
+    """
+    PATCH 4: Canonical profit factor calculation — single source of truth.
+
+    Gross wins / gross losses ratio.
+    - Handles break-even: returns inf if winning but no losses, 0.0 if losing/break-even.
+    - Used by: dashboard, economic_gate, audit, health monitoring.
+
+    Args:
+        closed_trades: List of trade dicts with 'net_pnl' field. If None, uses METRICS.
+
+    Returns:
+        float: Profit factor (wins/losses). inf if no losses, 0.0 if break-even/losing.
+    """
+    if closed_trades is None:
+        try:
+            from src.services.learning_event import METRICS
+            gw = METRICS.get("gross_wins", 0.0)
+            gl = METRICS.get("gross_losses", 0.0)
+        except Exception:
+            return 0.0
+    else:
+        gw = sum(max(t.get("net_pnl", 0.0), 0.0) for t in closed_trades)
+        gl = sum(abs(min(t.get("net_pnl", 0.0), 0.0)) for t in closed_trades)
+
+    if gl == 0:
+        return float("inf") if gw > 0 else 0.0
+    return gw / gl
+
+
 def lm_economic_health() -> dict:
     """
     V10.13s.4: Calculate economic health (trading results, not learning state).
@@ -581,16 +611,17 @@ def lm_economic_health() -> dict:
                 "warnings": ["Need at least 5 trades to assess economic health"]
             }
 
-        # Profit factor: gross_wins / gross_losses
-        gw = METRICS.get("gross_wins", 0.0)
-        gl = METRICS.get("gross_losses", 0.0)
-        profit_factor = gw / gl if gl > 0 else (99.0 if gw > 0 else 0.0)
+        # PATCH 4: Use canonical profit factor (single source of truth)
+        profit_factor = canonical_profit_factor()
+        # Normalize inf to 99.0 for display
+        if profit_factor == float("inf"):
+            profit_factor = 99.0
 
         # Scratch rate: SCRATCH_EXIT / total trades
         scratch_exits = _close_reasons.get("SCRATCH_EXIT", 0)
         scratch_rate = scratch_exits / trades if trades > 0 else 0.0
 
-        # Recent trend
+        # Recent trend (PATCH 2: Only compute if sufficient sample size)
         wins = METRICS.get("wins", 0)
         losses = METRICS.get("losses", 0)
         decisive = wins + losses
@@ -598,18 +629,25 @@ def lm_economic_health() -> dict:
 
         rr = list(_recent_results)
         recent_wins = sum(1 for r in rr if r == "WIN")
-        recent_wr = recent_wins / len(rr) if rr else 0.0
+        recent_sample_size = len(rr)
 
-        trend_delta = recent_wr - overall_wr
-        if trend_delta > 0.05:
-            recent_trend = "IMPROVING"
-            trend_score = 0.8
-        elif trend_delta < -0.05:
-            recent_trend = "DECLINING"
-            trend_score = 0.2
+        # PATCH 2: Don't treat empty/small sample as degradation
+        if recent_sample_size < 8:
+            # Insufficient recent data: don't judge trend yet
+            recent_trend = "INSUFFICIENT_RECENT_DATA"
+            trend_score = 0.5  # Neutral, not degraded
         else:
-            recent_trend = "NEUTRAL"
-            trend_score = 0.5
+            recent_wr = recent_wins / recent_sample_size
+            trend_delta = recent_wr - overall_wr
+            if trend_delta > 0.05:
+                recent_trend = "IMPROVING"
+                trend_score = 0.8
+            elif trend_delta < -0.05:
+                recent_trend = "DECLINING"
+                trend_score = 0.2
+            else:
+                recent_trend = "NEUTRAL"
+                trend_score = 0.5
 
         # Overall score components (each 0.0-1.0)
         # PF score: 1.5 is good, 1.0 is breakeven, < 0.5 is bad
@@ -626,8 +664,10 @@ def lm_economic_health() -> dict:
             warnings.append(f"Negative or break-even PF: {profit_factor:.2f}")
         if scratch_rate > 0.70:
             warnings.append(f"High scratch rate: {scratch_rate*100:.1f}%")
-        if recent_trend == "DECLINING":
-            warnings.append(f"Recent performance degrading ({recent_wr*100:.1f}% vs {overall_wr*100:.1f}%)")
+        # PATCH 2: Only warn about declining trend if we have sufficient sample size
+        if recent_trend == "DECLINING" and recent_sample_size >= 8:
+            recent_wr_pct = recent_wins / recent_sample_size
+            warnings.append(f"Recent performance degrading ({recent_wr_pct*100:.1f}% vs {overall_wr*100:.1f}%)")
 
         if overall_score >= 0.7:
             status = "GOOD"

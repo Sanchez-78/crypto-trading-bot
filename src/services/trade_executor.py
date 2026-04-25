@@ -1458,6 +1458,7 @@ def handle_signal(signal):
     _coh_v1013 = signal.get("coherence", 1.0)   # set by evaluate_signal V10.12
     _pp_v1013  = 0.0
     _mom_v1013 = 0.0
+    _econ_mult_v1013 = signal.get("_economic_size_mult", 1.0)  # PATCH 2: economic gate scaling
     try:
         from src.services.risk_engine import (
             portfolio_pressure as _ppfn,
@@ -1470,7 +1471,8 @@ def handle_signal(signal):
 
     base     = final_size(sym, reg, 0.05 if _t >= 20 else 0.025, _positions, ob,
                           coherence=_coh_v1013,
-                          portfolio_pressure=_pp_v1013)
+                          portfolio_pressure=_pp_v1013,
+                          economic_size_mult=_econ_mult_v1013)
     if base == 0.0:
         log.info(f"    portfolio gate: exposure_full  sym={sym}")
         return

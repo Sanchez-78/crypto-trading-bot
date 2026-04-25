@@ -661,13 +661,29 @@ _MATURITY_CACHE = {
     "cache_ts": 0,
 }
 
+def _get_maturity_trade_count(metrics: dict) -> int:
+    """
+    PATCH 1: Get authoritative trade count for maturity calculation.
+
+    Priority:
+    1. Canonical state (oracle at startup)
+    2. Runtime metrics (learning_monitor fallback)
+    """
+    canonical = metrics.get("canonical_state", {})
+    logic_trades = canonical.get("logic_completed_trades")
+    if logic_trades is not None:
+        return int(logic_trades)
+    return int(metrics.get("completed_trades_runtime", 0))
+
+
 def compute_effective_maturity():
     """
     V10.13s: Compute effective maturity after all hydration complete.
 
     Source priority:
-    1. Learning monitor pair counts (freshest after reset)
-    2. Global METRICS (fallback if LM empty)
+    1. Canonical state logic_completed_trades (startup oracle)
+    2. Learning monitor pair counts (freshest after reset)
+    3. Global METRICS (fallback if LM empty)
 
     Assigns bootstrap/cold-start flags based on unified trade count.
     Call once during startup; all modules then read from get_effective_maturity().
@@ -682,14 +698,34 @@ def compute_effective_maturity():
     try:
         from src.services.learning_monitor import lm_count
         from src.services.learning_event import METRICS as _M
+        from src.services.canonical_state import get_canonical_state
+
+        # PATCH 1: Check canonical state first (startup oracle with authoritative trade count)
+        canonical = get_canonical_state()
+        trades_from_canonical = canonical.get("trades_total", 0)
 
         lm_total = sum(s.get("n", 0) for s in lm_count.values()) if lm_count else 0
         global_total = _M.get("trades", 0)
-        effective_n = lm_total if lm_total > 0 else global_total
 
-        # Bootstrap: sparse learning data
-        bootstrap = effective_n < 100
-        cold_start = effective_n < 100 or (lm_total > 0 and max((s.get("n", 0) for s in lm_count.values()), default=0) < 15)
+        # Priority: canonical > lm > global
+        if trades_from_canonical > 0:
+            effective_n = trades_from_canonical
+            source = "canonical"
+        elif lm_total > 0:
+            effective_n = lm_total
+            source = "lm"
+        else:
+            effective_n = global_total
+            source = "global"
+
+        # Bootstrap: sparse learning data (threshold 150 per addendum)
+        bootstrap = (
+            effective_n < 150 or
+            (lm_total > 0 and min((s.get("n", 0) for s in lm_count.values()), default=0) < 15) or
+            (lm_count and sum(1 for s in lm_count.values() if s.get("converged")) < 4) or
+            (lm_count and sum(1 for s in lm_count.values() if s.get("n", 0) > 0) < 6)
+        )
+        cold_start = effective_n < 50
 
         _MATURITY_CACHE.update({
             "effective_trade_count": effective_n,
@@ -698,8 +734,16 @@ def compute_effective_maturity():
             "cache_ts": now,
             "lm_total": lm_total,
             "global_total": global_total,
+            "canonical_total": trades_from_canonical,
+            "source": source,
         })
+
+        log.info(
+            f"[MATURITY_PATCH1] Computed: effective_n={effective_n} (source={source}), "
+            f"bootstrap={bootstrap}, cold_start={cold_start}, canonical={trades_from_canonical}, lm={lm_total}"
+        )
     except Exception as _e:
+        log.warning(f"[MATURITY_PATCH1] Computation failed: {_e}, using cache")
         pass
 
     return _MATURITY_CACHE.copy()
@@ -1349,19 +1393,19 @@ def _log_canonical_decision(sym, action, regime, raw_ev, final_ev, raw_score, fi
         )
 
 
-def economic_gate(symbol: str, regime: str) -> tuple[bool, str]:
+def economic_gate(symbol: str, regime: str) -> tuple[bool, str, float]:
     """
-    V10.13s.4: Economic gate — throttle trading when economics degrade.
+    PATCH 2: Economic gate — scale trading when economics degrade, never hard-block.
 
-    Returns: (allow_trade: bool, reason: str)
+    Returns: (allow_trade: bool, reason: str, size_multiplier: float)
 
-    Blocks new entries when economic health is poor:
-    - Profit factor < 1.0 (net losing)
-    - Scratch rate > 75% (exit quality terrible)
-    - Recent trend declining (recent WR < overall WR by >5%)
+    Policy: SCALE-FIRST (never hard-block, always allow with appropriate sizing)
 
-    This is a soft gate (returns reason, can be overridden by EV), but signals
-    system instability and suggests waiting for conditions to improve.
+    Thresholds:
+    - INSUFFICIENT_RECENT_DATA: 0.90x (need more data to assess)
+    - DEGRADED (PF<1.0, high scratch, recent WR decline): 0.70x
+    - CAUTION: 0.85x
+    - GOOD/NORMAL: 1.00x
     """
     try:
         from src.services.learning_monitor import lm_economic_health
@@ -1369,30 +1413,37 @@ def economic_gate(symbol: str, regime: str) -> tuple[bool, str]:
         health = lm_economic_health()
         status = health.get("status", "ERROR")
 
-        # Allow trading unless health is actively bad
-        if status in ("GOOD", "CAUTION"):
-            return True, ""
+        # PATCH 2: Always allow trading (scale-first policy)
+        if status == "INSUFFICIENT_DATA":
+            return True, "[ECONOMIC_GATE] Insufficient trade data", 1.00
 
-        # FRAGILE or DEGRADED: Apply caution
+        if status == "INSUFFICIENT_RECENT_DATA":
+            # Recently restarted or low sample size — scale down to gather more data safely
+            return True, "[ECONOMIC_GATE] Insufficient recent sample (scaling 0.90x)", 0.90
+
         warnings = health.get("warnings", [])
         reason = " & ".join(warnings[:2]) if warnings else status
 
-        # Hard block only if DEGRADED with multiple failures
-        if status == "DEGRADED" and len(warnings) >= 2:
-            return False, f"[ECONOMIC_GATE] {reason}"
+        if status == "GOOD":
+            return True, "", 1.00
 
-        # FRAGILE: soft block (70% chance) — allow some trading but reduce frequency
+        if status == "CAUTION":
+            # Economics borderline but ok — light scaling
+            return True, f"[ECONOMIC_GATE] {reason} (scaling 0.85x)", 0.85
+
         if status == "FRAGILE":
-            import random
-            if random.random() < 0.30:  # 30% get through to sustain data flow
-                return True, ""
-            return False, f"[ECONOMIC_GATE] {reason} (soft_block)"
+            # Economics weak but not broken — moderate scaling
+            return True, f"[ECONOMIC_GATE] {reason} (scaling 0.70x)", 0.70
 
-        return True, ""
+        if status == "DEGRADED":
+            # Economics poor — conservative scaling
+            return True, f"[ECONOMIC_GATE] {reason} (scaling 0.50x)", 0.50
+
+        return True, "", 1.00
 
     except Exception as e:
-        log.debug(f"[ECONOMIC_GATE] Calculation failed: {e}, allowing trade")
-        return True, ""
+        log.debug(f"[ECONOMIC_GATE] Calculation failed: {e}, allowing full size")
+        return True, "", 1.00
 
 
 def evaluate_signal(signal):
@@ -1511,14 +1562,17 @@ def evaluate_signal(signal):
     except Exception:
         pass
 
-    # ── V10.13s.4: Economic gate — throttle if trading economics degrade ──────
+    # ── V10.13s.4: Economic gate — scale (never hard-block) ─────────────────────
+    # PATCH 2: Economic gate now implements scale-first policy: always allow trading
+    # but adjust position size based on economic health. Soft signals for logging only.
     sym = signal.get("sym", signal.get("symbol", ""))
     reg = signal.get("regime", "RANGING")
-    _eg_allow, _eg_reason = economic_gate(sym, reg)
-    if not _eg_allow:
-        track_blocked(reason="ECONOMIC_GATE")
-        print(f"    decision=SKIP_ECONOMIC  {_eg_reason}")
-        return None
+    _eg_allow, _eg_reason, _eg_size_mult = economic_gate(sym, reg)
+    # Always allow (PATCH 2: scale-first policy)
+    if _eg_reason:
+        log.info(f"[ECONOMIC_GATE] {_eg_reason} size_mult={_eg_size_mult:.2f}")
+    # Store size multiplier to apply in final_size() later
+    signal["_economic_size_mult"] = _eg_size_mult
 
     # ── Frequency cap ─────────────────────────────────────────────────────────
     t15 = trades_in_window(900)

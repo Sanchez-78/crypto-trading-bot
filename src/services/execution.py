@@ -576,7 +576,8 @@ def correlation_size_penalty(sym: str, direction: str, positions: dict) -> float
 
 def final_size(sym, reg, base, positions, ob=None,
                coherence: float = 1.0,
-               portfolio_pressure: float = 0.0) -> float:
+               portfolio_pressure: float = 0.0,
+               economic_size_mult: float = 1.0) -> float:
     """
     capital_alloc × ev_tier_mult × exposure_scale × leverage × execution_alpha.
 
@@ -647,6 +648,10 @@ def final_size(sym, reg, base, positions, ob=None,
     # Floor at 0.75: coherence modulates, does not block.
     coherence_mult = max(0.75, coherence)
     size *= coherence_mult
+
+    # ── PATCH 2: Economic health soft scaling ────────────────────────────────────
+    # Apply economic gate size multiplier (never hard-blocks, only scales)
+    size *= economic_size_mult
 
     return size
 
