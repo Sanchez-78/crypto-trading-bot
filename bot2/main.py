@@ -1632,7 +1632,9 @@ def main():
                 was_degraded = is_db_degraded_safe_mode()
 
                 if was_degraded and not currently_degraded:
-                    # Firebase has recovered — clear safe mode
+                    # Firebase has recovered — one-shot rehydrate then clear safe mode
+                    from src.services.firebase_recovery import attempt_recovery_rehydrate
+                    success, trades_loaded, model_loaded = attempt_recovery_rehydrate()
                     set_db_degraded_safe_mode(False)
                     logging.info("[SAFE_MODE] Firebase recovered; entries enabled")
                 elif not was_degraded and currently_degraded:
