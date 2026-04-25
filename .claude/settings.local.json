@@ -168,7 +168,9 @@
       "Bash(grep -E \"^\\\\\\\\?\\\\\\\\?\")",
       "Bash(rtk ps *)",
       "Bash(jobs -l)",
-      "Skill(claude-api)"
+      "Skill(claude-api)",
+      "Bash(git ls-remote *)",
+      "Bash(awk '{print $1}')"
     ]
   }
 }
