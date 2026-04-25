@@ -34,4 +34,4 @@ def on_price_tick(data):
             "regime": regime
         })
 
-event_bus.subscribe(PRICE_TICK, on_price_tick)
+event_bus.subscribe_once(PRICE_TICK, on_price_tick)

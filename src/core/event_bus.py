@@ -23,8 +23,12 @@ _processed_events: deque = deque(maxlen=2000)
 
 
 def subscribe(event, handler):
+    existing = _subscribers.get(event, [])
+    if handler in existing:
+        print(f"[!] Duplicate subscription prevented: {event} -> {handler.__name__}")
+        return
     _subscribers.setdefault(event, []).append(handler)
-    print(f"🔗 Subscribed: {event} -> {handler.__name__}")
+    print(f"[OK] Subscribed: {event} -> {handler.__name__}")
 
 
 def subscribe_once(event, handler):
@@ -51,3 +55,14 @@ def publish(event, data=None):
             h(data)
         except Exception as e:
             print(f"❌ Event error [{event}]:", e)
+
+
+# Namespace object for backward compatibility with code that uses event_bus.method() syntax
+class _EventBusNamespace:
+    """Namespace for event_bus functions — allows both function and object syntax."""
+    subscribe = staticmethod(subscribe)
+    subscribe_once = staticmethod(subscribe_once)
+    publish = staticmethod(publish)
+
+
+event_bus = _EventBusNamespace()

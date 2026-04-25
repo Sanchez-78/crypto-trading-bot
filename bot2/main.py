@@ -145,6 +145,16 @@ import src.services.signal_engine
 import src.services.trade_executor
 import src.services.audit_worker
 
+# V10.13s.1: Canonical state oracle for unified trade count / maturity
+try:
+    from src.services.canonical_state import (
+        invalidate_cache,
+        print_canonical_state,
+    )
+except ImportError:
+    def invalidate_cache(): pass
+    def print_canonical_state(): pass
+
 # ────────────────────────────────────────────────────────────────────────────
 # PATCH: Event Bus Integration (Zero Bug V2 Migration Phase 1)
 # ────────────────────────────────────────────────────────────────────────────
@@ -1705,6 +1715,9 @@ def main():
                               fx_usd_czk=_fx_usd_czk or None)
             _last_metrics = now
 
+            # V10.13s.1: Invalidate canonical state cache after metrics flush
+            invalidate_cache()
+
         if now - _last_pre_audit >= PRE_AUDIT_INTERVAL:
             _run_pre_live_audit()
             _last_pre_audit = now
@@ -1712,6 +1725,8 @@ def main():
         try:
             from src.services.learning_monitor import meta_update
             meta_update()
+            # V10.13s.1: Invalidate canonical state after learning update
+            invalidate_cache()
         except Exception:
             pass
 
@@ -1749,6 +1764,12 @@ def main():
         try:
             from src.services.learning_monitor import print_learning_monitor
             print_learning_monitor()
+        except Exception:
+            pass
+
+        # V10.13s.1: Print canonical state for diagnostic purposes
+        try:
+            print_canonical_state()
         except Exception:
             pass
 

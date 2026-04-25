@@ -167,7 +167,8 @@
       "Bash(rtk find *)",
       "Bash(grep -E \"^\\\\\\\\?\\\\\\\\?\")",
       "Bash(rtk ps *)",
-      "Bash(jobs -l)"
+      "Bash(jobs -l)",
+      "Skill(claude-api)"
     ]
   }
 }

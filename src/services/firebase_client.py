@@ -89,6 +89,19 @@ def _reset_quota_if_new_day():
         import logging
         logging.info("✅ Firebase quota RESET at midnight Pacific (09:00 GMT+2 / 07:00 UTC) — 50k reads, 20k writes available")
 
+def _get_quota_severity(reads_pct: float, writes_pct: float) -> str:
+    """Map quota % to severity level."""
+    max_pct = max(reads_pct, writes_pct)
+
+    if max_pct >= 95:
+        return "CRITICAL"
+    elif max_pct >= 80:
+        return "HIGH_WARNING"
+    elif max_pct >= 50:
+        return "WARNING"
+    else:
+        return "INFO"
+
 def _can_read(count=1):
     """Check if read quota available. Returns (allowed, current_usage, limit)."""
     _reset_quota_if_new_day()
@@ -103,20 +116,27 @@ def _record_read(count=1):
     global _QUOTA_READS
     _QUOTA_READS += count
     import logging
-    pct = _QUOTA_READS/_QUOTA_MAX_READS*100
+    reads_pct = _QUOTA_READS/_QUOTA_MAX_READS*100
+    writes_pct = _QUOTA_WRITES/_QUOTA_MAX_WRITES*100
+    severity = _get_quota_severity(reads_pct, writes_pct)
 
-    # Log aggressively to track source of reads
+    # Log at appropriate severity level
     if _QUOTA_READS % 100 == 0:  # Every 100 reads
-        logging.warning(f"🔴 CRITICAL: Firebase reads: {_QUOTA_READS:,}/{_QUOTA_MAX_READS:,} ({pct:.1f}%)")
-        import traceback
-        logging.warning("QUOTA USAGE TRACEBACK:")
-        for line in traceback.format_stack()[-5:-1]:
-            logging.warning(line.strip())
+        msg = f"Firebase quota: reads {reads_pct:.1f}%, writes {writes_pct:.1f}%"
+        if severity == "INFO":
+            logging.info(msg)
+        elif severity == "WARNING":
+            logging.warning(f"Firebase approaching limit: {msg}")
+        elif severity == "HIGH_WARNING":
+            logging.warning(f"Firebase near limit: {msg}")
+        elif severity == "CRITICAL":
+            logging.critical(f"Firebase quota critical: {msg}")
 
-    if _QUOTA_READS > _QUOTA_MAX_READS * 0.9:  # Warn at 90%
-        logging.warning(f"⚠️  EMERGENCY: Firebase reads at {pct:.1f}% — stopping further reads!")
-    elif _QUOTA_READS > _QUOTA_MAX_READS * 0.7:  # Warn at 70%
-        logging.warning(f"⚠️  Firebase reads: {_QUOTA_READS:,}/{_QUOTA_MAX_READS:,} ({pct:.1f}%)")
+        if severity in ("HIGH_WARNING", "CRITICAL"):
+            import traceback
+            logging.warning("QUOTA USAGE TRACEBACK:")
+            for line in traceback.format_stack()[-5:-1]:
+                logging.warning(line.strip())
 
 def _can_write(count=1):
     """Check if write quota available. Returns (allowed, current_usage, limit)."""
