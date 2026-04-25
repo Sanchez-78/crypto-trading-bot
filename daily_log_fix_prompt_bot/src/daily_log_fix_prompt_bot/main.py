@@ -11,6 +11,7 @@ from .parser import LogParser
 from .issue_detector import IssueDetector
 from .models import AnalysisResult, LogMetrics
 from .report_writer import ReportWriter
+from .disk_retry import queue_for_retry, get_pending_queue_stats
 
 logging.basicConfig(
     level=logging.INFO,
@@ -127,14 +128,25 @@ def run_daily_analysis() -> Path:
             log.info(f"Analysis complete. Report saved to {report_dir}")
         except (OSError, IOError, PermissionError) as e:
             log.error(f"⚠️  Failed to write analysis artifacts: {e}")
-            log.warning("Analysis results will not be persisted to disk")
+            log.warning("Queuing analysis for periodic retry save (every 2 hours)")
+            queue_for_retry(report_dir, metrics_dict, issues, events, sanitized_logs)
     else:
         log.warning("⚠️  Skipping artifact save (disk unavailable)")
         log.warning(f"❌ CRITICAL: Local disk at '{config.local_report_dir}' is not accessible")
-        log.warning("Reports cannot be saved. Check disk space, permissions, and mount status:")
+        log.warning("Queuing analysis for periodic retry save (every 2 hours)")
+        log.warning("Bot will attempt to save every 2h; check disk status:")
         log.warning("  - df -h                    (check disk space)")
         log.warning("  - ls -la reports/          (check directory permissions)")
         log.warning("  - mount | grep reports     (check mount status)")
+        queue_for_retry(report_dir, metrics_dict, issues, events, sanitized_logs)
+
+    # Report retry queue status if items pending
+    pending_stats = get_pending_queue_stats()
+    if pending_stats["pending"] > 0:
+        log.warning(
+            f"⏳ {pending_stats['pending']} analysis result(s) pending save "
+            f"(oldest: {pending_stats['hours_since_oldest']:.1f}h ago)"
+        )
 
     return report_dir
 
