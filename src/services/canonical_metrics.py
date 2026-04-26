@@ -25,6 +25,60 @@ from dataclasses import dataclass
 
 log = logging.getLogger(__name__)
 
+# V10.13u+5: Match dashboard MetricsEngine neutral-reason classification
+_NEUTRAL_REASONS = frozenset({
+    "timeout", "TIMEOUT_PROFIT", "TIMEOUT_FLAT", "TIMEOUT_LOSS",
+    "SCRATCH_EXIT", "STAGNATION_EXIT",
+})
+
+EPS = 1e-12
+
+
+def _extract_trade_profit(trade: dict) -> float:
+    """
+    V10.13u+5: Extract profit from trade using dashboard MetricsEngine field priority.
+
+    Matches dashboard _trade_profit() logic:
+    1. profit (top-level, Firestore)
+    2. pnl (top-level, Firestore)
+    3. evaluation.profit (nested, legacy)
+    """
+    if "profit" in trade:
+        return float(trade.get("profit") or 0.0)
+    if "pnl" in trade:
+        return float(trade.get("pnl") or 0.0)
+    try:
+        return float(trade.get("evaluation", {}).get("profit", 0.0) or 0.0)
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def _classify_outcome(trade: dict, profit: float) -> str:
+    """
+    V10.13u+5: Classify trade outcome using dashboard MetricsEngine logic.
+
+    Matches dashboard _classify_outcome():
+    - Uses stored result field if present
+    - Applies neutral-reason exclusion (timeout, scratch, stagnation)
+    - Falls back to profit direction for legacy trades without result field
+    """
+    result = trade.get("result", "")
+    if result:
+        close_reason = trade.get("close_reason", "")
+        if close_reason in _NEUTRAL_REASONS and abs(profit) < 0.001:
+            return "FLAT"
+        if result == "WIN":
+            return "WIN"
+        if result == "LOSS":
+            return "LOSS"
+
+    # Fallback for trades without result field
+    if profit > EPS:
+        return "WIN"
+    if profit < -EPS:
+        return "LOSS"
+    return "FLAT"
+
 
 @dataclass
 class MetricsSnapshot:
@@ -52,7 +106,7 @@ def canonical_profit_factor(closed_trades: list[dict] = None) -> float:
     - If None: returns 0.0 (caller must provide trades for accurate PF).
 
     Args:
-        closed_trades: List of trade dicts with 'net_pnl'. Required for accuracy.
+        closed_trades: List of trade dicts. Required for accuracy.
 
     Returns:
         float: PF ratio. Uses MetricsEngine logic: gross_pnl / loss_sum.
@@ -60,10 +114,12 @@ def canonical_profit_factor(closed_trades: list[dict] = None) -> float:
     if closed_trades is None or not closed_trades:
         return 0.0
 
-    # Mirror MetricsEngine.compute_canonical_trade_stats() logic
-    profits = [t.get("net_pnl", 0.0) for t in closed_trades]
-    gross_pnl = sum(p for p in profits if p > 0)
-    loss_sum = abs(sum(p for p in profits if p < 0))
+    # V10.13u+5: Use exact dashboard extraction and classification logic
+    profits = [_extract_trade_profit(t) for t in closed_trades]
+    outcomes = [_classify_outcome(t, p) for t, p in zip(closed_trades, profits)]
+
+    gross_pnl = sum(p for p in profits if p > EPS)
+    loss_sum = abs(sum(p for p in profits if p < -EPS))
 
     if loss_sum > 0:
         return gross_pnl / loss_sum
@@ -75,10 +131,11 @@ def canonical_profit_factor(closed_trades: list[dict] = None) -> float:
 
 def canonical_profit_factor_with_meta(closed_trades: list[dict] = None) -> dict:
     """
-    V10.13u+4: Canonical PF with full diagnostics metadata.
+    V10.13u+5: Canonical PF with full diagnostics metadata.
 
+    Uses exact dashboard trade profit extraction and outcome classification.
     Returns exactly which source was used, how many trades, and the calculation details.
-    Use this to verify Economic Health is using the dashboard's canonical source.
+    Includes parser diagnostics if parsing fails on large trade sets.
 
     Args:
         closed_trades: List of trade dicts. If None, returns empty source indicator.
@@ -98,9 +155,17 @@ def canonical_profit_factor_with_meta(closed_trades: list[dict] = None) -> dict:
             "net_pnl": 0.0,
         }
 
-    profits = [t.get("net_pnl", 0.0) for t in closed_trades]
-    gross_pnl = sum(p for p in profits if p > 0)
-    loss_sum = abs(sum(p for p in profits if p < 0))
+    # V10.13u+5: Use exact dashboard extraction and classification logic
+    profits = [_extract_trade_profit(t) for t in closed_trades]
+    outcomes = [_classify_outcome(t, p) for t, p in zip(closed_trades, profits)]
+
+    wins = outcomes.count("WIN")
+    losses = outcomes.count("LOSS")
+    flats = outcomes.count("FLAT")
+
+    gross_pnl = sum(p for p in profits if p > EPS)
+    loss_sum = abs(sum(p for p in profits if p < -EPS))
+    net_pnl = sum(profits)
 
     if loss_sum > 0:
         pf = gross_pnl / loss_sum
@@ -109,8 +174,15 @@ def canonical_profit_factor_with_meta(closed_trades: list[dict] = None) -> dict:
     else:
         pf = 1.0
 
-    wins = sum(1 for p in profits if p > 0)
-    losses = sum(1 for p in profits if p < 0)
+    # V10.13u+5: Add parser diagnostics if parsing fails on large sets
+    if len(closed_trades) >= 100 and wins == 0 and losses == 0:
+        sample_keys = list(closed_trades[0].keys()) if closed_trades else []
+        sample_pnl = [_extract_trade_profit(closed_trades[i]) for i in range(min(3, len(closed_trades)))]
+        log.warning(
+            "[ECON_CANONICAL_PARSE_FAIL] closed_trades=%s wins=0 losses=0 "
+            "sample_keys=%s sample_profits=%s",
+            len(closed_trades), sample_keys, sample_pnl
+        )
 
     return {
         "pf": pf,
@@ -120,7 +192,7 @@ def canonical_profit_factor_with_meta(closed_trades: list[dict] = None) -> dict:
         "losses": losses,
         "gross_win": gross_pnl,
         "gross_loss": loss_sum,
-        "net_pnl": sum(profits),
+        "net_pnl": net_pnl,
     }
 
 

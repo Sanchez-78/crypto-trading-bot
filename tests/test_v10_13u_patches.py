@@ -371,5 +371,97 @@ def test_economic_health_matches_canonical_source():
                     assert result.get("status") != "GOOD", "Should not be GOOD with PF < 1.0"
 
 
+# ── V10.13u+5: Economic PF Parser Fix ─────────────────────────────────
+
+def test_extract_trade_profit_matches_dashboard():
+    """V10.13u+5: Verify profit extraction matches dashboard field priority."""
+    from src.services.canonical_metrics import _extract_trade_profit
+
+    # Test 1: profit field (top priority)
+    trade1 = {"profit": 0.001, "pnl": 0.002}
+    assert _extract_trade_profit(trade1) == 0.001, "Should use profit field first"
+
+    # Test 2: pnl field (fallback)
+    trade2 = {"pnl": 0.002}
+    assert _extract_trade_profit(trade2) == 0.002, "Should use pnl field as fallback"
+
+    # Test 3: evaluation.profit (legacy)
+    trade3 = {"evaluation": {"profit": 0.003}}
+    assert _extract_trade_profit(trade3) == 0.003, "Should use evaluation.profit for legacy"
+
+    # Test 4: Zero and None handling
+    trade4 = {"profit": None}
+    assert _extract_trade_profit(trade4) == 0.0, "Should handle None as 0.0"
+
+    trade5 = {"profit": 0.0}
+    assert _extract_trade_profit(trade5) == 0.0, "Should handle 0.0 correctly"
+
+
+def test_classify_outcome_matches_dashboard():
+    """V10.13u+5: Verify outcome classification matches dashboard logic."""
+    from src.services.canonical_metrics import _classify_outcome
+
+    # Test 1: Result field with WIN
+    trade_win = {"result": "WIN", "close_reason": "TP"}
+    assert _classify_outcome(trade_win, 0.001) == "WIN"
+
+    # Test 2: Result field with LOSS
+    trade_loss = {"result": "LOSS", "close_reason": "SL"}
+    assert _classify_outcome(trade_loss, -0.001) == "LOSS"
+
+    # Test 3: Neutral reasons should return FLAT
+    trade_timeout = {"result": "WIN", "close_reason": "TIMEOUT_FLAT", "profit": 0.0001}
+    assert _classify_outcome(trade_timeout, 0.0001) == "FLAT", "Timeout with small profit should be FLAT"
+
+    # Test 4: Fallback to profit direction (no result field)
+    trade_no_result = {}
+    assert _classify_outcome(trade_no_result, 0.001) == "WIN", "Positive profit = WIN"
+    assert _classify_outcome(trade_no_result, -0.001) == "LOSS", "Negative profit = LOSS"
+    assert _classify_outcome(trade_no_result, 0.0) == "FLAT", "Zero profit = FLAT"
+
+
+def test_canonical_pf_with_profit_field():
+    """V10.13u+5: Verify PF calculation with profit field (dashboard format)."""
+    from src.services.canonical_metrics import canonical_profit_factor_with_meta
+
+    # Create trades with "profit" field (dashboard format, not "net_pnl")
+    trades = [
+        {"profit": 0.001, "result": "WIN", "close_reason": "TP"},
+        {"profit": 0.002, "result": "WIN", "close_reason": "TP"},
+        {"profit": -0.001, "result": "LOSS", "close_reason": "SL"},
+        {"profit": -0.002, "result": "LOSS", "close_reason": "SL"},
+    ]
+
+    meta = canonical_profit_factor_with_meta(trades)
+
+    # 2 wins, 2 losses
+    assert meta["wins"] == 2, f"Expected 2 wins, got {meta['wins']}"
+    assert meta["losses"] == 2, f"Expected 2 losses, got {meta['losses']}"
+    # gross_win = 0.001 + 0.002 = 0.003
+    # gross_loss = 0.001 + 0.002 = 0.003
+    # pf = 0.003 / 0.003 = 1.0
+    assert abs(meta["pf"] - 1.0) < 0.01, f"Expected PF ≈ 1.0, got {meta['pf']}"
+
+
+def test_parser_failure_clamp():
+    """V10.13u+5: 100+ trades with zero wins/losses should trigger failure clamp."""
+    from src.services.learning_monitor import lm_economic_health
+
+    # Create 100 trades with no profit field (simulates parser failure)
+    bad_trades = [{"close_reason": "TIMEOUT"} for _ in range(100)]
+
+    with patch("src.services.firebase_client.load_history") as mock_load:
+        mock_load.return_value = bad_trades
+
+        with patch("src.services.learning_event.METRICS", {"trades": 100}):
+            with patch("src.services.learning_event._close_reasons", {}):
+                with patch("src.services.learning_event._recent_results", []):
+                    result = lm_economic_health()
+
+                    # Should trigger parser failure clamp
+                    assert result.get("status") == "BAD", "Should be BAD for parse failure"
+                    assert result.get("overall_score") == 0.0, "Score should be 0.0 for parse failure"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

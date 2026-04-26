@@ -804,8 +804,12 @@ def lm_economic_health() -> dict:
             recent_wr_pct = recent_wins / recent_sample_size
             warnings.append(f"Recent performance degrading ({recent_wr_pct*100:.1f}% vs {overall_wr*100:.1f}%)")
 
+        # V10.13u+5: Parser failure clamp — 100+ trades with zero wins/losses is fatal
+        if trades >= 100 and pf_meta["wins"] == 0 and pf_meta["losses"] == 0:
+            overall_score = 0.0
+            status = "BAD"
         # V10.13u+4: Hard safety clamp — PF < 1.0 = never GOOD
-        if profit_factor < 1.0 and net_pnl <= 0:
+        elif profit_factor < 1.0 and net_pnl <= 0:
             overall_score = min(overall_score, 0.34)
             status = "BAD"
         elif profit_factor < 1.0:
