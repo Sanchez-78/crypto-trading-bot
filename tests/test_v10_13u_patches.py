@@ -682,5 +682,230 @@ def test_stagnation_loss_applies_cooldown():
     assert is_in_churn_cooldown("ADAUSDT", "LONG")
 
 
+# ── V10.13u+8: Exit PnL Integrity + Scratch/Stagnation Safety ───────────────
+
+def test_canonical_close_pnl_buy():
+    """V10.13u+8: Canonical PnL for BUY side."""
+    from src.services.exit_pnl import canonical_close_pnl
+
+    result = canonical_close_pnl(
+        symbol="XRPUSDT",
+        side="BUY",
+        entry_price=100.0,
+        exit_price=101.0,
+        size=1.0,
+        fee_rate=0.002,
+        slippage_rate=0.0,
+    )
+
+    # BUY: (101 - 100) / 100 * 1 = 0.01
+    assert abs(result["gross_pnl"] - 0.01) < 1e-9
+    # Fee: 0.002 * 1.0 = -0.002
+    assert abs(result["fee_pnl"] - (-0.002)) < 1e-9
+    assert result["slippage_pnl"] == 0.0
+    # Net: 0.01 - 0.002 = 0.008
+    assert abs(result["net_pnl"] - 0.008) < 1e-9
+    assert result["source"] == "canonical_close_pnl"
+
+
+def test_canonical_close_pnl_sell():
+    """V10.13u+8: Canonical PnL for SELL side."""
+    from src.services.exit_pnl import canonical_close_pnl
+
+    result = canonical_close_pnl(
+        symbol="XRPUSDT",
+        side="SELL",
+        entry_price=100.0,
+        exit_price=99.0,
+        size=1.0,
+        fee_rate=0.002,
+        slippage_rate=0.0,
+    )
+
+    # SELL: (100 - 99) / 100 * 1 = 0.01
+    assert abs(result["gross_pnl"] - 0.01) < 1e-9
+    # Fee: 0.002 * 1.0 = -0.002
+    assert abs(result["fee_pnl"] - (-0.002)) < 1e-9
+    assert result["slippage_pnl"] == 0.0
+    # Net: 0.01 - 0.002 = 0.008
+    assert abs(result["net_pnl"] - 0.008) < 1e-9
+
+
+def test_fee_and_slippage_are_non_positive():
+    """V10.13u+8: Hard invariant: fee_pnl and slippage_pnl are non-positive."""
+    from src.services.exit_pnl import canonical_close_pnl
+
+    result = canonical_close_pnl(
+        symbol="XRPUSDT",
+        side="BUY",
+        entry_price=100.0,
+        exit_price=101.0,
+        size=1.0,
+        fee_rate=0.002,
+        slippage_rate=0.001,
+    )
+
+    assert result["fee_pnl"] <= 0, "fee_pnl must be non-positive"
+    assert result["slippage_pnl"] <= 0, "slippage_pnl must be non-positive"
+
+
+def test_net_equals_gross_plus_costs():
+    """V10.13u+8: Algebraic identity: net = gross + fee + slippage."""
+    from src.services.exit_pnl import canonical_close_pnl
+
+    result = canonical_close_pnl(
+        symbol="XRPUSDT",
+        side="BUY",
+        entry_price=100.0,
+        exit_price=101.0,
+        size=1.0,
+        fee_rate=0.002,
+        slippage_rate=0.001,
+    )
+
+    expected_net = result["gross_pnl"] + result["fee_pnl"] + result["slippage_pnl"]
+    assert abs(result["net_pnl"] - expected_net) < 1e-12
+
+
+def test_prior_realized_pnl_included_in_gross():
+    """V10.13u+8: prior_realized_pnl shifts gross and net equally."""
+    from src.services.exit_pnl import canonical_close_pnl
+
+    result_no_prior = canonical_close_pnl(
+        symbol="XRPUSDT",
+        side="BUY",
+        entry_price=100.0,
+        exit_price=101.0,
+        size=1.0,
+        fee_rate=0.002,
+        prior_realized_pnl=0.0,
+    )
+
+    result_with_prior = canonical_close_pnl(
+        symbol="XRPUSDT",
+        side="BUY",
+        entry_price=100.0,
+        exit_price=101.0,
+        size=1.0,
+        fee_rate=0.002,
+        prior_realized_pnl=0.005,
+    )
+
+    # Gross and net should increase by exactly 0.005
+    assert abs((result_with_prior["gross_pnl"] - result_no_prior["gross_pnl"]) - 0.005) < 1e-12
+    assert abs((result_with_prior["net_pnl"] - result_no_prior["net_pnl"]) - 0.005) < 1e-12
+
+
+def test_exit_integrity_compares_net_not_gross():
+    """V10.13u+8: Exit integrity validator compares net PnL correctly."""
+    from src.services.exit_attribution import validate_exit_ctx
+
+    # Create exit context with canonical PnL values
+    exit_ctx = {
+        "symbol": "XRPUSDT",
+        "sym": "XRPUSDT",
+        "side": "BUY",
+        "entry_price": 100.0,
+        "exit_price": 101.0,
+        "size": 1.0,
+        "hold_seconds": 300,
+        "gross_pnl": 0.01,
+        "fee_cost": 0.002,
+        "slippage_cost": 0.0,
+        "net_pnl": 0.008,  # gross - fee - slip
+        "mfe": 0.015,
+        "mae": 0.0,
+        "final_exit_type": "TP",
+        "exit_reason_text": "TP",
+        "was_winner": True,
+        "was_forced": False,
+    }
+
+    is_valid, errors = validate_exit_ctx(exit_ctx)
+    assert is_valid, f"Should be valid, got errors: {errors}"
+
+
+def test_scratch_guard_holds_negative_net_in_econ_bad():
+    """V10.13u+8: SCRATCH_GUARD holds negative-net scratches in ECON BAD."""
+    from src.services.smart_exit_engine import SmartExitEngine, Position
+
+    engine = SmartExitEngine()
+
+    # Create a near-flat position that would be scratched (150s old = within SCRATCH_NEGATIVE_GRACE_S=240)
+    position = Position(
+        symbol="ADAUSDT",
+        entry_price=1.0,
+        tp=1.002,
+        sl=0.999,
+        pnl_pct=0.0001,  # Within scratch band (< 0.0012)
+        age_seconds=150,
+        direction="LONG",
+        max_favorable_pnl=0.0001,
+    )
+
+    with patch("src.services.learning_monitor.lm_economic_health") as mock_health:
+        # ECON BAD status
+        mock_health.return_value = {"status": "BAD", "pf": 0.75}
+
+        result = engine._check_scratch(position)
+        # Should be blocked because net_if_closed < 0 and ECON BAD
+        assert result is None, "Should block scratch in ECON BAD with negative net"
+
+
+def test_scratch_guard_allows_exit_when_econ_good():
+    """V10.13u+8: Scratch proceeds normally when ECON GOOD."""
+    from src.services.smart_exit_engine import SmartExitEngine, Position
+
+    engine = SmartExitEngine()
+
+    # Create a near-flat position that would be scratched (150s old = within SCRATCH_NEGATIVE_GRACE_S=240)
+    position = Position(
+        symbol="ADAUSDT",
+        entry_price=1.0,
+        tp=1.002,
+        sl=0.999,
+        pnl_pct=0.0001,  # Within scratch band (< 0.0012)
+        age_seconds=150,
+        direction="LONG",
+        max_favorable_pnl=0.0001,
+    )
+
+    with patch("src.services.learning_monitor.lm_economic_health") as mock_health:
+        # ECON GOOD status
+        mock_health.return_value = {"status": "GOOD", "pf": 1.5}
+
+        result = engine._check_scratch(position)
+        # Should proceed to scratch exit
+        assert result is not None, "Should allow scratch when ECON GOOD"
+        assert result["exit_type"] == "SCRATCH_EXIT"
+
+
+def test_stag_guard_holds_negative_net_in_econ_bad():
+    """V10.13u+8: STAG_GUARD extends hold to 240s in ECON BAD for negative net."""
+    from src.services.smart_exit_engine import SmartExitEngine, Position
+
+    engine = SmartExitEngine()
+
+    # Create position at age 200s (past base guard 180s but before ECON BAD guard 240s)
+    position = Position(
+        symbol="ADAUSDT",
+        entry_price=1.0,
+        tp=1.002,
+        sl=0.999,
+        pnl_pct=0.0008,  # Within stagnation band but with negative net after fees
+        age_seconds=200,
+        direction="LONG",
+        max_favorable_pnl=0.0008,
+    )
+
+    with patch("src.services.learning_monitor.lm_economic_health") as mock_health:
+        # ECON BAD status
+        mock_health.return_value = {"status": "BAD", "pf": 0.75}
+
+        result = engine._check_stagnation(position)
+        # Should be blocked by ECON BAD extension
+        assert result is None, "Should hold stagnation in ECON BAD at age 200s"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -136,6 +136,10 @@ ECON_BAD_MIN_EV = 0.04
 ECON_BAD_MIN_SCORE = 0.20
 ECON_BAD_FORCED_EXPLORE_MULT = 0.30
 
+# V10.13u+8: ECON BAD scratch/stag guards
+SCRATCH_NEGATIVE_GRACE_S  = 240
+STAG_MIN_AGE_ECON_BAD_S   = 240
+
 
 def get_harvest_threshold(regime: Optional[str] = None, threshold_type: str = "micro_tp") -> float:
     """
@@ -535,12 +539,31 @@ class SmartExitEngine:
         Releases capital from stagnant non-directional positions without waiting for
         the full timeout. Fires when |pnl| < 0.15% after 90 seconds.
         V10.13m: Log why scratch PASS/FAIL.
+        V10.13u+8: Hold scratch if ECON BAD and net_if_closed < 0 during grace period.
         """
         if position.age_seconds < SCRATCH_MIN_AGE_S:
             self._exit_audit_rejections["SCRATCH_EXIT:too_young"] += 1
             return None
 
         if abs(position.pnl_pct) < SCRATCH_MAX_PNL:
+            # V10.13u+8: ECON BAD guard for negative-net scratches
+            estimated_fee_pct = 0.002
+            net_if_closed = position.pnl_pct - estimated_fee_pct
+            if net_if_closed < 0 and position.age_seconds < SCRATCH_NEGATIVE_GRACE_S:
+                _econ_bad = False
+                try:
+                    from src.services.learning_monitor import lm_economic_health
+                    _econ_bad = lm_economic_health().get("status") == "BAD"
+                except Exception:
+                    pass
+                if _econ_bad:
+                    log.info(f"[SCRATCH_GUARD] symbol={position.symbol} "
+                            f"age={position.age_seconds}s "
+                            f"net_if_closed={net_if_closed*100:.4f}% "
+                            f"reason=econ_bad_negative_net_hold")
+                    self._exit_audit_rejections["SCRATCH_EXIT:too_young"] += 1
+                    return None
+
             return {
                 "exit_type": "SCRATCH_EXIT",
                 "reason": (f"Scratch: flat after {position.age_seconds}s  "
@@ -583,6 +606,21 @@ class SmartExitEngine:
                         f"reason=too_young_fee_negative")
                 self._exit_audit_rejections["STAGNATION_EXIT:too_young"] += 1
                 return None
+
+            # V10.13u+8: ECON BAD extension — hold through age < STAG_MIN_AGE_ECON_BAD_S=240
+            if net_if_closed < 0 and position.age_seconds < STAG_MIN_AGE_ECON_BAD_S:
+                _econ_bad = False
+                try:
+                    from src.services.learning_monitor import lm_economic_health
+                    _econ_bad = lm_economic_health().get("status") == "BAD"
+                except Exception:
+                    pass
+                if _econ_bad:
+                    log.info(f"[STAG_GUARD] {position.symbol} age={position.age_seconds}s "
+                            f"net_if_closed={net_if_closed*100:.4f}% "
+                            f"reason=econ_bad_stagnation_hold")
+                    self._exit_audit_rejections["STAGNATION_EXIT:too_young"] += 1
+                    return None
 
             return {
                 "exit_type": "STAGNATION_EXIT",

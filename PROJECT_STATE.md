@@ -26,22 +26,36 @@ Safety hardening before economics/integration rollout.
 - **Purpose**: Durable memory for workflow continuity across context compaction
 - **Status**: ✅ PUSHED to remote
 
+## Completed Commits (Continued)
+
+### Commit 4 (4337b7a): Emergency Read Quota Containment (Phase 1)
+- **Files**: `src/services/firebase_client.py`, `src/services/auto_cleaner.py`
+- **Changes**: Lower _can_read() threshold 80%→65%, increase WEIGHTS_TTL/SIGNALS_TTL 3600→7200s, throttle auto_cleaner to 1h
+- **Purpose**: Prevent Firebase read quota overage; graceful degradation via extended cache TTLs
+- **Deployment**: ✅ PUSHED and deployed to Hetzner
+- **Status**: Active; monitoring reads post-quota-reset
+
 ## Current Work
 
-### Design Complete — Awaiting Implementation Approval
+### Phase 1 Emergency Patch (4337b7a) — Deployed & Monitoring
+
+**Status**: Live on Hetzner; quota already exhausted before reset  
+**Verification**: ✅ App running, cache TTL patch active (WEIGHTS_TTL=7200s confirmed)  
+**Monitoring**: Baseline to be recorded at quota reset (2026-04-26 09:00 GMT+2)  
+**File**: `QUOTA_MONITORING_POST_4337b7a.md`
+
+**Next**: Record reads at T+0, T+15, T+60 after quota reset to measure patch effectiveness.
+
+### Design Complete — Not Implementing Today
 
 **Patch 3: Firebase Retry Queue Heartbeat** (`PATCH_3_FIREBASE_RETRY_HEARTBEAT_PLAN.md` v2)
 - Status: REVISED per 10 user corrections; design complete, not implemented
-- Architecture: Three-tier (enqueue → drain → write_direct), no re-entry risk
-- Scope: ~220 lines (8 module vars + refactored save_batch + 6 new functions)
-- Requirements: Thread-safety patch plan approved before implementation
+- No implementation today (lower priority after emergency containment)
 
-**Emergency Analysis: Firebase Read Quota Containment** (`EMERGENCY_READ_QUOTA_CONTAINMENT_PLAN.md`)
-- Status: COMPLETE; emergency plan designed, not implemented
-- Root cause: Read quota (50k/day) exceeded before 11:00 UTC; previous emergency documented at 6000 reads/36min
-- Phase 1 (immediate): 3 file changes (lower _can_read threshold 80%→65%, increase TTLs 3600→7200s, throttle auto_cleaner)
-- Phase 2 (post-reset): Unified safe_get_with_quota_bypass() wrapper
-- Expected outcome: Reduce daily reads from 50k+ to 30-35k
+**Future Patch: Git SHA Injection** (Unplanned)
+- Issue: Runtime marker shows UNKNOWN (no .git on server)
+- Solution: Inject git SHA from GitHub Actions → Docker → deployed binary
+- Implementation: Deferred until post-monitoring window
 
 ## Forbidden Now
 

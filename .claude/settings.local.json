@@ -172,7 +172,13 @@
       "Bash(git ls-remote *)",
       "Bash(awk '{print $1}')",
       "Bash(rtk --version)",
-      "Bash(rtk gain *)"
+      "Bash(rtk gain *)",
+      "Bash(python3 *)",
+      "Bash(git checkout *)",
+      "Bash(sed -n '370,376p' src/services/firebase_client.py)",
+      "Bash(sed -n '584,590p' src/services/firebase_client.py)",
+      "Bash(sed -n '643,649p' src/services/firebase_client.py)",
+      "Bash(rtk gh *)"
     ]
   }
 }

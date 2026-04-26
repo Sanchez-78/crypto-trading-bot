@@ -42,6 +42,7 @@ from src.services.exit_attribution import (
     build_exit_ctx, update_exit_attribution,
     render_exit_attribution_summary, EXIT_TYPES
 )
+from src.services.exit_pnl import canonical_close_pnl
 
 try:
     from src.services.learning_instrumentation import (
@@ -2244,8 +2245,16 @@ def on_price(data):
 
     get_event_bus().emit("LOG_OUTPUT", {"message": f"[CLOSE_LOGIC_START] {sym} reason={reason} entering close logic"}, time.time())
 
-    fee_used = pos.get("fee_rt", FEE_RT)
-    profit   = (move - fee_used) * pos["size"] + pos.get("realized_pnl", 0.0)
+    fee_used           = pos.get("fee_rt", FEE_RT)
+    _realized_pnl_val  = pos.get("realized_pnl", 0.0)
+    _pnl_result        = canonical_close_pnl(
+        symbol=sym, side=pos["action"],
+        entry_price=entry, exit_price=curr,
+        size=pos["size"], fee_rate=fee_used,
+        slippage_rate=pos.get("fill_slippage", 0.0),
+        prior_realized_pnl=_realized_pnl_val,
+    )
+    profit = _pnl_result["net_pnl"]
     result   = "WIN" if profit > 0 else "LOSS"
     short    = sym.replace("USDT", "")
     icon     = "✅" if result == "WIN" else "❌"
@@ -2314,6 +2323,10 @@ def on_price(data):
         **pos["signal"],
         "profit":        profit,
         "pnl":           profit,  # Alias for metrics compatibility
+        "net_pnl":       _pnl_result["net_pnl"],
+        "gross_pnl":     _pnl_result["gross_pnl"],
+        "fee_pnl":       _pnl_result["fee_pnl"],
+        "slippage_pnl":  _pnl_result["slippage_pnl"],
         "result":        result,
         "exit_price":    curr,
         "close_reason":  reason,
@@ -2390,10 +2403,10 @@ def on_price(data):
     if   _ap < 0.0005: learning_pnl = 0.0
     elif _ap < 0.001:  learning_pnl = 0.0003 if profit > 0 else -0.0003
     else:              learning_pnl = profit
-    _fee_cost = fee_used * pos["size"]
-    _slip_cost = pos.get("fill_slippage", 0.0) * pos["size"]
-    _gross_pnl = move * pos["size"]
-    _net_pnl = _gross_pnl - _fee_cost - _slip_cost
+    _fee_cost  = -_pnl_result["fee_pnl"]
+    _slip_cost = -_pnl_result["slippage_pnl"]
+    _gross_pnl = _pnl_result["gross_pnl"]
+    _net_pnl   = _pnl_result["net_pnl"]
     try:
         from src.services.learning_monitor import lm_update, lm_count, lm_health
         raw_f  = pos["signal"].get("features", {})
@@ -2476,10 +2489,10 @@ def on_price(data):
             exit_price=curr,
             size=pos["size"],
             hold_seconds=int(time.time() - pos["open_ts"]),
-            gross_pnl=(move * pos["size"]),
-            fee_cost=(fee_used * pos["size"]),
-            slippage_cost=pos.get("fill_slippage", 0.0) * pos["size"],
-            net_pnl=profit,
+            gross_pnl=_pnl_result["gross_pnl"],
+            fee_cost=_fee_cost,
+            slippage_cost=_slip_cost,
+            net_pnl=_pnl_result["net_pnl"],
             mfe=mfe,
             mae=mae,
             final_exit_type=reason,

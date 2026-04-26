@@ -131,11 +131,20 @@ def validate_exit_ctx(ctx: dict) -> Tuple[bool, List[str]]:
         errors.append(f"Negative hold_seconds: {ctx.get('hold_seconds')}")
     
     if ctx.get("gross_pnl") is not None and ctx.get("net_pnl") is not None:
-        expected = ctx["gross_pnl"] - ctx.get("fee_cost", 0) - ctx.get("slippage_cost", 0)
+        # V10.13u+8: gross_pnl includes prior_realized_pnl; fee/slip are positive magnitudes
+        expected = (
+            ctx["gross_pnl"]
+            - ctx.get("fee_cost", 0.0)
+            - ctx.get("slippage_cost", 0.0)
+        )
         actual = ctx["net_pnl"]
-        if abs(actual - expected) > 0.00001:
+        if abs(actual - expected) > 1e-9:
             errors.append(
-                f"Net PnL mismatch: gross={expected:.6f} but got {actual:.6f}"
+                f"[EXIT_INTEGRITY] net_pnl mismatch: "
+                f"gross={ctx['gross_pnl']:.8f} fee={ctx.get('fee_cost',0):.8f} "
+                f"slip={ctx.get('slippage_cost',0):.8f} "
+                f"expected_net={expected:.8f} actual_net={actual:.8f} "
+                f"delta={abs(actual - expected):.2e}"
             )
     
     return len(errors) == 0, errors
@@ -146,10 +155,10 @@ def validate_exit_ctx(ctx: dict) -> Tuple[bool, List[str]]:
 # ════════════════════════════════════════════════════════════════════════════════
 
 def update_exit_attribution(exit_ctx: dict) -> None:
-    """V10.13v (Fix 7): Update exit stats aggregator with new trade exit."""
+    """V10.13u+8: Update exit stats aggregator with new trade exit."""
     is_valid, errors = validate_exit_ctx(exit_ctx)
     if not is_valid:
-        log.error(f"[V10.13v EXIT_INTEGRITY_ERROR] Validation failed for {exit_ctx.get('symbol','?')}")
+        log.error(f"[V10.13u8 EXIT_INTEGRITY_ERROR] sym={exit_ctx.get('sym','?')} exit_type={exit_ctx.get('final_exit_type','?')}")
         for err in errors:
             log.error(f"  - {err}")
         return
