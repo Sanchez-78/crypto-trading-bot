@@ -169,11 +169,31 @@ def _cleanup_close_locks(now: float = None) -> None:
         _STALE_CLOSE_COUNTS.pop(key, None)
 
 
+def _release_stale_close_lock(key: str, meta: dict, now: float = None) -> None:
+    """V10.13u+12: Release a stale close lock that exceeded TTL.
+
+    Increments stale count and logs recovery event.
+    Allows next close attempt to proceed (fresh lock acquisition).
+    """
+    now = now or time.time()
+    age = now - meta.get("ts", now)
+    _CLOSING_POSITIONS.pop(key, None)
+    _STALE_CLOSE_COUNTS[key] = _STALE_CLOSE_COUNTS.get(key, 0) + 1
+    log.error(
+        "[CLOSE_LOCK_STALE_RELEASE] key=%s symbol=%s reason=%s age=%.1fs count=%s",
+        key, meta.get("symbol"), meta.get("reason"), age, _STALE_CLOSE_COUNTS[key]
+    )
+
+
 def _try_acquire_close_lock(sym: str, pos: dict, reason: str, now: float = None) -> tuple:
-    """V10.13u+11: Attempt to acquire close lock with explicit status.
+    """V10.13u+12: Attempt to acquire close lock with hard stale recovery.
 
     Returns: (acquired: bool, close_key: str, status: str)
     Status is one of: "acquired", "recently_closed", "already_closing"
+
+    V10.13u+12: Cleanup runs BEFORE duplicate check to enable hard stale recovery.
+    If a lock is stale (age > CLOSE_LOCK_TTL_S), it's released immediately,
+    allowing the next close attempt to proceed with a fresh lock.
     """
     now = now or time.time()
     _cleanup_close_locks(now)
@@ -185,19 +205,27 @@ def _try_acquire_close_lock(sym: str, pos: dict, reason: str, now: float = None)
 
     meta = _CLOSING_POSITIONS.get(key)
     if meta:
-        meta["attempts"] = meta.get("attempts", 0) + 1
-        last_log = meta.get("last_log", 0)
-        if now - last_log >= 5.0:
-            meta["last_log"] = now
-            log.warning(
-                "[CLOSE_SKIP_DUPLICATE] %s reason=%s key=%s status=already_closing age=%.1fs attempts=%s",
-                sym,
-                reason,
-                key,
-                now - meta.get("ts", now),
-                meta.get("attempts", 0),
-            )
-        return False, key, "already_closing"
+        age = now - meta.get("ts", now)
+
+        # V10.13u+12: Hard recovery — stale lock is released immediately
+        if age > CLOSE_LOCK_TTL_S:
+            _release_stale_close_lock(key, meta, now)
+            # Continue and acquire fresh lock below
+        else:
+            # Duplicate log throttled by key, max once per 5s
+            meta["attempts"] = meta.get("attempts", 0) + 1
+            last_log = meta.get("last_log", 0)
+            if now - last_log >= 5.0:
+                meta["last_log"] = now
+                log.warning(
+                    "[CLOSE_SKIP_DUPLICATE] %s reason=%s key=%s status=already_closing age=%.1fs attempts=%s",
+                    sym,
+                    reason,
+                    key,
+                    age,
+                    meta.get("attempts", 0),
+                )
+            return False, key, "already_closing"
 
     _CLOSING_POSITIONS[key] = {
         "ts": now,
@@ -220,20 +248,56 @@ def _mark_recently_closed(key: str) -> None:
     _RECENTLY_CLOSED[key] = time.time()
 
 
+def get_close_lock_health() -> dict:
+    """V10.13u+12: Return close lock health metrics for watchdog/self-heal suppression.
+
+    Safe to call frequently. Cleans up stale locks before returning.
+    Returns dict with: active, oldest_age, keys (first 5), stale_releases.
+    """
+    now = time.time()
+    _cleanup_close_locks(now)
+
+    oldest_age = 0.0
+    if _CLOSING_POSITIONS:
+        oldest_age = max(now - m.get("ts", now) for m in _CLOSING_POSITIONS.values())
+
+    return {
+        "active": len(_CLOSING_POSITIONS),
+        "oldest_age": oldest_age,
+        "keys": list(_CLOSING_POSITIONS.keys())[:5],
+        "stale_releases": sum(_STALE_CLOSE_COUNTS.values()),
+    }
+
+
+def _release_close_lock(close_key: str, sym: str, reason: str, status: str = "closed") -> None:
+    """V10.13u+12: Release close lock in a consistent way (for finally/guaranteed cleanup).
+
+    Called to guarantee lock release.
+    status: "closed" if close succeeded, "failed" if close aborted.
+    """
+    if status == "closed":
+        _mark_recently_closed(close_key)
+        _CLOSING_POSITIONS.pop(close_key, None)
+        log.warning(f"[CLOSE_LOCK_RELEASED] {sym} reason={reason} key={close_key} status=closed")
+    else:
+        _CLOSING_POSITIONS.pop(close_key, None)
+        log.error(f"[CLOSE_LOCK_RELEASED] {sym} reason={reason} key={close_key} status=failed")
+
+
 def _log_close_lock_health() -> None:
-    """V10.13u+11: Log close lock health metrics once per 60 seconds."""
+    """V10.13u+12: Log close lock health metrics once per 60 seconds."""
     now = time.time()
     if now - _CLOSE_LOCK_HEALTH_LAST_LOG[0] >= 60.0:
         _CLOSE_LOCK_HEALTH_LAST_LOG[0] = now
-        active = len(_CLOSING_POSITIONS)
-        stale = sum(1 for meta in _CLOSING_POSITIONS.values() if now - meta.get("ts", now) > CLOSE_LOCK_TTL_S)
+        health = get_close_lock_health()
+        active = health["active"]
         recently = len(_RECENTLY_CLOSED)
         top_lock = "none"
         if _CLOSING_POSITIONS:
             top_key = max(_CLOSING_POSITIONS.keys(), key=lambda k: _CLOSING_POSITIONS[k].get("attempts", 0))
             meta = _CLOSING_POSITIONS[top_key]
             top_lock = f"{meta.get('symbol')}:{meta.get('reason')} age={now - meta.get('ts', now):.1f}s attempts={meta.get('attempts', 0)}"
-        log.info(f"[CLOSE_LOCK_HEALTH] active={active} stale={stale} recently_closed={recently} top={top_lock}")
+        log.info(f"[CLOSE_LOCK_HEALTH] active={active} recently_closed={recently} top={top_lock}")
 
 
 def _adaptive_tp_sl(ev, wr):

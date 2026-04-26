@@ -58,8 +58,21 @@ def handle_anomaly(anomaly: str, state):
 
     # ────────────────────────────────────────────────────────────────────────
     # STALL: Try to unstagnate (loosen filters, boost exploration)
+    # V10.13u+12: Check close-lock health before boosting exploration
     # ────────────────────────────────────────────────────────────────────────
     elif anomaly == "STALL":
+        # V10.13u+12: Suppress exploration boost if close locks are active (recovery in progress)
+        try:
+            from src.services.trade_executor import get_close_lock_health
+            close_health = get_close_lock_health()
+        except Exception:
+            close_health = {"active": 0, "oldest_age": 0.0}
+
+        if close_health["active"] > 0:
+            logger.warning(f"[WATCHDOG_SUPPRESSED_CLOSE_LOCK] active={close_health['active']} "
+                          f"oldest_age={close_health['oldest_age']:.1f}s reason=STALL_while_closing")
+            return  # Skip exploration boost while close locks are active
+
         logger.warning(f"SELF_HEAL: STALL (no trades 900s) → boosting exploration")
         state.exploration_factor = getattr(state, "exploration_factor", 1.0) * 1.5
         state.allow_micro_trade = True

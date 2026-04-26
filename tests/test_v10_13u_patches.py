@@ -1386,5 +1386,158 @@ def test_stale_release_count_increments():
     assert key not in _CLOSING_POSITIONS, "Lock should be cleared"
 
 
+# ── V10.13u+12: Close-Lock Recovery + Watchdog Suppression ────────────────
+
+
+def test_close_lock_cleanup_runs_before_duplicate_skip():
+    """V10.13u+12: Cleanup (with hard recovery) runs before duplicate check."""
+    import time
+    from src.services.trade_executor import (
+        _try_acquire_close_lock, _CLOSING_POSITIONS, CLOSE_LOCK_TTL_S
+    )
+
+    _CLOSING_POSITIONS.clear()
+
+    pos = {"action": "BUY", "entry": 100.0, "entry_time": 1234567.0, "size": 1.0}
+
+    now = time.time()
+
+    # Insert fake stale lock (older than TTL)
+    old_ts = now - CLOSE_LOCK_TTL_S - 1.0
+    key = "BTCUSDT:BUY:100.0:1234567.0"
+    _CLOSING_POSITIONS[key] = {
+        "ts": old_ts,
+        "symbol": "BTCUSDT",
+        "reason": "STALE_TEST",
+        "attempts": 5,
+        "last_log": old_ts,
+    }
+
+    # Call _try_acquire_close_lock - should detect stale and release it
+    acquired, ret_key, status = _try_acquire_close_lock("BTCUSDT", pos, "NEW_REASON", now=now)
+
+    # Should acquire fresh lock (stale was released)
+    assert acquired is True, "Should acquire fresh lock after stale release"
+    assert status == "acquired", f"Expected 'acquired', got '{status}'"
+    assert key in _CLOSING_POSITIONS, "New lock should be in positions"
+
+
+def test_get_close_lock_health_cleans_stale():
+    """V10.13u+12: get_close_lock_health() cleans stale locks before returning."""
+    import time
+    from src.services.trade_executor import (
+        get_close_lock_health, _CLOSING_POSITIONS, _STALE_CLOSE_COUNTS, CLOSE_LOCK_TTL_S
+    )
+
+    _CLOSING_POSITIONS.clear()
+    _STALE_CLOSE_COUNTS.clear()
+
+    now = time.time()
+    old_ts = now - CLOSE_LOCK_TTL_S - 1.0
+
+    # Insert stale lock
+    key = "ETHUSDT:SELL:50.0:1234568.0"
+    _CLOSING_POSITIONS[key] = {
+        "ts": old_ts,
+        "symbol": "ETHUSDT",
+        "reason": "OLD_CLOSE",
+        "attempts": 2,
+        "last_log": old_ts,
+    }
+
+    # Call get_close_lock_health
+    health = get_close_lock_health()
+
+    # Stale lock should be cleaned
+    assert health["active"] == 0, "Active should be 0 after cleanup"
+    assert key not in _CLOSING_POSITIONS, "Stale lock should be removed"
+    assert _STALE_CLOSE_COUNTS[key] == 1, "Stale count should be 1"
+
+
+def test_release_stale_close_lock_increments_count():
+    """V10.13u+12: _release_stale_close_lock increments stale count."""
+    import time
+    from src.services.trade_executor import (
+        _release_stale_close_lock, _STALE_CLOSE_COUNTS
+    )
+
+    _STALE_CLOSE_COUNTS.clear()
+
+    key = "BNBUSDT:BUY:300.0:1234569.0"
+    meta = {"ts": time.time() - 25, "symbol": "BNBUSDT", "reason": "TEST"}
+
+    # Release stale lock
+    _release_stale_close_lock(key, meta)
+
+    assert _STALE_CLOSE_COUNTS[key] == 1, "Count should increment"
+
+    # Release again
+    _release_stale_close_lock(key, meta)
+
+    assert _STALE_CLOSE_COUNTS[key] == 2, "Count should increment again"
+
+
+def test_watchdog_suppressed_when_close_lock_active():
+    """V10.13u+12: Watchdog suppresses exploration boost when close locks active."""
+    from unittest.mock import patch, MagicMock
+    from src.core.self_heal import handle_anomaly
+
+    # Mock state
+    mock_state = MagicMock()
+    mock_state.exploration_factor = 1.0
+    mock_state.allow_micro_trade = False
+    mock_state.ev_threshold = 0.0
+    mock_state.filter_strength = 1.0
+
+    # Patch get_close_lock_health at the point it's imported in self_heal
+    with patch('src.services.trade_executor.get_close_lock_health') as mock_health:
+        mock_health.return_value = {"active": 2, "oldest_age": 5.5, "keys": ["KEY1", "KEY2"]}
+
+        # Call handle_anomaly with STALL
+        handle_anomaly("STALL", mock_state)
+
+        # State should NOT be modified (exploration not boosted)
+        assert mock_state.exploration_factor == 1.0, "Should not boost when locks active"
+        assert mock_state.allow_micro_trade is False, "Should not enable micro trades"
+
+
+def test_watchdog_runs_when_no_close_lock():
+    """V10.13u+12: Watchdog proceeds with exploration when no close locks active."""
+    from unittest.mock import patch, MagicMock
+    from src.core.self_heal import handle_anomaly
+
+    # Mock state
+    mock_state = MagicMock()
+    mock_state.exploration_factor = 1.0
+    mock_state.allow_micro_trade = False
+    mock_state.ev_threshold = 0.0
+    mock_state.filter_strength = 1.0
+
+    # Patch get_close_lock_health at the point it's imported in self_heal
+    with patch('src.services.trade_executor.get_close_lock_health') as mock_health:
+        mock_health.return_value = {"active": 0, "oldest_age": 0.0, "keys": []}
+
+        # Call handle_anomaly with STALL
+        handle_anomaly("STALL", mock_state)
+
+        # State SHOULD be modified (exploration boosted)
+        assert mock_state.exploration_factor == 1.5, "Should boost exploration when no locks"
+        assert mock_state.allow_micro_trade is True, "Should enable micro trades"
+
+
+def test_exit_type_replaced_alias_normalized():
+    """V10.13u+12: 'replaced' exit type is normalized to canonical form."""
+    from src.services.exit_attribution import normalize_exit_type, EXIT_TYPES
+
+    # Test various replacements
+    assert normalize_exit_type("replaced") == "REPLACED_EXIT"
+    assert normalize_exit_type("REPLACED") == "REPLACED_EXIT"
+    assert normalize_exit_type("replace") == "REPLACED_EXIT"
+    assert normalize_exit_type("replacement") == "REPLACED_EXIT"
+
+    # Ensure REPLACED_EXIT is in allowed types
+    assert "REPLACED_EXIT" in EXIT_TYPES, "REPLACED_EXIT should be in EXIT_TYPES"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
