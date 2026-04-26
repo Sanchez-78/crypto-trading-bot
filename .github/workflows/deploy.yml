@@ -24,14 +24,23 @@ jobs:
             REMOTE=$(git rev-parse origin/main)
             git pull origin main
 
+            # Ensure virtualenv exists (recreate if missing)
+            if [ ! -f venv/bin/python ]; then
+              echo "[DEPLOY] Virtualenv missing, creating..."
+              python3 -m venv venv
+              venv/bin/pip install --upgrade pip setuptools wheel
+              [ -f requirements.txt ] && venv/bin/pip install -r requirements.txt
+              echo "[DEPLOY] Virtualenv created ✓"
+            fi
+
             # Validate entrypoint exists and compiles
             test -f start.py || { echo "ERROR: start.py not found"; exit 1; }
-            /opt/cryptomaster/venv/bin/python -m py_compile start.py || { echo "ERROR: start.py syntax error"; exit 1; }
+            ./venv/bin/python -m py_compile start.py || { echo "ERROR: start.py syntax error"; exit 1; }
 
             # Validate critical runtime modules compile
-            /opt/cryptomaster/venv/bin/python -m py_compile bot2/main.py || { echo "ERROR: bot2/main.py syntax error"; exit 1; }
-            /opt/cryptomaster/venv/bin/python -m py_compile src/services/runtime_flags.py || { echo "ERROR: runtime_flags.py syntax error"; exit 1; }
-            /opt/cryptomaster/venv/bin/python -m py_compile src/services/firebase_client.py || { echo "ERROR: firebase_client.py syntax error"; exit 1; }
+            ./venv/bin/python -m py_compile bot2/main.py || { echo "ERROR: bot2/main.py syntax error"; exit 1; }
+            ./venv/bin/python -m py_compile src/services/runtime_flags.py || { echo "ERROR: runtime_flags.py syntax error"; exit 1; }
+            ./venv/bin/python -m py_compile src/services/firebase_client.py || { echo "ERROR: firebase_client.py syntax error"; exit 1; }
 
             echo "[DEPLOY] Compilation validation passed"
 
