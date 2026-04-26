@@ -255,7 +255,14 @@ def _try_acquire_close_lock(sym: str, pos: dict, reason: str, now: float = None)
     V10.13u+12: Cleanup runs BEFORE duplicate check to enable hard stale recovery.
     If a lock is stale (age > CLOSE_LOCK_TTL_S), it's released immediately,
     allowing the next close attempt to proceed with a fresh lock.
+
+    V10.13u+14 Phase 2: Defensive guard - partial TP never acquires full lock.
     """
+    # V10.13u+14 Phase 2: Reject partial reasons defensively (belt and suspenders)
+    if reason in PARTIAL_CLOSE_TYPES:
+        log.error(f"[PARTIAL_TP_LOCK_BLOCKED] symbol={sym} reason={reason}")
+        return False, None, "partial_tp_not_allowed"
+
     now = now or time.time()
     _cleanup_close_locks(now)
 
@@ -2495,15 +2502,17 @@ def on_price(data):
     if reason is None:
         return
 
+    # V10.13u+14 Phase 2: Partial TP hard bypass - BEFORE lock acquisition
+    # Partial TPs must never enter full close lock path
+    if reason in PARTIAL_CLOSE_TYPES:
+        log.warning(f"[PARTIAL_TP_BYPASS_FULL_CLOSE] {sym} reason={reason} path=partial_only")
+        # Partial TP: reduce size, book pnl, don't remove position or acquire lock
+        # TODO Phase 2: Extract partial TP logic into _handle_partial_tp_only()
+        return None
+
     # V10.13u+11: Reentrant close guard with TTL-based recovery
     acquired, close_key, close_lock_status = _try_acquire_close_lock(sym, pos, reason)
     if not acquired:
-        return None
-
-    # V10.13u+14: Partial TP guard - these don't remove full position
-    if reason in PARTIAL_CLOSE_TYPES:
-        _close_stage(sym, close_key, "partial_tp_skip", exit_type=reason)
-        log.info(f"[PARTIAL_CLOSE] {sym} reason={reason} skipping full close lock")
         return None
 
     _close_stage(sym, close_key, "lock_acquired")

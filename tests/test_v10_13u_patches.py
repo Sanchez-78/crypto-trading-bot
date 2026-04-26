@@ -1750,5 +1750,47 @@ def test_v10_13u14_close_stage_logging():
         pytest.fail(f"_close_stage() raised {e}")
 
 
+def test_v10_13u14_phase2_partial_tp_lock_rejected():
+    """V10.13u+14 Phase 2: Defensive guard rejects partial reason in lock function."""
+    from src.services.trade_executor import _try_acquire_close_lock, PARTIAL_CLOSE_TYPES
+
+    pos = {
+        "action": "BUY",
+        "entry": 100.0,
+        "opened_at": 1000000.0,
+        "size": 1.0,
+    }
+
+    # Try to acquire lock with PARTIAL_TP_25 - should be rejected
+    acquired, key, status = _try_acquire_close_lock("BTCUSDT", pos, "PARTIAL_TP_25")
+    assert acquired is False, "Partial TP should not acquire lock"
+    assert status == "partial_tp_not_allowed", f"Status should be partial_tp_not_allowed, got {status}"
+    assert key is None, "Key should be None for rejected partial reason"
+
+
+def test_v10_13u14_phase2_full_close_lock_works():
+    """V10.13u+14 Phase 2: Full close types can still acquire lock."""
+    from src.services.trade_executor import (
+        _try_acquire_close_lock, FULL_CLOSE_TYPES, _CLOSING_POSITIONS,
+        _close_key
+    )
+
+    pos = {
+        "action": "BUY",
+        "entry": 100.0,
+        "opened_at": 1000000.0,
+        "size": 1.0,
+    }
+
+    # Try to acquire lock with TRAIL_PROFIT (full close) - should work
+    acquired, key, status = _try_acquire_close_lock("BTCUSDT", pos, "TRAIL_PROFIT")
+    assert acquired is True, "Full close TRAIL_PROFIT should acquire lock"
+    assert status == "acquired", f"Status should be acquired, got {status}"
+    assert key is not None, "Key should not be None"
+
+    # Cleanup
+    _CLOSING_POSITIONS.pop(key, None)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
