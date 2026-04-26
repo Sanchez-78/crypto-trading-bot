@@ -137,6 +137,111 @@ _HIST_CAP = 200
 _hydration_source = "pending"  # Track source for diagnostics
 
 
+# HOTFIX (2026-04-26): Hydrate LearningMonitor from canonical closed trade history
+def hydrate_from_canonical_trades(closed_trades: list) -> dict:
+    """
+    Ingest canonical closed trade history into LearningMonitor.
+
+    Called at startup to sync LM with dashboard's closed trade source.
+    Prevents state mismatch where dashboard shows 500 trades but LM shows 6.
+
+    Args:
+        closed_trades: List of closed trade dicts from Firebase history
+                      (each with symbol, regime, pnl, realized_ev, etc)
+
+    Returns:
+        dict with hydration stats: {loaded_trades, hydrated_pairs, source}
+    """
+    global lm_count, lm_pnl_hist, lm_ev_hist, lm_wr_hist, lm_feature_stats, _hydration_source
+
+    if not closed_trades:
+        return {"loaded_trades": 0, "hydrated_pairs": 0, "source": "empty"}
+
+    try:
+        import logging
+        _log = logging.getLogger(__name__)
+
+        # Ingest each closed trade into per-(sym, reg) history
+        trades_loaded = 0
+        for trade in closed_trades:
+            sym = trade.get("symbol", "")
+            reg = trade.get("regime", "RANGING")
+            pnl = trade.get("realized_pnl", 0.0)
+            ev = trade.get("realized_ev", 0.0)
+
+            if not sym:
+                continue
+
+            key = (sym, reg)
+
+            # Initialize if needed
+            if key not in lm_count:
+                lm_count[key] = 0
+                lm_pnl_hist[key] = []
+                lm_ev_hist[key] = []
+                lm_wr_hist[key] = []
+
+            # Append pnl and EV
+            lm_pnl_hist[key].append(float(pnl))
+            lm_ev_hist[key].append(float(ev))
+
+            # Cap history at 200
+            _cap(lm_pnl_hist[key])
+            _cap(lm_ev_hist[key])
+
+            # Count wins/losses for WR
+            win = 1.0 if pnl > 0 else (0.0 if pnl < 0 else 0.5)
+            if key not in lm_wr_hist:
+                lm_wr_hist[key] = []
+            lm_wr_hist[key].append(win)
+            _cap(lm_wr_hist[key])
+
+            # Increment trade count
+            lm_count[key] += 1
+            trades_loaded += 1
+
+        hydrated_pairs = len(lm_count)
+        _hydration_source = "firebase_canonical"
+
+        _log.info(
+            f"[LM_HYDRATE] loaded_closed_trades={trades_loaded} "
+            f"hydrated_pairs={hydrated_pairs} source=firebase_canonical"
+        )
+
+        return {
+            "loaded_trades": trades_loaded,
+            "hydrated_pairs": hydrated_pairs,
+            "source": "firebase_canonical"
+        }
+
+    except Exception as exc:
+        import logging
+        logging.error(f"[LM_HYDRATE] Failed: {exc}")
+        return {"loaded_trades": 0, "hydrated_pairs": 0, "source": "error"}
+
+
+def check_state_mismatch(canonical_closed_trades: int) -> None:
+    """
+    Check for state mismatch between canonical metrics and LearningMonitor.
+
+    Logs warning if dashboard shows significant trade history but LM is empty.
+    Triggers after hydration to verify consistency.
+
+    Args:
+        canonical_closed_trades: Number of closed trades in dashboard/canonical source
+    """
+    if canonical_closed_trades < 100:
+        return  # Not enough trades to warrant concern
+
+    lm_total_trades = sum(lm_count.values())
+    if lm_total_trades < 20 and canonical_closed_trades >= 100:
+        import logging
+        logging.warning(
+            f"[STATE_MISMATCH] canonical_trades={canonical_closed_trades} "
+            f"but LM_trades={lm_total_trades}; hydration may be incomplete"
+        )
+
+
 def _cap(lst):
     if len(lst) > _HIST_CAP:
         del lst[:-_HIST_CAP]

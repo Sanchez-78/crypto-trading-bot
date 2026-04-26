@@ -188,3 +188,41 @@ def safe_stall_seconds(
     ]
     anchor = max(candidates) if candidates else now
     return max(0.0, now - anchor)
+
+
+def try_recover_from_quota_safe_mode() -> bool:
+    """
+    HOTFIX (2026-04-26): Attempt to recover from stuck quota_429 safe mode.
+
+    Only clears SAFE_MODE if:
+    - Current reason is "quota_429" (not permission/corruption/other errors)
+    - Firebase recovery probe succeeds
+    - Safe mode is currently active
+
+    Returns True if recovery succeeded and safe mode was cleared.
+    Returns False if still degraded or reason is not quota_429.
+
+    Non-quota safe modes (permission, corruption, etc) are never auto-recovered.
+    """
+    global _DB_DEGRADED_SAFE_MODE, _DB_DEGRADED_REASON
+
+    # Only attempt recovery for quota_429
+    if _DB_DEGRADED_REASON != "quota_429":
+        return False
+
+    if not _DB_DEGRADED_SAFE_MODE:
+        return False  # Not in safe mode
+
+    # Probe Firebase to see if quota is recovered
+    try:
+        from src.services.firebase_client import probe_quota_recovered
+        if probe_quota_recovered():
+            # Recovery successful: clear safe mode
+            logging.info("[SAFE_MODE_RECOVERY] Firebase quota recovered; entries re-enabled")
+            set_db_degraded_safe_mode(False, None)
+            return True
+    except ImportError:
+        logging.warning("[SAFE_MODE_RECOVERY] firebase_client not available, skipping probe")
+        return False
+
+    return False

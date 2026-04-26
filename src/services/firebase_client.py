@@ -1309,6 +1309,71 @@ def daily_budget_report():
     print("   Total : ~1 928 writes/day  (limit 20 000)")
 
 
+# ════════════════════════════════════════════════════════════════════════════════
+# HOTFIX (2026-04-26): Firebase quota recovery probe
+# ════════════════════════════════════════════════════════════════════════════════
+
+_LAST_RECOVERY_PROBE = 0  # Timestamp of last recovery probe
+_RECOVERY_PROBE_COOLDOWN = 300  # Seconds between probes (5 minutes)
+
+def probe_quota_recovered() -> bool:
+    """
+    Cheap Firebase recovery probe to detect when quota is restored.
+
+    Uses exactly 1 read of a tiny config document to test Firebase access.
+    Returns True only if read succeeds without 429/permission/network errors.
+
+    Global cooldown prevents per-cycle probing spam.
+    """
+    global _LAST_RECOVERY_PROBE, db
+    import time
+    import logging as _log_probe
+
+    now = time.time()
+
+    # Cooldown check: only probe every 5 minutes
+    if now - _LAST_RECOVERY_PROBE < _RECOVERY_PROBE_COOLDOWN:
+        return False  # Not yet time to probe
+
+    _LAST_RECOVERY_PROBE = now
+
+    # Safety: if db not initialized, can't probe
+    if db is None:
+        _log_probe.warning("[RECOVERY_PROBE] Firebase not initialized, skipping probe")
+        return False
+
+    try:
+        # Minimal read: fetch runtime config (tiny doc)
+        # This tests read access without scanning trades/signals
+        config_doc = db.collection(col("config")).document("runtime").get()
+
+        # Success: Firebase is responding
+        _log_probe.info("[RECOVERY_PROBE] Firebase quota recovered; read successful")
+        return True
+
+    except Exception as e:
+        error_str = str(e)
+
+        # Check if it's still a quota error
+        if "429" in error_str or "quota" in error_str.lower():
+            _log_probe.warning(f"[RECOVERY_PROBE] Still quota limited: {type(e).__name__}")
+            return False
+
+        # Check if it's a permission/auth error (don't recover for these)
+        if "permission" in error_str.lower() or "denied" in error_str.lower():
+            _log_probe.warning(f"[RECOVERY_PROBE] Permission denied (non-recoverable): {type(e).__name__}")
+            return False
+
+        # Check if it's a network error
+        if "connection" in error_str.lower() or "timeout" in error_str.lower():
+            _log_probe.warning(f"[RECOVERY_PROBE] Network error (retryable): {type(e).__name__}")
+            return False
+
+        # Unknown error: don't auto-recover
+        _log_probe.warning(f"[RECOVERY_PROBE] Unknown error: {type(e).__name__}: {error_str[:100]}")
+        return False
+
+
 def _daily_budget_report_legacy():
     """
     Estimate daily Firebase operation counts (call once at startup).

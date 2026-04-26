@@ -1572,6 +1572,23 @@ def main():
         logging.warning(f"Failed to print canonical state: {e}")
     print("  [7/7d] Canonical state audit printed ✓", file=sys.stderr, flush=True)
 
+    # HOTFIX (2026-04-26): Hydrate LearningMonitor from canonical closed trade history
+    # Ensures LM state is in sync with dashboard metrics after startup
+    print("  [7/7d.5] Hydrating LearningMonitor from canonical trades...", file=sys.stderr, flush=True)
+    try:
+        from src.services.learning_monitor import hydrate_from_canonical_trades, check_state_mismatch
+        if _history:
+            hydration_result = hydrate_from_canonical_trades(_history)
+            loaded = hydration_result.get("loaded_trades", 0)
+            pairs = hydration_result.get("hydrated_pairs", 0)
+            print(f"  [7/7d.5] LM hydrated: {loaded} trades across {pairs} pairs ✓", file=sys.stderr, flush=True)
+            check_state_mismatch(len(_history) if _history else 0)
+        else:
+            print(f"  [7/7d.5] No trade history available for LM hydration", file=sys.stderr, flush=True)
+    except Exception as e:
+        logging.warning(f"LM canonical hydration failed: {e}")
+        print(f"  [7/7d.5] LM hydration error: {e}", file=sys.stderr, flush=True)
+
     # V10.13b: Log bootstrap status to confirm hydration completed
     print("  [7/7e] Logging bootstrap status...", file=sys.stderr, flush=True)
     log_bootstrap_status()
@@ -1665,6 +1682,14 @@ def main():
                         f"[SAFE_MODE] dashboard state={status['state']} "
                         f"entries={status['entries']} reason={status['reason']}"
                     )
+        except Exception:
+            pass  # Graceful degrade if service unavailable
+
+        # HOTFIX (2026-04-26): Attempt to recover from stuck quota_429 safe mode
+        # If quota_429 and Firebase probe succeeds, clear safe mode and re-enable entries
+        try:
+            from src.services.runtime_flags import try_recover_from_quota_safe_mode
+            try_recover_from_quota_safe_mode()
         except Exception:
             pass  # Graceful degrade if service unavailable
 
