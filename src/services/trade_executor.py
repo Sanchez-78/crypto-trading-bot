@@ -108,6 +108,33 @@ MIN_EDGE_PCT             = 0.0003 # 0.03% min TP/SL distance (log: avg ATR-based
 _tick_counter   = [0]            # global price-tick counter (incremented in on_price)
 _trades_at_tick = []             # tick values when positions were opened (rate tracking)
 
+# V10.13u+9: Reentrant close guard — prevent same position from closing multiple times
+_CLOSING_POSITIONS: set = set()  # set of close keys currently being closed
+_RECENTLY_CLOSED: dict = {}      # close key -> timestamp (prevents immediate re-close)
+_CLOSE_TTL_S = 30.0              # TTL for recently closed tracking
+
+
+def _close_key(sym: str, pos: dict) -> str:
+    """V10.13u+9: Generate stable close key from position attributes.
+
+    Uses entry time, action, and entry price to uniquely identify a close operation.
+    Prevents duplicate closes on the same position across different price ticks.
+    """
+    opened = pos.get("opened_at") or pos.get("entry_time") or pos.get("ts") or ""
+    action = pos.get("action") or pos.get("side") or ""
+    entry = pos.get("entry") or pos.get("entry_price") or ""
+    return f"{sym}:{action}:{entry}:{opened}"
+
+
+def _cleanup_recently_closed(now: float) -> None:
+    """V10.13u+9: Remove expired entries from recently-closed tracking.
+
+    Prevents indefinite memory growth and allows positions to re-open after TTL.
+    """
+    for k in list(_RECENTLY_CLOSED.keys()):
+        if now - _RECENTLY_CLOSED[k] > _CLOSE_TTL_S:
+            _RECENTLY_CLOSED.pop(k, None)
+
 
 def _adaptive_tp_sl(ev, wr):
     """V8: Continuous TP/SL multipliers from EV and win rate.
@@ -2243,6 +2270,24 @@ def on_price(data):
     if reason is None:
         return
 
+    # V10.13u+9: Reentrant close guard — acquire lock before any side effects
+    now = time.time()
+    _cleanup_recently_closed(now)
+    ckey = _close_key(sym, pos)
+
+    if pos.get("_closing") or ckey in _CLOSING_POSITIONS or ckey in _RECENTLY_CLOSED:
+        log.warning(
+            f"[CLOSE_SKIP_DUPLICATE] {sym} reason={reason} key={ckey} "
+            f"closing={pos.get('_closing')} recent={ckey in _RECENTLY_CLOSED}"
+        )
+        return None
+
+    pos["_closing"] = True
+    pos["_closing_reason"] = reason
+    pos["_closing_started_at"] = now
+    _CLOSING_POSITIONS.add(ckey)
+    log.warning(f"[CLOSE_LOCK_ACQUIRED] {sym} reason={reason} key={ckey}")
+
     get_event_bus().emit("LOG_OUTPUT", {"message": f"[CLOSE_LOGIC_START] {sym} reason={reason} entering close logic"}, time.time())
 
     fee_used           = pos.get("fee_rt", FEE_RT)
@@ -2523,6 +2568,11 @@ def on_price(data):
         _positions.pop(sym, None)
         _sync_regime_exposure()   # Fix 5: recount eliminates decrement drift
     get_event_bus().emit("LOG_OUTPUT", {"message": f"[CLOSE_LOGIC_DELETED] {sym} position deleted"}, time.time())
+
+    # V10.13u+9: Release close lock after position is removed
+    _RECENTLY_CLOSED[ckey] = time.time()
+    _CLOSING_POSITIONS.discard(ckey)
+    log.warning(f"[CLOSE_LOCK_RELEASED] {sym} reason={reason} key={ckey} status=closed")
 
     if _pending_open:
         pending = _pending_open.pop(0)
