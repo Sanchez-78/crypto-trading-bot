@@ -706,42 +706,47 @@ def lm_health():
 
 def lm_economic_health() -> dict:
     """
-    V10.13s.4: Calculate economic health (trading results, not learning state).
+    V10.13u+4: Calculate economic health using dashboard's canonical trades.
 
-    Separate from lm_health() which measures learning quality.
-    Economic health measures actual trading profitability and execution.
+    Uses the exact same 500-trade snapshot as the dashboard to ensure PF consistency.
+    Never falls back to stale METRICS or model-state sources.
 
     Returns dict with:
-      - profit_factor: gross_wins / gross_losses ratio
+      - profit_factor: gross_wins / gross_losses ratio (from canonical source)
       - scratch_rate: fraction of exits via SCRATCH_EXIT
       - recent_trend: "IMPROVING" | "DECLINING" | "NEUTRAL"
       - overall_score: 0.0-1.0 based on these components
-      - status: "GOOD" | "CAUTION" | "FRAGILE" | "DEGRADED"
+      - status: "GOOD" | "CAUTION" | "FRAGILE" | "DEGRADED" | "BAD"
     """
     try:
         from src.services.learning_event import METRICS, _close_reasons, _recent_results
-        from src.services.canonical_metrics import canonical_profit_factor
+        from src.services.firebase_client import load_history
+        from src.services.canonical_metrics import canonical_profit_factor_with_meta
 
-        trades = METRICS.get("trades", 0)
-        if trades < 5:
+        # V10.13u+4: Load same 500-trade snapshot as dashboard (authoritative source)
+        canonical_closed_trades = load_history(limit=500)
+        if not canonical_closed_trades or len(canonical_closed_trades) < 5:
             return {
                 "profit_factor": 0.0,
                 "scratch_rate": 0.0,
                 "recent_trend": "INSUFFICIENT_DATA",
                 "overall_score": 0.0,
                 "status": "INSUFFICIENT_DATA",
-                "warnings": ["Need at least 5 trades to assess economic health"]
+                "warnings": ["Need at least 5 canonical closed trades"]
             }
 
-        # PATCH 2: Use canonical profit factor (single source of truth)
-        profit_factor = canonical_profit_factor()
+        # V10.13u+4: Get PF with metadata from dashboard's exact source
+        pf_meta = canonical_profit_factor_with_meta(canonical_closed_trades)
+        profit_factor = pf_meta["pf"]
+        net_pnl = pf_meta["net_pnl"]
+
         # Normalize inf to 99.0 for display
         if profit_factor == float("inf"):
             profit_factor = 99.0
 
-        # Diagnostic: save for logging after score calculation
-        wins = METRICS.get("wins", 0)
-        losses = METRICS.get("losses", 0)
+        trades = len(canonical_closed_trades)
+        wins = pf_meta["wins"]
+        losses = pf_meta["losses"]
 
         # Scratch rate: SCRATCH_EXIT / total trades
         scratch_exits = _close_reasons.get("SCRATCH_EXIT", 0)
@@ -799,9 +804,13 @@ def lm_economic_health() -> dict:
             recent_wr_pct = recent_wins / recent_sample_size
             warnings.append(f"Recent performance degrading ({recent_wr_pct*100:.1f}% vs {overall_wr*100:.1f}%)")
 
-        # V10.13u+3: Hard rule — PF < 1.0 + negative profit = never GOOD
+        # V10.13u+4: Hard safety clamp — PF < 1.0 = never GOOD
         if profit_factor < 1.0 and net_pnl <= 0:
+            overall_score = min(overall_score, 0.34)
             status = "BAD"
+        elif profit_factor < 1.0:
+            overall_score = min(overall_score, 0.49)
+            status = "CAUTION"
         elif overall_score >= 0.7:
             status = "GOOD"
         elif overall_score >= 0.5:
@@ -811,10 +820,12 @@ def lm_economic_health() -> dict:
         else:
             status = "DEGRADED"
 
-        # V10.13u+3: Log canonical economic health with active source confirmation
+        # V10.13u+4: Full diagnostic log with canonical source confirmation
         log.warning(
-            f"[ECON_CANONICAL_ACTIVE] pf={profit_factor:.2f} source=canonical_profit_factor "
-            f"economic_score={overall_score:.3f} status={status}"
+            f"[ECON_CANONICAL_ACTIVE] pf={profit_factor:.2f} source={pf_meta['source']} "
+            f"closed_trades={pf_meta['closed_trades']} wins={pf_meta['wins']} losses={pf_meta['losses']} "
+            f"gross_win={pf_meta['gross_win']:.8f} gross_loss={pf_meta['gross_loss']:.8f} "
+            f"net_pnl={pf_meta['net_pnl']:.8f} economic_score={overall_score:.3f} status={status}"
         )
 
         return {

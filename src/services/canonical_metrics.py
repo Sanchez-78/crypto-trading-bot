@@ -47,32 +47,81 @@ def canonical_profit_factor(closed_trades: list[dict] = None) -> float:
     """
     Canonical profit factor: gross_wins / gross_losses.
 
-    Used consistently by:
-      - Dashboard telemetry
-      - Economic health gate
-      - Pre-live audit
-      - Health monitoring
+    Matches dashboard MetricsEngine.compute_canonical_trade_stats() exactly.
+    - If closed_trades provided: compute from those trades only.
+    - If None: returns 0.0 (caller must provide trades for accurate PF).
 
     Args:
-        closed_trades: List of trade dicts with 'net_pnl'. If None, uses METRICS.
+        closed_trades: List of trade dicts with 'net_pnl'. Required for accuracy.
 
     Returns:
-        float: PF ratio. inf if no losses but winning, 0.0 if break-even/losing.
+        float: PF ratio. Uses MetricsEngine logic: gross_pnl / loss_sum.
     """
-    if closed_trades is None:
-        try:
-            from src.services.learning_event import METRICS
-            gw = METRICS.get("gross_wins", 0.0)
-            gl = METRICS.get("gross_losses", 0.0)
-        except Exception:
-            return 0.0
-    else:
-        gw = sum(max(t.get("net_pnl", 0.0), 0.0) for t in closed_trades)
-        gl = sum(abs(min(t.get("net_pnl", 0.0), 0.0)) for t in closed_trades)
+    if closed_trades is None or not closed_trades:
+        return 0.0
 
-    if gl == 0:
-        return float("inf") if gw > 0 else 0.0
-    return gw / gl
+    # Mirror MetricsEngine.compute_canonical_trade_stats() logic
+    profits = [t.get("net_pnl", 0.0) for t in closed_trades]
+    gross_pnl = sum(p for p in profits if p > 0)
+    loss_sum = abs(sum(p for p in profits if p < 0))
+
+    if loss_sum > 0:
+        return gross_pnl / loss_sum
+    elif gross_pnl > 0:
+        return float("inf")
+    else:
+        return 1.0
+
+
+def canonical_profit_factor_with_meta(closed_trades: list[dict] = None) -> dict:
+    """
+    V10.13u+4: Canonical PF with full diagnostics metadata.
+
+    Returns exactly which source was used, how many trades, and the calculation details.
+    Use this to verify Economic Health is using the dashboard's canonical source.
+
+    Args:
+        closed_trades: List of trade dicts. If None, returns empty source indicator.
+
+    Returns:
+        dict with: pf, source, closed_trades (count), wins, losses, gross_win, gross_loss, net_pnl
+    """
+    if closed_trades is None or not closed_trades:
+        return {
+            "pf": 0.0,
+            "source": "none_provided",
+            "closed_trades": 0,
+            "wins": 0,
+            "losses": 0,
+            "gross_win": 0.0,
+            "gross_loss": 0.0,
+            "net_pnl": 0.0,
+        }
+
+    profits = [t.get("net_pnl", 0.0) for t in closed_trades]
+    gross_pnl = sum(p for p in profits if p > 0)
+    loss_sum = abs(sum(p for p in profits if p < 0))
+
+    if loss_sum > 0:
+        pf = gross_pnl / loss_sum
+    elif gross_pnl > 0:
+        pf = float("inf")
+    else:
+        pf = 1.0
+
+    wins = sum(1 for p in profits if p > 0)
+    losses = sum(1 for p in profits if p < 0)
+
+    return {
+        "pf": pf,
+        "source": "canonical_closed_trades",
+        "closed_trades": len(closed_trades),
+        "wins": wins,
+        "losses": losses,
+        "gross_win": gross_pnl,
+        "gross_loss": loss_sum,
+        "net_pnl": sum(profits),
+    }
 
 
 def canonical_win_rate(closed_trades: list[dict] = None) -> float:

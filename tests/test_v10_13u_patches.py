@@ -294,5 +294,82 @@ def test_economic_health_profitable_pf_good():
                     assert result["profit_factor"] == 2.0
 
 
+# ── V10.13u+4: Canonical Economic PF Real Source Fix ─────────────────
+
+def test_canonical_profit_factor_with_meta_basic():
+    """V10.13u+4: canonical_profit_factor_with_meta returns correct metadata."""
+    from src.services.canonical_metrics import canonical_profit_factor_with_meta
+
+    # Create 10 trades: 7 wins, 3 losses
+    trades = [
+        {"net_pnl": 0.001},   # WIN
+        {"net_pnl": 0.002},   # WIN
+        {"net_pnl": 0.0015},  # WIN
+        {"net_pnl": 0.003},   # WIN
+        {"net_pnl": 0.0005},  # WIN
+        {"net_pnl": 0.002},   # WIN
+        {"net_pnl": 0.001},   # WIN
+        {"net_pnl": -0.001},  # LOSS
+        {"net_pnl": -0.002},  # LOSS
+        {"net_pnl": -0.0015}, # LOSS
+    ]
+
+    meta = canonical_profit_factor_with_meta(trades)
+
+    # Check metadata
+    assert meta["closed_trades"] == 10
+    assert meta["wins"] == 7
+    assert meta["losses"] == 3
+    assert meta["source"] == "canonical_closed_trades"
+
+    # gross_win = 0.001 + 0.002 + 0.0015 + 0.003 + 0.0005 + 0.002 + 0.001 = 0.011
+    # gross_loss = 0.001 + 0.002 + 0.0015 = 0.0045
+    # pf = 0.011 / 0.0045 ≈ 2.444
+    assert abs(meta["pf"] - 2.444) < 0.01, f"Expected PF ≈ 2.444, got {meta['pf']}"
+    assert abs(meta["gross_win"] - 0.011) < 1e-10
+    assert abs(meta["gross_loss"] - 0.0045) < 1e-10
+
+
+def test_canonical_profit_factor_with_meta_no_trades():
+    """V10.13u+4: canonical_profit_factor_with_meta handles empty trades."""
+    from src.services.canonical_metrics import canonical_profit_factor_with_meta
+
+    meta = canonical_profit_factor_with_meta(None)
+    assert meta["pf"] == 0.0
+    assert meta["closed_trades"] == 0
+    assert meta["source"] == "none_provided"
+
+    meta2 = canonical_profit_factor_with_meta([])
+    assert meta2["pf"] == 0.0
+    assert meta2["closed_trades"] == 0
+
+
+def test_economic_health_matches_canonical_source():
+    """V10.13u+4: Economic health uses dashboard's canonical closed trades."""
+    from src.services.learning_monitor import lm_economic_health
+
+    # Mock load_history to return trades that give PF = 0.75
+    canonical_trades = [
+        {"net_pnl": 0.001},   # WIN
+        {"net_pnl": 0.001},   # WIN
+        {"net_pnl": 0.001},   # WIN
+        {"net_pnl": -0.002},  # LOSS
+        {"net_pnl": -0.0015}, # LOSS
+    ]
+
+    with patch("src.services.firebase_client.load_history") as mock_load:
+        mock_load.return_value = canonical_trades
+
+        with patch("src.services.learning_event.METRICS", {"trades": 5}):
+            with patch("src.services.learning_event._close_reasons", {}):
+                with patch("src.services.learning_event._recent_results", []):
+                    result = lm_economic_health()
+
+                    # PF = 0.003 / 0.0035 ≈ 0.857
+                    pf = result.get("profit_factor")
+                    assert pf < 1.0, f"Expected PF < 1.0, got {pf}"
+                    assert result.get("status") != "GOOD", "Should not be GOOD with PF < 1.0"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
