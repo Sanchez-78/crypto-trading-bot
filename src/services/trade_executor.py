@@ -116,6 +116,11 @@ CLOSE_LOCK_TTL_S = 20.0          # lock must complete within 20s or be auto-rele
 RECENTLY_CLOSED_TTL_S = 60.0     # recently closed blocks re-entry for 60s
 _CLOSE_LOCK_HEALTH_LAST_LOG = [0.0]  # timestamp of last CLOSE_LOCK_HEALTH log
 
+# V10.13u+13: Force reconciliation constants for stuck close loops
+CLOSE_LOCK_FORCE_RECONCILE_AFTER = 3   # force reconcile after 3+ stale releases
+CLOSE_LOCK_MAX_ATTEMPTS = 250          # force reconcile if attempts > 250
+CLOSE_DUP_LOG_INTERVAL_S = 10.0        # throttle duplicate close logs to every 10s/key
+
 
 def _close_key(sym: str, pos: dict) -> str:
     """V10.13u+9: Generate stable close key from position attributes.
@@ -132,6 +137,8 @@ def _close_key(sym: str, pos: dict) -> str:
 def _cleanup_close_locks(now: float = None) -> None:
     """V10.13u+11: Remove stale locks and expired recently-closed entries.
 
+    V10.13u+13: Use _release_stale_close_lock to handle force_reconcile triggers.
+
     Prevents indefinite lock hold-up and allows position re-entry after TTL.
     Logs stale releases for observability and triggers recovery if repeated.
     """
@@ -142,18 +149,11 @@ def _cleanup_close_locks(now: float = None) -> None:
         if now - meta.get("ts", now) > CLOSE_LOCK_TTL_S
     ]
     for key in stale:
-        meta = _CLOSING_POSITIONS.pop(key, {})
-        _STALE_CLOSE_COUNTS[key] = _STALE_CLOSE_COUNTS.get(key, 0) + 1
-        count = _STALE_CLOSE_COUNTS[key]
-        log.error(
-            "[CLOSE_LOCK_STALE_RELEASE] key=%s symbol=%s reason=%s age=%.1fs attempts=%s stale_count=%s",
-            key,
-            meta.get("symbol"),
-            meta.get("reason"),
-            now - meta.get("ts", now),
-            meta.get("attempts", 0),
-            count,
-        )
+        meta = _CLOSING_POSITIONS.get(key, {})
+        # V10.13u+13: Call _release_stale_close_lock to trigger force_reconcile if needed
+        _release_stale_close_lock(key, meta, now)
+        # Log stuck position warning (after release, so we have updated stale count)
+        count = _STALE_CLOSE_COUNTS.get(key, 0)
         if count >= 2:
             log.error(
                 "[POSITION_CLOSE_STUCK] key=%s symbol=%s count=%s action=reconcile_required",
@@ -172,6 +172,9 @@ def _cleanup_close_locks(now: float = None) -> None:
 def _release_stale_close_lock(key: str, meta: dict, now: float = None) -> None:
     """V10.13u+12: Release a stale close lock that exceeded TTL.
 
+    V10.13u+13: Trigger force reconcile if stale_count >= CLOSE_LOCK_FORCE_RECONCILE_AFTER
+    or attempts >= CLOSE_LOCK_MAX_ATTEMPTS to stop infinite close loops.
+
     Increments stale count and logs recovery event.
     Allows next close attempt to proceed (fresh lock acquisition).
     """
@@ -179,10 +182,48 @@ def _release_stale_close_lock(key: str, meta: dict, now: float = None) -> None:
     age = now - meta.get("ts", now)
     _CLOSING_POSITIONS.pop(key, None)
     _STALE_CLOSE_COUNTS[key] = _STALE_CLOSE_COUNTS.get(key, 0) + 1
+    stale_count = _STALE_CLOSE_COUNTS[key]
+    attempts = int((meta or {}).get("attempts", 0))
+
     log.error(
         "[CLOSE_LOCK_STALE_RELEASE] key=%s symbol=%s reason=%s age=%.1fs count=%s",
-        key, meta.get("symbol"), meta.get("reason"), age, _STALE_CLOSE_COUNTS[key]
+        key, meta.get("symbol"), meta.get("reason"), age, stale_count
     )
+
+    # V10.13u+13: Force reconcile if stuck in infinite loop
+    if stale_count >= CLOSE_LOCK_FORCE_RECONCILE_AFTER or attempts >= CLOSE_LOCK_MAX_ATTEMPTS:
+        _force_reconcile_stuck_close(key, meta, reason="stale_lock_threshold")
+
+
+def _force_reconcile_stuck_close(key: str, meta: dict = None, reason: str = "stale_close_loop") -> bool:
+    """V10.13u+13: Last-resort recovery for positions stuck in close loops.
+
+    Removes the position from _positions and marks it as force_reconciled in
+    _RECENTLY_CLOSED to prevent immediate reacquire. Returns True if position was changed.
+    """
+    import time
+    meta = meta or {}
+    symbol = meta.get("symbol") or key.split(":")[0]
+    changed = False
+
+    try:
+        with _positions_lock:
+            if symbol in _positions:
+                _positions.pop(symbol, None)
+                changed = True
+                _sync_regime_exposure()
+    except Exception as e:
+        log.exception(f"[CLOSE_FORCE_RECONCILE_FAIL] key={key} symbol={symbol} err={e}")
+
+    _CLOSING_POSITIONS.pop(key, None)
+    # Store timestamp in _RECENTLY_CLOSED to block immediate reacquire (consistent with existing API)
+    _RECENTLY_CLOSED[key] = time.time()
+
+    log.error(
+        "[CLOSE_FORCE_RECONCILE] key=%s symbol=%s reason=%s stale_count=%s attempts=%s changed=%s",
+        key, symbol, reason, _STALE_CLOSE_COUNTS.get(key, 0), meta.get("attempts", 0), changed
+    )
+    return changed
 
 
 def _try_acquire_close_lock(sym: str, pos: dict, reason: str, now: float = None) -> tuple:
@@ -212,10 +253,10 @@ def _try_acquire_close_lock(sym: str, pos: dict, reason: str, now: float = None)
             _release_stale_close_lock(key, meta, now)
             # Continue and acquire fresh lock below
         else:
-            # Duplicate log throttled by key, max once per 5s
+            # V10.13u+13: Duplicate log throttled by key, max once per CLOSE_DUP_LOG_INTERVAL_S (10s)
             meta["attempts"] = meta.get("attempts", 0) + 1
             last_log = meta.get("last_log", 0)
-            if now - last_log >= 5.0:
+            if now - last_log >= CLOSE_DUP_LOG_INTERVAL_S:
                 meta["last_log"] = now
                 log.warning(
                     "[CLOSE_SKIP_DUPLICATE] %s reason=%s key=%s status=already_closing age=%.1fs attempts=%s",

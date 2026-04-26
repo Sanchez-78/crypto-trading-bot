@@ -1539,5 +1539,178 @@ def test_exit_type_replaced_alias_normalized():
     assert "REPLACED_EXIT" in EXIT_TYPES, "REPLACED_EXIT should be in EXIT_TYPES"
 
 
+# ── V10.13u+13: Force reconcile stuck close loops ─────────────────────────────────
+
+def test_force_reconcile_after_three_stale_releases():
+    """V10.13u+13: Force reconcile is triggered after 3+ stale releases."""
+    import time
+    from src.services.trade_executor import (
+        _CLOSING_POSITIONS, _STALE_CLOSE_COUNTS, _RECENTLY_CLOSED,
+        _force_reconcile_stuck_close, CLOSE_LOCK_FORCE_RECONCILE_AFTER, _positions
+    )
+
+    _CLOSING_POSITIONS.clear()
+    _STALE_CLOSE_COUNTS.clear()
+    _RECENTLY_CLOSED.clear()
+    _positions.clear()
+
+    key = "BTCUSDT:BUY:50000.0:1234567.0"
+    symbol = "BTCUSDT"
+    meta = {
+        "ts": time.time() - 60,
+        "symbol": symbol,
+        "reason": "TEST_STUCK",
+        "attempts": 100,
+    }
+
+    # Insert a fake position
+    _positions[symbol] = {"entry": 50000.0, "size": 1.0, "action": "BUY"}
+
+    # Manually trigger force reconcile
+    changed = _force_reconcile_stuck_close(key, meta, reason="stale_lock_threshold")
+
+    # Position should be removed
+    assert symbol not in _positions, "Position should be removed by force reconcile"
+    # Key should be in recently closed (stores timestamp to block reacquire)
+    assert key in _RECENTLY_CLOSED, "Key should be marked as force_reconciled"
+    assert isinstance(_RECENTLY_CLOSED[key], float), "Should store timestamp, not dict"
+    # Lock should be released
+    assert key not in _CLOSING_POSITIONS, "Lock should be released"
+
+
+def test_force_reconcile_blocks_immediate_reacquire():
+    """V10.13u+13: Force reconciled keys cannot be immediately reacquired."""
+    import time
+    from src.services.trade_executor import (
+        _CLOSING_POSITIONS, _RECENTLY_CLOSED, _try_acquire_close_lock,
+        _force_reconcile_stuck_close, RECENTLY_CLOSED_TTL_S, _positions
+    )
+
+    _CLOSING_POSITIONS.clear()
+    _RECENTLY_CLOSED.clear()
+    _positions.clear()
+
+    key = "ETHUSDT:SELL:3000.0:1234568.0"
+    symbol = "ETHUSDT"
+    meta = {"ts": time.time() - 60, "symbol": symbol, "reason": "TEST", "attempts": 100}
+
+    # Add position
+    _positions[symbol] = {"entry": 3000.0, "size": 1.0, "action": "SELL"}
+
+    # Force reconcile
+    _force_reconcile_stuck_close(key, meta)
+
+    # Try to acquire same key immediately
+    now = time.time()
+    pos = {"entry": 3000.0, "size": 1.0, "action": "SELL", "entry_time": 1234568.0}
+    acquired, ret_key, status = _try_acquire_close_lock(symbol, pos, "RETRY_AFTER_FORCE", now=now)
+
+    # Should NOT acquire (recently_closed)
+    assert acquired is False, "Should not acquire after force reconcile"
+    assert status == "recently_closed", f"Expected 'recently_closed', got '{status}'"
+
+
+def test_duplicate_close_logs_throttled():
+    """V10.13u+13: Duplicate close logs are throttled to CLOSE_DUP_LOG_INTERVAL_S (10s)."""
+    import time
+    from src.services.trade_executor import (
+        _CLOSING_POSITIONS, _try_acquire_close_lock, CLOSE_DUP_LOG_INTERVAL_S, _positions
+    )
+
+    _CLOSING_POSITIONS.clear()
+    _positions.clear()
+
+    symbol = "BNBUSDT"
+    pos = {"entry": 300.0, "size": 1.0, "action": "BUY", "entry_time": 1234569.0}
+
+    # First acquisition
+    now = time.time()
+    acquired1, key1, _ = _try_acquire_close_lock(symbol, pos, "FIRST", now=now)
+    assert acquired1 is True
+
+    # Second attempt (duplicate) immediately — should return already_closing
+    # Get metadata
+    meta = _CLOSING_POSITIONS[key1]
+    last_log_1 = meta.get("last_log", now)
+
+    # Try again at now+5s (within throttle window)
+    acquired2, key2, status2 = _try_acquire_close_lock(symbol, pos, "SECOND", now=now + 5.0)
+    assert acquired2 is False
+    assert status2 == "already_closing"
+    # last_log should NOT have been updated (still at initial time)
+    assert meta.get("last_log") == last_log_1, "last_log should not update within throttle window"
+
+    # Try again at now+11s (outside throttle window) — last_log should update
+    acquired3, key3, status3 = _try_acquire_close_lock(symbol, pos, "THIRD", now=now + 11.0)
+    assert acquired3 is False
+    assert status3 == "already_closing"
+    # last_log should have been updated
+    assert meta.get("last_log") > last_log_1, "last_log should update after throttle interval"
+
+
+def test_replaced_exit_type_normalized():
+    """V10.13u+13: Verify 'replaced' exit type is normalized (from V10.13u+10)."""
+    from src.services.exit_attribution import normalize_exit_type, EXIT_TYPES
+
+    # Test various replacements
+    assert normalize_exit_type("replaced") == "REPLACED_EXIT"
+    assert normalize_exit_type("REPLACED") == "REPLACED_EXIT"
+    assert normalize_exit_type("replace") == "REPLACED_EXIT"
+    assert normalize_exit_type("replacement") == "REPLACED_EXIT"
+
+    # Ensure REPLACED_EXIT is in allowed types
+    assert "REPLACED_EXIT" in EXIT_TYPES, "REPLACED_EXIT should be in EXIT_TYPES"
+
+
+def test_stale_release_does_not_reacquire_forever():
+    """V10.13u+13: After stale release, position is force-reconciled, preventing infinite loop."""
+    import time
+    from src.services.trade_executor import (
+        _CLOSING_POSITIONS, _STALE_CLOSE_COUNTS, _RECENTLY_CLOSED,
+        _cleanup_close_locks, _try_acquire_close_lock,
+        CLOSE_LOCK_TTL_S, CLOSE_LOCK_FORCE_RECONCILE_AFTER, _positions, _positions_lock
+    )
+
+    _CLOSING_POSITIONS.clear()
+    _STALE_CLOSE_COUNTS.clear()
+    _RECENTLY_CLOSED.clear()
+    _positions.clear()
+
+    symbol = "DOGEUSDT"
+    pos = {"entry": 0.5, "size": 1.0, "action": "BUY", "entry_time": 1234570.0}
+    key = "DOGEUSDT:BUY:0.5:1234570.0"
+
+    # Add initial position
+    with _positions_lock:
+        _positions[symbol] = {"entry": 0.5, "size": 1.0, "action": "BUY"}
+
+    now = time.time()
+
+    # Simulate CLOSE_LOCK_FORCE_RECONCILE_AFTER+1 stale release cycles
+    for cycle in range(CLOSE_LOCK_FORCE_RECONCILE_AFTER + 1):
+        # Try to acquire lock
+        acquired, ret_key, _ = _try_acquire_close_lock(symbol, pos, f"CYCLE_{cycle}", now=now)
+
+        if cycle < CLOSE_LOCK_FORCE_RECONCILE_AFTER:
+            # First N-1 cycles: should acquire
+            assert acquired is True, f"Should acquire on cycle {cycle} (below threshold)"
+            # Age the lock past TTL
+            meta = _CLOSING_POSITIONS.get(key)
+            if meta:
+                meta["ts"] = now - CLOSE_LOCK_TTL_S - 1.0
+            # Trigger cleanup for this cycle
+            now += 1.0
+            _cleanup_close_locks(now=now)
+        else:
+            # On the Nth cycle: force reconcile should have happened
+            # Position should be gone, key should be in recently_closed
+            assert symbol not in _positions, "Position should be removed by force reconcile"
+            assert key in _RECENTLY_CLOSED, "Key should be in recently_closed after force reconcile"
+
+    # Final check: stale count should be at threshold
+    assert _STALE_CLOSE_COUNTS[key] >= CLOSE_LOCK_FORCE_RECONCILE_AFTER, \
+        f"Stale count {_STALE_CLOSE_COUNTS[key]} should be >= {CLOSE_LOCK_FORCE_RECONCILE_AFTER}"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
