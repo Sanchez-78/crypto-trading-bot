@@ -2358,8 +2358,11 @@ def evaluate_signal(signal):
     )
 
     # V10.12f: Enhanced decision logging with unblock state and anti-deadlock info
+    # PATCH 2: Fix misleading decision=TAKE in SAFE_MODE debug logs
+    from src.services.runtime_flags import is_db_degraded_safe_mode
     _ub_str = f" unblock=True fallback={_unblock_fallback_used} anti_deadlock={_anti_deadlock_triggered} size×{_unblock_size_mult:.2f}" if _is_unblock else ""
-    print(f"    decision=TAKE  ev={ev:.4f}  p={win_prob:.4f}  "
+    _decision_display = "ADVISORY_TAKE_BLOCKED_SAFE_MODE" if is_db_degraded_safe_mode() else "TAKE"
+    print(f"    decision={_decision_display}  ev={ev:.4f}  p={win_prob:.4f}  "
           f"af={auditor_factor:.2f}  coh={_coh:.3f}{_ub_str}")
 
     # B16: conv-rate tracking — signal accepted

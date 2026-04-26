@@ -737,8 +737,15 @@ def print_status():
             t, _sym_cnt, _reg_cnt, _exit_cnt, profit, _sym_pnl)
 
     # ── Header ────────────────────────────────────────────────────────────────
-    status_tag = (g(" AKTIVNI ", C.BLD + C.GRN) if m["ready"]
-                  else g(" TRENINK ", C.YLW))
+    # PATCH 1: Dashboard header SAFE_MODE override
+    from src.services.runtime_flags import is_db_degraded_safe_mode, get_db_degraded_reason
+
+    if is_db_degraded_safe_mode():
+        reason = get_db_degraded_reason() or "unknown"
+        status_tag = g(f" SAFE_MODE_FIREBASE_DEGRADED ", C.RED + C.BLD)
+    else:
+        status_tag = (g(" AKTIVNI ", C.BLD + C.GRN) if m["ready"]
+                      else g(" TRENINK ", C.YLW))
     print(f"\n{g('=' * W, C.CYN)}")
     print(g(f"  CRYPTOMASTER  |  {uptime()}  |{status_tag}", C.BLD + C.CYN))
     print(g("=" * W, C.CYN))
@@ -1784,29 +1791,30 @@ def main():
                 if is_db_degraded_safe_mode():
                     reason = get_db_degraded_reason() or "unknown"
                     if anomalies:
-                        logging.warning(f"[SAFE_MODE] self_heal escalation suppressed reason={reason}")
+                        _get_logger = __import__('logging').getLogger(__name__)
+                        _get_logger.warning(f"[SAFE_MODE] self_heal escalation suppressed reason={reason}")
                     # Skip handle_anomaly during SAFE_MODE — existing positions managed normally via on_price
                     anomalies = []
 
                 # Handle each anomaly
                 for anomaly in anomalies:
                     handle_anomaly(anomaly, current_state)
-                
+
                 # Auto-rollback if critical
                 current_state = _state_history.rollback_if_needed(current_state, anomalies)
-                
+
                 # Save snapshot for recovery
                 _state_history.save(current_state)
-                
+
                 # Check failsafe
                 if failsafe_halt(current_state):
                     bus = get_event_bus()
                     msg = "🛑 FAILSAFE: Trading disabled (safe_mode + DD>45%)"
                     bus.emit("LOG_OUTPUT", {"message": msg}, now)
-                    
+
             except Exception as _heal_ex:
-                import logging as _log_heal
-                _log_heal.getLogger(__name__).error(f"Self-heal cycle error: {_heal_ex}")
+                _log_heal = __import__('logging').getLogger(__name__)
+                _log_heal.error(f"Self-heal cycle error: {_heal_ex}")
 
         if now - _last_audit >= AUDIT_INTERVAL:
             run_audit()
