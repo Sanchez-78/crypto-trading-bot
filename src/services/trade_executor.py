@@ -108,10 +108,13 @@ MIN_EDGE_PCT             = 0.0003 # 0.03% min TP/SL distance (log: avg ATR-based
 _tick_counter   = [0]            # global price-tick counter (incremented in on_price)
 _trades_at_tick = []             # tick values when positions were opened (rate tracking)
 
-# V10.13u+9: Reentrant close guard — prevent same position from closing multiple times
-_CLOSING_POSITIONS: set = set()  # set of close keys currently being closed
-_RECENTLY_CLOSED: dict = {}      # close key -> timestamp (prevents immediate re-close)
-_CLOSE_TTL_S = 30.0              # TTL for recently closed tracking
+# V10.13u+11: Close lock + TTL recovery — prevent stuck locks and duplicate closes
+_CLOSING_POSITIONS: dict = {}    # key -> {"ts": float, "symbol": str, "reason": str, "attempts": int, "last_log": float}
+_RECENTLY_CLOSED: dict = {}      # key -> close timestamp (prevents immediate re-close)
+_STALE_CLOSE_COUNTS: dict = {}   # key -> count of stale releases (recovery tracking)
+CLOSE_LOCK_TTL_S = 20.0          # lock must complete within 20s or be auto-released
+RECENTLY_CLOSED_TTL_S = 60.0     # recently closed blocks re-entry for 60s
+_CLOSE_LOCK_HEALTH_LAST_LOG = [0.0]  # timestamp of last CLOSE_LOCK_HEALTH log
 
 
 def _close_key(sym: str, pos: dict) -> str:
@@ -126,14 +129,85 @@ def _close_key(sym: str, pos: dict) -> str:
     return f"{sym}:{action}:{entry}:{opened}"
 
 
-def _cleanup_recently_closed(now: float) -> None:
-    """V10.13u+9: Remove expired entries from recently-closed tracking.
+def _cleanup_close_locks(now: float = None) -> None:
+    """V10.13u+11: Remove stale locks and expired recently-closed entries.
 
-    Prevents indefinite memory growth and allows positions to re-open after TTL.
+    Prevents indefinite lock hold-up and allows position re-entry after TTL.
+    Logs stale releases for observability and triggers recovery if repeated.
     """
-    for k in list(_RECENTLY_CLOSED.keys()):
-        if now - _RECENTLY_CLOSED[k] > _CLOSE_TTL_S:
-            _RECENTLY_CLOSED.pop(k, None)
+    now = now or time.time()
+
+    stale = [
+        key for key, meta in _CLOSING_POSITIONS.items()
+        if now - meta.get("ts", now) > CLOSE_LOCK_TTL_S
+    ]
+    for key in stale:
+        meta = _CLOSING_POSITIONS.pop(key, {})
+        _STALE_CLOSE_COUNTS[key] = _STALE_CLOSE_COUNTS.get(key, 0) + 1
+        count = _STALE_CLOSE_COUNTS[key]
+        log.error(
+            "[CLOSE_LOCK_STALE_RELEASE] key=%s symbol=%s reason=%s age=%.1fs attempts=%s stale_count=%s",
+            key,
+            meta.get("symbol"),
+            meta.get("reason"),
+            now - meta.get("ts", now),
+            meta.get("attempts", 0),
+            count,
+        )
+        if count >= 2:
+            log.error(
+                "[POSITION_CLOSE_STUCK] key=%s symbol=%s count=%s action=reconcile_required",
+                key, meta.get("symbol"), count
+            )
+
+    old_closed = [
+        key for key, ts in _RECENTLY_CLOSED.items()
+        if now - ts > RECENTLY_CLOSED_TTL_S
+    ]
+    for key in old_closed:
+        _RECENTLY_CLOSED.pop(key, None)
+        _STALE_CLOSE_COUNTS.pop(key, None)
+
+
+def _try_acquire_close_lock(sym: str, pos: dict, reason: str, now: float = None) -> tuple:
+    """V10.13u+11: Attempt to acquire close lock with explicit status.
+
+    Returns: (acquired: bool, close_key: str, status: str)
+    Status is one of: "acquired", "recently_closed", "already_closing"
+    """
+    now = now or time.time()
+    _cleanup_close_locks(now)
+
+    key = _close_key(sym, pos)
+
+    if key in _RECENTLY_CLOSED:
+        return False, key, "recently_closed"
+
+    meta = _CLOSING_POSITIONS.get(key)
+    if meta:
+        meta["attempts"] = meta.get("attempts", 0) + 1
+        last_log = meta.get("last_log", 0)
+        if now - last_log >= 5.0:
+            meta["last_log"] = now
+            log.warning(
+                "[CLOSE_SKIP_DUPLICATE] %s reason=%s key=%s status=already_closing age=%.1fs attempts=%s",
+                sym,
+                reason,
+                key,
+                now - meta.get("ts", now),
+                meta.get("attempts", 0),
+            )
+        return False, key, "already_closing"
+
+    _CLOSING_POSITIONS[key] = {
+        "ts": now,
+        "symbol": sym,
+        "reason": reason,
+        "attempts": 1,
+        "last_log": now,
+    }
+    log.warning("[CLOSE_LOCK_ACQUIRED] %s reason=%s key=%s", sym, reason, key)
+    return True, key, "acquired"
 
 
 def _is_recently_closed(key: str) -> bool:
@@ -144,6 +218,22 @@ def _is_recently_closed(key: str) -> bool:
 def _mark_recently_closed(key: str) -> None:
     """V10.13u+10: Mark a close key as recently closed."""
     _RECENTLY_CLOSED[key] = time.time()
+
+
+def _log_close_lock_health() -> None:
+    """V10.13u+11: Log close lock health metrics once per 60 seconds."""
+    now = time.time()
+    if now - _CLOSE_LOCK_HEALTH_LAST_LOG[0] >= 60.0:
+        _CLOSE_LOCK_HEALTH_LAST_LOG[0] = now
+        active = len(_CLOSING_POSITIONS)
+        stale = sum(1 for meta in _CLOSING_POSITIONS.values() if now - meta.get("ts", now) > CLOSE_LOCK_TTL_S)
+        recently = len(_RECENTLY_CLOSED)
+        top_lock = "none"
+        if _CLOSING_POSITIONS:
+            top_key = max(_CLOSING_POSITIONS.keys(), key=lambda k: _CLOSING_POSITIONS[k].get("attempts", 0))
+            meta = _CLOSING_POSITIONS[top_key]
+            top_lock = f"{meta.get('symbol')}:{meta.get('reason')} age={now - meta.get('ts', now):.1f}s attempts={meta.get('attempts', 0)}"
+        log.info(f"[CLOSE_LOCK_HEALTH] active={active} stale={stale} recently_closed={recently} top={top_lock}")
 
 
 def _adaptive_tp_sl(ev, wr):
@@ -2280,24 +2370,10 @@ def on_price(data):
     if reason is None:
         return
 
-    # V10.13u+10: Reentrant close guard — acquire lock before any side effects
-    now = time.time()
-    _cleanup_recently_closed(now)
-    ckey = _close_key(sym, pos)
-
-    # V10.13u+10: Check recently closed first (fastest path)
-    if _is_recently_closed(ckey):
-        log.warning(f"[CLOSE_SKIP_DUPLICATE] {sym} reason={reason} key={ckey} status=recently_closed")
+    # V10.13u+11: Reentrant close guard with TTL-based recovery
+    acquired, close_key, close_lock_status = _try_acquire_close_lock(sym, pos, reason)
+    if not acquired:
         return None
-
-    # V10.13u+10: Check currently closing
-    if ckey in _CLOSING_POSITIONS:
-        log.warning(f"[CLOSE_SKIP_DUPLICATE] {sym} reason={reason} key={ckey} status=already_closing")
-        return None
-
-    # V10.13u+10: Acquire lock
-    _CLOSING_POSITIONS.add(ckey)
-    log.warning(f"[CLOSE_LOCK_ACQUIRED] {sym} reason={reason} key={ckey}")
 
     get_event_bus().emit("LOG_OUTPUT", {"message": f"[CLOSE_LOGIC_START] {sym} reason={reason} entering close logic"}, time.time())
 
@@ -2534,29 +2610,33 @@ def on_price(data):
     from src.services.firebase_client import save_last_trade
     save_last_trade(trade)
 
-    # V10.13v (Fix 7): Exit outcome attribution
+    # V10.13u+11 (Fix 7): Exit outcome attribution with audit counter guard
     # Build and record exit context for exit type analysis
+    # Only update audit counters on successful lock acquisition, not on duplicates
     try:
-        exit_ctx = build_exit_ctx(
-            sym=sym,
-            regime=regime,
-            side=pos["action"],
-            entry_price=entry,
-            exit_price=curr,
-            size=pos["size"],
-            hold_seconds=int(time.time() - pos["open_ts"]),
-            gross_pnl=_pnl_result["gross_pnl"],
-            fee_cost=_fee_cost,
-            slippage_cost=_slip_cost,
-            net_pnl=_pnl_result["net_pnl"],
-            mfe=mfe,
-            mae=mae,
-            final_exit_type=reason,
-            exit_reason_text=reason,
-            was_winner=(profit > 0),
-            was_forced=False,
-        )
-        update_exit_attribution(exit_ctx)
+        if close_lock_status == "acquired":
+            exit_ctx = build_exit_ctx(
+                sym=sym,
+                regime=regime,
+                side=pos["action"],
+                entry_price=entry,
+                exit_price=curr,
+                size=pos["size"],
+                hold_seconds=int(time.time() - pos["open_ts"]),
+                gross_pnl=_pnl_result["gross_pnl"],
+                fee_cost=_fee_cost,
+                slippage_cost=_slip_cost,
+                net_pnl=_pnl_result["net_pnl"],
+                mfe=mfe,
+                mae=mae,
+                final_exit_type=reason,
+                exit_reason_text=reason,
+                was_winner=(profit > 0),
+                was_forced=False,
+            )
+            update_exit_attribution(exit_ctx)
+        else:
+            log.debug(f"[V10.13u11] Skip exit audit for {sym} reason={reason} status={close_lock_status}")
     except Exception as e:
         log.debug(f"[V10.13v] Exit attribution error: {e}")
 
@@ -2580,10 +2660,13 @@ def on_price(data):
         _sync_regime_exposure()   # Fix 5: recount eliminates decrement drift
     get_event_bus().emit("LOG_OUTPUT", {"message": f"[CLOSE_LOGIC_DELETED] {sym} position deleted"}, time.time())
 
-    # V10.13u+10: Release close lock after position is removed
-    _mark_recently_closed(ckey)
-    _CLOSING_POSITIONS.discard(ckey)
-    log.warning(f"[CLOSE_LOCK_RELEASED] {sym} reason={reason} key={ckey} status=closed")
+    # V10.13u+11: Release close lock after position is removed and mark as recently closed
+    _mark_recently_closed(close_key)
+    _CLOSING_POSITIONS.pop(close_key, None)
+    log.warning(f"[CLOSE_LOCK_RELEASED] {sym} reason={reason} key={close_key} status=closed")
+
+    # V10.13u+11: Log close lock health diagnostics once per 60s
+    _log_close_lock_health()
 
     if _pending_open:
         pending = _pending_open.pop(0)

@@ -931,8 +931,15 @@ def test_close_lock_blocks_duplicate_same_position():
     _RECENTLY_CLOSED.clear()
 
     # First attempt should succeed (lock acquired)
+    import time
     assert ckey not in _CLOSING_POSITIONS
-    _CLOSING_POSITIONS.add(ckey)
+    _CLOSING_POSITIONS[ckey] = {
+        "ts": time.time(),
+        "symbol": "BTCUSDT",
+        "reason": "TEST",
+        "attempts": 1,
+        "last_log": time.time(),
+    }
     assert ckey in _CLOSING_POSITIONS
 
     # Second attempt should be blocked by the guard
@@ -957,8 +964,22 @@ def test_close_lock_allows_different_symbol():
     assert ckey_btc != ckey_eth
 
     # Both should be able to acquire locks simultaneously
-    _CLOSING_POSITIONS.add(ckey_btc)
-    _CLOSING_POSITIONS.add(ckey_eth)
+    import time
+    now = time.time()
+    _CLOSING_POSITIONS[ckey_btc] = {
+        "ts": now,
+        "symbol": "BTCUSDT",
+        "reason": "TEST",
+        "attempts": 1,
+        "last_log": now,
+    }
+    _CLOSING_POSITIONS[ckey_eth] = {
+        "ts": now,
+        "symbol": "ETHUSDT",
+        "reason": "TEST",
+        "attempts": 1,
+        "last_log": now,
+    }
 
     assert ckey_btc in _CLOSING_POSITIONS
     assert ckey_eth in _CLOSING_POSITIONS
@@ -976,19 +997,26 @@ def test_close_lock_releases_on_exception():
     ckey = _close_key("BTCUSDT", pos)
 
     # Simulate acquiring lock
-    _CLOSING_POSITIONS.add(ckey)
+    import time
+    _CLOSING_POSITIONS[ckey] = {
+        "ts": time.time(),
+        "symbol": "BTCUSDT",
+        "reason": "TEST",
+        "attempts": 1,
+        "last_log": time.time(),
+    }
     assert ckey in _CLOSING_POSITIONS
 
     # Simulate releasing on exception
-    _CLOSING_POSITIONS.discard(ckey)
+    _CLOSING_POSITIONS.pop(ckey, None)
     assert ckey not in _CLOSING_POSITIONS
 
 
 def test_recently_closed_ttl_blocks_immediate_reclose():
-    """V10.13u+9: Recently-closed TTL prevents immediate re-close within 30s."""
+    """V10.13u+9/u+11: Recently-closed TTL prevents immediate re-close within TTL."""
     import time as time_module
     from src.services.trade_executor import (
-        _close_key, _RECENTLY_CLOSED, _CLOSE_TTL_S, _cleanup_recently_closed
+        _close_key, _RECENTLY_CLOSED, RECENTLY_CLOSED_TTL_S, _cleanup_close_locks
     )
 
     pos = {"action": "BUY", "entry": 100.0, "entry_time": 12345.0}
@@ -1003,8 +1031,8 @@ def test_recently_closed_ttl_blocks_immediate_reclose():
     # Check within TTL (e.g., 2 seconds later)
     assert ckey in _RECENTLY_CLOSED, "Recently closed should be tracked"
 
-    # After TTL expires (simulate 31 seconds later)
-    _cleanup_recently_closed(now + _CLOSE_TTL_S + 1)
+    # After TTL expires (simulate past expiry)
+    _cleanup_close_locks(now + RECENTLY_CLOSED_TTL_S + 1)
     assert ckey not in _RECENTLY_CLOSED, "TTL should expire old entries"
 
 
@@ -1022,8 +1050,16 @@ def test_exit_audit_not_incremented_on_duplicate():
     ckey = _close_key("BTCUSDT", pos)
 
     # First close: add to recently closed
-    _RECENTLY_CLOSED[ckey] = __import__("time").time()
-    _CLOSING_POSITIONS.add(ckey)
+    import time
+    now = time.time()
+    _RECENTLY_CLOSED[ckey] = now
+    _CLOSING_POSITIONS[ckey] = {
+        "ts": now,
+        "symbol": "BTCUSDT",
+        "reason": "TEST",
+        "attempts": 1,
+        "last_log": now,
+    }
 
     # Check: duplicate should be blocked by guard
     # (In actual code, [CLOSE_SKIP_DUPLICATE] would be logged)
@@ -1105,7 +1141,8 @@ def test_close_guard_blocks_duplicate_recently_closed():
 
 
 def test_close_guard_separate_checks():
-    """V10.13u+10: Close guard checks recently_closed and already_closing separately."""
+    """V10.13u+10/u+11: Close guard checks recently_closed and already_closing separately."""
+    import time
     from src.services.trade_executor import (
         _close_key, _is_recently_closed, _CLOSING_POSITIONS, _RECENTLY_CLOSED
     )
@@ -1120,16 +1157,233 @@ def test_close_guard_separate_checks():
     ckey_eth = _close_key("ETHUSDT", pos_eth)
 
     # Set BTC as recently closed
-    _RECENTLY_CLOSED[ckey_btc] = __import__("time").time()
+    _RECENTLY_CLOSED[ckey_btc] = time.time()
 
-    # Set ETH as currently closing
-    _CLOSING_POSITIONS.add(ckey_eth)
+    # Set ETH as currently closing (V10.13u+11: dict with metadata)
+    _CLOSING_POSITIONS[ckey_eth] = {
+        "ts": time.time(),
+        "symbol": "ETHUSDT",
+        "reason": "TEST",
+        "attempts": 1,
+        "last_log": time.time(),
+    }
 
     # Check separate detection
     assert _is_recently_closed(ckey_btc), "Should detect recently closed"
     assert ckey_eth in _CLOSING_POSITIONS, "Should detect already closing"
     assert not _is_recently_closed(ckey_eth), "ETH not in recently closed"
     assert ckey_btc not in _CLOSING_POSITIONS, "BTC not in currently closing"
+
+
+# ── V10.13u+11: Close Lock TTL + Stuck Position Recovery ────────────────────
+
+
+def test_close_lock_acquire_once():
+    """V10.13u+11: Lock acquired only once per close key."""
+    import time
+    from src.services.trade_executor import (
+        _try_acquire_close_lock, _CLOSING_POSITIONS, _RECENTLY_CLOSED,
+        _close_key, _STALE_CLOSE_COUNTS
+    )
+
+    _CLOSING_POSITIONS.clear()
+    _RECENTLY_CLOSED.clear()
+    _STALE_CLOSE_COUNTS.clear()
+
+    pos = {"action": "BUY", "entry": 100.0, "entry_time": 1234567.0, "size": 1.0}
+
+    # First acquisition should succeed
+    acquired, key, status = _try_acquire_close_lock("BTCUSDT", pos, "TEST_EXIT")
+    assert acquired is True, "First lock acquisition should succeed"
+    assert status == "acquired", f"Expected 'acquired', got '{status}'"
+    assert key in _CLOSING_POSITIONS, "Key should be in _CLOSING_POSITIONS"
+
+    # Second acquisition should fail (already closing)
+    acquired2, key2, status2 = _try_acquire_close_lock("BTCUSDT", pos, "TEST_EXIT")
+    assert acquired2 is False, "Second lock acquisition should fail"
+    assert status2 == "already_closing", f"Expected 'already_closing', got '{status2}'"
+    assert key == key2, "Should have same key"
+
+
+def test_close_lock_ttl_releases_stale():
+    """V10.13u+11: Stale locks are released and logged."""
+    import time
+    from src.services.trade_executor import (
+        _try_acquire_close_lock, _cleanup_close_locks, _CLOSING_POSITIONS,
+        _RECENTLY_CLOSED, _STALE_CLOSE_COUNTS, CLOSE_LOCK_TTL_S
+    )
+
+    _CLOSING_POSITIONS.clear()
+    _RECENTLY_CLOSED.clear()
+    _STALE_CLOSE_COUNTS.clear()
+
+    pos = {"action": "BUY", "entry": 100.0, "entry_time": 1234567.0, "size": 1.0}
+
+    now = time.time()
+
+    # Acquire lock
+    acquired, key, status = _try_acquire_close_lock("BTCUSDT", pos, "TEST_EXIT", now=now)
+    assert acquired is True
+
+    # Move time forward past TTL
+    future = now + CLOSE_LOCK_TTL_S + 1.0
+    _cleanup_close_locks(future)
+
+    # Lock should be released
+    assert key not in _CLOSING_POSITIONS, "Stale lock should be removed"
+    assert key in _STALE_CLOSE_COUNTS, "Stale release should be tracked"
+    assert _STALE_CLOSE_COUNTS[key] == 1, "Stale count should be 1"
+
+
+def test_close_skip_duplicate_is_throttled():
+    """V10.13u+11: Duplicate skip logging is throttled (every 5s)."""
+    import time
+    from src.services.trade_executor import (
+        _try_acquire_close_lock, _CLOSING_POSITIONS, _RECENTLY_CLOSED,
+        _STALE_CLOSE_COUNTS
+    )
+
+    _CLOSING_POSITIONS.clear()
+    _RECENTLY_CLOSED.clear()
+    _STALE_CLOSE_COUNTS.clear()
+
+    pos = {"action": "BUY", "entry": 100.0, "entry_time": 1234567.0, "size": 1.0}
+
+    now = time.time()
+
+    # Acquire lock
+    acquired, key, status = _try_acquire_close_lock("BTCUSDT", pos, "TEST_EXIT", now=now)
+    assert acquired is True
+    assert _CLOSING_POSITIONS[key]["last_log"] == now
+
+    # Try again within 5 seconds - should not update last_log
+    later = now + 2.0
+    acquired2, key2, status2 = _try_acquire_close_lock("BTCUSDT", pos, "TEST_EXIT", now=later)
+    assert acquired2 is False
+    assert status2 == "already_closing"
+    assert _CLOSING_POSITIONS[key]["last_log"] == now, "last_log should not be updated yet"
+
+    # Try again after 5 seconds - should update last_log
+    future = now + 6.0
+    acquired3, key3, status3 = _try_acquire_close_lock("BTCUSDT", pos, "TEST_EXIT", now=future)
+    assert acquired3 is False
+    assert status3 == "already_closing"
+    assert _CLOSING_POSITIONS[key]["last_log"] == future, "last_log should be updated"
+
+
+def test_recently_closed_blocks_reclose():
+    """V10.13u+11: Recently closed positions block re-close attempts."""
+    import time
+    from src.services.trade_executor import (
+        _try_acquire_close_lock, _mark_recently_closed, _CLOSING_POSITIONS,
+        _RECENTLY_CLOSED, _STALE_CLOSE_COUNTS, _close_key
+    )
+
+    _CLOSING_POSITIONS.clear()
+    _RECENTLY_CLOSED.clear()
+    _STALE_CLOSE_COUNTS.clear()
+
+    pos = {"action": "BUY", "entry": 100.0, "entry_time": 1234567.0, "size": 1.0}
+    key = _close_key("BTCUSDT", pos)
+
+    # Mark as recently closed
+    _mark_recently_closed(key)
+
+    # Try to acquire lock for same position
+    now = time.time()
+    acquired, ret_key, status = _try_acquire_close_lock("BTCUSDT", pos, "TEST_EXIT", now=now)
+
+    assert acquired is False, "Lock should be blocked by recently_closed"
+    assert status == "recently_closed", f"Expected 'recently_closed', got '{status}'"
+    assert ret_key == key
+
+
+def test_recently_closed_expires():
+    """V10.13u+11: Recently closed entries expire after TTL."""
+    import time
+    from src.services.trade_executor import (
+        _mark_recently_closed, _cleanup_close_locks, _RECENTLY_CLOSED,
+        _STALE_CLOSE_COUNTS, RECENTLY_CLOSED_TTL_S
+    )
+
+    _RECENTLY_CLOSED.clear()
+    _STALE_CLOSE_COUNTS.clear()
+
+    key = "TEST:BUY:100.0:1234567"
+
+    now = time.time()
+    _RECENTLY_CLOSED[key] = now
+
+    assert key in _RECENTLY_CLOSED
+
+    # Clean up before TTL expires
+    early = now + RECENTLY_CLOSED_TTL_S - 1.0
+    _cleanup_close_locks(early)
+    assert key in _RECENTLY_CLOSED, "Should not be cleaned up before TTL"
+
+    # Clean up after TTL expires
+    late = now + RECENTLY_CLOSED_TTL_S + 1.0
+    _cleanup_close_locks(late)
+    assert key not in _RECENTLY_CLOSED, "Should be cleaned up after TTL"
+
+
+def test_close_lock_metadata_tracked():
+    """V10.13u+11: Lock metadata is tracked (ts, symbol, reason, attempts)."""
+    import time
+    from src.services.trade_executor import (
+        _try_acquire_close_lock, _CLOSING_POSITIONS
+    )
+
+    _CLOSING_POSITIONS.clear()
+
+    pos = {"action": "BUY", "entry": 100.0, "entry_time": 1234567.0, "size": 1.0}
+
+    now = time.time()
+    acquired, key, status = _try_acquire_close_lock("BTCUSDT", pos, "TEST_REASON", now=now)
+
+    assert acquired is True
+    meta = _CLOSING_POSITIONS[key]
+
+    # Verify metadata fields
+    assert meta["ts"] == now, "Timestamp should match"
+    assert meta["symbol"] == "BTCUSDT", "Symbol should be tracked"
+    assert meta["reason"] == "TEST_REASON", "Reason should be tracked"
+    assert meta["attempts"] == 1, "Attempts should be 1 on first acquisition"
+    assert "last_log" in meta, "last_log should be tracked"
+
+
+def test_stale_release_count_increments():
+    """V10.13u+11: Stale release count increments and triggers alert at 2+."""
+    import time
+    from src.services.trade_executor import (
+        _try_acquire_close_lock, _cleanup_close_locks, _CLOSING_POSITIONS,
+        _STALE_CLOSE_COUNTS, CLOSE_LOCK_TTL_S
+    )
+
+    _CLOSING_POSITIONS.clear()
+    _STALE_CLOSE_COUNTS.clear()
+
+    pos = {"action": "BUY", "entry": 100.0, "entry_time": 1234567.0, "size": 1.0}
+
+    now = time.time()
+
+    # First stale release
+    acquired, key, _ = _try_acquire_close_lock("BTCUSDT", pos, "REASON1", now=now)
+    future1 = now + CLOSE_LOCK_TTL_S + 1.0
+    _cleanup_close_locks(future1)
+
+    assert _STALE_CLOSE_COUNTS[key] == 1, "Count should be 1 after first stale release"
+
+    # Second stale release (re-lock and expire again)
+    acquired2, key2, _ = _try_acquire_close_lock("BTCUSDT", pos, "REASON2", now=future1)
+    assert acquired2 is True, "Should be able to re-acquire after stale release"
+    assert key == key2, "Should have same key"
+
+    future2 = future1 + CLOSE_LOCK_TTL_S + 1.0
+    _cleanup_close_locks(future2)
+
+    assert _STALE_CLOSE_COUNTS[key] == 2, "Count should be 2 after second stale release"
+    assert key not in _CLOSING_POSITIONS, "Lock should be cleared"
 
 
 if __name__ == "__main__":
