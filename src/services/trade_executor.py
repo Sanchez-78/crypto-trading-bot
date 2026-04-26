@@ -136,6 +136,16 @@ def _cleanup_recently_closed(now: float) -> None:
             _RECENTLY_CLOSED.pop(k, None)
 
 
+def _is_recently_closed(key: str) -> bool:
+    """V10.13u+10: Check if a close key is in recently-closed TTL tracking."""
+    return key in _RECENTLY_CLOSED
+
+
+def _mark_recently_closed(key: str) -> None:
+    """V10.13u+10: Mark a close key as recently closed."""
+    _RECENTLY_CLOSED[key] = time.time()
+
+
 def _adaptive_tp_sl(ev, wr):
     """V8: Continuous TP/SL multipliers from EV and win rate.
 
@@ -2270,21 +2280,22 @@ def on_price(data):
     if reason is None:
         return
 
-    # V10.13u+9: Reentrant close guard — acquire lock before any side effects
+    # V10.13u+10: Reentrant close guard — acquire lock before any side effects
     now = time.time()
     _cleanup_recently_closed(now)
     ckey = _close_key(sym, pos)
 
-    if pos.get("_closing") or ckey in _CLOSING_POSITIONS or ckey in _RECENTLY_CLOSED:
-        log.warning(
-            f"[CLOSE_SKIP_DUPLICATE] {sym} reason={reason} key={ckey} "
-            f"closing={pos.get('_closing')} recent={ckey in _RECENTLY_CLOSED}"
-        )
+    # V10.13u+10: Check recently closed first (fastest path)
+    if _is_recently_closed(ckey):
+        log.warning(f"[CLOSE_SKIP_DUPLICATE] {sym} reason={reason} key={ckey} status=recently_closed")
         return None
 
-    pos["_closing"] = True
-    pos["_closing_reason"] = reason
-    pos["_closing_started_at"] = now
+    # V10.13u+10: Check currently closing
+    if ckey in _CLOSING_POSITIONS:
+        log.warning(f"[CLOSE_SKIP_DUPLICATE] {sym} reason={reason} key={ckey} status=already_closing")
+        return None
+
+    # V10.13u+10: Acquire lock
     _CLOSING_POSITIONS.add(ckey)
     log.warning(f"[CLOSE_LOCK_ACQUIRED] {sym} reason={reason} key={ckey}")
 
@@ -2569,8 +2580,8 @@ def on_price(data):
         _sync_regime_exposure()   # Fix 5: recount eliminates decrement drift
     get_event_bus().emit("LOG_OUTPUT", {"message": f"[CLOSE_LOGIC_DELETED] {sym} position deleted"}, time.time())
 
-    # V10.13u+9: Release close lock after position is removed
-    _RECENTLY_CLOSED[ckey] = time.time()
+    # V10.13u+10: Release close lock after position is removed
+    _mark_recently_closed(ckey)
     _CLOSING_POSITIONS.discard(ckey)
     log.warning(f"[CLOSE_LOCK_RELEASED] {sym} reason={reason} key={ckey} status=closed")
 

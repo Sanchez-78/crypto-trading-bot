@@ -1030,5 +1030,107 @@ def test_exit_audit_not_incremented_on_duplicate():
     assert ckey in _RECENTLY_CLOSED or ckey in _CLOSING_POSITIONS
 
 
+# ── V10.13u+10: Close Guard First + Exit Type Normalization ──────────────
+
+def test_replaced_exit_type_normalized():
+    """V10.13u+10: Replacement exit type variations normalize to REPLACED_EXIT."""
+    from src.services.exit_attribution import normalize_exit_type
+
+    assert normalize_exit_type("replaced") == "REPLACED_EXIT"
+    assert normalize_exit_type("REPLACED") == "REPLACED_EXIT"
+    assert normalize_exit_type("replace") == "REPLACED_EXIT"
+    assert normalize_exit_type("REPLACEMENT") == "REPLACED_EXIT"
+    # Case insensitive
+    assert normalize_exit_type("RePlaCeD") == "REPLACED_EXIT"
+
+
+def test_other_exit_types_normalized():
+    """V10.13u+10: Other exit type variations also normalize correctly."""
+    from src.services.exit_attribution import normalize_exit_type
+
+    assert normalize_exit_type("SCRATCH") == "SCRATCH_EXIT"
+    assert normalize_exit_type("scratch") == "SCRATCH_EXIT"
+    assert normalize_exit_type("STAGNATION") == "STAGNATION_EXIT"
+    assert normalize_exit_type("stagnation") == "STAGNATION_EXIT"
+
+
+def test_validator_accepts_replaced_exit():
+    """V10.13u+10: Exit validator accepts replaced exit type after normalization."""
+    from src.services.exit_attribution import validate_exit_ctx
+
+    # Create minimal valid context with "replaced" exit type
+    exit_ctx = {
+        "symbol": "BTCUSDT",
+        "sym": "BTCUSDT",
+        "side": "BUY",
+        "entry_price": 100.0,
+        "exit_price": 101.0,
+        "size": 1.0,
+        "hold_seconds": 300,
+        "gross_pnl": 0.01,
+        "fee_cost": 0.0002,
+        "slippage_cost": 0.0,
+        "net_pnl": 0.0098,
+        "mfe": 0.015,
+        "mae": 0.0,
+        "final_exit_type": "replaced",  # Should be normalized to REPLACED_EXIT
+        "exit_reason_text": "replaced",
+        "was_winner": True,
+        "was_forced": False,
+    }
+
+    is_valid, errors = validate_exit_ctx(exit_ctx)
+    assert is_valid, f"Should be valid after normalization, got errors: {errors}"
+    # Verify it was normalized
+    assert exit_ctx["final_exit_type"] == "REPLACED_EXIT"
+
+
+def test_close_guard_blocks_duplicate_recently_closed():
+    """V10.13u+10: Close guard blocks duplicate using _is_recently_closed."""
+    from src.services.trade_executor import (
+        _close_key, _is_recently_closed, _mark_recently_closed, _RECENTLY_CLOSED
+    )
+
+    pos = {"action": "BUY", "entry": 100.0, "entry_time": 12345.0}
+    _RECENTLY_CLOSED.clear()
+
+    ckey = _close_key("BTCUSDT", pos)
+
+    # Not recently closed initially
+    assert not _is_recently_closed(ckey)
+
+    # Mark as recently closed
+    _mark_recently_closed(ckey)
+    assert _is_recently_closed(ckey)
+
+
+def test_close_guard_separate_checks():
+    """V10.13u+10: Close guard checks recently_closed and already_closing separately."""
+    from src.services.trade_executor import (
+        _close_key, _is_recently_closed, _CLOSING_POSITIONS, _RECENTLY_CLOSED
+    )
+
+    pos_btc = {"action": "BUY", "entry": 100.0, "entry_time": 12345.0}
+    pos_eth = {"action": "BUY", "entry": 50.0, "entry_time": 12346.0}
+
+    _RECENTLY_CLOSED.clear()
+    _CLOSING_POSITIONS.clear()
+
+    ckey_btc = _close_key("BTCUSDT", pos_btc)
+    ckey_eth = _close_key("ETHUSDT", pos_eth)
+
+    # Set BTC as recently closed
+    _RECENTLY_CLOSED[ckey_btc] = __import__("time").time()
+
+    # Set ETH as currently closing
+    _CLOSING_POSITIONS.add(ckey_eth)
+
+    # Check separate detection
+    assert _is_recently_closed(ckey_btc), "Should detect recently closed"
+    assert ckey_eth in _CLOSING_POSITIONS, "Should detect already closing"
+    assert not _is_recently_closed(ckey_eth), "ETH not in recently closed"
+    assert ckey_btc not in _CLOSING_POSITIONS, "BTC not in currently closing"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

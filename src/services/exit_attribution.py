@@ -31,8 +31,39 @@ EXIT_TYPES = {
     "HARVEST_EXIT": "Harvest mode exit",
     "WALL_EXIT": "Wall exit (price touched wall)",
     "MANUAL_EXIT": "Manual exit",
+    "REPLACED_EXIT": "Position replaced by newer signal",
     "UNKNOWN_EXIT": "Unknown exit type",
 }
+
+
+def normalize_exit_type(exit_type: str | None) -> str:
+    """V10.13u+10: Normalize exit type strings to canonical form.
+
+    Maps various representations of exit types to their canonical EXIT_TYPES keys.
+    Example: "replaced", "REPLACED", "replace" → "REPLACED_EXIT"
+    """
+    raw = str(exit_type or "UNKNOWN").strip().upper()
+
+    # V10.13u+10: Mapping for "replaced" variations
+    mapping = {
+        "REPLACED": "REPLACED_EXIT",
+        "REPLACE": "REPLACED_EXIT",
+        "REPLACEMENT": "REPLACED_EXIT",
+        "SCRATCH": "SCRATCH_EXIT",
+        "STAGNATION": "STAGNATION_EXIT",
+    }
+
+    # Check mapping first
+    if raw in mapping:
+        return mapping[raw]
+
+    # If already in EXIT_TYPES, return as-is
+    if raw in EXIT_TYPES:
+        return raw
+
+    # Return the original (will fail validation if not valid)
+    return raw
+
 
 # ════════════════════════════════════════════════════════════════════════════════
 # 2. Exit stats aggregator
@@ -124,8 +155,12 @@ def validate_exit_ctx(ctx: dict) -> Tuple[bool, List[str]]:
         if field not in ctx or ctx[field] is None:
             errors.append(f"Missing required field: {field}")
     
-    if ctx.get("final_exit_type") not in EXIT_TYPES:
-        errors.append(f"Invalid final_exit_type: {ctx.get('final_exit_type')}")
+    # V10.13u+10: Normalize exit type before validation
+    normalized_exit_type = normalize_exit_type(ctx.get("final_exit_type"))
+    ctx["final_exit_type"] = normalized_exit_type
+
+    if normalized_exit_type not in EXIT_TYPES:
+        errors.append(f"Invalid final_exit_type: {normalized_exit_type}")
     
     if ctx.get("hold_seconds", 0) < 0:
         errors.append(f"Negative hold_seconds: {ctx.get('hold_seconds')}")
