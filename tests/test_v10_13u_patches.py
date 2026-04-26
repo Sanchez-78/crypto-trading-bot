@@ -240,5 +240,59 @@ def test_maturity_handles_mixed_state():
             assert result["source"] == "canonical"
 
 
+# ── V10.13u+3: Economic PF Source Drift Fix ──────────────────────────
+
+def test_economic_health_pf_hard_rule():
+    """V10.13u+3: PF < 1.0 + net_profit < 0 => status never GOOD."""
+    from src.services.learning_monitor import lm_economic_health
+
+    # Mock canonical_profit_factor to return 0.75 (unprofitable)
+    with patch("src.services.canonical_metrics.canonical_profit_factor") as mock_pf:
+        mock_pf.return_value = 0.75
+
+        # Create mock METRICS with negative net_pnl in the source module
+        mock_metrics = {
+            "trades": 100,
+            "net_pnl_total": -25.0,  # Losing money
+            "wins": 40,
+            "losses": 60,
+        }
+        with patch("src.services.learning_event.METRICS", mock_metrics):
+            with patch("src.services.learning_event._close_reasons", {"SCRATCH_EXIT": 20}):
+                with patch("src.services.learning_event._recent_results", [0, 0, 1, 0]):
+                    result = lm_economic_health()
+                    status = result.get("status")
+
+                    # Hard rule: PF < 1.0 + net_profit <= 0 => BAD
+                    assert status == "BAD", f"Expected BAD status for unprofitable PF, got {status}"
+                    assert result["profit_factor"] == 0.75
+
+
+def test_economic_health_profitable_pf_good():
+    """V10.13u+3: Profitable PF (>1.5) => can be GOOD."""
+    from src.services.learning_monitor import lm_economic_health
+
+    # Mock canonical_profit_factor to return 2.0 (profitable)
+    with patch("src.services.canonical_metrics.canonical_profit_factor") as mock_pf:
+        mock_pf.return_value = 2.0
+
+        # Create mock METRICS with positive net_pnl in the source module
+        mock_metrics = {
+            "trades": 100,
+            "net_pnl_total": 100.0,  # Winning
+            "wins": 70,
+            "losses": 30,
+        }
+        with patch("src.services.learning_event.METRICS", mock_metrics):
+            with patch("src.services.learning_event._close_reasons", {"SCRATCH_EXIT": 5}):
+                with patch("src.services.learning_event._recent_results", [1, 1, 1, 1]):
+                    result = lm_economic_health()
+                    status = result.get("status")
+
+                    # High PF + low scratch rate + positive trend = GOOD
+                    assert status in ["GOOD", "CAUTION"], f"Expected GOOD/CAUTION for profitable PF, got {status}"
+                    assert result["profit_factor"] == 2.0
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

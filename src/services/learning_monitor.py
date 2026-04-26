@@ -704,36 +704,6 @@ def lm_health():
     return h_dict.get('overall', h_dict.get('final', 0.0))
 
 
-def canonical_profit_factor(closed_trades: list[dict] = None) -> float:
-    """
-    PATCH 4: Canonical profit factor calculation — single source of truth.
-
-    Gross wins / gross losses ratio.
-    - Handles break-even: returns inf if winning but no losses, 0.0 if losing/break-even.
-    - Used by: dashboard, economic_gate, audit, health monitoring.
-
-    Args:
-        closed_trades: List of trade dicts with 'net_pnl' field. If None, uses METRICS.
-
-    Returns:
-        float: Profit factor (wins/losses). inf if no losses, 0.0 if break-even/losing.
-    """
-    if closed_trades is None:
-        try:
-            from src.services.learning_event import METRICS
-            gw = METRICS.get("gross_wins", 0.0)
-            gl = METRICS.get("gross_losses", 0.0)
-        except Exception:
-            return 0.0
-    else:
-        gw = sum(max(t.get("net_pnl", 0.0), 0.0) for t in closed_trades)
-        gl = sum(abs(min(t.get("net_pnl", 0.0), 0.0)) for t in closed_trades)
-
-    if gl == 0:
-        return float("inf") if gw > 0 else 0.0
-    return gw / gl
-
-
 def lm_economic_health() -> dict:
     """
     V10.13s.4: Calculate economic health (trading results, not learning state).
@@ -769,13 +739,9 @@ def lm_economic_health() -> dict:
         if profit_factor == float("inf"):
             profit_factor = 99.0
 
-        # Log canonical PF for diagnostics
+        # Diagnostic: save for logging after score calculation
         wins = METRICS.get("wins", 0)
         losses = METRICS.get("losses", 0)
-        log.info(
-            f"[ECON_CANONICAL] pf={profit_factor:.2f} source=canonical_profit_factor "
-            f"trades={trades} wins={wins} losses={losses}"
-        )
 
         # Scratch rate: SCRATCH_EXIT / total trades
         scratch_exits = _close_reasons.get("SCRATCH_EXIT", 0)
@@ -810,13 +776,18 @@ def lm_economic_health() -> dict:
                 trend_score = 0.5
 
         # Overall score components (each 0.0-1.0)
-        # PF score: 1.5 is good, 1.0 is breakeven, < 0.5 is bad
-        pf_score = min(1.0, profit_factor / 1.5)
-        # Scratch rate score: 0% is good (1.0), 80%+ is bad (0.0)
-        scratch_score = max(0.0, 1.0 - (scratch_rate / 0.80))
-        # Trend score already computed above
+        # V10.13u+3: PF score corrected for unprofitable systems
+        net_pnl = METRICS.get("net_pnl_total", 0.0)
 
-        overall_score = (pf_score + scratch_score + trend_score) / 3.0
+        if profit_factor < 1.0:
+            pf_score = max(0.0, min(0.35, profit_factor / 3.0))
+        elif profit_factor < 1.5:
+            pf_score = 0.35 + (profit_factor - 1.0) * 0.5
+        else:
+            pf_score = min(1.0, 0.60 + min(profit_factor, 3.0) / 7.5)
+
+        scratch_score = max(0.0, 1.0 - (scratch_rate / 0.80))
+        overall_score = pf_score * 0.4 + scratch_score * 0.35 + trend_score * 0.25
 
         # Status label
         warnings = []
@@ -824,12 +795,14 @@ def lm_economic_health() -> dict:
             warnings.append(f"Negative or break-even PF: {profit_factor:.2f}")
         if scratch_rate > 0.70:
             warnings.append(f"High scratch rate: {scratch_rate*100:.1f}%")
-        # PATCH 2: Only warn about declining trend if we have sufficient sample size
         if recent_trend == "DECLINING" and recent_sample_size >= 8:
             recent_wr_pct = recent_wins / recent_sample_size
             warnings.append(f"Recent performance degrading ({recent_wr_pct*100:.1f}% vs {overall_wr*100:.1f}%)")
 
-        if overall_score >= 0.7:
+        # V10.13u+3: Hard rule — PF < 1.0 + negative profit = never GOOD
+        if profit_factor < 1.0 and net_pnl <= 0:
+            status = "BAD"
+        elif overall_score >= 0.7:
             status = "GOOD"
         elif overall_score >= 0.5:
             status = "CAUTION"
@@ -837,6 +810,12 @@ def lm_economic_health() -> dict:
             status = "FRAGILE"
         else:
             status = "DEGRADED"
+
+        # V10.13u+3: Log canonical economic health with active source confirmation
+        log.warning(
+            f"[ECON_CANONICAL_ACTIVE] pf={profit_factor:.2f} source=canonical_profit_factor "
+            f"economic_score={overall_score:.3f} status={status}"
+        )
 
         return {
             "profit_factor": round(profit_factor, 3),
