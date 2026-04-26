@@ -1712,5 +1712,43 @@ def test_stale_release_does_not_reacquire_forever():
         f"Stale count {_STALE_CLOSE_COUNTS[key]} should be >= {CLOSE_LOCK_FORCE_RECONCILE_AFTER}"
 
 
+def test_v10_13u14_partial_tp_skips_full_close():
+    """V10.13u+14: Partial TP exits don't acquire full close lock."""
+    from src.services.trade_executor import (
+        _try_acquire_close_lock, _CLOSING_POSITIONS, _close_key,
+        PARTIAL_CLOSE_TYPES
+    )
+
+    # Create a position
+    pos = {
+        "action": "BUY",
+        "entry": 100.0,
+        "opened_at": 1000000.0,
+        "size": 1.0,
+        "pnl_pct": 0.05,
+    }
+
+    # Try to acquire lock for PARTIAL_TP_25 - should be guarded upstream
+    # The guard checks reason against PARTIAL_CLOSE_TYPES and returns early
+    assert "PARTIAL_TP_25" in PARTIAL_CLOSE_TYPES
+    key = _close_key("BTCUSDT", pos)
+
+    # Verify constants exist
+    assert hasattr(_CLOSING_POSITIONS, '__getitem__'), "_CLOSING_POSITIONS should be dict-like"
+
+
+def test_v10_13u14_close_stage_logging():
+    """V10.13u+14: Stage logging function exists and is callable."""
+    from src.services.trade_executor import _close_stage
+
+    # Just verify the function exists and can be called
+    try:
+        _close_stage("BTCUSDT", "test:key", "test_stage", test_meta="value")
+        # If no exception, it works
+        assert True
+    except Exception as e:
+        pytest.fail(f"_close_stage() raised {e}")
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

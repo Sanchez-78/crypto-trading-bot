@@ -121,6 +121,16 @@ CLOSE_LOCK_FORCE_RECONCILE_AFTER = 3   # force reconcile after 3+ stale releases
 CLOSE_LOCK_MAX_ATTEMPTS = 250          # force reconcile if attempts > 250
 CLOSE_DUP_LOG_INTERVAL_S = 10.0        # throttle duplicate close logs to every 10s/key
 
+# V10.13u+14: Distinguish full vs. partial close operations
+FULL_CLOSE_TYPES = {
+    "TP", "SL", "MICRO_TP", "TRAIL_PROFIT", "SCRATCH_EXIT", "STAGNATION_EXIT",
+    "TIMEOUT_PROFIT", "TIMEOUT_LOSS", "TIMEOUT_FLAT", "EARLY_STOP",
+    "REPLACED_EXIT", "WALL_EXIT", "EMERGENCY_EXIT"
+}
+PARTIAL_CLOSE_TYPES = {"PARTIAL_TP_25", "PARTIAL_TP_50", "PARTIAL_TP_75"}
+FORCE_RECONCILE_RECORDS = []  # emergency close records for stuck positions
+_CLOSE_STAGE_LAST_LOG = [0.0]  # throttle stage logs to max 1/second
+
 
 def _close_key(sym: str, pos: dict) -> str:
     """V10.13u+9: Generate stable close key from position attributes.
@@ -132,6 +142,16 @@ def _close_key(sym: str, pos: dict) -> str:
     action = pos.get("action") or pos.get("side") or ""
     entry = pos.get("entry") or pos.get("entry_price") or ""
     return f"{sym}:{action}:{entry}:{opened}"
+
+
+def _close_stage(sym: str, key: str, stage: str, **meta) -> None:
+    """V10.13u+14: Log close stages for diagnostics, throttled to 1/second."""
+    now = time.time()
+    # Throttle to prevent log spam - max 1 message per second across all stages
+    if now - _CLOSE_STAGE_LAST_LOG[0] >= 1.0:
+        _CLOSE_STAGE_LAST_LOG[0] = now
+        meta_str = " ".join(f"{k}={v}" for k, v in meta.items()) if meta else ""
+        log.warning(f"[CLOSE_STAGE] symbol={sym} key={key} stage={stage} {meta_str}")
 
 
 def _cleanup_close_locks(now: float = None) -> None:
@@ -2480,6 +2500,13 @@ def on_price(data):
     if not acquired:
         return None
 
+    # V10.13u+14: Partial TP guard - these don't remove full position
+    if reason in PARTIAL_CLOSE_TYPES:
+        _close_stage(sym, close_key, "partial_tp_skip", exit_type=reason)
+        log.info(f"[PARTIAL_CLOSE] {sym} reason={reason} skipping full close lock")
+        return None
+
+    _close_stage(sym, close_key, "lock_acquired")
     get_event_bus().emit("LOG_OUTPUT", {"message": f"[CLOSE_LOGIC_START] {sym} reason={reason} entering close logic"}, time.time())
 
     fee_used           = pos.get("fee_rt", FEE_RT)
@@ -2759,19 +2786,26 @@ def on_price(data):
     except Exception:
         pass
 
-    get_event_bus().emit("LOG_OUTPUT", {"message": f"[CLOSE_LOGIC_END] {sym} about to delete position"}, time.time())
-    with _positions_lock:
-        _positions.pop(sym, None)
-        _sync_regime_exposure()   # Fix 5: recount eliminates decrement drift
-    get_event_bus().emit("LOG_OUTPUT", {"message": f"[CLOSE_LOGIC_DELETED] {sym} position deleted"}, time.time())
-
-    # V10.13u+11: Release close lock after position is removed and mark as recently closed
-    _mark_recently_closed(close_key)
-    _CLOSING_POSITIONS.pop(close_key, None)
-    log.warning(f"[CLOSE_LOCK_RELEASED] {sym} reason={reason} key={close_key} status=closed")
-
-    # V10.13u+11: Log close lock health diagnostics once per 60s
-    _log_close_lock_health()
+    # V10.13u+14: Try/finally for guaranteed lock release
+    try:
+        _close_stage(sym, close_key, "position_remove_start")
+        get_event_bus().emit("LOG_OUTPUT", {"message": f"[CLOSE_LOGIC_END] {sym} about to delete position"}, time.time())
+        with _positions_lock:
+            _positions.pop(sym, None)
+            _sync_regime_exposure()   # Fix 5: recount eliminates decrement drift
+        get_event_bus().emit("LOG_OUTPUT", {"message": f"[CLOSE_LOGIC_DELETED] {sym} position deleted"}, time.time())
+        _close_stage(sym, close_key, "position_remove_done")
+    except Exception as e:
+        log.exception(f"[CLOSE_POSITION_REMOVE_FAIL] {sym} {e}")
+        _close_stage(sym, close_key, "exception", reason=str(type(e).__name__))
+    finally:
+        # V10.13u+14: Guaranteed lock release even if exception occurs
+        _close_stage(sym, close_key, "lock_release_start")
+        _mark_recently_closed(close_key)
+        _CLOSING_POSITIONS.pop(close_key, None)
+        log.warning(f"[CLOSE_LOCK_RELEASED] {sym} reason={reason} key={close_key} status=closed")
+        _close_stage(sym, close_key, "lock_release_done")
+        _log_close_lock_health()
 
     if _pending_open:
         pending = _pending_open.pop(0)
