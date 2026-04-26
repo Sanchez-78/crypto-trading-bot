@@ -463,5 +463,94 @@ def test_parser_failure_clamp():
                     assert result.get("overall_score") == 0.0, "Score should be 0.0 for parse failure"
 
 
+# ── V10.13u+6: Economic Log Throttle + Safety Freeze ────────────────────
+
+def test_econ_log_throttle_not_every_cycle():
+    """V10.13u+6: ECON_CANONICAL_ACTIVE should not log every cycle."""
+    from src.services.learning_monitor import lm_economic_health
+    import logging
+
+    canonical_trades = [
+        {"profit": 0.001, "result": "WIN"},
+        {"profit": -0.001, "result": "LOSS"},
+    ] * 250  # 500 trades
+
+    # Mock the log to count emissions
+    with patch("src.services.firebase_client.load_history") as mock_load:
+        mock_load.return_value = canonical_trades
+
+        with patch("src.services.learning_event.METRICS", {"trades": 500}):
+            with patch("src.services.learning_event._close_reasons", {}):
+                with patch("src.services.learning_event._recent_results", []):
+                    with patch("src.services.learning_monitor.log") as mock_log:
+                        # Call 1
+                        result1 = lm_economic_health()
+                        call_count_1 = mock_log.info.call_count
+                        assert call_count_1 >= 1, "Should log on first call"
+
+                        # Call 2 immediately after (within 60s) - should not log
+                        result2 = lm_economic_health()
+                        call_count_2 = mock_log.info.call_count
+                        assert call_count_2 == call_count_1, "Should not log again within 60s for same values"
+
+
+def test_econ_log_emits_on_status_change():
+    """V10.13u+6: ECON_CANONICAL_ACTIVE should emit immediately on status change."""
+    from src.services.learning_monitor import lm_economic_health, _last_econ_log_signature
+
+    # First call - profitable
+    profitable_trades = [{"profit": 0.01, "result": "WIN"} for _ in range(100)]
+
+    with patch("src.services.firebase_client.load_history") as mock_load:
+        mock_load.return_value = profitable_trades
+
+        with patch("src.services.learning_event.METRICS", {"trades": 100}):
+            with patch("src.services.learning_event._close_reasons", {}):
+                with patch("src.services.learning_event._recent_results", []):
+                    with patch("src.services.learning_monitor.log") as mock_log:
+                        result1 = lm_economic_health()
+                        status1 = result1.get("status")
+                        call_count_1 = mock_log.info.call_count
+
+                        # Second call with different trades (unprofitable)
+                        unprofitable_trades = [{"profit": -0.01, "result": "LOSS"} for _ in range(100)]
+                        mock_load.return_value = unprofitable_trades
+
+                        result2 = lm_economic_health()
+                        status2 = result2.get("status")
+                        call_count_2 = mock_log.info.call_count
+
+                        # Status changed, so should log immediately
+                        if status1 != status2:
+                            assert call_count_2 > call_count_1, "Should log when status changes"
+
+
+def test_econ_safety_warning_throttle():
+    """V10.13u+6: ECON_SAFETY_BAD warning should be throttled."""
+    from src.services.learning_monitor import lm_economic_health
+
+    bad_trades = [
+        {"profit": 0.0001, "result": "WIN"},
+        {"profit": -0.001, "result": "LOSS"},
+    ] * 250  # 500 trades, unprofitable
+
+    with patch("src.services.firebase_client.load_history") as mock_load:
+        mock_load.return_value = bad_trades
+
+        with patch("src.services.learning_event.METRICS", {"trades": 500}):
+            with patch("src.services.learning_event._close_reasons", {}):
+                with patch("src.services.learning_event._recent_results", []):
+                    with patch("src.services.learning_monitor.log") as mock_log:
+                        # Call 1 - should emit BAD warning
+                        result1 = lm_economic_health()
+                        assert result1.get("status") == "BAD", "Should be BAD for unprofitable"
+                        warning_count_1 = mock_log.warning.call_count
+
+                        # Call 2 immediately - should NOT emit BAD warning again
+                        result2 = lm_economic_health()
+                        warning_count_2 = mock_log.warning.call_count
+                        assert warning_count_2 == warning_count_1, "BAD warning should be throttled within 60s"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

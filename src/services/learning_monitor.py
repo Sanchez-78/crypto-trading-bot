@@ -26,10 +26,24 @@ Alerts:
 
 import logging
 import numpy as np
+import time
 
 from src.services.execution import bandit_score
 
 log = logging.getLogger(__name__)
+
+# ── V10.13u+6: Economic log throttling ──────────────────────────────────────────
+_last_econ_log_ts = 0.0          # Timestamp of last econ log
+_last_econ_log_signature = None  # Signature of last logged values (for change detection)
+_last_econ_safety_log_ts = 0.0   # Timestamp of last econ safety warning
+
+ECON_LOG_THROTTLE_SECONDS = 60   # Emit econ log once per 60 seconds
+
+
+def _compute_econ_signature(pf: float, status: str, source: str, closed_trades: int, wins: int, losses: int) -> str:
+    """Compute a signature of economic health key values for change detection."""
+    return f"{pf:.3f}|{status}|{source}|{closed_trades}|{wins}|{losses}"
+
 
 # ── Per-(sym, reg) state ───────────────────────────────────────────────────────
 
@@ -824,13 +838,38 @@ def lm_economic_health() -> dict:
         else:
             status = "DEGRADED"
 
-        # V10.13u+4: Full diagnostic log with canonical source confirmation
-        log.warning(
-            f"[ECON_CANONICAL_ACTIVE] pf={profit_factor:.2f} source={pf_meta['source']} "
-            f"closed_trades={pf_meta['closed_trades']} wins={pf_meta['wins']} losses={pf_meta['losses']} "
-            f"gross_win={pf_meta['gross_win']:.8f} gross_loss={pf_meta['gross_loss']:.8f} "
-            f"net_pnl={pf_meta['net_pnl']:.8f} economic_score={overall_score:.3f} status={status}"
+        # V10.13u+6: Throttled diagnostic log with change detection
+        global _last_econ_log_ts, _last_econ_log_signature, _last_econ_safety_log_ts
+
+        current_sig = _compute_econ_signature(
+            profit_factor, status, pf_meta['source'],
+            pf_meta['closed_trades'], pf_meta['wins'], pf_meta['losses']
         )
+        current_time = time.time()
+        should_emit = (
+            (current_time - _last_econ_log_ts >= ECON_LOG_THROTTLE_SECONDS) or
+            (current_sig != _last_econ_log_signature)
+        )
+
+        if should_emit:
+            log.info(
+                f"[ECON_CANONICAL_ACTIVE] pf={profit_factor:.2f} source={pf_meta['source']} "
+                f"closed_trades={pf_meta['closed_trades']} wins={pf_meta['wins']} losses={pf_meta['losses']} "
+                f"gross_win={pf_meta['gross_win']:.8f} gross_loss={pf_meta['gross_loss']:.8f} "
+                f"net_pnl={pf_meta['net_pnl']:.8f} economic_score={overall_score:.3f} status={status}"
+            )
+            _last_econ_log_ts = current_time
+            _last_econ_log_signature = current_sig
+
+        # V10.13u+6: Safety warning for BAD status (also throttled)
+        if status == "BAD":
+            should_emit_safety = (current_time - _last_econ_safety_log_ts >= ECON_LOG_THROTTLE_SECONDS)
+            if should_emit_safety:
+                log.warning(
+                    f"[ECON_SAFETY_BAD] pf={profit_factor:.2f} net_pnl={pf_meta['net_pnl']:.8f} "
+                    f"score={overall_score:.3f} action=conservative_mode"
+                )
+                _last_econ_safety_log_ts = current_time
 
         return {
             "profit_factor": round(profit_factor, 3),
