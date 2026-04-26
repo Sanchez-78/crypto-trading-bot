@@ -1194,9 +1194,9 @@ def handle_signal(signal):
         should_skip, reason = should_skip_entry(sym)
         if should_skip:
             log.debug(f"[SAFE_MODE] ENTRY_BLOCKED: {sym} ({reason})")
-            # Log decision suppression (throttled to once per 60s)
-            reason_str = get_db_degraded_reason() or "unknown"
-            log_suppressed_decision(f"TAKE_BLOCKED_SAFE_MODE reason={reason_str}")
+            # STEP 5: Log decision suppression (throttled to once per 60s)
+            # Note: Pass only decision code, not reason — log_suppressed_decision() adds reason prefix
+            log_suppressed_decision("TAKE_BLOCKED_SAFE_MODE")
             return
     except Exception:
         pass  # Graceful degrade if flags service unavailable

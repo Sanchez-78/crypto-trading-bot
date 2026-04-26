@@ -17,6 +17,8 @@ _DB_DEGRADED_REASON = None
 _DB_DEGRADED_LAST_SKIP_LOG = 0  # Timestamp of last entry-block log (throttle to 60s)
 _LAST_FORCED_EXPLORE_LOG = 0  # Throttle forced explore suppression log
 _LAST_DECISION_BLOCK_LOG = 0  # Throttle decision block log
+_LAST_MICRO_TRADE_LOG = 0  # Throttle micro-trade suppression log
+_LAST_ANTI_DEADLOCK_LOG = 0  # Throttle anti-deadlock suppression log
 
 
 def set_db_degraded_safe_mode(value: bool, reason: str = None):
@@ -89,6 +91,40 @@ def log_suppressed_forced_explore():
         _LAST_FORCED_EXPLORE_LOG = now
 
 
+def log_suppressed_micro_trade():
+    """Log micro-trade suppression (throttled to once per 60s)."""
+    global _LAST_MICRO_TRADE_LOG
+
+    if not _DB_DEGRADED_SAFE_MODE:
+        return
+
+    now = time.time()
+    should_log = (now - _LAST_MICRO_TRADE_LOG) >= 60.0
+
+    if should_log:
+        logging.warning(
+            f"[SAFE_MODE] micro-trade suppressed reason={_DB_DEGRADED_REASON}"
+        )
+        _LAST_MICRO_TRADE_LOG = now
+
+
+def log_suppressed_anti_deadlock():
+    """Log anti-deadlock suppression (throttled to once per 60s)."""
+    global _LAST_ANTI_DEADLOCK_LOG
+
+    if not _DB_DEGRADED_SAFE_MODE:
+        return
+
+    now = time.time()
+    should_log = (now - _LAST_ANTI_DEADLOCK_LOG) >= 60.0
+
+    if should_log:
+        logging.warning(
+            f"[SAFE_MODE] anti-deadlock suppressed reason={_DB_DEGRADED_REASON}"
+        )
+        _LAST_ANTI_DEADLOCK_LOG = now
+
+
 def log_suppressed_decision(decision_code: str):
     """Log suppressed trading decision (throttled to once per 60s)."""
     global _LAST_DECISION_BLOCK_LOG
@@ -123,3 +159,32 @@ def get_dashboard_status() -> dict:
             "note": "existing positions managed normally",
         }
     return {}
+
+
+def safe_stall_seconds(
+    now: float,
+    last_trade_ts: float | None,
+    runtime_start_ts: float | None,
+    last_cycle_ts: float | None,
+) -> float:
+    """
+    STEP 3: Calculate stall duration safely, preventing unix-time-sized values.
+
+    Selects the most recent valid timestamp from candidates and computes elapsed time.
+    Never uses invalid/corrupted timestamps as anchors, preventing false STALL anomalies.
+
+    Args:
+        now: Current timestamp
+        last_trade_ts: Last trade execution time, or None
+        runtime_start_ts: Bot runtime start time, or None
+        last_cycle_ts: Last decision cycle time, or None
+
+    Returns:
+        float: Stall duration in seconds (0.0 if no valid anchor, else max(0, now - anchor))
+    """
+    candidates = [
+        ts for ts in (last_trade_ts, runtime_start_ts, last_cycle_ts)
+        if isinstance(ts, (int, float)) and ts > 0 and ts <= now
+    ]
+    anchor = max(candidates) if candidates else now
+    return max(0.0, now - anchor)

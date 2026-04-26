@@ -278,8 +278,18 @@ def watchdog(now, agent=None):
     V10.12i: Use safe idle computation to prevent unix-time-sized STALL values.
 
     Uses event_bus.emit() instead of direct print() calls (Zero Bug Migration).
+
+    STEP 2: SAFE_MODE suppression — watchdog escalations blocked during Firebase degraded mode.
     """
     bus = get_event_bus()
+
+    # STEP 2: Watchdog/self-heal suppression — skip escalations during SAFE_MODE
+    from src.services.runtime_flags import is_db_degraded_safe_mode, get_db_degraded_reason, log_suppressed_forced_explore
+    if is_db_degraded_safe_mode():
+        reason = get_db_degraded_reason() or "unknown"
+        log_suppressed_forced_explore()
+        # Note: Watchdog may observe stall, but must not escalate entries during SAFE_MODE
+        return
 
     # V10.12i: Use safe idle computation instead of raw timestamp arithmetic
     idle_sec = safe_idle_seconds(last_trade_ts[0], now)
@@ -1109,7 +1119,12 @@ def print_status():
             sreg   = sig.get("regime", "")
             res    = sig.get("result")
             is_buy = action == "BUY"
-            act    = g("KUPUJ ", C.GRN + C.BLD) if is_buy else g("PRODEJ", C.RED + C.BLD)
+            # STEP 1: Mark last decisions as ADVISORY/CACHED when SAFE_MODE is active
+            from src.services.runtime_flags import is_db_degraded_safe_mode
+            if is_db_degraded_safe_mode():
+                act = g("ADVISORY KUPUJ", C.GRY) if is_buy else g("ADVISORY PRODEJ", C.GRY)
+            else:
+                act = g("KUPUJ ", C.GRN + C.BLD) if is_buy else g("PRODEJ", C.RED + C.BLD)
             rtag   = (g("  VYHRA",  C.GRN + C.BLD) if res == "WIN"
                       else g("  PROHRA", C.RED + C.BLD) if res == "LOSS" else "")
             ev_tag = g(f"  ev:{sev:.3f}", C.CYN) if sev else ""
@@ -1122,28 +1137,42 @@ def print_status():
                   f"{rtag}")
 
     # ── Footer ────────────────────────────────────────────────────────────────
-    # 3-step progress: Sbírám data → Trénink → Aktivní
-    if m["ready"]:
-        step = 3
-    elif t >= 50:
-        step = 2
+    # STEP 1: Dashboard SAFE_MODE override — check before normal state display
+    from src.services.runtime_flags import is_db_degraded_safe_mode, get_db_degraded_reason
+
+    if is_db_degraded_safe_mode():
+        # SAFE_MODE is active — override dashboard to show degradation state
+        reason = get_db_degraded_reason() or "unknown"
+        print(f"\n  {sep()}")
+        print(f"  {g('STAV: SAFE_MODE_FIREBASE_DEGRADED', C.RED + C.BLD)}")
+        print(f"  {g('ENTRIES: BLOCKED', C.RED + C.BLD)}")
+        print(f"  {g(f'REASON: {reason}', C.YLW)}")
+        print(f"  {g('NOTE: existing positions managed normally', C.GRY)}")
+        print(f"  {sep()}")
+        print(g("=" * W, C.CYN) + "\n")
     else:
-        step = 1
-    print(f"\n  {sep()}")
-    print(f"  {steps_bar(step, 3, ['Sbiram data', 'Trenink', 'Aktivni'])}")
-    print(f"  {sep()}")
-    if m["ready"]:
-        print(f"  {g('STAV:', C.BLD)}  "
-              f"{g('AKTIVNI – robot je kalibrovany a obchoduje!', C.GRN + C.BLD)}")
-    else:
-        needs = []
-        if t < 50:      needs.append(g(f"obchody {t}/50", C.YLW))
-        if wr <= 0.55:  needs.append(g(f"winrate {wr*100:.0f}%->55%", C.YLW))
-        if profit <= 0: needs.append(g("zisk > 0", C.YLW))
-        joined = ",  ".join(needs)
-        print(f"  {g('STAV:', C.BLD)}  {g('TRENINK', C.YLW + C.BLD)}  "
-              f"{g('(', C.GRY)}{joined}{g(')', C.GRY)}")
-    print(g("=" * W, C.CYN) + "\n")
+        # 3-step progress: Sbírám data → Trénink → Aktivní
+        if m["ready"]:
+            step = 3
+        elif t >= 50:
+            step = 2
+        else:
+            step = 1
+        print(f"\n  {sep()}")
+        print(f"  {steps_bar(step, 3, ['Sbiram data', 'Trenink', 'Aktivni'])}")
+        print(f"  {sep()}")
+        if m["ready"]:
+            print(f"  {g('STAV:', C.BLD)}  "
+                  f"{g('AKTIVNI – robot je kalibrovany a obchoduje!', C.GRN + C.BLD)}")
+        else:
+            needs = []
+            if t < 50:      needs.append(g(f"obchody {t}/50", C.YLW))
+            if wr <= 0.55:  needs.append(g(f"winrate {wr*100:.0f}%->55%", C.YLW))
+            if profit <= 0: needs.append(g("zisk > 0", C.YLW))
+            joined = ",  ".join(needs)
+            print(f"  {g('STAV:', C.BLD)}  {g('TRENINK', C.YLW + C.BLD)}  "
+                  f"{g('(', C.GRY)}{joined}{g(')', C.GRY)}")
+        print(g("=" * W, C.CYN) + "\n")
 
 
 # ── Pre-live audit (periodic health check, replay from Firestore) ─────────────
@@ -1749,7 +1778,16 @@ def main():
                 
                 # Check for anomalies
                 anomalies = _anomaly_detector.check(current_state)
-                
+
+                # STEP 2: Self-heal suppression — skip escalations during SAFE_MODE
+                from src.services.runtime_flags import is_db_degraded_safe_mode, get_db_degraded_reason
+                if is_db_degraded_safe_mode():
+                    reason = get_db_degraded_reason() or "unknown"
+                    if anomalies:
+                        logging.warning(f"[SAFE_MODE] self_heal escalation suppressed reason={reason}")
+                    # Skip handle_anomaly during SAFE_MODE — existing positions managed normally via on_price
+                    anomalies = []
+
                 # Handle each anomaly
                 for anomaly in anomalies:
                     handle_anomaly(anomaly, current_state)

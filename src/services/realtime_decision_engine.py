@@ -1168,20 +1168,31 @@ def is_unblock_mode(no_trades_seconds: float = None, no_signals_cycles: int = No
     Detect if system should enter controlled unblock mode.
     Unblock activates when system is idle (no trades for 15+ min OR no signals for 40+ cycles).
     During unblock: lower thresholds, reduced position sizes, rate-limited.
+
+    STEP 4: SAFE_MODE suppression — unblock disabled during Firebase degraded mode.
     """
+    # STEP 4: Suppress unblock (micro-trade path) during SAFE_MODE
+    try:
+        from src.services.runtime_flags import is_db_degraded_safe_mode, log_suppressed_micro_trade
+        if is_db_degraded_safe_mode():
+            log_suppressed_micro_trade()
+            return False  # Never enter unblock during SAFE_MODE
+    except ImportError:
+        pass
+
     if no_trades_seconds is None:
         try:
             no_trades_seconds = safe_idle_seconds(_last_trade_ts[0])
         except:
             no_trades_seconds = 0.0
-    
+
     if no_signals_cycles is None:
         try:
             from src.services.learning_event import METRICS
             no_signals_cycles = METRICS.get("no_signals_cycles", 0)
         except:
             no_signals_cycles = 0
-    
+
     return (no_trades_seconds >= 900.0) or (no_signals_cycles >= 40)
 
 
