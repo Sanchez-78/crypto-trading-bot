@@ -1792,5 +1792,57 @@ def test_v10_13u14_phase2_full_close_lock_works():
     _CLOSING_POSITIONS.pop(key, None)
 
 
+def test_v10_13u15_scratch_cost_guard_holds_negative_net():
+    """V10.13u+15: Cost guard holds negative-net SCRATCH when ECON BAD."""
+    from src.services.smart_exit_engine import SmartExitEngine, Position
+    from unittest.mock import patch
+
+    engine = SmartExitEngine()
+
+    pos = Position(
+        symbol="BTCUSDT",
+        entry_price=100.0,
+        tp=102.0,
+        sl=99.0,
+        pnl_pct=0.0005,  # Small positive, but less than fee cost (~0.002)
+        age_seconds=150,  # Within 360s window
+        direction="LONG",
+        max_favorable_pnl=0.01,
+    )
+
+    # Mock ECON BAD
+    with patch("src.services.smart_exit_engine._econ_bad", return_value=True):
+        result = engine._check_scratch(pos)
+        # With cost guard, should return None (hold position)
+        assert result is None, "Should hold negative-net scratch when ECON BAD"
+
+
+def test_v10_13u15_scratch_cost_guard_with_econ_good():
+    """V10.13u+15: Cost guard does not apply when Economic health is GOOD."""
+    from src.services.smart_exit_engine import SmartExitEngine, Position
+    from unittest.mock import patch
+
+    engine = SmartExitEngine()
+
+    pos = Position(
+        symbol="BTCUSDT",
+        entry_price=100.0,
+        tp=102.0,
+        sl=99.0,
+        pnl_pct=0.0008,  # Within SCRATCH band, but negative after costs
+        age_seconds=150,
+        direction="LONG",
+        max_favorable_pnl=0.01,
+    )
+
+    # Mock ECON GOOD
+    with patch("src.services.smart_exit_engine._econ_bad", return_value=False):
+        result = engine._check_scratch(pos)
+        # Cost guard should not apply since ECON is not BAD
+        # Scratch should exit even with negative net
+        assert result is not None, "Should allow scratch when ECON GOOD"
+        assert result["exit_type"] == "SCRATCH_EXIT"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

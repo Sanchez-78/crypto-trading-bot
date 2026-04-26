@@ -181,6 +181,33 @@ class Position:
         return self.age_seconds / 60.0
 
 
+# V10.13u+15: Exit cost guard helpers
+def _estimated_close_cost_pct(position) -> float:
+    """Conservative close-cost estimate as pct/ratio units matching position.pnl_pct."""
+    fee = getattr(position, "fee_rt", None) or 0.0015
+    slip = getattr(position, "fill_slippage", None) or 0.0005
+    return abs(float(fee)) + abs(float(slip))
+
+
+def _econ_bad() -> bool:
+    """Check if Economic Health status is BAD."""
+    try:
+        from src.services.learning_monitor import lm_economic_health
+        return lm_economic_health().get("status") == "BAD"
+    except Exception:
+        return False
+
+
+def _is_emergency_exit_context(position) -> bool:
+    """Return True only if position fields clearly indicate protective/emergency exit."""
+    return bool(
+        getattr(position, "emergency", False)
+        or getattr(position, "risk_exit", False)
+        or getattr(position, "force_exit", False)
+        or getattr(position, "hard_stop", False)
+    )
+
+
 class SmartExitEngine:
     """
     Intelligent position exit engine. Checks in priority order (V10.13g+j):
@@ -546,23 +573,27 @@ class SmartExitEngine:
             return None
 
         if abs(position.pnl_pct) < SCRATCH_MAX_PNL:
-            # V10.13u+8: ECON BAD guard for negative-net scratches
-            estimated_fee_pct = 0.002
-            net_if_closed = position.pnl_pct - estimated_fee_pct
-            if net_if_closed < 0 and position.age_seconds < SCRATCH_NEGATIVE_GRACE_S:
-                _econ_bad = False
+            # V10.13u+15: Cost guard - hold negative-net scratches when ECON BAD
+            cost = _estimated_close_cost_pct(position)
+            net_if_closed = float(position.pnl_pct) - cost
+
+            if (
+                _econ_bad()
+                and not _is_emergency_exit_context(position)
+                and net_if_closed < 0
+                and getattr(position, "age_seconds", 0) < 360
+            ):
+                log.info(
+                    f"[EXIT_COST_GUARD] {position.symbol} reason=SCRATCH_EXIT "
+                    f"age={position.age_seconds}s pnl_pct={position.pnl_pct:.6f} "
+                    f"cost={cost:.6f} net_if_closed={net_if_closed:.6f} "
+                    f"action=hold_econ_bad_negative_net"
+                )
                 try:
-                    from src.services.learning_monitor import lm_economic_health
-                    _econ_bad = lm_economic_health().get("status") == "BAD"
+                    self._exit_audit_rejections["SCRATCH_EXIT:cost_guard"] += 1
                 except Exception:
                     pass
-                if _econ_bad:
-                    log.info(f"[SCRATCH_GUARD] symbol={position.symbol} "
-                            f"age={position.age_seconds}s "
-                            f"net_if_closed={net_if_closed*100:.4f}% "
-                            f"reason=econ_bad_negative_net_hold")
-                    self._exit_audit_rejections["SCRATCH_EXIT:too_young"] += 1
-                    return None
+                return None
 
             return {
                 "exit_type": "SCRATCH_EXIT",
@@ -607,20 +638,28 @@ class SmartExitEngine:
                 self._exit_audit_rejections["STAGNATION_EXIT:too_young"] += 1
                 return None
 
-            # V10.13u+8: ECON BAD extension — hold through age < STAG_MIN_AGE_ECON_BAD_S=240
-            if net_if_closed < 0 and position.age_seconds < STAG_MIN_AGE_ECON_BAD_S:
-                _econ_bad = False
+            # V10.13u+15: Cost guard - hold small negative-net stagnation when ECON BAD
+            cost = _estimated_close_cost_pct(position)
+            net_if_closed_v15 = float(position.pnl_pct) - cost
+
+            if (
+                _econ_bad()
+                and not _is_emergency_exit_context(position)
+                and net_if_closed_v15 < 0
+                and getattr(position, "age_seconds", 0) < 360
+                and float(position.pnl_pct) > -0.003
+            ):
+                log.info(
+                    f"[EXIT_COST_GUARD] {position.symbol} reason=STAGNATION_EXIT "
+                    f"age={position.age_seconds}s pnl_pct={position.pnl_pct:.6f} "
+                    f"cost={cost:.6f} net_if_closed={net_if_closed_v15:.6f} "
+                    f"action=hold_small_negative_net"
+                )
                 try:
-                    from src.services.learning_monitor import lm_economic_health
-                    _econ_bad = lm_economic_health().get("status") == "BAD"
+                    self._exit_audit_rejections["STAGNATION_EXIT:cost_guard"] += 1
                 except Exception:
                     pass
-                if _econ_bad:
-                    log.info(f"[STAG_GUARD] {position.symbol} age={position.age_seconds}s "
-                            f"net_if_closed={net_if_closed*100:.4f}% "
-                            f"reason=econ_bad_stagnation_hold")
-                    self._exit_audit_rejections["STAGNATION_EXIT:too_young"] += 1
-                    return None
+                return None
 
             return {
                 "exit_type": "STAGNATION_EXIT",
