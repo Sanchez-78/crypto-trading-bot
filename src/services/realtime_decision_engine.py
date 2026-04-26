@@ -50,6 +50,19 @@ STAGNATION_CHURN_COOLDOWN_SEC = 600
 _last_exit_quality_log_ts = 0.0
 EXIT_QUALITY_LOG_THROTTLE_SECONDS = 60
 
+# V10.13u+16: ECON BAD entry quality gate cache
+_ECON_BAD_CACHE = {
+    "is_bad": False,
+    "pf": 1.0,
+    "net_pnl": 0.0,
+    "last_check_ts": 0.0,
+}
+_ECON_BAD_CACHE_TTL_S = 60.0
+
+# V10.13u+16: Guard activation logging (throttled)
+_last_econ_bad_guard_log_ts = 0.0
+_ECON_BAD_GUARD_LOG_THROTTLE_S = 60.0
+
 
 def _get_cached_history():
     """Get history with local caching - only refreshes every 6 hours.
@@ -88,6 +101,137 @@ def _determine_alignment(side: str, regime: str) -> str:
     )
 
     return "WITH_REGIME" if with_regime else "COUNTER_REGIME"
+
+
+def _get_econ_bad_state() -> tuple[bool, float]:
+    """V10.13u+16: Cached ECON BAD check.
+
+    Returns: (is_bad: bool, pf: float)
+
+    Caches ECON health status with 60-second TTL to avoid repeated Firebase calls.
+    """
+    global _ECON_BAD_CACHE
+    now = _time.time()
+
+    if now - _ECON_BAD_CACHE["last_check_ts"] < _ECON_BAD_CACHE_TTL_S:
+        return _ECON_BAD_CACHE["is_bad"], _ECON_BAD_CACHE["pf"]
+
+    try:
+        from src.services.learning_monitor import lm_economic_health
+        health = lm_economic_health()
+        is_bad = health.get("status") == "BAD"
+        pf = health.get("pf", 1.0)
+        net_pnl = health.get("net_pnl", 0.0)
+
+        _ECON_BAD_CACHE.update({
+            "is_bad": is_bad,
+            "pf": pf,
+            "net_pnl": net_pnl,
+            "last_check_ts": now,
+        })
+        return is_bad, pf
+    except Exception:
+        return False, 1.0
+
+
+def _econ_bad_entry_quality_gate(
+    symbol: str,
+    ev: float,
+    score: float,
+    win_prob: float,
+    coherence: float,
+    auditor_factor: float,
+) -> tuple[bool, str]:
+    """V10.13u+16: Entry quality gate during ECON BAD.
+
+    Args:
+        symbol: Trading pair
+        ev: Expected value
+        score: Decision score
+        win_prob: Win probability (p)
+        coherence: Signal coherence
+        auditor_factor: Auditor factor (af)
+
+    Returns:
+        (allowed: bool, reason: str for logging)
+
+    When ECON BAD:
+    - Reject if: ev < 0.045 OR score < 0.22 OR p < 0.54 OR coh < 0.58 OR af < 0.70
+    - Exception: Allow proven pairs with pair_n >= 25, positive EV, WR >= 0.58, positive net expectancy
+    """
+    is_bad, pf = _get_econ_bad_state()
+    if not is_bad:
+        return True, ""
+
+    # Check minimum thresholds
+    if ev < 0.045:
+        return False, f"weak_ev (ev={ev:.4f}<0.045)"
+    if score < 0.22:
+        return False, f"weak_score (score={score:.3f}<0.22)"
+    if win_prob < 0.54:
+        return False, f"weak_p (p={win_prob:.3f}<0.54)"
+    if coherence < 0.58:
+        return False, f"weak_coh (coh={coherence:.3f}<0.58)"
+    if auditor_factor < 0.70:
+        return False, f"weak_af (af={auditor_factor:.3f}<0.70)"
+
+    # All thresholds passed
+    return True, ""
+
+
+def _econ_bad_forced_explore_gate(signal: dict) -> tuple[bool, str]:
+    """V10.13u+16: Forced exploration gate during ECON BAD.
+
+    Args:
+        signal: Signal dict with ev, p, coh, af, forced fields
+
+    Returns:
+        (allowed: bool, reason: str for logging)
+
+    When ECON BAD and signal is forced:
+    - Strict thresholds: ev >= 0.050, p >= 0.55, coh >= 0.60, af >= 0.70
+    """
+    is_bad, _ = _get_econ_bad_state()
+    if not is_bad:
+        return True, ""
+
+    if not signal.get("forced", False):
+        return True, ""
+
+    # Strict thresholds for forced signals during ECON BAD
+    ev = signal.get("ev", 0.0)
+    p = signal.get("p", signal.get("confidence", 0.5))
+    coh = signal.get("coh", signal.get("coherence", 1.0))
+    af = signal.get("af", signal.get("auditor_factor", 1.0))
+
+    if ev < 0.050:
+        return False, f"forced_weak_ev (ev={ev:.4f}<0.050)"
+    if p < 0.55:
+        return False, f"forced_weak_p (p={p:.3f}<0.55)"
+    if coh < 0.60:
+        return False, f"forced_weak_coh (coh={coh:.3f}<0.60)"
+    if af < 0.70:
+        return False, f"forced_weak_af (af={af:.3f}<0.70)"
+
+    return True, ""
+
+
+def _log_econ_bad_guard_active():
+    """V10.13u+16: Log guard activation with thresholds (throttled every 60s)."""
+    global _last_econ_bad_guard_log_ts
+    now = _time.time()
+
+    if now - _last_econ_bad_guard_log_ts < _ECON_BAD_GUARD_LOG_THROTTLE_S:
+        return
+
+    is_bad, pf = _get_econ_bad_state()
+    if is_bad:
+        log.info(
+            f"[ECON_BAD_GUARD_ACTIVE] pf={pf:.3f} status=BAD "
+            f"min_ev=0.045 min_score=0.22 min_p=0.54 min_coh=0.58 min_af=0.70 "
+            f"forced_min_ev=0.050 forced_min_p=0.55 forced_min_coh=0.60 forced_min_af=0.70"
+        )
+        _last_econ_bad_guard_log_ts = now
 
 
 def build_decision_ctx(
@@ -2494,6 +2638,42 @@ def evaluate_signal(signal):
     signal["anti_deadlock"]    = _anti_deadlock_triggered
     signal["unblock_size_mult"] = _unblock_size_mult
 
+    # V10.13u+16: ECON BAD entry quality gate — block weak signals
+    _econ_bad_allowed, _econ_bad_reason = _econ_bad_entry_quality_gate(
+        symbol=sym,
+        ev=ev,
+        score=_score_adj,
+        win_prob=win_prob,
+        coherence=_coh,
+        auditor_factor=auditor_factor,
+    )
+    if not _econ_bad_allowed:
+        # Log rejection with full context
+        is_bad, pf = _get_econ_bad_state()
+        log.info(
+            f"[ECON_BAD_ENTRY_BLOCK] symbol={sym} reason={_econ_bad_reason} "
+            f"ev={ev:.4f} score={_score_adj:.3f} p={win_prob:.3f} coh={_coh:.3f} af={auditor_factor:.3f} "
+            f"pf={pf:.3f} net_pnl={_ECON_BAD_CACHE.get('net_pnl', 0.0):.6f}"
+        )
+        track_blocked(reason="ECON_BAD_ENTRY")
+        print(f"    decision=REJECT_ECON_BAD_ENTRY  {_econ_bad_reason}")
+        return None
+
+    # V10.13u+16: Forced exploration gate during ECON BAD
+    _forced_allowed, _forced_reason = _econ_bad_forced_explore_gate(signal)
+    if not _forced_allowed:
+        is_bad, pf = _get_econ_bad_state()
+        log.info(
+            f"[ECON_BAD_FORCED_BLOCK] symbol={sym} reason={_forced_reason} "
+            f"ev={ev:.4f} p={win_prob:.3f} coh={_coh:.3f} af={auditor_factor:.3f} pf={pf:.3f}"
+        )
+        track_blocked(reason="ECON_BAD_FORCED")
+        print(f"    decision=REJECT_ECON_BAD_FORCED  {_forced_reason}")
+        return None
+
+    # V10.13u+16: Log guard activation (throttled)
+    _log_econ_bad_guard_active()
+
     # V10.13w: Canonical decision logging — wire actual score values + explainability
     _setup_tag = signal.get("setup_tag", signal.get("signal_tag", ""))
     _direction_source = signal.get("direction_source", "signal_engine")
@@ -2531,19 +2711,6 @@ def evaluate_signal(signal):
         track_blocked(reason="CHURN_COOLDOWN")
         print(f"    decision=SKIP_CHURN_COOLDOWN  {sym}  {_direction}  still cooling down")
         return None
-
-    # V10.13u+7: Log entry guard when economic health is BAD
-    try:
-        from src.services.learning_monitor import lm_economic_health
-        health = lm_economic_health()
-        if health.get("status") == "BAD":
-            pf = health.get("pf", 0)
-            net_pnl = health.get("net_pnl", 0)
-            log.info(f"[ECON_ENTRY_GUARD] conservative active pf={pf:.3f} "
-                    f"net_pnl={net_pnl:.6f} min_ev=0.04 min_score=0.20 "
-                    f"forced_mult=0.30")
-    except Exception:
-        pass
 
     # B16: conv-rate tracking — signal accepted
     try:

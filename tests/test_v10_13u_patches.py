@@ -1844,5 +1844,128 @@ def test_v10_13u15_scratch_cost_guard_with_econ_good():
         assert result["exit_type"] == "SCRATCH_EXIT"
 
 
+# ════════════════════════════════════════════════════════════════════════════════
+# V10.13u+16 — ECON BAD ENTRY QUALITY GATE TESTS
+# ════════════════════════════════════════════════════════════════════════════════
+
+
+def test_v10_13u16_econ_bad_blocks_low_ev():
+    """V10.13u+16: Block TAKE when ECON BAD and ev < 0.045."""
+    from src.services.realtime_decision_engine import _econ_bad_entry_quality_gate
+    from unittest.mock import patch
+
+    # ECON BAD with weak EV
+    with patch("src.services.realtime_decision_engine._get_econ_bad_state", return_value=(True, 0.73)):
+        allowed, reason = _econ_bad_entry_quality_gate(
+            symbol="BTCUSDT",
+            ev=0.030,  # Below 0.045 threshold
+            score=0.25,
+            win_prob=0.55,
+            coherence=0.60,
+            auditor_factor=0.75,
+        )
+        assert not allowed, "Should block when ev < 0.045"
+        assert "weak_ev" in reason
+
+
+def test_v10_13u16_econ_bad_blocks_low_af():
+    """V10.13u+16: Block TAKE when ECON BAD and af < 0.70."""
+    from src.services.realtime_decision_engine import _econ_bad_entry_quality_gate
+    from unittest.mock import patch
+
+    with patch("src.services.realtime_decision_engine._get_econ_bad_state", return_value=(True, 0.73)):
+        allowed, reason = _econ_bad_entry_quality_gate(
+            symbol="ETHUSDT",
+            ev=0.050,
+            score=0.25,
+            win_prob=0.55,
+            coherence=0.60,
+            auditor_factor=0.35,  # Below 0.70 threshold
+        )
+        assert not allowed, "Should block when af < 0.70"
+        assert "weak_af" in reason
+
+
+def test_v10_13u16_econ_bad_blocks_forced_explore_weak():
+    """V10.13u+16: Block forced exploration under ECON BAD with weak quality."""
+    from src.services.realtime_decision_engine import _econ_bad_forced_explore_gate
+    from unittest.mock import patch
+
+    with patch("src.services.realtime_decision_engine._get_econ_bad_state", return_value=(True, 0.73)):
+        signal = {
+            "forced": True,
+            "ev": 0.030,  # Below 0.050 forced threshold
+            "p": 0.55,
+            "coh": 0.60,
+            "af": 0.75,
+        }
+        allowed, reason = _econ_bad_forced_explore_gate(signal)
+        assert not allowed, "Should block forced signal when ev < 0.050"
+        assert "forced_weak_ev" in reason
+
+
+def test_v10_13u16_econ_bad_allows_strong_signal():
+    """V10.13u+16: Allow TAKE when ECON BAD but all thresholds met."""
+    from src.services.realtime_decision_engine import _econ_bad_entry_quality_gate
+    from unittest.mock import patch
+
+    with patch("src.services.realtime_decision_engine._get_econ_bad_state", return_value=(True, 0.73)):
+        allowed, reason = _econ_bad_entry_quality_gate(
+            symbol="SOLUSDT",
+            ev=0.055,  # Above 0.045
+            score=0.25,  # Above 0.22
+            win_prob=0.56,  # Above 0.54
+            coherence=0.62,  # Above 0.58
+            auditor_factor=0.75,  # Above 0.70
+        )
+        assert allowed, "Should allow when all thresholds met"
+        assert reason == ""
+
+
+def test_v10_13u16_econ_good_allows_weak_signal():
+    """V10.13u+16: Allow weak signal when ECON is GOOD (no gate blocking)."""
+    from src.services.realtime_decision_engine import _econ_bad_entry_quality_gate
+    from unittest.mock import patch
+
+    with patch("src.services.realtime_decision_engine._get_econ_bad_state", return_value=(False, 1.05)):
+        allowed, reason = _econ_bad_entry_quality_gate(
+            symbol="DOGEUSDT",
+            ev=0.030,  # Would fail during ECON BAD
+            score=0.15,  # Would fail during ECON BAD
+            win_prob=0.50,  # Would fail during ECON BAD
+            coherence=0.50,  # Would fail during ECON BAD
+            auditor_factor=0.50,  # Would fail during ECON BAD
+        )
+        assert allowed, "Should allow when ECON is GOOD (gate inactive)"
+        assert reason == ""
+
+
+def test_v10_13u16_cache_ttl_refresh():
+    """V10.13u+16: ECON BAD cache reduces repeated lm_economic_health calls."""
+    from src.services.realtime_decision_engine import _get_econ_bad_state, _ECON_BAD_CACHE
+    from unittest.mock import patch
+
+    # Reset cache to force fresh fetch
+    _ECON_BAD_CACHE.update({"is_bad": False, "pf": 1.0, "net_pnl": 0.0, "last_check_ts": 0.0})
+
+    # First call: cache miss, fetch from lm_economic_health
+    with patch("src.services.learning_monitor.lm_economic_health") as mock_health:
+        mock_health.return_value = {"status": "BAD", "pf": 0.73, "net_pnl": -0.005}
+        is_bad_1, pf_1 = _get_econ_bad_state()
+        assert is_bad_1 is True
+        assert pf_1 == 0.73
+        first_call_count = mock_health.call_count
+
+    # Second call within TTL: use cache (no additional call)
+    with patch("src.services.learning_monitor.lm_economic_health") as mock_health:
+        mock_health.return_value = {"status": "GOOD", "pf": 1.05, "net_pnl": 0.050}
+        is_bad_2, pf_2 = _get_econ_bad_state()
+        # Should return cached value (BAD, 0.73) not the mocked new value
+        assert is_bad_2 is True, "Should return cached BAD status"
+        assert pf_2 == 0.73, "Should return cached pf value"
+        second_call_count = mock_health.call_count
+        assert second_call_count == 0, "Should use cache within TTL window"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
