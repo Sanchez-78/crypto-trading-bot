@@ -2250,6 +2250,15 @@ def on_price(data):
     short    = sym.replace("USDT", "")
     icon     = "✅" if result == "WIN" else "❌"
 
+    # V10.13u+7: Apply churn cooldown after stagnation loss
+    if reason == "STAGNATION_EXIT" and result == "LOSS":
+        try:
+            from src.services.realtime_decision_engine import add_churn_cooldown
+            direction = "SHORT" if pos["action"] == "SELL" else "LONG"
+            add_churn_cooldown(sym, direction)
+        except Exception as e:
+            log.debug(f"[CHURN_COOLDOWN] Add cooldown failed for {sym}: {e}")
+
     # BUG FIX: Removed duplicate direct print (was logging trade twice)
     # Keep only event_bus emit for single log entry
     msg = (f"    {icon} {short} {pos['action']} "

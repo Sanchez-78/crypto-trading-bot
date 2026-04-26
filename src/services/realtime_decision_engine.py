@@ -41,6 +41,15 @@ from src.services.adaptive_recovery import (
 from src.services.smart_exit_engine import evaluate_position_exit
 from src.services.reward_system import compute_reward
 
+# V10.13u+7: Churn cooldown tracking to prevent rapid re-entry after stagnation losses
+# Format: {(symbol, direction): timestamp_when_cooldown_expires}
+_churn_cooldowns = {}
+STAGNATION_CHURN_COOLDOWN_SEC = 600
+
+# V10.13u+7: Exit quality throttled logging state
+_last_exit_quality_log_ts = 0.0
+EXIT_QUALITY_LOG_THROTTLE_SECONDS = 60
+
 
 def _get_cached_history():
     """Get history with local caching - only refreshes every 6 hours.
@@ -1262,13 +1271,99 @@ def is_unblock_mode(no_trades_seconds: float = None, no_signals_cycles: int = No
 
 
 def current_ev_threshold(no_trades_sec: float = None, no_signals: int = None) -> float:
-    """V10.12d: Unblock-aware EV threshold. Normal: 0.025, Unblock: 0.015."""
+    """V10.13u+7: EV threshold with economic BAD tightening.
+    V10.12d: Unblock-aware EV threshold. Normal: 0.025, Unblock: 0.015."""
+    # V10.13u+7: Tighten entry when economic health is BAD
+    try:
+        from src.services.learning_monitor import lm_economic_health
+        health = lm_economic_health()
+        if health.get("status") == "BAD":
+            return 0.04  # Tighten to 0.04 when economic BAD
+    except Exception:
+        pass
+
     return 0.015 if is_unblock_mode(no_trades_sec, no_signals) else 0.025
 
 
 def current_score_threshold(no_trades_sec: float = None, no_signals: int = None) -> float:
-    """V10.12d: Unblock-aware score threshold. Normal: 0.18, Unblock: 0.12."""
+    """V10.13u+7: Score threshold with economic BAD tightening.
+    V10.12d: Unblock-aware score threshold. Normal: 0.18, Unblock: 0.12."""
+    # V10.13u+7: Tighten entry when economic health is BAD
+    try:
+        from src.services.learning_monitor import lm_economic_health
+        health = lm_economic_health()
+        if health.get("status") == "BAD":
+            return 0.20  # Tighten to 0.20 when economic BAD
+    except Exception:
+        pass
+
     return 0.12 if is_unblock_mode(no_trades_sec, no_signals) else 0.18
+
+
+def add_churn_cooldown(symbol: str, direction: str, duration_sec: int = None) -> None:
+    """V10.13u+7: Add churn cooldown for symbol+direction after stagnation loss.
+
+    Args:
+        symbol: Trading pair (e.g., ADAUSDT)
+        direction: LONG or SHORT
+        duration_sec: Cooldown duration (default: STAGNATION_CHURN_COOLDOWN_SEC)
+    """
+    if duration_sec is None:
+        duration_sec = STAGNATION_CHURN_COOLDOWN_SEC
+
+    key = (symbol, direction)
+    expire_ts = _time.time() + duration_sec
+    _churn_cooldowns[key] = expire_ts
+    log.info(f"[CHURN_COOLDOWN] symbol={symbol} direction={direction} "
+            f"cd={duration_sec}s reason=stagnation_loss")
+
+
+def is_in_churn_cooldown(symbol: str, direction: str) -> bool:
+    """V10.13u+7: Check if symbol+direction is in cooldown period."""
+    key = (symbol, direction)
+    if key not in _churn_cooldowns:
+        return False
+
+    if _time.time() < _churn_cooldowns[key]:
+        return True
+
+    del _churn_cooldowns[key]
+    return False
+
+
+def log_exit_quality_metrics() -> None:
+    """V10.13u+7: Throttled exit quality summary log."""
+    global _last_exit_quality_log_ts
+    now = _time.time()
+
+    if (now - _last_exit_quality_log_ts) < EXIT_QUALITY_LOG_THROTTLE_SECONDS:
+        return
+
+    _last_exit_quality_log_ts = now
+
+    try:
+        from src.services.exit_attribution import get_exit_stats
+        stats = get_exit_stats()
+        if not stats:
+            return
+
+        total = sum(s.get("count", 0) for s in stats.values())
+        if total == 0:
+            return
+
+        scratch_count = sum(s.get("count", 0) for k, s in stats.items() if "SCRATCH" in k)
+        stag_count = sum(s.get("count", 0) for k, s in stats.items() if "STAGNATION" in k)
+        scratch_pct = (scratch_count / total * 100) if total > 0 else 0
+        stag_pct = (stag_count / total * 100) if total > 0 else 0
+
+        # Estimate fee bleed (typical 0.1% taker per side for losing exits)
+        fee_bleed = 0.001 * (scratch_count + stag_count)
+
+        log.info(f"[EXIT_QUALITY] scratch_pct={scratch_pct:.1f}% "
+                f"stag_pct={stag_pct:.1f}% fee_bleed_est={fee_bleed:.6f} "
+                f"total_exits={total}")
+    except Exception as e:
+        log.debug(f"[EXIT_QUALITY] logging failed: {e}")
 
 
 def timing_penalty(candle_progress: float, atr_pct: float) -> tuple[float, bool]:
@@ -2430,6 +2525,26 @@ def evaluate_signal(signal):
     print(f"    decision={_decision_display}  ev={ev:.4f}  p={win_prob:.4f}  "
           f"af={auditor_factor:.2f}  coh={_coh:.3f}{_ub_str}")
 
+    # V10.13u+7: Churn cooldown check — skip if in cooldown period
+    _direction = "SHORT" if signal.get("action", "BUY") == "SELL" else "LONG"
+    if is_in_churn_cooldown(sym, _direction):
+        track_blocked(reason="CHURN_COOLDOWN")
+        print(f"    decision=SKIP_CHURN_COOLDOWN  {sym}  {_direction}  still cooling down")
+        return None
+
+    # V10.13u+7: Log entry guard when economic health is BAD
+    try:
+        from src.services.learning_monitor import lm_economic_health
+        health = lm_economic_health()
+        if health.get("status") == "BAD":
+            pf = health.get("pf", 0)
+            net_pnl = health.get("net_pnl", 0)
+            log.info(f"[ECON_ENTRY_GUARD] conservative active pf={pf:.3f} "
+                    f"net_pnl={net_pnl:.6f} min_ev=0.04 min_score=0.20 "
+                    f"forced_mult=0.30")
+    except Exception:
+        pass
+
     # B16: conv-rate tracking — signal accepted
     try:
         from src.services.signal_filter import log_signal_outcome as _lso4
@@ -2452,5 +2567,8 @@ def evaluate_signal(signal):
         )
     except Exception:
         pass
+
+    # V10.13u+7: Log exit quality metrics (throttled)
+    log_exit_quality_metrics()
 
     return signal

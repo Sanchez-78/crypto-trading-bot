@@ -119,8 +119,9 @@ EARLY_STOP_THRESHOLD = 0.60    # Cut losers at 60% of SL distance
 TRAILING_MIN_PEAK    = 0.001   # Must have been >= 0.1% profitable to trail
 TRAILING_RETRACE_PCT = 0.50    # Fire when retraced 50%+ from peak
 
-STAGNATION_MIN_AGE_S = 110     # V10.13k: was 240 — must be < min_timeout(120s)
+STAGNATION_MIN_AGE_S = 180     # V10.13u+7: 110→180 (reduce fee bleed from micro-exits)
 STAGNATION_MAX_PNL   = 0.0005  # |pnl| < 0.05% = stagnant
+STAGNATION_CHURN_COOLDOWN_SEC = 600  # V10.13u+7: 10-min cooldown after stagnation loss
 # V10.13s.3: Harvest optimization patch
 # Previous: V10.13o scratch (105s, 0.0016) still caused 82% scratch dominance
 # Problem: 5589 partial25_near_miss events show trades come close but don't trigger
@@ -128,6 +129,12 @@ STAGNATION_MAX_PNL   = 0.0005  # |pnl| < 0.05% = stagnant
 #           Tighten band to 0.0012 (more selective scratch classification)
 SCRATCH_MIN_AGE_S    = 120     # V10.13s.3: 105→120 (5s more for partial triggers to fire)
 SCRATCH_MAX_PNL      = 0.0012  # V10.13s.3: 0.0016→0.0012 (tighter band, fewer false scratches)
+
+# V10.13u+7: Fee-aware stagnation guard
+MIN_STAGNATION_EXIT_AGE_SEC = 180
+ECON_BAD_MIN_EV = 0.04
+ECON_BAD_MIN_SCORE = 0.20
+ECON_BAD_FORCED_EXPLORE_MULT = 0.30
 
 
 def get_harvest_threshold(regime: Optional[str] = None, threshold_type: str = "micro_tp") -> float:
@@ -550,16 +557,33 @@ class SmartExitEngine:
 
     def _check_stagnation(self, position: Position) -> Optional[Dict[str, Any]]:
         """
-        V10.13m+f: Exit completely stuck positions after 4 min.
+        V10.13u+7: Fee-aware stagnation guard reduces churn losses.
+        V10.13m+f: Exit completely stuck positions after 4 min (now 3 min for 180s base).
         V10.13f: reduced from 30 min (was dead code — timeout fires at 5 min max).
         Runs after scratch — only catches trades with |pnl| >= 0.15%.
         V10.13m: Log why stagnation PASS/FAIL.
+        V10.13u+7: Do not exit if net_if_closed would be negative due to fees/slippage.
         """
         if position.age_seconds < STAGNATION_MIN_AGE_S:
             self._exit_audit_rejections["STAGNATION_EXIT:too_young"] += 1
             return None
 
         if abs(position.pnl_pct) < STAGNATION_MAX_PNL:
+            # V10.13u+7: Fee-aware check — typical crypto fees ~0.1% taker per side
+            # Estimate fee impact: 0.2% round-trip (0.1% entry + 0.1% exit)
+            estimated_fee_pct = 0.002
+            net_if_closed = position.pnl_pct - estimated_fee_pct
+
+            # Only exit stagnation if net PnL after fees is still positive
+            # or if age is beyond min threshold
+            if net_if_closed < 0 and position.age_seconds < STAGNATION_MIN_AGE_S + 120:
+                # Too young and fees would make it a loss — hold and log guard
+                log.info(f"[STAG_GUARD] {position.symbol} age={position.age_seconds}s "
+                        f"pnl={position.pnl_pct*100:.4f}% net_if_closed={net_if_closed*100:.4f}% "
+                        f"reason=too_young_fee_negative")
+                self._exit_audit_rejections["STAGNATION_EXIT:too_young"] += 1
+                return None
+
             return {
                 "exit_type": "STAGNATION_EXIT",
                 "reason": (f"Stagnant {position.age_seconds}s  "
