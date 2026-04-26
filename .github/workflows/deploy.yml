@@ -44,7 +44,12 @@ jobs:
 
             echo "[DEPLOY] Compilation validation passed"
 
-            # Restart service
+            # PATCH 5: Export commit/branch for runtime detection
+            export COMMIT_SHA="$REMOTE"
+            export GIT_BRANCH="main"
+            echo "[DEPLOY] Setting runtime env: COMMIT_SHA=$COMMIT_SHA GIT_BRANCH=$GIT_BRANCH"
+
+            # Restart service with environment (systemd will capture from process env)
             systemctl restart cryptomaster
             sleep 3
             systemctl is-active cryptomaster || { echo "ERROR: cryptomaster service failed to start"; exit 1; }

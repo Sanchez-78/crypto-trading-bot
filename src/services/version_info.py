@@ -13,7 +13,22 @@ from datetime import datetime, timezone
 
 
 def get_git_commit() -> str:
-    """Get current git commit hash. Returns 'UNKNOWN' if unavailable."""
+    """
+    PATCH 5: Get current git commit hash.
+
+    Priority:
+    1. Environment variables (GitHub Actions CI)
+    2. Local git (fallback)
+    3. UNKNOWN if unavailable
+
+    Returns 'UNKNOWN' only if truly unavailable.
+    """
+    # Try environment variables first (GitHub Actions, deployment)
+    commit = os.getenv("COMMIT_SHA") or os.getenv("GITHUB_SHA")
+    if commit:
+        return commit[:12] if len(commit) > 12 else commit
+
+    # Fallback to local git
     try:
         result = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"],
@@ -26,11 +41,27 @@ def get_git_commit() -> str:
             return result.stdout.strip()
     except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
         pass
+
     return "UNKNOWN"
 
 
 def get_git_branch() -> str:
-    """Get current git branch. Returns 'UNKNOWN' if unavailable."""
+    """
+    PATCH 5: Get current git branch.
+
+    Priority:
+    1. Environment variables (GitHub Actions CI)
+    2. Local git (fallback)
+    3. UNKNOWN if unavailable
+
+    Returns 'UNKNOWN' only if truly unavailable.
+    """
+    # Try environment variables first (GitHub Actions, deployment)
+    branch = os.getenv("GIT_BRANCH") or os.getenv("GITHUB_REF_NAME")
+    if branch:
+        return branch
+
+    # Fallback to local git
     try:
         result = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
@@ -43,6 +74,7 @@ def get_git_branch() -> str:
             return result.stdout.strip()
     except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
         pass
+
     return "UNKNOWN"
 
 

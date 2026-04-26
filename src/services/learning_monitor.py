@@ -140,17 +140,17 @@ _hydration_source = "pending"  # Track source for diagnostics
 # HOTFIX (2026-04-26): Hydrate LearningMonitor from canonical closed trade history
 def hydrate_from_canonical_trades(closed_trades: list) -> dict:
     """
-    Ingest canonical closed trade history into LearningMonitor.
+    PATCH 3: Ingest canonical closed trade history into LearningMonitor with real WR/EV.
 
     Called at startup to sync LM with dashboard's closed trade source.
+    Normalizes field names, counts wins/losses/flats, computes decisive WR and EV.
     Prevents state mismatch where dashboard shows 500 trades but LM shows 6.
 
     Args:
         closed_trades: List of closed trade dicts from Firebase history
-                      (each with symbol, regime, pnl, realized_ev, etc)
 
     Returns:
-        dict with hydration stats: {loaded_trades, hydrated_pairs, source}
+        dict with hydration stats: {loaded_trades, hydrated_pairs, decisive, flats, ...}
     """
     global lm_count, lm_pnl_hist, lm_ev_hist, lm_wr_hist, lm_feature_stats, _hydration_source
 
@@ -161,57 +161,103 @@ def hydrate_from_canonical_trades(closed_trades: list) -> dict:
         import logging
         _log = logging.getLogger(__name__)
 
-        # Ingest each closed trade into per-(sym, reg) history
+        # Per-pair accumulators
+        pair_stats = {}  # (sym, reg) → {n_total, wins, losses, flats, pnl_sum, ev_sum}
+        EPS = 1e-12
         trades_loaded = 0
+        decisive_count = 0
+        flat_count = 0
+
+        # Ingest each closed trade into per-(sym, reg) history
         for trade in closed_trades:
-            sym = trade.get("symbol", "")
-            reg = trade.get("regime", "RANGING")
-            pnl = trade.get("realized_pnl", 0.0)
-            ev = trade.get("realized_ev", 0.0)
+            # Normalize field names
+            sym = trade.get("symbol") or trade.get("sym") or ""
+            reg = trade.get("regime") or trade.get("reg") or "UNKNOWN"
+            pnl = trade.get("net_pnl") or trade.get("pnl") or trade.get("pnl_pct") or 0.0
+            ev = trade.get("realized_ev") or trade.get("ev") or 0.0
 
             if not sym:
                 continue
 
             key = (sym, reg)
 
-            # Initialize if needed
+            # Initialize pair stats if needed
+            if key not in pair_stats:
+                pair_stats[key] = {
+                    "n_total": 0, "wins": 0, "losses": 0, "flats": 0,
+                    "pnl_sum": 0.0, "ev_sum": 0.0
+                }
+
+            # Initialize lm state if needed
             if key not in lm_count:
                 lm_count[key] = 0
                 lm_pnl_hist[key] = []
                 lm_ev_hist[key] = []
                 lm_wr_hist[key] = []
 
-            # Append pnl and EV
-            lm_pnl_hist[key].append(float(pnl))
-            lm_ev_hist[key].append(float(ev))
+            # Classify trade as win/loss/flat
+            pnl_f = float(pnl)
+            if pnl_f > EPS:
+                pair_stats[key]["wins"] += 1
+                decisive_count += 1
+                win = 1.0
+            elif pnl_f < -EPS:
+                pair_stats[key]["losses"] += 1
+                decisive_count += 1
+                win = 0.0
+            else:
+                pair_stats[key]["flats"] += 1
+                flat_count += 1
+                win = 0.5
 
-            # Cap history at 200
+            # Append to LM histor ies
+            lm_pnl_hist[key].append(pnl_f)
+            lm_ev_hist[key].append(float(ev))
+            lm_wr_hist[key].append(win)
+
+            # Cap histories at 200
             _cap(lm_pnl_hist[key])
             _cap(lm_ev_hist[key])
-
-            # Count wins/losses for WR
-            win = 1.0 if pnl > 0 else (0.0 if pnl < 0 else 0.5)
-            if key not in lm_wr_hist:
-                lm_wr_hist[key] = []
-            lm_wr_hist[key].append(win)
             _cap(lm_wr_hist[key])
 
-            # Increment trade count
+            # Accumulate stats
+            pair_stats[key]["n_total"] += 1
+            pair_stats[key]["pnl_sum"] += pnl_f
+            pair_stats[key]["ev_sum"] += float(ev)
             lm_count[key] += 1
             trades_loaded += 1
 
+        # Log pair-level stats for top 5 pairs
         hydrated_pairs = len(lm_count)
+        top_pairs = sorted(pair_stats.items(), key=lambda x: x[1]["n_total"], reverse=True)[:5]
+
+        pair_log_lines = []
+        for (sym, reg), stats in top_pairs:
+            n = stats["n_total"]
+            decisive = stats["wins"] + stats["losses"]
+            wr_decisive = stats["wins"] / decisive if decisive > 0 else 0.0
+            avg_pnl = stats["pnl_sum"] / n if n > 0 else 0.0
+            avg_ev = stats["ev_sum"] / n if n > 0 else 0.0
+            pair_log_lines.append(
+                f"  {sym} {reg} n={n} decisive={decisive} wr={wr_decisive*100:.0f}% "
+                f"avg_pnl={avg_pnl:+.6f} ev={avg_ev:+.6f}"
+            )
+
         _hydration_source = "firebase_canonical"
 
         _log.info(
-            f"[LM_HYDRATE] loaded_closed_trades={trades_loaded} "
-            f"hydrated_pairs={hydrated_pairs} source=firebase_canonical"
+            f"[LM_HYDRATE_CANONICAL] loaded_closed_trades={trades_loaded} "
+            f"hydrated_pairs={hydrated_pairs} decisive={decisive_count} flats={flat_count}"
         )
+        for line in pair_log_lines:
+            _log.info(f"[LM_HYDRATE_PAIR]{line}")
 
         return {
             "loaded_trades": trades_loaded,
             "hydrated_pairs": hydrated_pairs,
-            "source": "firebase_canonical"
+            "source": "firebase_canonical",
+            "decisive": decisive_count,
+            "flats": flat_count,
         }
 
     except Exception as exc:
@@ -704,6 +750,7 @@ def lm_economic_health() -> dict:
     """
     try:
         from src.services.learning_event import METRICS, _close_reasons, _recent_results
+        from src.services.canonical_metrics import canonical_profit_factor
 
         trades = METRICS.get("trades", 0)
         if trades < 5:
@@ -716,11 +763,19 @@ def lm_economic_health() -> dict:
                 "warnings": ["Need at least 5 trades to assess economic health"]
             }
 
-        # PATCH 4: Use canonical profit factor (single source of truth)
+        # PATCH 2: Use canonical profit factor (single source of truth)
         profit_factor = canonical_profit_factor()
         # Normalize inf to 99.0 for display
         if profit_factor == float("inf"):
             profit_factor = 99.0
+
+        # Log canonical PF for diagnostics
+        wins = METRICS.get("wins", 0)
+        losses = METRICS.get("losses", 0)
+        log.info(
+            f"[ECON_CANONICAL] pf={profit_factor:.2f} source=canonical_profit_factor "
+            f"trades={trades} wins={wins} losses={losses}"
+        )
 
         # Scratch rate: SCRATCH_EXIT / total trades
         scratch_exits = _close_reasons.get("SCRATCH_EXIT", 0)

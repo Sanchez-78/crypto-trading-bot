@@ -676,6 +676,58 @@ def _get_maturity_trade_count(metrics: dict) -> int:
     return int(metrics.get("completed_trades_runtime", 0))
 
 
+def _safe_get(obj, key, default=None):
+    """Safe dict accessor for mixed type objects."""
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return default
+
+
+def canonical_rr(tp_distance: float, sl_distance: float) -> float:
+    """
+    PATCH 4: Compute Risk-Reward ratio from distances.
+
+    Used everywhere RR is needed: RDE decisions, execution validation, dashboard display.
+
+    Args:
+        tp_distance: Distance to take-profit (absolute value of price delta)
+        sl_distance: Distance to stop-loss (absolute value of price delta)
+
+    Returns:
+        Risk-reward ratio (TP / SL), or 0.0 if SL invalid
+    """
+    if sl_distance <= 0:
+        return 0.0
+    return abs(tp_distance) / abs(sl_distance)
+
+
+def _extract_trade_count(*sources) -> int:
+    """
+    PATCH 1: Extract trade count from multiple sources, handling mixed types.
+
+    Accepts int, list, tuple, or dict with standard trade count keys.
+    Returns maximum count found, never crashes on malformed input.
+    """
+    best = 0
+    for src in sources:
+        if src is None:
+            continue
+        if isinstance(src, int):
+            best = max(best, src)
+            continue
+        if isinstance(src, (list, tuple)):
+            best = max(best, len(src))
+            continue
+        if isinstance(src, dict):
+            for k in ("closed_trades", "completed_trades", "total_trades", "trades", "trades_total", "n"):
+                v = src.get(k)
+                if isinstance(v, int):
+                    best = max(best, v)
+                elif isinstance(v, (list, tuple)):
+                    best = max(best, len(v))
+    return best
+
+
 def compute_effective_maturity():
     """
     V10.13s: Compute effective maturity after all hydration complete.
@@ -702,10 +754,18 @@ def compute_effective_maturity():
 
         # PATCH 1: Check canonical state first (startup oracle with authoritative trade count)
         canonical = get_canonical_state()
-        trades_from_canonical = canonical.get("trades_total", 0)
 
-        lm_total = sum(s.get("n", 0) for s in lm_count.values()) if lm_count else 0
-        global_total = _M.get("trades", 0)
+        # Extract trade counts with type safety
+        trades_from_canonical = _extract_trade_count(
+            canonical,
+            _safe_get(canonical, "closed_trades"),
+            _safe_get(canonical, "trades_total")
+        )
+
+        # LM count: sum of per-(sym,reg) trade counts (values are ints)
+        lm_total = sum(lm_count.values()) if lm_count else 0
+
+        global_total = _M.get("trades", 0) if isinstance(_M, dict) else 0
 
         # Priority: canonical > lm > global
         if trades_from_canonical > 0:
@@ -719,11 +779,14 @@ def compute_effective_maturity():
             source = "global"
 
         # Bootstrap: sparse learning data (threshold 150 per addendum)
+        # Count pairs with meaningful data
+        pair_count = len(lm_count) if lm_count else 0
+        min_pair_n = min(lm_count.values()) if lm_count else 0
+
         bootstrap = (
             effective_n < 150 or
-            (lm_total > 0 and min((s.get("n", 0) for s in lm_count.values()), default=0) < 15) or
-            (lm_count and sum(1 for s in lm_count.values() if s.get("converged")) < 4) or
-            (lm_count and sum(1 for s in lm_count.values() if s.get("n", 0) > 0) < 6)
+            (lm_total > 0 and min_pair_n < 15) or
+            (pair_count > 0 and pair_count < 6)
         )
         cold_start = effective_n < 50
 
@@ -736,14 +799,16 @@ def compute_effective_maturity():
             "global_total": global_total,
             "canonical_total": trades_from_canonical,
             "source": source,
+            "pair_count": pair_count,
+            "min_pair_n": min_pair_n,
         })
 
         log.info(
-            f"[MATURITY_PATCH1] Computed: effective_n={effective_n} (source={source}), "
-            f"bootstrap={bootstrap}, cold_start={cold_start}, canonical={trades_from_canonical}, lm={lm_total}"
+            f"[V10.13u/PATCH_MATURITY] source={source} trades={effective_n} "
+            f"bootstrap={bootstrap} cold_start={cold_start} pair_count={pair_count} min_pair_n={min_pair_n}"
         )
     except Exception as _e:
-        log.warning(f"[MATURITY_PATCH1] Computation failed: {_e}, using cache")
+        log.warning(f"[V10.13u/PATCH_MATURITY] Computation failed: {_e}, using cache")
         pass
 
     return _MATURITY_CACHE.copy()
