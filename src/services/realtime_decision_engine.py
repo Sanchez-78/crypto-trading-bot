@@ -63,6 +63,25 @@ _ECON_BAD_CACHE_TTL_S = 60.0
 _last_econ_bad_guard_log_ts = 0.0
 _ECON_BAD_GUARD_LOG_THROTTLE_S = 60.0
 
+# V10.13u+17: ECON BAD controlled recovery probe
+ECON_BAD_RECOVERY_MIN_IDLE_S = 3600          # 60 min no closed trades
+ECON_BAD_RECOVERY_MIN_REJECTS = 500          # OR 500+ rejections
+ECON_BAD_PROBE_MIN_EV = 0.038
+ECON_BAD_PROBE_MIN_SCORE = 0.18
+ECON_BAD_PROBE_MIN_P = 0.52
+ECON_BAD_PROBE_MIN_COH = 0.55
+ECON_BAD_PROBE_MIN_AF = 0.70
+ECON_BAD_PROBE_SIZE_MULT = 0.15              # 15% normal size
+ECON_BAD_PROBE_COOLDOWN_S = 1800             # 30 min between probes
+ECON_BAD_PROBE_MAX_OPEN = 1                  # Max 1 open probe position
+ECON_BAD_PROBE_MAX_PER_HOUR = 2              # Max 2 probes/hour
+
+_ECON_BAD_PROBE_STATE = {
+    "last_probe_ts": 0.0,
+    "probe_ts": [],
+    "last_summary_ts": 0.0,
+}
+
 
 def _get_cached_history():
     """Get history with local caching - only refreshes every 6 hours.
@@ -232,6 +251,89 @@ def _log_econ_bad_guard_active():
             f"forced_min_ev=0.050 forced_min_p=0.55 forced_min_coh=0.60 forced_min_af=0.70"
         )
         _last_econ_bad_guard_log_ts = now
+
+
+def _econ_bad_recovery_probe_allowed(signal: dict, ctx: dict) -> tuple[bool, str]:
+    """V10.13u+17: Controlled recovery probe during ECON BAD over-blocking.
+
+    Allow tiny probes (0.15x size) only when:
+    - Metrics are safe (ev > 0, af >= 0.70, p >= 0.52, coh >= 0.55, score >= 0.18)
+    - System is idle >= 60min OR rejects >= 500
+    - Not in loss cluster / toxic / spread block
+    - Max 1 open, max 2/hour, 30min cooldown between probes
+    - Close-lock is not active
+
+    Returns:
+        (allowed: bool, reason: str)
+    """
+    now = _time.time()
+
+    # Extract metrics from signal and context
+    ev = float(signal.get("ev", ctx.get("ev", 0.0)) or 0.0)
+    score = float(signal.get("score", ctx.get("score", 0.0)) or 0.0)
+    p = float(signal.get("p", ctx.get("p", 0.0)) or 0.0)
+    coh = float(signal.get("coh", ctx.get("coh", 0.0)) or 0.0)
+    af = float(signal.get("af", ctx.get("af", 0.0)) or 0.0)
+
+    # Hard safety floors — never override
+    if ev <= 0:
+        return False, "negative_ev"
+    if ev < ECON_BAD_PROBE_MIN_EV:
+        return False, "probe_ev_too_low"
+    if score < ECON_BAD_PROBE_MIN_SCORE:
+        return False, "probe_score_too_low"
+    if p < ECON_BAD_PROBE_MIN_P:
+        return False, "probe_p_too_low"
+    if coh < ECON_BAD_PROBE_MIN_COH:
+        return False, "probe_coh_too_low"
+    if af < ECON_BAD_PROBE_MIN_AF:
+        return False, "probe_af_too_low"
+
+    # Block on unsafe tags
+    reason_tag = str(signal.get("reason", ctx.get("reason", ""))).upper()
+    block_reason_tag = str(signal.get("block_reason", ctx.get("block_reason", ""))).upper()
+    tags = f"{reason_tag} {block_reason_tag}"
+
+    forbidden_tags = ("LOSS_CLUSTER", "TOXIC", "SPREAD", "NEGATIVE_EV", "FAST_FAIL")
+    if any(x in tags for x in forbidden_tags):
+        return False, "unsafe_block_reason"
+
+    # Block weak forced signals
+    if bool(signal.get("forced", False)) and (ev < 0.050 or p < 0.55 or coh < 0.60 or af < 0.70):
+        return False, "weak_forced_probe"
+
+    # Check close-lock health
+    try:
+        from src.services.trade_executor import get_close_lock_health
+        close_health = get_close_lock_health()
+        if int(close_health.get("active", 0) or 0) > 0:
+            return False, "close_lock_active"
+    except Exception:
+        return False, "close_lock_check_failed"
+
+    # Check open positions
+    open_positions = int(ctx.get("open_positions", signal.get("open_positions", 0)) or 0)
+    if open_positions >= ECON_BAD_PROBE_MAX_OPEN:
+        return False, "max_open_positions"
+
+    # Check if system has been over-blocked long enough
+    econ_bad_rejects = int(ctx.get("econ_bad_entry_rejects", 0) or 0)
+    idle_s = float(ctx.get("seconds_since_last_closed_trade", 0.0) or 0.0)
+    if econ_bad_rejects < ECON_BAD_RECOVERY_MIN_REJECTS and idle_s < ECON_BAD_RECOVERY_MIN_IDLE_S:
+        return False, "not_blocked_long_enough"
+
+    # Check cooldown between probes
+    if now - float(_ECON_BAD_PROBE_STATE.get("last_probe_ts", 0.0)) < ECON_BAD_PROBE_COOLDOWN_S:
+        return False, "probe_cooldown"
+
+    # Check hourly cap (clean old probes first)
+    _ECON_BAD_PROBE_STATE["probe_ts"] = [
+        t for t in _ECON_BAD_PROBE_STATE.get("probe_ts", []) if now - t < 3600
+    ]
+    if len(_ECON_BAD_PROBE_STATE["probe_ts"]) >= ECON_BAD_PROBE_MAX_PER_HOUR:
+        return False, "probe_hourly_cap"
+
+    return True, "controlled_probe"
 
 
 def build_decision_ctx(
@@ -2648,16 +2750,75 @@ def evaluate_signal(signal):
         auditor_factor=auditor_factor,
     )
     if not _econ_bad_allowed:
-        # Log rejection with full context
+        # V10.13u+17: Recovery probe check for over-blocking cases
         is_bad, pf = _get_econ_bad_state()
-        log.info(
-            f"[ECON_BAD_ENTRY_BLOCK] symbol={sym} reason={_econ_bad_reason} "
-            f"ev={ev:.4f} score={_score_adj:.3f} p={win_prob:.3f} coh={_coh:.3f} af={auditor_factor:.3f} "
-            f"pf={pf:.3f} net_pnl={_ECON_BAD_CACHE.get('net_pnl', 0.0):.6f}"
-        )
-        track_blocked(reason="ECON_BAD_ENTRY")
-        print(f"    decision=REJECT_ECON_BAD_ENTRY  {_econ_bad_reason}")
-        return None
+
+        # Build context for recovery probe check
+        _probe_ctx = {
+            "ev": ev,
+            "score": _score_adj,
+            "p": win_prob,
+            "coh": _coh,
+            "af": auditor_factor,
+            "reason": _econ_bad_reason,
+            "econ_bad_entry_rejects": getattr(_M, "get", lambda k, d: d)("econ_bad_entry_rejects", 0),
+            "seconds_since_last_closed_trade": safe_idle_seconds(),
+            "open_positions": 0,
+        }
+
+        # Try to get open position count safely
+        try:
+            from src.services.trade_executor import get_open_positions
+            _probe_ctx["open_positions"] = len(get_open_positions())
+        except Exception:
+            pass
+
+        # Check if recovery can override this specific rejection
+        recovery_overridable = _econ_bad_reason in ("weak_ev", "weak_score")
+
+        if recovery_overridable:
+            _probe_allowed, _probe_reason = _econ_bad_recovery_probe_allowed(signal, _probe_ctx)
+
+            if _probe_allowed:
+                # Allow recovery probe with reduced size
+                now = _time.time()
+                _ECON_BAD_PROBE_STATE["last_probe_ts"] = now
+                _ECON_BAD_PROBE_STATE.setdefault("probe_ts", []).append(now)
+
+                # Attach probe metadata to signal
+                signal["_econ_bad_probe"] = True
+                signal["_probe_size_mult"] = ECON_BAD_PROBE_SIZE_MULT
+
+                # Apply size multiplier
+                auditor_factor = auditor_factor * ECON_BAD_PROBE_SIZE_MULT
+
+                log.warning(
+                    f"[ECON_BAD_RECOVERY_PROBE] symbol={sym} "
+                    f"ev={ev:.4f} score={_score_adj:.3f} p={win_prob:.3f} coh={_coh:.3f} af={auditor_factor:.3f} "
+                    f"size_mult={ECON_BAD_PROBE_SIZE_MULT:.3f} reason={_probe_reason}"
+                )
+                track_blocked(reason="ECON_BAD_RECOVERY_PROBE")
+                print(f"    [ECON_BAD_RECOVERY_PROBE] {sym} ev={ev:.4f} size×{ECON_BAD_PROBE_SIZE_MULT:.2f}")
+                # Continue to TAKE with probe metadata attached
+            else:
+                # Recovery blocked, hard reject
+                log.info(
+                    f"[ECON_BAD_RECOVERY_BLOCK] symbol={sym} entry_reason={_econ_bad_reason} probe_reason={_probe_reason} "
+                    f"ev={ev:.4f} score={_score_adj:.3f} p={win_prob:.3f} coh={_coh:.3f} af={auditor_factor:.3f}"
+                )
+                track_blocked(reason="ECON_BAD_ENTRY")
+                print(f"    decision=REJECT_ECON_BAD_ENTRY  {_econ_bad_reason} (probe blocked: {_probe_reason})")
+                return None
+        else:
+            # Cannot override unsafe rejections (weak_af, weak_p, weak_coh)
+            log.info(
+                f"[ECON_BAD_ENTRY_BLOCK] symbol={sym} reason={_econ_bad_reason} "
+                f"ev={ev:.4f} score={_score_adj:.3f} p={win_prob:.3f} coh={_coh:.3f} af={auditor_factor:.3f} "
+                f"pf={pf:.3f} net_pnl={_ECON_BAD_CACHE.get('net_pnl', 0.0):.6f}"
+            )
+            track_blocked(reason="ECON_BAD_ENTRY")
+            print(f"    decision=REJECT_ECON_BAD_ENTRY  {_econ_bad_reason}")
+            return None
 
     # V10.13u+16: Forced exploration gate during ECON BAD
     _forced_allowed, _forced_reason = _econ_bad_forced_explore_gate(signal)

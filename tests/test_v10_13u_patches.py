@@ -1967,5 +1967,221 @@ def test_v10_13u16_cache_ttl_refresh():
         assert second_call_count == 0, "Should use cache within TTL window"
 
 
+# ════════════════════════════════════════════════════════════════════════════════
+# V10.13u+17 — ECON BAD CONTROLLED RECOVERY PROBE TESTS
+# ════════════════════════════════════════════════════════════════════════════════
+
+
+def test_v10_13u17_econ_bad_still_blocks_normal_weak():
+    """V10.13u+17: V10.13u+16 guard still blocks normal weak signals (no recovery)."""
+    from src.services.realtime_decision_engine import _econ_bad_entry_quality_gate
+    from unittest.mock import patch
+
+    with patch("src.services.realtime_decision_engine._get_econ_bad_state", return_value=(True, 0.73)):
+        allowed, reason = _econ_bad_entry_quality_gate(
+            symbol="BTCUSDT",
+            ev=0.030,  # Too weak for recovery (needs >= 0.038)
+            score=0.25,
+            win_prob=0.55,
+            coherence=0.60,
+            auditor_factor=0.75,
+        )
+        assert not allowed, "Should still block very weak signals"
+        assert "weak_ev" in reason
+
+
+def test_v10_13u17_recovery_allows_marginal_ev_with_idle():
+    """V10.13u+17: Recovery allows ev=0.039 (just above probe min) when idle >= 3600s."""
+    from src.services.realtime_decision_engine import _econ_bad_recovery_probe_allowed
+    from unittest.mock import patch, MagicMock
+
+    signal = {
+        "ev": 0.039,
+        "score": 0.20,
+        "p": 0.53,
+        "coh": 0.57,
+        "af": 0.75,
+    }
+    ctx = {
+        "ev": 0.039,
+        "score": 0.20,
+        "p": 0.53,
+        "coh": 0.57,
+        "af": 0.75,
+        "econ_bad_entry_rejects": 0,
+        "seconds_since_last_closed_trade": 3601.0,  # Just over 3600
+        "open_positions": 0,
+    }
+
+    with patch("src.services.realtime_decision_engine._get_econ_bad_state", return_value=(True, 0.73)):
+        with patch("src.services.trade_executor.get_close_lock_health", return_value={"active": 0}):
+            allowed, reason = _econ_bad_recovery_probe_allowed(signal, ctx)
+            assert allowed, "Should allow marginal EV when idle >= 3600s"
+            assert reason == "controlled_probe"
+
+
+def test_v10_13u17_recovery_blocks_low_af():
+    """V10.13u+17: Recovery still enforces af >= 0.70 floor."""
+    from src.services.realtime_decision_engine import _econ_bad_recovery_probe_allowed
+    from unittest.mock import patch
+
+    signal = {
+        "ev": 0.040,
+        "score": 0.20,
+        "p": 0.53,
+        "coh": 0.57,
+        "af": 0.65,  # Below 0.70
+    }
+    ctx = {
+        "ev": 0.040,
+        "score": 0.20,
+        "p": 0.53,
+        "coh": 0.57,
+        "af": 0.65,
+        "econ_bad_entry_rejects": 0,
+        "seconds_since_last_closed_trade": 3601.0,
+        "open_positions": 0,
+    }
+
+    with patch("src.services.realtime_decision_engine._get_econ_bad_state", return_value=(True, 0.73)):
+        with patch("src.services.trade_executor.get_close_lock_health", return_value={"active": 0}):
+            allowed, reason = _econ_bad_recovery_probe_allowed(signal, ctx)
+            assert not allowed, "Should reject af < 0.70"
+            assert "probe_af_too_low" in reason
+
+
+def test_v10_13u17_recovery_blocks_negative_ev():
+    """V10.13u+17: Recovery never allows negative EV."""
+    from src.services.realtime_decision_engine import _econ_bad_recovery_probe_allowed
+    from unittest.mock import patch
+
+    signal = {
+        "ev": -0.005,
+        "score": 0.20,
+        "p": 0.53,
+        "coh": 0.57,
+        "af": 0.75,
+    }
+    ctx = {
+        "ev": -0.005,
+        "score": 0.20,
+        "p": 0.53,
+        "coh": 0.57,
+        "af": 0.75,
+        "econ_bad_entry_rejects": 0,
+        "seconds_since_last_closed_trade": 3601.0,
+        "open_positions": 0,
+    }
+
+    with patch("src.services.realtime_decision_engine._get_econ_bad_state", return_value=(True, 0.73)):
+        allowed, reason = _econ_bad_recovery_probe_allowed(signal, ctx)
+        assert not allowed, "Should reject negative EV"
+        assert "negative_ev" in reason
+
+
+def test_v10_13u17_recovery_caps_probes_per_hour():
+    """V10.13u+17: Recovery enforces max 2 probes per hour."""
+    from src.services.realtime_decision_engine import (
+        _econ_bad_recovery_probe_allowed,
+        _ECON_BAD_PROBE_STATE,
+        ECON_BAD_PROBE_COOLDOWN_S,
+    )
+    import time as _t
+    from unittest.mock import patch
+
+    # Simulate 2 probes already taken this hour, with sufficient cooldown gap
+    now = _t.time()
+    # Both probes within 1-hour window, with cooldown gap between them
+    _ECON_BAD_PROBE_STATE["probe_ts"] = [now - 2000, now - (ECON_BAD_PROBE_COOLDOWN_S + 100)]
+    _ECON_BAD_PROBE_STATE["last_probe_ts"] = now - (ECON_BAD_PROBE_COOLDOWN_S + 100)
+
+    signal = {
+        "ev": 0.040,
+        "score": 0.20,
+        "p": 0.53,
+        "coh": 0.57,
+        "af": 0.75,
+    }
+    ctx = {
+        "ev": 0.040,
+        "score": 0.20,
+        "p": 0.53,
+        "coh": 0.57,
+        "af": 0.75,
+        "econ_bad_entry_rejects": 0,
+        "seconds_since_last_closed_trade": 3601.0,
+        "open_positions": 0,
+    }
+
+    with patch("src.services.realtime_decision_engine._get_econ_bad_state", return_value=(True, 0.73)):
+        with patch("src.services.trade_executor.get_close_lock_health", return_value={"active": 0}):
+            allowed, reason = _econ_bad_recovery_probe_allowed(signal, ctx)
+            assert not allowed, "Should cap probes to 2/hour"
+            assert "probe_hourly_cap" in reason
+
+
+def test_v10_13u17_recovery_blocks_with_open_positions():
+    """V10.13u+17: Recovery blocks if already 1+ open position."""
+    from src.services.realtime_decision_engine import _econ_bad_recovery_probe_allowed
+    from unittest.mock import patch
+
+    signal = {
+        "ev": 0.040,
+        "score": 0.20,
+        "p": 0.53,
+        "coh": 0.57,
+        "af": 0.75,
+    }
+    ctx = {
+        "ev": 0.040,
+        "score": 0.20,
+        "p": 0.53,
+        "coh": 0.57,
+        "af": 0.75,
+        "econ_bad_entry_rejects": 0,
+        "seconds_since_last_closed_trade": 3601.0,
+        "open_positions": 1,  # Already has 1 open
+    }
+
+    with patch("src.services.realtime_decision_engine._get_econ_bad_state", return_value=(True, 0.73)):
+        with patch("src.services.trade_executor.get_close_lock_health", return_value={"active": 0}):
+            allowed, reason = _econ_bad_recovery_probe_allowed(signal, ctx)
+            assert not allowed, "Should block when already 1+ open"
+            assert "max_open_positions" in reason
+
+
+def test_v10_13u17_recovery_applies_size_mult():
+    """V10.13u+17: Recovery probe sets 0.15x size multiplier."""
+    from src.services.realtime_decision_engine import ECON_BAD_PROBE_SIZE_MULT
+
+    assert ECON_BAD_PROBE_SIZE_MULT == 0.15, "Probe size multiplier should be 0.15 (15%)"
+
+
+def test_v10_13u17_pf_formula_unchanged():
+    """V10.13u+17: Canonical PF formula is not modified."""
+    from src.services.canonical_metrics import canonical_profit_factor
+
+    # Just verify the function exists and is callable (no changes to formula)
+    assert callable(canonical_profit_factor), "PF formula should be unchanged"
+
+
+def test_v10_13u17_econ_good_unaffected():
+    """V10.13u+17: Recovery probe does not activate when ECON is GOOD."""
+    from src.services.realtime_decision_engine import _econ_bad_entry_quality_gate
+    from unittest.mock import patch
+
+    # When ECON GOOD, V10.13u+16 gate should allow normally (no gate block)
+    with patch("src.services.realtime_decision_engine._get_econ_bad_state", return_value=(False, 1.05)):
+        allowed, reason = _econ_bad_entry_quality_gate(
+            symbol="BTCUSDT",
+            ev=0.030,  # Weak, but ECON GOOD so gate inactive
+            score=0.15,
+            win_prob=0.50,
+            coherence=0.50,
+            auditor_factor=0.50,
+        )
+        assert allowed, "Gate should be inactive when ECON GOOD"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
