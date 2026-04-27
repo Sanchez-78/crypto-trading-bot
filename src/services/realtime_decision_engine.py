@@ -519,6 +519,53 @@ def _maybe_emit_econ_bad_diag_from_reject(source: str = "rde_reject") -> None:
             pass
 
 
+def _trace_econ_bad_recovery_decision(
+    *,
+    symbol: str,
+    ev: float,
+    score: float,
+    p: float,
+    coh: float,
+    af: float,
+    econ_status: str,
+    pf: float,
+    current_probe_ready: bool,
+    current_probe_block: str,
+    final_decision: str,
+    reason: str,
+    idle_s: float | None = None,
+    open_positions: int | None = None,
+    forced: bool = False,
+) -> None:
+    """V10.13u+19b: Trace ECON BAD recovery probe decision path.
+
+    Observability only. Never raises. No Firebase writes.
+    Logs current signal readiness and exact rejection reason.
+    """
+    try:
+        idle_str = f" idle_s={idle_s:.0f}" if idle_s is not None else ""
+        open_str = f" open_positions={open_positions}" if open_positions is not None else ""
+        forced_str = " forced=true" if forced else ""
+
+        log.warning(
+            f"[ECON_BAD_RECOVERY_TRACE] symbol={symbol} "
+            f"ev={ev:.4f} score={score:.3f} p={p:.3f} coh={coh:.3f} af={af:.3f} "
+            f"pf={pf:.3f} econ_status={econ_status} "
+            f"current_probe_ready={current_probe_ready} current_probe_block={current_probe_block} "
+            f"final_decision={final_decision} reason={reason}{idle_str}{open_str}{forced_str}"
+        )
+
+        # Ready-but-rejected invariant check
+        if current_probe_ready and current_probe_block == "none" and final_decision == "REJECT":
+            log.warning(
+                f"[ECON_BAD_READY_BUT_REJECTED] symbol={symbol} "
+                f"ev={ev:.4f} score={score:.3f} p={p:.3f} coh={coh:.3f} af={af:.3f} "
+                f"pf={pf:.3f} econ_status={econ_status} reason={reason}"
+            )
+    except Exception:
+        pass
+
+
 def _get_cached_history():
     """Get history with local caching - only refreshes every 6 hours.
 
@@ -3349,6 +3396,23 @@ def evaluate_signal(signal):
                     f"ev={ev:.4f} score={_score_adj:.3f} p={win_prob:.3f} coh={_coh:.3f} af={auditor_factor:.3f} "
                     f"size_mult={ECON_BAD_PROBE_SIZE_MULT:.3f} reason={_probe_reason}"
                 )
+                # V10.13u+19b: Trace recovery decision path
+                _trace_econ_bad_recovery_decision(
+                    symbol=sym,
+                    ev=ev,
+                    score=_score_adj,
+                    p=win_prob,
+                    coh=_coh,
+                    af=auditor_factor,
+                    econ_status="BAD",
+                    pf=pf,
+                    current_probe_ready=True,
+                    current_probe_block="none",
+                    final_decision="TAKE",
+                    reason="recovery_probe_allowed",
+                    idle_s=_probe_ctx.get("seconds_since_last_closed_trade", None),
+                    open_positions=_probe_ctx.get("open_positions", 0),
+                )
                 track_blocked(reason="ECON_BAD_RECOVERY_PROBE")
                 print(f"    [ECON_BAD_RECOVERY_PROBE] {sym} ev={ev:.4f} size×{ECON_BAD_PROBE_SIZE_MULT:.2f}")
                 # Continue to TAKE with probe metadata attached
@@ -3386,6 +3450,23 @@ def evaluate_signal(signal):
                         f"[ECON_BAD_RECOVERY_BLOCK] symbol={sym} entry_reason={_econ_bad_reason} probe_reason={_probe_reason} "
                         f"deadlock_reason={deadlock_block_reason} "
                         f"ev={ev:.4f} score={_score_adj:.3f} p={win_prob:.3f} coh={_coh:.3f} af={auditor_factor:.3f}"
+                    )
+                    # V10.13u+19b: Trace recovery decision path
+                    _trace_econ_bad_recovery_decision(
+                        symbol=sym,
+                        ev=ev,
+                        score=_score_adj,
+                        p=win_prob,
+                        coh=_coh,
+                        af=auditor_factor,
+                        econ_status="BAD",
+                        pf=pf,
+                        current_probe_ready=False,  # blocked by probe_reason or deadlock_reason
+                        current_probe_block=_probe_reason,
+                        final_decision="REJECT",
+                        reason=deadlock_block_reason if not _deadlock_allowed else _probe_reason,
+                        idle_s=_probe_ctx.get("seconds_since_last_closed_trade", None),
+                        open_positions=_probe_ctx.get("open_positions", 0),
                     )
                     track_blocked(reason="ECON_BAD_ENTRY")
                     print(f"    decision=REJECT_ECON_BAD_ENTRY  {_econ_bad_reason} (probe blocked: {_probe_reason})")

@@ -3298,5 +3298,114 @@ def test_v10_13u19_enforces_cooldown(monkeypatch):
     assert reason2 == "cooldown_active"
 
 
+# ════════════════════════════════════════════════════════════════════════════════
+# V10.13u+19b: Recovery probe tracing
+# ════════════════════════════════════════════════════════════════════════════════
+
+def test_v10_13u19b_trace_logs_recovery_allowed(caplog):
+    """V10.13u+19b: Trace logs when recovery probe is allowed."""
+    from src.services import realtime_decision_engine as rde
+
+    rde._trace_econ_bad_recovery_decision(
+        symbol="ADAUSDT",
+        ev=0.0434,
+        score=0.204,
+        p=0.523,
+        coh=0.868,
+        af=0.750,
+        econ_status="BAD",
+        pf=0.739,
+        current_probe_ready=True,
+        current_probe_block="none",
+        final_decision="TAKE",
+        reason="recovery_probe_allowed",
+        idle_s=13 * 3600,
+        open_positions=0,
+    )
+
+    assert "[ECON_BAD_RECOVERY_TRACE]" in caplog.text
+    assert "current_probe_ready=True" in caplog.text
+    assert "current_probe_block=none" in caplog.text
+    assert "final_decision=TAKE" in caplog.text
+
+
+def test_v10_13u19b_trace_logs_ready_but_rejected(caplog):
+    """V10.13u+19b: Trace logs [ECON_BAD_READY_BUT_REJECTED] when ready signal is rejected."""
+    from src.services import realtime_decision_engine as rde
+
+    rde._trace_econ_bad_recovery_decision(
+        symbol="ADAUSDT",
+        ev=0.0434,
+        score=0.204,
+        p=0.523,
+        coh=0.868,
+        af=0.750,
+        econ_status="BAD",
+        pf=0.739,
+        current_probe_ready=True,
+        current_probe_block="none",
+        final_decision="REJECT",
+        reason="probe_cooldown",
+    )
+
+    assert "[ECON_BAD_READY_BUT_REJECTED]" in caplog.text
+    assert "reason=probe_cooldown" in caplog.text
+
+
+def test_v10_13u19b_trace_logs_blocked_signal(caplog):
+    """V10.13u+19b: Trace logs when signal is rejected with blocker."""
+    from src.services import realtime_decision_engine as rde
+
+    rde._trace_econ_bad_recovery_decision(
+        symbol="ADAUSDT",
+        ev=0.0434,
+        score=0.204,
+        p=0.523,
+        coh=0.868,
+        af=0.750,
+        econ_status="BAD",
+        pf=0.739,
+        current_probe_ready=False,
+        current_probe_block="weak_p",
+        final_decision="REJECT",
+        reason="quality_threshold",
+    )
+
+    assert "[ECON_BAD_RECOVERY_TRACE]" in caplog.text
+    assert "current_probe_ready=False" in caplog.text
+    assert "current_probe_block=weak_p" in caplog.text
+    assert "[ECON_BAD_READY_BUT_REJECTED]" not in caplog.text
+
+
+def test_v10_13u19b_trace_never_raises(monkeypatch):
+    """V10.13u+19b: Trace helper is exception-safe."""
+    from src.services import realtime_decision_engine as rde
+    from unittest.mock import MagicMock
+
+    # Patch logging to raise
+    mock_log = MagicMock()
+    mock_log.warning.side_effect = ValueError("mock error")
+    monkeypatch.setattr(rde, "log", mock_log)
+
+    # Should not raise
+    try:
+        rde._trace_econ_bad_recovery_decision(
+            symbol="ADAUSDT",
+            ev=0.0434,
+            score=0.204,
+            p=0.523,
+            coh=0.868,
+            af=0.750,
+            econ_status="BAD",
+            pf=0.739,
+            current_probe_ready=True,
+            current_probe_block="none",
+            final_decision="TAKE",
+            reason="test",
+        )
+    except Exception as e:
+        pytest.fail(f"Trace helper should be exception-safe, but raised: {e}")
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
