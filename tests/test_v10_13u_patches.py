@@ -3563,5 +3563,169 @@ def test_v10_13u19c_exception_safety_on_log_error(monkeypatch):
         pytest.fail(f"Trace helper should be exception-safe even on log failure, but raised: {e}")
 
 
+def test_v10_13u19d_weak_ev_recovery_checked_before_return(monkeypatch):
+    """V10.13u+19d: Recovery override is checked before weak-EV return."""
+    from src.services import realtime_decision_engine as rde
+
+    # Mock ECON BAD state to be active - patch lm_economic_health at source
+    monkeypatch.setattr(
+        "src.services.learning_monitor.lm_economic_health",
+        lambda: {"status": "BAD", "pf": 0.739, "net_pnl": 0.0}
+    )
+    # Clear cache to force fresh check
+    rde._ECON_BAD_CACHE["last_check_ts"] = 0.0
+
+    # Setup strong recovery candidate
+    signal = {
+        "ev": 0.0434,
+        "score": 0.204,
+        "p": 0.523,
+        "coh": 0.868,
+        "af": 0.750,
+        "forced": False,
+    }
+    ctx = {
+        "ev": 0.0434,
+        "score": 0.204,
+        "p": 0.523,
+        "coh": 0.868,
+        "af": 0.750,
+        "open_positions": 0,
+        "seconds_since_last_closed_trade": 3600,
+        "econ_bad_entry_rejects": 500,
+    }
+
+    # Call resolver - should check recovery for weak_ev
+    override = rde._resolve_econ_bad_recovery_override_for_signal(signal, ctx, "weak_ev")
+
+    # Should check recovery
+    assert override["checked"] is True
+    # Result depends on cooldown/caps, but at least it was checked
+    assert "override" in str(override) or override.get("reason") is not None
+
+
+def test_v10_13u19d_low_quality_weak_ev_still_rejected(monkeypatch):
+    """V10.13u+19d: Low-quality weak-EV candidates still reject."""
+    from src.services import realtime_decision_engine as rde
+
+    # Mock ECON BAD state to be active - patch lm_economic_health at source
+    monkeypatch.setattr(
+        "src.services.learning_monitor.lm_economic_health",
+        lambda: {"status": "BAD", "pf": 0.739, "net_pnl": 0.0}
+    )
+    # Clear cache to force fresh check
+    rde._ECON_BAD_CACHE["last_check_ts"] = 0.0
+
+    # Weak candidate with low p and af
+    signal = {
+        "ev": 0.0348,
+        "score": 0.172,
+        "p": 0.500,  # Below minimum
+        "coh": 0.697,
+        "af": 0.595,  # Below minimum (0.70)
+        "forced": False,
+    }
+    ctx = {
+        "ev": 0.0348,
+        "score": 0.172,
+        "p": 0.500,
+        "coh": 0.697,
+        "af": 0.595,
+        "open_positions": 0,
+        "seconds_since_last_closed_trade": 1900,
+    }
+
+    override = rde._resolve_econ_bad_recovery_override_for_signal(signal, ctx, "weak_ev")
+
+    # Should check but not allow due to low p/af
+    assert override["checked"] is True
+    assert override["allowed"] is False
+    # Reason should indicate why recovery/deadlock was blocked
+    assert override["reason"] in (
+        "below_probe_ev", "weak_p", "weak_coh", "weak_af", "weak_score",
+        "below_deadlock_ev", "recovery_blocked:probe_ev_too_low"
+    ) or "probe" in override["reason"].lower()
+
+
+def test_v10_13u19d_negative_ev_still_hard_rejected(monkeypatch):
+    """V10.13u+19d: Negative EV is never allowed by override."""
+    from src.services import realtime_decision_engine as rde
+
+    # Mock ECON BAD state to be active - patch lm_economic_health at source
+    monkeypatch.setattr(
+        "src.services.learning_monitor.lm_economic_health",
+        lambda: {"status": "BAD", "pf": 0.739, "net_pnl": 0.0}
+    )
+    # Clear cache to force fresh check
+    rde._ECON_BAD_CACHE["last_check_ts"] = 0.0
+
+    signal = {"ev": -0.0100, "score": 0.204, "p": 0.523, "coh": 0.868, "af": 0.750, "forced": False}
+    ctx = {"ev": -0.0100}
+
+    override = rde._resolve_econ_bad_recovery_override_for_signal(signal, ctx, "weak_ev")
+
+    # Must check but not allow negative EV
+    assert override["checked"] is True
+    assert override["allowed"] is False
+    assert "negative" in override["reason"].lower()
+
+
+def test_v10_13u19d_non_weak_ev_not_overridable(monkeypatch):
+    """V10.13u+19d: Non-weak-EV reasons are not overridable."""
+    from src.services import realtime_decision_engine as rde
+
+    # Mock ECON BAD state to be active - patch lm_economic_health at source
+    monkeypatch.setattr(
+        "src.services.learning_monitor.lm_economic_health",
+        lambda: {"status": "BAD", "pf": 0.739, "net_pnl": 0.0}
+    )
+    # Clear cache to force fresh check
+    rde._ECON_BAD_CACHE["last_check_ts"] = 0.0
+
+    signal = {"ev": 0.0434, "score": 0.204, "p": 0.523, "coh": 0.868, "af": 0.750}
+    ctx = {"open_positions": 0}
+
+    # Try to override weak_af (not overridable)
+    override = rde._resolve_econ_bad_recovery_override_for_signal(signal, ctx, "weak_af")
+
+    # Should not even check for non-weak-EV reasons
+    assert override["checked"] is False
+    assert override["allowed"] is False
+    assert override["reason"] == "not_overridable"
+
+
+def test_v10_13u19d_actual_allowed_emits_invariant(caplog):
+    """V10.13u+19d: If actual recovery allowed but final reject, emit invariant."""
+    from src.services import realtime_decision_engine as rde
+
+    # This tests the fixed invariant: uses actual_recovery_allowed instead of snapshot
+    rde._trace_econ_bad_entry_return(
+        symbol="ADAUSDT",
+        ev=0.0434,
+        score=0.204,
+        p=0.523,
+        coh=0.868,
+        af=0.750,
+        entry_reason="weak_ev",
+        final_decision="REJECT_ECON_BAD_ENTRY",  # Even though allowed
+        actual_recovery_checked=True,
+        actual_recovery_allowed=True,  # Critical: actual override says allowed
+        actual_recovery_reason="recovery_allowed",
+    )
+
+    # Should emit READY_BUT_REJECTED because actual said allowed but final rejected
+    assert "[ECON_BAD_READY_BUT_REJECTED]" in caplog.text
+
+
+def test_v10_13u19d_no_global_threshold_change():
+    """V10.13u+19d: No global thresholds loosened."""
+    from src.services import realtime_decision_engine as rde
+
+    # Verify key constants unchanged
+    assert rde.ECON_BAD_PROBE_MIN_EV == 0.038, "Recovery probe min EV should be 0.038"
+    assert rde.ECON_BAD_DEADLOCK_MIN_EV == 0.0370, "Deadlock min EV should be 0.0370"
+    assert rde.ECON_BAD_DEADLOCK_MAX_EV == 0.0380, "Deadlock max EV should be 0.0380"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

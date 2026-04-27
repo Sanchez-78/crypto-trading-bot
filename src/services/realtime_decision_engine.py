@@ -622,17 +622,17 @@ def _trace_econ_bad_entry_return(
             final_decision,
         )
 
-        # Ready-but-rejected invariant check: snapshot says ready but final decision is reject
+        # Ready-but-rejected invariant: actual recovery was checked, allowed, but final reject still happened
+        # V10.13u+19d: Use actual_recovery_allowed, not snapshot_probe_ready (snapshot may be stale)
         if (
-            snapshot_ready is True
-            and str(snapshot_block_reason) == "none"
+            actual_recovery_checked is True
+            and actual_recovery_allowed is True
             and str(final_decision).startswith("REJECT")
         ):
             log.error(
                 "[ECON_BAD_READY_BUT_REJECTED] "
                 "symbol=%s ev=%.4f score=%.3f p=%.3f coh=%.3f af=%.3f "
                 "pf=%s econ_status=%s entry_reason=%s "
-                "actual_recovery_checked=%s actual_recovery_allowed=%s "
                 "actual_recovery_reason=%s final_decision=%s",
                 symbol,
                 float(ev or 0.0),
@@ -643,8 +643,6 @@ def _trace_econ_bad_entry_return(
                 pf,
                 econ_status,
                 entry_reason,
-                actual_recovery_checked,
-                actual_recovery_allowed,
                 actual_recovery_reason,
                 final_decision,
             )
@@ -1014,6 +1012,128 @@ def _econ_bad_deadlock_nearmiss_probe_allowed(signal: dict, ctx: dict | None = N
     meta["probe_reason"] = "no_trade_nearmiss"
     meta["version"] = "V10.13u+19"
     return True, "deadlock_nearmiss_probe", meta
+
+
+def _resolve_econ_bad_recovery_override_for_signal(
+    signal: dict,
+    ctx: dict | None = None,
+    entry_reason: str = ""
+) -> dict:
+    """V10.13u+19d: Decide whether weak-EV ECON BAD rejection may be overridden.
+
+    Check both normal recovery probe and deadlock probe for the current signal.
+    Return unified decision dict with exact reason.
+
+    Returns:
+        {
+            "checked": bool,  # whether recovery/deadlock was actually evaluated
+            "allowed": bool,  # whether override is allowed
+            "reason": str,    # exact reason (if blocked) or "recovery_allowed"/"deadlock_allowed"
+            "kind": "normal" | "deadlock" | "none",  # which probe type if allowed
+            "size_mult": float | None,  # size multiplier to apply
+            "meta": dict,  # additional metadata
+        }
+
+    Observability-safe. Never raises. Never mutates signal.
+    """
+    if ctx is None:
+        ctx = {}
+
+    try:
+        # Check if ECON BAD is active
+        is_bad, _ = _get_econ_bad_state()
+        if not is_bad:
+            return {
+                "checked": False,
+                "allowed": False,
+                "reason": "econ_not_bad",
+                "kind": "none",
+                "size_mult": None,
+                "meta": {},
+            }
+
+        # Only override weak-EV / probe-low candidates
+        if entry_reason not in ("weak_ev", "weak_score"):
+            return {
+                "checked": False,
+                "allowed": False,
+                "reason": "not_overridable",
+                "kind": "none",
+                "size_mult": None,
+                "meta": {},
+            }
+
+        # Hard EV floor: never override negative/zero EV
+        ev = float(signal.get("ev", ctx.get("ev", 0.0)) or 0.0)
+        if ev <= 0:
+            return {
+                "checked": True,
+                "allowed": False,
+                "reason": "negative_ev",
+                "kind": "none",
+                "size_mult": None,
+                "meta": {},
+            }
+
+        # Try normal recovery probe first
+        recovery_allowed, recovery_reason = _econ_bad_recovery_probe_allowed(signal, ctx)
+        if recovery_allowed:
+            return {
+                "checked": True,
+                "allowed": True,
+                "reason": "recovery_allowed",
+                "kind": "normal",
+                "size_mult": ECON_BAD_PROBE_SIZE_MULT,
+                "meta": {"probe_reason": recovery_reason},
+            }
+
+        # If normal recovery blocked only by EV being slightly below floor, try deadlock
+        if recovery_reason == "probe_ev_too_low":
+            deadlock_allowed, deadlock_reason, deadlock_meta = _econ_bad_deadlock_nearmiss_probe_allowed(signal, ctx)
+            if deadlock_allowed:
+                return {
+                    "checked": True,
+                    "allowed": True,
+                    "reason": "deadlock_allowed",
+                    "kind": "deadlock",
+                    "size_mult": ECON_BAD_DEADLOCK_SIZE_MULT,
+                    "meta": deadlock_meta,
+                }
+
+            # Deadlock also blocked, return exact reason
+            return {
+                "checked": True,
+                "allowed": False,
+                "reason": deadlock_reason,
+                "kind": "none",
+                "size_mult": None,
+                "meta": deadlock_meta,
+            }
+
+        # Normal recovery blocked for other reason (not EV-related)
+        return {
+            "checked": True,
+            "allowed": False,
+            "reason": recovery_reason,
+            "kind": "none",
+            "size_mult": None,
+            "meta": {},
+        }
+
+    except Exception as exc:
+        try:
+            log.warning("[ECON_BAD_RECOVERY_OVERRIDE_ERROR] err=%s", str(exc)[:160])
+        except Exception:
+            pass
+
+        return {
+            "checked": False,
+            "allowed": False,
+            "reason": f"override_check_error:{str(exc)[:50]}",
+            "kind": "none",
+            "size_mult": None,
+            "meta": {},
+        }
 
 
 def build_decision_ctx(
@@ -3461,146 +3581,49 @@ def evaluate_signal(signal):
         except Exception:
             pass
 
-        # Check if recovery can override this specific rejection
-        recovery_overridable = _econ_bad_reason in ("weak_ev", "weak_score")
+        # V10.13u+19d: Check recovery/deadlock override for ANY weak-EV candidate
+        # (not just overridable reasons)
+        override = _resolve_econ_bad_recovery_override_for_signal(signal, _probe_ctx, _econ_bad_reason)
 
-        if recovery_overridable:
-            _probe_allowed, _probe_reason = _econ_bad_recovery_probe_allowed(signal, _probe_ctx)
-
-            if _probe_allowed:
-                # Allow recovery probe with reduced size
-                now = _time.time()
+        if override["allowed"]:
+            # Recovery or deadlock probe is allowed — return TAKE with probe metadata
+            now = _time.time()
+            if override["kind"] == "normal":
                 _ECON_BAD_PROBE_STATE["last_probe_ts"] = now
                 _ECON_BAD_PROBE_STATE.setdefault("probe_ts", []).append(now)
-
-                # Attach probe metadata to signal
                 signal["_econ_bad_probe"] = True
-                signal["_probe_size_mult"] = ECON_BAD_PROBE_SIZE_MULT
-
-                # Apply size multiplier
-                auditor_factor = auditor_factor * ECON_BAD_PROBE_SIZE_MULT
-
-                log.warning(
-                    f"[ECON_BAD_RECOVERY_PROBE] symbol={sym} "
-                    f"ev={ev:.4f} score={_score_adj:.3f} p={win_prob:.3f} coh={_coh:.3f} af={auditor_factor:.3f} "
-                    f"size_mult={ECON_BAD_PROBE_SIZE_MULT:.3f} reason={_probe_reason}"
-                )
-                # V10.13u+19b: Trace recovery decision path
-                _trace_econ_bad_recovery_decision(
-                    symbol=sym,
-                    ev=ev,
-                    score=_score_adj,
-                    p=win_prob,
-                    coh=_coh,
-                    af=auditor_factor,
-                    econ_status="BAD",
-                    pf=pf,
-                    current_probe_ready=True,
-                    current_probe_block="none",
-                    final_decision="TAKE",
-                    reason="recovery_probe_allowed",
-                    idle_s=_probe_ctx.get("seconds_since_last_closed_trade", None),
-                    open_positions=_probe_ctx.get("open_positions", 0),
-                )
-                track_blocked(reason="ECON_BAD_RECOVERY_PROBE")
-                print(f"    [ECON_BAD_RECOVERY_PROBE] {sym} ev={ev:.4f} size×{ECON_BAD_PROBE_SIZE_MULT:.2f}")
-                # Continue to TAKE with probe metadata attached
+                probe_kind_str = "normal"
+            elif override["kind"] == "deadlock":
+                _ECON_BAD_DEADLOCK_PROBE_STATE["last_probe_ts"] = now
+                _ECON_BAD_DEADLOCK_PROBE_STATE.setdefault("probe_ts_24h", []).append(now)
+                signal["_econ_bad_deadlock_probe"] = True
+                probe_kind_str = "deadlock"
             else:
-                # Recovery blocked; check V10.13u+19 deadlock probe
-                _deadlock_allowed, _deadlock_reason, _deadlock_meta = _econ_bad_deadlock_nearmiss_probe_allowed(signal, _probe_ctx)
+                probe_kind_str = "unknown"
 
-                if _deadlock_allowed and _probe_reason == "probe_ev_too_low":
-                    # Allow deadlock probe with even smaller size
-                    now = _time.time()
-                    _ECON_BAD_DEADLOCK_PROBE_STATE["last_probe_ts"] = now
-                    _ECON_BAD_DEADLOCK_PROBE_STATE.setdefault("probe_ts_24h", []).append(now)
+            signal["_econ_bad_probe_size_mult"] = override["size_mult"]
+            signal["_econ_bad_probe_reason"] = override["reason"]
 
-                    # Attach deadlock probe metadata to signal
-                    signal["_econ_bad_deadlock_probe"] = True
-                    signal["_deadlock_size_mult"] = ECON_BAD_DEADLOCK_SIZE_MULT
+            # Apply size multiplier
+            auditor_factor = auditor_factor * override["size_mult"]
 
-                    # Apply size multiplier (0.08x)
-                    auditor_factor = auditor_factor * ECON_BAD_DEADLOCK_SIZE_MULT
-
-                    log.warning(
-                        f"[ECON_BAD_DEADLOCK_PROBE] symbol={sym} "
-                        f"ev={ev:.4f} score={_score_adj:.3f} p={win_prob:.3f} coh={_coh:.3f} af={auditor_factor:.3f} "
-                        f"pf={_deadlock_meta.get('pf', 1.0):.3f} idle_s={_deadlock_meta.get('idle_s', 0):.0f} "
-                        f"total_blocks={_deadlock_meta.get('total_blocks', 0)} size_mult={ECON_BAD_DEADLOCK_SIZE_MULT:.3f} "
-                        f"reason={_deadlock_reason}"
-                    )
-                    track_blocked(reason="ECON_BAD_DEADLOCK_PROBE")
-                    print(f"    [ECON_BAD_DEADLOCK_PROBE] {sym} ev={ev:.4f} size×{ECON_BAD_DEADLOCK_SIZE_MULT:.2f}")
-                    # Continue to TAKE with deadlock probe metadata attached
-                else:
-                    # Both normal and deadlock probes blocked, hard reject
-                    deadlock_block_reason = _deadlock_reason if not _deadlock_allowed else "normal_probe_ev_ok"
-                    log.info(
-                        f"[ECON_BAD_RECOVERY_BLOCK] symbol={sym} entry_reason={_econ_bad_reason} probe_reason={_probe_reason} "
-                        f"deadlock_reason={deadlock_block_reason} "
-                        f"ev={ev:.4f} score={_score_adj:.3f} p={win_prob:.3f} coh={_coh:.3f} af={auditor_factor:.3f}"
-                    )
-                    # V10.13u+19b: Trace recovery decision path
-                    _trace_econ_bad_recovery_decision(
-                        symbol=sym,
-                        ev=ev,
-                        score=_score_adj,
-                        p=win_prob,
-                        coh=_coh,
-                        af=auditor_factor,
-                        econ_status="BAD",
-                        pf=pf,
-                        current_probe_ready=False,  # blocked by probe_reason or deadlock_reason
-                        current_probe_block=_probe_reason,
-                        final_decision="REJECT",
-                        reason=deadlock_block_reason if not _deadlock_allowed else _probe_reason,
-                        idle_s=_probe_ctx.get("seconds_since_last_closed_trade", None),
-                        open_positions=_probe_ctx.get("open_positions", 0),
-                    )
-                    track_blocked(reason="ECON_BAD_ENTRY")
-                    print(f"    decision=REJECT_ECON_BAD_ENTRY  {_econ_bad_reason} (probe blocked: {_probe_reason})")
-                    # V10.13u+18: Track near-miss for diagnostics
-                    _update_econ_bad_near_miss(
-                        symbol=sym, regime=regime, ev=ev, score=_score_adj, win_prob=win_prob,
-                        coherence=_coh, auditor_factor=auditor_factor, block_reason=_econ_bad_reason
-                    )
-                    # V10.13u+19c: Trace actual return path with recovery probe decision
-                    _trace_econ_bad_entry_return(
-                        symbol=sym,
-                        ev=ev,
-                        score=_score_adj,
-                        p=win_prob,
-                        coh=_coh,
-                        af=auditor_factor,
-                        entry_reason=_econ_bad_reason,
-                        final_decision="REJECT_ECON_BAD_ENTRY",
-                        actual_recovery_checked=True,
-                        actual_recovery_allowed=False,
-                        actual_recovery_reason=f"recovery_blocked:{_probe_reason}",
-                        open_positions=_probe_ctx.get("open_positions", 0),
-                        idle_s=_probe_ctx.get("seconds_since_last_closed_trade", 0.0),
-                        forced=signal.get("forced", False),
-                    )
-                    # V10.13u+18b: Flush diagnostics before early return
-                    _maybe_flush_econ_bad_diagnostics()
-                    # V10.13u+18g: Emit from rejection path as production-safe fallback
-                    _maybe_emit_econ_bad_diag_from_reject(source="rde_reject")
-                    return None
-        else:
-            # Cannot override unsafe rejections (weak_af, weak_p, weak_coh)
-            log.info(
-                f"[ECON_BAD_ENTRY_BLOCK] symbol={sym} reason={_econ_bad_reason} "
+            log.warning(
+                f"[ECON_BAD_RECOVERY_PROBE] symbol={sym} kind={probe_kind_str} "
                 f"ev={ev:.4f} score={_score_adj:.3f} p={win_prob:.3f} coh={_coh:.3f} af={auditor_factor:.3f} "
-                f"pf={pf:.3f} net_pnl={_ECON_BAD_CACHE.get('net_pnl', 0.0):.6f}"
+                f"size_mult={override['size_mult']:.3f} reason={override['reason']}"
             )
-            track_blocked(reason="ECON_BAD_ENTRY")
-            print(f"    decision=REJECT_ECON_BAD_ENTRY  {_econ_bad_reason}")
+
+            track_blocked(reason="ECON_BAD_RECOVERY_PROBE")
+            print(f"    [ECON_BAD_RECOVERY_PROBE] {sym} ev={ev:.4f} size×{override['size_mult']:.2f}")
+            # Continue to TAKE with probe metadata attached
+        else:
+            # Recovery/deadlock override not allowed — reject with trace
             # V10.13u+18: Track near-miss for diagnostics
             _update_econ_bad_near_miss(
                 symbol=sym, regime=regime, ev=ev, score=_score_adj, win_prob=win_prob,
                 coherence=_coh, auditor_factor=auditor_factor, block_reason=_econ_bad_reason
             )
-            # V10.13u+19c: Trace actual return path (non-overridable rejection)
+            # V10.13u+19d: Trace actual return path with recovery override decision
             _trace_econ_bad_entry_return(
                 symbol=sym,
                 ev=ev,
@@ -3610,13 +3633,15 @@ def evaluate_signal(signal):
                 af=auditor_factor,
                 entry_reason=_econ_bad_reason,
                 final_decision="REJECT_ECON_BAD_ENTRY",
-                actual_recovery_checked=False,
-                actual_recovery_allowed=False,
-                actual_recovery_reason="not_overridable",
+                actual_recovery_checked=override["checked"],
+                actual_recovery_allowed=override["allowed"],
+                actual_recovery_reason=override["reason"],
                 open_positions=_probe_ctx.get("open_positions", 0),
                 idle_s=_probe_ctx.get("seconds_since_last_closed_trade", 0.0),
                 forced=signal.get("forced", False),
             )
+            track_blocked(reason="ECON_BAD_ENTRY")
+            print(f"    decision=REJECT_ECON_BAD_ENTRY  {_econ_bad_reason}")
             # V10.13u+18b: Flush diagnostics before early return
             _maybe_flush_econ_bad_diagnostics()
             # V10.13u+18g: Emit from rejection path as production-safe fallback
