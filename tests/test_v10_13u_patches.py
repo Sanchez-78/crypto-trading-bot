@@ -3000,5 +3000,303 @@ def test_v10_13u18g_no_decision_change():
     assert result is None, "Helper should return None (observability only)"
 
 
+# ════════════════════════════════════════════════════════════════════════════════
+# V10.13u+19: ECON BAD no-trade deadlock near-miss probe
+# ════════════════════════════════════════════════════════════════════════════════
+
+def test_v10_13u19_allows_near_miss_after_12h_idle(monkeypatch):
+    """V10.13u+19: Allow deadlock probe after 12h idle."""
+    from src.services import realtime_decision_engine as rde
+
+    signal = {
+        "ev": 0.0370,
+        "score": 0.183,
+        "p": 0.824,
+        "coh": 0.741,
+        "af": 0.750,
+    }
+
+    ctx = {
+        "ev": 0.0370,
+        "score": 0.183,
+        "p": 0.824,
+        "coh": 0.741,
+        "af": 0.750,
+        "seconds_since_last_closed_trade": 13 * 3600,  # 13 hours
+        "open_positions": 0,
+    }
+
+    monkeypatch.setattr(
+        "src.services.learning_monitor.lm_economic_health",
+        lambda: {"status": "BAD", "profit_factor": 0.739},
+    )
+    monkeypatch.setattr(rde, "get_econ_bad_diagnostics_snapshot", lambda: {"total_econ_bad_blocks": 60})
+
+    allowed, reason, meta = rde._econ_bad_deadlock_nearmiss_probe_allowed(signal, ctx)
+
+    assert allowed, f"Should allow after 12h idle, but got: {reason}"
+    assert meta["size_mult"] == 0.08
+
+
+def test_v10_13u19_blocks_before_12h_idle(monkeypatch):
+    """V10.13u+19: Block before 12h idle."""
+    from src.services import realtime_decision_engine as rde
+
+    signal = {
+        "ev": 0.0370,
+        "score": 0.183,
+        "p": 0.824,
+        "coh": 0.741,
+        "af": 0.750,
+    }
+
+    ctx = {
+        "seconds_since_last_closed_trade": 6 * 3600,  # 6 hours
+        "open_positions": 0,
+    }
+
+    monkeypatch.setattr(
+        "src.services.learning_monitor.lm_economic_health",
+        lambda: {"status": "BAD", "profit_factor": 0.739},
+    )
+
+    allowed, reason, meta = rde._econ_bad_deadlock_nearmiss_probe_allowed(signal, ctx)
+
+    assert not allowed
+    assert reason == "idle_too_short"
+
+
+def test_v10_13u19_blocks_ev_below_floor(monkeypatch):
+    """V10.13u+19: Block EV below 0.0370."""
+    from src.services import realtime_decision_engine as rde
+
+    signal = {
+        "ev": 0.0360,  # Below 0.0370
+        "score": 0.183,
+        "p": 0.824,
+        "coh": 0.741,
+        "af": 0.750,
+    }
+
+    ctx = {
+        "seconds_since_last_closed_trade": 13 * 3600,
+        "open_positions": 0,
+    }
+
+    monkeypatch.setattr(
+        "src.services.learning_monitor.lm_economic_health",
+        lambda: {"status": "BAD", "profit_factor": 0.739},
+    )
+
+    allowed, reason, meta = rde._econ_bad_deadlock_nearmiss_probe_allowed(signal, ctx)
+
+    assert not allowed
+    assert reason == "below_deadlock_ev"
+
+
+def test_v10_13u19_blocks_negative_ev(monkeypatch):
+    """V10.13u+19: Block negative EV."""
+    from src.services import realtime_decision_engine as rde
+
+    signal = {
+        "ev": -0.001,
+        "score": 0.183,
+        "p": 0.824,
+        "coh": 0.741,
+        "af": 0.750,
+    }
+
+    ctx = {
+        "seconds_since_last_closed_trade": 13 * 3600,
+        "open_positions": 0,
+    }
+
+    monkeypatch.setattr(
+        "src.services.learning_monitor.lm_economic_health",
+        lambda: {"status": "BAD", "profit_factor": 0.739},
+    )
+
+    allowed, reason, meta = rde._econ_bad_deadlock_nearmiss_probe_allowed(signal, ctx)
+
+    assert not allowed
+    assert reason == "negative_ev"
+
+
+def test_v10_13u19_blocks_weak_p(monkeypatch):
+    """V10.13u+19: Block p < 0.700."""
+    from src.services import realtime_decision_engine as rde
+
+    signal = {
+        "ev": 0.0370,
+        "score": 0.183,
+        "p": 0.650,  # Below 0.700
+        "coh": 0.741,
+        "af": 0.750,
+    }
+
+    ctx = {
+        "seconds_since_last_closed_trade": 13 * 3600,
+        "open_positions": 0,
+    }
+
+    monkeypatch.setattr(
+        "src.services.learning_monitor.lm_economic_health",
+        lambda: {"status": "BAD", "profit_factor": 0.739},
+    )
+
+    allowed, reason, meta = rde._econ_bad_deadlock_nearmiss_probe_allowed(signal, ctx)
+
+    assert not allowed
+    assert reason == "weak_p"
+
+
+def test_v10_13u19_blocks_weak_coh(monkeypatch):
+    """V10.13u+19: Block coh < 0.700."""
+    from src.services import realtime_decision_engine as rde
+
+    signal = {
+        "ev": 0.0370,
+        "score": 0.183,
+        "p": 0.824,
+        "coh": 0.650,  # Below 0.700
+        "af": 0.750,
+    }
+
+    ctx = {
+        "seconds_since_last_closed_trade": 13 * 3600,
+        "open_positions": 0,
+    }
+
+    monkeypatch.setattr(
+        "src.services.learning_monitor.lm_economic_health",
+        lambda: {"status": "BAD", "profit_factor": 0.739},
+    )
+
+    allowed, reason, meta = rde._econ_bad_deadlock_nearmiss_probe_allowed(signal, ctx)
+
+    assert not allowed
+    assert reason == "weak_coh"
+
+
+def test_v10_13u19_blocks_weak_af(monkeypatch):
+    """V10.13u+19: Block af < 0.740."""
+    from src.services import realtime_decision_engine as rde
+
+    signal = {
+        "ev": 0.0370,
+        "score": 0.183,
+        "p": 0.824,
+        "coh": 0.741,
+        "af": 0.700,  # Below 0.740
+    }
+
+    ctx = {
+        "seconds_since_last_closed_trade": 13 * 3600,
+        "open_positions": 0,
+    }
+
+    monkeypatch.setattr(
+        "src.services.learning_monitor.lm_economic_health",
+        lambda: {"status": "BAD", "profit_factor": 0.739},
+    )
+
+    allowed, reason, meta = rde._econ_bad_deadlock_nearmiss_probe_allowed(signal, ctx)
+
+    assert not allowed
+    assert reason == "weak_af"
+
+
+def test_v10_13u19_blocks_forbidden_tags(monkeypatch):
+    """V10.13u+19: Block LOSS_CLUSTER, TOXIC, SPREAD tags."""
+    from src.services import realtime_decision_engine as rde
+
+    signal = {
+        "ev": 0.0370,
+        "score": 0.183,
+        "p": 0.824,
+        "coh": 0.741,
+        "af": 0.750,
+        "reason": "LOSS_CLUSTER",
+    }
+
+    ctx = {
+        "seconds_since_last_closed_trade": 13 * 3600,
+        "open_positions": 0,
+    }
+
+    monkeypatch.setattr(
+        "src.services.learning_monitor.lm_economic_health",
+        lambda: {"status": "BAD", "profit_factor": 0.739},
+    )
+
+    allowed, reason, meta = rde._econ_bad_deadlock_nearmiss_probe_allowed(signal, ctx)
+
+    assert not allowed
+    assert "forbidden_tag" in reason
+
+
+def test_v10_13u19_blocks_forced_signals(monkeypatch):
+    """V10.13u+19: Block forced exploration by default."""
+    from src.services import realtime_decision_engine as rde
+
+    signal = {
+        "ev": 0.0370,
+        "score": 0.183,
+        "p": 0.824,
+        "coh": 0.741,
+        "af": 0.750,
+        "forced": True,
+    }
+
+    ctx = {
+        "seconds_since_last_closed_trade": 13 * 3600,
+        "open_positions": 0,
+    }
+
+    monkeypatch.setattr(
+        "src.services.learning_monitor.lm_economic_health",
+        lambda: {"status": "BAD", "profit_factor": 0.739},
+    )
+
+    allowed, reason, meta = rde._econ_bad_deadlock_nearmiss_probe_allowed(signal, ctx)
+
+    assert not allowed
+    assert reason == "forced_deadlock_probe_disabled"
+
+
+def test_v10_13u19_enforces_cooldown(monkeypatch):
+    """V10.13u+19: Block if cooldown active."""
+    from src.services import realtime_decision_engine as rde
+    import time as _time_module
+
+    signal = {
+        "ev": 0.0370,
+        "score": 0.183,
+        "p": 0.824,
+        "coh": 0.741,
+        "af": 0.750,
+    }
+
+    ctx = {
+        "seconds_since_last_closed_trade": 13 * 3600,
+        "open_positions": 0,
+    }
+
+    monkeypatch.setattr(
+        "src.services.learning_monitor.lm_economic_health",
+        lambda: {"status": "BAD", "profit_factor": 0.739},
+    )
+    monkeypatch.setattr(rde, "get_econ_bad_diagnostics_snapshot", lambda: {"total_econ_bad_blocks": 60})
+
+    # Simulate first probe being taken (integration code would do this)
+    now = _time_module.time()
+    rde._ECON_BAD_DEADLOCK_PROBE_STATE["last_probe_ts"] = now
+
+    # Now second probe should be blocked by cooldown
+    allowed2, reason2, meta2 = rde._econ_bad_deadlock_nearmiss_probe_allowed(signal, ctx)
+    assert not allowed2
+    assert reason2 == "cooldown_active"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

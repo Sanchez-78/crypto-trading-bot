@@ -76,6 +76,27 @@ ECON_BAD_PROBE_COOLDOWN_S = 1800             # 30 min between probes
 ECON_BAD_PROBE_MAX_OPEN = 1                  # Max 1 open probe position
 ECON_BAD_PROBE_MAX_PER_HOUR = 2              # Max 2 probes/hour
 
+# V10.13u+19: ECON BAD no-trade deadlock near-miss probe
+ECON_BAD_DEADLOCK_PROBE_ENABLED = True
+ECON_BAD_DEADLOCK_MIN_IDLE_S = 12 * 3600         # 12 hours
+ECON_BAD_DEADLOCK_MIN_TOTAL_BLOCKS = 50
+ECON_BAD_DEADLOCK_MIN_EV = 0.0370
+ECON_BAD_DEADLOCK_MAX_EV = 0.0380
+ECON_BAD_DEADLOCK_MIN_SCORE = 0.180
+ECON_BAD_DEADLOCK_MIN_P = 0.700
+ECON_BAD_DEADLOCK_MIN_COH = 0.700
+ECON_BAD_DEADLOCK_MIN_AF = 0.740
+ECON_BAD_DEADLOCK_SIZE_MULT = 0.08
+ECON_BAD_DEADLOCK_COOLDOWN_S = 3 * 3600         # 3 hours
+ECON_BAD_DEADLOCK_MAX_OPEN = 1
+ECON_BAD_DEADLOCK_MAX_PER_24H = 4
+
+_ECON_BAD_DEADLOCK_PROBE_STATE = {
+    "last_probe_ts": 0.0,
+    "probe_ts_24h": [],
+    "last_block_log_ts": 0.0,
+}
+
 _ECON_BAD_PROBE_STATE = {
     "last_probe_ts": 0.0,
     "probe_ts": [],
@@ -749,6 +770,114 @@ def _econ_bad_recovery_probe_allowed(signal: dict, ctx: dict) -> tuple[bool, str
         return False, "probe_hourly_cap"
 
     return True, "controlled_probe"
+
+
+def _econ_bad_deadlock_nearmiss_probe_allowed(signal: dict, ctx: dict | None = None) -> tuple[bool, str, dict]:
+    """V10.13u+19: allow tiny probe after long no-trade ECON BAD deadlock.
+
+    Observability + narrow execution valve for near-miss just below normal probe floor.
+    Never overrides negative EV, weak quality, close-lock, forced weak signals, or position cap.
+
+    Returns: (allowed: bool, reason: str, meta: dict)
+    """
+    meta = {}
+    now = _time.time()
+    ctx = ctx or {}
+
+    # 1. Feature enabled
+    if not ECON_BAD_DEADLOCK_PROBE_ENABLED:
+        return False, "feature_disabled", meta
+
+    # 2. ECON BAD check
+    try:
+        from src.services.learning_monitor import lm_economic_health
+        health = lm_economic_health()
+        econ_status = health.get("status", "UNKNOWN")
+        if econ_status != "BAD":
+            return False, "econ_not_bad", meta
+        meta["pf"] = health.get("profit_factor", 1.0)
+        meta["econ_status"] = econ_status
+        meta["pf_source"] = health.get("pf_source", "unknown")
+    except Exception:
+        return False, "econ_check_failed", meta
+
+    # 3. EV hard floor
+    ev = float(signal.get("ev", ctx.get("ev", 0.0)) or 0.0)
+    if ev <= 0:
+        return False, "negative_ev", meta
+    if ev < ECON_BAD_DEADLOCK_MIN_EV:
+        return False, "below_deadlock_ev", meta
+    if ev >= ECON_BAD_DEADLOCK_MAX_EV:
+        return False, "use_normal_recovery_probe", meta
+
+    # 4. Strong metric floors
+    score = float(signal.get("score", ctx.get("score", 0.0)) or 0.0)
+    p = float(signal.get("p", ctx.get("p", 0.0)) or 0.0)
+    coh = float(signal.get("coh", ctx.get("coh", 0.0)) or 0.0)
+    af = float(signal.get("af", ctx.get("af", 0.0)) or 0.0)
+
+    if score < ECON_BAD_DEADLOCK_MIN_SCORE:
+        return False, "weak_score", meta
+    if p < ECON_BAD_DEADLOCK_MIN_P:
+        return False, "weak_p", meta
+    if coh < ECON_BAD_DEADLOCK_MIN_COH:
+        return False, "weak_coh", meta
+    if af < ECON_BAD_DEADLOCK_MIN_AF:
+        return False, "weak_af", meta
+
+    # 5. Forbidden tags
+    reason_tag = str(signal.get("reason", ctx.get("reason", ""))).upper()
+    block_reason_tag = str(signal.get("block_reason", ctx.get("block_reason", ""))).upper()
+    reject_reason_tag = str(signal.get("reject_reason", ctx.get("reject_reason", ""))).upper()
+    tags_str = f"{reason_tag} {block_reason_tag} {reject_reason_tag}"
+
+    forbidden_tags = ("LOSS_CLUSTER", "TOXIC", "SPREAD", "NEGATIVE_EV", "FAST_FAIL",
+                      "FORCED_EXPLORE_GATE", "OFI_TOXIC", "PAIR_BLOCK")
+    for tag in forbidden_tags:
+        if tag in tags_str:
+            return False, f"forbidden_tag_{tag.lower()}", meta
+
+    # 6. Forced signal check
+    if bool(signal.get("forced", False)):
+        return False, "forced_deadlock_probe_disabled", meta
+
+    # 7. Open position cap
+    open_positions = int(ctx.get("open_positions", signal.get("open_positions", 0)) or 0)
+    if open_positions >= ECON_BAD_DEADLOCK_MAX_OPEN:
+        return False, "max_open_positions", meta
+
+    # 8. No-trade idle check
+    idle_s = float(ctx.get("seconds_since_last_closed_trade", 0.0) or 0.0)
+    if idle_s < ECON_BAD_DEADLOCK_MIN_IDLE_S:
+        return False, "idle_too_short", meta
+    meta["idle_s"] = idle_s
+
+    # 9. Diagnostic evidence
+    try:
+        snap = get_econ_bad_diagnostics_snapshot()
+        total_blocks = int(snap.get("total_econ_bad_blocks", 0) or 0)
+        if total_blocks < ECON_BAD_DEADLOCK_MIN_TOTAL_BLOCKS:
+            return False, "insufficient_diagnostic_blocks", meta
+        meta["total_blocks"] = total_blocks
+    except Exception:
+        return False, "diagnostic_check_failed", meta
+
+    # 10. Cooldown check
+    last_probe_ts = float(_ECON_BAD_DEADLOCK_PROBE_STATE.get("last_probe_ts", 0.0))
+    if last_probe_ts and (now - last_probe_ts) < ECON_BAD_DEADLOCK_COOLDOWN_S:
+        return False, "cooldown_active", meta
+
+    # 11. Per-24h cap (clean old probes)
+    probe_ts_24h = [t for t in _ECON_BAD_DEADLOCK_PROBE_STATE.get("probe_ts_24h", [])
+                    if now - t < 86400]
+    if len(probe_ts_24h) >= ECON_BAD_DEADLOCK_MAX_PER_24H:
+        return False, "max_per_24h", meta
+
+    # Allowed
+    meta["size_mult"] = ECON_BAD_DEADLOCK_SIZE_MULT
+    meta["probe_reason"] = "no_trade_nearmiss"
+    meta["version"] = "V10.13u+19"
+    return True, "deadlock_nearmiss_probe", meta
 
 
 def build_decision_ctx(
@@ -3224,23 +3353,52 @@ def evaluate_signal(signal):
                 print(f"    [ECON_BAD_RECOVERY_PROBE] {sym} ev={ev:.4f} size×{ECON_BAD_PROBE_SIZE_MULT:.2f}")
                 # Continue to TAKE with probe metadata attached
             else:
-                # Recovery blocked, hard reject
-                log.info(
-                    f"[ECON_BAD_RECOVERY_BLOCK] symbol={sym} entry_reason={_econ_bad_reason} probe_reason={_probe_reason} "
-                    f"ev={ev:.4f} score={_score_adj:.3f} p={win_prob:.3f} coh={_coh:.3f} af={auditor_factor:.3f}"
-                )
-                track_blocked(reason="ECON_BAD_ENTRY")
-                print(f"    decision=REJECT_ECON_BAD_ENTRY  {_econ_bad_reason} (probe blocked: {_probe_reason})")
-                # V10.13u+18: Track near-miss for diagnostics
-                _update_econ_bad_near_miss(
-                    symbol=sym, regime=regime, ev=ev, score=_score_adj, win_prob=win_prob,
-                    coherence=_coh, auditor_factor=auditor_factor, block_reason=_econ_bad_reason
-                )
-                # V10.13u+18b: Flush diagnostics before early return
-                _maybe_flush_econ_bad_diagnostics()
-                # V10.13u+18g: Emit from rejection path as production-safe fallback
-                _maybe_emit_econ_bad_diag_from_reject(source="rde_reject")
-                return None
+                # Recovery blocked; check V10.13u+19 deadlock probe
+                _deadlock_allowed, _deadlock_reason, _deadlock_meta = _econ_bad_deadlock_nearmiss_probe_allowed(signal, _probe_ctx)
+
+                if _deadlock_allowed and _probe_reason == "probe_ev_too_low":
+                    # Allow deadlock probe with even smaller size
+                    now = _time.time()
+                    _ECON_BAD_DEADLOCK_PROBE_STATE["last_probe_ts"] = now
+                    _ECON_BAD_DEADLOCK_PROBE_STATE.setdefault("probe_ts_24h", []).append(now)
+
+                    # Attach deadlock probe metadata to signal
+                    signal["_econ_bad_deadlock_probe"] = True
+                    signal["_deadlock_size_mult"] = ECON_BAD_DEADLOCK_SIZE_MULT
+
+                    # Apply size multiplier (0.08x)
+                    auditor_factor = auditor_factor * ECON_BAD_DEADLOCK_SIZE_MULT
+
+                    log.warning(
+                        f"[ECON_BAD_DEADLOCK_PROBE] symbol={sym} "
+                        f"ev={ev:.4f} score={_score_adj:.3f} p={win_prob:.3f} coh={_coh:.3f} af={auditor_factor:.3f} "
+                        f"pf={_deadlock_meta.get('pf', 1.0):.3f} idle_s={_deadlock_meta.get('idle_s', 0):.0f} "
+                        f"total_blocks={_deadlock_meta.get('total_blocks', 0)} size_mult={ECON_BAD_DEADLOCK_SIZE_MULT:.3f} "
+                        f"reason={_deadlock_reason}"
+                    )
+                    track_blocked(reason="ECON_BAD_DEADLOCK_PROBE")
+                    print(f"    [ECON_BAD_DEADLOCK_PROBE] {sym} ev={ev:.4f} size×{ECON_BAD_DEADLOCK_SIZE_MULT:.2f}")
+                    # Continue to TAKE with deadlock probe metadata attached
+                else:
+                    # Both normal and deadlock probes blocked, hard reject
+                    deadlock_block_reason = _deadlock_reason if not _deadlock_allowed else "normal_probe_ev_ok"
+                    log.info(
+                        f"[ECON_BAD_RECOVERY_BLOCK] symbol={sym} entry_reason={_econ_bad_reason} probe_reason={_probe_reason} "
+                        f"deadlock_reason={deadlock_block_reason} "
+                        f"ev={ev:.4f} score={_score_adj:.3f} p={win_prob:.3f} coh={_coh:.3f} af={auditor_factor:.3f}"
+                    )
+                    track_blocked(reason="ECON_BAD_ENTRY")
+                    print(f"    decision=REJECT_ECON_BAD_ENTRY  {_econ_bad_reason} (probe blocked: {_probe_reason})")
+                    # V10.13u+18: Track near-miss for diagnostics
+                    _update_econ_bad_near_miss(
+                        symbol=sym, regime=regime, ev=ev, score=_score_adj, win_prob=win_prob,
+                        coherence=_coh, auditor_factor=auditor_factor, block_reason=_econ_bad_reason
+                    )
+                    # V10.13u+18b: Flush diagnostics before early return
+                    _maybe_flush_econ_bad_diagnostics()
+                    # V10.13u+18g: Emit from rejection path as production-safe fallback
+                    _maybe_emit_econ_bad_diag_from_reject(source="rde_reject")
+                    return None
         else:
             # Cannot override unsafe rejections (weak_af, weak_p, weak_coh)
             log.info(
