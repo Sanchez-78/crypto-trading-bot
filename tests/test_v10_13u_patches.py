@@ -3727,5 +3727,205 @@ def test_v10_13u19d_no_global_threshold_change():
     assert rde.ECON_BAD_DEADLOCK_MAX_EV == 0.0380, "Deadlock max EV should be 0.0380"
 
 
+def test_v10_13u19e_below_probe_ev_reason_propagates(caplog):
+    """V10.13u+19e: Weak-EV reject below recovery/deadlock floors logs exact actual reason."""
+    from src.services.realtime_decision_engine import (
+        _normalize_econ_bad_override_result,
+        _trace_econ_bad_entry_return,
+    )
+
+    override = _normalize_econ_bad_override_result({
+        "checked": True,
+        "allowed": False,
+        "reason": "below_probe_ev",
+        "kind": None,
+        "size_mult": None,
+        "meta": {},
+    })
+
+    signal = {
+        "symbol": "XRPUSDT",
+        "ev": 0.0338,
+        "score": 0.174,
+        "p": 0.500,
+        "coh": 0.675,
+        "af": 0.595,
+    }
+    ctx = {
+        "open_positions": 0,
+        "idle_s": 1234,
+        "forced": False,
+        "snapshot_probe_ready": False,
+        "snapshot_probe_block": "below_probe_ev",
+    }
+
+    _trace_econ_bad_entry_return(
+        signal=signal,
+        ctx=ctx,
+        entry_reason="weak_ev (ev=0.0338<0.045)",
+        override=override,
+        final_decision="REJECT_ECON_BAD_ENTRY",
+    )
+
+    assert "[ECON_BAD_ENTRY_RETURN_TRACE]" in caplog.text
+    assert "actual_recovery_checked=True" in caplog.text
+    assert "actual_recovery_allowed=False" in caplog.text
+    assert "actual_recovery_reason=below_probe_ev" in caplog.text
+    assert "[ECON_BAD_READY_BUT_REJECTED]" not in caplog.text
+
+
+def test_v10_13u19e_snapshot_ready_does_not_trigger_invariant(caplog):
+    """V10.13u+19e: Snapshot readiness alone must not trigger READY_BUT_REJECTED."""
+    from src.services.realtime_decision_engine import (
+        _normalize_econ_bad_override_result,
+        _trace_econ_bad_entry_return,
+    )
+
+    override = _normalize_econ_bad_override_result({
+        "checked": True,
+        "allowed": False,
+        "reason": "below_probe_ev",
+        "kind": None,
+        "size_mult": None,
+        "meta": {},
+    })
+
+    signal = {
+        "symbol": "ADAUSDT",
+        "ev": 0.0338,
+        "score": 0.174,
+        "p": 0.523,
+        "coh": 0.675,
+        "af": 0.595,
+    }
+    ctx = {
+        "open_positions": 0,
+        "idle_s": 3000,
+        "forced": False,
+        "snapshot_probe_ready": True,
+        "snapshot_probe_block": "none",
+    }
+
+    _trace_econ_bad_entry_return(
+        signal=signal,
+        ctx=ctx,
+        entry_reason="weak_ev (ev=0.0338<0.045)",
+        override=override,
+        final_decision="REJECT_ECON_BAD_ENTRY",
+    )
+
+    assert "snapshot_probe_ready=True" in caplog.text
+    assert "snapshot_probe_block=none" in caplog.text
+    assert "actual_recovery_allowed=False" in caplog.text
+    assert "actual_recovery_reason=below_probe_ev" in caplog.text
+    assert "[ECON_BAD_READY_BUT_REJECTED]" not in caplog.text
+
+
+def test_v10_13u19e_actual_allowed_reject_triggers_invariant(caplog):
+    """V10.13u+19e: READY_BUT_REJECTED fires only if actual resolver allowed TAKE."""
+    from src.services.realtime_decision_engine import (
+        _normalize_econ_bad_override_result,
+        _trace_econ_bad_entry_return,
+    )
+
+    override = _normalize_econ_bad_override_result({
+        "checked": True,
+        "allowed": True,
+        "reason": "recovery_probe_allowed",
+        "kind": "recovery",
+        "size_mult": 0.15,
+        "meta": {},
+    })
+
+    signal = {
+        "symbol": "ADAUSDT",
+        "ev": 0.0434,
+        "score": 0.204,
+        "p": 0.523,
+        "coh": 0.868,
+        "af": 0.750,
+    }
+    ctx = {
+        "open_positions": 0,
+        "idle_s": 50000,
+        "forced": False,
+        "snapshot_probe_ready": True,
+        "snapshot_probe_block": "none",
+    }
+
+    _trace_econ_bad_entry_return(
+        signal=signal,
+        ctx=ctx,
+        entry_reason="weak_ev (ev=0.0434<0.045)",
+        override=override,
+        final_decision="REJECT_ECON_BAD_ENTRY",
+    )
+
+    assert "[ECON_BAD_READY_BUT_REJECTED]" in caplog.text
+    assert "actual_recovery_allowed=True" in caplog.text
+    assert "actual_recovery_reason=recovery_probe_allowed" in caplog.text
+
+
+def test_v10_13u19e_allowed_take_no_invariant(caplog):
+    """V10.13u+19e: Allowed recovery TAKE path is not an invariant violation."""
+    from src.services.realtime_decision_engine import (
+        _normalize_econ_bad_override_result,
+        _trace_econ_bad_entry_return,
+    )
+
+    override = _normalize_econ_bad_override_result({
+        "checked": True,
+        "allowed": True,
+        "reason": "recovery_probe_allowed",
+        "kind": "recovery",
+        "size_mult": 0.15,
+        "meta": {},
+    })
+
+    signal = {
+        "symbol": "ADAUSDT",
+        "ev": 0.0434,
+        "score": 0.204,
+        "p": 0.523,
+        "coh": 0.868,
+        "af": 0.750,
+    }
+    ctx = {"open_positions": 0, "idle_s": 50000, "forced": False}
+
+    _trace_econ_bad_entry_return(
+        signal=signal,
+        ctx=ctx,
+        entry_reason="weak_ev (ev=0.0434<0.045)",
+        override=override,
+        final_decision="TAKE",
+    )
+
+    assert "[ECON_BAD_ENTRY_RETURN_TRACE]" in caplog.text
+    assert "actual_recovery_allowed=True" in caplog.text
+    assert "final_decision=TAKE" in caplog.text
+    assert "[ECON_BAD_READY_BUT_REJECTED]" not in caplog.text
+
+
+def test_v10_13u19e_override_normalizer_handles_bad_input():
+    """V10.13u+19e: Normalizer is exception-safe."""
+    from src.services.realtime_decision_engine import _normalize_econ_bad_override_result
+
+    out = _normalize_econ_bad_override_result(None)
+
+    assert out["checked"] is False
+    assert out["allowed"] is False
+    assert out["reason"] == "not_overridable"
+    assert isinstance(out["meta"], dict)
+
+
+def test_v10_13u19e_no_threshold_changes():
+    """V10.13u+19e: No global thresholds loosened."""
+    from src.services import realtime_decision_engine as rde
+
+    # Verify key constants unchanged
+    assert rde.ECON_BAD_DEADLOCK_MIN_EV == 0.0370, "Deadlock min EV should be 0.0370"
+    assert rde.ECON_BAD_DEADLOCK_MAX_EV == 0.0380, "Deadlock max EV should be 0.0380"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -568,26 +568,50 @@ def _trace_econ_bad_recovery_decision(
 
 def _trace_econ_bad_entry_return(
     *,
-    symbol: str,
-    ev: float,
-    score: float,
-    p: float,
-    coh: float,
-    af: float,
-    entry_reason: str,
-    final_decision: str,
+    symbol: str = None,
+    ev: float = None,
+    score: float = None,
+    p: float = None,
+    coh: float = None,
+    af: float = None,
+    entry_reason: str = None,
+    final_decision: str = None,
     actual_recovery_checked: bool = False,
     actual_recovery_allowed: bool = False,
     actual_recovery_reason: str = "not_checked",
     open_positions: int = 0,
     idle_s: float = 0.0,
     forced: bool = False,
+    signal: dict = None,
+    ctx: dict = None,
+    override: dict = None,
 ) -> None:
-    """V10.13u+19c: Trace actual production return path for ECON BAD entry rejection.
+    """V10.13u+19c/19e: Trace actual production return path for ECON BAD entry rejection.
 
     Observability only. Never raises. No Firebase writes. Captures full decision context.
+    V10.13u+19e: Accepts override dict to derive checked/allowed/reason from resolver.
     """
     try:
+        # Derive values from signal/ctx if not provided
+        if signal and symbol is None:
+            symbol = signal.get("symbol", "UNKNOWN")
+        if signal and ev is None:
+            ev = signal.get("ev", 0.0)
+        if signal and score is None:
+            score = signal.get("score", 0.0)
+        if signal and p is None:
+            p = signal.get("p", 0.0)
+        if signal and coh is None:
+            coh = signal.get("coh", 0.0)
+        if signal and af is None:
+            af = signal.get("af", 0.0)
+
+        # Use override dict if provided (V10.13u+19e)
+        if override and isinstance(override, dict):
+            actual_recovery_checked = bool(override.get("checked", actual_recovery_checked))
+            actual_recovery_allowed = bool(override.get("allowed", actual_recovery_allowed))
+            actual_recovery_reason = str(override.get("reason", actual_recovery_reason))
+
         snap = get_econ_bad_diagnostics_snapshot()
         pf = snap.get("pf")
         econ_status = snap.get("econ_status")
@@ -602,7 +626,7 @@ def _trace_econ_bad_entry_return(
             "actual_recovery_checked=%s actual_recovery_allowed=%s "
             "actual_recovery_reason=%s open_positions=%s idle_s=%.0f forced=%s "
             "final_decision=%s",
-            symbol,
+            symbol or "UNKNOWN",
             float(ev or 0.0),
             float(score or 0.0),
             float(p or 0.0),
@@ -610,7 +634,7 @@ def _trace_econ_bad_entry_return(
             float(af or 0.0),
             pf,
             econ_status,
-            entry_reason,
+            entry_reason or "unknown",
             snapshot_ready,
             snapshot_block_reason,
             actual_recovery_checked,
@@ -619,11 +643,11 @@ def _trace_econ_bad_entry_return(
             open_positions,
             float(idle_s or 0.0),
             forced,
-            final_decision,
+            final_decision or "UNKNOWN",
         )
 
         # Ready-but-rejected invariant: actual recovery was checked, allowed, but final reject still happened
-        # V10.13u+19d: Use actual_recovery_allowed, not snapshot_probe_ready (snapshot may be stale)
+        # V10.13u+19d/19e: Use actual_recovery_allowed from override, not snapshot_probe_ready (snapshot may be stale)
         if (
             actual_recovery_checked is True
             and actual_recovery_allowed is True
@@ -1131,6 +1155,43 @@ def _resolve_econ_bad_recovery_override_for_signal(
             "allowed": False,
             "reason": f"override_check_error:{str(exc)[:50]}",
             "kind": "none",
+            "size_mult": None,
+            "meta": {},
+        }
+
+
+def _normalize_econ_bad_override_result(result: object, default_reason: str = "not_overridable") -> dict:
+    """V10.13u+19e: Normalize recovery/deadlock override result for logging.
+
+    Ensures consistent dict shape for trace logging. Never raises.
+    Used to sanitize resolver output before passing to trace functions.
+    """
+    try:
+        if not isinstance(result, dict):
+            return {
+                "checked": False,
+                "allowed": False,
+                "reason": default_reason,
+                "kind": None,
+                "size_mult": None,
+                "meta": {},
+            }
+
+        reason = result.get("reason") or default_reason
+        return {
+            "checked": bool(result.get("checked", True)),
+            "allowed": bool(result.get("allowed", False)),
+            "reason": str(reason),
+            "kind": result.get("kind"),
+            "size_mult": result.get("size_mult"),
+            "meta": result.get("meta") if isinstance(result.get("meta"), dict) else {},
+        }
+    except Exception:
+        return {
+            "checked": False,
+            "allowed": False,
+            "reason": "normalize_error",
+            "kind": None,
             "size_mult": None,
             "meta": {},
         }
