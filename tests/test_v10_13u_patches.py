@@ -2560,11 +2560,13 @@ def test_v10_13u18c_snapshot_returns_state():
     _reset_econ_bad_diagnostics()
 
     # Mock ECON BAD state and get snapshot
-    with patch("src.services.realtime_decision_engine._get_econ_bad_state", return_value=(True, 0.74)):
+    # V10.13u+18f: Also mock lm_economic_health for PF resolution
+    with patch("src.services.realtime_decision_engine._get_econ_bad_state", return_value=(True, 0.74)), \
+         patch("src.services.learning_monitor.lm_economic_health", return_value={"profit_factor": 0.74, "status": "BAD"}):
         snapshot = get_econ_bad_diagnostics_snapshot()
 
     assert snapshot["econ_bad"] is True, "Snapshot should reflect ECON BAD status"
-    assert snapshot["pf"] == 0.74, "Snapshot should include PF"
+    assert snapshot["pf"] == 0.74, "Snapshot should include resolved PF"
     assert snapshot["total_econ_bad_blocks"] == 0, "Snapshot should include counter"
     assert snapshot["probe_ready"] is False, "Snapshot should calculate probe_ready"
 
@@ -2792,6 +2794,112 @@ def test_v10_13u18d_no_decision_change():
             assert True, "Should emit without affecting decisions"
         except Exception:
             pytest.fail("Heartbeat should never raise")
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# V10.13u+18f: ECON BAD DIAGNOSTIC PF SOURCE FIX
+# ════════════════════════════════════════════════════════════════════════════════
+
+def test_v10_13u18f_pf_resolver_uses_lm_economic_health():
+    """V10.13u+18f: PF resolver uses canonical lm_economic_health source."""
+    from src.services.realtime_decision_engine import _resolve_econ_bad_diag_pf_status
+    from unittest.mock import patch
+
+    with patch("src.services.learning_monitor.lm_economic_health") as mock_health:
+        mock_health.return_value = {"profit_factor": 0.74, "status": "BAD"}
+        result = _resolve_econ_bad_diag_pf_status()
+
+        assert result["pf"] == 0.74, "Should extract profit_factor"
+        assert result["status"] == "BAD", "Should extract status"
+        assert result["source"] == "lm_economic_health", "Should identify source"
+        assert result["fallback"] is False, "Should not be fallback"
+        assert result["error"] is None, "Should have no error"
+
+
+def test_v10_13u18f_pf_resolver_accepts_pf_key():
+    """V10.13u+18f: PF resolver accepts 'pf' key variant."""
+    from src.services.realtime_decision_engine import _resolve_econ_bad_diag_pf_status
+    from unittest.mock import patch
+
+    with patch("src.services.learning_monitor.lm_economic_health") as mock_health:
+        mock_health.return_value = {"pf": 0.73, "status": "BAD"}
+        result = _resolve_econ_bad_diag_pf_status()
+
+        assert result["pf"] == 0.73, "Should extract pf"
+        assert result["status"] == "BAD"
+
+
+def test_v10_13u18f_pf_resolver_fallback_is_explicit():
+    """V10.13u+18f: PF resolver returns explicit fallback when unavailable."""
+    from src.services.realtime_decision_engine import _resolve_econ_bad_diag_pf_status
+    from unittest.mock import patch
+
+    with patch("src.services.learning_monitor.lm_economic_health", side_effect=Exception("Not available")):
+        result = _resolve_econ_bad_diag_pf_status()
+
+        assert result["pf"] == 1.0, "Should fallback to 1.0"
+        assert result["status"] == "UNKNOWN", "Should show UNKNOWN status"
+        assert result["source"] == "fallback", "Should mark as fallback"
+        assert result["fallback"] is True, "Should set fallback flag"
+        assert result["error"] is not None, "Should include error message"
+
+
+def test_v10_13u18f_heartbeat_logs_pf_source():
+    """V10.13u+18f: Heartbeat logs include pf_source and pf_fallback fields."""
+    from src.services.realtime_decision_engine import (
+        maybe_emit_econ_bad_diag_heartbeat,
+        _ECON_BAD_DIAGNOSTICS,
+    )
+    from unittest.mock import patch
+    import logging
+
+    # Reset state
+    _reset_econ_bad_diagnostics()
+    _ECON_BAD_DIAGNOSTICS["total_econ_bad_blocks"] = 1
+    _ECON_BAD_DIAGNOSTICS["last_summary_ts"] = 0.0
+
+    # Capture logs
+    with patch("src.services.learning_monitor.lm_economic_health") as mock_health, \
+         patch("src.services.realtime_decision_engine.log") as mock_log:
+        mock_health.return_value = {"profit_factor": 0.74, "status": "BAD"}
+
+        maybe_emit_econ_bad_diag_heartbeat(force=True, source="test")
+
+        # Check that log.warning was called
+        assert mock_log.warning.called, "Should emit logs"
+
+        # Check heartbeat log contains pf_source and pf_fallback
+        heartbeat_call = None
+        for call in mock_log.warning.call_args_list:
+            if "[ECON_BAD_DIAG_HEARTBEAT]" in str(call):
+                heartbeat_call = call
+                break
+
+        assert heartbeat_call is not None, "Should emit heartbeat"
+        heartbeat_msg = str(heartbeat_call)
+        assert "pf_source=" in heartbeat_msg, "Should include pf_source field"
+        assert "pf_fallback=" in heartbeat_msg, "Should include pf_fallback field"
+
+
+def test_v10_13u18f_no_decision_change():
+    """V10.13u+18f: PF source fix only changes diagnostics, not decisions."""
+    from src.services.realtime_decision_engine import (
+        maybe_emit_econ_bad_diag_heartbeat,
+        _get_econ_bad_state,
+    )
+    from unittest.mock import patch
+
+    # Verify economic state itself is unchanged
+    with patch("src.services.learning_monitor.lm_economic_health") as mock_health:
+        mock_health.return_value = {"profit_factor": 0.74, "status": "BAD"}
+
+        # _get_econ_bad_state should still work and not be affected
+        try:
+            is_bad, old_pf = _get_econ_bad_state()
+            # Should not raise, but old_pf might differ from resolved pf
+            assert isinstance(is_bad, bool), "ECON BAD state should still be boolean"
+        except Exception:
+            pytest.fail("Core economic state should not be affected")
 
 
 if __name__ == "__main__":

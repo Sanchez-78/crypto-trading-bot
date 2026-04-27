@@ -267,11 +267,51 @@ def _maybe_flush_econ_bad_diagnostics(ctx: dict = None, *, force: bool = False) 
         pass
 
 
+def _resolve_econ_bad_diag_pf_status() -> dict:
+    """V10.13u+18f: Resolve PF/status from canonical economic health source.
+
+    Returns dict with keys: pf, status, source, fallback, error
+    Never raises. Always safe for diagnostics.
+    """
+    try:
+        from src.services.learning_monitor import lm_economic_health
+        health = lm_economic_health()
+
+        # Extract PF from known keys
+        pf = health.get("profit_factor") or health.get("pf") or health.get("canonical_pf") or 1.0
+        status = health.get("status") or health.get("economic_status") or health.get("alert") or "UNKNOWN"
+
+        return {
+            "pf": float(pf) if pf else 1.0,
+            "status": str(status) if status else "UNKNOWN",
+            "source": "lm_economic_health",
+            "fallback": False,
+            "error": None,
+        }
+    except Exception as e:
+        # Fallback when economic health unavailable
+        return {
+            "pf": 1.0,
+            "status": "UNKNOWN",
+            "source": "fallback",
+            "fallback": True,
+            "error": str(e)[:50],  # Short error for logs
+        }
+
+
 def get_econ_bad_diagnostics_snapshot(reset: bool = False) -> dict:
     """V10.13u+18c: Return ECON BAD diagnostic state snapshot. Never raises."""
     try:
-        is_bad, pf = _get_econ_bad_state()
+        is_bad, _ = _get_econ_bad_state()  # Ignore old pf, use resolved instead
         best = _ECON_BAD_DIAGNOSTICS.get("best_near_miss", {})
+
+        # V10.13u+18f: Resolve PF from canonical economic health source
+        pf_status = _resolve_econ_bad_diag_pf_status()
+        pf = pf_status["pf"]
+        econ_status = pf_status["status"]
+        pf_source = pf_status["source"]
+        pf_fallback = pf_status["fallback"]
+        pf_error = pf_status.get("error")
 
         probe_ready = (
             best.get("ev", -999) >= ECON_BAD_PROBE_MIN_EV
@@ -298,6 +338,10 @@ def get_econ_bad_diagnostics_snapshot(reset: bool = False) -> dict:
         snapshot = {
             "econ_bad": is_bad,
             "pf": pf,
+            "econ_status": econ_status,
+            "pf_source": pf_source,
+            "pf_fallback": pf_fallback,
+            "pf_error": pf_error,
             "total_econ_bad_blocks": _ECON_BAD_DIAGNOSTICS.get("total_econ_bad_blocks", 0),
             "hard_negative_ev_blocks": _ECON_BAD_DIAGNOSTICS.get("hard_negative_ev_blocks", 0),
             "weak_ev": _ECON_BAD_DIAGNOSTICS.get("weak_ev_blocks", 0),
@@ -359,10 +403,17 @@ def maybe_emit_econ_bad_diag_heartbeat(force: bool = False, source: str = "rde")
         best_coh_str = f"{snapshot['best_coh']:.3f}" if snapshot['best_coh'] else 'None'
         best_af_str = f"{snapshot['best_af']:.3f}" if snapshot['best_af'] else 'None'
 
+        # V10.13u+18f: Format PF source fields
+        pf_fallback_str = "true" if snapshot.get("pf_fallback") else "false"
+        pf_error_str = f" pf_error={snapshot['pf_error']}" if snapshot.get("pf_fallback") and snapshot.get("pf_error") else ""
+
         # Emit heartbeat at WARNING level for production visibility
         log.warning(
             f"[ECON_BAD_DIAG_HEARTBEAT] source={source} "
             f"pf={snapshot['pf']:.3f} "
+            f"econ_status={snapshot.get('econ_status', 'UNKNOWN')} "
+            f"pf_source={snapshot.get('pf_source', 'unknown')} "
+            f"pf_fallback={pf_fallback_str}{pf_error_str} "
             f"total={snapshot['total_econ_bad_blocks']} "
             f"neg_ev={snapshot['hard_negative_ev_blocks']} "
             f"weak_ev={snapshot['weak_ev']} "
@@ -381,9 +432,13 @@ def maybe_emit_econ_bad_diag_heartbeat(force: bool = False, source: str = "rde")
             f"probe_block={snapshot['probe_block_reason']}"
         )
 
-        # Also emit full summary at WARNING level
+        # Also emit full summary at WARNING level with PF source fields
         log.warning(
             f"[ECON_BAD_NEAR_MISS_SUMMARY] "
+            f"pf={snapshot['pf']:.3f} "
+            f"econ_status={snapshot.get('econ_status', 'UNKNOWN')} "
+            f"pf_source={snapshot.get('pf_source', 'unknown')} "
+            f"pf_fallback={pf_fallback_str}{pf_error_str} "
             f"total={snapshot['total_econ_bad_blocks']} "
             f"negative_ev={snapshot['hard_negative_ev_blocks']} "
             f"weak_ev={snapshot['weak_ev']} "
