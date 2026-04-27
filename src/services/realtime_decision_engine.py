@@ -243,6 +243,30 @@ def _log_no_trade_diagnostic():
     _ECON_BAD_DIAGNOSTICS["last_no_trade_diag_ts"] = now
 
 
+def _maybe_flush_econ_bad_diagnostics(ctx: dict = None, *, force: bool = False) -> None:
+    """V10.13u+18b: Observability-only flush. Never raises. Never alters decision.
+
+    Called before early-return rejection paths to ensure diagnostics are emitted.
+    Only flushes if ECON BAD is active and counters exist.
+    """
+    try:
+        is_bad, _pf = _get_econ_bad_state()
+        if not is_bad:
+            return
+
+        # Only flush if counters have been updated or forced
+        if _ECON_BAD_DIAGNOSTICS["total_econ_bad_blocks"] == 0 and not force:
+            return
+
+        # Emit summary (respects throttle, first summary allowed even if last_summary_ts==0)
+        now = _time.time()
+        if force or (now - _ECON_BAD_DIAGNOSTICS.get("last_summary_ts", 0.0) >= _ECON_BAD_DIAG_THROTTLE_S):
+            _log_econ_bad_near_miss_summary()
+    except Exception:
+        # Never allow diagnostics to crash or affect decision
+        pass
+
+
 def _get_cached_history():
     """Get history with local caching - only refreshes every 6 hours.
 
@@ -2862,6 +2886,12 @@ def evaluate_signal(signal):
         print(f"    decision=REJECT_NEGATIVE_EV  ev={ev:.4f} ≤ 0 (EV-only violation)")
         track_blocked(reason="NEGATIVE_EV_REJECTION")
         log.warning(f"[V10.13t] {sym}: Rejected negative/zero EV (ev={ev:.4f}) — hard enforcement of EV-only principle")
+        # V10.13u+18b: Track negative EV rejections and flush diagnostics
+        is_bad, _pf = _get_econ_bad_state()
+        if is_bad:
+            _ECON_BAD_DIAGNOSTICS["hard_negative_ev_blocks"] += 1
+            _ECON_BAD_DIAGNOSTICS["total_econ_bad_blocks"] += 1
+            _maybe_flush_econ_bad_diagnostics()
         return None
 
     # ════════════════════════════════════════════════════════════════════════════════
@@ -2973,6 +3003,8 @@ def evaluate_signal(signal):
                     symbol=sym, regime=regime, ev=ev, score=_score_adj, win_prob=win_prob,
                     coherence=_coh, auditor_factor=auditor_factor, block_reason=_econ_bad_reason
                 )
+                # V10.13u+18b: Flush diagnostics before early return
+                _maybe_flush_econ_bad_diagnostics()
                 return None
         else:
             # Cannot override unsafe rejections (weak_af, weak_p, weak_coh)
@@ -2988,6 +3020,8 @@ def evaluate_signal(signal):
                 symbol=sym, regime=regime, ev=ev, score=_score_adj, win_prob=win_prob,
                 coherence=_coh, auditor_factor=auditor_factor, block_reason=_econ_bad_reason
             )
+            # V10.13u+18b: Flush diagnostics before early return
+            _maybe_flush_econ_bad_diagnostics()
             return None
 
     # V10.13u+16: Forced exploration gate during ECON BAD
@@ -3005,6 +3039,8 @@ def evaluate_signal(signal):
             symbol=sym, regime=regime, ev=ev, score=_score_adj, win_prob=win_prob,
             coherence=_coh, auditor_factor=auditor_factor, block_reason=_forced_reason, forced=True
         )
+        # V10.13u+18b: Flush diagnostics before early return
+        _maybe_flush_econ_bad_diagnostics()
         return None
 
     # V10.13u+16: Log guard activation (throttled)
