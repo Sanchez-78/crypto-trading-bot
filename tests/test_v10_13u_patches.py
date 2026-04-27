@@ -2544,5 +2544,136 @@ def test_v10_13u18b_no_decision_semantics_change():
     assert _ECON_BAD_DIAGNOSTICS["total_econ_bad_blocks"] == 0
 
 
+# ════════════════════════════════════════════════════════════════════════════════
+# V10.13u+18c: ECON BAD DIAGNOSTIC HEARTBEAT
+# ════════════════════════════════════════════════════════════════════════════════
+
+def test_v10_13u18c_snapshot_returns_state():
+    """V10.13u+18c: get_econ_bad_diagnostics_snapshot() returns diagnostic state."""
+    from src.services.realtime_decision_engine import (
+        get_econ_bad_diagnostics_snapshot,
+        _ECON_BAD_DIAGNOSTICS,
+    )
+    from unittest.mock import patch
+
+    # Reset
+    _reset_econ_bad_diagnostics()
+
+    # Mock ECON BAD state and get snapshot
+    with patch("src.services.realtime_decision_engine._get_econ_bad_state", return_value=(True, 0.74)):
+        snapshot = get_econ_bad_diagnostics_snapshot()
+
+    assert snapshot["econ_bad"] is True, "Snapshot should reflect ECON BAD status"
+    assert snapshot["pf"] == 0.74, "Snapshot should include PF"
+    assert snapshot["total_econ_bad_blocks"] == 0, "Snapshot should include counter"
+    assert snapshot["probe_ready"] is False, "Snapshot should calculate probe_ready"
+
+
+def test_v10_13u18c_heartbeat_emits_when_econ_bad():
+    """V10.13u+18c: maybe_emit_econ_bad_diag_heartbeat() handles ECON BAD."""
+    from src.services.realtime_decision_engine import (
+        maybe_emit_econ_bad_diag_heartbeat,
+        _ECON_BAD_DIAGNOSTICS,
+        get_econ_bad_diagnostics_snapshot,
+    )
+    from unittest.mock import patch
+
+    # Reset and set counters
+    _reset_econ_bad_diagnostics()
+    _ECON_BAD_DIAGNOSTICS["total_econ_bad_blocks"] = 5
+    _ECON_BAD_DIAGNOSTICS["hard_negative_ev_blocks"] = 2
+    _ECON_BAD_DIAGNOSTICS["weak_ev_blocks"] = 3
+
+    # Mock ECON BAD state and call heartbeat
+    with patch("src.services.realtime_decision_engine._get_econ_bad_state", return_value=(True, 0.74)):
+        # Should not raise
+        try:
+            maybe_emit_econ_bad_diag_heartbeat(force=True, source="test")
+            assert True, "Heartbeat should not raise when ECON BAD"
+        except Exception as e:
+            pytest.fail(f"Heartbeat should be exception-safe: {e}")
+
+        # Verify snapshot works
+        snapshot = get_econ_bad_diagnostics_snapshot()
+        assert snapshot["econ_bad"] is True, "Snapshot should reflect ECON BAD"
+        assert snapshot["total_econ_bad_blocks"] == 5, "Snapshot should reflect counters"
+
+
+def test_v10_13u18c_heartbeat_skips_when_econ_good():
+    """V10.13u+18c: Heartbeat does nothing when ECON GOOD."""
+    from src.services.realtime_decision_engine import (
+        maybe_emit_econ_bad_diag_heartbeat,
+    )
+    from unittest.mock import patch
+
+    # Mock ECON GOOD state
+    with patch("src.services.realtime_decision_engine._get_econ_bad_state", return_value=(False, 1.05)), \
+         patch("src.services.realtime_decision_engine.log") as mock_log:
+        maybe_emit_econ_bad_diag_heartbeat(force=True)
+        # Should not log anything when ECON GOOD
+        assert not mock_log.info.called, "Should not log when ECON GOOD"
+
+
+def test_v10_13u18c_heartbeat_throttles():
+    """V10.13u+18c: Heartbeat throttles by default."""
+    from src.services.realtime_decision_engine import (
+        maybe_emit_econ_bad_diag_heartbeat,
+        _ECON_BAD_DIAGNOSTICS,
+    )
+    from unittest.mock import patch
+    import time
+
+    # Reset with recent timestamp
+    _reset_econ_bad_diagnostics()
+    _ECON_BAD_DIAGNOSTICS["total_econ_bad_blocks"] = 5
+    _ECON_BAD_DIAGNOSTICS["last_summary_ts"] = time.time()  # Just emitted
+
+    # Mock ECON BAD state
+    with patch("src.services.realtime_decision_engine._get_econ_bad_state", return_value=(True, 0.74)), \
+         patch("src.services.realtime_decision_engine.log") as mock_log:
+        maybe_emit_econ_bad_diag_heartbeat(force=False)
+        # Should NOT log due to throttle
+        assert not mock_log.info.called, "Should throttle without force"
+
+
+def test_v10_13u18c_heartbeat_force_bypasses_throttle():
+    """V10.13u+18c: force=True parameter works."""
+    from src.services.realtime_decision_engine import (
+        maybe_emit_econ_bad_diag_heartbeat,
+        _ECON_BAD_DIAGNOSTICS,
+    )
+    from unittest.mock import patch
+    import time
+
+    # Reset with recent timestamp
+    _reset_econ_bad_diagnostics()
+    _ECON_BAD_DIAGNOSTICS["total_econ_bad_blocks"] = 5
+    _ECON_BAD_DIAGNOSTICS["last_summary_ts"] = time.time()  # Just emitted
+
+    # Mock ECON BAD state and call with force=True
+    with patch("src.services.realtime_decision_engine._get_econ_bad_state", return_value=(True, 0.74)):
+        try:
+            maybe_emit_econ_bad_diag_heartbeat(force=True)
+            assert True, "Heartbeat with force=True should work"
+        except Exception as e:
+            pytest.fail(f"Heartbeat should be exception-safe: {e}")
+
+
+def test_v10_13u18c_heartbeat_exception_safe():
+    """V10.13u+18c: Heartbeat never raises even on errors."""
+    from src.services.realtime_decision_engine import (
+        maybe_emit_econ_bad_diag_heartbeat,
+    )
+    from unittest.mock import patch
+
+    # Mock to raise exception
+    with patch("src.services.realtime_decision_engine._get_econ_bad_state", side_effect=Exception("Mock error")):
+        try:
+            maybe_emit_econ_bad_diag_heartbeat(force=True)
+            assert True, "Heartbeat should be exception-safe"
+        except Exception:
+            pytest.fail("Heartbeat should never raise")
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

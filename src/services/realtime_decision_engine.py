@@ -267,6 +267,118 @@ def _maybe_flush_econ_bad_diagnostics(ctx: dict = None, *, force: bool = False) 
         pass
 
 
+def get_econ_bad_diagnostics_snapshot(reset: bool = False) -> dict:
+    """V10.13u+18c: Return ECON BAD diagnostic state snapshot. Never raises."""
+    try:
+        is_bad, pf = _get_econ_bad_state()
+        best = _ECON_BAD_DIAGNOSTICS.get("best_near_miss", {})
+
+        probe_ready = (
+            best.get("ev", -999) >= ECON_BAD_PROBE_MIN_EV
+            and best.get("score", -999) >= ECON_BAD_PROBE_MIN_SCORE
+            and best.get("p", 0) >= ECON_BAD_PROBE_MIN_P
+            and best.get("coh", 0) >= ECON_BAD_PROBE_MIN_COH
+            and best.get("af", 0) >= ECON_BAD_PROBE_MIN_AF
+            and best.get("symbol") is not None
+        )
+
+        probe_block_reason = "none"
+        if best.get("symbol"):
+            if best.get("ev", -999) < ECON_BAD_PROBE_MIN_EV:
+                probe_block_reason = "below_probe_ev"
+            elif best.get("score", -999) < ECON_BAD_PROBE_MIN_SCORE:
+                probe_block_reason = "below_probe_score"
+            elif best.get("p", 0) < ECON_BAD_PROBE_MIN_P:
+                probe_block_reason = "below_probe_p"
+            elif best.get("coh", 0) < ECON_BAD_PROBE_MIN_COH:
+                probe_block_reason = "below_probe_coh"
+            elif best.get("af", 0) < ECON_BAD_PROBE_MIN_AF:
+                probe_block_reason = "below_probe_af"
+
+        snapshot = {
+            "econ_bad": is_bad,
+            "pf": pf,
+            "total_econ_bad_blocks": _ECON_BAD_DIAGNOSTICS.get("total_econ_bad_blocks", 0),
+            "hard_negative_ev_blocks": _ECON_BAD_DIAGNOSTICS.get("hard_negative_ev_blocks", 0),
+            "weak_ev": _ECON_BAD_DIAGNOSTICS.get("weak_ev_blocks", 0),
+            "weak_score": _ECON_BAD_DIAGNOSTICS.get("weak_score_blocks", 0),
+            "weak_p": _ECON_BAD_DIAGNOSTICS.get("weak_p_blocks", 0),
+            "weak_coh": _ECON_BAD_DIAGNOSTICS.get("weak_coh_blocks", 0),
+            "weak_af": _ECON_BAD_DIAGNOSTICS.get("weak_af_blocks", 0),
+            "forced_weak": _ECON_BAD_DIAGNOSTICS.get("forced_weak_blocks", 0),
+            "forced_explore": _ECON_BAD_DIAGNOSTICS.get("forced_explore_blocks", 0),
+            "best_symbol": best.get("symbol"),
+            "best_ev": best.get("ev"),
+            "best_score": best.get("score"),
+            "best_p": best.get("p"),
+            "best_coh": best.get("coh"),
+            "best_af": best.get("af"),
+            "probe_ready": probe_ready,
+            "probe_block_reason": probe_block_reason,
+        }
+
+        if reset:
+            _ECON_BAD_DIAGNOSTICS["last_summary_ts"] = 0
+
+        return snapshot
+    except Exception:
+        return {"error": "snapshot_failed"}
+
+
+def maybe_emit_econ_bad_diag_heartbeat(force: bool = False, source: str = "rde") -> None:
+    """V10.13u+18c: Emit periodic diagnostic heartbeat. Never raises. Never affects decision."""
+    try:
+        snapshot = get_econ_bad_diagnostics_snapshot()
+
+        if not snapshot.get("econ_bad", False):
+            return
+
+        # Throttle unless forced
+        now = _time.time()
+        last_ts = _ECON_BAD_DIAGNOSTICS.get("last_summary_ts", 0.0)
+        if not force and (now - last_ts) < _ECON_BAD_DIAG_THROTTLE_S:
+            return
+
+        # Emit heartbeat
+        log.info(
+            f"[ECON_BAD_DIAG_HEARTBEAT] source={source} "
+            f"pf={snapshot['pf']:.3f} "
+            f"total={snapshot['total_econ_bad_blocks']} "
+            f"neg_ev={snapshot['hard_negative_ev_blocks']} "
+            f"weak_ev={snapshot['weak_ev']} "
+            f"best_ev={snapshot['best_ev']:.4f if snapshot['best_ev'] and snapshot['best_ev'] > -999 else 'None'} "
+            f"probe_ready={snapshot['probe_ready']} "
+            f"probe_block={snapshot['probe_block_reason']}"
+        )
+
+        # Also emit full summary
+        log.info(
+            f"[ECON_BAD_NEAR_MISS_SUMMARY] "
+            f"total={snapshot['total_econ_bad_blocks']} "
+            f"negative_ev={snapshot['hard_negative_ev_blocks']} "
+            f"weak_ev={snapshot['weak_ev']} "
+            f"weak_score={snapshot['weak_score']} "
+            f"weak_p={snapshot['weak_p']} "
+            f"weak_coh={snapshot['weak_coh']} "
+            f"weak_af={snapshot['weak_af']} "
+            f"forced_weak={snapshot['forced_weak']} "
+            f"forced_explore={snapshot['forced_explore']} "
+            f"best_symbol={snapshot['best_symbol'] or 'None'} "
+            f"best_ev={snapshot['best_ev']:.4f if snapshot['best_ev'] and snapshot['best_ev'] > -999 else 'None'} "
+            f"best_score={snapshot['best_score']:.3f if snapshot['best_score'] and snapshot['best_score'] > -999 else 'None'} "
+            f"best_p={snapshot['best_p']:.3f if snapshot['best_p'] else 'None'} "
+            f"best_coh={snapshot['best_coh']:.3f if snapshot['best_coh'] else 'None'} "
+            f"best_af={snapshot['best_af']:.3f if snapshot['best_af'] else 'None'} "
+            f"probe_ready={snapshot['probe_ready']} "
+            f"probe_block={snapshot['probe_block_reason']}"
+        )
+
+        _ECON_BAD_DIAGNOSTICS["last_summary_ts"] = now
+    except Exception:
+        # Never allow heartbeat to crash or affect trading
+        pass
+
+
 def _get_cached_history():
     """Get history with local caching - only refreshes every 6 hours.
 
