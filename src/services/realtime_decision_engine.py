@@ -566,6 +566,95 @@ def _trace_econ_bad_recovery_decision(
         pass
 
 
+def _trace_econ_bad_entry_return(
+    *,
+    symbol: str,
+    ev: float,
+    score: float,
+    p: float,
+    coh: float,
+    af: float,
+    entry_reason: str,
+    final_decision: str,
+    actual_recovery_checked: bool = False,
+    actual_recovery_allowed: bool = False,
+    actual_recovery_reason: str = "not_checked",
+    open_positions: int = 0,
+    idle_s: float = 0.0,
+    forced: bool = False,
+) -> None:
+    """V10.13u+19c: Trace actual production return path for ECON BAD entry rejection.
+
+    Observability only. Never raises. No Firebase writes. Captures full decision context.
+    """
+    try:
+        snap = get_econ_bad_diagnostics_snapshot()
+        pf = snap.get("pf")
+        econ_status = snap.get("econ_status")
+        snapshot_ready = snap.get("probe_ready")
+        snapshot_block_reason = snap.get("probe_block_reason")
+
+        log.warning(
+            "[ECON_BAD_ENTRY_RETURN_TRACE] "
+            "symbol=%s ev=%.4f score=%.3f p=%.3f coh=%.3f af=%.3f "
+            "pf=%s econ_status=%s entry_reason=%s "
+            "snapshot_probe_ready=%s snapshot_probe_block=%s "
+            "actual_recovery_checked=%s actual_recovery_allowed=%s "
+            "actual_recovery_reason=%s open_positions=%s idle_s=%.0f forced=%s "
+            "final_decision=%s",
+            symbol,
+            float(ev or 0.0),
+            float(score or 0.0),
+            float(p or 0.0),
+            float(coh or 0.0),
+            float(af or 0.0),
+            pf,
+            econ_status,
+            entry_reason,
+            snapshot_ready,
+            snapshot_block_reason,
+            actual_recovery_checked,
+            actual_recovery_allowed,
+            actual_recovery_reason,
+            open_positions,
+            float(idle_s or 0.0),
+            forced,
+            final_decision,
+        )
+
+        # Ready-but-rejected invariant check: snapshot says ready but final decision is reject
+        if (
+            snapshot_ready is True
+            and str(snapshot_block_reason) == "none"
+            and str(final_decision).startswith("REJECT")
+        ):
+            log.error(
+                "[ECON_BAD_READY_BUT_REJECTED] "
+                "symbol=%s ev=%.4f score=%.3f p=%.3f coh=%.3f af=%.3f "
+                "pf=%s econ_status=%s entry_reason=%s "
+                "actual_recovery_checked=%s actual_recovery_allowed=%s "
+                "actual_recovery_reason=%s final_decision=%s",
+                symbol,
+                float(ev or 0.0),
+                float(score or 0.0),
+                float(p or 0.0),
+                float(coh or 0.0),
+                float(af or 0.0),
+                pf,
+                econ_status,
+                entry_reason,
+                actual_recovery_checked,
+                actual_recovery_allowed,
+                actual_recovery_reason,
+                final_decision,
+            )
+    except Exception as exc:
+        try:
+            log.warning("[ECON_BAD_ENTRY_RETURN_TRACE_ERROR] err=%s", str(exc)[:160])
+        except Exception:
+            pass
+
+
 def _get_cached_history():
     """Get history with local caching - only refreshes every 6 hours.
 
@@ -3475,6 +3564,23 @@ def evaluate_signal(signal):
                         symbol=sym, regime=regime, ev=ev, score=_score_adj, win_prob=win_prob,
                         coherence=_coh, auditor_factor=auditor_factor, block_reason=_econ_bad_reason
                     )
+                    # V10.13u+19c: Trace actual return path with recovery probe decision
+                    _trace_econ_bad_entry_return(
+                        symbol=sym,
+                        ev=ev,
+                        score=_score_adj,
+                        p=win_prob,
+                        coh=_coh,
+                        af=auditor_factor,
+                        entry_reason=_econ_bad_reason,
+                        final_decision="REJECT_ECON_BAD_ENTRY",
+                        actual_recovery_checked=True,
+                        actual_recovery_allowed=False,
+                        actual_recovery_reason=f"recovery_blocked:{_probe_reason}",
+                        open_positions=_probe_ctx.get("open_positions", 0),
+                        idle_s=_probe_ctx.get("seconds_since_last_closed_trade", 0.0),
+                        forced=signal.get("forced", False),
+                    )
                     # V10.13u+18b: Flush diagnostics before early return
                     _maybe_flush_econ_bad_diagnostics()
                     # V10.13u+18g: Emit from rejection path as production-safe fallback
@@ -3493,6 +3599,23 @@ def evaluate_signal(signal):
             _update_econ_bad_near_miss(
                 symbol=sym, regime=regime, ev=ev, score=_score_adj, win_prob=win_prob,
                 coherence=_coh, auditor_factor=auditor_factor, block_reason=_econ_bad_reason
+            )
+            # V10.13u+19c: Trace actual return path (non-overridable rejection)
+            _trace_econ_bad_entry_return(
+                symbol=sym,
+                ev=ev,
+                score=_score_adj,
+                p=win_prob,
+                coh=_coh,
+                af=auditor_factor,
+                entry_reason=_econ_bad_reason,
+                final_decision="REJECT_ECON_BAD_ENTRY",
+                actual_recovery_checked=False,
+                actual_recovery_allowed=False,
+                actual_recovery_reason="not_overridable",
+                open_positions=_probe_ctx.get("open_positions", 0),
+                idle_s=_probe_ctx.get("seconds_since_last_closed_trade", 0.0),
+                forced=signal.get("forced", False),
             )
             # V10.13u+18b: Flush diagnostics before early return
             _maybe_flush_econ_bad_diagnostics()

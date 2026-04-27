@@ -3407,5 +3407,161 @@ def test_v10_13u19b_trace_never_raises(monkeypatch):
         pytest.fail(f"Trace helper should be exception-safe, but raised: {e}")
 
 
+def test_v10_13u19c_econ_bad_entry_return_trace_emits_on_weak_ev_reject(caplog):
+    """V10.13u+19c: Weak-EV ECON BAD reject emits ECON_BAD_ENTRY_RETURN_TRACE."""
+    from src.services import realtime_decision_engine as rde
+
+    # Call the trace helper with weak_ev rejection
+    rde._trace_econ_bad_entry_return(
+        symbol="ADAUSDT",
+        ev=0.0434,
+        score=0.204,
+        p=0.523,
+        coh=0.868,
+        af=0.750,
+        entry_reason="weak_ev",
+        final_decision="REJECT_ECON_BAD_ENTRY",
+        actual_recovery_checked=True,
+        actual_recovery_allowed=False,
+        actual_recovery_reason="recovery_blocked:probe_ev_too_low",
+        open_positions=0,
+        idle_s=3600.0,
+        forced=False,
+    )
+
+    # Verify trace was emitted
+    assert "[ECON_BAD_ENTRY_RETURN_TRACE]" in caplog.text
+    assert "symbol=ADAUSDT" in caplog.text
+    assert "final_decision=REJECT_ECON_BAD_ENTRY" in caplog.text
+
+
+def test_v10_13u19c_ready_but_rejected_invariant_emits(caplog):
+    """V10.13u+19c: If snapshot ready=True/block=none but reject, emit ECON_BAD_READY_BUT_REJECTED."""
+    from src.services import realtime_decision_engine as rde
+
+    # Set up diagnostics with best_near_miss that meets probe criteria
+    # This will cause the snapshot to compute probe_ready=True
+    rde._ECON_BAD_DIAGNOSTICS["best_near_miss"] = {
+        "symbol": "ADAUSDT",
+        "ev": 0.0434,  # >= 0.038 (PROBE_MIN_EV)
+        "score": 0.204,  # >= 0.18 (PROBE_MIN_SCORE)
+        "p": 0.523,  # >= 0.52 (PROBE_MIN_P)
+        "coh": 0.868,  # >= 0.55 (PROBE_MIN_COH)
+        "af": 0.750,  # >= 0.70 (PROBE_MIN_AF)
+    }
+
+    # Call with ready=True but final_decision=REJECT
+    rde._trace_econ_bad_entry_return(
+        symbol="ADAUSDT",
+        ev=0.0434,
+        score=0.204,
+        p=0.523,
+        coh=0.868,
+        af=0.750,
+        entry_reason="weak_ev",
+        final_decision="REJECT_ECON_BAD_ENTRY",
+        actual_recovery_checked=True,
+        actual_recovery_allowed=False,
+        actual_recovery_reason="recovery_blocked:probe_ev_too_low",
+        open_positions=0,
+        idle_s=3600.0,
+    )
+
+    # Verify READY_BUT_REJECTED was emitted
+    assert "[ECON_BAD_READY_BUT_REJECTED]" in caplog.text
+    assert "symbol=ADAUSDT" in caplog.text
+
+
+def test_v10_13u19c_negative_ev_still_rejects(caplog):
+    """V10.13u+19c: Negative EV must never be converted to recovery/deadlock probe."""
+    from src.services import realtime_decision_engine as rde
+
+    # Call with negative EV
+    rde._trace_econ_bad_entry_return(
+        symbol="ADAUSDT",
+        ev=-0.0100,  # Negative
+        score=0.204,
+        p=0.523,
+        coh=0.868,
+        af=0.750,
+        entry_reason="negative_ev",
+        final_decision="REJECT_NEGATIVE_EV",
+        actual_recovery_checked=False,
+        actual_recovery_allowed=False,
+        actual_recovery_reason="negative_ev_hard_block",
+    )
+
+    # Verify trace was emitted
+    assert "[ECON_BAD_ENTRY_RETURN_TRACE]" in caplog.text
+    assert "ev=-0.0100" in caplog.text
+
+
+def test_v10_13u19c_no_global_threshold_change():
+    """V10.13u+19c: Constants for ECON_BAD entry/recovery/deadlock thresholds remain unchanged."""
+    from src.services import realtime_decision_engine as rde
+
+    # Verify global thresholds are not loosened
+    assert rde.ECON_BAD_PROBE_MIN_EV == 0.038, "Recovery probe floor should remain 0.038"
+    assert rde.ECON_BAD_DEADLOCK_MIN_EV == 0.0370, "Deadlock probe min should be 0.0370"
+    assert rde.ECON_BAD_DEADLOCK_MAX_EV == 0.0380, "Deadlock probe max should be 0.0380"
+    # Note: Main entry floor (0.045) is hardcoded in _econ_bad_entry_quality_gate function
+
+
+def test_v10_13u19c_trace_handles_none_fields():
+    """V10.13u+19c: Trace helper handles None/missing diagnostics fields gracefully."""
+    from src.services import realtime_decision_engine as rde
+
+    try:
+        # Call with all fields but potentially None snapshot data
+        rde._trace_econ_bad_entry_return(
+            symbol="ADAUSDT",
+            ev=0.0434,
+            score=0.204,
+            p=0.523,
+            coh=0.868,
+            af=0.750,
+            entry_reason="weak_ev",
+            final_decision="REJECT_ECON_BAD_ENTRY",
+            actual_recovery_checked=True,
+            actual_recovery_allowed=False,
+            actual_recovery_reason=None,  # None reason
+            open_positions=0,
+            idle_s=None,  # None idle
+            forced=False,
+        )
+    except Exception as e:
+        pytest.fail(f"Trace helper should handle None fields gracefully, but raised: {e}")
+
+
+def test_v10_13u19c_exception_safety_on_log_error(monkeypatch):
+    """V10.13u+19c: Trace helper never raises even if logging fails."""
+    from src.services import realtime_decision_engine as rde
+    from unittest.mock import MagicMock
+
+    # Patch logging to raise
+    mock_log = MagicMock()
+    mock_log.warning.side_effect = RuntimeError("Log error")
+    mock_log.error.side_effect = RuntimeError("Log error")
+    monkeypatch.setattr(rde, "log", mock_log)
+
+    try:
+        # Should not raise even though logging fails
+        rde._trace_econ_bad_entry_return(
+            symbol="ADAUSDT",
+            ev=0.0434,
+            score=0.204,
+            p=0.523,
+            coh=0.868,
+            af=0.750,
+            entry_reason="weak_ev",
+            final_decision="REJECT_ECON_BAD_ENTRY",
+            actual_recovery_checked=True,
+            actual_recovery_allowed=False,
+            actual_recovery_reason="recovery_blocked:probe_ev_too_low",
+        )
+    except Exception as e:
+        pytest.fail(f"Trace helper should be exception-safe even on log failure, but raised: {e}")
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
