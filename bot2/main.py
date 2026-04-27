@@ -1401,7 +1401,20 @@ def main():
     # V10.13u: Log runtime version marker for deployment verification
     runtime_marker = get_runtime_marker()
     print(f"\n{format_runtime_marker(runtime_marker)}\n", file=sys.stderr, flush=True)
-    
+
+    # V10.13u+18e: Wire ECON BAD diagnostics startup marker
+    try:
+        from src.services.realtime_decision_engine import emit_econ_bad_diag_hook_marker
+        emit_econ_bad_diag_hook_marker()
+    except Exception as e:
+        try:
+            import logging as _econ_bad_log
+            _econ_bad_log.getLogger(__name__).warning(
+                "[ECON_BAD_DIAG_HOOK_ERROR] source=main phase=startup error=%r", e
+            )
+        except Exception:
+            pass
+
     # V10.13s Phase 2: Print learning pipeline instrumentation counters
     try:
         counters_str = format_lm_counters()
@@ -1626,6 +1639,10 @@ def main():
 
     print("\n✅ BOOTSTRAP COMPLETE — Starting main event loop...\n", file=sys.stderr, flush=True)
 
+    # V10.13u+18e: ECON BAD diagnostics periodic heartbeat
+    _last_econ_bad_diag_heartbeat_ts = 0.0
+    _ECON_BAD_RUNTIME_HEARTBEAT_EVERY_S = 30.0
+
     t = threading.Thread(target=start)
     t.daemon = True
     t.start()
@@ -1670,6 +1687,21 @@ def main():
 
         global _last_audit, _last_metrics, _last_pre_audit, _last_health_check
         now = time.time()
+
+        # V10.13u+18e: Periodic ECON BAD diagnostics heartbeat
+        try:
+            if now - _last_econ_bad_diag_heartbeat_ts >= _ECON_BAD_RUNTIME_HEARTBEAT_EVERY_S:
+                _last_econ_bad_diag_heartbeat_ts = now
+                from src.services.realtime_decision_engine import maybe_emit_econ_bad_diag_heartbeat
+                maybe_emit_econ_bad_diag_heartbeat(source="main", force=False)
+        except Exception as e:
+            try:
+                import logging as _econ_bad_log
+                _econ_bad_log.getLogger(__name__).warning(
+                    "[ECON_BAD_DIAG_HOOK_ERROR] source=main phase=heartbeat error=%r", e
+                )
+            except Exception:
+                pass
 
         # EMERGENCY (2026-04-25): Periodic observability logging for safe mode status
         # Logs dashboard state when safe mode is active
