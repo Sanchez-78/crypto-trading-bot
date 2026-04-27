@@ -607,7 +607,12 @@ def _trace_econ_bad_entry_return(
             af = signal.get("af", 0.0)
 
         # Use override dict if provided (V10.13u+19e)
-        if override and isinstance(override, dict):
+        # V10.13u+19f: If override is None (missing), log bug reason
+        if override is None:
+            actual_recovery_checked = False
+            actual_recovery_allowed = False
+            actual_recovery_reason = "override_missing_bug"
+        elif isinstance(override, dict):
             actual_recovery_checked = bool(override.get("checked", actual_recovery_checked))
             actual_recovery_allowed = bool(override.get("allowed", actual_recovery_allowed))
             actual_recovery_reason = str(override.get("reason", actual_recovery_reason))
@@ -3645,6 +3650,8 @@ def evaluate_signal(signal):
         # V10.13u+19d: Check recovery/deadlock override for ANY weak-EV candidate
         # (not just overridable reasons)
         override = _resolve_econ_bad_recovery_override_for_signal(signal, _probe_ctx, _econ_bad_reason)
+        # V10.13u+19e: Normalize override for consistent logging
+        override = _normalize_econ_bad_override_result(override)
 
         if override["allowed"]:
             # Recovery or deadlock probe is allowed — return TAKE with probe metadata
@@ -3674,6 +3681,15 @@ def evaluate_signal(signal):
                 f"size_mult={override['size_mult']:.3f} reason={override['reason']}"
             )
 
+            # V10.13u+19e: Trace allowed path with override
+            _trace_econ_bad_entry_return(
+                signal=signal,
+                ctx=_probe_ctx,
+                entry_reason=_econ_bad_reason,
+                override=override,
+                final_decision="TAKE",
+            )
+
             track_blocked(reason="ECON_BAD_RECOVERY_PROBE")
             print(f"    [ECON_BAD_RECOVERY_PROBE] {sym} ev={ev:.4f} size×{override['size_mult']:.2f}")
             # Continue to TAKE with probe metadata attached
@@ -3684,22 +3700,13 @@ def evaluate_signal(signal):
                 symbol=sym, regime=regime, ev=ev, score=_score_adj, win_prob=win_prob,
                 coherence=_coh, auditor_factor=auditor_factor, block_reason=_econ_bad_reason
             )
-            # V10.13u+19d: Trace actual return path with recovery override decision
+            # V10.13u+19e: Trace actual return path using normalized override dict
             _trace_econ_bad_entry_return(
-                symbol=sym,
-                ev=ev,
-                score=_score_adj,
-                p=win_prob,
-                coh=_coh,
-                af=auditor_factor,
+                signal=signal,
+                ctx=_probe_ctx,
                 entry_reason=_econ_bad_reason,
+                override=override,
                 final_decision="REJECT_ECON_BAD_ENTRY",
-                actual_recovery_checked=override["checked"],
-                actual_recovery_allowed=override["allowed"],
-                actual_recovery_reason=override["reason"],
-                open_positions=_probe_ctx.get("open_positions", 0),
-                idle_s=_probe_ctx.get("seconds_since_last_closed_trade", 0.0),
-                forced=signal.get("forced", False),
             )
             track_blocked(reason="ECON_BAD_ENTRY")
             print(f"    decision=REJECT_ECON_BAD_ENTRY  {_econ_bad_reason}")

@@ -3927,5 +3927,186 @@ def test_v10_13u19e_no_threshold_changes():
     assert rde.ECON_BAD_DEADLOCK_MAX_EV == 0.0380, "Deadlock max EV should be 0.0380"
 
 
+def test_v10_13u19f_weak_ev_calls_override_before_reject(monkeypatch):
+    """V10.13u+19f: Weak-EV path calls resolver and logs checked=True with exact blocker."""
+    from src.services import realtime_decision_engine as rde
+
+    # Mock ECON BAD to be active
+    monkeypatch.setattr(
+        "src.services.learning_monitor.lm_economic_health",
+        lambda: {"status": "BAD", "pf": 0.739, "net_pnl": 0.0}
+    )
+    rde._ECON_BAD_CACHE["last_check_ts"] = 0.0
+
+    signal = {
+        "symbol": "XRPUSDT",
+        "ev": 0.0338,
+        "score": 0.174,
+        "p": 0.500,
+        "coh": 0.675,
+        "af": 0.595,
+        "forced": False,
+    }
+    ctx = {
+        "ev": 0.0338,
+        "score": 0.174,
+        "p": 0.500,
+        "coh": 0.675,
+        "af": 0.595,
+        "open_positions": 0,
+        "seconds_since_last_closed_trade": 1234,
+    }
+
+    override = rde._resolve_econ_bad_recovery_override_for_signal(signal, ctx, "weak_ev")
+
+    # Should check and return exact blocker, not "not_overridable"
+    assert override["checked"] is True
+    assert override["allowed"] is False
+    assert override["reason"] != "not_overridable"
+    assert any(x in override["reason"].lower() for x in ["below", "probe", "ev"])
+
+
+def test_v10_13u19f_override_missing_logs_bug_reason(caplog):
+    """V10.13u+19f: If override is missing, trace logs override_missing_bug."""
+    from src.services.realtime_decision_engine import _trace_econ_bad_entry_return
+
+    signal = {
+        "symbol": "ADAUSDT",
+        "ev": 0.0338,
+        "score": 0.174,
+        "p": 0.500,
+        "coh": 0.675,
+        "af": 0.595,
+    }
+
+    # Call trace with override=None
+    _trace_econ_bad_entry_return(
+        signal=signal,
+        ctx={},
+        entry_reason="weak_ev",
+        override=None,
+        final_decision="REJECT_ECON_BAD_ENTRY",
+    )
+
+    assert "[ECON_BAD_ENTRY_RETURN_TRACE]" in caplog.text
+    assert "actual_recovery_reason=override_missing_bug" in caplog.text
+
+
+def test_v10_13u19f_snapshot_ready_does_not_trigger_invariant(caplog):
+    """V10.13u+19f: Snapshot readiness alone does NOT trigger READY_BUT_REJECTED."""
+    from src.services.realtime_decision_engine import (
+        _normalize_econ_bad_override_result,
+        _trace_econ_bad_entry_return,
+    )
+
+    override = _normalize_econ_bad_override_result({
+        "checked": True,
+        "allowed": False,
+        "reason": "below_probe_ev",
+        "kind": None,
+        "size_mult": None,
+        "meta": {},
+    })
+
+    signal = {
+        "symbol": "ADAUSDT",
+        "ev": 0.0338,
+        "score": 0.174,
+        "p": 0.500,
+        "coh": 0.675,
+        "af": 0.595,
+    }
+
+    _trace_econ_bad_entry_return(
+        signal=signal,
+        ctx={"snapshot_probe_ready": True, "snapshot_probe_block": "none"},
+        entry_reason="weak_ev",
+        override=override,
+        final_decision="REJECT_ECON_BAD_ENTRY",
+    )
+
+    # Should NOT trigger invariant when actual_allowed=False
+    assert "[ECON_BAD_READY_BUT_REJECTED]" not in caplog.text
+    assert "actual_recovery_allowed=False" in caplog.text
+
+
+def test_v10_13u19f_actual_allowed_reject_triggers_invariant(caplog):
+    """V10.13u+19f: Actual allowed but final REJECT triggers READY_BUT_REJECTED."""
+    from src.services.realtime_decision_engine import (
+        _normalize_econ_bad_override_result,
+        _trace_econ_bad_entry_return,
+    )
+
+    override = _normalize_econ_bad_override_result({
+        "checked": True,
+        "allowed": True,
+        "reason": "recovery_probe_allowed",
+        "kind": "recovery",
+        "size_mult": 0.15,
+        "meta": {},
+    })
+
+    signal = {
+        "symbol": "ADAUSDT",
+        "ev": 0.0434,
+        "score": 0.204,
+        "p": 0.523,
+        "coh": 0.868,
+        "af": 0.750,
+    }
+
+    _trace_econ_bad_entry_return(
+        signal=signal,
+        ctx={},
+        entry_reason="weak_ev",
+        override=override,
+        final_decision="REJECT_ECON_BAD_ENTRY",  # allowed but rejected
+    )
+
+    # Should trigger invariant
+    assert "[ECON_BAD_READY_BUT_REJECTED]" in caplog.text
+    assert "actual_recovery_allowed=True" in caplog.text
+
+
+def test_v10_13u19f_allowed_override_returns_take():
+    """V10.13u+19f: Allowed resolver result enables TAKE path."""
+    from src.services import realtime_decision_engine as rde
+
+    # Create minimal signal with enough data
+    signal = {
+        "symbol": "ADAUSDT",
+        "ev": 0.0434,
+        "score": 0.204,
+        "p": 0.523,
+        "coh": 0.868,
+        "af": 0.750,
+        "forced": False,
+    }
+    ctx = {
+        "ev": 0.0434,
+        "score": 0.204,
+        "p": 0.523,
+        "coh": 0.868,
+        "af": 0.750,
+        "open_positions": 0,
+        "seconds_since_last_closed_trade": 50000,
+    }
+
+    # Mock recovery probe to allow
+    def mock_recovery_allowed(sig, cx):
+        return True, "recovery_probe_allowed"
+
+    original_recovery = rde._econ_bad_recovery_probe_allowed
+    rde._econ_bad_recovery_probe_allowed = mock_recovery_allowed
+
+    try:
+        override = rde._resolve_econ_bad_recovery_override_for_signal(signal, ctx, "weak_ev")
+        assert override["allowed"] is True
+        assert override["kind"] == "normal"
+        assert override["size_mult"] == rde.ECON_BAD_PROBE_SIZE_MULT
+    finally:
+        rde._econ_bad_recovery_probe_allowed = original_recovery
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
