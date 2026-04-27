@@ -82,6 +82,166 @@ _ECON_BAD_PROBE_STATE = {
     "last_summary_ts": 0.0,
 }
 
+# V10.13u+18: ECON BAD near-miss diagnostics (no behavior change)
+_ECON_BAD_DIAGNOSTICS = {
+    "total_econ_bad_blocks": 0,
+    "weak_ev_blocks": 0,
+    "weak_score_blocks": 0,
+    "weak_p_blocks": 0,
+    "weak_coh_blocks": 0,
+    "weak_af_blocks": 0,
+    "hard_negative_ev_blocks": 0,
+    "forced_explore_blocks": 0,
+    "forced_weak_blocks": 0,
+    "probe_candidate_near_miss": 0,
+    "probe_block_reason_counts": {},
+    "best_near_miss": {
+        "symbol": None,
+        "regime": None,
+        "ev": -999.0,
+        "score": -999.0,
+        "p": 0.0,
+        "coh": 0.0,
+        "af": 0.0,
+        "reason_blocked": None,
+        "probe_blocked_by": None,
+        "ts": 0.0,
+    },
+    "last_summary_ts": 0.0,
+    "last_no_trade_diag_ts": 0.0,
+}
+_ECON_BAD_DIAG_THROTTLE_S = 600  # Summary every 10 minutes
+_ECON_BAD_NO_TRADE_DIAG_THROTTLE_S = 300  # Check every 5 minutes
+
+
+def _update_econ_bad_near_miss(
+    symbol: str,
+    regime: str,
+    ev: float,
+    score: float,
+    win_prob: float,
+    coherence: float,
+    auditor_factor: float,
+    block_reason: str,
+    forced: bool = False,
+):
+    """V10.13u+18: Track near-miss candidates for diagnostics."""
+    # Only track if this is actually a candidate (positive EV, not too bad)
+    if ev <= 0 or auditor_factor < 0.50:
+        return
+
+    # Update counters based on block reason
+    _ECON_BAD_DIAGNOSTICS["total_econ_bad_blocks"] += 1
+
+    if "weak_ev" in block_reason:
+        _ECON_BAD_DIAGNOSTICS["weak_ev_blocks"] += 1
+    elif "weak_score" in block_reason:
+        _ECON_BAD_DIAGNOSTICS["weak_score_blocks"] += 1
+    elif "weak_p" in block_reason:
+        _ECON_BAD_DIAGNOSTICS["weak_p_blocks"] += 1
+    elif "weak_coh" in block_reason:
+        _ECON_BAD_DIAGNOSTICS["weak_coh_blocks"] += 1
+    elif "weak_af" in block_reason:
+        _ECON_BAD_DIAGNOSTICS["weak_af_blocks"] += 1
+    elif "negative_ev" in block_reason.lower():
+        _ECON_BAD_DIAGNOSTICS["hard_negative_ev_blocks"] += 1
+
+    if forced:
+        if "weak" in block_reason.lower():
+            _ECON_BAD_DIAGNOSTICS["forced_weak_blocks"] += 1
+        else:
+            _ECON_BAD_DIAGNOSTICS["forced_explore_blocks"] += 1
+
+    # Track best near-miss (highest EV that was rejected)
+    if ev > _ECON_BAD_DIAGNOSTICS["best_near_miss"]["ev"]:
+        _ECON_BAD_DIAGNOSTICS["best_near_miss"] = {
+            "symbol": symbol,
+            "regime": regime,
+            "ev": ev,
+            "score": score,
+            "p": win_prob,
+            "coh": coherence,
+            "af": auditor_factor,
+            "reason_blocked": block_reason,
+            "probe_blocked_by": None,
+            "ts": _time.time(),
+        }
+
+
+def _log_econ_bad_near_miss_summary():
+    """V10.13u+18: Log diagnostic summary every 10 min (throttled)."""
+    global _ECON_BAD_DIAGNOSTICS
+    now = _time.time()
+
+    if now - _ECON_BAD_DIAGNOSTICS.get("last_summary_ts", 0.0) < _ECON_BAD_DIAG_THROTTLE_S:
+        return
+
+    is_bad, pf = _get_econ_bad_state()
+    if not is_bad:
+        return
+
+    best = _ECON_BAD_DIAGNOSTICS["best_near_miss"]
+    probe_ready = (
+        best["ev"] >= ECON_BAD_PROBE_MIN_EV
+        and best["score"] >= ECON_BAD_PROBE_MIN_SCORE
+        and best["p"] >= ECON_BAD_PROBE_MIN_P
+        and best["coh"] >= ECON_BAD_PROBE_MIN_COH
+        and best["af"] >= ECON_BAD_PROBE_MIN_AF
+        and best["symbol"] is not None
+    )
+
+    log.info(
+        f"[ECON_BAD_NEAR_MISS_SUMMARY] "
+        f"pf={pf:.3f} "
+        f"total_blocks={_ECON_BAD_DIAGNOSTICS['total_econ_bad_blocks']} "
+        f"weak_ev={_ECON_BAD_DIAGNOSTICS['weak_ev_blocks']} "
+        f"weak_score={_ECON_BAD_DIAGNOSTICS['weak_score_blocks']} "
+        f"neg_ev={_ECON_BAD_DIAGNOSTICS['hard_negative_ev_blocks']} "
+        f"forced={_ECON_BAD_DIAGNOSTICS['forced_explore_blocks']} "
+        f"best_sym={best.get('symbol', 'None')} "
+        f"best_ev={best.get('ev', -999):.4f} "
+        f"best_score={best.get('score', -999):.3f} "
+        f"best_p={best.get('p', 0):.3f} "
+        f"best_coh={best.get('coh', 0):.3f} "
+        f"best_af={best.get('af', 0):.3f} "
+        f"probe_ready={probe_ready} "
+        f"reason_blocked={best.get('reason_blocked', 'none')}"
+    )
+
+    _ECON_BAD_DIAGNOSTICS["last_summary_ts"] = now
+
+
+def _log_no_trade_diagnostic():
+    """V10.13u+18: Log diagnostic when no trade for > 6h."""
+    now = _time.time()
+
+    if now - _ECON_BAD_DIAGNOSTICS.get("last_no_trade_diag_ts", 0.0) < _ECON_BAD_NO_TRADE_DIAG_THROTTLE_S:
+        return
+
+    idle_s = safe_idle_seconds()
+    if idle_s < 21600:  # 6 hours
+        return
+
+    is_bad, pf = _get_econ_bad_state()
+    if not is_bad:
+        return
+
+    best = _ECON_BAD_DIAGNOSTICS["best_near_miss"]
+    log.warning(
+        f"[NO_TRADE_DIAGNOSTIC] idle_s={idle_s:.0f} "
+        f"pf={pf:.3f} "
+        f"positions={0} "
+        f"total_econ_bad_blocks={_ECON_BAD_DIAGNOSTICS['total_econ_bad_blocks']} "
+        f"weak_ev_blocks={_ECON_BAD_DIAGNOSTICS['weak_ev_blocks']} "
+        f"weak_score_blocks={_ECON_BAD_DIAGNOSTICS['weak_score_blocks']} "
+        f"neg_ev_blocks={_ECON_BAD_DIAGNOSTICS['hard_negative_ev_blocks']} "
+        f"forced_blocks={_ECON_BAD_DIAGNOSTICS['forced_explore_blocks']} "
+        f"best_near_miss_sym={best.get('symbol', 'None')} "
+        f"best_ev={best.get('ev', -999):.4f}"
+    )
+
+    _ECON_BAD_DIAGNOSTICS["last_no_trade_diag_ts"] = now
+
 
 def _get_cached_history():
     """Get history with local caching - only refreshes every 6 hours.
@@ -2808,6 +2968,11 @@ def evaluate_signal(signal):
                 )
                 track_blocked(reason="ECON_BAD_ENTRY")
                 print(f"    decision=REJECT_ECON_BAD_ENTRY  {_econ_bad_reason} (probe blocked: {_probe_reason})")
+                # V10.13u+18: Track near-miss for diagnostics
+                _update_econ_bad_near_miss(
+                    symbol=sym, regime=regime, ev=ev, score=_score_adj, win_prob=win_prob,
+                    coherence=_coh, auditor_factor=auditor_factor, block_reason=_econ_bad_reason
+                )
                 return None
         else:
             # Cannot override unsafe rejections (weak_af, weak_p, weak_coh)
@@ -2818,6 +2983,11 @@ def evaluate_signal(signal):
             )
             track_blocked(reason="ECON_BAD_ENTRY")
             print(f"    decision=REJECT_ECON_BAD_ENTRY  {_econ_bad_reason}")
+            # V10.13u+18: Track near-miss for diagnostics
+            _update_econ_bad_near_miss(
+                symbol=sym, regime=regime, ev=ev, score=_score_adj, win_prob=win_prob,
+                coherence=_coh, auditor_factor=auditor_factor, block_reason=_econ_bad_reason
+            )
             return None
 
     # V10.13u+16: Forced exploration gate during ECON BAD
@@ -2830,6 +3000,11 @@ def evaluate_signal(signal):
         )
         track_blocked(reason="ECON_BAD_FORCED")
         print(f"    decision=REJECT_ECON_BAD_FORCED  {_forced_reason}")
+        # V10.13u+18: Track near-miss for diagnostics
+        _update_econ_bad_near_miss(
+            symbol=sym, regime=regime, ev=ev, score=_score_adj, win_prob=win_prob,
+            coherence=_coh, auditor_factor=auditor_factor, block_reason=_forced_reason, forced=True
+        )
         return None
 
     # V10.13u+16: Log guard activation (throttled)
@@ -2898,5 +3073,9 @@ def evaluate_signal(signal):
 
     # V10.13u+7: Log exit quality metrics (throttled)
     log_exit_quality_metrics()
+
+    # V10.13u+18: Log diagnostic summaries (throttled, no behavior change)
+    _log_econ_bad_near_miss_summary()
+    _log_no_trade_diagnostic()
 
     return signal
