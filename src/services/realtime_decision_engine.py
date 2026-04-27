@@ -1107,19 +1107,55 @@ def _resolve_econ_bad_recovery_override_for_signal(
                 "meta": {},
             }
 
-        # Only override weak-EV / probe-low candidates
-        if entry_reason not in ("weak_ev", "weak_score"):
+        # V10.13u+19h: Normalize entry_reason to handle decorated reasons
+        # e.g., "weak_ev (ev=0.0300<0.045)" -> "weak_ev"
+        _entry_reason_raw = str(entry_reason or "").strip().lower()
+        _entry_reason_base = (
+            _entry_reason_raw.split("(", 1)[0]
+            .strip()
+            .split(" ", 1)[0]
+            .strip()
+        )
+
+        _OVERRIDABLE_ECON_BAD_REASONS = {
+            "weak_ev",
+            "weak_score",
+            "weak_p",
+            "weak_coh",
+            "weak_af",
+        }
+
+        if _entry_reason_base not in _OVERRIDABLE_ECON_BAD_REASONS:
             return {
                 "checked": False,
                 "allowed": False,
-                "reason": "not_overridable",
+                "reason": f"not_overridable:{_entry_reason_base or 'unknown'}",
                 "kind": "none",
                 "size_mult": None,
-                "meta": {},
+                "meta": {"entry_reason_raw": _entry_reason_raw},
             }
 
+        # V10.13u+19h: Metric extraction with aliases for flexibility
+        def _metric(name: str, *aliases, default=0.0) -> float:
+            for src in (signal, ctx):
+                if not isinstance(src, dict):
+                    continue
+                for key in (name, *aliases):
+                    val = src.get(key)
+                    if val is not None:
+                        try:
+                            return float(val)
+                        except Exception:
+                            pass
+            return float(default)
+
+        ev = _metric("ev")
+        score = _metric("score", "_score_adj")
+        p = _metric("p", "win_prob", "prob")
+        coh = _metric("coh", "coherence")
+        af = _metric("af", "auditor_factor")
+
         # Hard EV floor: never override negative/zero EV
-        ev = float(signal.get("ev", ctx.get("ev", 0.0)) or 0.0)
         if ev <= 0:
             return {
                 "checked": True,
@@ -3657,9 +3693,13 @@ def evaluate_signal(signal):
         _probe_ctx = {
             "ev": ev,
             "score": _score_adj,
+            "_score_adj": _score_adj,
             "p": win_prob,
+            "win_prob": win_prob,
             "coh": _coh,
+            "coherence": _coh,
             "af": auditor_factor,
+            "auditor_factor": auditor_factor,
             "reason": _econ_bad_reason,
             "econ_bad_entry_rejects": getattr(_M, "get", lambda k, d: d)("econ_bad_entry_rejects", 0),
             "seconds_since_last_closed_trade": safe_idle_seconds(),

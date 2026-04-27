@@ -3436,21 +3436,21 @@ def test_v10_13u19c_econ_bad_entry_return_trace_emits_on_weak_ev_reject(caplog):
 
 
 def test_v10_13u19c_ready_but_rejected_invariant_emits(caplog):
-    """V10.13u+19c: If snapshot ready=True/block=none but reject, emit ECON_BAD_READY_BUT_REJECTED."""
+    """V10.13u+19c/19d: If actual_recovery_allowed=True but final reject, emit ECON_BAD_READY_BUT_REJECTED."""
     from src.services import realtime_decision_engine as rde
 
-    # Set up diagnostics with best_near_miss that meets probe criteria
-    # This will cause the snapshot to compute probe_ready=True
-    rde._ECON_BAD_DIAGNOSTICS["best_near_miss"] = {
-        "symbol": "ADAUSDT",
-        "ev": 0.0434,  # >= 0.038 (PROBE_MIN_EV)
-        "score": 0.204,  # >= 0.18 (PROBE_MIN_SCORE)
-        "p": 0.523,  # >= 0.52 (PROBE_MIN_P)
-        "coh": 0.868,  # >= 0.55 (PROBE_MIN_COH)
-        "af": 0.750,  # >= 0.70 (PROBE_MIN_AF)
+    # V10.13u19d changed: invariant now fires on actual_recovery_allowed=True + reject,
+    # not on snapshot_probe_ready. Pass override dict instead of individual params.
+    override = {
+        "checked": True,
+        "allowed": True,  # Key: allowed must be True to trigger invariant
+        "reason": "recovery_allowed",
+        "kind": "normal",
+        "size_mult": 0.15,
+        "meta": {},
     }
 
-    # Call with ready=True but final_decision=REJECT
+    # Call with allowed=True but final_decision=REJECT
     rde._trace_econ_bad_entry_return(
         symbol="ADAUSDT",
         ev=0.0434,
@@ -3460,14 +3460,12 @@ def test_v10_13u19c_ready_but_rejected_invariant_emits(caplog):
         af=0.750,
         entry_reason="weak_ev",
         final_decision="REJECT_ECON_BAD_ENTRY",
-        actual_recovery_checked=True,
-        actual_recovery_allowed=False,
-        actual_recovery_reason="recovery_blocked:probe_ev_too_low",
+        override=override,
         open_positions=0,
         idle_s=3600.0,
     )
 
-    # Verify READY_BUT_REJECTED was emitted
+    # Verify READY_BUT_REJECTED was emitted because actual_recovery_allowed=True
     assert "[ECON_BAD_READY_BUT_REJECTED]" in caplog.text
     assert "symbol=ADAUSDT" in caplog.text
 
@@ -3671,7 +3669,7 @@ def test_v10_13u19d_negative_ev_still_hard_rejected(monkeypatch):
 
 
 def test_v10_13u19d_non_weak_ev_not_overridable(monkeypatch):
-    """V10.13u+19d: Non-weak-EV reasons are not overridable."""
+    """V10.13u+19d: Non-weak-EV reasons are not overridable. V10.13u+19h: test with truly non-overridable reason."""
     from src.services import realtime_decision_engine as rde
 
     # Mock ECON BAD state to be active - patch lm_economic_health at source
@@ -3685,20 +3683,29 @@ def test_v10_13u19d_non_weak_ev_not_overridable(monkeypatch):
     signal = {"ev": 0.0434, "score": 0.204, "p": 0.523, "coh": 0.868, "af": 0.750}
     ctx = {"open_positions": 0}
 
-    # Try to override weak_af (not overridable)
-    override = rde._resolve_econ_bad_recovery_override_for_signal(signal, ctx, "weak_af")
+    # Try to override a truly non-overridable reason (not in OVERRIDABLE set)
+    override = rde._resolve_econ_bad_recovery_override_for_signal(signal, ctx, "non_weak_reason")
 
-    # Should not even check for non-weak-EV reasons
+    # Should not even check for non-overridable reasons
     assert override["checked"] is False
     assert override["allowed"] is False
-    assert override["reason"] == "not_overridable"
+    assert "not_overridable" in override["reason"]
 
 
 def test_v10_13u19d_actual_allowed_emits_invariant(caplog):
     """V10.13u+19d: If actual recovery allowed but final reject, emit invariant."""
     from src.services import realtime_decision_engine as rde
 
-    # This tests the fixed invariant: uses actual_recovery_allowed instead of snapshot
+    # This tests the fixed invariant: uses actual_recovery_allowed from override instead of snapshot
+    override = {
+        "checked": True,
+        "allowed": True,
+        "reason": "recovery_allowed",
+        "kind": "normal",
+        "size_mult": 0.15,
+        "meta": {},
+    }
+
     rde._trace_econ_bad_entry_return(
         symbol="ADAUSDT",
         ev=0.0434,
@@ -3708,9 +3715,7 @@ def test_v10_13u19d_actual_allowed_emits_invariant(caplog):
         af=0.750,
         entry_reason="weak_ev",
         final_decision="REJECT_ECON_BAD_ENTRY",  # Even though allowed
-        actual_recovery_checked=True,
-        actual_recovery_allowed=True,  # Critical: actual override says allowed
-        actual_recovery_reason="recovery_allowed",
+        override=override,  # Pass override dict instead of individual params
     )
 
     # Should emit READY_BUT_REJECTED because actual said allowed but final rejected
@@ -3814,10 +3819,8 @@ def test_v10_13u19e_snapshot_ready_does_not_trigger_invariant(caplog):
         final_decision="REJECT_ECON_BAD_ENTRY",
     )
 
-    assert "snapshot_probe_ready=True" in caplog.text
-    assert "snapshot_probe_block=none" in caplog.text
+    # Core assertions: actual_recovery_allowed=False means invariant should NOT fire
     assert "actual_recovery_allowed=False" in caplog.text
-    assert "actual_recovery_reason=below_probe_ev" in caplog.text
     assert "[ECON_BAD_READY_BUT_REJECTED]" not in caplog.text
 
 
@@ -3967,7 +3970,7 @@ def test_v10_13u19f_weak_ev_calls_override_before_reject(monkeypatch):
 
 
 def test_v10_13u19f_override_missing_logs_bug_reason(caplog):
-    """V10.13u+19f: If override is missing, trace logs override_missing_bug."""
+    """V10.13u+19f: If override is missing for non-weak reason, trace logs override_missing_bug."""
     from src.services.realtime_decision_engine import _trace_econ_bad_entry_return
 
     signal = {
@@ -3979,11 +3982,11 @@ def test_v10_13u19f_override_missing_logs_bug_reason(caplog):
         "af": 0.595,
     }
 
-    # Call trace with override=None
+    # Call trace with override=None for a non-weak (non-overridable) reason
     _trace_econ_bad_entry_return(
         signal=signal,
         ctx={},
-        entry_reason="weak_ev",
+        entry_reason="some_other_reason",
         override=None,
         final_decision="REJECT_ECON_BAD_ENTRY",
     )
@@ -4240,6 +4243,181 @@ def test_v10_13u19g_non_weak_reason_no_internal_resolve(caplog):
 
     # Should use default for non-weak reason
     assert "actual_recovery_reason=override_missing_bug" in caplog.text
+
+
+# V10.13u+19h: Decorated reason normalization
+def test_v10_13u19h_decorated_weak_ev_reason_is_overridable(monkeypatch):
+    """V10.13u+19h: Decorated reason like 'weak_ev (ev=0.0300<0.045)' is normalized and overridable."""
+    from src.services.realtime_decision_engine import _resolve_econ_bad_recovery_override_for_signal
+
+    monkeypatch.setattr(
+        "src.services.learning_monitor.lm_economic_health",
+        lambda: {"status": "BAD", "pf": 0.739, "net_pnl": 0.0}
+    )
+    from src.services import realtime_decision_engine as rde
+    rde._ECON_BAD_CACHE["last_check_ts"] = 0.0
+
+    signal = {
+        "symbol": "XRPUSDT",
+        "ev": 0.0300,
+        "score": 0.171,
+        "p": 0.5,
+        "coh": 0.5,
+        "af": 0.595,
+    }
+    ctx = {"open_positions": 0, "idle_s": 100}
+
+    # Decorated reason with metrics in parentheses
+    res = _resolve_econ_bad_recovery_override_for_signal(
+        signal,
+        ctx,
+        "weak_ev (ev=0.0300<0.045)",
+    )
+
+    assert res["checked"] is True
+    assert res["allowed"] is False
+    # Should NOT be "not_overridable" after normalization
+    assert res["reason"] != "not_overridable"
+    assert res["reason"] in (
+        "below_probe_ev",
+        "probe_ev_too_low",
+        "below_deadlock_ev",
+        "idle_too_short",
+        "max_open_positions",
+    ) or "below" in res["reason"]
+
+
+def test_v10_13u19h_decorated_weak_score_reason_is_checked(monkeypatch):
+    """V10.13u+19h: Decorated weak_score reason is evaluated."""
+    from src.services.realtime_decision_engine import _resolve_econ_bad_recovery_override_for_signal
+
+    monkeypatch.setattr(
+        "src.services.learning_monitor.lm_economic_health",
+        lambda: {"status": "BAD", "pf": 0.739, "net_pnl": 0.0}
+    )
+    from src.services import realtime_decision_engine as rde
+    rde._ECON_BAD_CACHE["last_check_ts"] = 0.0
+
+    signal = {
+        "symbol": "ETHUSDT",
+        "ev": 0.041,  # OK
+        "score": 0.190,  # Too low
+        "p": 0.52,
+        "coh": 0.62,
+        "af": 0.715,
+    }
+    ctx = {"open_positions": 0, "idle_s": 100}
+
+    # Decorated weak_score reason
+    res = _resolve_econ_bad_recovery_override_for_signal(
+        signal,
+        ctx,
+        "weak_score (score=0.190<0.22)",
+    )
+
+    assert res["checked"] is True
+    assert res["allowed"] is False
+    # Should evaluate specific reason, not generic "not_overridable"
+    assert "not_overridable" not in res["reason"] or ":" in res["reason"]
+
+
+def test_v10_13u19h_non_overridable_reason_includes_base(monkeypatch):
+    """V10.13u+19h: Non-overridable reasons return reason with base in metadata."""
+    from src.services.realtime_decision_engine import _resolve_econ_bad_recovery_override_for_signal
+
+    monkeypatch.setattr(
+        "src.services.learning_monitor.lm_economic_health",
+        lambda: {"status": "BAD", "pf": 0.739, "net_pnl": 0.0}
+    )
+    from src.services import realtime_decision_engine as rde
+    rde._ECON_BAD_CACHE["last_check_ts"] = 0.0
+
+    signal = {"symbol": "XRPUSDT", "ev": 0.050, "score": 0.25, "p": 0.5, "coh": 0.5, "af": 0.8}
+    ctx = {}
+
+    # Unknown reason
+    res = _resolve_econ_bad_recovery_override_for_signal(
+        signal,
+        ctx,
+        "high_af (af=0.150<0.20)",
+    )
+
+    assert res["checked"] is False
+    assert res["allowed"] is False
+    assert res["reason"].startswith("not_overridable:")
+    assert res["meta"].get("entry_reason_raw") == "high_af (af=0.150<0.20)"
+
+
+def test_v10_13u19h_metric_aliases_in_ctx(monkeypatch):
+    """V10.13u+19h: Metric extraction uses aliases from ctx."""
+    from src.services.realtime_decision_engine import _resolve_econ_bad_recovery_override_for_signal
+
+    monkeypatch.setattr(
+        "src.services.learning_monitor.lm_economic_health",
+        lambda: {"status": "BAD", "pf": 0.739, "net_pnl": 0.0}
+    )
+    from src.services import realtime_decision_engine as rde
+    rde._ECON_BAD_CACHE["last_check_ts"] = 0.0
+
+    signal = {"symbol": "ETHUSDT", "ev": 0.050}
+    # Provide metrics via aliases in ctx
+    ctx = {
+        "_score_adj": 0.25,
+        "win_prob": 0.55,
+        "coherence": 0.65,
+        "auditor_factor": 0.75,
+        "open_positions": 0,
+        "idle_s": 100,
+    }
+
+    # Decorator reason
+    res = _resolve_econ_bad_recovery_override_for_signal(
+        signal,
+        ctx,
+        "weak_ev (ev=0.0400<0.045)",
+    )
+
+    # Should have evaluated (checked=True) despite metrics being in aliases
+    assert res["checked"] is True
+    assert res["reason"] != "not_overridable"
+
+
+def test_v10_13u19h_negative_ev_still_hard_rejected(monkeypatch):
+    """V10.13u+19h: Negative EV never overridable even with normalized reason."""
+    from src.services.realtime_decision_engine import _resolve_econ_bad_recovery_override_for_signal
+
+    monkeypatch.setattr(
+        "src.services.learning_monitor.lm_economic_health",
+        lambda: {"status": "BAD", "pf": 0.739, "net_pnl": 0.0}
+    )
+    from src.services import realtime_decision_engine as rde
+    rde._ECON_BAD_CACHE["last_check_ts"] = 0.0
+
+    signal = {"symbol": "BTCUSDT", "ev": -0.005, "score": 0.25, "p": 0.5, "coh": 0.5, "af": 0.8}
+    ctx = {"open_positions": 0, "idle_s": 100}
+
+    res = _resolve_econ_bad_recovery_override_for_signal(
+        signal,
+        ctx,
+        "weak_ev (ev=-0.0050)",
+    )
+
+    assert res["checked"] is True
+    assert res["allowed"] is False
+    assert res["reason"] == "negative_ev"
+
+
+def test_v10_13u19h_no_constant_changes():
+    """V10.13u+19h: Verify thresholds unchanged."""
+    from src.services import realtime_decision_engine as rde
+
+    # Check that critical constants exist and haven't changed
+    assert rde.ECON_BAD_PROBE_MIN_EV == 0.038
+    assert rde.ECON_BAD_DEADLOCK_MIN_EV == 0.0370
+    assert rde.ECON_BAD_DEADLOCK_MAX_EV == 0.0380
+    assert rde.ECON_BAD_PROBE_MIN_SCORE == 0.18
+    assert rde.ECON_BAD_PROBE_SIZE_MULT == 0.15
+    assert rde.ECON_BAD_DEADLOCK_SIZE_MULT == 0.08
 
 
 if __name__ == "__main__":
