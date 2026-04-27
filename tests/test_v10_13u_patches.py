@@ -4108,5 +4108,139 @@ def test_v10_13u19f_allowed_override_returns_take():
         rde._econ_bad_recovery_probe_allowed = original_recovery
 
 
+def test_v10_13u19g_weak_ev_reject_calls_resolver_internally(caplog, monkeypatch):
+    """V10.13u+19g: Trace calls resolver internally if override=None and weak_ev."""
+    from src.services.realtime_decision_engine import _trace_econ_bad_entry_return
+
+    # Mock ECON BAD to be active
+    monkeypatch.setattr(
+        "src.services.learning_monitor.lm_economic_health",
+        lambda: {"status": "BAD", "pf": 0.739, "net_pnl": 0.0}
+    )
+    from src.services import realtime_decision_engine as rde
+    rde._ECON_BAD_CACHE["last_check_ts"] = 0.0
+
+    signal = {
+        "symbol": "XRPUSDT",
+        "ev": 0.0338,
+        "score": 0.174,
+        "p": 0.500,
+        "coh": 0.675,
+        "af": 0.595,
+        "forced": False,
+    }
+    ctx = {
+        "ev": 0.0338,
+        "score": 0.174,
+        "p": 0.500,
+        "coh": 0.675,
+        "af": 0.595,
+        "open_positions": 0,
+        "seconds_since_last_closed_trade": 1234,
+    }
+
+    # Call trace WITHOUT override dict — should resolve internally
+    _trace_econ_bad_entry_return(
+        signal=signal,
+        ctx=ctx,
+        entry_reason="weak_ev",
+        override=None,  # Not provided
+        final_decision="REJECT_ECON_BAD_ENTRY",
+    )
+
+    # Should NOT show not_overridable
+    assert "actual_recovery_reason=not_overridable" not in caplog.text
+    # Should show checked=True and exact blocker
+    assert "actual_recovery_checked=True" in caplog.text
+    assert "actual_recovery_allowed=False" in caplog.text
+
+
+def test_v10_13u19g_weak_score_resolves_internally(caplog, monkeypatch):
+    """V10.13u+19g: Trace resolves weak_score internally if override=None."""
+    from src.services.realtime_decision_engine import _trace_econ_bad_entry_return
+
+    monkeypatch.setattr(
+        "src.services.learning_monitor.lm_economic_health",
+        lambda: {"status": "BAD", "pf": 0.739, "net_pnl": 0.0}
+    )
+    from src.services import realtime_decision_engine as rde
+    rde._ECON_BAD_CACHE["last_check_ts"] = 0.0
+
+    signal = {
+        "symbol": "ADAUSDT",
+        "ev": 0.050,  # OK
+        "score": 0.15,  # Too low
+        "p": 0.55,
+        "coh": 0.70,
+        "af": 0.80,
+        "forced": False,
+    }
+
+    _trace_econ_bad_entry_return(
+        signal=signal,
+        ctx={},
+        entry_reason="weak_score",
+        override=None,
+        final_decision="REJECT_ECON_BAD_ENTRY",
+    )
+
+    assert "actual_recovery_checked=True" in caplog.text
+    assert "actual_recovery_allowed=False" in caplog.text
+    assert "actual_recovery_reason=not_overridable" not in caplog.text
+
+
+def test_v10_13u19g_resolver_error_logged(caplog, monkeypatch):
+    """V10.13u+19g: If resolver throws, trace logs resolver_error."""
+    from src.services.realtime_decision_engine import _trace_econ_bad_entry_return
+
+    # Mock ECON BAD
+    monkeypatch.setattr(
+        "src.services.learning_monitor.lm_economic_health",
+        lambda: {"status": "BAD", "pf": 0.739, "net_pnl": 0.0}
+    )
+    from src.services import realtime_decision_engine as rde
+    rde._ECON_BAD_CACHE["last_check_ts"] = 0.0
+
+    # Mock resolver to throw
+    def mock_resolver_error(sig, ctx, reason):
+        raise RuntimeError("Test resolver error")
+
+    original_resolver = rde._resolve_econ_bad_recovery_override_for_signal
+    rde._resolve_econ_bad_recovery_override_for_signal = mock_resolver_error
+
+    try:
+        _trace_econ_bad_entry_return(
+            signal={"symbol": "TEST", "ev": 0.04},
+            ctx={},
+            entry_reason="weak_ev",
+            override=None,
+            final_decision="REJECT_ECON_BAD_ENTRY",
+        )
+
+        assert "actual_recovery_checked=True" in caplog.text
+        assert "actual_recovery_allowed=False" in caplog.text
+        assert "resolver_error" in caplog.text
+    finally:
+        rde._resolve_econ_bad_recovery_override_for_signal = original_resolver
+
+
+def test_v10_13u19g_non_weak_reason_no_internal_resolve(caplog):
+    """V10.13u+19g: Non-weak reasons don't trigger internal resolve."""
+    from src.services.realtime_decision_engine import _trace_econ_bad_entry_return
+
+    signal = {"symbol": "TEST", "ev": 0.05}
+
+    _trace_econ_bad_entry_return(
+        signal=signal,
+        ctx={},
+        entry_reason="some_other_reason",
+        override=None,
+        final_decision="REJECT_ECON_BAD_ENTRY",
+    )
+
+    # Should use default for non-weak reason
+    assert "actual_recovery_reason=override_missing_bug" in caplog.text
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

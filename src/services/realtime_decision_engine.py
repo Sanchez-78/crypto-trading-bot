@@ -607,8 +607,34 @@ def _trace_econ_bad_entry_return(
             af = signal.get("af", 0.0)
 
         # Use override dict if provided (V10.13u+19e)
-        # V10.13u+19f: If override is None (missing), log bug reason
+        # V10.13u+19g: If override is None AND entry_reason is weak/overridable,
+        # call resolver internally to ensure trace never shows not_overridable
+        if override is None and entry_reason and any(
+            entry_reason.lower().startswith(x)
+            for x in ("weak_ev", "weak_score", "weak_p", "weak_coh", "weak_af")
+        ):
+            try:
+                # Call resolver internally if not provided
+                internal_override = _resolve_econ_bad_recovery_override_for_signal(
+                    signal or {},
+                    ctx or {},
+                    entry_reason,
+                )
+                override = _normalize_econ_bad_override_result(internal_override)
+            except Exception as resolve_err:
+                # If resolver throws, mark as checked with error reason
+                override = {
+                    "checked": True,
+                    "allowed": False,
+                    "reason": f"resolver_error:{str(resolve_err)[:60]}",
+                    "kind": None,
+                    "size_mult": None,
+                    "meta": {},
+                }
+
+        # Apply override (whether provided or resolved internally)
         if override is None:
+            # Not a weak-overridable reason, use defaults
             actual_recovery_checked = False
             actual_recovery_allowed = False
             actual_recovery_reason = "override_missing_bug"
