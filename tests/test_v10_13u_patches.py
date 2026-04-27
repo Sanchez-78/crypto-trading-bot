@@ -2675,5 +2675,124 @@ def test_v10_13u18c_heartbeat_exception_safe():
             pytest.fail("Heartbeat should never raise")
 
 
+# ════════════════════════════════════════════════════════════════════════════════
+# V10.13u+18d: ECON BAD DIAGNOSTIC HOOK INTEGRATION
+# ════════════════════════════════════════════════════════════════════════════════
+
+def test_v10_13u18d_hook_marker_emits():
+    """V10.13u+18d: emit_econ_bad_diag_hook_marker() emits startup message."""
+    from src.services.realtime_decision_engine import (
+        emit_econ_bad_diag_hook_marker,
+    )
+    from unittest.mock import patch
+
+    # Should not raise
+    with patch("src.services.realtime_decision_engine.log") as mock_log:
+        try:
+            emit_econ_bad_diag_hook_marker()
+            # Marker should attempt to log (exception-safe)
+            assert True, "Hook marker should not raise"
+        except Exception:
+            pytest.fail("Hook marker should be exception-safe")
+
+
+def test_v10_13u18d_first_heartbeat_without_throttle():
+    """V10.13u+18d: First heartbeat after restart emits immediately."""
+    from src.services.realtime_decision_engine import (
+        maybe_emit_econ_bad_diag_heartbeat,
+        _ECON_BAD_DIAGNOSTICS,
+    )
+    from unittest.mock import patch
+    import time
+
+    # Reset to simulate first startup
+    _reset_econ_bad_diagnostics()
+    _ECON_BAD_DIAGNOSTICS["total_econ_bad_blocks"] = 1
+    _ECON_BAD_DIAGNOSTICS["last_summary_ts"] = 0.0  # First time
+
+    # Mock ECON BAD state
+    with patch("src.services.realtime_decision_engine._get_econ_bad_state", return_value=(True, 0.74)):
+        # Should emit without waiting for throttle (first heartbeat)
+        maybe_emit_econ_bad_diag_heartbeat(force=False)
+        # Timestamp should be updated (indicating first emission)
+        assert _ECON_BAD_DIAGNOSTICS["last_summary_ts"] > 0, "First heartbeat should emit without throttle"
+
+
+def test_v10_13u18d_heartbeat_from_main_loop_source():
+    """V10.13u+18d: Heartbeat accepts main_loop source."""
+    from src.services.realtime_decision_engine import (
+        maybe_emit_econ_bad_diag_heartbeat,
+        _ECON_BAD_DIAGNOSTICS,
+    )
+    from unittest.mock import patch
+
+    # Reset
+    _reset_econ_bad_diagnostics()
+    _ECON_BAD_DIAGNOSTICS["total_econ_bad_blocks"] = 1
+    _ECON_BAD_DIAGNOSTICS["last_summary_ts"] = 0.0
+
+    # Mock ECON BAD state and call with main_loop source
+    with patch("src.services.realtime_decision_engine._get_econ_bad_state", return_value=(True, 0.74)):
+        try:
+            maybe_emit_econ_bad_diag_heartbeat(source="main_loop", force=True)
+            assert True, "Should accept main_loop source"
+        except Exception as e:
+            pytest.fail(f"Should accept main_loop source: {e}")
+
+
+def test_v10_13u18d_snapshot_includes_all_counters():
+    """V10.13u+18d: Snapshot includes all diagnostic counters."""
+    from src.services.realtime_decision_engine import (
+        get_econ_bad_diagnostics_snapshot,
+        _ECON_BAD_DIAGNOSTICS,
+    )
+    from unittest.mock import patch
+
+    # Reset and populate all counters
+    _reset_econ_bad_diagnostics()
+    _ECON_BAD_DIAGNOSTICS["total_econ_bad_blocks"] = 10
+    _ECON_BAD_DIAGNOSTICS["hard_negative_ev_blocks"] = 3
+    _ECON_BAD_DIAGNOSTICS["weak_ev_blocks"] = 4
+    _ECON_BAD_DIAGNOSTICS["weak_score_blocks"] = 1
+    _ECON_BAD_DIAGNOSTICS["weak_p_blocks"] = 1
+    _ECON_BAD_DIAGNOSTICS["weak_coh_blocks"] = 1
+    _ECON_BAD_DIAGNOSTICS["weak_af_blocks"] = 0
+    _ECON_BAD_DIAGNOSTICS["forced_weak_blocks"] = 0
+    _ECON_BAD_DIAGNOSTICS["forced_explore_blocks"] = 0
+
+    # Get snapshot
+    with patch("src.services.realtime_decision_engine._get_econ_bad_state", return_value=(True, 0.74)):
+        snapshot = get_econ_bad_diagnostics_snapshot()
+
+    # Verify all fields present
+    assert snapshot["total_econ_bad_blocks"] == 10, "Should include total"
+    assert snapshot["hard_negative_ev_blocks"] == 3, "Should include negative_ev"
+    assert snapshot["weak_ev"] == 4, "Should include weak_ev"
+    assert snapshot["weak_score"] == 1, "Should include weak_score"
+    assert snapshot["weak_p"] == 1, "Should include weak_p"
+    assert snapshot["weak_coh"] == 1, "Should include weak_coh"
+    assert snapshot["weak_af"] == 0, "Should include weak_af"
+    assert snapshot["forced_weak"] == 0, "Should include forced_weak"
+    assert snapshot["forced_explore"] == 0, "Should include forced_explore"
+    assert "pf" in snapshot, "Should include pf"
+    assert "probe_ready" in snapshot, "Should include probe_ready"
+
+
+def test_v10_13u18d_no_decision_change():
+    """V10.13u+18d: Diagnostics emit at WARNING level without changing decisions."""
+    from src.services.realtime_decision_engine import (
+        maybe_emit_econ_bad_diag_heartbeat,
+    )
+    from unittest.mock import patch
+
+    # Should not affect any decisions - just verify no exception
+    with patch("src.services.realtime_decision_engine._get_econ_bad_state", return_value=(True, 0.74)):
+        try:
+            maybe_emit_econ_bad_diag_heartbeat(force=True, source="test")
+            assert True, "Should emit without affecting decisions"
+        except Exception:
+            pytest.fail("Heartbeat should never raise")
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

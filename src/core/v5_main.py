@@ -368,14 +368,26 @@ class V5ProductionSystem:
 def main_loop(system: V5ProductionSystem, market_stream_iterator):
     """
     Main trading loop.
-    
+
     Args:
         system: V5ProductionSystem instance
         market_stream_iterator: Iterator yielding market data + signals
     """
     logger.info("🚀 Starting V5 Production Loop...")
-    
+
+    # V10.13u+18d: Emit startup marker for diagnostic hook
+    try:
+        from src.services.realtime_decision_engine import emit_econ_bad_diag_hook_marker
+        emit_econ_bad_diag_hook_marker()
+    except Exception:
+        pass
+
+    # V10.13u+18d: Track ticks for periodic diagnostic heartbeat
+    _tick_count = 0
+    _last_diag_heartbeat_tick = 0
+
     for market_tick in market_stream_iterator:
+        _tick_count += 1
         try:
             # Extract data
             signal = market_tick.get("signal")
@@ -398,7 +410,16 @@ def main_loop(system: V5ProductionSystem, market_stream_iterator):
             if system.trades_executed % 100 == 0:
                 status = system.get_status()
                 logger.info(f"📊 Status: {status}")
-        
+
+            # V10.13u+18d: Emit ECON BAD diagnostic heartbeat every ~100 ticks (~10s)
+            if _tick_count - _last_diag_heartbeat_tick >= 100:
+                try:
+                    from src.services.realtime_decision_engine import maybe_emit_econ_bad_diag_heartbeat
+                    maybe_emit_econ_bad_diag_heartbeat(source="main_loop")
+                except Exception:
+                    pass
+                _last_diag_heartbeat_tick = _tick_count
+
         except Exception as e:
             logger.error(f"Error in main loop: {e}", exc_info=True)
 

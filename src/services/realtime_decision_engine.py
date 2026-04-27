@@ -325,34 +325,64 @@ def get_econ_bad_diagnostics_snapshot(reset: bool = False) -> dict:
         return {"error": "snapshot_failed"}
 
 
+def emit_econ_bad_diag_hook_marker() -> None:
+    """V10.13u+18d: Emit startup marker to prove hook is active. One-shot."""
+    try:
+        log.warning(
+            f"[ECON_BAD_DIAG_HOOK_ACTIVE] source=realtime_decision_engine "
+            f"interval_s={_ECON_BAD_DIAG_THROTTLE_S} "
+            f"timestamp={_time.time():.0f}"
+        )
+    except Exception:
+        pass
+
+
 def maybe_emit_econ_bad_diag_heartbeat(force: bool = False, source: str = "rde") -> None:
-    """V10.13u+18c: Emit periodic diagnostic heartbeat. Never raises. Never affects decision."""
+    """V10.13u+18d: Emit periodic diagnostic heartbeat. Never raises. Never affects decision."""
     try:
         snapshot = get_econ_bad_diagnostics_snapshot()
 
         if not snapshot.get("econ_bad", False):
             return
 
-        # Throttle unless forced
+        # Throttle unless forced or first emission
         now = _time.time()
         last_ts = _ECON_BAD_DIAGNOSTICS.get("last_summary_ts", 0.0)
-        if not force and (now - last_ts) < _ECON_BAD_DIAG_THROTTLE_S:
+        is_first = last_ts == 0.0
+        if not force and not is_first and (now - last_ts) < _ECON_BAD_DIAG_THROTTLE_S:
             return
 
-        # Emit heartbeat
-        log.info(
+        # Format values with conditionals (must be done before f-string)
+        best_ev_str = f"{snapshot['best_ev']:.4f}" if (snapshot['best_ev'] is not None and snapshot['best_ev'] > -999) else 'None'
+        best_score_str = f"{snapshot['best_score']:.3f}" if (snapshot['best_score'] is not None and snapshot['best_score'] > -999) else 'None'
+        best_p_str = f"{snapshot['best_p']:.3f}" if snapshot['best_p'] else 'None'
+        best_coh_str = f"{snapshot['best_coh']:.3f}" if snapshot['best_coh'] else 'None'
+        best_af_str = f"{snapshot['best_af']:.3f}" if snapshot['best_af'] else 'None'
+
+        # Emit heartbeat at WARNING level for production visibility
+        log.warning(
             f"[ECON_BAD_DIAG_HEARTBEAT] source={source} "
             f"pf={snapshot['pf']:.3f} "
             f"total={snapshot['total_econ_bad_blocks']} "
             f"neg_ev={snapshot['hard_negative_ev_blocks']} "
             f"weak_ev={snapshot['weak_ev']} "
-            f"best_ev={snapshot['best_ev']:.4f if snapshot['best_ev'] and snapshot['best_ev'] > -999 else 'None'} "
+            f"weak_score={snapshot['weak_score']} "
+            f"weak_p={snapshot['weak_p']} "
+            f"weak_coh={snapshot['weak_coh']} "
+            f"weak_af={snapshot['weak_af']} "
+            f"forced={snapshot['forced_weak'] + snapshot['forced_explore']} "
+            f"best_symbol={snapshot['best_symbol'] or 'None'} "
+            f"best_ev={best_ev_str} "
+            f"best_score={best_score_str} "
+            f"best_p={best_p_str} "
+            f"best_coh={best_coh_str} "
+            f"best_af={best_af_str} "
             f"probe_ready={snapshot['probe_ready']} "
             f"probe_block={snapshot['probe_block_reason']}"
         )
 
-        # Also emit full summary
-        log.info(
+        # Also emit full summary at WARNING level
+        log.warning(
             f"[ECON_BAD_NEAR_MISS_SUMMARY] "
             f"total={snapshot['total_econ_bad_blocks']} "
             f"negative_ev={snapshot['hard_negative_ev_blocks']} "
@@ -364,11 +394,11 @@ def maybe_emit_econ_bad_diag_heartbeat(force: bool = False, source: str = "rde")
             f"forced_weak={snapshot['forced_weak']} "
             f"forced_explore={snapshot['forced_explore']} "
             f"best_symbol={snapshot['best_symbol'] or 'None'} "
-            f"best_ev={snapshot['best_ev']:.4f if snapshot['best_ev'] and snapshot['best_ev'] > -999 else 'None'} "
-            f"best_score={snapshot['best_score']:.3f if snapshot['best_score'] and snapshot['best_score'] > -999 else 'None'} "
-            f"best_p={snapshot['best_p']:.3f if snapshot['best_p'] else 'None'} "
-            f"best_coh={snapshot['best_coh']:.3f if snapshot['best_coh'] else 'None'} "
-            f"best_af={snapshot['best_af']:.3f if snapshot['best_af'] else 'None'} "
+            f"best_ev={best_ev_str} "
+            f"best_score={best_score_str} "
+            f"best_p={best_p_str} "
+            f"best_coh={best_coh_str} "
+            f"best_af={best_af_str} "
             f"probe_ready={snapshot['probe_ready']} "
             f"probe_block={snapshot['probe_block_reason']}"
         )

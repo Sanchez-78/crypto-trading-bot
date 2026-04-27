@@ -141,10 +141,10 @@ class LivePathHeartbeat:
 
             self.last_heartbeat = now
 
-            # V10.13u+18c: Emit ECON BAD diagnostic heartbeat from periodic loop
+            # V10.13u+18d: Emit ECON BAD diagnostic heartbeat from periodic loop
             try:
                 from src.services.realtime_decision_engine import maybe_emit_econ_bad_diag_heartbeat
-                maybe_emit_econ_bad_diag_heartbeat(source="live_path_heartbeat")
+                maybe_emit_econ_bad_diag_heartbeat(source="live_path_heartbeat", force=False)
             except Exception:
                 pass
 
