@@ -113,6 +113,10 @@ _ECON_BAD_DIAGNOSTICS = {
 _ECON_BAD_DIAG_THROTTLE_S = 600  # Summary every 10 minutes
 _ECON_BAD_NO_TRADE_DIAG_THROTTLE_S = 300  # Check every 5 minutes
 
+# V10.13u+18g: Rejection path diagnostic emission throttle
+_ECON_BAD_DIAG_REJECT_EMIT_THROTTLE_S = 60.0
+_econ_bad_diag_last_reject_emit_ts = 0.0
+
 
 def _update_econ_bad_near_miss(
     symbol: str,
@@ -462,6 +466,36 @@ def maybe_emit_econ_bad_diag_heartbeat(force: bool = False, source: str = "rde")
     except Exception:
         # Never allow heartbeat to crash or affect trading
         pass
+
+
+def _maybe_emit_econ_bad_diag_from_reject(source: str = "rde_reject") -> None:
+    """V10.13u+18g: Emit ECON BAD diagnostics from rejection/update path.
+
+    Production-safe fallback when periodic loop heartbeat is not reached.
+    Observability only. Never changes decision logic. Never raises.
+    """
+    global _econ_bad_diag_last_reject_emit_ts
+    try:
+        now = _time.time()
+        if _econ_bad_diag_last_reject_emit_ts and (
+            now - _econ_bad_diag_last_reject_emit_ts
+        ) < _ECON_BAD_DIAG_REJECT_EMIT_THROTTLE_S:
+            return
+
+        snap = get_econ_bad_diagnostics_snapshot()
+        total = int(snap.get("total_econ_bad_blocks") or 0)
+        if total <= 0:
+            return
+
+        # Force bypasses the 10-minute heartbeat throttle.
+        # This helper has its own 60-second throttle.
+        maybe_emit_econ_bad_diag_heartbeat(force=True, source=source)
+        _econ_bad_diag_last_reject_emit_ts = now
+    except Exception as exc:
+        try:
+            log.warning("[ECON_BAD_DIAG_REJECT_EMIT_ERROR] err=%s", str(exc)[:160])
+        except Exception:
+            pass
 
 
 def _get_cached_history():
@@ -3089,6 +3123,8 @@ def evaluate_signal(signal):
             _ECON_BAD_DIAGNOSTICS["hard_negative_ev_blocks"] += 1
             _ECON_BAD_DIAGNOSTICS["total_econ_bad_blocks"] += 1
             _maybe_flush_econ_bad_diagnostics()
+            # V10.13u+18g: Emit from rejection path as production-safe fallback
+            _maybe_emit_econ_bad_diag_from_reject(source="rde_reject")
         return None
 
     # ════════════════════════════════════════════════════════════════════════════════
@@ -3202,6 +3238,8 @@ def evaluate_signal(signal):
                 )
                 # V10.13u+18b: Flush diagnostics before early return
                 _maybe_flush_econ_bad_diagnostics()
+                # V10.13u+18g: Emit from rejection path as production-safe fallback
+                _maybe_emit_econ_bad_diag_from_reject(source="rde_reject")
                 return None
         else:
             # Cannot override unsafe rejections (weak_af, weak_p, weak_coh)
@@ -3219,6 +3257,8 @@ def evaluate_signal(signal):
             )
             # V10.13u+18b: Flush diagnostics before early return
             _maybe_flush_econ_bad_diagnostics()
+            # V10.13u+18g: Emit from rejection path as production-safe fallback
+            _maybe_emit_econ_bad_diag_from_reject(source="rde_reject")
             return None
 
     # V10.13u+16: Forced exploration gate during ECON BAD
@@ -3238,6 +3278,8 @@ def evaluate_signal(signal):
         )
         # V10.13u+18b: Flush diagnostics before early return
         _maybe_flush_econ_bad_diagnostics()
+        # V10.13u+18g: Emit from rejection path as production-safe fallback
+        _maybe_emit_econ_bad_diag_from_reject(source="rde_reject")
         return None
 
     # V10.13u+16: Log guard activation (throttled)

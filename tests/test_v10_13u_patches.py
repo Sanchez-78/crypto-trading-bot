@@ -2902,5 +2902,103 @@ def test_v10_13u18f_no_decision_change():
             pytest.fail("Core economic state should not be affected")
 
 
+# ════════════════════════════════════════════════════════════════════════════════
+# V10.13u+18g: Rejection-path diagnostic emission
+# ════════════════════════════════════════════════════════════════════════════════
+
+def test_v10_13u18g_reject_path_emits_first_summary(monkeypatch, caplog):
+    """V10.13u+18g: First diagnostic emission from rejection path triggers heartbeat."""
+    from src.services import realtime_decision_engine as rde
+
+    _reset_econ_bad_diagnostics()
+    monkeypatch.setattr(rde, "_econ_bad_diag_last_reject_emit_ts", 0.0)
+    monkeypatch.setattr(
+        "src.services.learning_monitor.lm_economic_health",
+        lambda: {"profit_factor": 0.74, "status": "BAD"},
+    )
+
+    rde._update_econ_bad_near_miss(
+        symbol="BTCUSDT",
+        regime="BULL",
+        ev=0.037,
+        score=0.183,
+        win_prob=0.523,
+        coherence=0.741,
+        auditor_factor=0.750,
+        block_reason="weak_ev",
+    )
+    rde._maybe_emit_econ_bad_diag_from_reject("test")
+
+    assert "[ECON_BAD_DIAG_HEARTBEAT]" in caplog.text
+    assert "source=test" in caplog.text
+
+
+def test_v10_13u18g_reject_path_throttles(monkeypatch, caplog):
+    """V10.13u+18g: Reject-path emission throttles at 60 seconds."""
+    from src.services import realtime_decision_engine as rde
+
+    _reset_econ_bad_diagnostics()
+    monkeypatch.setattr(rde, "_econ_bad_diag_last_reject_emit_ts", 0.0)
+    monkeypatch.setattr(
+        "src.services.learning_monitor.lm_economic_health",
+        lambda: {"profit_factor": 0.74, "status": "BAD"},
+    )
+
+    rde._update_econ_bad_near_miss(
+        symbol="BTCUSDT",
+        regime="BULL",
+        ev=0.037,
+        score=0.183,
+        win_prob=0.523,
+        coherence=0.741,
+        auditor_factor=0.750,
+        block_reason="weak_ev",
+    )
+
+    rde._maybe_emit_econ_bad_diag_from_reject("test")
+    first_count = caplog.text.count("[ECON_BAD_DIAG_HEARTBEAT]")
+
+    caplog.clear()
+    rde._maybe_emit_econ_bad_diag_from_reject("test")
+    second_count = caplog.text.count("[ECON_BAD_DIAG_HEARTBEAT]")
+
+    assert first_count == 1, "First call should emit"
+    assert second_count == 0, "Second call within 60s should be throttled"
+
+
+def test_v10_13u18g_reject_path_no_emit_without_counters(caplog):
+    """V10.13u+18g: No emission if no diagnostic counters exist."""
+    from src.services import realtime_decision_engine as rde
+
+    _reset_econ_bad_diagnostics()
+    rde._maybe_emit_econ_bad_diag_from_reject("test")
+
+    assert "[ECON_BAD_DIAG_HEARTBEAT]" not in caplog.text
+
+
+def test_v10_13u18g_reject_path_exception_safe(monkeypatch):
+    """V10.13u+18g: Helper never raises, even if snapshot fails."""
+    from src.services import realtime_decision_engine as rde
+
+    def boom():
+        raise ValueError("mock error")
+
+    monkeypatch.setattr(rde, "get_econ_bad_diagnostics_snapshot", boom)
+
+    # Should not raise
+    try:
+        rde._maybe_emit_econ_bad_diag_from_reject("test")
+    except Exception as e:
+        pytest.fail(f"Helper should be exception-safe, but raised: {e}")
+
+
+def test_v10_13u18g_no_decision_change():
+    """V10.13u+18g: Reject-path emitter is observability-only."""
+    from src.services import realtime_decision_engine as rde
+
+    result = rde._maybe_emit_econ_bad_diag_from_reject("test")
+    assert result is None, "Helper should return None (observability only)"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
