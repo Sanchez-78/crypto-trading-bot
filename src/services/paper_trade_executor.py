@@ -221,15 +221,7 @@ def open_paper_position(
     bucket = extra.get("explore_bucket") if extra else None
 
     with _POSITION_LOCK:
-        if len(_POSITIONS) >= _MAX_OPEN:
-            log.error(
-                "[PAPER_ENTRY_BLOCKED] symbol=%s reason=max_open_exceeded open=%d",
-                symbol,
-                len(_POSITIONS),
-            )
-            return {"status": "blocked", "reason": "max_open_exceeded"}
-
-        # Check exploration-specific exposure caps
+        # Check exploration-specific exposure caps FIRST (before total max cap)
         cap_check = _check_exploration_exposure_caps(symbol, bucket)
         if cap_check:
             log.error(
@@ -239,6 +231,16 @@ def open_paper_position(
                 cap_check["detail"],
             )
             return cap_check
+
+        # Then check total paper position cap
+        if len(_POSITIONS) >= _MAX_OPEN:
+            log.error(
+                "[PAPER_ENTRY_BLOCKED] symbol=%s reason=max_open_exceeded open=%d bucket=%s",
+                symbol,
+                len(_POSITIONS),
+                bucket or "N/A",
+            )
+            return {"status": "blocked", "reason": "max_open_exceeded"}
 
     trade_id = _generate_trade_id()
     side_raw = signal.get("action", signal.get("side", "BUY"))

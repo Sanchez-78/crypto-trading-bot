@@ -58,6 +58,12 @@ def update_bucket_metrics(closed_trade: dict) -> None:
         metrics["avg_net_pnl_pct"] = metrics["sum_net_pnl_pct"] / metrics["count"]
         metrics["last_close_ts"] = time.time()
 
+        # Immediate compact log on every closed exploration trade
+        log.info(
+            f"[PAPER_BUCKET_UPDATE] bucket={bucket} n={metrics['count']} "
+            f"outcome={outcome} net_pnl_pct={net_pnl_pct:.4f}"
+        )
+
         # Update outcome counts
         if outcome == "WIN":
             metrics["wins"] += 1
