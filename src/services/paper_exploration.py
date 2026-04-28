@@ -305,7 +305,8 @@ def maybe_open_paper_exploration_from_reject(
         if result.get("status") == "opened":
             log.warning(
                 "[PAPER_EXPLORE_ENTRY] bucket=%s symbol=%s side=%s original_decision=%s "
-                "ev=%.4f score=%.3f price=%.8f base_size_usd=%.2f size_mult=%.4f final_size_usd=%.2f reject_reason=%s reason=%s",
+                "ev=%.4f score=%.3f price=%.8f base_size_usd=%.2f size_mult=%.4f final_size_usd=%.2f "
+                "max_hold_s=%d reject_reason=%s reason=%s",
                 ov["bucket"],
                 symbol,
                 signal.get("action", "BUY"),
@@ -316,6 +317,7 @@ def maybe_open_paper_exploration_from_reject(
                 base_size_usd,
                 ov["size_mult"],
                 final_size_usd,
+                int(ov["max_hold_s"]),
                 reject_reason,
                 ov["reason"],
             )

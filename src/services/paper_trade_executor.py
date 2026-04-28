@@ -146,6 +146,54 @@ def _calculate_pnl(
     }
 
 
+def _check_exploration_exposure_caps(symbol: str, bucket: Optional[str]) -> Optional[dict]:
+    """Check exploration-specific exposure caps.
+
+    Rules:
+    - max_open_per_symbol = 1
+    - max_open_per_bucket = 2
+    - max_open_per_symbol_bucket = 1
+
+    Returns:
+        None if caps OK, else {"status": "blocked", "reason": ..., "detail": ...}
+    """
+    if not bucket:
+        return None  # Not an exploration trade, skip caps
+
+    symbol_count = sum(1 for p in _POSITIONS.values() if p["symbol"] == symbol and p.get("explore_bucket"))
+    bucket_count = sum(1 for p in _POSITIONS.values() if p.get("explore_bucket") == bucket)
+    symbol_bucket_count = sum(
+        1 for p in _POSITIONS.values()
+        if p["symbol"] == symbol and p.get("explore_bucket") == bucket
+    )
+
+    # Check symbol cap
+    if symbol_count >= 1:
+        return {
+            "status": "blocked",
+            "reason": "max_open_per_symbol",
+            "detail": f"symbol={symbol} open_symbol={symbol_count} bucket={bucket}",
+        }
+
+    # Check bucket cap
+    if bucket_count >= 2:
+        return {
+            "status": "blocked",
+            "reason": "max_open_per_bucket",
+            "detail": f"bucket={bucket} open_bucket={bucket_count} symbol={symbol}",
+        }
+
+    # Check symbol-bucket cap
+    if symbol_bucket_count >= 1:
+        return {
+            "status": "blocked",
+            "reason": "max_open_per_symbol_bucket",
+            "detail": f"symbol={symbol} bucket={bucket} open_symbol_bucket={symbol_bucket_count}",
+        }
+
+    return None
+
+
 def open_paper_position(
     signal: dict,
     price: float,
@@ -169,17 +217,30 @@ def open_paper_position(
         log.error("[PAPER_ENTRY_BLOCKED] symbol=%s reason=invalid_price", signal.get("symbol"))
         return {"status": "blocked", "reason": "invalid_price"}
 
+    symbol = signal.get("symbol", "UNKNOWN")
+    bucket = extra.get("explore_bucket") if extra else None
+
     with _POSITION_LOCK:
         if len(_POSITIONS) >= _MAX_OPEN:
             log.error(
                 "[PAPER_ENTRY_BLOCKED] symbol=%s reason=max_open_exceeded open=%d",
-                signal.get("symbol"),
+                symbol,
                 len(_POSITIONS),
             )
             return {"status": "blocked", "reason": "max_open_exceeded"}
 
+        # Check exploration-specific exposure caps
+        cap_check = _check_exploration_exposure_caps(symbol, bucket)
+        if cap_check:
+            log.error(
+                "[PAPER_ENTRY_BLOCKED] symbol=%s reason=%s %s",
+                symbol,
+                cap_check["reason"],
+                cap_check["detail"],
+            )
+            return cap_check
+
     trade_id = _generate_trade_id()
-    symbol = signal.get("symbol", "UNKNOWN")
     side_raw = signal.get("action", signal.get("side", "BUY"))
     side, side_raw_stored = _normalize_side(side_raw)
 
@@ -340,13 +401,16 @@ def close_paper_position(
     }
 
     log.warning(
-        "[PAPER_EXIT] symbol=%s reason=%s entry=%.8f exit=%.8f net_pnl_pct=%.4f outcome=%s",
+        "[PAPER_EXIT] symbol=%s reason=%s entry=%.8f exit=%.8f net_pnl_pct=%.4f outcome=%s hold_s=%d max_hold_s=%d bucket=%s",
         pos["symbol"],
         reason,
         pos["entry_price"],
         price,
         pnl_data["net_pnl_pct"],
         pnl_data["outcome"],
+        int(duration_s),
+        int(pos.get("max_hold_s") or _MAX_AGE_S),
+        pos.get("explore_bucket", "A_STRICT_TAKE"),
     )
 
     # Persist state after closing position

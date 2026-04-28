@@ -544,5 +544,161 @@ class TestPaperStatePersistence:
         assert len(saved_positions) == 0
 
 
+class TestBucketMetrics:
+    """Bucket-level learning metrics"""
+
+    def test_bucket_metrics_updates_after_closed_trade(self):
+        """Bucket metrics update after closed exploration trade"""
+        import os
+        if os.path.exists("data/paper_open_positions.json"):
+            os.remove("data/paper_open_positions.json")
+
+        from src.services.bucket_metrics import update_bucket_metrics, get_bucket_metrics, reset_bucket_metrics
+
+        reset_bucket_metrics()
+
+        closed_trade = {
+            "symbol": "XRPUSDT",
+            "explore_bucket": "C_WEAK_EV",
+            "outcome": "WIN",
+            "net_pnl_pct": 0.15,
+            "exit_reason": "TP",
+        }
+
+        update_bucket_metrics(closed_trade)
+
+        metrics = get_bucket_metrics("C_WEAK_EV")
+        assert metrics["count"] == 1
+        assert metrics["wins"] == 1
+        assert metrics["losses"] == 0
+        assert metrics["wr"] == 100.0
+        assert metrics["tp_count"] == 1
+        assert metrics["tp_rate"] == 100.0
+
+    def test_bucket_metrics_tracks_loss(self):
+        """Bucket metrics track losses"""
+        from src.services.bucket_metrics import update_bucket_metrics, get_bucket_metrics, reset_bucket_metrics
+
+        reset_bucket_metrics()
+
+        closed_trade = {
+            "symbol": "ETHUSDT",
+            "explore_bucket": "D_NEG_EV_CONTROL",
+            "outcome": "LOSS",
+            "net_pnl_pct": -0.25,
+            "exit_reason": "SL",
+        }
+
+        update_bucket_metrics(closed_trade)
+
+        metrics = get_bucket_metrics("D_NEG_EV_CONTROL")
+        assert metrics["count"] == 1
+        assert metrics["losses"] == 1
+        assert metrics["wins"] == 0
+        assert metrics["wr"] == 0.0
+        assert metrics["sl_count"] == 1
+
+
+class TestExposureCaps:
+    """Exploration exposure caps (per symbol/bucket)"""
+
+    def test_second_exploration_same_symbol_blocked(self):
+        """Second exploration for same symbol blocked"""
+        reset_paper_positions()
+        signal = {
+            "symbol": "XRPUSDT",
+            "action": "BUY",
+            "ev": 0.015,
+            "score": 0.15,
+        }
+
+        # Open first position
+        result1 = open_paper_position(
+            signal,
+            price=2.543,
+            ts=time.time(),
+            reason="PAPER_EXPLORE",
+            extra={
+                "explore_bucket": "C_WEAK_EV",
+                "final_size_usd": 8.00,
+            },
+        )
+        assert result1["status"] == "opened"
+
+        # Try to open second with same symbol/bucket
+        result2 = open_paper_position(
+            signal,
+            price=2.543,
+            ts=time.time(),
+            reason="PAPER_EXPLORE",
+            extra={
+                "explore_bucket": "C_WEAK_EV",
+                "final_size_usd": 8.00,
+            },
+        )
+        assert result2["status"] == "blocked"
+        assert result2["reason"] == "max_open_per_symbol"
+
+    def test_third_bucket_exploration_blocked(self):
+        """Third exploration for same bucket blocked at cap of 2"""
+        reset_paper_positions()
+
+        # Open first position in C_WEAK_EV
+        result1 = open_paper_position(
+            {"symbol": "XRPUSDT", "action": "BUY", "ev": 0.015, "score": 0.15},
+            price=2.543,
+            ts=time.time(),
+            reason="PAPER_EXPLORE",
+            extra={"explore_bucket": "C_WEAK_EV", "final_size_usd": 8.00},
+        )
+        assert result1["status"] == "opened"
+
+        # Open second in same bucket, different symbol
+        result2 = open_paper_position(
+            {"symbol": "ETHUSDT", "action": "BUY", "ev": 0.015, "score": 0.15},
+            price=2543.0,
+            ts=time.time(),
+            reason="PAPER_EXPLORE",
+            extra={"explore_bucket": "C_WEAK_EV", "final_size_usd": 8.00},
+        )
+        assert result2["status"] == "opened"
+
+        # Try to open third in same bucket - should be blocked
+        result3 = open_paper_position(
+            {"symbol": "BNBUSDT", "action": "BUY", "ev": 0.015, "score": 0.15},
+            price=555.0,
+            ts=time.time(),
+            reason="PAPER_EXPLORE",
+            extra={"explore_bucket": "C_WEAK_EV", "final_size_usd": 8.00},
+        )
+        assert result3["status"] == "blocked"
+        assert result3["reason"] == "max_open_per_bucket"
+
+    def test_different_bucket_allows_open(self):
+        """Different bucket can still open even with one symbol filled"""
+        reset_paper_positions()
+
+        # Open C_WEAK_EV for XRPUSDT
+        result1 = open_paper_position(
+            {"symbol": "XRPUSDT", "action": "BUY", "ev": 0.015, "score": 0.15},
+            price=2.543,
+            ts=time.time(),
+            reason="PAPER_EXPLORE",
+            extra={"explore_bucket": "C_WEAK_EV", "final_size_usd": 8.00},
+        )
+        assert result1["status"] == "opened"
+
+        # Open D_NEG_EV_CONTROL for XRPUSDT (different bucket)
+        result2 = open_paper_position(
+            {"symbol": "XRPUSDT", "action": "BUY", "ev": -0.01, "score": 0.05},
+            price=2.543,
+            ts=time.time(),
+            reason="PAPER_EXPLORE",
+            extra={"explore_bucket": "D_NEG_EV_CONTROL", "final_size_usd": 3.00},
+        )
+        # Should be blocked because max_open_per_symbol=1
+        assert result2["status"] == "blocked"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

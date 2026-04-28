@@ -1497,6 +1497,13 @@ def _save_paper_trade_closed(closed_trade: dict) -> None:
         except Exception as e:
             log.debug(f"[METRICS_UPDATE_FAILED] {e}")
 
+        # Update bucket-level metrics for exploration analysis
+        try:
+            from src.services.bucket_metrics import update_bucket_metrics
+            update_bucket_metrics(closed_trade)
+        except Exception as e:
+            log.debug(f"[BUCKET_METRICS_FAILED] {e}")
+
     except Exception as e:
         log.warning(f"[PAPER_SAVE_ERROR] {e}")
 
