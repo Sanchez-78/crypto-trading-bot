@@ -39,6 +39,35 @@ def _save_paper_state() -> None:
         log.warning("[PAPER_STATE_SAVE_ERROR] err=%s", str(e))
 
 
+def _migrate_legacy_position(pos: dict) -> dict:
+    """Migrate legacy position missing max_hold_s.
+
+    Args:
+        pos: Position dict that may be missing max_hold_s
+
+    Returns:
+        Updated position dict with max_hold_s set
+    """
+    if "max_hold_s" in pos:
+        return pos  # Already has max_hold_s
+
+    # Infer from bucket if available
+    bucket = pos.get("explore_bucket", "A_STRICT_TAKE")
+    if bucket == "B_RECOVERY_READY":
+        pos["max_hold_s"] = 900
+    elif bucket == "C_WEAK_EV":
+        pos["max_hold_s"] = 600
+    elif bucket == "D_NEG_EV_CONTROL":
+        pos["max_hold_s"] = 300
+    elif bucket == "E_NO_PATTERN":
+        pos["max_hold_s"] = 300
+    else:
+        # Default safe value for unknown/A_STRICT_TAKE
+        pos["max_hold_s"] = _MAX_AGE_S
+
+    return pos
+
+
 def _load_paper_state() -> None:
     """Load open paper positions from disk at startup."""
     try:
@@ -48,13 +77,27 @@ def _load_paper_state() -> None:
             return
         with open(_STATE_FILE, "r") as f:
             positions_data = json.load(f)
+
+        # Migrate legacy positions
+        migrated_count = 0
+        for trade_id, pos in positions_data.items():
+            if "max_hold_s" not in pos:
+                positions_data[trade_id] = _migrate_legacy_position(pos)
+                migrated_count += 1
+
         with _POSITION_LOCK:
             _POSITIONS.update(positions_data)
+
         log.info(
             "[PAPER_STATE_LOAD] open_positions=%d source=%s",
             len(positions_data),
             _STATE_FILE,
         )
+        if migrated_count > 0:
+            log.info(
+                "[PAPER_STATE_MIGRATE] count=%d reason=missing_max_hold_s",
+                migrated_count,
+            )
     except Exception as e:
         log.warning("[PAPER_STATE_LOAD_ERROR] err=%s", str(e))
 
@@ -335,12 +378,15 @@ def update_paper_positions(
         entry_price = pos["entry_price"]
         age_s = ts - pos["entry_ts"]
 
+        # Use per-position max_hold_s (for exploration) or default timeout_s
+        max_hold = pos.get("max_hold_s", pos.get("timeout_s", _MAX_AGE_S))
+
         exit_reason = None
         if current_price >= pos["tp"]:
             exit_reason = "TP"
         elif current_price <= pos["sl"]:
             exit_reason = "SL"
-        elif age_s >= pos["timeout_s"]:
+        elif age_s >= max_hold:
             exit_reason = "TIMEOUT"
 
         if exit_reason:
