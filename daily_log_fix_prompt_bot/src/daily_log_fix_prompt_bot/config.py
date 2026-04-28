@@ -34,6 +34,7 @@ def load_config() -> Settings:
         hetzner_host=os.getenv("HETZNER_HOST", "127.0.0.1"),
         hetzner_port=int(os.getenv("HETZNER_PORT", "22")),
         hetzner_user=os.getenv("HETZNER_USER", "root"),
+        ssh_key_path=os.getenv("SSH_KEY_PATH", "~/.ssh/id_ed25519"),
         service_name=os.getenv("SERVICE_NAME", "cryptomaster"),
         log_lookback_hours=int(os.getenv("LOG_LOOKBACK_HOURS", "24")),
         local_report_dir=os.getenv("LOCAL_REPORT_DIR", "reports"),

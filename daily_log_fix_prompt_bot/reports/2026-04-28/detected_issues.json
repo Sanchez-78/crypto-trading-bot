@@ -1,0 +1,124 @@
+[
+  {
+    "id": "NO_SIGNALS",
+    "severity": "critical",
+    "confidence": 1.0,
+    "title": "No signals generated in analysis period",
+    "evidence": [
+      "No signal_created events found in logs"
+    ],
+    "probable_root_cause": "Signal generator stalled, WebSocket dead, or data feed frozen",
+    "recommended_fix": "Check market_stream WebSocket, verify Binance connectivity, restart if hung",
+    "likely_files": [
+      "src/services/market_stream.py",
+      "src/services/signal_generator.py"
+    ],
+    "validation_steps": [
+      "Check WebSocket connection status",
+      "Verify Binance API is accessible"
+    ]
+  },
+  {
+    "id": "ZERO_PNL_ANOMALY",
+    "severity": "medium",
+    "confidence": 0.7,
+    "title": "Excessive zero PnL trades",
+    "evidence": [
+      "1086/1086 trades have zero PnL"
+    ],
+    "probable_root_cause": "Rounding errors, flat timeout exits not classified, or PnL not computed",
+    "recommended_fix": "Check PnL rounding logic, verify timeout classification, ensure computation",
+    "likely_files": [
+      "src/services/learning_event.py",
+      "src/services/metrics_engine.py"
+    ],
+    "validation_steps": [
+      "Inspect PnL calculation code",
+      "Check rounding thresholds"
+    ]
+  },
+  {
+    "id": "VERSION_MISMATCH",
+    "severity": "medium",
+    "confidence": 0.7,
+    "title": "Multiple versions observed: 10.12c, 10.13g, 10.13m, 10.13r, 10.13u, 10.13w, 10.13x",
+    "evidence": [
+      "10.13u",
+      "10.13w",
+      "10.13g",
+      "10.13r",
+      "10.13x",
+      "10.12c",
+      "10.13m"
+    ],
+    "probable_root_cause": "Bot restarted with different code, or mixed deployment",
+    "recommended_fix": "Verify deployment is consistent, check git HEAD, restart bot cleanly",
+    "likely_files": [
+      "start.py",
+      "bot2/main.py"
+    ],
+    "validation_steps": [
+      "Check git status",
+      "Verify single instance running"
+    ]
+  },
+  {
+    "id": "FIREBASE_QUOTA_RISK",
+    "severity": "high",
+    "confidence": 0.8,
+    "title": "High Firebase warnings count: 11",
+    "evidence": [
+      "Firebase warnings in logs: 11"
+    ],
+    "probable_root_cause": "Quota exhaustion, slow writes, or connection timeouts",
+    "recommended_fix": "Check Firebase quota status, optimize batch writes, add backoff retry",
+    "likely_files": [
+      "src/services/firebase_client.py"
+    ],
+    "validation_steps": [
+      "Run quota monitor",
+      "Check daily usage stats"
+    ]
+  },
+  {
+    "id": "REDIS_FAILURES",
+    "severity": "medium",
+    "confidence": 0.75,
+    "title": "Repeated Redis connection failures: 11",
+    "evidence": [
+      "Redis warnings in logs: 11"
+    ],
+    "probable_root_cause": "Redis server down, network timeout, or connection pool exhaustion",
+    "recommended_fix": "Check Redis server status, verify network connectivity, increase pool size",
+    "likely_files": [
+      "src/services/learning_event.py",
+      "src/services/execution_engine.py"
+    ],
+    "validation_steps": [
+      "ping Redis server",
+      "Check connection pool stats"
+    ]
+  },
+  {
+    "id": "UNCAUGHT_EXCEPTIONS",
+    "severity": "critical",
+    "confidence": 0.95,
+    "title": "Uncaught exceptions detected: 11",
+    "evidence": [
+      "\u26a0\ufe0f  WebSocket error: Connection to remote host was lost.",
+      "\u26a0\ufe0f  WebSocket error: Connection to remote host was lost.",
+      "\u26a0\ufe0f  WebSocket error: Connection to remote host was lost."
+    ],
+    "probable_root_cause": "Code bug, missing error handling, or edge case not covered",
+    "recommended_fix": "Inspect traceback, add error handling, write test for edge case",
+    "likely_files": [
+      "src/services/realtime_decision_engine.py",
+      "src/services/trade_executor.py"
+    ],
+    "validation_steps": [
+      "Read full traceback",
+      "Reproduce locally",
+      "Add unit test"
+    ]
+  }
+]

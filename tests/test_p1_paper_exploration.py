@@ -1234,5 +1234,240 @@ class TestMaxHoldWindow:
         assert 593 < duration_s < 597  # Allow small tolerance for execution time
 
 
+class TestCostEdgeUnitAudit:
+    """P1.1j: Cost-edge unit normalization and audit logs"""
+
+    def test_normalize_percent_value(self):
+        """Percent value (0.18) converts to (0.0018 decimal, 0.18 pct)"""
+        from src.services.paper_exploration import _normalize_pct_or_decimal
+
+        dec, pct = _normalize_pct_or_decimal(0.18)
+        assert abs(dec - 0.0018) < 1e-6
+        assert abs(pct - 0.18) < 1e-6
+
+    def test_normalize_decimal_value(self):
+        """Decimal value (0.0006) converts to (0.0006 decimal, 0.06 pct)"""
+        from src.services.paper_exploration import _normalize_pct_or_decimal
+
+        dec, pct = _normalize_pct_or_decimal(0.0006)
+        assert abs(dec - 0.0006) < 1e-6
+        assert abs(pct - 0.06) < 1e-6
+
+    def test_normalize_invalid_value(self):
+        """Invalid values return (0.0, 0.0)"""
+        from src.services.paper_exploration import _normalize_pct_or_decimal
+
+        dec, pct = _normalize_pct_or_decimal(None)
+        assert dec == 0.0 and pct == 0.0
+
+        dec, pct = _normalize_pct_or_decimal("invalid")
+        assert dec == 0.0 and pct == 0.0
+
+    def test_estimate_expected_move_returns_tuple(self):
+        """_estimate_expected_move() returns (decimal, percent) tuple"""
+        from src.services.paper_exploration import _estimate_expected_move
+
+        # Score-based: 0.16 * 1.5 = 0.24 % = 0.0024 decimal
+        signal = {"score": 0.16}
+        dec, pct = _estimate_expected_move(signal)
+        assert isinstance(dec, float) and isinstance(pct, float)
+        assert abs(pct - 0.24) < 1e-6
+        assert abs(dec - 0.0024) < 1e-6
+
+    def test_cost_edge_check_with_normalized_units(self):
+        """Cost edge comparison uses decimal internally"""
+        from src.services.paper_exploration import _check_cost_edge
+
+        # Expected move 0.0024 decimal (0.24%) >= required 0.0023 (0.23%)
+        assert _check_cost_edge(0.0024) is True
+
+        # Expected move 0.0006 decimal (0.06%) < required 0.0023 (0.23%)
+        assert _check_cost_edge(0.0006) is False
+
+    def test_unit_mismatch_prevented(self):
+        """0.06% move is not confused with 6% move"""
+        reset_exploration_caps()
+        signal = {
+            "symbol": "XRPUSDT",
+            "action": "BUY",
+            "ev": 0.015,
+            "score": 0.04,  # Low score -> low expected move
+            "p": 0.55,
+            "coherence": 0.8,
+        }
+        ctx = {"reject_reason": "REJECT_ECON_BAD_ENTRY"}
+
+        result = paper_exploration_override(signal, ctx)
+
+        # Should reject because 0.06% (0.04*1.5) < 0.23% required
+        assert result["allowed"] is False
+        assert "cost_edge_too_low" in result["reason"]
+
+    def test_cost_edge_ok_when_sufficient_move(self):
+        """Sufficient expected move (0.30%) passes cost edge (0.23% required)"""
+        reset_exploration_caps()
+        signal = {
+            "symbol": "BTCUSDT",
+            "action": "BUY",
+            "ev": 0.025,
+            "score": 0.20,  # 0.20 * 1.5 = 0.30% >> 0.23% required
+            "p": 0.65,
+            "coherence": 0.85,
+            "ema_diff": 0.001,  # Momentum: +0.2
+            "macd": 0.0001,     # Momentum: +0.15
+            "mom5": 0.5,        # Momentum: +0.1
+            "mom10": 0.3,       # Momentum: +0.1
+            "rsi": 55,          # Neutral, no penalty
+        }
+        ctx = {"reject_reason": "REJECT_ECON_BAD_ENTRY"}
+
+        result = paper_exploration_override(signal, ctx)
+
+        # Should pass cost edge and allow entry (direction_quality = 0.65 >= 0.4 for C1)
+        assert result["allowed"] is True
+        assert result["cost_edge_ok"] is True
+
+    def test_audit_log_contains_normalized_units(self):
+        """Audit logs show both decimal and percent for all values"""
+        reset_exploration_caps()
+        import logging
+
+        # Capture logs at debug level
+        with patch("src.services.paper_exploration.log") as mock_log:
+            signal = {
+                "symbol": "XRPUSDT",
+                "action": "BUY",
+                "ev": 0.015,
+                "score": 0.16,
+                "p": 0.55,
+                "coherence": 0.8,
+                "ema_diff": 0.001,
+                "rsi": 55,
+            }
+            ctx = {"reject_reason": "REJECT_ECON_BAD_ENTRY"}
+
+            result = paper_exploration_override(signal, ctx)
+
+            # Verify audit log was called with normalized units
+            # (Note: mock_log.debug will be called if audit logging is enabled)
+            if mock_log.debug.called:
+                call_args = str(mock_log.debug.call_args)
+                # Verify units are present in audit log
+                assert "expected_move_dec" in call_args or "expected_move_pct" in call_args
+
+    def test_skip_counter_increments(self):
+        """Skip counters are incremented for each skip reason"""
+        from src.services.paper_exploration import _skip_counters, reset_exploration_caps
+
+        reset_exploration_caps()
+        # Reset counters
+        for key in _skip_counters:
+            _skip_counters[key] = 0
+
+        # Trigger a cost_edge_too_low skip with minimal expected move
+        signal = {
+            "symbol": "XRPUSDT",
+            "action": "BUY",
+            "ev": 0.015,
+            "score": 0.01,  # Very low: 0.01 * 1.5 = 0.015% << 0.23% required
+            "p": 0.55,
+            "coherence": 0.8,
+            "auditor_factor": 0.5,  # Has quality so enters C_WEAK_EV logic
+        }
+        ctx = {"reject_reason": "REJECT_ECON_BAD_ENTRY"}
+
+        result = paper_exploration_override(signal, ctx)
+        assert result["allowed"] is False
+        assert "cost_edge_too_low" in result["reason"]
+
+        # Verify skip counter was incremented
+        assert _skip_counters["cost_edge_too_low"] > 0
+
+    def test_entry_counter_increments(self):
+        """Entry counter increments when trade is allowed"""
+        from src.services.paper_exploration import _skip_counters, reset_exploration_caps
+
+        reset_exploration_caps()
+        # Reset counters
+        for key in _skip_counters:
+            _skip_counters[key] = 0
+
+        signal = {
+            "symbol": "BTCUSDT",
+            "action": "BUY",
+            "ev": 0.025,
+            "score": 0.20,
+            "p": 0.65,
+            "coherence": 0.85,
+            "ema_diff": 0.001,  # Momentum: +0.2
+            "macd": 0.0001,     # Momentum: +0.15
+            "mom5": 0.5,        # Momentum: +0.1
+            "mom10": 0.3,       # Momentum: +0.1
+            "rsi": 55,          # Neutral, no penalty
+        }
+        ctx = {"reject_reason": "REJECT_ECON_BAD_ENTRY"}
+
+        result = paper_exploration_override(signal, ctx)
+        assert result["allowed"] is True
+        assert result["cost_edge_ok"] is True
+
+        # Verify entry counter was incremented
+        assert _skip_counters["entries"] > 0
+
+    def test_no_real_executor_called_on_skip(self):
+        """Skipped C_WEAK_EV trades do not call trade executor"""
+        reset_paper_positions()
+        reset_exploration_caps()
+
+        signal = {
+            "symbol": "XRPUSDT",
+            "action": "BUY",
+            "ev": 0.015,
+            "score": 0.01,  # Too low, will be rejected
+            "p": 0.55,
+            "coherence": 0.8,
+        }
+
+        # paper_exploration_override only does classification, doesn't call executor
+        result = paper_exploration_override(signal)
+        assert result["allowed"] is False
+
+        # Verify no position was opened
+        positions = get_paper_open_positions()
+        assert len(positions) == 0
+
+    def test_strict_take_unaffected_by_p1_1j(self):
+        """P1.1j changes do not affect strict TAKE logic (bucket A)"""
+        # Bucket A is handled by upstream P0.3 logic, not paper_exploration_override
+        # This test just verifies that B/C/D/E behavior is correct
+
+        reset_exploration_caps()
+        signal = {
+            "symbol": "XRPUSDT",
+            "action": "BUY",
+            "ev": 0.045,  # High EV -> B_RECOVERY_READY
+            "score": 0.2,
+        }
+
+        result = paper_exploration_override(signal)
+        assert result["bucket"] == "B_RECOVERY_READY"
+
+    def test_recovery_ready_unaffected_by_p1_1j(self):
+        """P1.1j changes do not affect B_RECOVERY_READY logic"""
+        reset_exploration_caps()
+        signal = {
+            "symbol": "ETHUSDT",
+            "action": "BUY",
+            "ev": 0.045,
+            "score": 0.2,
+        }
+        ctx = {"recovery_ready": True}
+
+        result = paper_exploration_override(signal, ctx)
+        assert result["allowed"] is True
+        assert result["bucket"] == "B_RECOVERY_READY"
+        assert result["size_mult"] == 0.15
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

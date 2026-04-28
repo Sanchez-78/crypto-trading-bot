@@ -5,11 +5,13 @@ data about which rejects are actually profitable.
 
 Buckets: A (strict TAKE), B (recovery-ready), C (weak EV), D (neg EV control),
          E (no pattern control), F (blocked control - disabled by default)
+
+P1.1j: Unit-normalized cost-edge audit and skip metrics.
 """
 import os
 import logging
 import time
-from typing import Optional
+from typing import Optional, Tuple
 
 log = logging.getLogger(__name__)
 
@@ -21,51 +23,140 @@ _exploration_hourly_caps = {
 
 _ONE_HOUR_S = 3600
 
-# P1.1i: C_WEAK_EV bucket tuning
-_COST_ESTIMATE_FEE_PCT = 0.0015  # round-trip fee ~0.15%
-_COST_ESTIMATE_SLIPPAGE_PCT = 0.0003  # slippage ~0.03%
-_COST_TOTAL_PCT = (_COST_ESTIMATE_FEE_PCT + _COST_ESTIMATE_SLIPPAGE_PCT) * 100  # ~0.18%
-_MIN_EDGE_BUFFER_PCT = 0.05  # 5 bps min edge buffer
-_MIN_REQUIRED_MOVE_PCT = _COST_TOTAL_PCT + _MIN_EDGE_BUFFER_PCT  # ~0.23%
+# P1.1i: C_WEAK_EV bucket tuning (all in DECIMAL fractions for internal consistency)
+_COST_ESTIMATE_FEE_DEC = 0.0015      # round-trip fee: 0.15% = 0.0015 decimal
+_COST_ESTIMATE_SLIPPAGE_DEC = 0.0003 # slippage: 0.03% = 0.0003 decimal
+_COST_TOTAL_DEC = _COST_ESTIMATE_FEE_DEC + _COST_ESTIMATE_SLIPPAGE_DEC  # 0.0018 decimal
+_MIN_EDGE_BUFFER_DEC = 0.0005         # 5 bps buffer: 0.05% = 0.0005 decimal
+_MIN_REQUIRED_MOVE_DEC = _COST_TOTAL_DEC + _MIN_EDGE_BUFFER_DEC  # 0.0023 decimal
+
+# For logging (convert to percent for readability)
+_COST_TOTAL_PCT = _COST_TOTAL_DEC * 100    # 0.18%
+_MIN_EDGE_BUFFER_PCT = _MIN_EDGE_BUFFER_DEC * 100  # 0.05%
+_MIN_REQUIRED_MOVE_PCT = _MIN_REQUIRED_MOVE_DEC * 100  # 0.23%
 
 # Throttle tracking for bad C_WEAK_EV buckets
 _THROTTLED_BUCKETS = set()  # set of "C_WEAK_EV" or "C1_WEAK_EV_MOMENTUM", etc.
 
+# P1.1j: Skip reason counters (in-memory, 10-minute window)
+_skip_counters = {
+    "cost_edge_too_low": 0,
+    "direction_quality_low": 0,
+    "c1_momentum_not_aligned": 0,
+    "c2_reversal_not_aligned": 0,
+    "rsi_overbought_long": 0,
+    "rsi_oversold_short": 0,
+    "missing_price": 0,
+    "invalid_side": 0,
+    "throttle_active": 0,
+    "no_side": 0,
+    "negative_ev": 0,
+    "entries": 0,
+}
+_last_skip_summary_ts = 0
+_skip_summary_interval_s = 600  # 10 minutes
 
-def _estimate_expected_move(signal: dict) -> float:
-    """Estimate expected move percentage from signal metrics.
+
+def _normalize_pct_or_decimal(value: float) -> Tuple[float, float]:
+    """Normalize percent or decimal to both forms.
+
+    Args:
+        value: Either a decimal (0.0015) or percent (0.15)
 
     Returns:
-        Expected move % (positive), or 0 if unavailable
+        (decimal_value, percent_value) tuple
+
+    Rules:
+    - If value > 0.05 and <= 100, treat as percent and divide by 100
+    - If value <= 0.05, treat as decimal
+    - Never raises
     """
-    # Try to use ATR/volatility if available
+    try:
+        v = float(value) if value else 0.0
+        if v > 0.05 and v <= 100:
+            # Treat as percent, convert to decimal
+            return (v / 100.0, v)
+        else:
+            # Treat as decimal
+            return (v, v * 100.0)
+    except Exception:
+        return (0.0, 0.0)
+
+
+def _estimate_expected_move(signal: dict) -> Tuple[float, float]:
+    """Estimate expected move from signal metrics.
+
+    Returns:
+        (move_decimal, move_pct) — e.g., (0.0006, 0.06) if expected move is 0.06%
+    """
+    # Try ATR if available
     atr = signal.get("atr")
     if atr:
-        return float(atr) * 100
+        dec, pct = _normalize_pct_or_decimal(atr)
+        return (dec, pct)
 
-    # Fallback: use volatility estimate
+    # Fallback: volatility
     volatility = signal.get("volatility", 0.0)
     if volatility > 0:
-        return float(volatility) * 100
+        dec, pct = _normalize_pct_or_decimal(volatility)
+        return (dec, pct)
 
-    # Last resort: use score as proxy (score * 1.5 ~= expected move %)
+    # Last resort: score as proxy (score * 1.5 ~= expected move %)
+    # Score is 0-1, so score * 1.5 is 0-150%, which should be treated as percent
     score = float(signal.get("score", 0.0))
     if score > 0:
-        return score * 1.5
+        move_pct = score * 1.5
+        # Score-based move is already in percent, convert to decimal
+        move_dec = move_pct / 100.0
+        return (move_dec, move_pct)
 
-    return 0.0
+    return (0.0, 0.0)
 
 
-def _check_cost_edge(expected_move_pct: float) -> bool:
+def _check_cost_edge(expected_move_dec: float) -> bool:
     """Check if expected move can beat total cost.
 
     Args:
-        expected_move_pct: Expected price movement %
+        expected_move_dec: Expected price movement in decimal (0.0006 = 0.06%)
 
     Returns:
-        True if edge exists (move > cost + buffer), False otherwise
+        True if edge exists, False otherwise
     """
-    return expected_move_pct >= _MIN_REQUIRED_MOVE_PCT
+    return expected_move_dec >= _MIN_REQUIRED_MOVE_DEC
+
+
+def _increment_skip_counter(reason: str) -> None:
+    """Increment a skip reason counter."""
+    if reason in _skip_counters:
+        _skip_counters[reason] += 1
+
+
+def _maybe_log_skip_summary() -> None:
+    """Emit skip summary every 10 minutes."""
+    global _last_skip_summary_ts
+    now = time.time()
+
+    if now - _last_skip_summary_ts < _skip_summary_interval_s:
+        return
+
+    entries = _skip_counters.get("entries", 0)
+    if entries == 0 and sum(v for k, v in _skip_counters.items() if k != "entries") == 0:
+        return  # No activity, don't log
+
+    log.info(
+        "[PAPER_EXPLORE_SKIP_SUMMARY] window_s=%d cost_edge_too_low=%d "
+        "direction_quality_low=%d throttle_active=%d entries=%d negative_ev=%d "
+        "no_side=%d",
+        _skip_summary_interval_s,
+        _skip_counters.get("cost_edge_too_low", 0),
+        _skip_counters.get("direction_quality_low", 0),
+        _skip_counters.get("throttle_active", 0),
+        entries,
+        _skip_counters.get("negative_ev", 0),
+        _skip_counters.get("no_side", 0),
+    )
+
+    _last_skip_summary_ts = now
 
 
 def _score_direction_quality(signal: dict, ctx: Optional[dict] = None) -> float:
@@ -283,18 +374,42 @@ def paper_exploration_override(signal: dict, ctx: Optional[dict] = None) -> dict
 
         # C_WEAK_EV: Positive EV but below ECON_BAD floor, and has quality
         if ev > 0 and quality_any > 0:
-            # P1.1i: Check cost-edge and sub-bucket classification
-            expected_move = _estimate_expected_move(signal)
-            has_edge = _check_cost_edge(expected_move)
+            # P1.1j: Unit-normalized cost-edge check with detailed audit
+            expected_move_dec, expected_move_pct = _estimate_expected_move(signal)
+            has_edge = _check_cost_edge(expected_move_dec)
             direction_quality = _score_direction_quality(signal, ctx)
             sub_bucket = _classify_c_weak_ev_sub_bucket(signal, ctx, direction_quality)
 
-            # If no cost edge or rejected sub-bucket, skip C_WEAK_EV
+            # Audit log (before decision) with all units normalized
+            log.debug(
+                "[PAPER_C_WEAK_EV_AUDIT] symbol=%s side=%s ev=%.4f "
+                "expected_move_dec=%.6f expected_move_pct=%.4f "
+                "cost_dec=%.6f cost_pct=%.4f "
+                "buffer_dec=%.6f buffer_pct=%.4f "
+                "required_move_dec=%.6f required_move_pct=%.4f "
+                "cost_edge_ok=%s direction_quality=%.3f sub_bucket=%s",
+                symbol, action, ev,
+                expected_move_dec, expected_move_pct,
+                _COST_TOTAL_DEC, _COST_TOTAL_PCT,
+                _MIN_EDGE_BUFFER_DEC, _MIN_EDGE_BUFFER_PCT,
+                _MIN_REQUIRED_MOVE_DEC, _MIN_REQUIRED_MOVE_PCT,
+                has_edge, direction_quality, sub_bucket,
+            )
+
+            # Cost edge check with normalized units
             if not has_edge:
+                skip_reason = "cost_edge_too_low"
+                _increment_skip_counter(skip_reason)
+                log.info(
+                    "[PAPER_EXPLORE_SKIP] reason=%s bucket=C_WEAK_EV symbol=%s "
+                    "expected_move_pct=%.4f required_move_pct=%.4f",
+                    skip_reason, symbol, expected_move_pct, _MIN_REQUIRED_MOVE_PCT,
+                )
+                _maybe_log_skip_summary()
                 return {
                     "allowed": False,
                     "bucket": "C_WEAK_EV",
-                    "reason": f"cost_edge_too_low expected_move={expected_move:.4f} cost={_COST_TOTAL_PCT:.4f}",
+                    "reason": f"cost_edge_too_low expected_move_pct={expected_move_pct:.4f} required={_MIN_REQUIRED_MOVE_PCT:.4f}",
                     "size_mult": 0.0,
                     "max_hold_s": 0,
                     "tags": [],
@@ -303,7 +418,15 @@ def paper_exploration_override(signal: dict, ctx: Optional[dict] = None) -> dict
                     "cost_edge_ok": False,
                 }
 
+            # Direction quality check
             if sub_bucket == "C0_WEAK_EV_REJECTED":
+                skip_reason = "direction_quality_low"
+                _increment_skip_counter(skip_reason)
+                log.info(
+                    "[PAPER_EXPLORE_SKIP] reason=%s bucket=C_WEAK_EV symbol=%s score=%.3f",
+                    skip_reason, symbol, direction_quality,
+                )
+                _maybe_log_skip_summary()
                 return {
                     "allowed": False,
                     "bucket": "C_WEAK_EV",
@@ -316,12 +439,19 @@ def paper_exploration_override(signal: dict, ctx: Optional[dict] = None) -> dict
                     "cost_edge_ok": has_edge,
                 }
 
-            # P1.1i: Check if sub-bucket is throttled
+            # Throttle check
             if _apply_bucket_throttle("C_WEAK_EV", sub_bucket):
+                skip_reason = "throttle_active"
+                _increment_skip_counter(skip_reason)
+                log.info(
+                    "[PAPER_EXPLORE_SKIP] reason=%s bucket=C_WEAK_EV symbol=%s sub_bucket=%s",
+                    skip_reason, symbol, sub_bucket,
+                )
+                _maybe_log_skip_summary()
                 return {
                     "allowed": False,
                     "bucket": "C_WEAK_EV",
-                    "reason": f"sub_bucket_throttled {sub_bucket}",
+                    "reason": f"throttle_active sub_bucket={sub_bucket}",
                     "size_mult": 0.0,
                     "max_hold_s": 0,
                     "tags": [],
@@ -330,22 +460,35 @@ def paper_exploration_override(signal: dict, ctx: Optional[dict] = None) -> dict
                     "cost_edge_ok": has_edge,
                 }
 
-            # P1.1i: Reduced hold times for C_WEAK_EV sub-buckets
+            # Determine hold times and TP/SL for sub-bucket (in decimal)
             if sub_bucket == "C1_WEAK_EV_MOMENTUM":
                 max_hold = 300
-                tp_pct = max(0.0025, _COST_TOTAL_PCT / 100.0 + 0.001)  # TP above cost
-                sl_pct = max(0.0018, _COST_TOTAL_PCT / 100.0 + 0.0005)  # SL tighter
+                # TP: cost + 0.10% buffer
+                tp_pct = max(0.0025, _COST_TOTAL_DEC + 0.001)
+                # SL: cost + 0.05% buffer
+                sl_pct = max(0.0018, _COST_TOTAL_DEC + 0.0005)
                 size_mult = 0.08
             else:  # C2_WEAK_EV_REVERSAL
                 max_hold = 240
-                tp_pct = max(0.0020, _COST_TOTAL_PCT / 100.0 + 0.0008)
-                sl_pct = max(0.0016, _COST_TOTAL_PCT / 100.0 + 0.0004)
+                # TP: cost + 0.08% buffer
+                tp_pct = max(0.0020, _COST_TOTAL_DEC + 0.0008)
+                # SL: cost + 0.04% buffer
+                sl_pct = max(0.0016, _COST_TOTAL_DEC + 0.0004)
                 size_mult = 0.06
+
+            # Entry approved
+            _increment_skip_counter("entries")
+            log.info(
+                "[PAPER_EXPLORE_ENTRY] bucket=C_WEAK_EV symbol=%s sub_bucket=%s "
+                "ev=%.4f expected_move_pct=%.4f direction_quality=%.3f",
+                symbol, sub_bucket, ev, expected_move_pct, direction_quality,
+            )
+            _maybe_log_skip_summary()
 
             return {
                 "allowed": True,
                 "bucket": "C_WEAK_EV",
-                "reason": f"weak_ev={ev:.4f} quality={quality_any:.3f} sub_bucket={sub_bucket}",
+                "reason": f"cost_edge_ok ev={ev:.4f} quality={quality_any:.3f} sub_bucket={sub_bucket}",
                 "size_mult": size_mult,
                 "max_hold_s": max_hold,
                 "tags": ["weak_ev_positive", sub_bucket.lower()],
@@ -359,6 +502,8 @@ def paper_exploration_override(signal: dict, ctx: Optional[dict] = None) -> dict
         # D_NEG_EV_CONTROL: Tiny capped sample of negative EV baseline
         if ev <= 0 and "NEGATIVE" in reject_reason:
             if not _check_hourly_cap("D_NEG_EV_CONTROL"):
+                _increment_skip_counter("negative_ev")
+                _maybe_log_skip_summary()
                 return {
                     "allowed": False,
                     "bucket": "D_NEG_EV_CONTROL",
@@ -367,6 +512,8 @@ def paper_exploration_override(signal: dict, ctx: Optional[dict] = None) -> dict
                     "max_hold_s": 300,
                     "tags": ["control"],
                 }
+            _increment_skip_counter("entries")
+            _maybe_log_skip_summary()
             return {
                 "allowed": True,
                 "bucket": "D_NEG_EV_CONTROL",
@@ -379,6 +526,8 @@ def paper_exploration_override(signal: dict, ctx: Optional[dict] = None) -> dict
         # E_NO_PATTERN: Tiny capped NO_CANDIDATE_PATTERN baseline
         if "NO_PATTERN" in reject_reason or "NO_CANDIDATE" in reject_reason:
             if not _check_hourly_cap("E_NO_PATTERN"):
+                _increment_skip_counter("no_side")
+                _maybe_log_skip_summary()
                 return {
                     "allowed": False,
                     "bucket": "E_NO_PATTERN",
@@ -387,6 +536,8 @@ def paper_exploration_override(signal: dict, ctx: Optional[dict] = None) -> dict
                     "max_hold_s": 300,
                     "tags": ["control"],
                 }
+            _increment_skip_counter("entries")
+            _maybe_log_skip_summary()
             return {
                 "allowed": True,
                 "bucket": "E_NO_PATTERN",
@@ -400,6 +551,7 @@ def paper_exploration_override(signal: dict, ctx: Optional[dict] = None) -> dict
         # Return false — we don't explore F bucket
 
         # Default: No exploration
+        _maybe_log_skip_summary()
         return {
             "allowed": False,
             "bucket": "UNKNOWN",
