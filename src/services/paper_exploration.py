@@ -21,6 +21,141 @@ _exploration_hourly_caps = {
 
 _ONE_HOUR_S = 3600
 
+# P1.1i: C_WEAK_EV bucket tuning
+_COST_ESTIMATE_FEE_PCT = 0.0015  # round-trip fee ~0.15%
+_COST_ESTIMATE_SLIPPAGE_PCT = 0.0003  # slippage ~0.03%
+_COST_TOTAL_PCT = (_COST_ESTIMATE_FEE_PCT + _COST_ESTIMATE_SLIPPAGE_PCT) * 100  # ~0.18%
+_MIN_EDGE_BUFFER_PCT = 0.05  # 5 bps min edge buffer
+_MIN_REQUIRED_MOVE_PCT = _COST_TOTAL_PCT + _MIN_EDGE_BUFFER_PCT  # ~0.23%
+
+# Throttle tracking for bad C_WEAK_EV buckets
+_THROTTLED_BUCKETS = set()  # set of "C_WEAK_EV" or "C1_WEAK_EV_MOMENTUM", etc.
+
+
+def _estimate_expected_move(signal: dict) -> float:
+    """Estimate expected move percentage from signal metrics.
+
+    Returns:
+        Expected move % (positive), or 0 if unavailable
+    """
+    # Try to use ATR/volatility if available
+    atr = signal.get("atr")
+    if atr:
+        return float(atr) * 100
+
+    # Fallback: use volatility estimate
+    volatility = signal.get("volatility", 0.0)
+    if volatility > 0:
+        return float(volatility) * 100
+
+    # Last resort: use score as proxy (score * 1.5 ~= expected move %)
+    score = float(signal.get("score", 0.0))
+    if score > 0:
+        return score * 1.5
+
+    return 0.0
+
+
+def _check_cost_edge(expected_move_pct: float) -> bool:
+    """Check if expected move can beat total cost.
+
+    Args:
+        expected_move_pct: Expected price movement %
+
+    Returns:
+        True if edge exists (move > cost + buffer), False otherwise
+    """
+    return expected_move_pct >= _MIN_REQUIRED_MOVE_PCT
+
+
+def _score_direction_quality(signal: dict, ctx: Optional[dict] = None) -> float:
+    """Score direction quality based on momentum/reversal signals.
+
+    Returns:
+        Score 0.0-1.0; used for C1/C2 sub-bucket selection
+    """
+    ctx = ctx or {}
+    regime = signal.get("regime", "RANGING")
+    action = signal.get("action", "BUY")
+    ev = float(signal.get("ev", 0.0))
+
+    score = 0.0
+
+    # Momentum alignment
+    ema_diff = signal.get("ema_diff", 0.0)
+    macd = signal.get("macd", 0.0)
+    mom5 = signal.get("mom5", 0.0)
+    mom10 = signal.get("mom10", 0.0)
+
+    if action == "BUY":
+        # For BUY: positive ema_diff, positive macd, positive momentum is good
+        if ema_diff > 0:
+            score += 0.2
+        if macd > 0:
+            score += 0.15
+        if mom5 > 0:
+            score += 0.1
+        if mom10 > 0:
+            score += 0.1
+        # Penalize if overbought
+        rsi = signal.get("rsi", 50)
+        if rsi > 70:
+            score -= 0.15
+    else:  # SELL
+        # For SELL: negative ema_diff, negative macd, negative momentum is good
+        if ema_diff < 0:
+            score += 0.2
+        if macd < 0:
+            score += 0.15
+        if mom5 < 0:
+            score += 0.1
+        if mom10 < 0:
+            score += 0.1
+        # Penalize if oversold
+        rsi = signal.get("rsi", 50)
+        if rsi < 30:
+            score -= 0.15
+
+    # Clamp to [0, 1]
+    return max(0.0, min(1.0, score))
+
+
+def _classify_c_weak_ev_sub_bucket(
+    signal: dict,
+    ctx: Optional[dict] = None,
+    direction_quality: float = 0.0,
+) -> str:
+    """Classify C_WEAK_EV into sub-buckets based on direction quality.
+
+    Args:
+        signal: Signal dict
+        ctx: Context dict
+        direction_quality: Pre-calculated direction quality score (0-1)
+
+    Returns:
+        "C1_WEAK_EV_MOMENTUM", "C2_WEAK_EV_REVERSAL", or "C0_WEAK_EV_REJECTED"
+    """
+    ctx = ctx or {}
+    action = signal.get("action", "BUY")
+    rsi = signal.get("rsi", 50)
+    mom_score = direction_quality
+
+    # C1: momentum aligned (score >= 0.4, not extreme RSI)
+    if mom_score >= 0.4:
+        # Reject if overbought LONG or oversold SHORT
+        if action == "BUY" and rsi > 75:
+            return "C0_WEAK_EV_REJECTED"
+        if action == "SELL" and rsi < 25:
+            return "C0_WEAK_EV_REJECTED"
+        return "C1_WEAK_EV_MOMENTUM"
+
+    # C2: reversal signal (RSI extreme)
+    if (action == "BUY" and rsi < 30) or (action == "SELL" and rsi > 70):
+        return "C2_WEAK_EV_REVERSAL"
+
+    # Default: rejected if no clear direction
+    return "C0_WEAK_EV_REJECTED"
+
 
 def _check_hourly_cap(bucket: str) -> bool:
     """Check if bucket has reached its hourly cap. Reset cap every hour."""
@@ -44,6 +179,38 @@ def _check_hourly_cap(bucket: str) -> bool:
     return True
 
 
+def _apply_bucket_throttle(bucket: str, sub_bucket: str = "") -> bool:
+    """Check if bucket is throttled due to bad performance.
+
+    Args:
+        bucket: Bucket name (e.g., "C_WEAK_EV")
+        sub_bucket: Sub-bucket name if applicable
+
+    Returns:
+        True if bucket is throttled, False otherwise
+    """
+    throttle_key = sub_bucket if sub_bucket else bucket
+    return throttle_key in _THROTTLED_BUCKETS
+
+
+def _mark_bucket_throttled(bucket: str, sub_bucket: str = "", reason: str = ""):
+    """Mark a bucket as throttled (e.g., due to bad PF).
+
+    Args:
+        bucket: Bucket name
+        sub_bucket: Sub-bucket name if applicable
+        reason: Reason for throttle (e.g., "bad_pf_timeout")
+    """
+    throttle_key = sub_bucket if sub_bucket else bucket
+    _THROTTLED_BUCKETS.add(throttle_key)
+    log.warning(
+        "[PAPER_BUCKET_THROTTLE] bucket=%s sub_bucket=%s reason=%s",
+        bucket,
+        sub_bucket or "N/A",
+        reason,
+    )
+
+
 def paper_exploration_override(signal: dict, ctx: Optional[dict] = None) -> dict:
     """
     Determine if a rejected signal should be explored in paper-only mode.
@@ -54,12 +221,17 @@ def paper_exploration_override(signal: dict, ctx: Optional[dict] = None) -> dict
 
     Returns:
         {
-            "allowed": bool,           # Whether to explore this rejection
-            "bucket": str,             # Bucket classification (A-F)
-            "reason": str,             # Human-readable reason
-            "size_mult": float,        # Size multiplier (0.0-1.0)
-            "max_hold_s": int,         # Max hold time in seconds
-            "tags": list[str],         # Tags for learning tracking
+            "allowed": bool,                    # Whether to explore this rejection
+            "bucket": str,                      # Bucket classification (A-F)
+            "reason": str,                      # Human-readable reason
+            "size_mult": float,                 # Size multiplier (0.0-1.0)
+            "max_hold_s": int,                  # Max hold time in seconds
+            "tags": list[str],                  # Tags for learning tracking
+            "explore_sub_bucket": str,          # Sub-bucket (C1/C2/etc, P1.1i)
+            "direction_quality_score": float,   # Direction quality 0-1 (P1.1i)
+            "cost_edge_ok": bool,               # Cost edge exists (P1.1i)
+            "tp_pct": float,                    # TP target (P1.1i)
+            "sl_pct": float,                    # SL target (P1.1i)
         }
 
     Never raises. Always returns a valid dict.
@@ -111,13 +283,77 @@ def paper_exploration_override(signal: dict, ctx: Optional[dict] = None) -> dict
 
         # C_WEAK_EV: Positive EV but below ECON_BAD floor, and has quality
         if ev > 0 and quality_any > 0:
+            # P1.1i: Check cost-edge and sub-bucket classification
+            expected_move = _estimate_expected_move(signal)
+            has_edge = _check_cost_edge(expected_move)
+            direction_quality = _score_direction_quality(signal, ctx)
+            sub_bucket = _classify_c_weak_ev_sub_bucket(signal, ctx, direction_quality)
+
+            # If no cost edge or rejected sub-bucket, skip C_WEAK_EV
+            if not has_edge:
+                return {
+                    "allowed": False,
+                    "bucket": "C_WEAK_EV",
+                    "reason": f"cost_edge_too_low expected_move={expected_move:.4f} cost={_COST_TOTAL_PCT:.4f}",
+                    "size_mult": 0.0,
+                    "max_hold_s": 0,
+                    "tags": [],
+                    "explore_sub_bucket": "C0_WEAK_EV_REJECTED",
+                    "direction_quality_score": direction_quality,
+                    "cost_edge_ok": False,
+                }
+
+            if sub_bucket == "C0_WEAK_EV_REJECTED":
+                return {
+                    "allowed": False,
+                    "bucket": "C_WEAK_EV",
+                    "reason": f"direction_quality_low score={direction_quality:.3f}",
+                    "size_mult": 0.0,
+                    "max_hold_s": 0,
+                    "tags": [],
+                    "explore_sub_bucket": sub_bucket,
+                    "direction_quality_score": direction_quality,
+                    "cost_edge_ok": has_edge,
+                }
+
+            # P1.1i: Check if sub-bucket is throttled
+            if _apply_bucket_throttle("C_WEAK_EV", sub_bucket):
+                return {
+                    "allowed": False,
+                    "bucket": "C_WEAK_EV",
+                    "reason": f"sub_bucket_throttled {sub_bucket}",
+                    "size_mult": 0.0,
+                    "max_hold_s": 0,
+                    "tags": [],
+                    "explore_sub_bucket": sub_bucket,
+                    "direction_quality_score": direction_quality,
+                    "cost_edge_ok": has_edge,
+                }
+
+            # P1.1i: Reduced hold times for C_WEAK_EV sub-buckets
+            if sub_bucket == "C1_WEAK_EV_MOMENTUM":
+                max_hold = 300
+                tp_pct = max(0.0025, _COST_TOTAL_PCT / 100.0 + 0.001)  # TP above cost
+                sl_pct = max(0.0018, _COST_TOTAL_PCT / 100.0 + 0.0005)  # SL tighter
+                size_mult = 0.08
+            else:  # C2_WEAK_EV_REVERSAL
+                max_hold = 240
+                tp_pct = max(0.0020, _COST_TOTAL_PCT / 100.0 + 0.0008)
+                sl_pct = max(0.0016, _COST_TOTAL_PCT / 100.0 + 0.0004)
+                size_mult = 0.06
+
             return {
                 "allowed": True,
                 "bucket": "C_WEAK_EV",
-                "reason": f"weak_ev={ev:.4f} quality={quality_any:.3f}",
-                "size_mult": 0.08,
-                "max_hold_s": 600,
-                "tags": ["weak_ev_positive"],
+                "reason": f"weak_ev={ev:.4f} quality={quality_any:.3f} sub_bucket={sub_bucket}",
+                "size_mult": size_mult,
+                "max_hold_s": max_hold,
+                "tags": ["weak_ev_positive", sub_bucket.lower()],
+                "explore_sub_bucket": sub_bucket,
+                "direction_quality_score": direction_quality,
+                "cost_edge_ok": has_edge,
+                "tp_pct": tp_pct,
+                "sl_pct": sl_pct,
             }
 
         # D_NEG_EV_CONTROL: Tiny capped sample of negative EV baseline

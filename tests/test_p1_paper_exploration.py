@@ -64,23 +64,28 @@ class TestBucketClassification:
         assert result["bucket"] == "B_RECOVERY_READY"
 
     def test_bucket_c_weak_ev_positive(self):
-        """C_WEAK_EV: positive EV with quality"""
+        """C_WEAK_EV: positive EV with quality (P1.1i: must pass cost-edge and direction filters)"""
         reset_exploration_caps()
         signal = {
             "symbol": "XRPUSDT",
             "action": "BUY",
             "ev": 0.015,
-            "score": 0.1,
+            "score": 0.16,  # P1.1i: raised from 0.1 to pass cost-edge (0.16*1.5=0.24 > 0.23)
             "p": 0.55,
             "coherence": 0.8,
             "auditor_factor": 0.9,
+            "ema_diff": 0.001,  # Momentum aligned for BUY
+            "macd": 0.0001,
+            "mom5": 0.3,
+            "rsi": 55,  # Neutral, not extreme
         }
         ctx = {"reject_reason": "REJECT_ECON_BAD_ENTRY"}
         result = paper_exploration_override(signal, ctx)
         assert result["allowed"] is True
         assert result["bucket"] == "C_WEAK_EV"
+        assert result["explore_sub_bucket"] == "C1_WEAK_EV_MOMENTUM"  # P1.1i: now has sub-bucket
         assert result["size_mult"] == 0.08
-        assert result["max_hold_s"] == 600
+        assert result["max_hold_s"] == 300  # P1.1i: reduced from 600 for C1
 
     def test_bucket_c_weak_ev_zero_quality_rejected(self):
         """C_WEAK_EV: positive EV but zero quality -> rejected"""
@@ -698,6 +703,163 @@ class TestExposureCaps:
         )
         # Should be blocked because max_open_per_symbol=1
         assert result2["status"] == "blocked"
+
+
+class TestCWeakEVTuning:
+    """P1.1i: C_WEAK_EV bucket tuning with cost-edge and sub-buckets"""
+
+    def test_cost_edge_too_low_rejected(self):
+        """C_WEAK_EV with insufficient expected move is rejected"""
+        reset_exploration_caps()
+        signal = {
+            "symbol": "XRPUSDT",
+            "action": "BUY",
+            "ev": 0.015,
+            "score": 0.05,  # Low score -> low expected move
+            "p": 0.55,
+            "coherence": 0.8,
+        }
+        ctx = {"reject_reason": "REJECT_ECON_BAD_ENTRY"}
+
+        result = paper_exploration_override(signal, ctx)
+
+        # Should be rejected due to insufficient cost edge
+        assert result["allowed"] is False
+        assert result["bucket"] == "C_WEAK_EV"
+        assert "cost_edge_too_low" in result["reason"]
+        assert result["cost_edge_ok"] is False
+
+    def test_momentum_sub_bucket_classification(self):
+        """C_WEAK_EV momentum trade classified as C1"""
+        reset_exploration_caps()
+        signal = {
+            "symbol": "BTCUSDT",
+            "action": "BUY",
+            "ev": 0.025,
+            "score": 0.2,  # Good score
+            "p": 0.65,
+            "coherence": 0.85,
+            "ema_diff": 0.001,  # Positive for BUY
+            "macd": 0.0001,  # Positive for BUY
+            "mom5": 0.5,  # Positive
+            "mom10": 0.3,  # Positive
+            "rsi": 55,  # Neutral
+        }
+        ctx = {"reject_reason": "REJECT_ECON_BAD_ENTRY"}
+
+        result = paper_exploration_override(signal, ctx)
+
+        assert result["allowed"] is True
+        assert result["explore_sub_bucket"] == "C1_WEAK_EV_MOMENTUM"
+        assert result["direction_quality_score"] > 0.3
+        assert result["max_hold_s"] == 300
+
+    def test_reversal_sub_bucket_classification(self):
+        """C_WEAK_EV reversal trade classified as C2"""
+        reset_exploration_caps()
+        signal = {
+            "symbol": "ETHUSDT",
+            "action": "BUY",
+            "ev": 0.020,
+            "score": 0.16,  # Higher score for cost edge (0.16 * 1.5 = 0.24 > 0.23)
+            "p": 0.60,
+            "coherence": 0.80,
+            "rsi": 25,  # Oversold, reversal signal for BUY
+            "ema_diff": -0.001,  # Weak negative (reversal)
+            "macd": -0.0001,
+            "mom5": -0.2,
+            "mom10": -0.1,
+        }
+        ctx = {"reject_reason": "REJECT_ECON_BAD_ENTRY"}
+
+        result = paper_exploration_override(signal, ctx)
+
+        assert result["allowed"] is True
+        assert result["explore_sub_bucket"] == "C2_WEAK_EV_REVERSAL"
+        assert result["max_hold_s"] == 240
+
+    def test_overbought_long_rejected(self):
+        """C_WEAK_EV BUY rejected when overbought"""
+        reset_exploration_caps()
+        signal = {
+            "symbol": "ADAUSDT",
+            "action": "BUY",
+            "ev": 0.025,
+            "score": 0.2,
+            "p": 0.65,
+            "coherence": 0.85,
+            "ema_diff": 0.001,
+            "macd": 0.0001,
+            "mom5": 0.5,
+            "rsi": 78,  # Overbought
+        }
+        ctx = {"reject_reason": "REJECT_ECON_BAD_ENTRY"}
+
+        result = paper_exploration_override(signal, ctx)
+
+        assert result["allowed"] is False
+        assert result["explore_sub_bucket"] == "C0_WEAK_EV_REJECTED"
+
+    def test_oversold_short_rejected(self):
+        """C_WEAK_EV SELL rejected when oversold"""
+        reset_exploration_caps()
+        signal = {
+            "symbol": "XRPUSDT",
+            "action": "SELL",
+            "ev": 0.020,
+            "score": 0.15,
+            "p": 0.60,
+            "coherence": 0.80,
+            "ema_diff": -0.001,
+            "macd": -0.0001,
+            "mom5": -0.3,
+            "rsi": 22,  # Oversold, countertrend for SELL
+        }
+        ctx = {"reject_reason": "REJECT_ECON_BAD_ENTRY"}
+
+        result = paper_exploration_override(signal, ctx)
+
+        assert result["allowed"] is False
+        assert result["explore_sub_bucket"] == "C0_WEAK_EV_REJECTED"
+
+    def test_sub_bucket_appears_in_closed_trade(self):
+        """Closed trade includes sub_bucket field"""
+        from src.services.paper_trade_executor import (
+            open_paper_position,
+            close_paper_position,
+        )
+
+        reset_paper_positions()
+        if os.path.exists("data/paper_open_positions.json"):
+            os.remove("data/paper_open_positions.json")
+
+        signal = {
+            "symbol": "DOGEUSDT",
+            "action": "BUY",
+            "ev": 0.025,
+            "score": 0.2,
+        }
+
+        result = open_paper_position(
+            signal,
+            price=0.35,
+            ts=time.time(),
+            reason="PAPER_EXPLORE",
+            extra={
+                "explore_bucket": "C_WEAK_EV",
+                "explore_sub_bucket": "C1_WEAK_EV_MOMENTUM",
+                "final_size_usd": 6.4,
+                "max_hold_s": 300,
+            },
+        )
+        assert result["status"] == "opened"
+
+        # Close the position
+        trade_id = result["trade_id"]
+        closed = close_paper_position(trade_id, 0.36, time.time() + 100, "TP")
+
+        assert closed is not None
+        assert closed.get("explore_sub_bucket") == "C1_WEAK_EV_MOMENTUM"
 
 
 class TestRobustStateLoader:

@@ -375,6 +375,7 @@ def open_paper_position(
         "rde_decision": reason,
         "paper_source": extra.get("paper_source") if extra else "normal_rde_take",
         "explore_bucket": extra.get("explore_bucket") if extra else "A_STRICT_TAKE",
+        "explore_sub_bucket": extra.get("explore_sub_bucket") if extra else "",  # P1.1i
         "original_decision": extra.get("original_decision") if extra else "TAKE",
         "reject_reason": extra.get("reject_reason") if extra else None,
         "size_mult": extra.get("size_mult") if extra else 1.0,
