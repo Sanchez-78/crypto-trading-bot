@@ -18,6 +18,49 @@ _MAX_AGE_S = float(os.getenv("PAPER_MAX_POSITION_AGE_S", "900"))  # 15 min defau
 # State
 _POSITIONS = {}  # position_id -> position_dict
 _POSITION_LOCK = __import__("threading").RLock()
+_STATE_FILE = "data/paper_open_positions.json"
+
+
+def _save_paper_state() -> None:
+    """Save open paper positions to disk."""
+    try:
+        import json
+        with _POSITION_LOCK:
+            positions_snapshot = dict(_POSITIONS)
+        os.makedirs("data", exist_ok=True)
+        with open(_STATE_FILE, "w") as f:
+            json.dump(positions_snapshot, f, indent=2)
+        log.info(
+            "[PAPER_STATE_SAVE] open_positions=%d source=%s",
+            len(positions_snapshot),
+            _STATE_FILE,
+        )
+    except Exception as e:
+        log.warning("[PAPER_STATE_SAVE_ERROR] err=%s", str(e))
+
+
+def _load_paper_state() -> None:
+    """Load open paper positions from disk at startup."""
+    try:
+        import json
+        if not os.path.exists(_STATE_FILE):
+            log.info("[PAPER_STATE_LOAD] open_positions=0 source=%s reason=file_not_found", _STATE_FILE)
+            return
+        with open(_STATE_FILE, "r") as f:
+            positions_data = json.load(f)
+        with _POSITION_LOCK:
+            _POSITIONS.update(positions_data)
+        log.info(
+            "[PAPER_STATE_LOAD] open_positions=%d source=%s",
+            len(positions_data),
+            _STATE_FILE,
+        )
+    except Exception as e:
+        log.warning("[PAPER_STATE_LOAD_ERROR] err=%s", str(e))
+
+
+# Load paper positions from disk on module init
+_load_paper_state()
 
 
 def _generate_trade_id() -> str:
@@ -119,6 +162,11 @@ def open_paper_position(
     symbol = signal.get("symbol", "UNKNOWN")
     side = signal.get("action", signal.get("side", "BUY"))
 
+    # Apply exploration sizing if provided; otherwise use default position size
+    size_usd = _POSITION_SIZE
+    if extra and "final_size_usd" in extra:
+        size_usd = extra["final_size_usd"]
+
     position = {
         "trade_id": trade_id,
         "mode": "paper_live",
@@ -126,7 +174,7 @@ def open_paper_position(
         "side": side,
         "entry_price": price,
         "entry_ts": ts,
-        "size_usd": _POSITION_SIZE,
+        "size_usd": size_usd,
         "tp": price * 1.012,  # 1.2% TP placeholder
         "sl": price * 0.988,  # 1.2% SL placeholder
         "timeout_s": _MAX_AGE_S,
@@ -156,11 +204,14 @@ def open_paper_position(
         symbol,
         side,
         price,
-        _POSITION_SIZE,
+        size_usd,
         position["ev_at_entry"],
         position["score_at_entry"],
         reason,
     )
+
+    # Persist state after opening position
+    _save_paper_state()
 
     return {
         "status": "opened",
@@ -275,6 +326,9 @@ def close_paper_position(
         pnl_data["net_pnl_pct"],
         pnl_data["outcome"],
     )
+
+    # Persist state after closing position
+    _save_paper_state()
 
     return closed_trade
 

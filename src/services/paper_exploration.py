@@ -280,7 +280,10 @@ def maybe_open_paper_exploration_from_reject(
             return False
 
         # Open paper position with exploration metadata
-        from src.services.paper_trade_executor import open_paper_position
+        from src.services.paper_trade_executor import open_paper_position, _POSITION_SIZE
+
+        base_size_usd = _POSITION_SIZE
+        final_size_usd = base_size_usd * ov["size_mult"]
 
         result = open_paper_position(
             signal,
@@ -293,6 +296,7 @@ def maybe_open_paper_exploration_from_reject(
                 "original_decision": original_decision,
                 "reject_reason": reject_reason,
                 "size_mult": ov["size_mult"],
+                "final_size_usd": final_size_usd,
                 "max_hold_s": ov["max_hold_s"],
                 "tags": ov["tags"],
             },
@@ -301,7 +305,7 @@ def maybe_open_paper_exploration_from_reject(
         if result.get("status") == "opened":
             log.warning(
                 "[PAPER_EXPLORE_ENTRY] bucket=%s symbol=%s side=%s original_decision=%s "
-                "ev=%.4f score=%.3f price=%.8f reject_reason=%s reason=%s",
+                "ev=%.4f score=%.3f price=%.8f base_size_usd=%.2f size_mult=%.4f final_size_usd=%.2f reject_reason=%s reason=%s",
                 ov["bucket"],
                 symbol,
                 signal.get("action", "BUY"),
@@ -309,6 +313,9 @@ def maybe_open_paper_exploration_from_reject(
                 signal.get("ev", 0.0),
                 signal.get("score", 0.0),
                 price,
+                base_size_usd,
+                ov["size_mult"],
+                final_size_usd,
                 reject_reason,
                 ov["reason"],
             )
