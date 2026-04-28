@@ -1484,6 +1484,7 @@ def _save_paper_trade_closed(closed_trade: dict) -> None:
                 db.collection(col("trades_paper")).add(paper_record)
                 log.warning(
                     f"[LEARNING_UPDATE] source=paper_closed_trade symbol={closed_trade.get('symbol')} "
+                    f"bucket={closed_trade.get('explore_bucket', 'A_STRICT_TAKE')} "
                     f"outcome={closed_trade.get('outcome')} net_pnl_pct={closed_trade.get('net_pnl_pct', 0):.4f}"
                 )
         except Exception as e:

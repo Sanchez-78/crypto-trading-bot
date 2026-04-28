@@ -311,6 +311,48 @@ class TestPaperExplorationIntegration:
         positions = get_paper_open_positions()
         assert positions[0]["size_usd"] == 100.0  # Default _POSITION_SIZE
 
+    def test_paper_exit_closes_position_and_returns_closed_trade(self):
+        """Paper exit on TP hit returns closed trade with all fields"""
+        reset_paper_positions()
+        signal = {
+            "symbol": "XRPUSDT",
+            "action": "BUY",
+            "ev": 0.05,
+            "score": 0.5,
+            "regime": "BULL_TREND",
+        }
+        entry_price = 2.543
+        ts = time.time()
+
+        # Open position
+        result = open_paper_position(
+            signal,
+            price=entry_price,
+            ts=ts,
+            reason="PAPER_EXPLORE",
+            extra={
+                "explore_bucket": "C_WEAK_EV",
+                "size_mult": 0.08,
+                "final_size_usd": 8.00,
+            },
+        )
+        trade_id = result["trade_id"]
+
+        # Simulate TP hit (price up 1.3%)
+        exit_price = entry_price * 1.013
+        closed = close_paper_position(trade_id, exit_price, ts + 60, "TP")
+
+        assert closed is not None
+        assert closed["symbol"] == "XRPUSDT"
+        assert closed["exit_price"] == exit_price
+        assert closed["exit_reason"] == "TP"
+        assert closed["explore_bucket"] == "C_WEAK_EV"
+        assert closed["outcome"] in ("WIN", "FLAT", "LOSS")
+
+        # Position should be removed from open positions
+        positions = get_paper_open_positions()
+        assert len(positions) == 0
+
 
 class TestExplorationStats:
     """Exploration cap tracking and reset"""
@@ -363,6 +405,62 @@ class TestExceptionSafety:
         result = paper_exploration_override(signal)
         assert isinstance(result, dict)
         assert "allowed" in result
+
+
+class TestSideNormalization:
+    """Side alias normalization (BUY/LONG, SELL/SHORT)"""
+
+    def test_buy_and_long_produce_same_position(self):
+        """BUY and LONG both produce canonical BUY side"""
+        reset_paper_positions()
+        signal_buy = {
+            "symbol": "XRPUSDT",
+            "action": "BUY",
+            "ev": 0.05,
+            "score": 0.5,
+        }
+        signal_long = {
+            "symbol": "XRPUSDT",
+            "action": "LONG",
+            "ev": 0.05,
+            "score": 0.5,
+        }
+
+        result_buy = open_paper_position(signal_buy, price=2.543, ts=time.time(), reason="RDE_TAKE")
+        result_long = open_paper_position(signal_long, price=2.543, ts=time.time(), reason="RDE_TAKE")
+
+        positions = get_paper_open_positions()
+        assert len(positions) == 2
+        assert positions[0]["side"] == "BUY"
+        assert positions[1]["side"] == "BUY"
+        assert positions[0]["side_raw"] == "BUY"
+        assert positions[1]["side_raw"] == "LONG"
+
+    def test_sell_and_short_produce_same_position(self):
+        """SELL and SHORT both produce canonical SELL side"""
+        reset_paper_positions()
+        signal_sell = {
+            "symbol": "ETHUSDT",
+            "action": "SELL",
+            "ev": 0.05,
+            "score": 0.5,
+        }
+        signal_short = {
+            "symbol": "ETHUSDT",
+            "action": "SHORT",
+            "ev": 0.05,
+            "score": 0.5,
+        }
+
+        result_sell = open_paper_position(signal_sell, price=2543.0, ts=time.time(), reason="RDE_TAKE")
+        result_short = open_paper_position(signal_short, price=2543.0, ts=time.time(), reason="RDE_TAKE")
+
+        positions = get_paper_open_positions()
+        assert len(positions) == 2
+        assert positions[0]["side"] == "SELL"
+        assert positions[1]["side"] == "SELL"
+        assert positions[0]["side_raw"] == "SELL"
+        assert positions[1]["side_raw"] == "SHORT"
 
 
 class TestPaperStatePersistence:

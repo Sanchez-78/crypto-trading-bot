@@ -63,6 +63,26 @@ def _load_paper_state() -> None:
 _load_paper_state()
 
 
+def _normalize_side(side_raw: str) -> tuple[str, str]:
+    """Normalize side aliases to canonical form.
+
+    Args:
+        side_raw: Raw side (BUY, LONG, SELL, SHORT, etc.)
+
+    Returns:
+        (canonical_side, side_raw) tuple where canonical_side is BUY or SELL
+    """
+    side_upper = str(side_raw).upper().strip() if side_raw else "BUY"
+    if side_upper in ("BUY", "LONG"):
+        return "BUY", side_raw
+    elif side_upper in ("SELL", "SHORT"):
+        return "SELL", side_raw
+    else:
+        # Default to BUY for unknown, log warning
+        log.warning(f"[SIDE_NORMALIZATION_DEFAULT] raw={side_raw} defaulting to BUY")
+        return "BUY", side_raw
+
+
 def _generate_trade_id() -> str:
     """Generate unique trade ID."""
     return f"paper_{uuid.uuid4().hex[:12]}"
@@ -160,7 +180,8 @@ def open_paper_position(
 
     trade_id = _generate_trade_id()
     symbol = signal.get("symbol", "UNKNOWN")
-    side = signal.get("action", signal.get("side", "BUY"))
+    side_raw = signal.get("action", signal.get("side", "BUY"))
+    side, side_raw_stored = _normalize_side(side_raw)
 
     # Apply exploration sizing if provided; otherwise use default position size
     size_usd = _POSITION_SIZE
@@ -172,6 +193,7 @@ def open_paper_position(
         "mode": "paper_live",
         "symbol": symbol,
         "side": side,
+        "side_raw": side_raw_stored,
         "entry_price": price,
         "entry_ts": ts,
         "size_usd": size_usd,
