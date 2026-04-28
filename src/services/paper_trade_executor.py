@@ -68,17 +68,69 @@ def _migrate_legacy_position(pos: dict) -> dict:
     return pos
 
 
+def _convert_list_to_dict(positions_list: list) -> dict:
+    """Convert legacy list format to canonical dict format.
+
+    Args:
+        positions_list: List of position dicts from old format
+
+    Returns:
+        Dict mapping trade_id -> position dict
+    """
+    result = {}
+    for idx, pos in enumerate(positions_list):
+        # Try to find existing trade_id/id field
+        trade_id = pos.get("trade_id") or pos.get("id")
+
+        if trade_id:
+            result[trade_id] = pos
+        else:
+            # Generate stable fallback key
+            symbol = pos.get("symbol", "UNKNOWN")
+            opened_at_ts = pos.get("entry_ts", pos.get("opened_at_ts", time.time()))
+            fallback_id = f"legacy_{idx}_{symbol}_{int(opened_at_ts)}"
+            result[fallback_id] = pos
+
+    return result
+
+
 def _load_paper_state() -> None:
-    """Load open paper positions from disk at startup."""
+    """Load open paper positions from disk at startup.
+
+    Supports both canonical dict and legacy list formats.
+    Automatically converts and saves back in canonical format.
+    """
     try:
         import json
         if not os.path.exists(_STATE_FILE):
-            log.info("[PAPER_STATE_LOAD] open_positions=0 source=%s reason=file_not_found", _STATE_FILE)
+            log.info("[PAPER_STATE_LOAD] open_positions=0 source=%s missing=true", _STATE_FILE)
             return
+
         with open(_STATE_FILE, "r") as f:
             positions_data = json.load(f)
 
-        # Migrate legacy positions
+        # Handle empty state
+        if not positions_data:
+            log.info("[PAPER_STATE_LOAD] open_positions=0 source=%s", _STATE_FILE)
+            return
+
+        # Convert list to dict if needed
+        list_to_dict_count = 0
+        if isinstance(positions_data, list):
+            if len(positions_data) == 0:
+                # Empty list - just log and return
+                log.info("[PAPER_STATE_LOAD] open_positions=0 source=%s", _STATE_FILE)
+                return
+
+            # Convert list to dict
+            positions_data = _convert_list_to_dict(positions_data)
+            list_to_dict_count = len(positions_data)
+            log.info(
+                "[PAPER_STATE_MIGRATE] from=list to=dict count=%d",
+                list_to_dict_count,
+            )
+
+        # Migrate legacy positions (ensure max_hold_s is set)
         migrated_count = 0
         for trade_id, pos in positions_data.items():
             if "max_hold_s" not in pos:
@@ -98,8 +150,15 @@ def _load_paper_state() -> None:
                 "[PAPER_STATE_MIGRATE] count=%d reason=missing_max_hold_s",
                 migrated_count,
             )
+
+        # If we did a list->dict conversion, save back in canonical format
+        if list_to_dict_count > 0:
+            _save_paper_state()
+
+    except json.JSONDecodeError as e:
+        log.warning("[PAPER_STATE_LOAD_ERROR] source=%s err=json_decode err_detail=%s", _STATE_FILE, str(e))
     except Exception as e:
-        log.warning("[PAPER_STATE_LOAD_ERROR] err=%s", str(e))
+        log.warning("[PAPER_STATE_LOAD_ERROR] source=%s err=%s", _STATE_FILE, str(e))
 
 
 # Load paper positions from disk on module init

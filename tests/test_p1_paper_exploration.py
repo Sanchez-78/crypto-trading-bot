@@ -700,6 +700,204 @@ class TestExposureCaps:
         assert result2["status"] == "blocked"
 
 
+class TestRobustStateLoader:
+    """P1.1h: Robust paper state loader handling dict and list formats"""
+
+    def test_empty_list_loads_without_error(self):
+        """Empty list in state file loads as empty state without error"""
+        import json
+
+        reset_paper_positions()
+        if os.path.exists("data/paper_open_positions.json"):
+            os.remove("data/paper_open_positions.json")
+
+        # Write empty list to state file
+        os.makedirs("data", exist_ok=True)
+        with open("data/paper_open_positions.json", "w") as f:
+            json.dump([], f)
+
+        # Load should not crash
+        from src.services.paper_trade_executor import _load_paper_state
+        _load_paper_state()
+
+        # Should start with empty state
+        from src.services.paper_trade_executor import get_paper_open_positions
+        positions = get_paper_open_positions()
+        assert len(positions) == 0
+
+    def test_list_format_migrates_to_dict(self):
+        """List format positions migrate to dict with proper keys"""
+        import json
+
+        reset_paper_positions()
+        if os.path.exists("data/paper_open_positions.json"):
+            os.remove("data/paper_open_positions.json")
+
+        # Write list format state
+        legacy_list = [
+            {
+                "trade_id": "paper_old_1",
+                "symbol": "XRPUSDT",
+                "side": "BUY",
+                "entry_price": 2.543,
+                "size": 3.15,
+                "size_usd": 8.00,
+                "entry_ts": time.time() - 100,
+                "explore_bucket": "C_WEAK_EV",
+            },
+            {
+                "id": "paper_old_2",  # Using 'id' instead of 'trade_id'
+                "symbol": "ETHUSDT",
+                "side": "SELL",
+                "entry_price": 2543.0,
+                "size": 0.31,
+                "size_usd": 8.00,
+                "entry_ts": time.time() - 50,
+                "explore_bucket": "B_RECOVERY_READY",
+            },
+        ]
+
+        os.makedirs("data", exist_ok=True)
+        with open("data/paper_open_positions.json", "w") as f:
+            json.dump(legacy_list, f)
+
+        # Load should convert to dict
+        from src.services.paper_trade_executor import _load_paper_state, get_paper_trade_by_id
+        _load_paper_state()
+
+        # Check that both positions loaded with correct keys
+        pos1 = get_paper_trade_by_id("paper_old_1")
+        assert pos1 is not None
+        assert pos1["symbol"] == "XRPUSDT"
+
+        pos2 = get_paper_trade_by_id("paper_old_2")
+        assert pos2 is not None
+        assert pos2["symbol"] == "ETHUSDT"
+
+    def test_dict_format_loads_normally(self):
+        """Standard dict format loads without issues"""
+        import json
+
+        reset_paper_positions()
+        if os.path.exists("data/paper_open_positions.json"):
+            os.remove("data/paper_open_positions.json")
+
+        # Write canonical dict format
+        canonical_dict = {
+            "paper_trade_dict_1": {
+                "symbol": "BTCUSDT",
+                "side": "BUY",
+                "entry_price": 45000.0,
+                "size": 0.01,
+                "size_usd": 450.0,
+                "entry_ts": time.time() - 75,
+                "explore_bucket": "C_WEAK_EV",
+                "max_hold_s": 600,
+            }
+        }
+
+        os.makedirs("data", exist_ok=True)
+        with open("data/paper_open_positions.json", "w") as f:
+            json.dump(canonical_dict, f)
+
+        from src.services.paper_trade_executor import _load_paper_state, get_paper_trade_by_id
+        _load_paper_state()
+
+        pos = get_paper_trade_by_id("paper_trade_dict_1")
+        assert pos is not None
+        assert pos["symbol"] == "BTCUSDT"
+        assert pos["max_hold_s"] == 600
+
+    def test_corrupt_json_logs_error_and_starts_empty(self):
+        """Corrupt JSON logs error and starts with empty state"""
+        import json
+
+        reset_paper_positions()
+        if os.path.exists("data/paper_open_positions.json"):
+            os.remove("data/paper_open_positions.json")
+
+        # Write invalid JSON
+        os.makedirs("data", exist_ok=True)
+        with open("data/paper_open_positions.json", "w") as f:
+            f.write("{invalid json]")
+
+        from src.services.paper_trade_executor import _load_paper_state, get_paper_open_positions
+        _load_paper_state()
+
+        # Should start with empty state
+        positions = get_paper_open_positions()
+        assert len(positions) == 0
+
+    def test_save_writes_canonical_dict_format(self):
+        """Saved state always uses canonical dict format, never list"""
+        import json
+
+        reset_paper_positions()
+        if os.path.exists("data/paper_open_positions.json"):
+            os.remove("data/paper_open_positions.json")
+
+        signal = {
+            "symbol": "DOGEUSDT",
+            "action": "BUY",
+            "ev": 0.020,
+            "score": 0.15,
+        }
+
+        # Open a position to trigger save
+        result = open_paper_position(
+            signal,
+            price=0.35,
+            ts=time.time(),
+            reason="PAPER_EXPLORE",
+            extra={
+                "explore_bucket": "C_WEAK_EV",
+                "final_size_usd": 8.00,
+                "max_hold_s": 600,
+            },
+        )
+        assert result["status"] == "opened"
+
+        # Check saved file is dict, not list
+        with open("data/paper_open_positions.json", "r") as f:
+            saved = json.load(f)
+
+        assert isinstance(saved, dict), "Saved state should be dict, not list"
+        assert len(saved) == 1
+
+    def test_list_with_missing_keys_generates_fallback_keys(self):
+        """List entries without trade_id/id get fallback keys"""
+        import json
+
+        reset_paper_positions()
+        if os.path.exists("data/paper_open_positions.json"):
+            os.remove("data/paper_open_positions.json")
+
+        # Write list with position missing both trade_id and id
+        legacy_list = [
+            {
+                # No trade_id or id field
+                "symbol": "XRPUSDT",
+                "side": "BUY",
+                "entry_price": 2.543,
+                "entry_ts": 1700000000.0,  # Fixed timestamp for stable fallback key
+                "explore_bucket": "C_WEAK_EV",
+            }
+        ]
+
+        os.makedirs("data", exist_ok=True)
+        with open("data/paper_open_positions.json", "w") as f:
+            json.dump(legacy_list, f)
+
+        from src.services.paper_trade_executor import _load_paper_state, get_paper_open_positions
+        _load_paper_state()
+
+        # Should load with fallback key
+        positions = get_paper_open_positions()
+        assert len(positions) == 1
+        # Fallback key format: legacy_<idx>_<symbol>_<ts>
+        assert positions[0]["symbol"] == "XRPUSDT"
+
+
 class TestMaxHoldWindow:
     """P1.1g: Per-position max_hold_s enforcement"""
 
