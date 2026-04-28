@@ -700,5 +700,179 @@ class TestExposureCaps:
         assert result2["status"] == "blocked"
 
 
+class TestMaxHoldWindow:
+    """P1.1g: Per-position max_hold_s enforcement"""
+
+    def test_c_weak_ev_closes_near_max_hold_s(self):
+        """C_WEAK_EV with max_hold_s=600 closes around 600 seconds"""
+        from src.services.paper_trade_executor import get_paper_trade_by_id, update_paper_positions
+        import json
+        reset_paper_positions()
+
+        # Remove state file
+        if os.path.exists("data/paper_open_positions.json"):
+            os.remove("data/paper_open_positions.json")
+
+        signal = {
+            "symbol": "XRPUSDT",
+            "action": "BUY",
+            "ev": 0.015,
+            "score": 0.15,
+            "p": 0.55,
+        }
+
+        # Open C_WEAK_EV position with max_hold_s=600
+        open_ts = time.time()
+        result = open_paper_position(
+            signal,
+            price=2.543,
+            ts=open_ts,
+            reason="PAPER_EXPLORE",
+            extra={
+                "explore_bucket": "C_WEAK_EV",
+                "final_size_usd": 8.00,
+                "max_hold_s": 600,
+            },
+        )
+        assert result["status"] == "opened"
+        trade_id = result["trade_id"]
+
+        # Verify position has max_hold_s set
+        pos = get_paper_trade_by_id(trade_id)
+        assert pos is not None
+        assert pos.get("max_hold_s") == 600
+
+        # Simulate passage of 600 seconds by calling update_paper_positions at different times
+        # Advance time to just before max_hold_s expires
+        update_result = update_paper_positions({"XRPUSDT": 2.550}, open_ts + 599)
+
+        # Position should still be open
+        pos = get_paper_trade_by_id(trade_id)
+        assert pos is not None
+
+        # Advance to 601s
+        update_result = update_paper_positions({"XRPUSDT": 2.550}, open_ts + 601)
+
+        # Position should be closed
+        pos = get_paper_trade_by_id(trade_id)
+        assert pos is None
+
+    def test_legacy_position_gets_max_hold_s_on_load(self):
+        """Legacy position without max_hold_s gets inferred on load"""
+        from src.services.paper_trade_executor import _load_paper_state, get_paper_trade_by_id
+        import json
+
+        # Reset and remove state file
+        reset_paper_positions()
+        if os.path.exists("data/paper_open_positions.json"):
+            os.remove("data/paper_open_positions.json")
+
+        # Create a legacy position on disk (missing max_hold_s)
+        legacy_positions = {
+            "legacy_trade_001": {
+                "symbol": "XRPUSDT",
+                "action": "BUY",
+                "entry_price": 2.543,
+                "size": 3.15,
+                "size_usd": 8.00,
+                "entry_ts": time.time() - 100,  # Opened 100s ago
+                "explore_bucket": "C_WEAK_EV",
+                "paper_source": "exploration_reject",
+                # Note: no max_hold_s field - this is the legacy case
+            }
+        }
+
+        # Write to disk
+        os.makedirs("data", exist_ok=True)
+        with open("data/paper_open_positions.json", "w") as f:
+            json.dump(legacy_positions, f)
+
+        # Now load the state - migration should happen
+        _load_paper_state()
+
+        # Verify the position was loaded and migrated
+        pos = get_paper_trade_by_id("legacy_trade_001")
+        assert pos is not None
+
+        # C_WEAK_EV should get max_hold_s=600
+        assert pos.get("max_hold_s") == 600
+
+    def test_b_recovery_ready_legacy_gets_900s(self):
+        """B_RECOVERY_READY legacy position gets max_hold_s=900"""
+        from src.services.paper_trade_executor import _load_paper_state, get_paper_trade_by_id
+        import json
+
+        reset_paper_positions()
+        if os.path.exists("data/paper_open_positions.json"):
+            os.remove("data/paper_open_positions.json")
+
+        # Create legacy B_RECOVERY_READY position
+        legacy_positions = {
+            "legacy_trade_002": {
+                "symbol": "ETHUSDT",
+                "action": "SELL",
+                "entry_price": 2543.0,
+                "size": 0.31,
+                "size_usd": 8.00,
+                "entry_ts": time.time() - 100,
+                "explore_bucket": "B_RECOVERY_READY",
+                "paper_source": "exploration_reject",
+            }
+        }
+
+        os.makedirs("data", exist_ok=True)
+        with open("data/paper_open_positions.json", "w") as f:
+            json.dump(legacy_positions, f)
+
+        # Load and migrate
+        _load_paper_state()
+
+        pos = get_paper_trade_by_id("legacy_trade_002")
+        assert pos is not None
+        assert pos.get("max_hold_s") == 900
+
+    def test_hold_s_never_exceeds_max_hold_s(self):
+        """duration_s reported in closed trade never exceeds max_hold_s"""
+        import json
+        reset_paper_positions()
+
+        if os.path.exists("data/paper_open_positions.json"):
+            os.remove("data/paper_open_positions.json")
+
+        signal = {
+            "symbol": "BNBUSDT",
+            "action": "BUY",
+            "ev": 0.020,
+            "score": 0.15,
+        }
+
+        open_ts = time.time()
+        result = open_paper_position(
+            signal,
+            price=555.0,
+            ts=open_ts,
+            reason="PAPER_EXPLORE",
+            extra={
+                "explore_bucket": "C_WEAK_EV",
+                "final_size_usd": 8.00,
+                "max_hold_s": 600,
+            },
+        )
+        assert result["status"] == "opened"
+        trade_id = result["trade_id"]
+
+        # Manually close the position to verify duration_s calculation
+        close_ts = open_ts + 595  # Held for 595 seconds (within max_hold_s)
+        closed = close_paper_position(trade_id, 555.5, close_ts, "TP")
+        assert closed is not None
+
+        # Verify duration_s is less than max_hold_s
+        duration_s = closed.get("duration_s", 0)
+        max_hold_s = closed.get("max_hold_s", 600)
+        assert duration_s <= max_hold_s
+        # duration_s should be close to 595
+        assert 593 < duration_s < 597  # Allow small tolerance for execution time
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
