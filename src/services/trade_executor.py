@@ -1657,7 +1657,58 @@ def handle_signal(signal):
             else:
                 _replace_if_better(signal)   # fall back to ws/EV rotation
         else:
-            log.info(f"    portfolio gate: {reason}  sym={sym}")
+            # V10.13u+20 P1.1: Paper exploration from rejected signals
+            _explored = False
+            try:
+                from src.core.runtime_mode import is_paper_mode, paper_exploration_enabled
+                from src.services.paper_exploration import paper_exploration_override
+
+                if is_paper_mode() and paper_exploration_enabled():
+                    # Try to explore this rejection
+                    explore_ctx = {
+                        "reject_reason": reason,
+                        "recovery_ready": False,
+                        "probe_ready": False,
+                    }
+                    ov = paper_exploration_override(signal, explore_ctx)
+                    if ov.get("allowed"):
+                        entry_price = signal.get("price")
+                        if entry_price is None or not isinstance(entry_price, (int, float)):
+                            log.warning(
+                                "[PAPER_EXPLORE_SKIP] symbol=%s reason=no_real_price reject_reason=%s",
+                                sym, reason
+                            )
+                        else:
+                            _explored = True
+                            open_paper_position(
+                                signal,
+                                price=entry_price,
+                                ts=time.time(),
+                                reason="PAPER_EXPLORE",
+                                extra={
+                                    "paper_source": "exploration_reject",
+                                    "explore_bucket": ov["bucket"],
+                                    "original_decision": "REJECT",
+                                    "reject_reason": reason,
+                                    "size_mult": ov["size_mult"],
+                                    "max_hold_s": ov["max_hold_s"],
+                                    "tags": ov["tags"],
+                                },
+                            )
+                            log.warning(
+                                "[PAPER_EXPLORE_ENTRY] bucket=%s symbol=%s side=%s original_decision=REJECT "
+                                "ev=%.4f score=%.3f price=%.8f reason=%s",
+                                ov["bucket"], sym, signal.get("action", "BUY"),
+                                signal.get("ev", 0.0), signal.get("score", 0.0),
+                                entry_price, ov["reason"]
+                            )
+            except ImportError:
+                pass  # Paper exploration not available
+            except Exception as e:
+                log.debug(f"[PAPER_EXPLORE_ERROR] {e}")
+
+            if not _explored:
+                log.info(f"    portfolio gate: {reason}  sym={sym}")
         return
 
     entry = signal["price"]

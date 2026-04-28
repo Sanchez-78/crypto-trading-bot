@@ -88,6 +88,7 @@ def open_paper_position(
     price: float,
     ts: float,
     reason: str = "RDE_TAKE",
+    extra: Optional[dict] = None,
 ) -> dict:
     """Open a paper trading position using real live price.
 
@@ -96,6 +97,7 @@ def open_paper_position(
         price: Current real market price (MUST be real, not synthetic)
         ts: Timestamp of entry
         reason: Entry reason (default "RDE_TAKE")
+        extra: Optional dict with paper_source, explore_bucket, etc.
 
     Returns:
         dict: {"trade_id": ..., "status": "opened", "symbol": ..., ...}
@@ -136,9 +138,13 @@ def open_paper_position(
         "coh_at_entry": signal.get("coh", signal.get("coherence", 1.0)),
         "af_at_entry": signal.get("af", signal.get("auditor_factor", 1.0)),
         "rde_decision": reason,
-        "paper_explore": False,
-        "explore_bucket": "A_STRICT_TAKE",
-        "original_reject_reason": None,
+        "paper_source": extra.get("paper_source") if extra else "normal_rde_take",
+        "explore_bucket": extra.get("explore_bucket") if extra else "A_STRICT_TAKE",
+        "original_decision": extra.get("original_decision") if extra else "TAKE",
+        "reject_reason": extra.get("reject_reason") if extra else None,
+        "size_mult": extra.get("size_mult") if extra else 1.0,
+        "max_hold_s": extra.get("max_hold_s") if extra else _MAX_AGE_S,
+        "tags": extra.get("tags") if extra else [],
         "created_at": ts,
     }
 
