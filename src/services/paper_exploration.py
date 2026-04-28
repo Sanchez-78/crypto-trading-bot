@@ -199,3 +199,123 @@ def reset_exploration_caps() -> None:
     for bucket in _exploration_hourly_caps.keys():
         _exploration_hourly_caps[bucket]["count"] = 0
         _exploration_hourly_caps[bucket]["window_start"] = now
+
+
+def maybe_open_paper_exploration_from_reject(
+    signal: dict,
+    ctx: Optional[dict] = None,
+    *,
+    original_decision: str,
+    reject_reason: str,
+    current_price: Optional[float] = None,
+) -> bool:
+    """Try opening a paper exploration trade from a rejected real-price signal.
+
+    Called from active reject hooks in production. Returns True if paper position opened.
+    Observability/safety only. Never raises.
+
+    Args:
+        signal: Signal dict with symbol, ev, score, p, coh, af, regime, etc.
+        ctx: Optional context dict
+        original_decision: Reject decision (e.g., "REJECT_ECON_BAD_ENTRY")
+        reject_reason: Reject reason (e.g., "weak_ev")
+        current_price: Current real market price (try this first)
+
+    Returns:
+        True if paper position was opened, False otherwise
+    """
+    try:
+        from src.core.runtime_mode import is_paper_mode, paper_exploration_enabled
+
+        if not is_paper_mode() or not paper_exploration_enabled():
+            return False
+
+        signal = signal or {}
+        ctx = ctx or {}
+
+        # Resolve symbol
+        symbol = signal.get("symbol") or ctx.get("symbol") or "UNKNOWN"
+
+        # Resolve real price (priority order)
+        price = None
+        for price_candidate in [
+            current_price,
+            signal.get("price"),
+            signal.get("last_price"),
+            signal.get("current_price"),
+            ctx.get("price"),
+            ctx.get("last_price"),
+            ctx.get("current_price"),
+        ]:
+            if price_candidate and isinstance(price_candidate, (int, float)) and price_candidate > 0:
+                price = price_candidate
+                break
+
+        if not price:
+            log.warning(
+                "[PAPER_EXPLORE_SKIP] reason=no_real_price symbol=%s original_decision=%s reject_reason=%s",
+                symbol,
+                original_decision,
+                reject_reason,
+            )
+            return False
+
+        # Check if this reject should be explored
+        explore_ctx = {
+            "reject_reason": reject_reason,
+            "recovery_ready": ctx.get("recovery_ready", False),
+            "probe_ready": ctx.get("probe_ready", False),
+        }
+        ov = paper_exploration_override(signal, explore_ctx)
+
+        if not ov.get("allowed"):
+            log.warning(
+                "[PAPER_EXPLORE_SKIP] reason=%s bucket=%s symbol=%s original_decision=%s reject_reason=%s",
+                ov.get("reason", "not_allowed"),
+                ov.get("bucket", "UNKNOWN"),
+                symbol,
+                original_decision,
+                reject_reason,
+            )
+            return False
+
+        # Open paper position with exploration metadata
+        from src.services.paper_trade_executor import open_paper_position
+
+        result = open_paper_position(
+            signal,
+            price=price,
+            ts=time.time(),
+            reason="PAPER_EXPLORE",
+            extra={
+                "paper_source": "exploration_reject",
+                "explore_bucket": ov["bucket"],
+                "original_decision": original_decision,
+                "reject_reason": reject_reason,
+                "size_mult": ov["size_mult"],
+                "max_hold_s": ov["max_hold_s"],
+                "tags": ov["tags"],
+            },
+        )
+
+        if result.get("status") == "opened":
+            log.warning(
+                "[PAPER_EXPLORE_ENTRY] bucket=%s symbol=%s side=%s original_decision=%s "
+                "ev=%.4f score=%.3f price=%.8f reject_reason=%s reason=%s",
+                ov["bucket"],
+                symbol,
+                signal.get("action", "BUY"),
+                original_decision,
+                signal.get("ev", 0.0),
+                signal.get("score", 0.0),
+                price,
+                reject_reason,
+                ov["reason"],
+            )
+            return True
+
+        return False
+
+    except Exception as e:
+        log.debug(f"[PAPER_EXPLORE_ERROR] {e}")
+        return False

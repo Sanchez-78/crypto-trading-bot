@@ -677,6 +677,29 @@ def _trace_econ_bad_entry_return(
             final_decision or "UNKNOWN",
         )
 
+        # V10.13u+20 P1.1b: Try paper exploration for ECON_BAD reject
+        try:
+            from src.services.paper_exploration import maybe_open_paper_exploration_from_reject
+
+            if str(final_decision).startswith("REJECT"):
+                maybe_open_paper_exploration_from_reject(
+                    signal=signal or {
+                        "symbol": symbol,
+                        "ev": ev,
+                        "score": score,
+                        "p": p,
+                        "coh": coh,
+                        "af": af,
+                        "regime": signal.get("regime", "NEUTRAL") if signal else "NEUTRAL",
+                    },
+                    ctx=ctx or {},
+                    original_decision=final_decision or "REJECT_ECON_BAD_ENTRY",
+                    reject_reason=entry_reason or "econ_bad",
+                    current_price=signal.get("price") if signal else None,
+                )
+        except Exception:
+            pass  # Graceful degrade if exploration unavailable
+
         # Ready-but-rejected invariant: actual recovery was checked, allowed, but final reject still happened
         # V10.13u+19d/19e: Use actual_recovery_allowed from override, not snapshot_probe_ready (snapshot may be stale)
         if (
@@ -3638,6 +3661,21 @@ def evaluate_signal(signal):
             _maybe_flush_econ_bad_diagnostics()
             # V10.13u+18g: Emit from rejection path as production-safe fallback
             _maybe_emit_econ_bad_diag_from_reject(source="rde_reject")
+
+        # V10.13u+20 P1.1b: Try paper exploration for negative EV reject (capped baseline)
+        try:
+            from src.services.paper_exploration import maybe_open_paper_exploration_from_reject
+
+            maybe_open_paper_exploration_from_reject(
+                signal=signal,
+                ctx={},
+                original_decision="REJECT_NEGATIVE_EV",
+                reject_reason="negative_ev",
+                current_price=signal.get("price") if signal else None,
+            )
+        except Exception:
+            pass  # Graceful degrade if exploration unavailable
+
         return None
 
     # ════════════════════════════════════════════════════════════════════════════════

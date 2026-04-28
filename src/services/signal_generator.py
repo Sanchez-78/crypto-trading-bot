@@ -679,6 +679,19 @@ def on_price(data):
             if s not in _cycle_prefilter_drops:
                 _cycle_prefilter_drops[s] = "NO_CANDIDATE_PATTERN"
                 logging.warning(f"on_price({s}): NO_CANDIDATE_PATTERN (edge generation failed, forced signal failed 70% check)")
+
+            # V10.13u+20 P1.1b: Wire paper exploration into NO_CANDIDATE_PATTERN reject
+            # Safe check: action is None, so no side to safely infer
+            # Only log skip; do not open paper with fake BUY direction
+            try:
+                logging.info(
+                    "[PAPER_EXPLORE_SKIP] reason=no_side symbol=%s "
+                    "original_decision=NO_CANDIDATE_PATTERN reject_reason=no_candidate_pattern",
+                    s,
+                )
+            except Exception:
+                pass
+
             track_filtered()
             return
     else:
