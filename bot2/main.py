@@ -1389,9 +1389,18 @@ def print_cycle_summary(now: float) -> None:
 def main():
     # V10.13s: Explicit startup tracing with canonical version
     import sys
+    import logging
     from src.core.version import get_version_string
     from src.services.learning_instrumentation import format_lm_counters
     from src.services.version_info import get_runtime_marker, format_runtime_marker, try_write_runtime_status_to_firestore
+
+    # V10.13u+20: Configure logging to output INFO level to stderr for P0.3 validation
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(message)s',
+        stream=sys.stderr,
+        force=True
+    )
 
     version_str = get_version_string()
     print("\n" + "="*80, file=sys.stderr, flush=True)
