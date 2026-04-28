@@ -44,6 +44,27 @@ from src.services.exit_attribution import (
 )
 from src.services.exit_pnl import canonical_close_pnl
 
+# V10.13u+20: Paper trading mode integration
+try:
+    from src.core.runtime_mode import is_paper_mode, live_trading_allowed
+except ImportError:
+    def is_paper_mode():
+        return False
+    def live_trading_allowed():
+        return False
+
+try:
+    from src.services.paper_trade_executor import (
+        open_paper_position, update_paper_positions, close_paper_position
+    )
+except ImportError:
+    def open_paper_position(*args, **kwargs):
+        return {"status": "error", "reason": "paper_trade_executor not available"}
+    def update_paper_positions(*args, **kwargs):
+        return []
+    def close_paper_position(*args, **kwargs):
+        return None
+
 try:
     from src.services.learning_instrumentation import (
         increment_trades_closed, increment_lm_update_called, increment_lm_update_success
@@ -1438,6 +1459,47 @@ def _flush():
     _last_flush[0] = time.time()
 
 
+def _save_paper_trade_closed(closed_trade: dict) -> None:
+    """V10.13u+20: Save closed paper trade to Firebase for learning.
+
+    Paper trades use real prices and produce canonical metrics for learning.
+    Writes to trades_paper collection and updates metrics with paper outcomes.
+
+    Args:
+        closed_trade: Closed paper trade dict from paper_trade_executor
+    """
+    try:
+        # Prepare paper trade record for Firebase
+        paper_record = {
+            **closed_trade,
+            "timestamp": time.time(),
+            "mode": "paper_live",  # mark as paper for filtering
+        }
+
+        # Save to Firebase (paper trades in separate collection)
+        try:
+            from src.services.firebase_client import db, col
+            if db:
+                # Write to trades_paper collection (separate from live trades)
+                db.collection(col("trades_paper")).add(paper_record)
+                log.warning(
+                    f"[LEARNING_UPDATE] source=paper_closed_trade symbol={closed_trade.get('symbol')} "
+                    f"outcome={closed_trade.get('outcome')} net_pnl_pct={closed_trade.get('net_pnl_pct', 0):.4f}"
+                )
+        except Exception as e:
+            log.warning(f"[LEARNING_WRITE_FAILED] source=paper {e}")
+
+        # Update learning metrics
+        try:
+            from src.services.learning_event import update_metrics
+            update_metrics(closed_trade)
+        except Exception as e:
+            log.debug(f"[METRICS_UPDATE_FAILED] {e}")
+
+    except Exception as e:
+        log.warning(f"[PAPER_SAVE_ERROR] {e}")
+
+
 def handle_signal(signal):
     global _last_replace_ts   # V10.10: written directly in efficiency replacement path
     sym     = signal["symbol"]
@@ -2165,6 +2227,28 @@ def handle_signal(signal):
     except Exception:
         pass
 
+    # V10.13u+20: Route to paper trading if in paper mode
+    if is_paper_mode():
+        _paper_result = open_paper_position(signal, actual_entry, time.time(), "RDE_TAKE")
+        if _paper_result.get("status") == "opened":
+            log.warning(
+                f"[PAPER_ROUTED] symbol={sym} side={signal['action']} "
+                f"price={actual_entry:.8f} ev={signal.get('ev', 0):.4f}"
+            )
+        else:
+            log.warning(
+                f"[PAPER_BLOCKED] symbol={sym} reason={_paper_result.get('reason', 'unknown')}"
+            )
+        return  # Paper trades managed separately; do not open in live positions dict
+
+    # V10.13u+20: Verify live trading is allowed before opening real orders
+    if not live_trading_allowed():
+        log.warning(
+            f"[LIVE_ORDER_DISABLED] symbol={sym} mode check failed "
+            f"(TRADING_MODE required, real orders disabled)"
+        )
+        return
+
     with _positions_lock:
         _positions[sym] = {
             "action":        signal["action"],
@@ -2233,6 +2317,15 @@ def handle_signal(signal):
 
 
 def on_price(data):
+    # V10.13u+20: Update paper positions before live position handling
+    if is_paper_mode():
+        _symbol_prices = {data["symbol"]: data["price"]}
+        _closed_papers = update_paper_positions(_symbol_prices, time.time())
+        if _closed_papers:
+            # Process closed paper trades for learning
+            for _closed_trade in _closed_papers:
+                _save_paper_trade_closed(_closed_trade)
+
     if time.time() - _last_flush[0] >= FLUSH_EVERY and BATCH:
         _flush()
 

@@ -273,10 +273,15 @@ class TestPnLCalculation:
 
     def test_calculate_pnl_flat_small_change(self):
         """Small change between profit and loss produces FLAT."""
+        # Need move > 0.05% gross but < 0.05% net (after fees+slippage)
+        # Fees: 0.15%, Slippage: 0.03%, Threshold: 0.05%
+        # Net = Gross - 0.18% must be in (-0.05%, 0.05%)
+        # Gross must be > 0.13% (0.13 - 0.18 = -0.05) and < 0.23% (0.23 - 0.18 = 0.05)
+        # Use 0.20%: net = 0.20 - 0.18 = 0.02% (FLAT because 0.02% < 0.05%)
         pnl = _calculate_pnl(
             side="BUY",
             entry_price=100.0,
-            exit_price=100.02,
+            exit_price=100.20,
             size_usd=1000.0,
         )
 

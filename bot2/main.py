@@ -1607,6 +1607,13 @@ def main():
     log_bootstrap_status()
     print("  [7/7e] Bootstrap status logged ✓", file=sys.stderr, flush=True)
 
+    # V10.13u+20: Log runtime mode configuration for P0.3 validation
+    try:
+        from src.core.runtime_mode import log_runtime_config
+        log_runtime_config()
+    except Exception as e:
+        print(f"  [WARNING] Failed to log runtime config: {e}", file=sys.stderr, flush=True)
+
     print("  [8/8] Running warmup indicators...", file=sys.stderr, flush=True)
     warmup()
     print("  [8/8] Warmup complete ✓", file=sys.stderr, flush=True)
