@@ -723,58 +723,74 @@ def _safe_learning_update_for_paper_trade(pos: dict, pnl_data: dict) -> bool:
         return False
 
 
-def _safe_bucket_metrics_update_for_paper_trade(trade: dict) -> bool:
-    """P1.1R Phase 4: Update bucket metrics with correct bucket selection. Never raises.
+def _primary_bucket_for_closed_trade(t: dict) -> str:
+    """P1.1T: Determine exact primary bucket — never ambiguous, never fallback to A_STRICT_TAKE."""
+    return str(
+        t.get("training_bucket")
+        or t.get("explore_bucket")
+        or t.get("bucket")
+        or "UNKNOWN"
+    )
+
+
+def _safe_bucket_metrics_update_for_paper_trade(raw_trade: dict) -> bool:
+    """P1.1T: Isolated bucket metrics update. ONLY called once per closed trade. Never A_STRICT_TAKE fallback.
 
     Args:
-        trade: Closed trade dict (will be normalized to canonical form)
+        raw_trade: Raw closed trade dict
 
     Returns:
-        True if update succeeded, False if skipped or errored
+        True if update succeeded, False if error (never raises)
     """
     try:
-        # Normalize to canonical form (guarantees all safe types)
-        canon = _canonical_closed_paper_trade(trade)
+        # Normalize to canonical form
+        t = _canonical_closed_paper_trade(raw_trade)
 
-        # P1.1R: Fix false bucket updates — use training_bucket if present, else explore_bucket
-        # A closed C_WEAK_EV_TRAIN trade must update ONLY C_WEAK_EV_TRAIN metrics, not A_STRICT_TAKE
-        primary_bucket = canon["training_bucket"]
-        if primary_bucket == "UNKNOWN":
-            primary_bucket = canon["explore_bucket"]
+        # P1.1T: Determine primary bucket exactly once, no ambiguity
+        primary = _primary_bucket_for_closed_trade(t)
 
-        # Call metrics update with correct bucket
-        from src.services.bucket_metrics import update_bucket_metrics
-
-        # Build metrics dict with correct primary bucket
+        # Prepare metrics dict with primary bucket only
+        # No parent bucket, no fallback bucket, no A_STRICT_TAKE unless primary IS A_STRICT_TAKE
         metrics_dict = {
-            "explore_bucket": primary_bucket,
-            "explore_sub_bucket": canon["sub_bucket"] or "",
-            "outcome": canon["outcome"],
-            "net_pnl_pct": canon["net_pnl_pct"],
-            "exit_reason": canon["exit_reason"],
+            "explore_bucket": primary,
+            "explore_sub_bucket": str(t.get("sub_bucket") or "N/A"),
+            "outcome": t.get("outcome") or "UNKNOWN",
+            "net_pnl_pct": _safe_float(t.get("net_pnl_pct"), 0.0),
+            "exit_reason": t.get("exit_reason") or "UNKNOWN",
         }
 
+        # Call metrics update once
+        from src.services.bucket_metrics import update_bucket_metrics
         update_bucket_metrics(metrics_dict)
 
         log.info(
-            "[PAPER_BUCKET_UPDATE] bucket=%s sub_bucket=%s outcome=%s net_pnl_pct=%.4f",
-            primary_bucket,
-            canon["sub_bucket"] or "N/A",
-            canon["outcome"],
-            canon["net_pnl_pct"],
+            "[PAPER_BUCKET_UPDATE] bucket=%s outcome=%s net_pnl_pct=%.4f",
+            primary,
+            t.get("outcome") or "UNKNOWN",
+            _safe_float(t.get("net_pnl_pct"), 0.0),
         )
 
         return True
 
     except Exception as e:
-        bucket = trade.get("training_bucket") or trade.get("explore_bucket") or "UNKNOWN"
-        log.error(
-            "[BUCKET_METRICS_ERROR] err=%s bucket=%s symbol=%s fn=update_bucket_metrics",
+        bucket = raw_trade.get("training_bucket") or raw_trade.get("explore_bucket") or "UNKNOWN"
+        log.exception(
+            "[BUCKET_METRICS_ERROR] err=%s bucket=%s symbol=%s fn=_safe_bucket_metrics_update_for_paper_trade",
             str(e),
             bucket,
-            trade.get("symbol", "UNKNOWN"),
+            raw_trade.get("symbol", "UNKNOWN"),
         )
         return False
+
+
+def _safe_float(v, default=0.0):
+    """P1.1T: Type-safe float conversion."""
+    try:
+        if v is None:
+            return default
+        return float(v)
+    except (TypeError, ValueError):
+        return default
 
 
 def close_paper_position(

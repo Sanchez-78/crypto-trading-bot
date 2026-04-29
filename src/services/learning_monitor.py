@@ -591,125 +591,126 @@ def lm_update(sym, reg, pnl, ws, features, window=None):
         log.debug(f"[LM_PERSIST_ERROR] {sym}/{reg}: {_persist_err}")
 
 
+def _safe_float(v, default=0.0):
+    """P1.1T: Type-safe float conversion."""
+    try:
+        if v is None:
+            return default
+        return float(v)
+    except (TypeError, ValueError):
+        return default
+
+
 def _safe_features(raw):
-    """P1.1S: Type-safe feature extraction — handles any feature shape."""
+    """P1.1T: Type-safe feature extraction — handles any feature shape, never iterates scalars."""
     if not isinstance(raw, dict):
         return {}
     out = {}
     for k, v in raw.items():
-        if isinstance(k, str):
-            if isinstance(v, (int, float, bool, str)) or v is None:
-                out[k] = v
-            elif isinstance(v, (list, tuple)):
-                out[k] = list(v)
-            elif isinstance(v, dict):
-                out[k] = dict(v)
-            else:
-                out[k] = str(v)
+        name = str(k)
+        if isinstance(v, (int, float, bool, str)) or v is None:
+            out[name] = v
+        elif isinstance(v, dict):
+            out[name] = dict(v)
+        elif isinstance(v, (list, tuple, set)):
+            out[name] = list(v)
+        else:
+            out[name] = str(v)
     return out
+
+
+# P1.1T: Paper-train-only isolated learning state — never depends on legacy functions
+_paper_train_model_state = {}
 
 
 def update_from_paper_trade(trade: dict) -> bool:
     """
-    P1.1S: Forensic fix — self-contained safe paper-training learning update.
-    Never raises. Never iterates scalar feature values.
+    P1.1T: Paper-train-only safe learning update. Completely isolated, never unsafe.
+    Never calls lm_update(). Never calls record_features(). Never iterates scalar feature values.
+    Never raises.
 
     Args:
-        trade: Closed paper trade dict with symbol, regime, pnl_decimal, ws, features
+        trade: Closed paper trade dict with symbol, regime, net_pnl_pct, outcome, features, etc.
 
     Returns:
-        True on success, False on validation failure or internal error
+        True on success, False on any error (never raises)
     """
     try:
-        # Explicit field extraction and type-safe conversion
-        symbol = str(trade.get("symbol") or "UNKNOWN")
-        regime = str(trade.get("regime") or "UNKNOWN")
-        pnl = float(trade.get("pnl_decimal") or trade.get("net_pnl_pct", 0.0) / 100.0)
-        ws = float(trade.get("ws") or trade.get("score_at_entry") or 0.0)
+        t = trade if isinstance(trade, dict) else {}
 
-        # P1.1S: Most critical — ensure features is always a dict, never a scalar
-        # Use _safe_features to handle any production shape
-        features = _safe_features(trade.get("features"))
+        # Type-safe field extraction using safe helpers
+        sym = str(t.get("symbol") or "UNKNOWN")
+        reg = str(t.get("regime") or "UNKNOWN")
+        bucket = str(t.get("training_bucket") or t.get("explore_bucket") or t.get("bucket") or "UNKNOWN")
+        pnl_pct = _safe_float(t.get("net_pnl_pct"), 0.0)
+        pnl = _safe_float(t.get("pnl_decimal"), pnl_pct / 100.0)
+        outcome = str(t.get("outcome") or "").upper()
+        features = _safe_features(t.get("features"))
 
-        # Validation: skip if missing core fields
-        if symbol == "UNKNOWN" or regime == "UNKNOWN":
-            log.debug(f"[UPDATE_FROM_PAPER_TRADE] skip: symbol={symbol} regime={regime}")
+        # Validation
+        if sym == "UNKNOWN" or reg == "UNKNOWN":
+            log.debug(f"[PAPER_TRAIN_LEARNING_UPDATE] skip: symbol={sym} regime={reg}")
             return False
 
-        # P1.1S: Self-contained update — never iterate scalar feature values
-        # Update learning state directly without calling record_features() or old lm_update()
-        key = (symbol, regime)
+        # P1.1T: Use isolated module-level state, not global legacy state
+        key = f"{sym}_{reg}"
+        row = _paper_train_model_state.setdefault(key, {
+            "symbol": sym,
+            "regime": reg,
+            "n": 0,
+            "wins": 0,
+            "losses": 0,
+            "flats": 0,
+            "pnl_sum": 0.0,
+            "pnl_history": [],
+            "score_history": [],
+            "bucket_counts": {},
+            "feature_counts": {},
+        })
 
-        # Initialize state if needed
-        if key not in lm_count:
-            lm_count[key] = 0
-            lm_pnl_hist[key] = []
-            lm_wr_hist[key] = []
-            lm_ev_hist[key] = []
+        # Increment trade count and update outcome counts
+        row["n"] = int(row.get("n") or 0) + 1
+        if outcome == "WIN":
+            row["wins"] = int(row.get("wins") or 0) + 1
+        elif outcome == "LOSS":
+            row["losses"] = int(row.get("losses") or 0) + 1
+        else:
+            row["flats"] = int(row.get("flats") or 0) + 1
 
-        # Increment trade count
-        lm_count[key] = lm_count.get(key, 0) + 1
-        n = lm_count[key]
+        # Track PnL
+        row["pnl_sum"] = _safe_float(row.get("pnl_sum"), 0.0) + pnl
+        hist = row.setdefault("pnl_history", [])
+        if isinstance(hist, list):
+            hist.append(pnl)
+            # Cap at 200 trades
+            if len(hist) > 200:
+                del hist[:-200]
 
-        # Append PnL to history
-        pnl_lst = lm_pnl_hist.setdefault(key, [])
-        pnl_lst.append(float(pnl))
-        _cap(pnl_lst)
+        # Track score history
+        ws = _safe_float(t.get("score_at_entry") or t.get("ws"), 0.0)
+        sh = row.setdefault("score_history", [])
+        if isinstance(sh, list):
+            sh.append(ws)
+            if len(sh) > 200:
+                del sh[:-200]
 
-        # Compute and append rolling EV
-        ev_current = true_ev(symbol, regime)
-        ev_mean = lm_ev_hist.get(key, [0.0])[-1] if lm_ev_hist.get(key) else 0.0
-        ev_new = ev_mean + (ev_current - ev_mean) / max(n, 1)
-        ev_lst = lm_ev_hist.setdefault(key, [])
-        ev_lst.append(ev_new)
-        _cap(ev_lst)
+        # Track bucket counts
+        bc = row.setdefault("bucket_counts", {})
+        if isinstance(bc, dict):
+            bc[bucket] = int(bc.get(bucket) or 0) + 1
 
-        # Update rolling win rate
-        pnl_snap = list(pnl_lst)
-        wins = sum(1 for x in pnl_snap if x > 0)
-        total = len(pnl_snap)
-        wr = wins / total if total > 0 else 0.0
-        wr_lst = lm_wr_hist.setdefault(key, [])
-        wr_lst.append(wr)
-        _cap(wr_lst)
-
-        # Update per-symbol recent PnL (loss cluster guard)
-        s_lst = sym_recent_pnl.setdefault(symbol, [])
-        s_lst.append(float(pnl))
-        if len(s_lst) > 8:
-            del s_lst[:-8]
-
-        # P1.1S: Safe feature attribution — never iterate scalar values
-        # Only use features.items() (dict iteration), never iterate values directly
+        # Track feature counts (only presence, never iterate values)
         if features:
-            credit = 1.0 / len(features)
-            win = 1 if pnl > 0 else 0
-            for fname, fvalue in features.items():
-                # fname is the feature name (key), fvalue is the value (scalar or list)
-                # Only update the feature name in stats, not the value
-                w, t = lm_feature_stats.get(fname, (0.0, 0.0))
-                lm_feature_stats[fname] = (w + win * credit, t + credit)
-
-        # Persist state
-        try:
-            from src.services.state_manager import flush_lm_update_async
-            flush_lm_update_async(
-                symbol, regime,
-                pnl_lst,
-                lm_wr_hist[key],
-                lm_ev_hist[key],
-                lm_bandit_hist.get(key, []),
-                lm_count[key],
-                sym_recent_pnl.get(symbol, []),
-                lm_feature_stats,
-            )
-        except Exception as persist_err:
-            log.debug(f"[UPDATE_FROM_PAPER_TRADE_PERSIST] {symbol}/{regime}: {persist_err}")
+            fc = row.setdefault("feature_counts", {})
+            if isinstance(fc, dict):
+                for fname, fvalue in features.items():
+                    # Count feature presence only; never iterate scalar values
+                    fc[str(fname)] = int(fc.get(str(fname)) or 0) + 1
 
         return True
 
     except Exception as exc:
-        log.exception(f"[UPDATE_FROM_PAPER_TRADE_ERROR] unexpected error: {exc}")
+        log.exception(f"[PAPER_TRAIN_LEARNING_UPDATE_ERROR] update_from_paper_trade failed: {exc}")
         return False
 
 
