@@ -666,6 +666,74 @@ class TestP1N1AntiSpamDedupe:
         assert len(get_paper_open_positions()) == 0
 
 
+class TestP1OHotfixHealthLogging:
+    """P1.1O-hotfix: Test paper training health logging type safety."""
+
+    def test_safe_count_open_positions_with_empty_list(self):
+        """_safe_count_open_positions([]) returns 0."""
+        from src.services.paper_training_sampler import _safe_count_open_positions
+
+        assert _safe_count_open_positions([]) == 0
+
+    def test_safe_count_open_positions_with_empty_dict(self):
+        """_safe_count_open_positions({}) returns 0."""
+        from src.services.paper_training_sampler import _safe_count_open_positions
+
+        assert _safe_count_open_positions({}) == 0
+
+    def test_safe_count_open_positions_with_dict(self):
+        """_safe_count_open_positions({"a": {}, "b": {}}) returns 2."""
+        from src.services.paper_training_sampler import _safe_count_open_positions
+
+        assert _safe_count_open_positions({"a": {}, "b": {}}) == 2
+
+    def test_safe_count_open_positions_with_list(self):
+        """_safe_count_open_positions([{}, {}]) returns 2."""
+        from src.services.paper_training_sampler import _safe_count_open_positions
+
+        assert _safe_count_open_positions([{}, {}]) == 2
+
+    def test_safe_count_open_positions_with_none(self):
+        """_safe_count_open_positions(None) returns 0."""
+        from src.services.paper_training_sampler import _safe_count_open_positions
+
+        assert _safe_count_open_positions(None) == 0
+
+    def test_safe_count_open_positions_with_int(self):
+        """_safe_count_open_positions(5) returns 5."""
+        from src.services.paper_training_sampler import _safe_count_open_positions
+
+        assert _safe_count_open_positions(5) == 5
+
+    def test_safe_count_open_positions_with_invalid_type(self):
+        """_safe_count_open_positions(invalid) returns 0."""
+        from src.services.paper_training_sampler import _safe_count_open_positions
+
+        assert _safe_count_open_positions("invalid") == 0
+        assert _safe_count_open_positions(3.14) == 3  # float converts to int
+
+    def test_health_logging_does_not_raise_with_list(self, clean_positions):
+        """_maybe_log_training_health([]) does not trigger logging TypeError."""
+        import os
+        os.environ["TRADING_MODE"] = "paper_train"
+
+        from src.services.paper_training_sampler import _maybe_log_training_health
+
+        # This should not raise TypeError even with empty list
+        # Set last log time to 0 to force logging
+        from src.services.paper_training_sampler import _training_metrics
+
+        _training_metrics["last_health_log_ts"] = 0
+
+        # Call with empty list (the bug scenario)
+        try:
+            _maybe_log_training_health(open_positions=[])
+            # Success - no TypeError
+            assert True
+        except TypeError as e:
+            pytest.fail(f"Health logging raised TypeError: {e}")
+
+
 class TestP1O1LearningAndMetricsTypeSafety:
     """P1.1O: Test learning monitor and bucket metrics type safety."""
 

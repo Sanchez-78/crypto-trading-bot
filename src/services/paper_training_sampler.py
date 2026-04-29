@@ -319,7 +319,24 @@ def _training_quality_gate(
     return _allow(symbol=symbol, side=side, bucket=bucket, source_reject=source_reject)
 
 
-def _maybe_log_training_health() -> None:
+def _safe_count_open_positions(open_positions) -> int:
+    """P1.1O-hotfix: Safely convert open_positions to count.
+
+    Handles dict, list, None, or int input without raising.
+    """
+    if isinstance(open_positions, dict):
+        return len(open_positions)
+    if isinstance(open_positions, list):
+        return len(open_positions)
+    if open_positions is None:
+        return 0
+    try:
+        return int(open_positions)
+    except Exception:
+        return 0
+
+
+def _maybe_log_training_health(open_positions=None) -> None:
     """Log training health every 10 minutes."""
     now = time.time()
     last_log = _training_metrics["last_health_log_ts"]
@@ -337,9 +354,13 @@ def _maybe_log_training_health() -> None:
 
     status = "OK" if entries_1h >= _MIN_ENTRIES_PER_HOUR else "STARVED"
 
+    # P1.1O-hotfix: Safe count for open positions
+    open_count = _safe_count_open_positions(open_positions)
+
     log.info(
-        "[PAPER_TRAIN_HEALTH] open=... closed_1h=%d entries_1h=%d target_1h=%d "
+        "[PAPER_TRAIN_HEALTH] open=%d closed_1h=%d entries_1h=%d target_1h=%d "
         "learning_updates_1h=%d status=%s",
+        open_count,
         closed_1h,
         entries_1h,
         _MIN_ENTRIES_PER_HOUR,
