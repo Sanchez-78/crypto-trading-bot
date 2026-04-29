@@ -670,47 +670,47 @@ class TestP1OHotfixHealthLogging:
     """P1.1O-hotfix: Test paper training health logging type safety."""
 
     def test_safe_count_open_positions_with_empty_list(self):
-        """_safe_count_open_positions([]) returns 0."""
-        from src.services.paper_training_sampler import _safe_count_open_positions
+        """_safe_int_count([]) returns 0."""
+        from src.services.paper_training_sampler import _safe_int_count
 
-        assert _safe_count_open_positions([]) == 0
+        assert _safe_int_count([]) == 0
 
     def test_safe_count_open_positions_with_empty_dict(self):
-        """_safe_count_open_positions({}) returns 0."""
-        from src.services.paper_training_sampler import _safe_count_open_positions
+        """_safe_int_count({}) returns 0."""
+        from src.services.paper_training_sampler import _safe_int_count
 
-        assert _safe_count_open_positions({}) == 0
+        assert _safe_int_count({}) == 0
 
     def test_safe_count_open_positions_with_dict(self):
-        """_safe_count_open_positions({"a": {}, "b": {}}) returns 2."""
-        from src.services.paper_training_sampler import _safe_count_open_positions
+        """_safe_int_count({"a": {}, "b": {}}) returns 2."""
+        from src.services.paper_training_sampler import _safe_int_count
 
-        assert _safe_count_open_positions({"a": {}, "b": {}}) == 2
+        assert _safe_int_count({"a": {}, "b": {}}) == 2
 
     def test_safe_count_open_positions_with_list(self):
-        """_safe_count_open_positions([{}, {}]) returns 2."""
-        from src.services.paper_training_sampler import _safe_count_open_positions
+        """_safe_int_count([{}, {}]) returns 2."""
+        from src.services.paper_training_sampler import _safe_int_count
 
-        assert _safe_count_open_positions([{}, {}]) == 2
+        assert _safe_int_count([{}, {}]) == 2
 
     def test_safe_count_open_positions_with_none(self):
-        """_safe_count_open_positions(None) returns 0."""
-        from src.services.paper_training_sampler import _safe_count_open_positions
+        """_safe_int_count(None) returns 0."""
+        from src.services.paper_training_sampler import _safe_int_count
 
-        assert _safe_count_open_positions(None) == 0
+        assert _safe_int_count(None) == 0
 
     def test_safe_count_open_positions_with_int(self):
-        """_safe_count_open_positions(5) returns 5."""
-        from src.services.paper_training_sampler import _safe_count_open_positions
+        """_safe_int_count(5) returns 5."""
+        from src.services.paper_training_sampler import _safe_int_count
 
-        assert _safe_count_open_positions(5) == 5
+        assert _safe_int_count(5) == 5
 
     def test_safe_count_open_positions_with_invalid_type(self):
-        """_safe_count_open_positions(invalid) returns 0."""
-        from src.services.paper_training_sampler import _safe_count_open_positions
+        """_safe_int_count(invalid) returns 0."""
+        from src.services.paper_training_sampler import _safe_int_count
 
-        assert _safe_count_open_positions("invalid") == 0
-        assert _safe_count_open_positions(3.14) == 3  # float converts to int
+        assert _safe_int_count("invalid") == 0
+        assert _safe_int_count(3.14) == 3  # float converts to int
 
     def test_health_logging_does_not_raise_with_list(self, clean_positions):
         """_maybe_log_training_health([]) does not trigger logging TypeError."""
@@ -960,3 +960,147 @@ class TestP1O1LearningAndMetricsTypeSafety:
         result2 = _safe_bucket_metrics_update_for_paper_trade(closed_trade)
         # Result can be True or False depending on metrics service
         assert isinstance(result2, bool)
+
+
+class TestP1P1HardenLogging:
+    """P1.1P: Verify paper_train logging hardening and skip log throttling."""
+
+    def test_health_log_with_empty_list(self):
+        """Task 1: PAPER_TRAIN_HEALTH with open_positions=[] logs open=0 (no TypeError)."""
+        from src.services.paper_training_sampler import _maybe_log_training_health
+        # Verify no logging error occurs (would raise if %d formatter receives list)
+        _maybe_log_training_health(open_positions=[])
+        # Pass if no exception raised
+
+    def test_health_log_with_dict(self):
+        """Task 1: PAPER_TRAIN_HEALTH with open_positions={} logs open=0."""
+        from src.services.paper_training_sampler import _maybe_log_training_health
+        _maybe_log_training_health(open_positions={})
+        # Pass if no exception raised
+
+    def test_health_log_with_multiple_positions(self):
+        """Task 1: PAPER_TRAIN_HEALTH with open_positions=[{}, {}] logs open=2."""
+        from src.services.paper_training_sampler import _maybe_log_training_health
+        _maybe_log_training_health(open_positions=[{"id": "p1"}, {"id": "p2"}])
+        # Pass if no exception raised
+
+    def test_health_log_no_percent_d_formatter(self):
+        """Task 1: Verify PAPER_TRAIN_HEALTH uses f-string, not %d formatter."""
+        import inspect
+        from src.services.paper_training_sampler import _maybe_log_training_health
+        # Get the source code of the function
+        source = inspect.getsource(_maybe_log_training_health)
+        # Verify no %d formatting in the health log line
+        # (The log.info call should use f-strings, not positional %d args)
+        assert "PAPER_TRAIN_HEALTH" in source
+        # Find the line with PAPER_TRAIN_HEALTH
+        lines = source.split("\n")
+        health_lines = [l for l in lines if "PAPER_TRAIN_HEALTH" in l]
+        assert health_lines, "PAPER_TRAIN_HEALTH log not found"
+        # The log call should use f-string, not %d formatter in args
+        health_log_block = "\n".join(health_lines)
+        # Should contain f" or f' for f-string formatting
+        assert 'f"' in health_log_block or "f'" in health_log_block, \
+            f"Health log should use f-string: {health_log_block}"
+
+    def test_skip_log_throttling_reduces_duplicates(self):
+        """Task 2: 100 repeated DUPLICATE_CANDIDATE calls produce <= 2 skip logs."""
+        from src.services.paper_training_sampler import _log_train_skip_once
+        import logging
+
+        # Capture logs
+        log_capture = []
+        class LogCapture(logging.Handler):
+            def emit(self, record):
+                log_capture.append(record.getMessage())
+
+        logger = logging.getLogger("src.services.paper_training_sampler")
+        handler = LogCapture()
+        logger.addHandler(handler)
+
+        try:
+            # Call _log_train_skip_once 100 times with same params
+            for i in range(100):
+                _log_train_skip_once(
+                    reason="DUPLICATE_CANDIDATE",
+                    symbol="BTCUSDT",
+                    side="BUY",
+                    bucket="A_STRICT_TAKE",
+                    source_reject="COST_EDGE_TOO_LOW"
+                )
+
+            # Count PAPER_TRAIN_SKIP logs
+            skip_logs = [msg for msg in log_capture if "PAPER_TRAIN_SKIP" in msg]
+            # Should have <= 2 logs due to 30s throttle (one initial, maybe one retry)
+            assert len(skip_logs) <= 2, \
+                f"Expected <= 2 skip logs for 100 identical calls, got {len(skip_logs)}"
+        finally:
+            logger.removeHandler(handler)
+
+    def test_router_pre_throttle_blocks_duplicates(self):
+        """Task 3: Router pre-throttle returns False on repeated symbol/side/source within TTL."""
+        from src.services.trade_executor import _paper_train_router_allowed
+        import time
+
+        # Reset module state for clean test
+        from src.services import trade_executor
+        trade_executor._PAPER_TRAIN_ROUTER_TS = {}
+
+        # First call should be allowed
+        result1 = _paper_train_router_allowed("BTCUSDT", "BUY", "DUPLICATE_CANDIDATE")
+        assert result1 is True, "First call should be allowed"
+
+        # Immediate second call with same params should be blocked (within 10s TTL)
+        result2 = _paper_train_router_allowed("BTCUSDT", "BUY", "DUPLICATE_CANDIDATE")
+        assert result2 is False, "Second call within TTL should be blocked"
+
+        # Different symbol should be allowed even within TTL
+        result3 = _paper_train_router_allowed("ETHUSDT", "BUY", "DUPLICATE_CANDIDATE")
+        assert result3 is True, "Different symbol should be allowed"
+
+    def test_router_pre_throttle_different_sources(self):
+        """Router pre-throttle should allow different source rejects (source_base extracted)."""
+        from src.services.trade_executor import _paper_train_router_allowed
+
+        from src.services import trade_executor
+        trade_executor._PAPER_TRAIN_ROUTER_TS = {}
+
+        # First call with reason "DUPLICATE_CANDIDATE"
+        result1 = _paper_train_router_allowed("BTCUSDT", "BUY", "DUPLICATE_CANDIDATE")
+        assert result1 is True
+
+        # Second call with different reason should be allowed (different key)
+        result2 = _paper_train_router_allowed("BTCUSDT", "BUY", "UNBLOCK_LIMIT")
+        assert result2 is True, "Different source should be allowed"
+
+    def test_cost_edge_skip_throttled(self):
+        """Task 2: Cost-edge skip is throttled and does not log every duplicate."""
+        from src.services.paper_training_sampler import _log_train_skip_once
+        import logging
+
+        log_capture = []
+        class LogCapture(logging.Handler):
+            def emit(self, record):
+                log_capture.append(record.getMessage())
+
+        logger = logging.getLogger("src.services.paper_training_sampler")
+        handler = LogCapture()
+        logger.addHandler(handler)
+
+        try:
+            # Simulate 50 cost-edge rejects in burst
+            for i in range(50):
+                _log_train_skip_once(
+                    reason="COST_EDGE_TOO_LOW",
+                    symbol="BTCUSDT",
+                    side="BUY",
+                    bucket="A_STRICT_TAKE",
+                    source_reject="EV_GATING"
+                )
+
+            # Should have very few logs (throttled to ~1 per 30s)
+            cost_edge_logs = [msg for msg in log_capture if "COST_EDGE_TOO_LOW" in msg]
+            assert len(cost_edge_logs) <= 2, \
+                f"Expected <= 2 cost-edge logs for 50 calls, got {len(cost_edge_logs)}"
+        finally:
+            logger.removeHandler(handler)

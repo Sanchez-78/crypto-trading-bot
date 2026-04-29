@@ -48,6 +48,10 @@ _entry_times_hour = deque()  # timestamps of entries in last hour
 _health = defaultdict(int)  # health metrics: entries, skips, skip_reasons
 _last_health_log = 0.0  # last time health was logged
 
+# P1.1P: Throttled skip logging (prevent spam from duplicate bursts)
+_LAST_SKIP_LOG_TS = {}  # (reason, symbol, side, bucket, source) -> timestamp
+_SKIP_LOG_TTL_S = 30.0  # throttle period for skip logs
+
 
 def _now() -> float:
     """Get current timestamp."""
@@ -86,6 +90,39 @@ def _allow(**kw) -> dict:
     """Record entry event and return allow result."""
     _health["entries"] += 1
     return {"allowed": True, **kw}
+
+
+def _log_train_skip_once(reason: str, symbol: str, side: str, bucket: str, source_reject: str, **extra) -> None:
+    """P1.1P: Log training skip with throttling to prevent spam.
+
+    Only logs once per (reason, symbol, side, bucket, source_base) per TTL window.
+    Prevents hundreds of identical skip logs during duplicate candidate bursts.
+    """
+    now = time.time()
+    # Extract source base (e.g., "DUPLICATE_CANDIDATE" from "DUPLICATE_CANDIDATE(age=0.0s)")
+    source_base = str(source_reject).split("(")[0] if source_reject else "UNKNOWN"
+    key = (str(reason), str(symbol), str(side), str(bucket), source_base)
+
+    last = _LAST_SKIP_LOG_TS.get(key, 0.0)
+    if now - last < _SKIP_LOG_TTL_S:
+        return  # Throttled - do not log
+
+    _LAST_SKIP_LOG_TS[key] = now
+
+    # Format extra fields
+    extra_s = " ".join(f"{k}={v}" for k, v in extra.items() if v is not None)
+    if extra_s:
+        extra_s = " " + extra_s
+
+    log.info(
+        "[PAPER_TRAIN_SKIP] reason=%s symbol=%s side=%s bucket=%s source_reject=%s%s",
+        reason,
+        symbol,
+        side,
+        bucket,
+        source_reject,
+        extra_s,
+    )
 
 
 def _is_training_enabled() -> bool:
@@ -319,25 +356,28 @@ def _training_quality_gate(
     return _allow(symbol=symbol, side=side, bucket=bucket, source_reject=source_reject)
 
 
-def _safe_count_open_positions(open_positions) -> int:
-    """P1.1O-hotfix: Safely convert open_positions to count.
-
-    Handles dict, list, None, or int input without raising.
-    """
-    if isinstance(open_positions, dict):
-        return len(open_positions)
-    if isinstance(open_positions, list):
-        return len(open_positions)
-    if open_positions is None:
+def _safe_int_count(value) -> int:
+    """P1.1P: Safely convert any value to count (list/dict/set/tuple/int/None)."""
+    if value is None:
         return 0
+    if isinstance(value, (list, tuple, set, dict)):
+        return len(value)
     try:
-        return int(open_positions)
+        return int(value)
     except Exception:
         return 0
 
 
+def _safe_int(value, default: int = 0) -> int:
+    """P1.1P: Safely convert value to int with default fallback."""
+    try:
+        return int(value)
+    except Exception:
+        return default
+
+
 def _maybe_log_training_health(open_positions=None) -> None:
-    """Log training health every 10 minutes."""
+    """Log training health every 10 minutes. P1.1P: Uses f-string to avoid logging TypeError."""
     now = time.time()
     last_log = _training_metrics["last_health_log_ts"]
 
@@ -354,25 +394,25 @@ def _maybe_log_training_health(open_positions=None) -> None:
 
     status = "OK" if entries_1h >= _MIN_ENTRIES_PER_HOUR else "STARVED"
 
-    # P1.1O-hotfix: Safe count for open positions
-    open_count = _safe_count_open_positions(open_positions)
+    # P1.1P: Safe conversions for all values
+    open_count = _safe_int_count(open_positions)
+    closed_count = _safe_int(closed_1h)
+    entry_count = _safe_int(entries_1h)
+    target_count = _safe_int(_MIN_ENTRIES_PER_HOUR)
+    learning_count = _safe_int(_training_metrics["learning_updates_1h"])
+    status_s = str(status or "UNKNOWN")
 
+    # P1.1P: Use f-string instead of %d formatter (avoids TypeError with list input)
     log.info(
-        "[PAPER_TRAIN_HEALTH] open=%d closed_1h=%d entries_1h=%d target_1h=%d "
-        "learning_updates_1h=%d status=%s",
-        open_count,
-        closed_1h,
-        entries_1h,
-        _MIN_ENTRIES_PER_HOUR,
-        _training_metrics["learning_updates_1h"],
-        status,
+        f"[PAPER_TRAIN_HEALTH] open={open_count} "
+        f"closed_1h={closed_count} entries_1h={entry_count} "
+        f"target_1h={target_count} learning_updates_1h={learning_count} "
+        f"status={status_s}"
     )
 
     if status == "STARVED":
         log.warning(
-            "[PAPER_TRAIN_STARVED] entries_1h=%d < target=%d reason=insufficient_rejection_sampling",
-            entries_1h,
-            _MIN_ENTRIES_PER_HOUR,
+            f"[PAPER_TRAIN_STARVED] entries_1h={entry_count} < target={target_count} reason=insufficient_rejection_sampling"
         )
 
     _training_metrics["last_health_log_ts"] = now
@@ -492,13 +532,13 @@ def maybe_open_training_sample(
         )
 
         if not gate_result.get("allowed"):
-            log.info(
-                "[PAPER_TRAIN_SKIP] reason=%s symbol=%s side=%s bucket=%s source_reject=%s",
-                gate_result.get("reason"),
-                symbol,
-                side,
-                bucket,
-                reason,
+            # P1.1P: Use throttled skip logger to prevent spam from duplicate bursts
+            _log_train_skip_once(
+                reason=gate_result.get("reason", "unknown"),
+                symbol=symbol,
+                side=side,
+                bucket=bucket,
+                source_reject=reason,
             )
             return {
                 "allowed": False,

@@ -88,6 +88,10 @@ _last_flush       = [0.0]
 _regime_exposure  = {}   # regime -> count of open positions
 _pending_open     = []   # signals queued after replace_if_better triggers
 
+# P1.1P: Router pre-throttle to prevent duplicate signal bursts
+_PAPER_TRAIN_ROUTER_TS = {}
+_PAPER_TRAIN_ROUTER_TTL_S = 10.0
+
 MAX_POSITIONS     = 3    # max concurrent open positions (raised for bootstrap learning speed)
 MAX_SAME_DIR      = 2    # max positions in same direction — 1→2: in BULL_TREND all symbols
                           # generate BUY, old limit=1 blocked 2/3 signals every tick, cutting
@@ -1508,6 +1512,21 @@ def _save_paper_trade_closed(closed_trade: dict) -> None:
         log.warning(f"[PAPER_SAVE_ERROR] {e}")
 
 
+def _paper_train_router_allowed(symbol: str, side: str, source: str) -> bool:
+    """P1.1P: Router pre-throttle — allow routing only if 10s TTL has passed per (symbol, side, source_base).
+
+    Prevents duplicate signal bursts from being routed to the sampler multiple times in rapid succession.
+    """
+    now = time.time()
+    source_key = str(source).split("(")[0]
+    key = (str(symbol), str(side), source_key)
+    last = _PAPER_TRAIN_ROUTER_TS.get(key, 0.0)
+    if now - last < _PAPER_TRAIN_ROUTER_TTL_S:
+        return False
+    _PAPER_TRAIN_ROUTER_TS[key] = now
+    return True
+
+
 def _maybe_route_to_paper_training(signal: dict, current_price: float, reject_reason: str) -> bool:
     """P1.1M: Route blocked signal to paper training in paper_train mode.
 
@@ -1532,6 +1551,11 @@ def _maybe_route_to_paper_training(signal: dict, current_price: float, reject_re
             return False
 
         sym = signal.get("symbol", "UNKNOWN")
+        side = signal.get("action", "UNKNOWN")
+
+        # P1.1P: Router pre-throttle — skip if already routed for this symbol/side/source within TTL
+        if not _paper_train_router_allowed(sym, side, reject_reason):
+            return False
 
         # Log routing boundary
         log.info(
