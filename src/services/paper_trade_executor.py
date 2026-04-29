@@ -296,6 +296,66 @@ def _check_exploration_exposure_caps(symbol: str, bucket: Optional[str]) -> Opti
     return None
 
 
+def _check_training_sampler_caps(symbol: str, bucket: Optional[str]) -> Optional[dict]:
+    """Check training sampler-specific exposure caps (P1.1N secondary layer).
+
+    Rules:
+    - max_open_per_symbol = 1 (PAPER_TRAIN_MAX_OPEN_PER_SYMBOL)
+    - max_open_per_bucket = 2 (PAPER_TRAIN_MAX_OPEN_PER_BUCKET)
+
+    Returns:
+        None if caps OK, else {"status": "blocked", "reason": ..., "detail": ...}
+    """
+    if not bucket:
+        return None  # Not a training sampler trade, skip caps
+
+    try:
+        from src.core.runtime_mode import PAPER_TRAIN_MAX_OPEN_PER_SYMBOL, PAPER_TRAIN_MAX_OPEN_PER_BUCKET
+    except Exception:
+        return None
+
+    symbol_count = sum(
+        1 for p in _POSITIONS.values()
+        if p["symbol"] == symbol and p.get("paper_source") == "training_sampler"
+    )
+    bucket_count = sum(
+        1 for p in _POSITIONS.values()
+        if p.get("training_bucket") == bucket and p.get("paper_source") == "training_sampler"
+    )
+
+    # Check symbol cap
+    if symbol_count >= PAPER_TRAIN_MAX_OPEN_PER_SYMBOL:
+        log.info(
+            "[PAPER_ENTRY_BLOCKED] reason=training_sampler_max_open_per_symbol "
+            "symbol=%s open_symbol=%d bucket=%s",
+            symbol,
+            symbol_count,
+            bucket,
+        )
+        return {
+            "status": "blocked",
+            "reason": "training_sampler_max_open_per_symbol",
+            "detail": f"symbol={symbol} open_symbol={symbol_count} bucket={bucket}",
+        }
+
+    # Check bucket cap
+    if bucket_count >= PAPER_TRAIN_MAX_OPEN_PER_BUCKET:
+        log.info(
+            "[PAPER_ENTRY_BLOCKED] reason=training_sampler_max_open_per_bucket "
+            "bucket=%s open_bucket=%d symbol=%s",
+            bucket,
+            bucket_count,
+            symbol,
+        )
+        return {
+            "status": "blocked",
+            "reason": "training_sampler_max_open_per_bucket",
+            "detail": f"bucket={bucket} open_bucket={bucket_count} symbol={symbol}",
+        }
+
+    return None
+
+
 def open_paper_position(
     signal: dict,
     price: float,
@@ -321,6 +381,8 @@ def open_paper_position(
 
     symbol = signal.get("symbol", "UNKNOWN")
     bucket = extra.get("explore_bucket") if extra else None
+    training_bucket = extra.get("training_bucket") if extra else None
+    paper_source = extra.get("paper_source") if extra else None
 
     with _POSITION_LOCK:
         # Check exploration-specific exposure caps FIRST (before total max cap)
@@ -334,13 +396,25 @@ def open_paper_position(
             )
             return cap_check
 
+        # Check training sampler-specific caps (P1.1N secondary layer)
+        if paper_source == "training_sampler":
+            training_cap_check = _check_training_sampler_caps(symbol, training_bucket)
+            if training_cap_check:
+                log.error(
+                    "[PAPER_ENTRY_BLOCKED] symbol=%s reason=%s %s",
+                    symbol,
+                    training_cap_check["reason"],
+                    training_cap_check["detail"],
+                )
+                return training_cap_check
+
         # Then check total paper position cap
         if len(_POSITIONS) >= _MAX_OPEN:
             log.error(
                 "[PAPER_ENTRY_BLOCKED] symbol=%s reason=max_open_exceeded open=%d bucket=%s",
                 symbol,
                 len(_POSITIONS),
-                bucket or "N/A",
+                bucket or training_bucket or "N/A",
             )
             return {"status": "blocked", "reason": "max_open_exceeded"}
 

@@ -187,3 +187,34 @@ def get_runtime_status() -> dict:
         "paper_exploration": paper_exploration_enabled(),
         "is_paper_mode": is_paper_mode(),
     }
+
+
+# P1.1N: Paper training config helpers
+def _env_bool(name: str, default: bool = False) -> bool:
+    """Parse env var as boolean."""
+    v = os.getenv(name)
+    if v is None:
+        return default
+    return str(v).strip().lower() in ("1", "true", "yes", "on")
+
+
+def _env_int(name: str, default: int) -> int:
+    """Parse env var as integer."""
+    try:
+        return int(str(os.getenv(name, default)).strip())
+    except Exception:
+        return default
+
+
+def paper_train_enabled() -> bool:
+    """Check if paper_train mode is active and training is enabled."""
+    return get_trading_mode() == TradingMode.PAPER_TRAIN and _env_bool("PAPER_TRAINING_ENABLED", True)
+
+
+# Paper training caps and windows
+PAPER_TRAIN_MAX_OPEN_PER_SYMBOL = _env_int("PAPER_TRAIN_MAX_OPEN_PER_SYMBOL", 1)
+PAPER_TRAIN_MAX_OPEN_PER_BUCKET = _env_int("PAPER_TRAIN_MAX_OPEN_PER_BUCKET", 2)
+PAPER_TRAIN_MAX_ENTRIES_PER_MINUTE = _env_int("PAPER_TRAIN_MAX_ENTRIES_PER_MINUTE", 3)
+PAPER_TRAIN_MAX_ENTRIES_PER_HOUR = _env_int("PAPER_TRAIN_MAX_ENTRIES_PER_HOUR", 18)
+PAPER_TRAIN_DEDUPE_WINDOW_S = _env_int("PAPER_TRAIN_DEDUPE_WINDOW_S", 30)
+PAPER_TRAIN_DUPLICATE_CANDIDATE_COOLDOWN_S = _env_int("PAPER_TRAIN_DUPLICATE_CANDIDATE_COOLDOWN_S", 60)

@@ -1580,25 +1580,31 @@ def _maybe_route_to_paper_training(signal: dict, current_price: float, reject_re
                 )
                 if open_result.get("status") == "opened":
                     log.info(
-                        "[PAPER_TRAIN_ENTRY] bucket=%s symbol=%s side=%s price=%.8f source=%s",
+                        "[PAPER_TRAIN_ENTRY] bucket=%s symbol=%s side=%s price=%.8f "
+                        "cost_edge_ok=%s expected_move_pct=%.4f side_inferred=%s source=%s",
                         result.get("bucket", ""),
                         sym,
                         result["side"],
                         current_price,
+                        result.get("cost_edge_ok", False),
+                        result.get("expected_move_pct", 0.0),
+                        result.get("side_inferred", False),
                         reject_reason,
                     )
-                return True
+                    return True
+                else:
+                    log.info(
+                        "[PAPER_TRAIN_BLOCKED] symbol=%s bucket=%s reason=%s",
+                        sym,
+                        result.get("bucket", ""),
+                        open_result.get("reason", "open_failed"),
+                    )
+                    return False
             except Exception as e:
                 log.warning(f"[PAPER_TRAIN_OPEN_ERROR] {sym}: {e}")
                 return False
         else:
-            # Training sampler declined
-            log.info(
-                "[PAPER_TRAIN_SKIP] reason=%s symbol=%s source=%s",
-                result.get("reason", "unknown"),
-                sym,
-                reject_reason,
-            )
+            # Training sampler declined (sampler logs [PAPER_TRAIN_SKIP])
             return False
 
     except Exception as e:

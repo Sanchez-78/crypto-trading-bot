@@ -4,11 +4,14 @@ Opens paper positions when normal RDE rejects signals, using real live prices
 for learning. Only active in paper_train mode, never in paper_live or live_real.
 
 Goal: collect minimum N closed trades per hour for learning data.
+
+P1.1N: Anti-spam dedupe and quality gates to prevent duplicate sampling spam.
 """
 import os
 import logging
 import time
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
+from collections import defaultdict, deque
 
 log = logging.getLogger(__name__)
 
@@ -36,6 +39,53 @@ _training_metrics = {
     "learning_updates_1h": 0,
     "last_health_log_ts": 0,
 }
+
+# P1.1N: Anti-spam dedupe and rate caps
+_recent_dedupe = {}  # dedupe_key -> timestamp
+_recent_dup_candidate = {}  # symbol:side:DUPLICATE_CANDIDATE -> timestamp
+_entry_times_minute = deque()  # timestamps of entries in last minute
+_entry_times_hour = deque()  # timestamps of entries in last hour
+_health = defaultdict(int)  # health metrics: entries, skips, skip_reasons
+_last_health_log = 0.0  # last time health was logged
+
+
+def _now() -> float:
+    """Get current timestamp."""
+    return time.time()
+
+
+def _prune(now: float) -> None:
+    """Prune old entries from deque and dict to prevent memory leak."""
+    from src.core.runtime_mode import PAPER_TRAIN_DEDUPE_WINDOW_S, PAPER_TRAIN_DUPLICATE_CANDIDATE_COOLDOWN_S
+
+    # Prune minute and hour windows
+    while _entry_times_minute and now - _entry_times_minute[0] > 60:
+        _entry_times_minute.popleft()
+    while _entry_times_hour and now - _entry_times_hour[0] > 3600:
+        _entry_times_hour.popleft()
+
+    # Prune dedupe dict
+    for k, ts in list(_recent_dedupe.items()):
+        if now - ts > max(PAPER_TRAIN_DEDUPE_WINDOW_S * 2, 120):
+            _recent_dedupe.pop(k, None)
+
+    # Prune duplicate candidate dict
+    for k, ts in list(_recent_dup_candidate.items()):
+        if now - ts > max(PAPER_TRAIN_DUPLICATE_CANDIDATE_COOLDOWN_S * 2, 180):
+            _recent_dup_candidate.pop(k, None)
+
+
+def _skip(reason: str, **kw) -> dict:
+    """Record skip event and return skip result."""
+    _health["skips"] += 1
+    _health[f"skip_{reason}"] += 1
+    return {"allowed": False, "reason": reason, **kw}
+
+
+def _allow(**kw) -> dict:
+    """Record entry event and return allow result."""
+    _health["entries"] += 1
+    return {"allowed": True, **kw}
 
 
 def _is_training_enabled() -> bool:
@@ -170,6 +220,103 @@ def _check_hourly_cap(bucket: str) -> bool:
 
     cap_info["count"] += 1
     return True
+
+
+def _training_quality_gate(
+    symbol: str,
+    side: str,
+    bucket: str,
+    source_reject: str,
+    cost_edge_ok: bool,
+    open_positions: Optional[List[dict]] = None,
+) -> dict:
+    """Apply quality gates before opening a training sample.
+
+    Returns:
+        {"allowed": bool, "reason": str, ...} via _skip() or _allow()
+    """
+    now = _now()
+    _prune(now)
+
+    symbol = str(symbol or "UNKNOWN").upper()
+    side = str(side or "UNKNOWN").upper()
+    bucket = str(bucket or "UNKNOWN")
+    source_reject = str(source_reject or "UNKNOWN")
+
+    # Cost-edge: do not open weak EV train if edge cannot cover costs
+    if bucket == "C_WEAK_EV_TRAIN" and cost_edge_ok is False:
+        return _skip("cost_edge_too_low", symbol=symbol, bucket=bucket, source_reject=source_reject)
+
+    # Dedicated duplicate candidate cooldown
+    from src.core.runtime_mode import PAPER_TRAIN_DUPLICATE_CANDIDATE_COOLDOWN_S
+
+    if "DUPLICATE_CANDIDATE" in source_reject:
+        dk = f"{symbol}:{side}:DUPLICATE_CANDIDATE"
+        last = _recent_dup_candidate.get(dk)
+        if last is not None and now - last < PAPER_TRAIN_DUPLICATE_CANDIDATE_COOLDOWN_S:
+            return _skip(
+                "duplicate_candidate_cooldown",
+                symbol=symbol,
+                bucket=bucket,
+                source_reject=source_reject,
+            )
+        _recent_dup_candidate[dk] = now
+
+    # General dedupe per window
+    from src.core.runtime_mode import PAPER_TRAIN_DEDUPE_WINDOW_S
+
+    window = int(now // PAPER_TRAIN_DEDUPE_WINDOW_S)
+    dedupe_key = f"{symbol}:{side}:{bucket}:{source_reject}:{window}"
+    if dedupe_key in _recent_dedupe:
+        return _skip(
+            "duplicate_training_sample",
+            symbol=symbol,
+            bucket=bucket,
+            source_reject=source_reject,
+        )
+    _recent_dedupe[dedupe_key] = now
+
+    # Global rate caps (per minute and per hour)
+    from src.core.runtime_mode import (
+        PAPER_TRAIN_MAX_ENTRIES_PER_MINUTE,
+        PAPER_TRAIN_MAX_ENTRIES_PER_HOUR,
+        PAPER_TRAIN_MAX_OPEN_PER_SYMBOL,
+        PAPER_TRAIN_MAX_OPEN_PER_BUCKET,
+    )
+
+    if len(_entry_times_minute) >= PAPER_TRAIN_MAX_ENTRIES_PER_MINUTE:
+        return _skip("max_entries_per_minute", symbol=symbol, bucket=bucket, source_reject=source_reject)
+
+    if len(_entry_times_hour) >= PAPER_TRAIN_MAX_ENTRIES_PER_HOUR:
+        return _skip("max_entries_per_hour", symbol=symbol, bucket=bucket, source_reject=source_reject)
+
+    # Open-position caps per symbol and bucket
+    open_positions = open_positions or []
+    open_symbol = 0
+    open_bucket = 0
+    for p in open_positions:
+        if (p.get("paper_source") == "training_sampler") or p.get("training_bucket"):
+            if str(p.get("symbol", "")).upper() == symbol:
+                open_symbol += 1
+            if str(p.get("training_bucket", "")) == bucket:
+                open_bucket += 1
+
+    if open_symbol >= PAPER_TRAIN_MAX_OPEN_PER_SYMBOL:
+        return _skip(
+            "max_open_per_symbol",
+            symbol=symbol,
+            bucket=bucket,
+            open_symbol=open_symbol,
+        )
+
+    if open_bucket >= PAPER_TRAIN_MAX_OPEN_PER_BUCKET:
+        return _skip("max_open_per_bucket", symbol=symbol, bucket=bucket, open_bucket=open_bucket)
+
+    # All gates passed; record entry times for rate limiting
+    _entry_times_minute.append(now)
+    _entry_times_hour.append(now)
+
+    return _allow(symbol=symbol, side=side, bucket=bucket, source_reject=source_reject)
 
 
 def _maybe_log_training_health() -> None:
@@ -308,28 +455,42 @@ def maybe_open_training_sample(
                 "max_hold_s": 0,
             }
 
-        # Calculate cost edge (for logging, not blocking in training)
+        # Calculate cost edge
         from src.services.paper_exploration import _estimate_expected_move, _check_cost_edge
         expected_move_dec, expected_move_pct = _estimate_expected_move(signal)
         cost_edge_ok = _check_cost_edge(expected_move_dec)
 
-        # Log entry
-        log.info(
-            "[PAPER_TRAIN_ENTRY] bucket=%s symbol=%s side=%s price=%.8f size_mult=%.3f "
-            "ev=%.4f cost_edge_ok=%s expected_move_pct=%.4f side_inferred=%s source_reject=%s",
-            bucket,
-            symbol,
-            side,
-            current_price,
-            size_mult,
-            float(signal.get("ev", 0.0)),
-            cost_edge_ok,
-            expected_move_pct,
-            side_inferred,
-            reason,
+        # Apply quality gates (P1.1N: anti-spam dedupe and rate caps)
+        gate_result = _training_quality_gate(
+            symbol=symbol,
+            side=side,
+            bucket=bucket,
+            source_reject=reason,
+            cost_edge_ok=cost_edge_ok,
+            open_positions=None,  # executor will enforce position caps
         )
 
-        # Record entry metric
+        if not gate_result.get("allowed"):
+            log.info(
+                "[PAPER_TRAIN_SKIP] reason=%s symbol=%s side=%s bucket=%s source_reject=%s",
+                gate_result.get("reason"),
+                symbol,
+                side,
+                bucket,
+                reason,
+            )
+            return {
+                "allowed": False,
+                "bucket": bucket,
+                "reason": gate_result.get("reason"),
+                "size_mult": 0.0,
+                "side": side,
+                "side_inferred": side_inferred,
+                "cost_edge_ok": cost_edge_ok,
+                "max_hold_s": 0,
+            }
+
+        # All gates passed; record entry metric
         _training_metrics["entries_1h"].append(time.time())
         _maybe_log_training_health()
 
