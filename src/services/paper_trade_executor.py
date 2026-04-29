@@ -22,18 +22,39 @@ _STATE_FILE = "data/paper_open_positions.json"
 
 
 def _save_paper_state() -> None:
-    """Save open paper positions to disk."""
+    """Save open paper positions to disk with atomic writes."""
     try:
         import json
         with _POSITION_LOCK:
             positions_snapshot = dict(_POSITIONS)
-        os.makedirs("data", exist_ok=True)
-        with open(_STATE_FILE, "w") as f:
-            json.dump(positions_snapshot, f, indent=2)
+
+        # Ensure directory exists
+        data_dir = os.path.dirname(_STATE_FILE) or "data"
+        os.makedirs(data_dir, exist_ok=True)
+
+        # Atomic write: write to temp file, then replace
+        tmp_file = _STATE_FILE + ".tmp"
+        try:
+            with open(tmp_file, "w") as f:
+                json.dump(positions_snapshot, f, indent=2, sort_keys=True)
+            os.replace(tmp_file, _STATE_FILE)
+        except FileNotFoundError:
+            # Fallback for race condition: direct write
+            with open(_STATE_FILE, "w") as f:
+                json.dump(positions_snapshot, f, indent=2, sort_keys=True)
+
         log.info(
             "[PAPER_STATE_SAVE] open_positions=%d source=%s",
             len(positions_snapshot),
             _STATE_FILE,
+        )
+    except PermissionError as e:
+        log.error(
+            "[PAPER_STATE_SAVE_ERROR] permission path=%s uid=%s euid=%s err=%s",
+            _STATE_FILE,
+            os.getuid() if hasattr(os, "getuid") else "N/A",
+            os.geteuid() if hasattr(os, "geteuid") else "N/A",
+            str(e),
         )
     except Exception as e:
         log.warning("[PAPER_STATE_SAVE_ERROR] err=%s", str(e))
@@ -536,6 +557,143 @@ def update_paper_positions(
     return closed_trades
 
 
+def _safe_learning_update_for_paper_trade(pos: dict, pnl_data: dict) -> bool:
+    """P1.1O: Convert closed paper trade to learning_monitor update. Never raises.
+
+    Args:
+        pos: Position dict (closed trade with metadata)
+        pnl_data: PnL breakdown dict with net_pnl_pct, outcome
+
+    Returns:
+        True if update succeeded, False if skipped or errored
+    """
+    try:
+        # Sanitize all inputs to canonical types
+        symbol = str(pos.get("symbol") or "")
+        regime = str(pos.get("regime") or pos.get("regime_at_entry") or "UNKNOWN")
+        net_pnl_pct = float(pnl_data.get("net_pnl_pct") or 0.0)
+        pnl_decimal = net_pnl_pct / 100.0
+        ws = float(pos.get("score_at_entry") or pos.get("ws") or 0.0)
+
+        # Sanitize features to dict
+        features = pos.get("features")
+        if not isinstance(features, dict):
+            features = {}
+
+        bucket = pos.get("training_bucket") or pos.get("explore_bucket") or "UNKNOWN"
+        outcome = pnl_data.get("outcome") or "UNKNOWN"
+
+        # Skip if symbol missing
+        if not symbol:
+            log.debug("[LEARNING_UPDATE_SKIP] reason=no_symbol bucket=%s", bucket)
+            return False
+
+        # Call learning monitor
+        from src.services.learning_monitor import lm_update
+        from src.services.paper_training_sampler import (
+            record_training_closed,
+            record_training_learning_update,
+        )
+
+        # Record training trade metrics
+        record_training_closed(bucket=bucket, outcome=outcome)
+
+        # Update learning monitor with training trade
+        lm_update(
+            sym=symbol,
+            reg=regime,
+            pnl=pnl_decimal,
+            ws=ws,
+            features=features,
+        )
+        record_training_learning_update()
+
+        log.info(
+            "[LEARNING_UPDATE] source=paper_closed_trade symbol=%s regime=%s bucket=%s outcome=%s net_pnl_pct=%.4f",
+            symbol,
+            regime,
+            bucket,
+            outcome,
+            net_pnl_pct,
+        )
+
+        return True
+
+    except Exception as e:
+        bucket = pos.get("training_bucket") or pos.get("explore_bucket") or "UNKNOWN"
+        log.error(
+            "[LEARNING_UPDATE_ERROR] err=%s symbol=%s bucket=%s",
+            str(e),
+            pos.get("symbol", "UNKNOWN"),
+            bucket,
+        )
+        return False
+
+
+def _safe_bucket_metrics_update_for_paper_trade(trade: dict) -> bool:
+    """P1.1O: Update bucket metrics with type safety. Never raises.
+
+    Args:
+        trade: Closed trade dict
+
+    Returns:
+        True if update succeeded, False if skipped or errored
+    """
+    try:
+        # Sanitize all inputs
+        bucket = trade.get("training_bucket") or trade.get("explore_bucket") or "UNKNOWN"
+        sub_bucket = trade.get("explore_sub_bucket") or trade.get("training_sub_bucket") or None
+        outcome = trade.get("outcome") or "UNKNOWN"
+        net_pnl_pct = float(trade.get("net_pnl_pct") or 0.0)
+        exit_reason = trade.get("exit_reason") or trade.get("reason") or "UNKNOWN"
+
+        # Sanitize tags to list
+        tags = trade.get("tags")
+        if tags is None:
+            tags = []
+        elif isinstance(tags, str):
+            tags = [tags]
+        elif not isinstance(tags, list):
+            try:
+                tags = list(tags)
+            except Exception:
+                tags = []
+
+        # Call metrics update (handles training_bucket, explore_bucket, sub_bucket)
+        from src.services.bucket_metrics import update_bucket_metrics
+
+        # Temporarily add explore_bucket if only training_bucket exists
+        trade_copy = dict(trade)
+        if "explore_bucket" not in trade_copy and bucket != "UNKNOWN":
+            trade_copy["explore_bucket"] = bucket
+        if sub_bucket:
+            trade_copy["explore_sub_bucket"] = sub_bucket
+        trade_copy["outcome"] = outcome
+        trade_copy["exit_reason"] = exit_reason
+
+        update_bucket_metrics(trade_copy)
+
+        log.info(
+            "[PAPER_BUCKET_UPDATE] bucket=%s sub_bucket=%s outcome=%s net_pnl_pct=%.4f",
+            bucket,
+            sub_bucket or "N/A",
+            outcome,
+            net_pnl_pct,
+        )
+
+        return True
+
+    except Exception as e:
+        bucket = trade.get("training_bucket") or trade.get("explore_bucket") or "UNKNOWN"
+        log.error(
+            "[BUCKET_METRICS_ERROR] err=%s bucket=%s symbol=%s",
+            str(e),
+            bucket,
+            trade.get("symbol", "UNKNOWN"),
+        )
+        return False
+
+
 def close_paper_position(
     position_id: str,
     price: float,
@@ -602,38 +760,12 @@ def close_paper_position(
     )
 
     # P1.1L Phase 6: Call learning update for training trades
+    # P1.1O: Use safe adapter for type safety
     if pos.get("paper_source") == "training_sampler":
-        try:
-            from src.services.learning_monitor import lm_update
-            from src.services.paper_training_sampler import record_training_closed, record_training_learning_update
+        _safe_learning_update_for_paper_trade(pos, pnl_data)
 
-            # Record training trade metrics
-            record_training_closed(
-                bucket=pos.get("training_bucket", pos.get("explore_bucket", "")),
-                outcome=pnl_data["outcome"],
-            )
-
-            # Update learning monitor with training trade
-            pnl_decimal = pnl_data["net_pnl_pct"] / 100.0
-            lm_update(
-                sym=pos["symbol"],
-                reg=pos.get("regime", "RANGING"),
-                pnl=pnl_decimal,
-                ws=pos.get("score_at_entry", 0.0),
-                features=pos.get("features", {}),
-            )
-            record_training_learning_update()
-
-            log.info(
-                "[LEARNING_UPDATE] source=paper_closed_trade symbol=%s regime=%s bucket=%s outcome=%s net_pnl_pct=%.4f",
-                pos["symbol"],
-                pos.get("regime", "RANGING"),
-                pos.get("training_bucket", pos.get("explore_bucket", "")),
-                pnl_data["outcome"],
-                pnl_data["net_pnl_pct"],
-            )
-        except Exception as e:
-            log.warning("[LEARNING_UPDATE_ERROR] Failed to update learning on training trade: %s", e)
+    # P1.1O: Update bucket metrics (works for training and exploration trades)
+    _safe_bucket_metrics_update_for_paper_trade(closed_trade)
 
     # Persist state after closing position
     _save_paper_state()
