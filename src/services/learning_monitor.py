@@ -591,6 +591,49 @@ def lm_update(sym, reg, pnl, ws, features, window=None):
         log.debug(f"[LM_PERSIST_ERROR] {sym}/{reg}: {_persist_err}")
 
 
+def update_from_paper_trade(trade: dict) -> bool:
+    """
+    P1.1R: Safe canonical paper-training learning update with explicit type handling.
+    Never raises. Safely processes closed paper trades with guaranteed type safety.
+
+    Args:
+        trade: Closed paper trade dict with symbol, regime, pnl_decimal, ws, features
+
+    Returns:
+        True on success, False on validation failure or internal error
+    """
+    try:
+        # Explicit field extraction and type-safe conversion
+        symbol = str(trade.get("symbol") or "UNKNOWN")
+        regime = str(trade.get("regime") or "UNKNOWN")
+        pnl = float(trade.get("pnl_decimal") or trade.get("net_pnl_pct", 0.0) / 100.0)
+        ws = float(trade.get("ws") or trade.get("score_at_entry") or 0.0)
+
+        # Most critical: ensure features is always a dict, never a scalar
+        features_raw = trade.get("features")
+        if isinstance(features_raw, dict):
+            features = features_raw
+        elif features_raw is None:
+            features = {}
+        else:
+            # Scalar or unexpected type: safety default to empty dict
+            features = {}
+            log.debug(f"[UPDATE_FROM_PAPER_TRADE] features type mismatch: {type(features_raw).__name__}, defaulting to empty dict")
+
+        # Validation: skip if missing core fields
+        if symbol == "UNKNOWN" or regime == "UNKNOWN":
+            log.debug(f"[UPDATE_FROM_PAPER_TRADE] skip: symbol={symbol} regime={regime}")
+            return False
+
+        # Call lm_update with guaranteed types
+        lm_update(sym=symbol, reg=regime, pnl=pnl, ws=ws, features=features)
+        return True
+
+    except Exception as exc:
+        log.exception(f"[UPDATE_FROM_PAPER_TRADE_ERROR] unexpected error: {exc}")
+        return False
+
+
 # ── Convergence & edge metrics ─────────────────────────────────────────────────
 
 def lm_convergence(sym, reg):

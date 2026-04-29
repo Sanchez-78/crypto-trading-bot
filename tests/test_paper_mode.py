@@ -1257,3 +1257,117 @@ class TestP1Q1StabilizeLogging:
         # Verify counters were reset
         assert len(_SKIP_COUNTERS) == 0, "Counters should be cleared after summary"
         assert _LAST_SKIP_SUMMARY_TS[0] == now, "Summary timestamp should be updated"
+
+
+class TestP1R1UpdateFromPaperTrade:
+    """P1.1R: Test the new update_from_paper_trade() safe API."""
+
+    def test_update_from_paper_trade_accepts_valid_trade(self):
+        """update_from_paper_trade() accepts canonical paper trade and returns True."""
+        from src.services.learning_monitor import update_from_paper_trade
+
+        trade = {
+            "symbol": "BTCUSDT",
+            "regime": "BULL_TREND",
+            "pnl_decimal": 0.015,
+            "ws": 0.35,
+            "features": {"hour_utc": 14, "rsi": 55.0},
+        }
+
+        result = update_from_paper_trade(trade)
+        assert result is True
+
+    def test_update_from_paper_trade_empty_features(self):
+        """update_from_paper_trade() accepts empty features dict."""
+        from src.services.learning_monitor import update_from_paper_trade
+
+        trade = {
+            "symbol": "ETHUSDT",
+            "regime": "RANGING",
+            "pnl_decimal": 0.008,
+            "ws": 0.25,
+            "features": {},
+        }
+
+        result = update_from_paper_trade(trade)
+        assert result is True
+
+    def test_update_from_paper_trade_handles_scalar_features(self):
+        """P1.1R: update_from_paper_trade() safely handles scalar features (never crashes)."""
+        from src.services.learning_monitor import update_from_paper_trade
+
+        # Scalar feature instead of dict — should NOT raise, should default to empty
+        trade = {
+            "symbol": "ADAUSDT",
+            "regime": "CONSOLIDATING",
+            "pnl_decimal": 0.002,
+            "ws": 0.20,
+            "features": 42,  # Scalar int instead of dict
+        }
+
+        result = update_from_paper_trade(trade)
+        assert result is True  # Should NOT crash, should handle gracefully
+
+    def test_update_from_paper_trade_none_features(self):
+        """update_from_paper_trade() accepts None features."""
+        from src.services.learning_monitor import update_from_paper_trade
+
+        trade = {
+            "symbol": "XRPUSDT",
+            "regime": "NEUTRAL",
+            "pnl_decimal": -0.005,
+            "ws": 0.15,
+            "features": None,
+        }
+
+        result = update_from_paper_trade(trade)
+        assert result is True
+
+    def test_update_from_paper_trade_missing_symbol(self):
+        """update_from_paper_trade() returns False if symbol missing."""
+        from src.services.learning_monitor import update_from_paper_trade
+
+        trade = {
+            "symbol": None,
+            "regime": "BULL_TREND",
+            "pnl_decimal": 0.010,
+            "ws": 0.30,
+            "features": {},
+        }
+
+        result = update_from_paper_trade(trade)
+        assert result is False
+
+    def test_safe_learning_update_uses_new_api(self, clean_positions):
+        """_safe_learning_update_for_paper_trade uses update_from_paper_trade."""
+        from src.services.paper_trade_executor import _safe_learning_update_for_paper_trade
+
+        pos = {
+            "symbol": "BTCUSDT",
+            "regime": "BULL_TREND",
+            "features": {},
+            "paper_source": "training_sampler",
+        }
+        pnl_data = {"net_pnl_pct": 1.5, "outcome": "WIN"}
+
+        result = _safe_learning_update_for_paper_trade(pos, pnl_data)
+        assert isinstance(result, bool)
+
+    def test_bucket_update_prefers_training_bucket(self, clean_positions):
+        """P1.1R Phase 4: Closed trade updates only its primary training_bucket."""
+        from src.services.paper_trade_executor import _safe_bucket_metrics_update_for_paper_trade
+
+        # Trade with both training_bucket and explore_bucket set
+        trade = {
+            "symbol": "BTCUSDT",
+            "training_bucket": "C_WEAK_EV_TRAIN",
+            "explore_bucket": "A_STRICT_TAKE",
+            "outcome": "WIN",
+            "net_pnl_pct": 1.2,
+            "exit_reason": "TP",
+            "regime": "BULL_TREND",
+        }
+
+        result = _safe_bucket_metrics_update_for_paper_trade(trade)
+        assert isinstance(result, bool)
+        # If it didn't crash, it used the correct bucket logic

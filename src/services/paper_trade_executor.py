@@ -661,7 +661,7 @@ def _canonical_closed_paper_trade(raw: dict) -> dict:
 
 
 def _safe_learning_update_for_paper_trade(pos: dict, pnl_data: dict) -> bool:
-    """P1.1Q Phase 3: Convert closed paper trade to learning_monitor update. Never raises.
+    """P1.1R: Convert closed paper trade to learning_monitor update via safe API. Never raises.
 
     Args:
         pos: Position dict (closed trade with metadata)
@@ -680,8 +680,8 @@ def _safe_learning_update_for_paper_trade(pos: dict, pnl_data: dict) -> bool:
             log.debug("[LEARNING_UPDATE_SKIP] reason=no_symbol bucket=%s", canon["bucket"])
             return False
 
-        # Call learning monitor with guaranteed types
-        from src.services.learning_monitor import lm_update
+        # Import the safe paper learning API (P1.1R: no adapter guessing)
+        from src.services.learning_monitor import update_from_paper_trade
         from src.services.paper_training_sampler import (
             record_training_closed,
             record_training_learning_update,
@@ -690,31 +690,32 @@ def _safe_learning_update_for_paper_trade(pos: dict, pnl_data: dict) -> bool:
         # Record training trade metrics
         record_training_closed(bucket=canon["bucket"], outcome=canon["outcome"])
 
-        # Update learning monitor - lm_update(sym, reg, pnl, ws, features, window=None)
-        lm_update(
-            sym=canon["symbol"],
-            reg=canon["regime"],
-            pnl=canon["pnl_decimal"],
-            ws=canon["ws"],
-            features=canon["features"],
-        )
-        record_training_learning_update()
+        # Update learning monitor via safe API
+        ok = update_from_paper_trade(canon)
+        if ok:
+            record_training_learning_update()
+            log.info(
+                "[LEARNING_UPDATE] source=paper_closed_trade symbol=%s regime=%s bucket=%s outcome=%s net_pnl_pct=%.4f ok=True",
+                canon["symbol"],
+                canon["regime"],
+                canon["bucket"],
+                canon["outcome"],
+                canon["net_pnl_pct"],
+            )
+        else:
+            log.warning(
+                "[LEARNING_UPDATE_ERROR] update_from_paper_trade_false symbol=%s bucket=%s regime=%s",
+                canon["symbol"],
+                canon["bucket"],
+                canon["regime"],
+            )
 
-        log.info(
-            "[LEARNING_UPDATE] source=paper_closed_trade symbol=%s regime=%s bucket=%s outcome=%s net_pnl_pct=%.4f",
-            canon["symbol"],
-            canon["regime"],
-            canon["bucket"],
-            canon["outcome"],
-            canon["net_pnl_pct"],
-        )
-
-        return True
+        return bool(ok)
 
     except Exception as e:
         bucket = pos.get("training_bucket") or pos.get("explore_bucket") or "UNKNOWN"
         log.error(
-            "[LEARNING_UPDATE_ERROR] err=%s symbol=%s bucket=%s fn=lm_update signature=lm_update(sym,reg,pnl,ws,features)",
+            "[LEARNING_UPDATE_ERROR] err=%s symbol=%s bucket=%s fn=update_from_paper_trade",
             str(e),
             pos.get("symbol", "UNKNOWN"),
             bucket,
@@ -723,7 +724,7 @@ def _safe_learning_update_for_paper_trade(pos: dict, pnl_data: dict) -> bool:
 
 
 def _safe_bucket_metrics_update_for_paper_trade(trade: dict) -> bool:
-    """P1.1Q Phase 4: Update bucket metrics with type safety. Never raises.
+    """P1.1R Phase 4: Update bucket metrics with correct bucket selection. Never raises.
 
     Args:
         trade: Closed trade dict (will be normalized to canonical form)
@@ -735,12 +736,18 @@ def _safe_bucket_metrics_update_for_paper_trade(trade: dict) -> bool:
         # Normalize to canonical form (guarantees all safe types)
         canon = _canonical_closed_paper_trade(trade)
 
-        # Call metrics update with explore_bucket field
+        # P1.1R: Fix false bucket updates — use training_bucket if present, else explore_bucket
+        # A closed C_WEAK_EV_TRAIN trade must update ONLY C_WEAK_EV_TRAIN metrics, not A_STRICT_TAKE
+        primary_bucket = canon["training_bucket"]
+        if primary_bucket == "UNKNOWN":
+            primary_bucket = canon["explore_bucket"]
+
+        # Call metrics update with correct bucket
         from src.services.bucket_metrics import update_bucket_metrics
 
-        # Build metrics dict with explore_bucket (required by update_bucket_metrics)
+        # Build metrics dict with correct primary bucket
         metrics_dict = {
-            "explore_bucket": canon["explore_bucket"],
+            "explore_bucket": primary_bucket,
             "explore_sub_bucket": canon["sub_bucket"] or "",
             "outcome": canon["outcome"],
             "net_pnl_pct": canon["net_pnl_pct"],
@@ -751,7 +758,7 @@ def _safe_bucket_metrics_update_for_paper_trade(trade: dict) -> bool:
 
         log.info(
             "[PAPER_BUCKET_UPDATE] bucket=%s sub_bucket=%s outcome=%s net_pnl_pct=%.4f",
-            canon["bucket"],
+            primary_bucket,
             canon["sub_bucket"] or "N/A",
             canon["outcome"],
             canon["net_pnl_pct"],
@@ -762,7 +769,7 @@ def _safe_bucket_metrics_update_for_paper_trade(trade: dict) -> bool:
     except Exception as e:
         bucket = trade.get("training_bucket") or trade.get("explore_bucket") or "UNKNOWN"
         log.error(
-            "[BUCKET_METRICS_ERROR] err=%s bucket=%s symbol=%s fn=update_bucket_metrics signature=update_bucket_metrics(closed_trade)",
+            "[BUCKET_METRICS_ERROR] err=%s bucket=%s symbol=%s fn=update_bucket_metrics",
             str(e),
             bucket,
             trade.get("symbol", "UNKNOWN"),
