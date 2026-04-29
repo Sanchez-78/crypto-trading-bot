@@ -44,11 +44,28 @@ def update_bucket_metrics(closed_trade: dict) -> None:
         closed_trade: Closed trade dict with explore_bucket, outcome, net_pnl_pct, exit_reason, explore_sub_bucket (optional)
     """
     try:
-        bucket = closed_trade.get("explore_bucket", "A_STRICT_TAKE")
-        sub_bucket = closed_trade.get("explore_sub_bucket", "")  # P1.1i
-        outcome = closed_trade.get("outcome", "FLAT")
-        net_pnl_pct = float(closed_trade.get("net_pnl_pct", 0.0))
-        exit_reason = closed_trade.get("exit_reason", "UNKNOWN")
+        # P1.1Q: Defensive parsing — ensure bucket is never None
+        bucket = closed_trade.get("explore_bucket") or "A_STRICT_TAKE"
+        if bucket is None:
+            bucket = "A_STRICT_TAKE"
+        bucket = str(bucket).strip() or "A_STRICT_TAKE"
+
+        # P1.1Q: sub_bucket must be str or empty, never None for iteration contexts
+        sub_bucket = closed_trade.get("explore_sub_bucket") or ""
+        if sub_bucket is None:
+            sub_bucket = ""
+        sub_bucket = str(sub_bucket).strip()
+
+        outcome = closed_trade.get("outcome") or "FLAT"
+        if outcome is None:
+            outcome = "FLAT"
+        outcome = str(outcome).strip() or "FLAT"
+
+        net_pnl_pct = float(closed_trade.get("net_pnl_pct") or 0.0)
+        exit_reason = closed_trade.get("exit_reason") or "UNKNOWN"
+        if exit_reason is None:
+            exit_reason = "UNKNOWN"
+        exit_reason = str(exit_reason).strip() or "UNKNOWN"
 
         _init_bucket_metrics(bucket)
         metrics = _BUCKET_METRICS[bucket]

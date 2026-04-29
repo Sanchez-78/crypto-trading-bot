@@ -52,6 +52,11 @@ _last_health_log = 0.0  # last time health was logged
 _LAST_SKIP_LOG_TS = {}  # (reason, symbol, side, bucket, source) -> timestamp
 _SKIP_LOG_TTL_S = 30.0  # throttle period for skip logs
 
+# P1.1Q Phase 6: Skip summary counters (emit summary every 10 minutes instead of per-event logs)
+_SKIP_COUNTERS = {}  # reason -> count
+_LAST_SKIP_SUMMARY_TS = [0.0]  # [timestamp] for shared mutable reference
+_SKIP_SUMMARY_WINDOW_S = 600.0  # 10 minutes
+
 
 def _now() -> float:
     """Get current timestamp."""
@@ -93,10 +98,11 @@ def _allow(**kw) -> dict:
 
 
 def _log_train_skip_once(reason: str, symbol: str, side: str, bucket: str, source_reject: str, **extra) -> None:
-    """P1.1P: Log training skip with throttling to prevent spam.
+    """P1.1P/P1.1Q: Log training skip with throttling to prevent spam.
 
     Only logs once per (reason, symbol, side, bucket, source_base) per TTL window.
     Prevents hundreds of identical skip logs during duplicate candidate bursts.
+    P1.1Q: Also tracks skip counters for periodic summary logs.
     """
     now = time.time()
     # Extract source base (e.g., "DUPLICATE_CANDIDATE" from "DUPLICATE_CANDIDATE(age=0.0s)")
@@ -105,9 +111,12 @@ def _log_train_skip_once(reason: str, symbol: str, side: str, bucket: str, sourc
 
     last = _LAST_SKIP_LOG_TS.get(key, 0.0)
     if now - last < _SKIP_LOG_TTL_S:
-        return  # Throttled - do not log
+        # Still throttled, but increment counter for summary
+        _SKIP_COUNTERS[reason] = _SKIP_COUNTERS.get(reason, 0) + 1
+        return  # Do not log individual skip
 
     _LAST_SKIP_LOG_TS[key] = now
+    _SKIP_COUNTERS[reason] = _SKIP_COUNTERS.get(reason, 0) + 1
 
     # Format extra fields
     extra_s = " ".join(f"{k}={v}" for k, v in extra.items() if v is not None)
@@ -123,6 +132,29 @@ def _log_train_skip_once(reason: str, symbol: str, side: str, bucket: str, sourc
         source_reject,
         extra_s,
     )
+
+    # P1.1Q: Emit summary if window has passed
+    if now - _LAST_SKIP_SUMMARY_TS[0] >= _SKIP_SUMMARY_WINDOW_S:
+        _emit_skip_summary(now)
+
+
+def _emit_skip_summary(now: float) -> None:
+    """P1.1Q Phase 6: Emit periodic skip summary instead of per-event spam."""
+    global _SKIP_COUNTERS
+    if not _SKIP_COUNTERS:
+        return
+
+    # Build summary string
+    summary_items = [f"{reason}={count}" for reason, count in sorted(_SKIP_COUNTERS.items())]
+    summary_s = " ".join(summary_items)
+
+    log.info(
+        f"[PAPER_TRAIN_SKIP_SUMMARY] window_s={int(_SKIP_SUMMARY_WINDOW_S)} {summary_s}"
+    )
+
+    # Reset counters
+    _SKIP_COUNTERS.clear()
+    _LAST_SKIP_SUMMARY_TS[0] = now
 
 
 def _is_training_enabled() -> bool:
