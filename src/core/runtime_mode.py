@@ -7,10 +7,11 @@ log = logging.getLogger(__name__)
 
 
 class TradingMode(str, Enum):
-    """Runtime trading modes for V10.13u+20 paper training."""
-    PAPER_LIVE = "paper_live"
-    REPLAY_TRAIN = "replay_train"
-    LIVE_REAL = "live_real"
+    """Runtime trading modes for V10.13u+21 paper training."""
+    PAPER_LIVE = "paper_live"      # Conservative paper exploration
+    PAPER_TRAIN = "paper_train"    # Active paper training sampler (P1.1k)
+    REPLAY_TRAIN = "replay_train"  # Historical replay training
+    LIVE_REAL = "live_real"        # Real orders (fully gated)
 
 
 # Default mode if not specified
@@ -59,13 +60,24 @@ def live_trading_confirmed() -> bool:
 
 
 def is_paper_mode() -> bool:
-    """Check if current mode is paper (paper_live or replay_train).
+    """Check if current mode is paper (paper_live, paper_train, or replay_train).
 
     Returns:
-        bool: True if mode is paper_live or replay_train
+        bool: True if mode is paper_live, paper_train, or replay_train
     """
     mode = get_trading_mode()
-    return mode in (TradingMode.PAPER_LIVE, TradingMode.REPLAY_TRAIN)
+    return mode in (TradingMode.PAPER_LIVE, TradingMode.PAPER_TRAIN, TradingMode.REPLAY_TRAIN)
+
+
+def is_live_trading_enabled() -> bool:
+    """Check if mode is live_real (trading mode, not necessarily allowed yet).
+
+    This is used to gate paper training mode (which runs in paper_train, not live_real).
+
+    Returns:
+        bool: True if TRADING_MODE=live_real
+    """
+    return get_trading_mode() == TradingMode.LIVE_REAL
 
 
 def live_trading_allowed() -> bool:
@@ -80,7 +92,7 @@ def live_trading_allowed() -> bool:
     Returns:
         bool: True only if all conditions are met
     """
-    if get_trading_mode() != TradingMode.LIVE_REAL:
+    if not is_live_trading_enabled():
         return False
 
     if not real_orders_enabled():
