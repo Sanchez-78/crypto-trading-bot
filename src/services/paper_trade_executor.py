@@ -525,7 +525,7 @@ def close_paper_position(
     # P1.1L Phase 6: Call learning update for training trades
     if pos.get("paper_source") == "training_sampler":
         try:
-            from src.services.learning_monitor import lm_on_closed_trade
+            from src.services.learning_monitor import lm_update
             from src.services.paper_training_sampler import record_training_closed, record_training_learning_update
 
             # Record training trade metrics
@@ -535,25 +535,14 @@ def close_paper_position(
             )
 
             # Update learning monitor with training trade
-            trade_for_learning = {
-                "symbol": pos["symbol"],
-                "side": pos["side"],
-                "entry_price": pos["entry_price"],
-                "exit_price": price,
-                "entry_ts": pos["entry_ts"],
-                "exit_ts": ts,
-                "regime": pos.get("regime", "RANGING"),
-                "pnl_pct": pnl_data["net_pnl_pct"],
-                "pnl": pnl_data["net_pnl_pct"] / 100.0 * pos["size_usd"],
-                "outcome": pnl_data["outcome"],
-                "result": "WIN" if pnl_data["outcome"] == "WIN" else ("LOSS" if pnl_data["outcome"] == "LOSS" else "FLAT"),
-                "reason": reason,
-                "hold_s": duration_s,
-                "training_bucket": pos.get("training_bucket", pos.get("explore_bucket", "")),
-                "side_inferred": pos.get("side_inferred", False),
-            }
-
-            lm_on_closed_trade(trade_for_learning)
+            pnl_decimal = pnl_data["net_pnl_pct"] / 100.0
+            lm_update(
+                sym=pos["symbol"],
+                reg=pos.get("regime", "RANGING"),
+                pnl=pnl_decimal,
+                ws=pos.get("score_at_entry", 0.0),
+                features=pos.get("features", {}),
+            )
             record_training_learning_update()
 
             log.info(
