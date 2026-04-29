@@ -1,506 +1,860 @@
-────── 75%  +0.00000885  OK
-Apr 20 13:23:21 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BNB  1  100%  ━━━━━━━━━━━━━━━━━━━━━● 100%  +0.00000208  OK
-Apr 20 13:23:25 ubuntu-4gb-nbg1-1 cryptomaster[492198]: WARNING:root:on_price(ADAUSDT): Generated FORCED signal SHORT
-Apr 20 13:23:28 ubuntu-4gb-nbg1-1 cryptomaster[492198]: WARNING:root:on_price(SOLUSDT): Generated FORCED signal LONG
-Apr 20 13:23:30 ubuntu-4gb-nbg1-1 cryptomaster[492198]: WARNING:root:on_price(BNBUSDT): Generated FORCED signal SHORT
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     DOT  4  25%  ━━━━●───────────────── 25%  -0.00000928  X
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     SOL  5  20%  ━━━●────────────────── 20%  -0.00001800  X
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     XRP  5  40%  ━━━━━━━●────────────── 40%  -0.00000201  X
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     UCENI – STAV A USPESNOST
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Kalibrace      KALIBROVAN  ✓  ━━━━━━━━━━━━━━━━━━━━━● 100%  (52 obchodu celkem)
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Trend uceni    STABILNÍ ➡️
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Poslednich 50    42.0%  vs  prumer 44.0%  (-2.0%)
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     EV vykon       prumer 0.032  min 0.030  max 0.048  (50 obch)
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Uzavreni       TP 0%  SL 0%  trail 0%  timeout 0%
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Kalibrace p    p=49.5%  WR=44.0%  odchylka 5.5pp  dobre
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     WR dle rezimu
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       BULL   ━━━━━━━●────────────── 39%  39%  (28 obch)
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       BEAR   ━━━━━━━━━●──────────── 46%  46%  (24 obch)
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     AUDITOR  (ochrana strategie)
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     EV prah              -0.285  score prah 0.173  t15=41  t60=52  aktivni
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Velikost pozice      1.20x  EV-only · loss streak → scale · DD halt 40%
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     STRATEGIE  (ADX + EMA + MACD + BB + RSI)
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Rezim trhu   BULL TREND  silny vzestup  (47%)
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Signaly (THIS CYCLE)  0 kandidati  (cele: 6514 zachyceno  52 provedeno)
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Filtrace      0.0%  projde filtrem  TP: 1.2xATR  /  SL: 0.8xATR  (RR 1.5:1)  EV-only
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     POSLEDNI ROZHODNUTI
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BTC  PRODEJ  $75,083.7850  p:50%  ev:0.030  BULL
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ETH  PRODEJ  $2,315.7650  p:42%  ev:0.034  BEAR
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ADA  PRODEJ  $0.2470  p:50%  ev:0.030  BULL
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BNB  PRODEJ  $624.9850  p:50%  ev:0.030  BULL
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     DOT  PRODEJ  $1.2605  p:50%  ev:0.030  BEAR  VYHRA
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     SOL  PRODEJ  $85.1950  p:50%  ev:0.030  BULL
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     XRP  KUPUJ   $1.4226  p:50%  ev:0.030  BEAR  PROHRA
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Sbiram data ━━━ ● Trenink ─── Aktivni
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   STAV:  TRENINK  (winrate 44%->55%,  zisk > 0)
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]: ============================================================
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]: === EXECUTION ENGINE ===
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Equity:   0.999957  |  DD: 0.00%
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Exposure: 0.006  |  Positions: 1
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Sharpe:   0.000  |  WR: 42.31%  |  Edge: 0.50000  |  MaxDD: 0.00%
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Failure:  0.000  [OK]
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BTCUSDT      BEAR_TREND   EV:+0.0000  Size:0.0060
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]: === LEARNING MONITOR ===
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   (waiting for 10 closed trades per pair)
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   [!] LEARNING: NO LEARNING SIGNAL DETECTED
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Health: 0.000  [BAD]
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]: ========================
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]: [V10.13g EXIT] TP=0 SL=0 micro=0 be=0 partial=(18,0,0) trail=1 scratch=27 stag=0 harvest=0 t_profit=0 t_flat=0 t_loss=0
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   → Harvest rate: 41.3% (19/46)
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]: 📊 [V10.13m EXIT_AUDIT]
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   winners: SCRATCH_EXIT=27 PARTIAL_TP_25=18 EARLY_STOP=6 TRAIL_PROFIT=1
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   near_miss: partial25_near_miss=23777 micro_near_miss=11589 trail_near_miss=47
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   top_rejects:
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   🔴 ADA $0.2470 | [FORCED_EXPLORE] sc:3/7  ws:0.50 | BULL_TREND | conf:31% []
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=52]  t15=41  spread=0.000  af=1.00
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     RDE[v10.10b]: ev=0.050 thr=-0.285 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     coherence[v10.12]: 0.500  ev 0.050→0.030
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     [V10.13r] SCORE_THRESHOLD_COLD_START: relaxed to 0.1728
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   🔴 SOL $85.2450 | [FORCED_EXPLORE] sc:3/7  ws:0.50 | BEAR_TREND | conf:40% []
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=52]  t15=40  spread=0.000  af=1.00
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     RDE[v10.10b]: ev=0.050 thr=-0.285 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     coherence[v10.12]: 0.675  ev 0.050→0.034
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     [V10.13r] SCORE_THRESHOLD_COLD_START: relaxed to 0.1728
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     decision=TAKE  ev=0.0338  p=0.5000  af=1.00  coh=0.675
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   🔴 BNB $625.1550 | [FORCED_EXPLORE] sc:3/7  ws:0.50 | BEAR_TREND | conf:52% []
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     EV=0.050  p=0.42  rr=1.25  ws=0.500  score=0.185[n=52]  t15=39  spread=0.000  af=1.00
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     RDE[v10.10b]: ev=0.050 thr=-0.285 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     coherence[v10.12]: 0.675  ev 0.050→0.034
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     [V10.13r] SCORE_THRESHOLD_COLD_START: relaxed to 0.1728
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     decision=TAKE  ev=0.0338  p=0.4173  af=1.00  coh=0.675
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   [!] LEARNING: NO LEARNING SIGNAL DETECTED
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ── CYCLE SNAPSHOT ────────────────────────────────────────
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]: {
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   "cycle_time": 1776691411.4642012,
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   "positions": 1,
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   "learning": {
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "health": 0.0,
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "alert": "BAD",
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "mode": "WARM",
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "pairs": {},
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "features": {},
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "block_reasons": {
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "SKIP_SCORE_SOFT": 149,
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "OFI_TOXIC_SOFT_BOOTSTRAP": 232,
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "OFI_TOXIC_SOFT": 250
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     },
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "completed_trades": 52,
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "best_edge": "Unknown",
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "defense": {
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "wall_exits": 0,
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "timeouts": 0,
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "l2_rejected": 0,
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "corr_rejected": 0,
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "defended": 0,
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "efficiency": 0.0
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     },
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "concept_drift": false
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   }
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]: }
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]: ============================================================
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   CRYPTOMASTER  |  0h 18m 17s  | TRENINK
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]: ============================================================
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ZIVE CENY  (Binance · kazde 1 s)
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BTC  $   75,108.3850   ─  +0.000%  [OPEN]
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ETH  $    2,314.8150   ─  +0.000%
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ADA  $        0.2470   ─  +0.000%
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BNB  $      625.1550   ─  +0.000%
-Apr 20 13:23:31 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     DOT  $        1.2615   ─  +0.000%
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     SOL  $       85.2350   ─  +0.000%
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     XRP  $        1.4226   ─  +0.000%
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     OTEVRENE POZICE
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BTC  SELL  $75,119.4608->$75,108.3850  +0.000001  TP:0.80%  SL:0.40%
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     VYSLEDKY OBCHODOVANI
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Obchody    52  (OK 11  X 14  ~ 27)
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Winrate     44.0%  ━━━━━━━━●───────────── 44%  cil 55%  (bez timeoutu)
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Zisk        -0.00004279  ◄●─────────────────────
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Drawdown    0.00005433  (pokles od vrcholu)
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Serie       FIRE 4x vyhra v rade!
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ----------------------------------------
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Profit Factor  0.57x  (zisk / ztrata, cil > 1.5)
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Expectancy     -0.00000107  (prumerny vynos / obchod)
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Nejlepsi      +0.00000744   Nejhorsi  -0.00000748
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Posledni obchod  1m 3s zpet
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     VYSLEDKY PO MENACH
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Mena  Obch  WR  Bar          Zisk
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     --------------------------------------------------
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BTC  1  0%  ●───────────────────── 0%  -0.00000703  X
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ETH  5  60%  ━━━━━━━━━━━━●───────── 60%  -0.00000145  OK
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ADA  4  75%  ━━━━━━━━━━━━━━━●────── 75%  +0.00000885  OK
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BNB  1  100%  ━━━━━━━━━━━━━━━━━━━━━● 100%  +0.00000208  OK
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     DOT  4  25%  ━━━━●───────────────── 25%  -0.00000928  X
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     SOL  5  20%  ━━━●────────────────── 20%  -0.00001800  X
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     XRP  5  40%  ━━━━━━━●────────────── 40%  -0.00000201  X
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     UCENI – STAV A USPESNOST
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Kalibrace      KALIBROVAN  ✓  ━━━━━━━━━━━━━━━━━━━━━● 100%  (52 obchodu celkem)
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Trend uceni    STABILNÍ ➡️
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Poslednich 50    42.0%  vs  prumer 44.0%  (-2.0%)
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     EV vykon       prumer 0.032  min 0.030  max 0.048  (50 obch)
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Uzavreni       TP 0%  SL 0%  trail 0%  timeout 0%
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Kalibrace p    p=49.5%  WR=44.0%  odchylka 5.5pp  dobre
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     WR dle rezimu
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       BULL   ━━━━━━━●────────────── 39%  39%  (28 obch)
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       BEAR   ━━━━━━━━━●──────────── 46%  46%  (24 obch)
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     AUDITOR  (ochrana strategie)
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     EV prah              -0.285  score prah 0.173  t15=39  t60=52  aktivni
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Velikost pozice      1.20x  EV-only · loss streak → scale · DD halt 40%
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     STRATEGIE  (ADX + EMA + MACD + BB + RSI)
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Rezim trhu   BULL TREND  silny vzestup  (47%)
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Signaly (THIS CYCLE)  0 kandidati  (cele: 6517 zachyceno  52 provedeno)
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Filtrace      0.0%  projde filtrem  TP: 1.2xATR  /  SL: 0.8xATR  (RR 1.5:1)  EV-only
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     POSLEDNI ROZHODNUTI
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BTC  PRODEJ  $75,083.7850  p:50%  ev:0.030  BULL
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ETH  PRODEJ  $2,315.7650  p:42%  ev:0.034  BEAR
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ADA  PRODEJ  $0.2470  p:50%  ev:0.030  BULL
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BNB  PRODEJ  $625.1550  p:42%  ev:0.034  BEAR
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     DOT  PRODEJ  $1.2605  p:50%  ev:0.030  BEAR  VYHRA
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     SOL  PRODEJ  $85.2450  p:50%  ev:0.034  BEAR
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     XRP  KUPUJ   $1.4226  p:50%  ev:0.030  BEAR  PROHRA
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Sbiram data ━━━ ● Trenink ─── Aktivni
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   STAV:  TRENINK  (winrate 44%->55%,  zisk > 0)
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]: ============================================================
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]: === EXECUTION ENGINE ===
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Equity:   0.999957  |  DD: 0.00%
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Exposure: 0.006  |  Positions: 1
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Sharpe:   0.000  |  WR: 42.31%  |  Edge: 0.50000  |  MaxDD: 0.00%
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Failure:  0.000  [OK]
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BTCUSDT      BEAR_TREND   EV:+0.0000  Size:0.0060
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]: === LEARNING MONITOR ===
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   (waiting for 10 closed trades per pair)
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   [!] LEARNING: NO LEARNING SIGNAL DETECTED
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Health: 0.000  [BAD]
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]: ========================
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]: [V10.13g EXIT] TP=0 SL=0 micro=0 be=0 partial=(18,0,0) trail=1 scratch=27 stag=0 harvest=0 t_profit=0 t_flat=0 t_loss=0
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   → Harvest rate: 41.3% (19/46)
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]: 📊 [V10.13m EXIT_AUDIT]
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   winners: SCRATCH_EXIT=27 PARTIAL_TP_25=18 EARLY_STOP=6 TRAIL_PROFIT=1
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   near_miss: partial25_near_miss=23777 micro_near_miss=11589 trail_near_miss=47
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   top_rejects:
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   [!] LEARNING: NO LEARNING SIGNAL DETECTED
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   [!] LEARNING: NO LEARNING SIGNAL DETECTED
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ── CYCLE SNAPSHOT ────────────────────────────────────────
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]: {
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   "cycle_time": 1776691421.4854434,
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   "positions": 1,
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   "learning": {
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "health": 0.0,
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "alert": "BAD",
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "mode": "WARM",
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "pairs": {},
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "features": {},
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "block_reasons": {
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "SKIP_SCORE_SOFT": 149,
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "OFI_TOXIC_SOFT_BOOTSTRAP": 232,
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "OFI_TOXIC_SOFT": 250
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     },
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "completed_trades": 52,
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "best_edge": "Unknown",
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "defense": {
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "wall_exits": 0,
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "timeouts": 0,
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "l2_rejected": 0,
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "corr_rejected": 0,
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "defended": 0,
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "efficiency": 0.0
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     },
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "concept_drift": false
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   }
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]: }
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]: ============================================================
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   CRYPTOMASTER  |  0h 18m 27s  | TRENINK
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]: ============================================================
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ZIVE CENY  (Binance · kazde 1 s)
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BTC  $   75,096.2750   ─  +0.000%  [OPEN]
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ETH  $    2,314.1850   ─  +0.000%
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ADA  $        0.2470   ─  +0.000%
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BNB  $      625.0150   ─  +0.000%
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     DOT  $        1.2615   ─  +0.000%
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     SOL  $       85.2050   ─  +0.000%
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     XRP  $        1.4224   ─  +0.000%
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     OTEVRENE POZICE
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BTC  SELL  $75,119.4608->$75,096.2750  +0.000002  TP:0.80%  SL:0.40%
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     VYSLEDKY OBCHODOVANI
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Obchody    52  (OK 11  X 14  ~ 27)
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Winrate     44.0%  ━━━━━━━━●───────────── 44%  cil 55%  (bez timeoutu)
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Zisk        -0.00004279  ◄●─────────────────────
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Drawdown    0.00005433  (pokles od vrcholu)
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Serie       FIRE 4x vyhra v rade!
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ----------------------------------------
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Profit Factor  0.57x  (zisk / ztrata, cil > 1.5)
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Expectancy     -0.00000107  (prumerny vynos / obchod)
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Nejlepsi      +0.00000744   Nejhorsi  -0.00000748
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Posledni obchod  1m 14s zpet
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     VYSLEDKY PO MENACH
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Mena  Obch  WR  Bar          Zisk
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     --------------------------------------------------
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BTC  1  0%  ●───────────────────── 0%  -0.00000703  X
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ETH  5  60%  ━━━━━━━━━━━━●───────── 60%  -0.00000145  OK
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ADA  4  75%  ━━━━━━━━━━━━━━━●────── 75%  +0.00000885  OK
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BNB  1  100%  ━━━━━━━━━━━━━━━━━━━━━● 100%  +0.00000208  OK
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     DOT  4  25%  ━━━━●───────────────── 25%  -0.00000928  X
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     SOL  5  20%  ━━━●────────────────── 20%  -0.00001800  X
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     XRP  5  40%  ━━━━━━━●────────────── 40%  -0.00000201  X
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     UCENI – STAV A USPESNOST
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Kalibrace      KALIBROVAN  ✓  ━━━━━━━━━━━━━━━━━━━━━● 100%  (52 obchodu celkem)
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Trend uceni    STABILNÍ ➡️
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Poslednich 50    42.0%  vs  prumer 44.0%  (-2.0%)
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     EV vykon       prumer 0.032  min 0.030  max 0.048  (50 obch)
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Uzavreni       TP 0%  SL 0%  trail 0%  timeout 0%
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Kalibrace p    p=49.5%  WR=44.0%  odchylka 5.5pp  dobre
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     WR dle rezimu
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       BULL   ━━━━━━━●────────────── 39%  39%  (28 obch)
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       BEAR   ━━━━━━━━━●──────────── 46%  46%  (24 obch)
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     AUDITOR  (ochrana strategie)
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     EV prah              -0.285  score prah 0.173  t15=38  t60=52  aktivni
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Velikost pozice      1.20x  EV-only · loss streak → scale · DD halt 40%
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     STRATEGIE  (ADX + EMA + MACD + BB + RSI)
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Rezim trhu   BULL TREND  silny vzestup  (47%)
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Signaly (THIS CYCLE)  0 kandidati  (cele: 6517 zachyceno  52 provedeno)
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Filtrace      0.0%  projde filtrem  TP: 1.2xATR  /  SL: 0.8xATR  (RR 1.5:1)  EV-only
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     POSLEDNI ROZHODNUTI
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BTC  PRODEJ  $75,083.7850  p:50%  ev:0.030  BULL
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ETH  PRODEJ  $2,315.7650  p:42%  ev:0.034  BEAR
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ADA  PRODEJ  $0.2470  p:50%  ev:0.030  BULL
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BNB  PRODEJ  $625.1550  p:42%  ev:0.034  BEAR
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     DOT  PRODEJ  $1.2605  p:50%  ev:0.030  BEAR  VYHRA
-Apr 20 13:23:41 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     SOL  PRODEJ  $85.2450  p:50%  ev:0.034  BEAR
-Apr 20 13:23:46 ubuntu-4gb-nbg1-1 cryptomaster[492198]: WARNING:root:on_price(BNBUSDT): Generated FORCED signal LONG
-Apr 20 13:23:46 ubuntu-4gb-nbg1-1 cryptomaster[492198]: WARNING:src.services.hardblock_adapter:🔄 HardBlock zone adjustment: MODERATE (idle=79s, health=0.50) buffer: 0.060 → 0.090
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     XRP  KUPUJ   $1.4226  p:50%  ev:0.030  BEAR  PROHRA
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Sbiram data ━━━ ● Trenink ─── Aktivni
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   STAV:  TRENINK  (winrate 44%->55%,  zisk > 0)
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]: ============================================================
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]: === EXECUTION ENGINE ===
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Equity:   0.999957  |  DD: 0.00%
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Exposure: 0.006  |  Positions: 1
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Sharpe:   0.000  |  WR: 42.31%  |  Edge: 0.50000  |  MaxDD: 0.00%
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Failure:  0.000  [OK]
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BTCUSDT      BEAR_TREND   EV:+0.0000  Size:0.0060
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]: === LEARNING MONITOR ===
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   (waiting for 10 closed trades per pair)
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   [!] LEARNING: NO LEARNING SIGNAL DETECTED
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Health: 0.000  [BAD]
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]: ========================
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]: [V10.13g EXIT] TP=0 SL=0 micro=0 be=0 partial=(18,0,0) trail=1 scratch=27 stag=0 harvest=0 t_profit=0 t_flat=0 t_loss=0
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   → Harvest rate: 41.3% (19/46)
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]: 📊 [V10.13m EXIT_AUDIT]
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   winners: SCRATCH_EXIT=27 PARTIAL_TP_25=18 EARLY_STOP=6 TRAIL_PROFIT=1
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   near_miss: partial25_near_miss=23777 micro_near_miss=11589 trail_near_miss=47
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   top_rejects:
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   🔴 BNB $624.8550 | [FORCED_EXPLORE] sc:3/7  ws:0.50 | BEAR_TREND | conf:40% []
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=52]  t15=38  spread=0.000  af=1.00
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     RDE[v10.10b]: ev=0.050 thr=-0.285 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=False
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     coherence[v10.12]: 0.675  ev 0.050→0.034
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     [V10.13r] SCORE_THRESHOLD_COLD_START: relaxed to 0.1728
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     decision=TAKE  ev=0.0338  p=0.5000  af=1.00  coh=0.675
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   [!] LEARNING: NO LEARNING SIGNAL DETECTED
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ── CYCLE SNAPSHOT ────────────────────────────────────────
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]: {
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   "cycle_time": 1776691431.697285,
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   "positions": 1,
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   "learning": {
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "health": 0.0,
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "alert": "BAD",
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "mode": "WARM",
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "pairs": {},
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "features": {},
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "block_reasons": {
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "SKIP_SCORE_SOFT": 149,
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "OFI_TOXIC_SOFT_BOOTSTRAP": 232,
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "OFI_TOXIC_SOFT": 250
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     },
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "completed_trades": 52,
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "best_edge": "Unknown",
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "defense": {
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "wall_exits": 0,
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "timeouts": 0,
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "l2_rejected": 0,
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "corr_rejected": 0,
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "defended": 0,
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "efficiency": 0.0
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     },
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "concept_drift": false
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   }
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]: }
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]: ============================================================
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   CRYPTOMASTER  |  0h 18m 37s  | TRENINK
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]: ============================================================
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ZIVE CENY  (Binance · kazde 1 s)
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BTC  $   75,106.6150   ─  +0.000%  [OPEN]
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ETH  $    2,314.4550   ─  +0.000%
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ADA  $        0.2470   ─  +0.000%
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BNB  $      624.9050   ─  +0.000%
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     DOT  $        1.2605   ─  +0.000%
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     SOL  $       85.1950   ─  +0.000%
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     XRP  $        1.4226   ─  +0.000%
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     OTEVRENE POZICE
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BTC  SELL  $75,119.4608->$75,106.6150  +0.000001  TP:0.80%  SL:0.40%
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     VYSLEDKY OBCHODOVANI
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Obchody    52  (OK 11  X 14  ~ 27)
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Winrate     44.0%  ━━━━━━━━●───────────── 44%  cil 55%  (bez timeoutu)
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Zisk        -0.00004279  ◄●─────────────────────
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Drawdown    0.00005433  (pokles od vrcholu)
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Serie       FIRE 4x vyhra v rade!
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ----------------------------------------
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Profit Factor  0.57x  (zisk / ztrata, cil > 1.5)
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Expectancy     -0.00000107  (prumerny vynos / obchod)
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Nejlepsi      +0.00000744   Nejhorsi  -0.00000748
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Posledni obchod  1m 24s zpet
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     VYSLEDKY PO MENACH
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Mena  Obch  WR  Bar          Zisk
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     --------------------------------------------------
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BTC  1  0%  ●───────────────────── 0%  -0.00000703  X
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ETH  5  60%  ━━━━━━━━━━━━●───────── 60%  -0.00000145  OK
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ADA  4  75%  ━━━━━━━━━━━━━━━●────── 75%  +0.00000885  OK
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BNB  1  100%  ━━━━━━━━━━━━━━━━━━━━━● 100%  +0.00000208  OK
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     DOT  4  25%  ━━━━●───────────────── 25%  -0.00000928  X
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     SOL  5  20%  ━━━●────────────────── 20%  -0.00001800  X
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     XRP  5  40%  ━━━━━━━●────────────── 40%  -0.00000201  X
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     UCENI – STAV A USPESNOST
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Kalibrace      KALIBROVAN  ✓  ━━━━━━━━━━━━━━━━━━━━━● 100%  (52 obchodu celkem)
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Trend uceni    STABILNÍ ➡️
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Poslednich 50    42.0%  vs  prumer 44.0%  (-2.0%)
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     EV vykon       prumer 0.032  min 0.030  max 0.048  (50 obch)
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Uzavreni       TP 0%  SL 0%  trail 0%  timeout 0%
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Kalibrace p    p=49.5%  WR=44.0%  odchylka 5.5pp  dobre
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     WR dle rezimu
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       BULL   ━━━━━━━●────────────── 39%  39%  (28 obch)
-Apr 20 13:23:51 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       BEAR   ━━━━━━━━━●──────────── 46%  46%  (24 obch)
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     AUDITOR  (ochrana strategie)
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     EV prah              -0.285  score prah 0.173  t15=38  t60=52  aktivni
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Velikost pozice      1.20x  EV-only · loss streak → scale · DD halt 40%
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     STRATEGIE  (ADX + EMA + MACD + BB + RSI)
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Rezim trhu   BULL TREND  silny vzestup  (47%)
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Signaly (THIS CYCLE)  0 kandidati  (cele: 6518 zachyceno  52 provedeno)
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Filtrace      0.0%  projde filtrem  TP: 1.2xATR  /  SL: 0.8xATR  (RR 1.5:1)  EV-only
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     POSLEDNI ROZHODNUTI
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BTC  PRODEJ  $75,083.7850  p:50%  ev:0.030  BULL
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ETH  PRODEJ  $2,315.7650  p:42%  ev:0.034  BEAR
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ADA  PRODEJ  $0.2470  p:50%  ev:0.030  BULL
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BNB  PRODEJ  $624.8550  p:50%  ev:0.034  BEAR
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     DOT  PRODEJ  $1.2605  p:50%  ev:0.030  BEAR  VYHRA
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     SOL  PRODEJ  $85.2450  p:50%  ev:0.034  BEAR
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     XRP  KUPUJ   $1.4226  p:50%  ev:0.030  BEAR  PROHRA
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Sbiram data ━━━ ● Trenink ─── Aktivni
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   STAV:  TRENINK  (winrate 44%->55%,  zisk > 0)
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]: ============================================================
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]: === EXECUTION ENGINE ===
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Equity:   0.999957  |  DD: 0.00%
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Exposure: 0.006  |  Positions: 1
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Sharpe:   0.000  |  WR: 42.31%  |  Edge: 0.50000  |  MaxDD: 0.00%
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Failure:  0.000  [OK]
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BTCUSDT      BEAR_TREND   EV:+0.0000  Size:0.0060
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]: === LEARNING MONITOR ===
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   (waiting for 10 closed trades per pair)
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   [!] LEARNING: NO LEARNING SIGNAL DETECTED
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   Health: 0.000  [BAD]
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]: ========================
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]: [V10.13g EXIT] TP=0 SL=0 micro=0 be=0 partial=(18,0,0) trail=1 scratch=27 stag=0 harvest=0 t_profit=0 t_flat=0 t_loss=0
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   → Harvest rate: 41.3% (19/46)
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]: 📊 [V10.13m EXIT_AUDIT]
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   winners: SCRATCH_EXIT=27 PARTIAL_TP_25=18 EARLY_STOP=6 TRAIL_PROFIT=1
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   near_miss: partial25_near_miss=23777 micro_near_miss=11589 trail_near_miss=47
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   top_rejects:
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   [!] LEARNING: NO LEARNING SIGNAL DETECTED
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ── CYCLE SNAPSHOT ────────────────────────────────────────
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]: {
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   "cycle_time": 1776691441.7207398,
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   "positions": 1,
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   "learning": {
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "health": 0.0,
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "alert": "BAD",
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "mode": "WARM",
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "pairs": {},
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "features": {},
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "block_reasons": {
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "SKIP_SCORE_SOFT": 149,
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "OFI_TOXIC_SOFT_BOOTSTRAP": 232,
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "OFI_TOXIC_SOFT": 250
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     },
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "completed_trades": 52,
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "best_edge": "Unknown",
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "defense": {
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "wall_exits": 0,
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "timeouts": 0,
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "l2_rejected": 0,
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "corr_rejected": 0,
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "defended": 0,
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:       "efficiency": 0.0
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     },
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     "concept_drift": false
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   }
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]: }
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]: ============================================================
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   CRYPTOMASTER  |  0h 18m 47s  | TRENINK
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]: ============================================================
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ZIVE CENY  (Binance · kazde 1 s)
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BTC  $   75,103.4850   ─  +0.000%  [OPEN]
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ETH  $    2,314.5450   ─  +0.000%
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ADA  $        0.2470   ─  +0.000%
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BNB  $      624.9350   ─  +0.000%
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     DOT  $        1.2605   ─  +0.000%
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     SOL  $       85.2050   ─  +0.000%
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     XRP  $        1.4226   ─  +0.000%
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     OTEVRENE POZICE
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BTC  SELL  $75,119.4608->$75,103.4850  +0.000001  TP:0.80%  SL:0.40%
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     VYSLEDKY OBCHODOVANI
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Obchody    52  (OK 11  X 14  ~ 27)
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Winrate     44.0%  ━━━━━━━━●───────────── 44%  cil 55%  (bez timeoutu)
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Zisk        -0.00004279  ◄●─────────────────────
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Drawdown    0.00005433  (pokles od vrcholu)
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Serie       FIRE 4x vyhra v rade!
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ----------------------------------------
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Profit Factor  0.57x  (zisk / ztrata, cil > 1.5)
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Expectancy     -0.00000107  (prumerny vynos / obchod)
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Nejlepsi      +0.00000744   Nejhorsi  -0.00000748
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Posledni obchod  1m 34s zpet
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     VYSLEDKY PO MENACH
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:   ────────────────────────────────────────────────────────
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     Mena  Obch  WR  Bar          Zisk
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     --------------------------------------------------
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BTC  1  0%  ●───────────────────── 0%  -0.00000703  X
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ETH  5  60%  ━━━━━━━━━━━━●───────── 60%  -0.00000145  OK
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     ADA  4  75%  ━━━━━━━━━━━━━━━●────── 75%  +0.00000885  OK
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     BNB  1  100%  ━━━━━━━━━━━━━━━━━━━━━● 100%  +0.00000208  OK
-Apr 20 13:24:01 ubuntu-4gb-nbg1-1 cryptomaster[492198]:     DOT  4  25%  ━━━━●───────────────── 25%  -0.00000928  X
-Apr 20 13:24:06 ubuntu-4gb-nbg1-1 cryptomaster[492198]: WARNING:root:on_price(BNBUSDT): Generated FORCED signal LONG
+]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.697  ev 0.050→0.035
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0348  p=0.5000  af=1.00  coh=0.697 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 BTC $77,092.8750 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:35% [trend,pullback,vol,mom]
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.637  ev 0.050→0.032
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0319  p=0.5000  af=1.00  coh=0.637 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [EXEC] regime=BULL_TREND TP=77713.50348 SL=76788.34273
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 XRP $1.3931 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:54% [trend,pullback,vol,wick]
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.697  ev 0.050→0.035
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0348  p=0.5000  af=1.00  coh=0.697 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 SOL $84.7650 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:54% [trend,pullback,vol,wick]
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.697  ev 0.050→0.035
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0348  p=0.5000  af=1.00  coh=0.697 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 SOL $84.7650 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:54% [trend,pullback,vol,wick]
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.697  ev 0.050→0.035
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0348  p=0.5000  af=1.00  coh=0.697 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 SOL $84.7650 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:54% [trend,pullback,vol,wick]
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.697  ev 0.050→0.035
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979[V10.13w DECISION] SOLUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0348 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.3s)  sym=SOLUSDT
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(XRPUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] XRPUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=2.8s)  sym=XRPUSDT
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(XRPUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] XRPUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=2.8s)  sym=XRPUSDT
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(XRPUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] XRPUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     max_pos[v10.8]: 0.0178→0.0100  mode=neutral  pred=BULL_TREND
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     policy[v10.7/10.8/v10.9/v10.10/v10.12/v10.13]: mode=neutral  pm=1.100  policy_ev=0.0000  risk_ev=0.0000
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:      fw=3.95  pred=BULL_TREND  max_pos=0.0100  ptp×=1.65  corr×=1.00  sxd=False
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:      eff=0.0000  eff_live=0.0000  repl=False  coh=0.580
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:      pp=0.000  mom=0.000  mom_mult×1.00
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     unblock_size[v10.12e]: ×0.25  fallback=False
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     exec_quality[v10.11]: exec_q=0.99 spread=0.0001 slip=0.0009 fill=1.00 lat=1.00
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     risk_budget[v10.12c]: risk=0.75 dd=0.000 sharpe=0.00 ruin=0.000 heat=0.0000 max_heat=0.2250
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [EXEC] regime=BULL_TREND entry=1.39269270 TP=1.40383424 SL=1.38712193 size=0.003724 atr=0.00000649
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [UNBLOCK_LIMIT] XRPUSDT UNBLOCK_RATE_LIMIT: 6/6 trades in last hour — signal skipped
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(ETHUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] ETHUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0348 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.2s)  sym=ETHUSDT
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(ETHUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] ETHUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0348 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.2s)  sym=ETHUSDT
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(ETHUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] ETHUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0348 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.2s)  sym=ETHUSDT
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(ETHUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] ETHUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0348 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.3s)  sym=ETHUSDT
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(ETHUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] ETHUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0348 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.3s)  sym=ETHUSDT
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(ETHUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] ETHUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0348 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.3s)  sym=ETHUSDT
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(ETHUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] ETHUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0348 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.3s)  sym=ETHUSDT
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(ETHUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] ETHUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0348 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.3s)  sym=ETHUSDT
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(XRPUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] XRPUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.2s)  sym=XRPUSDT
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(ADAUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] ADAUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0348  p=0.5000  af=1.00  coh=0.697 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 XRP $1.3931 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:54% [trend,pullback,vol,wick]
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.580  ev 0.050→0.030
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.580 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 XRP $1.3931 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:54% [trend,pullback,vol,wick]
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.580  ev 0.050→0.030
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.580 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 XRP $1.3933 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:54% [trend,pullback,vol,wick]
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.580  ev 0.050→0.030
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.580 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [EXEC] regime=BULL_TREND TP=1.40383 SL=1.38712
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 ETH $2,325.6850 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:54% [trend,pullback,vol,wick]
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.697  ev 0.050→0.035
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0348  p=0.5000  af=1.00  coh=0.697 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 ETH $2,325.6850 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:54% [trend,pullback,vol,wick]
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.697  ev 0.050→0.035
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0348  p=0.5000  af=1.00  coh=0.697 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 ETH $2,325.6850 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:54% [trend,pullback,vol,wick]
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.697  ev 0.050→0.035
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0348  p=0.5000  af=1.00  coh=0.697 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 ETH $2,325.6850 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:35% [trend,pullback,vol,wick]
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.697  ev 0.050→0.035
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0348  p=0.5000  af=1.00  coh=0.697 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 ETH $2,325.6850 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:35% [trend,pullback,vol,wick]
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.697  ev 0.050→0.035
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0348  p=0.5000  af=1.00  coh=0.697 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 ETH $2,325.6850 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:35% [trend,pullback,vol,wick]
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.697  ev 0.050→0.035
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0348  p=0.5000  af=1.00  coh=0.697 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 ETH $2,325.6850 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:35% [trend,pullback,vol,wick]
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.697  ev 0.050→0.035
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0348  p=0.5000  af=1.00  coh=0.697 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 ETH $2,325.6850 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:35% [trend,pullback,vol,wick]
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.697  ev 0.050→0.035
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0348  p=0.5000  af=1.00  coh=0.697 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 XRP $1.3933 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:54% [trend,pullback,vol,wick]
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.580  ev 0.050→0.030
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.580 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 ADA $0.2496 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:54% [trend,pullback,vol,wick]
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.580  ev 0.050→0.030
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.580 unblock=True fallback=False anti_deadlock=False size×0.25    max_pos[v10.8]: 0.0178→0.0100  mode=neutral  pred=BULL_TREND
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     policy[v10.7/10.8/v10.9/v10.10/v10.12/v10.13]: mode=neutral  pm=1.100  policy_ev=0.0000  risk_ev=0.0000
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:      fw=3.95  pred=BULL_TREND  max_pos=0.0100  ptp×=1.65  corr×=1.00  sxd=False
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:      eff=0.0000  eff_live=0.0000  repl=False  coh=0.580
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:      pp=0.000  mom=0.000  mom_mult×1.00
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     unblock_size[v10.12e]: ×0.25  fallback=False
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     exec_quality[v10.11]: exec_q=0.74 spread=0.0004 slip=0.0011 fill=0.75 lat=1.00
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     risk_budget[v10.12c]: risk=0.75 dd=0.000 sharpe=0.00 ruin=0.000 heat=0.0000 max_heat=0.2250
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [EXEC] regime=BULL_TREND entry=0.24966248 TP=0.25165978 SL=0.24866383 size=0.001391 atr=0.00000652
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [UNBLOCK_LIMIT] ADAUSDT UNBLOCK_RATE_LIMIT: 6/6 trades in last hour — signal skipped
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(ADAUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] ADAUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:18 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.0s)  sym=ADAUSDT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(XRPUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] XRPUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.3s)  sym=XRPUSDT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(XRPUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] XRPUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0348 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.3s)  sym=XRPUSDT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(XRPUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] XRPUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0348 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.3s)  sym=XRPUSDT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(XRPUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] XRPUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0348 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.3s)  sym=XRPUSDT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(XRPUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] XRPUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0348 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.3s)  sym=XRPUSDT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(ADAUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] ADAUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.1s)  sym=ADAUSDT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(XRPUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] XRPUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0348 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.4s)  sym=XRPUSDT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(ADAUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] ADAUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.2s)  sym=ADAUSDT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(ADAUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] ADAUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.2s)  sym=ADAUSDT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(XRPUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] XRPUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0348 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.4s)  sym=XRPUSDT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(XRPUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] XRPUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0348 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.5s)  sym=XRPUSDT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(XRPUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] XRPUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0348 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.5s)  sym=XRPUSDT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(XRPUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [EXEC] regime=BULL_TREND TP=0.25166 SL=0.24866
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 ADA $0.2496 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:54% [trend,pullback,vol,wick]
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.580  ev 0.050→0.030
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.580 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 XRP $1.3933 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:54% [trend,pullback,vol,wick]
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.580  ev 0.050→0.030
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.580 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 XRP $1.3933 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:54% [trend,pullback,vol,wick]
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.697  ev 0.050→0.035
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0348  p=0.5000  af=1.00  coh=0.697 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 XRP $1.3933 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:54% [trend,pullback,vol,wick]
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.697  ev 0.050→0.035
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0348  p=0.5000  af=1.00  coh=0.697 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 XRP $1.3933 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:35% [trend,pullback,vol,wick]
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.697  ev 0.050→0.035
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0348  p=0.5000  af=1.00  coh=0.697 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 XRP $1.3933 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:35% [trend,pullback,vol,wick]
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.697  ev 0.050→0.035
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0348  p=0.5000  af=1.00  coh=0.697 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 ADA $0.2496 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:54% [trend,pullback,vol,wick]
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.580  ev 0.050→0.030
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.580 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 XRP $1.3933 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:35% [trend,pullback,vol,wick]
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.697  ev 0.050→0.035
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0348  p=0.5000  af=1.00  coh=0.697 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 ADA $0.2496 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:54% [trend,pullback,vol,wick]
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.580  ev 0.050→0.030
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.580 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 ADA $0.2496 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:54% [trend,pullback,vol,wick]
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.580  ev 0.050→0.030
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.580 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 XRP $1.3933 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:35% [trend,pullback,vol,wick]
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.697  ev 0.050→0.035
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0348  p=0.5000  af=1.00  coh=0.697 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 XRP $1.3933 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:35% [trend,pullback,vol,wick]
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.697  ev 0.050→0.035
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0348  p=0.5000  af=1.00  coh=0.697 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 XRP $1.3933 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:35% [trend,pullback,vol,wick]
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.697  ev 0.050→0.035
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0348  p=0.5000  af=1.00  coh=0.697 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 XRP $1.3933 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:35% [trend,pullback,vol,wick][ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] XRPUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0348 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.5s)  sym=XRPUSDT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(XRPUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] XRPUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0348 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.5s)  sym=XRPUSDT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(XRPUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] XRPUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.5s)  sym=XRPUSDT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(XRPUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] XRPUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     max_pos[v10.8]: 0.0178→0.0100  mode=neutral  pred=BULL_TREND
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     policy[v10.7/10.8/v10.9/v10.10/v10.12/v10.13]: mode=neutral  pm=1.100  policy_ev=0.0000  risk_ev=0.0000
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:      fw=3.10  pred=BULL_TREND  max_pos=0.0100  ptp×=1.65  corr×=1.00  sxd=False
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:      eff=0.0000  eff_live=0.0000  repl=False  coh=0.523
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:      pp=0.000  mom=0.000  mom_mult×1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     unblock_size[v10.12e]: ×0.25  fallback=False
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     exec_quality[v10.11]: exec_q=0.99 spread=0.0001 slip=0.0009 fill=1.00 lat=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     risk_budget[v10.12c]: risk=0.75 dd=0.000 sharpe=0.00 ruin=0.000 heat=0.0000 max_heat=0.2250
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [EXEC] regime=BULL_TREND entry=1.39269270 TP=1.40383424 SL=1.38712193 size=0.003724 atr=0.00000095
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [UNBLOCK_LIMIT] XRPUSDT UNBLOCK_RATE_LIMIT: 6/6 trades in last hour — signal skipped
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(ADAUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] ADAUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.3s)  sym=ADAUSDT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(ADAUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] ADAUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.4s)  sym=ADAUSDT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(ADAUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] ADAUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.4s)  sym=ADAUSDT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(ADAUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] ADAUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.4s)  sym=ADAUSDT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(ADAUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] ADAUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.4s)  sym=ADAUSDT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(ADAUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] ADAUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.4s)  sym=ADAUSDT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(ETHUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] ETHUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0320 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     max_pos[v10.8]: 0.0178→0.0100  mode=neutral  pred=BULL_TREND
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     policy[v10.7/10.8/v10.9/v10.10/v10.12/v10.13]: mode=neutral  pm=1.100  policy_ev=0.0000  risk_ev=0.0000
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:      fw=3.10  pred=BULL_TREND  max_pos=0.0100  ptp×=1.65  corr×=1.00  sxd=False
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:      eff=0.0000  eff_live=0.0000  repl=False  coh=0.640
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:      pp=0.000  mom=0.000  mom_mult×1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     unblock_size[v10.12e]: ×0.25  fallback=False
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     exec_quality[v10.11]: exec_q=0.99 spread=0.0000 slip=0.0009 fill=1.00 lat=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     risk_budget[v10.12c]: risk=0.75 dd=0.000 sharpe=0.00 ruin=0.000 heat=0.0000 max_heat=0.2250
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [EXEC] regime=BULL_TREND entry=2324.78471400 TP=2343.38299171 SL=2315.48557514 size=0.003725 atr=0.00193605
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [UNBLOCK_LIMIT] ETHUSDT UNBLOCK_RATE_LIMIT: 6/6 trades in last hour — signal skipped
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(ETHUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] ETHUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0320 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.0s)  sym=ETHUSDT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(ETHUSDT): Generated valid signal BUY (edge=trend_pullback)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] ETHUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0447 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     max_pos[v10.8]: 0.0212→0.0119  mode=neutral  pred=BULL_TREND
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     policy[v10.7/10.8/v10.9/v10.10/v10.12/v10.13]: mode=neutral  pm=1.100  policy_ev=0.0000  risk_ev=0.0000
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:      fw=5.40  pred=BULL_TREND  max_pos=0.0119  ptp×=1.65  corr×=1.00  sxd=False
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:      eff=0.0000  eff_live=0.0000  repl=False  coh=0.893
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:      pp=0.000  mom=0.000  mom_mult×1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     unblock_size[v10.12e]: ×0.25  fallback=False
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     exec_quality[v10.11]: exec_q=0.99 spread=0.0000 slip=0.0009 fill=1.00 lat=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     risk_budget[v10.12c]: risk=0.75 dd=0.000 sharpe=0.00 ruin=0.000 heat=0.0000 max_heat=0.2250
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [EXEC] regime=BULL_TREND entry=2324.78971200 TP=2343.38802970 SL=2315.49055315 size=0.004437 atr=0.00205340
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [UNBLOCK_LIMIT] ETHUSDT UNBLOCK_RATE_LIMIT: 6/6 trades in last hour — signal skipped
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(ADAUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.697  ev 0.050→0.035
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0348  p=0.5000  af=1.00  coh=0.697 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 XRP $1.3933 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:35% [trend,pullback,vol,wick]
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.697  ev 0.050→0.035
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0348  p=0.5000  af=1.00  coh=0.697 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 XRP $1.3933 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:35% [trend,pullback,vol,wick]
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.580  ev 0.050→0.030
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.580 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 XRP $1.3933 | [fake_breakout] sc:3/7  ws:0.50 | BULL_TREND | conf:35% [trend,pullback,wick]
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.523  ev 0.050→0.030
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.523 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [EXEC] regime=BULL_TREND TP=1.40383 SL=1.38712
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 ADA $0.2496 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:54% [trend,pullback,vol,wick]
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.522  ev 0.050→0.030
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.522 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 ADA $0.2496 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:54% [trend,pullback,vol,wick]
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.522  ev 0.050→0.030
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.522 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 ADA $0.2496 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:54% [trend,pullback,vol,wick]
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.522  ev 0.050→0.030
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.522 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 ADA $0.2496 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:54% [trend,pullback,vol,wick]
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.522  ev 0.050→0.030
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.522 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 ADA $0.2496 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:35% [trend,pullback,vol,wick]
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.522  ev 0.050→0.030
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.522 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 ADA $0.2496 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:35% [trend,pullback,vol,wick]
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.522  ev 0.050→0.030
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.522 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 ETH $2,325.7150 | [fake_breakout] sc:3/7  ws:0.50 | BULL_TREND | conf:35% [trend,pullback,wick]
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.640  ev 0.050→0.032
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0320  p=0.5000  af=1.00  coh=0.640 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [EXEC] regime=BULL_TREND TP=2343.38299 SL=2315.48558
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 ETH $2,325.7150 | [fake_breakout] sc:3/7  ws:0.50 | BULL_TREND | conf:35% [trend,pullback,wick]
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.640  ev 0.050→0.032
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0320  p=0.5000  af=1.00  coh=0.640 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 ETH $2,325.7200 | [trend_pullback] sc:6/7  ws:0.50 | BULL_TREND | conf:35% [trend,pullback,bounce,breakout,mom,wick]
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.893  ev 0.050→0.045
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0447  p=0.5000  af=1.00  coh=0.893 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [EXEC] regime=BULL_TREND TP=2343.38803 SL=2315.49055
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 ADA $0.2496 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:35% [trend,pullback,vol,wick][ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] ADAUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.4s)  sym=ADAUSDT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(ADAUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] ADAUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.4s)  sym=ADAUSDT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(ADAUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] ADAUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.4s)  sym=ADAUSDT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(ADAUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] ADAUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.5s)  sym=ADAUSDT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(ETHUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] ETHUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0320 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     max_pos[v10.8]: 0.0178→0.0100  mode=neutral  pred=BULL_TREND
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     policy[v10.7/10.8/v10.9/v10.10/v10.12/v10.13]: mode=neutral  pm=1.100  policy_ev=0.0000  risk_ev=0.0000
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:      fw=3.10  pred=BULL_TREND  max_pos=0.0100  ptp×=1.65  corr×=1.00  sxd=False
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:      eff=0.0000  eff_live=0.0000  repl=False  coh=0.640
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:      pp=0.000  mom=0.000  mom_mult×1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     unblock_size[v10.12e]: ×0.25  fallback=False
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     exec_quality[v10.11]: exec_q=0.99 spread=0.0000 slip=0.0009 fill=1.00 lat=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     risk_budget[v10.12c]: risk=0.75 dd=0.000 sharpe=0.00 ruin=0.000 heat=0.0000 max_heat=0.2250
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [EXEC] regime=BULL_TREND entry=2324.79471000 TP=2343.39306768 SL=2315.49553116 size=0.003725 atr=0.00130440
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [UNBLOCK_LIMIT] ETHUSDT UNBLOCK_RATE_LIMIT: 6/6 trades in last hour — signal skipped
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(ETHUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] ETHUSDT BUY QUIET_RANGE NEUTRAL dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     portfolio gate: quiet_atr_fee  sym=ETHUSDT  atr=0.0030<0.0037
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(ETHUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] ETHUSDT BUY QUIET_RANGE NEUTRAL dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.1s)  sym=ETHUSDT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(ETHUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] ETHUSDT BUY QUIET_RANGE NEUTRAL dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.1s)  sym=ETHUSDT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(ETHUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] ETHUSDT BUY QUIET_RANGE NEUTRAL dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     portfolio gate: quiet_atr_fee  sym=ETHUSDT  atr=0.0030<0.0037
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(ETHUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] ETHUSDT BUY QUIET_RANGE NEUTRAL dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0301 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.0s)  sym=ETHUSDT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(ETHUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] ETHUSDT BUY QUIET_RANGE NEUTRAL dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0301 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.0s)  sym=ETHUSDT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(ETHUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] ETHUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0305 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     max_pos[v10.8]: 0.0178→0.0100  mode=neutral  pred=BULL_TREND
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     policy[v10.7/10.8/v10.9/v10.10/v10.12/v10.13]: mode=neutral  pm=1.100  policy_ev=0.0000  risk_ev=0.0000
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:      fw=3.95  pred=BULL_TREND  max_pos=0.0100  ptp×=1.65  corr×=1.00  sxd=False
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:      eff=0.0000  eff_live=0.0000  repl=False  coh=0.609
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:      pp=0.000  mom=0.000  mom_mult×1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     unblock_size[v10.12e]: ×0.25  fallback=False
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     exec_quality[v10.11]: exec_q=0.99 spread=0.0000 slip=0.0009 fill=1.00 lat=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     risk_budget[v10.12c]: risk=0.75 dd=0.000 sharpe=0.00 ruin=0.000 heat=0.0000 max_heat=0.2250
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [EXEC] regime=BULL_TREND entry=2326.93288500 TP=2345.54834808 SL=2317.62515346 size=0.001858 atr=0.00328113
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [UNBLOCK_LIMIT] ETHUSDT UNBLOCK_RATE_LIMIT: 6/6 trades in last hour — signal skipped
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(ETHUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] ETHUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0305 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.0s)  sym=ETHUSDT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(ETHUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.522  ev 0.050→0.030
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.522 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 ADA $0.2496 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:35% [trend,pullback,vol,wick]
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.500  ev 0.050→0.030
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 ADA $0.2496 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:35% [trend,pullback,vol,wick]
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.500  ev 0.050→0.030
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 ADA $0.2496 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:35% [trend,pullback,vol,wick]
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.500  ev 0.050→0.030
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 ETH $2,325.7250 | [fake_breakout] sc:3/7  ws:0.50 | BULL_TREND | conf:35% [trend,pullback,wick]
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.640  ev 0.050→0.032
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0320  p=0.5000  af=1.00  coh=0.640 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [EXEC] regime=BULL_TREND TP=2343.39307 SL=2315.49553
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 ETH $2,325.7250 | [fake_breakout] sc:3/7  ws:0.50 | QUIET_RANGE | conf:36% [trend,pullback,mom]
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.500  ev 0.050→0.030
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 ETH $2,325.7250 | [fake_breakout] sc:3/7  ws:0.50 | QUIET_RANGE | conf:36% [trend,pullback,mom]
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.573  ev 0.050→0.030
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.573 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 ETH $2,325.7250 | [fake_breakout] sc:3/7  ws:0.50 | QUIET_RANGE | conf:36% [trend,pullback,mom]
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.573  ev 0.050→0.030
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.573 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 ETH $2,325.7250 | [fake_breakout] sc:3/7  ws:0.50 | QUIET_RANGE | conf:36% [trend,pullback,wick]
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.500  ev 0.050→0.030
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.500 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 ETH $2,325.7250 | [fake_breakout] sc:3/7  ws:0.50 | QUIET_RANGE | conf:36% [trend,pullback,wick]
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.602  ev 0.050→0.030
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0301  p=0.5000  af=1.00  coh=0.602 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 ETH $2,325.7250 | [fake_breakout] sc:3/7  ws:0.50 | QUIET_RANGE | conf:36% [trend,pullback,wick]
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.602  ev 0.050→0.030
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0301  p=0.5000  af=1.00  coh=0.602 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 ETH $2,325.7700 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:54% [trend,pullback,vol,wick]
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.609  ev 0.050→0.030
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0305  p=0.5000  af=1.00  coh=0.609 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [EXEC] regime=BULL_TREND TP=2345.54835 SL=2317.62515
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 ETH $2,325.7700 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:54% [trend,pullback,vol,wick]
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.609  ev 0.050→0.030
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0305  p=0.5000  af=1.00  coh=0.609 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 ETH $2,325.7700 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:54% [trend,pullback,vol,wick]
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00[V10.13w DECISION] ETHUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0305 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.0s)  sym=ETHUSDT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(ETHUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] ETHUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0305 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.0s)  sym=ETHUSDT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(ETHUSDT): Generated valid signal SELL (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [OFI_BLOCK] OFI_SOFT_SOFT_LIGHT       ETHUSDT /SELL size_mult=0.88 result=SOFT  — OFI toxicity 0.88: applying size penalty
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] ETHUSDT SELL BULL_TREND COUNTER_REGIME dir_src=signal_engine regime_src=regime_detector countertrend=yes | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=0.88 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     max_pos[v10.8]: 0.0157→0.0100  mode=neutral  pred=BULL_TREND
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     policy[v10.7/10.8/v10.9/v10.10/v10.12/v10.13]: mode=neutral  pm=0.900  policy_ev=0.0000  risk_ev=0.0000
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:      fw=3.80  pred=BULL_TREND  max_pos=0.0100  ptp×=1.35  corr×=1.00  sxd=False
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:      eff=0.0000  eff_live=0.0000  repl=False  coh=0.565
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:      pp=0.000  mom=0.000  mom_mult×1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     unblock_size[v10.12e]: ×0.25  fallback=False
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     exec_quality[v10.11]: exec_q=0.52 spread=0.0000 slip=0.0009 fill=0.75 lat=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     risk_budget[v10.12c]: risk=0.75 dd=0.000 sharpe=0.00 ruin=0.000 heat=0.0000 max_heat=0.2250
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [EXEC] regime=BULL_TREND entry=2324.60211750 TP=2306.00530056 SL=2333.90052597 size=0.001956 atr=0.00253476
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [UNBLOCK_LIMIT] ETHUSDT UNBLOCK_RATE_LIMIT: 6/6 trades in last hour — signal skipped
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(ETHUSDT): Generated valid signal SELL (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [OFI_BLOCK] OFI_SOFT_SOFT_LIGHT       ETHUSDT /SELL size_mult=0.88 result=SOFT  — OFI toxicity 0.88: applying size penalty
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] ETHUSDT SELL BULL_TREND COUNTER_REGIME dir_src=signal_engine regime_src=regime_detector countertrend=yes | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=0.88 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     max_pos[v10.8]: 0.0157→0.0100  mode=neutral  pred=BULL_TREND
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     policy[v10.7/10.8/v10.9/v10.10/v10.12/v10.13]: mode=neutral  pm=0.900  policy_ev=0.0000  risk_ev=0.0000
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:      fw=2.70  pred=BULL_TREND  max_pos=0.0100  ptp×=1.35  corr×=1.00  sxd=False
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:      eff=0.0000  eff_live=0.0000  repl=False  coh=0.513
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:      pp=0.000  mom=0.000  mom_mult×1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     unblock_size[v10.12e]: ×0.25  fallback=False
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     exec_quality[v10.11]: exec_q=0.52 spread=0.0000 slip=0.0009 fill=0.75 lat=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     risk_budget[v10.12c]: risk=0.75 dd=0.000 sharpe=0.00 ruin=0.000 heat=0.0000 max_heat=0.2250
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [EXEC] regime=BULL_TREND entry=2325.64871175 TP=2307.04352206 SL=2334.95130660 size=0.000975 atr=0.00219636
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [UNBLOCK_LIMIT] ETHUSDT UNBLOCK_RATE_LIMIT: 6/6 trades in last hour — signal skipped
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(ETHUSDT): Generated valid signal SELL (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [OFI_BLOCK] OFI_SOFT_SOFT_LIGHT       ETHUSDT /SELL size_mult=0.88 result=SOFT  — OFI toxicity 0.88: applying size penalty
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] ETHUSDT SELL BULL_TREND COUNTER_REGIME dir_src=signal_engine regime_src=regime_detector countertrend=yes | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=0.88 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.0s)  sym=ETHUSDT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(ETHUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] ETHUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     max_pos[v10.8]: 0.0178→0.0100  mode=neutral  pred=BULL_TREND
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     policy[v10.7/10.8/v10.9/v10.10/v10.12/v10.13]: mode=neutral  pm=1.100  policy_ev=0.0000  risk_ev=0.0000
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:      fw=3.95  pred=BULL_TREND  max_pos=0.0100  ptp×=1.65  corr×=1.00  sxd=False
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:      eff=0.0000  eff_live=0.0000  repl=False  coh=0.522
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:      pp=0.000  mom=0.000  mom_mult×1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     unblock_size[v10.12e]: ×0.25  fallback=False
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     exec_quality[v10.11]: exec_q=0.99 spread=0.0000 slip=0.0009 fill=1.00 lat=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     risk_budget[v10.12c]: risk=0.75 dd=0.000 sharpe=0.00 ruin=0.000 heat=0.0000 max_heat=0.2250
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [EXEC] regime=BULL_TREND entry=2325.88128825 TP=2344.48833856 SL=2316.57776310 size=0.003725 atr=0.00123805
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [UNBLOCK_LIMIT] ETHUSDT UNBLOCK_RATE_LIMIT: 6/6 trades in last hour — signal skipped
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(ETHUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] ETHUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.0s)  sym=ETHUSDT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(ETHUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] ETHUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0305 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.0s)  sym=ETHUSDT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(ETHUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] ETHUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.0s)  sym=ETHUSDT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(ETHUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] ETHUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0305 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.0s)  sym=ETHUSDT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(ETHUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] ETHUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0320 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     max_pos[v10.8]: 0.0178→0.0100  mode=neutral  pred=BULL_TREND
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     policy[v10.7/10.8/v10.9/v10.10/v10.12/v10.13]: mode=neutral  pm=1.100  policy_ev=0.0000  risk_ev=0.0000
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:      fw=3.10  pred=BULL_TREND  max_pos=0.0100  ptp×=1.65  corr×=1.00  sxd=False
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:      eff=0.0000  eff_live=0.0000  repl=False  coh=0.640
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:      pp=0.000  mom=0.000  mom_mult×1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     unblock_size[v10.12e]: ×0.25  fallback=False
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     exec_quality[v10.11]: exec_q=0.99 spread=0.0000 slip=0.0009 fill=1.00 lat=1.00
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     risk_budget[v10.12c]: risk=0.75 dd=0.000 sharpe=0.00 ruin=0.000 heat=0.0000 max_heat=0.2250
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [EXEC] regime=BULL_TREND entry=2324.83469400 TP=2343.43337155 SL=2315.53535522 size=0.001858 atr=0.00057772
+Apr 29 07:49:19 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [UNBLOCK_LIMIT] ETHUSDT UNBLOCK_RATE_LIMIT: 6/6 trades in last hour — signal skipped
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(BTCUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] BTCUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     max_pos[v10.8]: 0.0178→0.0100  mode=neutral  pred=BULL_TREND
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     policy[v10.7/10.8/v10.9/v10.10/v10.12/v10.13]: mode=neutral  pm=1.100  policy_ev=0.0000  risk_ev=0.0000
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:      fw=3.95  pred=BULL_TREND  max_pos=0.0100  ptp×=1.65  corr×=1.00  sxd=False
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:      eff=0.0000  eff_live=0.0000  repl=False  coh=0.580
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:      pp=0.000  mom=0.000  mom_mult×1.00
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     unblock_size[v10.12e]: ×0.25  fallback=False
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     exec_quality[v10.11]: exec_q=0.99 spread=0.0000 slip=0.0009 fill=1.00 lat=1.00
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     risk_budget[v10.12c]: risk=0.75 dd=0.000 sharpe=0.00 ruin=0.000 heat=0.0000 max_heat=0.2250
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [EXEC] regime=BULL_TREND entry=77102.94995475 TP=77719.77355439 SL=76794.53815493 size=0.003725 atr=0.40549881
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [UNBLOCK_LIMIT] BTCUSDT UNBLOCK_RATE_LIMIT: 6/6 trades in last hour — signal skipped
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(BTCUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] BTCUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.609  ev 0.050→0.030
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0305  p=0.5000  af=1.00  coh=0.609 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 ETH $2,325.7700 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:54% [trend,pullback,vol,wick]
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.609  ev 0.050→0.030
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0305  p=0.5000  af=1.00  coh=0.609 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🔴 ETH $2,325.7650 | [fake_breakout] sc:5/7  ws:0.50 | BULL_TREND | conf:36% [pullback,bounce,vol,mom,wick]
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.565  ev 0.050→0.030
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     OFI penalty: size×0.88
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0300  p=0.5000  af=0.88  coh=0.565 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [EXEC] regime=BULL_TREND TP=2306.00530 SL=2333.90053
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🔴 ETH $2,325.7650 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:36% [pullback,vol,mom,wick]
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.513  ev 0.050→0.030
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     OFI penalty: size×0.88
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0300  p=0.5000  af=0.88  coh=0.513 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [EXEC] regime=BULL_TREND TP=2307.04352 SL=2334.95131
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🔴 ETH $2,325.7650 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:36% [pullback,vol,mom,wick]
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.513  ev 0.050→0.030
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     OFI penalty: size×0.88
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0300  p=0.5000  af=0.88  coh=0.513 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 ETH $2,325.7650 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:51% [trend,pullback,vol,wick]
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.522  ev 0.050→0.030
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.522 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [EXEC] regime=BULL_TREND TP=2344.48834 SL=2316.57776
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 ETH $2,325.7650 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:51% [trend,pullback,vol,wick]
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.522  ev 0.050→0.030
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.522 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 ETH $2,325.7650 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:51% [trend,pullback,vol,wick]
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.609  ev 0.050→0.030
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0305  p=0.5000  af=1.00  coh=0.609 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 ETH $2,325.7650 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:51% [trend,pullback,vol,wick]
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.522  ev 0.050→0.030
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.522 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 ETH $2,325.7650 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:51% [trend,pullback,vol,wick]
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.609  ev 0.050→0.030
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0305  p=0.5000  af=1.00  coh=0.609 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 ETH $2,325.7650 | [fake_breakout] sc:3/7  ws:0.50 | BULL_TREND | conf:51% [trend,pullback,wick]
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.640  ev 0.050→0.032
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0320  p=0.5000  af=1.00  coh=0.640 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [EXEC] regime=BULL_TREND TP=2343.43337 SL=2315.53536
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 BTC $77,099.0950 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:54% [trend,pullback,vol,wick]
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.580  ev 0.050→0.030
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.580 unblock=True fallback=False anti_deadlock=False size×0.25
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [EXEC] regime=BULL_TREND TP=77719.77355 SL=76794.53815
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:   🟢 BTC $77,099.0950 | [fake_breakout] sc:4/7  ws:0.50 | BULL_TREND | conf:54% [trend,pullback,vol,wick]
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     EV=0.050  p=0.50  rr=1.25  ws=0.500  score=0.185[n=0]  t15=0  spread=0.000  af=1.00
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     RDE[v10.10b]: ev=0.050 thr=-0.142 vel_pen=1.00 streak_pen=1.00 combo_pen=1.00 emergency=True
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     coherence[v10.12]: 0.580  ev 0.050→0.030
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     [V10.13u/PATCH5] SCORE_THRESHOLD: bootstrap active (global_trades=0<100 | uptime=33min<60,trades=0<150) + idle_mode=UNBLOCK_HARD → relaxed from 0.1200 to 0.0979
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     decision=TAKE  ev=0.0300  p=0.5000  af=1.00  coh=0.580 unblock=True fallback=False anti_deadlock=False size×0.25    candidate_gate: DUPLICATE_CANDIDATE(age=0.0s)  sym=BTCUSDT
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(BTCUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] BTCUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.0s)  sym=BTCUSDT
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(BTCUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] BTCUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.0s)  sym=BTCUSDT
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(BTCUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] BTCUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.0s)  sym=BTCUSDT
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(BTCUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] BTCUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.0s)  sym=BTCUSDT
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(BTCUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] BTCUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.0s)  sym=BTCUSDT
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(BTCUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] BTCUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.0s)  sym=BTCUSDT
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(BTCUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] BTCUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.0s)  sym=BTCUSDT
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(BTCUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] BTCUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.0s)  sym=BTCUSDT
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(BTCUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] BTCUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.0s)  sym=BTCUSDT
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(BTCUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] BTCUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.0s)  sym=BTCUSDT
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(BTCUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] BTCUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.1s)  sym=BTCUSDT
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(BTCUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] BTCUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.1s)  sym=BTCUSDT
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: on_price(BTCUSDT): Generated valid signal BUY (edge=fake_breakout)
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [ECONOMIC_GATE] [ECONOMIC_GATE] Insufficient trade data size_mult=1.00
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]: [V10.13w DECISION] BTCUSDT BUY BULL_TREND WITH_REGIME dir_src=signal_engine regime_src=regime_detector | ev_raw=0.0500 ev_final=0.0300 score_raw=0.1850 score_threshold=0.0979 auditor_factor=1.00 confidence=0.5000 | ACCEPT
+Apr 29 07:49:20 ubuntu-4gb-nbg1-1 cryptomaster[268699]:     candidate_gate: DUPLICATE_CANDIDATE(age=0.1s)  sym=BTCUSDT

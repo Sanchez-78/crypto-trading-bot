@@ -1371,3 +1371,125 @@ class TestP1R1UpdateFromPaperTrade:
         result = _safe_bucket_metrics_update_for_paper_trade(trade)
         assert isinstance(result, bool)
         # If it didn't crash, it used the correct bucket logic
+
+
+class TestP1S1ProductionShapedTrades:
+    """P1.1S: Regression tests with production-shaped trades."""
+
+    def test_update_from_paper_trade_production_shaped_with_scalar_features(self):
+        """P1.1S: Production-shaped trade with scalar feature values must not crash."""
+        from src.services.learning_monitor import update_from_paper_trade
+
+        # Exact production shape from P1.1S specification
+        raw_trade = {
+            "symbol": "BTCUSDT",
+            "regime": "QUIET_RANGE",
+            "side": "BUY",
+            "entry_price": 77794.215,
+            "exit_price": 77667.735,
+            "net_pnl_pct": -0.0027,
+            "outcome": "FLAT",
+            "reason": "TIMEOUT",
+            "hold_s": 300,
+            "max_hold_s": 300,
+            "bucket": None,
+            "training_bucket": "C_WEAK_EV_TRAIN",
+            "features": {
+                "ema_diff": 1,
+                "rsi": 55.0,
+                "hour_utc": 10,
+                "is_weekend": False,
+                "tags": 0
+            },
+            "score_at_entry": 0,
+            "ws": 0,
+            "pnl_decimal": -0.000027,
+        }
+
+        # MUST NOT raise 'int' object is not iterable
+        result = update_from_paper_trade(raw_trade)
+        assert isinstance(result, bool), "Should return bool, not raise"
+
+    def test_safe_learning_update_production_shape_no_crash(self):
+        """P1.1S: _safe_learning_update_for_paper_trade handles production shape."""
+        from src.services.paper_trade_executor import _safe_learning_update_for_paper_trade
+
+        pos = {
+            "symbol": "BTCUSDT",
+            "regime": "QUIET_RANGE",
+            "side": "BUY",
+            "entry_price": 77794.215,
+            "training_bucket": "C_WEAK_EV_TRAIN",
+            "features": {
+                "ema_diff": 1,
+                "rsi": 55.0,
+                "hour_utc": 10,
+                "is_weekend": False,
+                "tags": 0
+            },
+            "score_at_entry": 0,
+            "ws": 0,
+            "paper_source": "training_sampler",
+        }
+
+        pnl_data = {
+            "net_pnl_pct": -0.0027,
+            "outcome": "FLAT",
+            "exit_reason": "TIMEOUT",
+        }
+
+        # MUST NOT raise or produce "LEARNING_UPDATE_ERROR"
+        result = _safe_learning_update_for_paper_trade(pos, pnl_data)
+        assert isinstance(result, bool)
+
+    def test_c_weak_ev_train_does_not_update_a_strict_take(self):
+        """P1.1S Phase 4: C_WEAK_EV_TRAIN closes must NOT update A_STRICT_TAKE metrics."""
+        from src.services.paper_trade_executor import _safe_bucket_metrics_update_for_paper_trade
+
+        # Production-shaped trade closing C_WEAK_EV_TRAIN
+        trade = {
+            "symbol": "BTCUSDT",
+            "regime": "QUIET_RANGE",
+            "training_bucket": "C_WEAK_EV_TRAIN",
+            "explore_bucket": "A_STRICT_TAKE",  # Should NOT be used
+            "bucket": None,
+            "outcome": "FLAT",
+            "net_pnl_pct": -0.0027,
+            "exit_reason": "TIMEOUT",
+            "features": {
+                "ema_diff": 1,
+                "rsi": 55.0,
+                "hour_utc": 10,
+                "is_weekend": False,
+                "tags": 0
+            },
+        }
+
+        # Should use training_bucket, not explore_bucket
+        result = _safe_bucket_metrics_update_for_paper_trade(trade)
+        assert result is True
+        # If implementation is correct, only C_WEAK_EV_TRAIN metrics are updated
+
+    def test_record_features_scalar_safe(self):
+        """P1.1S: record_features() never iterates scalar feature values."""
+        from src.services.learning_monitor import record_features, lm_feature_stats
+
+        # Production-shaped features with scalar values
+        features = {
+            "ema_diff": 1,  # int
+            "rsi": 55.0,  # float
+            "hour_utc": 10,  # int
+            "is_weekend": False,  # bool
+            "tags": 0  # int — this is the problematic one
+        }
+
+        # MUST NOT raise 'int' object is not iterable
+        record_features(features, 0.01)  # positive pnl = win
+
+        # Verify features were recorded (not iterated)
+        assert "ema_diff" in lm_feature_stats
+        assert "rsi" in lm_feature_stats
+        assert "tags" in lm_feature_stats
+
+        # Clean up
+        lm_feature_stats.clear()

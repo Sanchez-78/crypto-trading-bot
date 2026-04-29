@@ -714,7 +714,7 @@ def _safe_learning_update_for_paper_trade(pos: dict, pnl_data: dict) -> bool:
 
     except Exception as e:
         bucket = pos.get("training_bucket") or pos.get("explore_bucket") or "UNKNOWN"
-        log.error(
+        log.exception(
             "[LEARNING_UPDATE_ERROR] err=%s symbol=%s bucket=%s fn=update_from_paper_trade",
             str(e),
             pos.get("symbol", "UNKNOWN"),
