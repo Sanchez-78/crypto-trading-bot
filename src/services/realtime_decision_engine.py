@@ -3676,6 +3676,45 @@ def evaluate_signal(signal):
         except Exception:
             pass  # Graceful degrade if exploration unavailable
 
+        # P1.1L Phase 4: Try paper training sampler for negative EV reject
+        try:
+            from src.services.paper_training_sampler import maybe_open_training_sample
+            from src.services.paper_trade_executor import open_paper_position
+
+            sampler_result = maybe_open_training_sample(
+                signal=signal,
+                ctx={},
+                reason="REJECT_NEGATIVE_EV",
+                current_price=signal.get("price") if signal else None,
+            )
+
+            if sampler_result.get("allowed"):
+                # Open paper training position with metadata
+                extra = {
+                    "paper_source": "training_sampler",
+                    "training_bucket": sampler_result.get("bucket"),
+                    "explore_bucket": sampler_result.get("bucket"),
+                    "original_decision": "REJECT_NEGATIVE_EV",
+                    "reject_reason": "negative_ev",
+                    "side_inferred": sampler_result.get("side_inferred", False),
+                    "cost_edge_ok": sampler_result.get("cost_edge_ok", False),
+                    "expected_move_pct": sampler_result.get("expected_move_pct", 0.0),
+                    "required_move_pct": sampler_result.get("required_move_pct", 0.0),
+                    "size_mult": sampler_result.get("size_mult", 1.0),
+                    "max_hold_s": sampler_result.get("max_hold_s", 300),
+                    "tags": sampler_result.get("tags", []),
+                }
+
+                open_paper_position(
+                    signal=signal,
+                    price=signal.get("price", 0),
+                    ts=_time.time(),
+                    reason="PAPER_TRAINING",
+                    extra=extra,
+                )
+        except Exception:
+            pass  # Graceful degrade if training sampler unavailable
+
         return None
 
     # ════════════════════════════════════════════════════════════════════════════════
@@ -3818,6 +3857,46 @@ def evaluate_signal(signal):
             _maybe_flush_econ_bad_diagnostics()
             # V10.13u+18g: Emit from rejection path as production-safe fallback
             _maybe_emit_econ_bad_diag_from_reject(source="rde_reject")
+
+            # P1.1L Phase 4: Try paper training sampler for ECON_BAD_ENTRY reject
+            try:
+                from src.services.paper_training_sampler import maybe_open_training_sample
+                from src.services.paper_trade_executor import open_paper_position
+
+                sampler_result = maybe_open_training_sample(
+                    signal=signal,
+                    ctx=_probe_ctx,
+                    reason="REJECT_ECON_BAD_ENTRY",
+                    current_price=signal.get("price") if signal else None,
+                )
+
+                if sampler_result.get("allowed"):
+                    # Open paper training position with metadata
+                    extra = {
+                        "paper_source": "training_sampler",
+                        "training_bucket": sampler_result.get("bucket"),
+                        "explore_bucket": sampler_result.get("bucket"),
+                        "original_decision": "REJECT_ECON_BAD_ENTRY",
+                        "reject_reason": _econ_bad_reason,
+                        "side_inferred": sampler_result.get("side_inferred", False),
+                        "cost_edge_ok": sampler_result.get("cost_edge_ok", False),
+                        "expected_move_pct": sampler_result.get("expected_move_pct", 0.0),
+                        "required_move_pct": sampler_result.get("required_move_pct", 0.0),
+                        "size_mult": sampler_result.get("size_mult", 1.0),
+                        "max_hold_s": sampler_result.get("max_hold_s", 300),
+                        "tags": sampler_result.get("tags", []),
+                    }
+
+                    open_paper_position(
+                        signal=signal,
+                        price=signal.get("price", 0),
+                        ts=_time.time(),
+                        reason="PAPER_TRAINING",
+                        extra=extra,
+                    )
+            except Exception:
+                pass  # Graceful degrade if training sampler unavailable
+
             return None
 
     # V10.13u+16: Forced exploration gate during ECON BAD
@@ -3839,6 +3918,46 @@ def evaluate_signal(signal):
         _maybe_flush_econ_bad_diagnostics()
         # V10.13u+18g: Emit from rejection path as production-safe fallback
         _maybe_emit_econ_bad_diag_from_reject(source="rde_reject")
+
+        # P1.1L Phase 4: Try paper training sampler for ECON_BAD_FORCED reject
+        try:
+            from src.services.paper_training_sampler import maybe_open_training_sample
+            from src.services.paper_trade_executor import open_paper_position
+
+            sampler_result = maybe_open_training_sample(
+                signal=signal,
+                ctx={},
+                reason="REJECT_ECON_BAD_FORCED",
+                current_price=signal.get("price") if signal else None,
+            )
+
+            if sampler_result.get("allowed"):
+                # Open paper training position with metadata
+                extra = {
+                    "paper_source": "training_sampler",
+                    "training_bucket": sampler_result.get("bucket"),
+                    "explore_bucket": sampler_result.get("bucket"),
+                    "original_decision": "REJECT_ECON_BAD_FORCED",
+                    "reject_reason": _forced_reason,
+                    "side_inferred": sampler_result.get("side_inferred", False),
+                    "cost_edge_ok": sampler_result.get("cost_edge_ok", False),
+                    "expected_move_pct": sampler_result.get("expected_move_pct", 0.0),
+                    "required_move_pct": sampler_result.get("required_move_pct", 0.0),
+                    "size_mult": sampler_result.get("size_mult", 1.0),
+                    "max_hold_s": sampler_result.get("max_hold_s", 300),
+                    "tags": sampler_result.get("tags", []),
+                }
+
+                open_paper_position(
+                    signal=signal,
+                    price=signal.get("price", 0),
+                    ts=_time.time(),
+                    reason="PAPER_TRAINING",
+                    extra=extra,
+                )
+        except Exception:
+            pass  # Graceful degrade if training sampler unavailable
+
         return None
 
     # V10.13u+16: Log guard activation (throttled)

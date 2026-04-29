@@ -509,7 +509,7 @@ def close_paper_position(
     }
 
     log.warning(
-        "[PAPER_EXIT] symbol=%s reason=%s entry=%.8f exit=%.8f net_pnl_pct=%.4f outcome=%s hold_s=%d max_hold_s=%d bucket=%s",
+        "[PAPER_EXIT] symbol=%s reason=%s entry=%.8f exit=%.8f net_pnl_pct=%.4f outcome=%s hold_s=%d max_hold_s=%d bucket=%s training_bucket=%s",
         pos["symbol"],
         reason,
         pos["entry_price"],
@@ -519,7 +519,53 @@ def close_paper_position(
         int(duration_s),
         int(pos.get("max_hold_s") or _MAX_AGE_S),
         pos.get("explore_bucket", "A_STRICT_TAKE"),
+        pos.get("training_bucket", ""),
     )
+
+    # P1.1L Phase 6: Call learning update for training trades
+    if pos.get("paper_source") == "training_sampler":
+        try:
+            from src.services.learning_monitor import lm_on_closed_trade
+            from src.services.paper_training_sampler import record_training_closed, record_training_learning_update
+
+            # Record training trade metrics
+            record_training_closed(
+                bucket=pos.get("training_bucket", pos.get("explore_bucket", "")),
+                outcome=pnl_data["outcome"],
+            )
+
+            # Update learning monitor with training trade
+            trade_for_learning = {
+                "symbol": pos["symbol"],
+                "side": pos["side"],
+                "entry_price": pos["entry_price"],
+                "exit_price": price,
+                "entry_ts": pos["entry_ts"],
+                "exit_ts": ts,
+                "regime": pos.get("regime", "RANGING"),
+                "pnl_pct": pnl_data["net_pnl_pct"],
+                "pnl": pnl_data["net_pnl_pct"] / 100.0 * pos["size_usd"],
+                "outcome": pnl_data["outcome"],
+                "result": "WIN" if pnl_data["outcome"] == "WIN" else ("LOSS" if pnl_data["outcome"] == "LOSS" else "FLAT"),
+                "reason": reason,
+                "hold_s": duration_s,
+                "training_bucket": pos.get("training_bucket", pos.get("explore_bucket", "")),
+                "side_inferred": pos.get("side_inferred", False),
+            }
+
+            lm_on_closed_trade(trade_for_learning)
+            record_training_learning_update()
+
+            log.info(
+                "[LEARNING_UPDATE] source=paper_closed_trade symbol=%s regime=%s bucket=%s outcome=%s net_pnl_pct=%.4f",
+                pos["symbol"],
+                pos.get("regime", "RANGING"),
+                pos.get("training_bucket", pos.get("explore_bucket", "")),
+                pnl_data["outcome"],
+                pnl_data["net_pnl_pct"],
+            )
+        except Exception as e:
+            log.warning("[LEARNING_UPDATE_ERROR] Failed to update learning on training trade: %s", e)
 
     # Persist state after closing position
     _save_paper_state()
