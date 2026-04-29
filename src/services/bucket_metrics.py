@@ -44,11 +44,18 @@ def update_bucket_metrics(closed_trade: dict) -> None:
         closed_trade: Closed trade dict with explore_bucket, outcome, net_pnl_pct, exit_reason, explore_sub_bucket (optional)
     """
     try:
-        # P1.1Q: Defensive parsing — ensure bucket is never None
-        bucket = closed_trade.get("explore_bucket") or "A_STRICT_TAKE"
+        # P1.1U: Bucket extraction — do NOT default to A_STRICT_TAKE for any bucket
+        # The caller is responsible for providing correct bucket value.
+        bucket = closed_trade.get("explore_bucket")
         if bucket is None:
-            bucket = "A_STRICT_TAKE"
-        bucket = str(bucket).strip() or "A_STRICT_TAKE"
+            bucket = closed_trade.get("training_bucket")
+        if bucket is None:
+            bucket = closed_trade.get("bucket")
+        if bucket is None:
+            bucket = "UNKNOWN"
+        bucket = str(bucket).strip()
+        if not bucket:
+            bucket = "UNKNOWN"
 
         # P1.1Q: sub_bucket must be str or empty, never None for iteration contexts
         sub_bucket = closed_trade.get("explore_sub_bucket") or ""

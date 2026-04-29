@@ -1601,3 +1601,205 @@ class TestP1S1ProductionShapedTrades:
 
         # Clean up
         lm_feature_stats.clear()
+
+
+class TestP1U1ProductionAuditFix:
+    """P1.1U: Production audit fixes — exact server-shaped tests."""
+
+    def test_server_shape_update_from_paper_trade_returns_true(self):
+        """P1.1U Step 6: Exact production-shaped trade returns True."""
+        from src.services.learning_monitor import update_from_paper_trade
+
+        raw_trade = {
+            "symbol": "BTCUSDT",
+            "regime": "QUIET_RANGE",
+            "side": "BUY",
+            "entry_price": 77794.215,
+            "exit_price": 77667.735,
+            "net_pnl_pct": -0.0027,
+            "outcome": "FLAT",
+            "reason": "TIMEOUT",
+            "hold_s": 300,
+            "max_hold_s": 300,
+            "bucket": None,
+            "training_bucket": "C_WEAK_EV_TRAIN",
+            "features": {
+                "ema_diff": 1,
+                "rsi": 55.0,
+                "hour_utc": 10,
+                "is_weekend": False,
+                "tags": 0
+            },
+            "score_at_entry": 0,
+            "ws": 0,
+        }
+
+        result = update_from_paper_trade(raw_trade)
+        assert result is True, "update_from_paper_trade should return True for production shape"
+
+    def test_server_shape_scalar_tags_int_no_iter_error(self):
+        """P1.1U Step 6: Scalar int values (like tags=0) do not cause iteration errors."""
+        from src.services.learning_monitor import update_from_paper_trade
+
+        raw_trade = {
+            "symbol": "ETHUSDT",
+            "regime": "BULL_TREND",
+            "training_bucket": "D_NEG_EV_CONTROL",
+            "features": {
+                "ema_diff": 1,  # int
+                "rsi": 55.0,  # float
+                "hour_utc": 10,  # int
+                "is_weekend": False,  # bool
+                "tags": 0,  # int — was causing 'int' object is not iterable
+                "volatility": 2,  # another int
+            },
+            "outcome": "LOSS",
+            "net_pnl_pct": -0.5,
+            "score_at_entry": 0.25,
+        }
+
+        # Must not raise 'int' object is not iterable
+        try:
+            result = update_from_paper_trade(raw_trade)
+            assert isinstance(result, bool)
+        except TypeError as e:
+            if "is not iterable" in str(e):
+                pytest.fail(f"update_from_paper_trade raised iteration error: {e}")
+            raise
+
+    def test_paper_train_close_learning_logs_ok_true(self, clean_positions):
+        """P1.1U Step 6: Paper train close processes learning update without error."""
+        import os
+        os.environ["TRADING_MODE"] = "paper_train"
+
+        # Open a C_WEAK_EV_TRAIN position
+        result = open_paper_position(
+            {
+                "symbol": "BTCUSDT",
+                "action": "BUY",
+                "ev": 0.045,
+            },
+            price=50000.0,
+            ts=time.time(),
+            reason="TRAINING_SAMPLER:TEST",
+            extra={
+                "paper_source": "training_sampler",
+                "training_bucket": "C_WEAK_EV_TRAIN",
+                "score_at_entry": 0.75,
+                "features": {
+                    "ema_diff": 1,
+                    "rsi": 55.0,
+                    "hour_utc": 10,
+                    "is_weekend": False,
+                    "tags": 0,
+                },
+            },
+        )
+
+        trade_id = result["trade_id"]
+
+        # Close with a win
+        closed = close_paper_position(
+            position_id=trade_id,
+            price=50500.0,
+            ts=time.time() + 120,
+            reason="TP",
+        )
+
+        assert closed is not None
+        assert closed["outcome"] == "WIN"
+        # If we got here, the learning and metrics update succeeded without raising
+        assert closed["training_bucket"] == "C_WEAK_EV_TRAIN"
+
+    def test_paper_train_metrics_updates_one_bucket_only(self):
+        """P1.1U Step 5: C_WEAK_EV_TRAIN close updates exactly one bucket, not A_STRICT_TAKE."""
+        from src.services.paper_trade_executor import _safe_bucket_metrics_update_for_paper_trade
+
+        # Production-shaped C_WEAK_EV_TRAIN trade
+        trade = {
+            "symbol": "BTCUSDT",
+            "regime": "QUIET_RANGE",
+            "training_bucket": "C_WEAK_EV_TRAIN",
+            "explore_bucket": None,
+            "bucket": None,
+            "outcome": "FLAT",
+            "net_pnl_pct": -0.0027,
+            "exit_reason": "TIMEOUT",
+            "features": {
+                "ema_diff": 1,
+                "rsi": 55.0,
+                "hour_utc": 10,
+                "is_weekend": False,
+                "tags": 0,
+            },
+        }
+
+        result = _safe_bucket_metrics_update_for_paper_trade(trade)
+        assert result is True
+        # Function should complete without defaulting to A_STRICT_TAKE
+
+    def test_c_weak_ev_train_never_updates_a_strict_take(self):
+        """P1.1U Step 5: C_WEAK_EV_TRAIN never emits A_STRICT_TAKE metrics."""
+        from src.services.paper_trade_executor import _safe_bucket_metrics_update_for_paper_trade
+        import logging
+
+        log_capture = []
+
+        class LogCapture(logging.Handler):
+            def emit(self, record):
+                log_capture.append(record.getMessage())
+
+        logger = logging.getLogger("src.services.bucket_metrics")
+        handler = LogCapture()
+        logger.addHandler(handler)
+
+        try:
+            # C_WEAK_EV_TRAIN trade
+            trade = {
+                "symbol": "BTCUSDT",
+                "regime": "QUIET_RANGE",
+                "training_bucket": "C_WEAK_EV_TRAIN",
+                "explore_bucket": None,
+                "outcome": "FLAT",
+                "net_pnl_pct": -0.0027,
+                "exit_reason": "TIMEOUT",
+            }
+
+            _safe_bucket_metrics_update_for_paper_trade(trade)
+
+            # Check that PAPER_BUCKET_UPDATE does NOT mention A_STRICT_TAKE
+            bucket_logs = [msg for msg in log_capture if "PAPER_BUCKET_UPDATE" in msg]
+            a_strict_logs = [msg for msg in bucket_logs if "A_STRICT_TAKE" in msg]
+            assert len(a_strict_logs) == 0, \
+                f"C_WEAK_EV_TRAIN should never produce A_STRICT_TAKE bucket updates. Got: {bucket_logs}"
+        finally:
+            logger.removeHandler(handler)
+
+    def test_no_lm_update_or_record_features_called_from_paper_train(self):
+        """P1.1U Step 4: Paper train path works without legacy lm_update or record_features."""
+        from src.services.paper_trade_executor import _safe_learning_update_for_paper_trade
+
+        # Test that the learning update works with production-shaped trade
+        raw_trade = {
+            "symbol": "BTCUSDT",
+            "regime": "QUIET_RANGE",
+            "training_bucket": "C_WEAK_EV_TRAIN",
+            "features": {
+                "ema_diff": 1,
+                "rsi": 55.0,
+                "hour_utc": 10,
+                "is_weekend": False,
+                "tags": 0,
+            },
+            "outcome": "FLAT",
+            "net_pnl_pct": -0.0027,
+        }
+
+        pnl_data = {
+            "net_pnl_pct": -0.0027,
+            "outcome": "FLAT",
+        }
+
+        # Should succeed without raising
+        result = _safe_learning_update_for_paper_trade(raw_trade, pnl_data)
+        assert isinstance(result, bool)

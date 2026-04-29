@@ -759,16 +759,9 @@ def _safe_bucket_metrics_update_for_paper_trade(raw_trade: dict) -> bool:
             "exit_reason": t.get("exit_reason") or "UNKNOWN",
         }
 
-        # Call metrics update once
+        # Call metrics update once (bucket_metrics will log the update)
         from src.services.bucket_metrics import update_bucket_metrics
         update_bucket_metrics(metrics_dict)
-
-        log.info(
-            "[PAPER_BUCKET_UPDATE] bucket=%s outcome=%s net_pnl_pct=%.4f",
-            primary,
-            t.get("outcome") or "UNKNOWN",
-            _safe_float(t.get("net_pnl_pct"), 0.0),
-        )
 
         return True
 
