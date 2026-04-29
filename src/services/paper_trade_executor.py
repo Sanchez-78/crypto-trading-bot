@@ -375,9 +375,14 @@ def open_paper_position(
         "rde_decision": reason,
         "paper_source": extra.get("paper_source") if extra else "normal_rde_take",
         "explore_bucket": extra.get("explore_bucket") if extra else "A_STRICT_TAKE",
+        "training_bucket": (extra.get("training_bucket") or extra.get("explore_bucket", "A_STRICT_TAKE")) if extra else "A_STRICT_TAKE",  # P1.1M: preserve training bucket
         "explore_sub_bucket": extra.get("explore_sub_bucket") if extra else "",  # P1.1i
         "original_decision": extra.get("original_decision") if extra else "TAKE",
         "reject_reason": extra.get("reject_reason") if extra else None,
+        "side_inferred": extra.get("side_inferred") if extra else False,  # P1.1M
+        "cost_edge_ok": extra.get("cost_edge_ok") if extra else True,  # P1.1M
+        "expected_move_pct": extra.get("expected_move_pct") if extra else 0.0,  # P1.1M
+        "required_move_pct": extra.get("required_move_pct") if extra else 0.23,  # P1.1M
         "size_mult": extra.get("size_mult") if extra else 1.0,
         "max_hold_s": extra.get("max_hold_s") if extra else _MAX_AGE_S,
         "tags": extra.get("tags") if extra else [],

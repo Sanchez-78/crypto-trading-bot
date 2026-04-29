@@ -319,3 +319,134 @@ class TestRuntimeMode:
 
         # Should be False
         assert not live_trading_allowed()
+
+
+class TestP1M1RoutingToPaperTraining:
+    """P1.1M: Route accepted and blocked signals into paper training."""
+
+    def test_paper_train_strict_take_opens_position(self, clean_positions):
+        """Strict TAKE opens A_STRICT_TAKE paper position in paper_train mode."""
+        import os
+        os.environ["TRADING_MODE"] = "paper_train"
+
+        signal = {
+            "symbol": "XRPUSDT",
+            "action": "BUY",
+            "ev": 0.050,
+            "score": 0.25,
+            "price": 2.5,
+            "features": {"ema_diff": 0.001, "macd": 0.0001},
+            "regime": "BULL_TREND",
+        }
+
+        result = open_paper_position(
+            signal,
+            price=2.5,
+            ts=time.time(),
+            reason="RDE_TAKE",
+            extra={
+                "paper_source": "strict_take",
+                "training_bucket": "A_STRICT_TAKE",
+                "original_decision": "TAKE",
+                "score_at_entry": signal.get("score", 0.0),
+            },
+        )
+
+        assert result["status"] == "opened"
+        positions = get_paper_open_positions()
+        assert len(positions) == 1
+        pos = positions[0]
+        assert pos["training_bucket"] == "A_STRICT_TAKE"
+        assert pos["original_decision"] == "TAKE"
+
+    def test_paper_train_side_inference_creates_entry(self, clean_positions):
+        """Training sampler with side inference opens C_WEAK_EV_TRAIN."""
+        import os
+        os.environ["TRADING_MODE"] = "paper_train"
+
+        signal = {
+            "symbol": "ETHUSDT",
+            "action": "",  # No side specified, will be inferred
+            "ev": 0.015,
+            "score": 0.12,
+            "p": 0.52,
+            "coherence": 0.65,
+            "auditor_factor": 0.75,
+            "price": 1800.0,
+            "features": {"ema_diff": 0.002, "macd": 0.0005, "rsi": 30},
+            "regime": "BULL_TREND",
+        }
+
+        # Simulate paper training sampler result
+        result = open_paper_position(
+            signal,
+            price=1800.0,
+            ts=time.time(),
+            reason="TRAINING_SAMPLER:REJECT_ECON_BAD_ENTRY",
+            extra={
+                "paper_source": "training_sampler",
+                "training_bucket": "C_WEAK_EV_TRAIN",
+                "side_inferred": True,
+                "original_decision": "REJECT_ECON_BAD_ENTRY",
+                "cost_edge_ok": False,
+                "expected_move_pct": 1.5,
+                "size_mult": 0.05,
+                "max_hold_s": 300,
+            },
+        )
+
+        assert result["status"] == "opened"
+        positions = get_paper_open_positions()
+        assert len(positions) == 1
+        pos = positions[0]
+        assert pos["training_bucket"] == "C_WEAK_EV_TRAIN"
+        assert pos["side_inferred"] is True
+
+    def test_paper_train_closed_trade_has_training_metadata(self, clean_positions):
+        """Closed training trade preserves all P1.1M metadata."""
+        import os
+        os.environ["TRADING_MODE"] = "paper_train"
+
+        signal = {
+            "symbol": "BTCUSDT",
+            "action": "BUY",
+            "ev": -0.010,  # Negative EV for D_NEG_EV_CONTROL
+            "score": 0.05,
+            "price": 50000.0,
+        }
+
+        # Open D_NEG_EV_CONTROL training position
+        result = open_paper_position(
+            signal,
+            price=50000.0,
+            ts=time.time(),
+            reason="TRAINING_SAMPLER:REJECT_NEGATIVE_EV",
+            extra={
+                "paper_source": "training_sampler",
+                "training_bucket": "D_NEG_EV_CONTROL",
+                "original_decision": "REJECT_NEGATIVE_EV",
+                "side_inferred": False,
+                "cost_edge_ok": False,
+                "expected_move_pct": -1.0,
+                "required_move_pct": 0.23,
+                "size_mult": 0.02,
+                "max_hold_s": 240,
+                "regime": "RANGING",
+            },
+        )
+
+        trade_id = result["trade_id"]
+
+        # Close at a loss
+        closed = close_paper_position(
+            position_id=trade_id,
+            price=49500.0,
+            ts=time.time() + 120,
+            reason="SL",
+        )
+
+        assert closed is not None
+        assert closed["training_bucket"] == "D_NEG_EV_CONTROL"
+        assert closed["outcome"] == "LOSS"
+        # Control bucket exit is allowed even with loss
+        assert closed["net_pnl_pct"] < 0

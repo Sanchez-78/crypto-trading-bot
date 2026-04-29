@@ -1508,6 +1508,104 @@ def _save_paper_trade_closed(closed_trade: dict) -> None:
         log.warning(f"[PAPER_SAVE_ERROR] {e}")
 
 
+def _maybe_route_to_paper_training(signal: dict, current_price: float, reject_reason: str) -> bool:
+    """P1.1M: Route blocked signal to paper training in paper_train mode.
+
+    In paper_train mode, signals that are blocked by operational gates
+    (DUPLICATE_CANDIDATE, UNBLOCK_LIMIT, etc.) are routed to the training
+    sampler instead of being silently dropped.
+
+    Args:
+        signal: The signal dict
+        current_price: Current market price
+        reject_reason: Reason for rejection (e.g., "DUPLICATE_CANDIDATE")
+
+    Returns:
+        True if a paper training position was opened, False if skipped
+    """
+    try:
+        from src.core.runtime_mode import get_trading_mode
+        from src.services.paper_training_sampler import maybe_open_training_sample
+
+        mode = get_trading_mode()
+        if mode.value != "paper_train":
+            return False
+
+        sym = signal.get("symbol", "UNKNOWN")
+
+        # Log routing boundary
+        log.info(
+            "[PAPER_TRAIN_ROUTER] source=%s symbol=%s price=%.8f",
+            reject_reason,
+            sym,
+            current_price,
+        )
+
+        # Try to open training sample
+        result = maybe_open_training_sample(
+            signal=signal,
+            ctx={},
+            reason=reject_reason,
+            current_price=current_price,
+        )
+
+        if result.get("allowed"):
+            # Open the paper position using the training sampler result
+            try:
+                # Build a modified signal with inferred side if needed
+                trade_signal = dict(signal)
+                if result.get("side_inferred"):
+                    trade_signal["action"] = result["side"]
+
+                open_result = open_paper_position(
+                    signal=trade_signal,
+                    price=current_price,
+                    ts=time.time(),
+                    reason=f"TRAINING_SAMPLER:{reject_reason}",
+                    extra={
+                        "paper_source": "training_sampler",
+                        "training_bucket": result.get("bucket", ""),
+                        "original_decision": reject_reason,
+                        "reject_reason": reject_reason,
+                        "side_inferred": result.get("side_inferred", False),
+                        "cost_edge_ok": result.get("cost_edge_ok", False),
+                        "expected_move_pct": result.get("expected_move_pct", 0.0),
+                        "required_move_pct": result.get("required_move_pct", 0.0),
+                        "size_mult": result.get("size_mult", 0.0),
+                        "max_hold_s": result.get("max_hold_s", 300),
+                        "features": signal.get("features", {}),
+                        "regime": signal.get("regime", "RANGING"),
+                        "score_at_entry": signal.get("score", 0.0),
+                    },
+                )
+                if open_result.get("status") == "opened":
+                    log.info(
+                        "[PAPER_TRAIN_ENTRY] bucket=%s symbol=%s side=%s price=%.8f source=%s",
+                        result.get("bucket", ""),
+                        sym,
+                        result["side"],
+                        current_price,
+                        reject_reason,
+                    )
+                return True
+            except Exception as e:
+                log.warning(f"[PAPER_TRAIN_OPEN_ERROR] {sym}: {e}")
+                return False
+        else:
+            # Training sampler declined
+            log.info(
+                "[PAPER_TRAIN_SKIP] reason=%s symbol=%s source=%s",
+                result.get("reason", "unknown"),
+                sym,
+                reject_reason,
+            )
+            return False
+
+    except Exception as e:
+        log.warning(f"[PAPER_TRAIN_ROUTING_ERROR] {e}")
+        return False
+
+
 def handle_signal(signal):
     global _last_replace_ts   # V10.10: written directly in efficiency replacement path
     sym     = signal["symbol"]
@@ -1552,18 +1650,24 @@ def handle_signal(signal):
         allowed, reason = check_duplicate(signal)
         if not allowed:
             log.info(f"    candidate_gate: {reason}  sym={sym}")
+            # P1.1M: Route to paper training in paper_train mode
+            _maybe_route_to_paper_training(signal, signal.get("price", 0), f"DUPLICATE_CANDIDATE:{reason}")
             return
 
         # Check 2: Same symbol + same side in last 30 seconds
         allowed, reason = check_symbol_side_cooldown(signal)
         if not allowed:
             log.info(f"    candidate_gate: {reason}  sym={sym}")
+            # P1.1M: Route to paper training in paper_train mode
+            _maybe_route_to_paper_training(signal, signal.get("price", 0), f"DUPLICATE_CANDIDATE:{reason}")
             return
 
         # Check 3: Bootstrap frequency cap (max 6 opens per 60s during cold start)
         allowed, reason = check_bootstrap_frequency(signal)
         if not allowed:
             log.info(f"    candidate_gate: {reason}  sym={sym}")
+            # P1.1M: Route to paper training in paper_train mode
+            _maybe_route_to_paper_training(signal, signal.get("price", 0), f"DUPLICATE_CANDIDATE:{reason}")
             return
     except Exception as e:
         log.warning(f"[DEDUP_GUARD_FAIL] {e} — proceeding without dedup checks")
@@ -2252,6 +2356,8 @@ def handle_signal(signal):
         _can_open, _reason = can_open_unblock_trade()
         if not _can_open:
             log.warning(f"[UNBLOCK_LIMIT] {sym} {_reason} — signal skipped")
+            # P1.1M: Route to paper training in paper_train mode instead of silently dropping
+            _maybe_route_to_paper_training(signal, signal.get("price", 0), f"UNBLOCK_LIMIT:{_reason}")
             return  # BUG FIX: return (not return None) for consistency
         record_unblock_trade()
     
@@ -2288,7 +2394,23 @@ def handle_signal(signal):
 
     # V10.13u+20: Route to paper trading if in paper mode
     if is_paper_mode():
-        _paper_result = open_paper_position(signal, actual_entry, time.time(), "RDE_TAKE")
+        # P1.1M: Include training metadata for strict TAKE in paper_train mode
+        extra_meta = {
+            "paper_source": "strict_take",
+            "training_bucket": "A_STRICT_TAKE",
+            "original_decision": "TAKE",
+            "reject_reason": None,
+            "side_inferred": False,
+            "cost_edge_ok": True,  # Strict TAKE passes cost-edge by definition
+            "expected_move_pct": float(signal.get("ev", 0.0)) * 100,
+            "required_move_pct": 0.23,
+            "size_mult": 1.0,
+            "max_hold_s": int(os.getenv("PAPER_TRAINING_MAX_HOLD_S", "300")),
+            "features": signal.get("features", {}),
+            "regime": regime,
+            "score_at_entry": signal.get("score", 0.0),
+        }
+        _paper_result = open_paper_position(signal, actual_entry, time.time(), "RDE_TAKE", extra=extra_meta)
         if _paper_result.get("status") == "opened":
             log.warning(
                 f"[PAPER_ROUTED] symbol={sym} side={signal['action']} "
