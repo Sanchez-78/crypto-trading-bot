@@ -1631,6 +1631,14 @@ def _maybe_route_to_paper_training(signal: dict, current_price: float, reject_re
                 # P1.1AB: Log paper entry attempt
                 _pipeline_record_paper_entry_attempt(sym, result.get("bucket", ""), current_price)
 
+                # P1.1AC: Mark candidate as evaluated (after entry attempt, not before)
+                # This prevents duplicate gate from blocking multiple signals in same cycle
+                try:
+                    from src.services.candidate_dedup import mark_candidate_evaluated
+                    mark_candidate_evaluated(trade_signal)
+                except Exception:
+                    pass  # If dedup unavailable, continue anyway
+
                 open_result = open_paper_position(
                     signal=trade_signal,
                     price=current_price,
@@ -1875,6 +1883,10 @@ def handle_signal(signal):
     # P1.1AB: Log RDE candidate status
     bucket = signal.get("bucket", "A_STRICT_TAKE")
     _pipeline_record_rde_candidate(sym, bucket, allowed, reason)
+
+    # P1.1AC: If RDE rejected for duplicate gate, log explicitly
+    if not allowed and "DUPLICATE_CANDIDATE" in reason:
+        log.info("[RDE_CANDIDATE] symbol=%s accepted=false reason=%s", sym, reason)
 
     if not allowed:
         if reason == "max_positions":
