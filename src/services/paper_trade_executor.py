@@ -243,19 +243,20 @@ def _load_paper_state() -> None:
                 migrated_count,
             )
 
-        # P1.1Z: Reconcile stale positions
-        reconcile_result = _reconcile_stale_paper_positions()
-
-        # Log startup summary
-        alive_count = len(_POSITIONS)
-        log.info(
-            "[PAPER_STATE_RECONCILE_SUMMARY] loaded=%d normalized=%d stale_closed=%d stale_pending=%d alive=%d",
-            len(positions_data),
-            normalized_count,
-            reconcile_result.get("closed", 0),
-            reconcile_result.get("pending", 0),
-            alive_count,
-        )
+        # P1.1Z: Reconcile stale positions (non-fatal — separate error handling)
+        try:
+            reconcile_result = _reconcile_stale_paper_positions()
+            alive_count = len(_POSITIONS)
+            log.info(
+                "[PAPER_STATE_RECONCILE_SUMMARY] loaded=%d normalized=%d stale_closed=%d stale_pending=%d alive=%d",
+                len(positions_data),
+                normalized_count,
+                reconcile_result.get("closed", 0),
+                reconcile_result.get("pending", 0),
+                alive_count,
+            )
+        except Exception as e:
+            log.exception("[PAPER_STATE_RECONCILE_ERROR] source=%s err=%s", _STATE_FILE, str(e))
 
         # If we did a list->dict conversion, save back in canonical format
         if list_to_dict_count > 0:
@@ -265,10 +266,6 @@ def _load_paper_state() -> None:
         log.warning("[PAPER_STATE_LOAD_ERROR] source=%s err=json_decode err_detail=%s", _STATE_FILE, str(e))
     except Exception as e:
         log.warning("[PAPER_STATE_LOAD_ERROR] source=%s err=%s", _STATE_FILE, str(e))
-
-
-# Load paper positions from disk on module init
-_load_paper_state()
 
 
 def _normalize_side(side_raw: str) -> tuple[str, str]:
@@ -802,7 +799,7 @@ def update_paper_positions(
             exit_reason = "TIMEOUT"
 
         if exit_reason:
-            closed_trade = close_paper_position(trade_id, current_price, ts, exit_reason)
+            closed_trade = close_paper_position(position_id=trade_id, price=current_price, ts=ts, reason=exit_reason)
             if closed_trade:
                 closed_trades.append(closed_trade)
 
@@ -1152,3 +1149,27 @@ def reset_paper_positions():
     """Reset all open positions (for testing)."""
     with _POSITION_LOCK:
         _POSITIONS.clear()
+
+
+# P1.1Z2: Startup initialization — load paper state after all functions are defined
+_PAPER_STATE_INITIALIZED = False
+
+
+def _init_paper_state_once() -> None:
+    """Initialize paper state once at module load time.
+
+    Called at module bottom after all helper functions are defined.
+    Prevents NameError for _reconcile_stale_paper_positions() and other helpers.
+    """
+    global _PAPER_STATE_INITIALIZED
+    if _PAPER_STATE_INITIALIZED:
+        return
+    _PAPER_STATE_INITIALIZED = True
+    try:
+        _load_paper_state()
+    except Exception as e:
+        log.exception("[PAPER_STATE_LOAD_ERROR] source=%s err=%s", _STATE_FILE, e)
+
+
+# Call startup initializer after all functions are defined
+_init_paper_state_once()
