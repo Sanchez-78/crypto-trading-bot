@@ -2590,7 +2590,13 @@ def handle_signal(signal):
 
 def on_price(data):
     # V10.13u+20: Update paper positions before live position handling
-    if is_paper_mode():
+    try:
+        from src.core.runtime_mode import is_paper_mode as _is_paper_mode
+        _is_paper_mode_local = _is_paper_mode()
+    except Exception:
+        _is_paper_mode_local = os.getenv("TRADING_MODE", "").strip().lower() in ("paper_live", "paper_train", "replay_train")
+
+    if _is_paper_mode_local:
         _symbol_prices = {data["symbol"]: data["price"]}
         _closed_papers = update_paper_positions(_symbol_prices, time.time())
         if _closed_papers:
