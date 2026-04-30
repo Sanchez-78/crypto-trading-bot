@@ -2309,6 +2309,102 @@ class TestP1Y1StrictTakeDisable(unittest.TestCase):
         assert should_log_third is True, "Log after 60s should be allowed"
 
 
+class TestP1ZHotfixSafeHelpers(unittest.TestCase):
+    """P1.1Z-hotfix: Regression tests for safe helpers and startup."""
+
+    def test_paper_trade_executor_imports_with_p1z_helpers(self):
+        """P1.1Z-hotfix Test 1: Safe helpers are defined and callable."""
+        from src.services import paper_trade_executor as pte
+
+        assert callable(pte._safe_float), "_safe_float should be callable"
+        assert callable(pte._safe_int), "_safe_int should be callable"
+
+    def test_safe_float_with_valid_values(self):
+        """P1.1Z-hotfix Test 2: _safe_float handles valid values."""
+        from src.services.paper_trade_executor import _safe_float
+
+        assert _safe_float(10.5) == 10.5
+        assert _safe_float("20.3") == 20.3
+        assert _safe_float(None, 5.0) == 5.0
+        assert _safe_float("invalid", 0.0) == 0.0
+
+    def test_safe_int_with_valid_values(self):
+        """P1.1Z-hotfix Test 3: _safe_int handles valid values."""
+        from src.services.paper_trade_executor import _safe_int
+
+        assert _safe_int(10) == 10
+        assert _safe_int("20") == 20
+        assert _safe_int(10.7) == 10  # Truncates to int
+        assert _safe_int(None, 5) == 5
+        assert _safe_int("invalid", 0) == 0
+
+    def test_startup_normalization_does_not_raise(self):
+        """P1.1Z-hotfix Test 4: Startup with stale position does not raise."""
+        from src.services.paper_trade_executor import (
+            _effective_paper_hold_s,
+            _is_position_stale,
+        )
+
+        now = time.time()
+
+        # Production-shaped legacy position
+        pos = {
+            "symbol": "BTCUSDT",
+            "side": "BUY",
+            "training_bucket": "C_WEAK_EV_TRAIN",
+            "entry_ts": now - 600.0,  # Aged 600 seconds
+            "created_at": now - 600.0,
+            "max_hold_s": 300.0,
+            "timeout_s": 900.0,  # Legacy timeout
+            "entry_price": 76000.0,
+        }
+
+        # Should compute effective hold without raising
+        effective = _effective_paper_hold_s(pos)
+        assert effective == 300.0, "Effective hold should be 300s for training"
+
+        # Should detect as stale
+        is_stale = _is_position_stale(pos, now)
+        assert is_stale is True, "Position aged 600s with 300s hold should be stale"
+
+    def test_stale_training_positions_dont_block_caps(self):
+        """P1.1Z-hotfix Test 5: Stale training position doesn't block new entries."""
+        from src.services.paper_trade_executor import (
+            _check_training_sampler_caps,
+            reset_paper_positions,
+            open_paper_position,
+        )
+
+        reset_paper_positions()
+
+        # Create a stale training position that would block if not ignored
+        signal = {
+            "symbol": "BTCUSDT",
+            "action": "BUY",
+        }
+
+        open_result = open_paper_position(
+            signal=signal,
+            price=76000.0,
+            ts=time.time() - 400.0,  # Aged 400s
+            reason="TEST",
+            extra={
+                "paper_source": "training_sampler",
+                "training_bucket": "C_WEAK_EV_TRAIN",
+                "max_hold_s": 300.0,
+            },
+        )
+
+        assert open_result.get("status") == "opened", "Should open position"
+
+        # Cap check should not block because position is stale
+        cap_check = _check_training_sampler_caps("BTCUSDT", "C_WEAK_EV_TRAIN")
+        # cap_check should be None (no blocking) because stale position is ignored
+        assert cap_check is None, "Stale position should not block new entry"
+
+        reset_paper_positions()
+
+
 class TestP1Z1StalePositionTimeout(unittest.TestCase):
     """P1.1Z: Test stale position reconciliation and timeout fixes."""
 

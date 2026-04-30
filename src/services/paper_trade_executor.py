@@ -123,6 +123,26 @@ def _convert_list_to_dict(positions_list: list) -> dict:
     return result
 
 
+def _safe_float(value, default=0.0) -> float:
+    """P1.1Z: Safely convert value to float with fallback."""
+    try:
+        if value is None:
+            return float(default)
+        return float(value)
+    except (ValueError, TypeError):
+        return float(default)
+
+
+def _safe_int(value, default=0) -> int:
+    """P1.1Z: Safely convert value to int with fallback."""
+    try:
+        if value is None:
+            return int(default)
+        return int(float(value))
+    except (ValueError, TypeError):
+        return int(default)
+
+
 def _load_paper_state() -> None:
     """Load open paper positions from disk at startup.
 
@@ -274,16 +294,6 @@ def _normalize_side(side_raw: str) -> tuple[str, str]:
 def _generate_trade_id() -> str:
     """Generate unique trade ID."""
     return f"paper_{uuid.uuid4().hex[:12]}"
-
-
-def _safe_float(val, default: float = 0.0) -> float:
-    """Safely convert value to float."""
-    try:
-        if val is None:
-            return default
-        return float(val)
-    except (ValueError, TypeError):
-        return default
 
 
 def _effective_paper_hold_s(pos: dict) -> float:
