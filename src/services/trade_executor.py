@@ -46,12 +46,25 @@ from src.services.exit_pnl import canonical_close_pnl
 
 # V10.13u+20: Paper trading mode integration
 try:
-    from src.core.runtime_mode import is_paper_mode, live_trading_allowed
+    from src.core.runtime_mode import is_paper_mode, live_trading_allowed as _rt_live_trading_allowed
+    _rt_live_trading_allowed_available = True
 except ImportError:
+    _rt_live_trading_allowed_available = False
     def is_paper_mode():
         return False
-    def live_trading_allowed():
+
+# P1.1W: live_trading_allowed() checks all required flags for live order placement
+def live_trading_allowed():
+    """Check if live order placement is allowed. All flags must be true."""
+    if _rt_live_trading_allowed_available:
+        return _rt_live_trading_allowed()
+    # Fallback: Check env flags directly
+    mode = os.getenv("TRADING_MODE", "").strip().lower()
+    if mode != "live_real":
         return False
+    enable_real = os.getenv("ENABLE_REAL_ORDERS", "false").strip().lower() == "true"
+    confirmed = os.getenv("LIVE_TRADING_CONFIRMED", "false").strip().lower() == "true"
+    return enable_real and confirmed
 
 try:
     from src.services.paper_trade_executor import (
@@ -119,6 +132,10 @@ _meta_state = {                                                        # V10.6b:
 # V10.12d: Unblock mode rate limiting
 _UNBLOCK_TRADES_MAX_HOUR = 6    # max 6 unblock trades per hour
 _UNBLOCK_POSITIONS_MAX   = 2    # max 2 concurrent unblock positions
+
+# P1.1W: Throttle LIVE_ORDER_DISABLED spam (max once per symbol per 60s)
+_LIVE_ORDER_DISABLED_THROTTLE = {}  # symbol -> last_log_ts
+_LIVE_ORDER_DISABLED_TTL = 60.0  # seconds between logs per symbol
 _unblock_trades_hour = []       # list of timestamps of unblock trades in last 60 min
 
 FEE_RT      = 0.0015    # 0.15% round-trip (Binance taker 0.075%×2)
@@ -2427,7 +2444,8 @@ def handle_signal(signal):
     except Exception:
         pass
 
-    # V10.13u+20: Route to paper trading if in paper mode
+    # P1.1W: CRITICAL — Route paper_train signals to paper BEFORE live order gates
+    # This prevents LIVE_ORDER_DISABLED spam and ensures paper trades never reach live code
     if is_paper_mode_local:
         # P1.1M: Include training metadata for strict TAKE in paper_train mode
         extra_meta = {
@@ -2459,10 +2477,18 @@ def handle_signal(signal):
 
     # V10.13u+20: Verify live trading is allowed before opening real orders
     if not live_trading_allowed():
-        log.warning(
-            f"[LIVE_ORDER_DISABLED] symbol={sym} mode check failed "
-            f"(TRADING_MODE required, real orders disabled)"
-        )
+        # P1.1W: Throttle spam — max once per symbol per 60s
+        now_ts = time.time()
+        last_log = _LIVE_ORDER_DISABLED_THROTTLE.get(sym, 0.0)
+        if now_ts - last_log >= _LIVE_ORDER_DISABLED_TTL:
+            mode = os.getenv("TRADING_MODE", "unknown").strip()
+            real_orders = os.getenv("ENABLE_REAL_ORDERS", "false").strip().lower() == "true"
+            confirmed = os.getenv("LIVE_TRADING_CONFIRMED", "false").strip().lower() == "true"
+            log.warning(
+                f"[LIVE_ORDER_DISABLED] symbol={sym} mode={mode} "
+                f"real_orders={real_orders} confirmed={confirmed} reason=not_live_real"
+            )
+            _LIVE_ORDER_DISABLED_THROTTLE[sym] = now_ts
         return
 
     with _positions_lock:
