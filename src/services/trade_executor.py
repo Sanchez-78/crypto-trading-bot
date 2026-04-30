@@ -1753,6 +1753,28 @@ def _pipeline_record_paper_entry_success(symbol: str, bucket: str, trade_id: str
         _PIPELINE_CYCLE["paper_entries"] += 1
 
 
+def _pipeline_record_drop(symbol: str, reject_reason: str) -> None:
+    """P1.1AD: Log accepted candidate dropped by portfolio gate without reaching training sampler."""
+    log.info(
+        "[ENTRY_PIPELINE_DROP] symbol=%s reason=%s stage=portfolio_gate",
+        symbol,
+        reject_reason,
+    )
+
+
+def _drop_and_route_to_training(signal: dict, current_price: float, reject_reason: str) -> None:
+    """P1.1AD: Log drop and route accepted candidate to training sampler in paper_train mode."""
+    sym = signal.get("symbol", "UNKNOWN")
+    _pipeline_record_drop(sym, reject_reason)
+    try:
+        from src.core.runtime_mode import get_trading_mode
+        mode = get_trading_mode()
+        if mode.value == "paper_train":
+            _maybe_route_to_paper_training(signal, current_price, f"PORTFOLIO_GATE:{reject_reason}")
+    except Exception:
+        pass
+
+
 def _pipeline_emit_summary() -> None:
     """P1.1AB: Emit cycle summary and check for stalls."""
     global _PIPELINE_LAST_SUMMARY_TS
@@ -1802,10 +1824,12 @@ def handle_signal(signal):
     regime  = signal.get("regime", "RANGING")
 
     # P1.1AB: Log raw signal with key attributes
+    # P1.1AD: Use score_raw/score_final if available (canonical decision score)
     side = signal.get("action", signal.get("side", "UNKNOWN"))
     ev = signal.get("ev", 0.0)
     p = signal.get("p", signal.get("confidence", 0.5))
-    score = signal.get("score", 0.0)
+    # Use score_raw (from canonical decision) if available, fallback to score
+    score = signal.get("score_raw", signal.get("score_final", signal.get("score", 0.0)))
     _pipeline_record_signal(sym, side, regime, ev, p, score)
 
     # P1.1X: Paper mode check — use is_paper_mode() from runtime_mode
@@ -2050,22 +2074,39 @@ def handle_signal(signal):
     if not _has_min_edge(entry, tp_est, sl_est):
         log.info(f"    portfolio gate: min_edge  sym={sym}  "
               f"tp={abs(tp_est-entry)/entry:.4f}  sl={abs(sl_est-entry)/entry:.4f}")
+        _drop_and_route_to_training(signal, entry, "min_edge")
         return
     _sig_ev = signal.get("ev", 0.0)   # set by RDE evaluate_signal; 0.0 = conservative
     if _reject_bad_rr(entry, tp_est, sl_est, ev=_sig_ev, atr_pct=atr_pct):
         rr  = abs(tp_est - entry) / max(abs(sl_est - entry), 1e-9)
         log.info(f"    portfolio gate: bad_rr  sym={sym}  rr={rr:.2f}")
+        _drop_and_route_to_training(signal, entry, "bad_rr")
         return
 
     # QUIET_RANGE: skip when ATR < 2.5× round-trip fee.
     # With FEE_RT=0.15%, ATR must exceed 0.375% or the fee alone eats the edge.
     # Not bootstrapped — this is a structural market condition, not a learning gate.
+    # P1.1AD: Bypass for paper_train mode to allow training sample collection
     if regime == "QUIET_RANGE":
         _atr_pct = atr / max(entry, 1e-9)
         if _atr_pct < 2.5 * FEE_RT:
-            log.info(f"    portfolio gate: quiet_atr_fee  sym={sym}  "
-                  f"atr={_atr_pct:.4f}<{2.5*FEE_RT:.4f}")
-            return
+            # P1.1AD: Allow paper_train to bypass quiet_atr_fee for training samples
+            try:
+                from src.core.runtime_mode import get_trading_mode
+                mode = get_trading_mode()
+                if mode.value != "paper_train":
+                    log.info(f"    portfolio gate: quiet_atr_fee  sym={sym}  "
+                          f"atr={_atr_pct:.4f}<{2.5*FEE_RT:.4f}")
+                    _drop_and_route_to_training(signal, entry, "quiet_atr_fee")
+                    return
+                # In paper_train, bypass gate to route to training sampler
+                log.debug(f"    [QUIET_ATR_BYPASS] symbol={sym} paper_train=true "
+                        f"atr={_atr_pct:.4f}<{2.5*FEE_RT:.4f}")
+            except Exception:
+                log.info(f"    portfolio gate: quiet_atr_fee  sym={sym}  "
+                      f"atr={_atr_pct:.4f}<{2.5*FEE_RT:.4f}")
+                _drop_and_route_to_training(signal, entry, "quiet_atr_fee")
+                return
 
     # Bootstrap open: bypass staleness/cost gates until 30 closed trades
     try:
@@ -2081,6 +2122,7 @@ def handle_signal(signal):
     tick_ms = max(100, min(500, int(atr / max(entry, 1e-9) * 100_000)))
     if not bootstrap_open and not valid(sig_ts, tick_ms, vol_f):
         log.info(f"    portfolio gate: stale_signal  sym={sym}")
+        _drop_and_route_to_training(signal, entry, "stale_signal")
         return
 
     # ── Mammon-inspired: dual staleness guards ───────────────────────────────
@@ -2110,6 +2152,7 @@ def handle_signal(signal):
                         "sig=%.6f  cur=%.6f  drift=%.2f%%",
                         sym, entry, _cur, _drift * 100,
                     )
+                    _drop_and_route_to_training(signal, entry, "price_drift")
                     return
 
                 # Guard B — ATR-normalised z-score cancel
@@ -2122,6 +2165,7 @@ def handle_signal(signal):
                             "sig=%.6f  cur=%.6f  z=%.2f>=%.1f",
                             sym, entry, _cur, _z, _CANCEL_Z_SIGMA,
                         )
+                        _drop_and_route_to_training(signal, entry, "mean_dev_cancel")
                         return
         except Exception:
             pass
@@ -2129,6 +2173,7 @@ def handle_signal(signal):
     ws_raw = signal.get("ws", 0.5)
     if not bootstrap_open and not pre_cost(ws_raw, FEE_RT):
         log.info(f"    portfolio gate: pre_cost  sym={sym}  ws={ws_raw:.3f}")
+        _drop_and_route_to_training(signal, entry, "pre_cost")
         return
 
     reg    = signal.get("regime", "RANGING")
@@ -2150,6 +2195,7 @@ def handle_signal(signal):
     if not bootstrap_open and _fw_score < _FW_MIN:
         log.info(f"    portfolio gate: fw_score  sym={sym}  "
               f"score={_fw_score:.2f}<{_FW_MIN}  regime={reg}")
+        _drop_and_route_to_training(signal, entry, "fw_score")
         return
     ws_adj = ob_adjust(ws_raw, ob)
     ws_adj = ev_adjust(ws_adj, sym, reg)
@@ -2163,6 +2209,7 @@ def handle_signal(signal):
     force = _force_trade_guard()
     if force and reg == "QUIET_RANGE":
         log.info(f"    portfolio gate: force_quiet  sym={sym}  regime=QUIET_RANGE")
+        _drop_and_route_to_training(signal, entry, "force_quiet")
         return
 
     import math
@@ -2193,6 +2240,7 @@ def handle_signal(signal):
                           economic_size_mult=_econ_mult_v1013)
     if base == 0.0:
         log.info(f"    portfolio gate: exposure_full  sym={sym}")
+        _drop_and_route_to_training(signal, entry, "exposure_full")
         return
     thr      = get_ev_threshold()
     ws_thr   = ws_threshold()
@@ -2268,6 +2316,7 @@ def handle_signal(signal):
                                 volatility=atr_pct)
     if _meta == 0.0:
         log.info(f"    portfolio gate: meta_hard_stop  DD={_dd_mc:.1%}  sym={sym}")
+        _drop_and_route_to_training(signal, entry, "meta_hard_stop")
         return
     size *= _meta
 
@@ -2431,6 +2480,7 @@ def handle_signal(signal):
     ctrl = failure_control(_positions)
     if ctrl == 0.0:
         log.info(f"    portfolio gate: failure_halt  sym={sym}  mode={bootstrap_mode()}")
+        _drop_and_route_to_training(signal, entry, "failure_halt")
         return
     size *= ctrl
 
@@ -2474,6 +2524,7 @@ def handle_signal(signal):
     if not cost_guard_bootstrap(edge):
         log.info(f"    portfolio gate: cost_guard  sym={sym}  "
               f"edge={edge:.4f}  mode={bootstrap_mode()}")
+        _drop_and_route_to_training(signal, entry, "cost_guard")
         return
 
     # ── V10.12b: Portfolio Risk Budget ────────────────────────────────────────
@@ -2621,6 +2672,7 @@ def handle_signal(signal):
 
         if should_skip_strict_take:
             # P1.1Y: Log throttled [PAPER_STRICT_TAKE_SKIP] to allow C_WEAK_EV_TRAIN training
+            # P1.1AD: Route accepted A_STRICT_TAKE candidate into training sampler instead of dropping
             now_ts = time.time()
             last_log = _PAPER_STRICT_TAKE_SKIP_THROTTLE.get(sym, 0.0)
             if now_ts - last_log >= _PAPER_STRICT_TAKE_SKIP_TTL:
@@ -2628,6 +2680,18 @@ def handle_signal(signal):
                     f"[PAPER_STRICT_TAKE_SKIP] symbol={sym} mode=paper_train reason=disabled_for_training"
                 )
                 _PAPER_STRICT_TAKE_SKIP_THROTTLE[sym] = now_ts
+
+            # P1.1AD: Bridge accepted A_STRICT_TAKE candidates into training sampler
+            log.info(
+                "[PAPER_TRAIN_BRIDGE] symbol=%s from_bucket=A_STRICT_TAKE "
+                "training_bucket=C_WEAK_EV_TRAIN reason=strict_take_disabled_for_training",
+                sym
+            )
+            _maybe_route_to_paper_training(
+                signal=signal,
+                current_price=actual_entry,
+                reject_reason="STRICT_TAKE_ROUTED_TO_TRAINING"
+            )
         else:
             # P1.1M: Include training metadata for strict TAKE in paper_train mode
             extra_meta = {
