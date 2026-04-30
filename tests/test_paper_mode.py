@@ -2147,3 +2147,24 @@ class TestP1W1RoutingAndThrottling(unittest.TestCase):
             assert count_third == 1, f"Third log after 60s should be emitted. Got {count_third} messages"
         finally:
             logger.removeHandler(handler)
+
+    def test_is_paper_mode_local_detects_paper_train(self):
+        """P1.1X: Verify is_paper_mode_local correctly detects paper_train mode."""
+        os.environ["TRADING_MODE"] = "paper_train"
+
+        # Test that is_paper_mode_local would detect paper_train correctly
+        from src.core.runtime_mode import is_paper_mode as _rt_is_paper_mode
+
+        # Should detect paper_train mode
+        is_paper = _rt_is_paper_mode()
+        assert is_paper is True, "is_paper_mode() should detect paper_train mode"
+
+    def test_is_paper_mode_local_rejects_live_real(self):
+        """P1.1X: Verify is_paper_mode_local correctly rejects live_real mode."""
+        os.environ["TRADING_MODE"] = "live_real"
+
+        from src.core.runtime_mode import is_paper_mode as _rt_is_paper_mode
+
+        # Should NOT detect live_real as paper mode
+        is_paper = _rt_is_paper_mode()
+        assert is_paper is False, "is_paper_mode() should reject live_real mode"

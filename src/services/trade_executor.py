@@ -46,17 +46,19 @@ from src.services.exit_pnl import canonical_close_pnl
 
 # V10.13u+20: Paper trading mode integration
 try:
-    from src.core.runtime_mode import is_paper_mode, live_trading_allowed as _rt_live_trading_allowed
-    _rt_live_trading_allowed_available = True
+    from src.core.runtime_mode import live_trading_allowed as _rt_live_trading_allowed
+    _rt_live_trading_available = True
 except ImportError:
-    _rt_live_trading_allowed_available = False
-    def is_paper_mode():
-        return False
+    _rt_live_trading_available = False
 
-# P1.1W: live_trading_allowed() checks all required flags for live order placement
+# P1.1X: live_trading_allowed() uses runtime_mode or fallback env check
 def live_trading_allowed():
-    """Check if live order placement is allowed. All flags must be true."""
-    if _rt_live_trading_allowed_available:
+    """Check if live order placement is allowed. All conditions must be true:
+    - TRADING_MODE=live_real
+    - ENABLE_REAL_ORDERS=true
+    - LIVE_TRADING_CONFIRMED=true
+    """
+    if _rt_live_trading_available:
         return _rt_live_trading_allowed()
     # Fallback: Check env flags directly
     mode = os.getenv("TRADING_MODE", "").strip().lower()
@@ -1654,14 +1656,15 @@ def handle_signal(signal):
     sym     = signal["symbol"]
     regime  = signal.get("regime", "RANGING")
 
-    # P1.1V: Defensive initialization — ensure is_paper_mode is always defined in local scope
+    # P1.1X: Paper mode check — use is_paper_mode() from runtime_mode
+    # CRITICAL: This must be computed early to route paper signals BEFORE live_trading_allowed() check
     try:
-        from src.core.runtime_mode import get_runtime_mode
-        _mode = get_runtime_mode()
-        _name = getattr(_mode, "mode", "") or getattr(_mode, "name", "")
-        is_paper_mode_local = bool(getattr(_mode, "is_paper", False) or _name in ("paper_live", "paper_train"))
+        from src.core.runtime_mode import is_paper_mode as _rt_is_paper_mode
+        is_paper_mode_local = _rt_is_paper_mode()
     except Exception:
-        is_paper_mode_local = False
+        # Fallback: check TRADING_MODE env var directly
+        mode = os.getenv("TRADING_MODE", "").strip().lower()
+        is_paper_mode_local = mode in ("paper_live", "paper_train", "replay_train")
 
     # EMERGENCY (2026-04-25): Entry gate — block new positions when Firebase degraded
     # Prevents unsafe trading when authoritative state unavailable
