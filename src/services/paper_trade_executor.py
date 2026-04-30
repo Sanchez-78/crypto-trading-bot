@@ -166,6 +166,49 @@ def _load_paper_state() -> None:
                 positions_data[trade_id] = _migrate_legacy_position(pos)
                 migrated_count += 1
 
+        # P1.1Z: Normalize training positions to fix legacy timeout values
+        normalized_count = 0
+        for trade_id, pos in positions_data.items():
+            training_bucket = pos.get("training_bucket")
+            paper_source = pos.get("paper_source")
+            is_training = (
+                training_bucket == "C_WEAK_EV_TRAIN"
+                or paper_source == "training_sampler"
+            )
+
+            if is_training:
+                # Ensure training bucket is set
+                if not training_bucket:
+                    pos["training_bucket"] = "C_WEAK_EV_TRAIN"
+
+                # Normalize timeout to effective hold time (max 300s for training)
+                max_hold = _safe_float(pos.get("max_hold_s"), 300.0)
+                timeout = _safe_float(pos.get("timeout_s"), max_hold)
+                effective_timeout = min(max_hold or 300.0, timeout or 300.0, 300.0)
+
+                if timeout != effective_timeout:
+                    pos["timeout_s"] = effective_timeout
+                    normalized_count += 1
+
+                # Ensure entry_ts and created_at are consistent
+                entry_ts = pos.get("entry_ts") or pos.get("created_at")
+                if entry_ts:
+                    if "entry_ts" not in pos:
+                        pos["entry_ts"] = entry_ts
+                    if "created_at" not in pos:
+                        pos["created_at"] = entry_ts
+
+                if normalized_count > 0 or (timeout != effective_timeout):
+                    log.info(
+                        "[PAPER_POSITION_NORMALIZED] trade_id=%s symbol=%s training_bucket=C_WEAK_EV_TRAIN "
+                        "timeout_s=%.0f max_hold_s=%.0f",
+                        trade_id,
+                        pos.get("symbol", "UNKNOWN"),
+                        effective_timeout,
+                        max_hold,
+                    )
+                    positions_data[trade_id] = pos
+
         with _POSITION_LOCK:
             _POSITIONS.update(positions_data)
 
@@ -179,6 +222,20 @@ def _load_paper_state() -> None:
                 "[PAPER_STATE_MIGRATE] count=%d reason=missing_max_hold_s",
                 migrated_count,
             )
+
+        # P1.1Z: Reconcile stale positions
+        reconcile_result = _reconcile_stale_paper_positions()
+
+        # Log startup summary
+        alive_count = len(_POSITIONS)
+        log.info(
+            "[PAPER_STATE_RECONCILE_SUMMARY] loaded=%d normalized=%d stale_closed=%d stale_pending=%d alive=%d",
+            len(positions_data),
+            normalized_count,
+            reconcile_result.get("closed", 0),
+            reconcile_result.get("pending", 0),
+            alive_count,
+        )
 
         # If we did a list->dict conversion, save back in canonical format
         if list_to_dict_count > 0:
@@ -217,6 +274,50 @@ def _normalize_side(side_raw: str) -> tuple[str, str]:
 def _generate_trade_id() -> str:
     """Generate unique trade ID."""
     return f"paper_{uuid.uuid4().hex[:12]}"
+
+
+def _safe_float(val, default: float = 0.0) -> float:
+    """Safely convert value to float."""
+    try:
+        if val is None:
+            return default
+        return float(val)
+    except (ValueError, TypeError):
+        return default
+
+
+def _effective_paper_hold_s(pos: dict) -> float:
+    """P1.1Z: Calculate effective hold time for training positions.
+
+    Training positions (C_WEAK_EV_TRAIN) must not stay open longer than max_hold_s (300s).
+    Non-training positions use their configured timeout.
+
+    Args:
+        pos: Position dict with training_bucket, max_hold_s, timeout_s, etc.
+
+    Returns:
+        Effective hold time in seconds
+    """
+    if not isinstance(pos, dict):
+        return 300.0
+
+    bucket = str(pos.get("training_bucket") or pos.get("bucket") or pos.get("explore_bucket") or "")
+    source = str(pos.get("paper_source") or pos.get("mode") or "")
+
+    is_training = (
+        bucket == "C_WEAK_EV_TRAIN"
+        or source == "training_sampler"
+    )
+
+    max_hold = _safe_float(pos.get("max_hold_s"), 300.0)
+    timeout = _safe_float(pos.get("timeout_s"), max_hold)
+
+    if is_training:
+        # Training positions: effective hold is min of max_hold and timeout, capped at 300s
+        return max(30.0, min(max_hold or 300.0, timeout or 300.0, 300.0))
+
+    # Non-training: use configured timeout or max_hold
+    return max(30.0, timeout or max_hold or 300.0)
 
 
 def _calculate_pnl(
@@ -277,6 +378,86 @@ def _calculate_pnl(
     }
 
 
+def _reconcile_stale_paper_positions(now: Optional[float] = None, price_by_symbol: Optional[dict] = None) -> dict:
+    """P1.1Z: Close stale training positions that exceed effective hold time.
+
+    Args:
+        now: Current timestamp (default: time.time())
+        price_by_symbol: Dict of current prices by symbol
+
+    Returns:
+        dict with counts: {"closed": N, "pending": N, "alive": N}
+    """
+    if now is None:
+        now = time.time()
+    if price_by_symbol is None:
+        price_by_symbol = {}
+
+    closed_count = 0
+    pending_count = 0
+    positions_to_close = []
+
+    with _POSITION_LOCK:
+        for trade_id, pos in list(_POSITIONS.items()):
+            entry_ts = _safe_float(pos.get("entry_ts") or pos.get("created_at"), 0.0)
+            if entry_ts <= 0:
+                continue
+
+            age_s = now - entry_ts
+            effective_hold = _effective_paper_hold_s(pos)
+
+            if age_s >= effective_hold:
+                positions_to_close.append((trade_id, pos, age_s, effective_hold))
+
+    # Close positions outside lock to avoid deadlock
+    for trade_id, pos, age_s, effective_hold in positions_to_close:
+        try:
+            symbol = pos.get("symbol", "UNKNOWN")
+            exit_price = price_by_symbol.get(symbol) or pos.get("last_price") or pos.get("entry_price", 0.0)
+
+            close_paper_position(
+                position_id=trade_id,
+                price=exit_price,
+                ts=now,
+                reason="TIMEOUT",
+            )
+
+            log.info(
+                "[PAPER_STALE_RECONCILE] trade_id=%s symbol=%s age_s=%.1f effective_hold_s=%.1f action=closed reason=TIMEOUT",
+                trade_id,
+                symbol,
+                age_s,
+                effective_hold,
+            )
+            closed_count += 1
+        except Exception as e:
+            log.warning(f"[PAPER_STALE_RECONCILE_ERROR] trade_id={trade_id} err={e}")
+            pending_count += 1
+
+    with _POSITION_LOCK:
+        alive_count = len(_POSITIONS)
+
+    return {
+        "closed": closed_count,
+        "pending": pending_count,
+        "alive": alive_count,
+    }
+
+
+def _is_position_stale(pos: dict, now: Optional[float] = None) -> bool:
+    """P1.1Z: Check if a position has exceeded its effective hold time."""
+    if now is None:
+        now = time.time()
+
+    entry_ts = _safe_float(pos.get("entry_ts") or pos.get("created_at"), 0.0)
+    if entry_ts <= 0:
+        return False
+
+    age_s = now - entry_ts
+    effective_hold = _effective_paper_hold_s(pos)
+    return age_s >= effective_hold
+
+
 def _check_exploration_exposure_caps(symbol: str, bucket: Optional[str]) -> Optional[dict]:
     """Check exploration-specific exposure caps.
 
@@ -285,17 +466,26 @@ def _check_exploration_exposure_caps(symbol: str, bucket: Optional[str]) -> Opti
     - max_open_per_bucket = 2
     - max_open_per_symbol_bucket = 1
 
+    P1.1Z: Ignore stale positions in cap counts.
+
     Returns:
         None if caps OK, else {"status": "blocked", "reason": ..., "detail": ...}
     """
     if not bucket:
         return None  # Not an exploration trade, skip caps
 
-    symbol_count = sum(1 for p in _POSITIONS.values() if p["symbol"] == symbol and p.get("explore_bucket"))
-    bucket_count = sum(1 for p in _POSITIONS.values() if p.get("explore_bucket") == bucket)
+    now = time.time()
+    symbol_count = sum(
+        1 for p in _POSITIONS.values()
+        if p["symbol"] == symbol and p.get("explore_bucket") and not _is_position_stale(p, now)
+    )
+    bucket_count = sum(
+        1 for p in _POSITIONS.values()
+        if p.get("explore_bucket") == bucket and not _is_position_stale(p, now)
+    )
     symbol_bucket_count = sum(
         1 for p in _POSITIONS.values()
-        if p["symbol"] == symbol and p.get("explore_bucket") == bucket
+        if p["symbol"] == symbol and p.get("explore_bucket") == bucket and not _is_position_stale(p, now)
     )
 
     # Check symbol cap
@@ -332,6 +522,8 @@ def _check_training_sampler_caps(symbol: str, bucket: Optional[str]) -> Optional
     - max_open_per_symbol = 1 (PAPER_TRAIN_MAX_OPEN_PER_SYMBOL)
     - max_open_per_bucket = 2 (PAPER_TRAIN_MAX_OPEN_PER_BUCKET)
 
+    P1.1Z: Ignore stale positions in cap counts.
+
     Returns:
         None if caps OK, else {"status": "blocked", "reason": ..., "detail": ...}
     """
@@ -343,13 +535,14 @@ def _check_training_sampler_caps(symbol: str, bucket: Optional[str]) -> Optional
     except Exception:
         return None
 
+    now = time.time()
     symbol_count = sum(
         1 for p in _POSITIONS.values()
-        if p["symbol"] == symbol and p.get("paper_source") == "training_sampler"
+        if p["symbol"] == symbol and p.get("paper_source") == "training_sampler" and not _is_position_stale(p, now)
     )
     bucket_count = sum(
         1 for p in _POSITIONS.values()
-        if p.get("training_bucket") == bucket and p.get("paper_source") == "training_sampler"
+        if p.get("training_bucket") == bucket and p.get("paper_source") == "training_sampler" and not _is_position_stale(p, now)
     )
 
     # Check symbol cap
@@ -468,21 +661,22 @@ def open_paper_position(
                     _PAPER_ENTRY_BLOCKED_THROTTLE[throttle_key] = now_ts
                 return training_cap_check
 
-        # Then check total paper position cap
-        if len(_POSITIONS) >= _MAX_OPEN:
+        # Then check total paper position cap (P1.1Z: exclude stale positions)
+        now = time.time()
+        alive_positions = [p for p in _POSITIONS.values() if not _is_position_stale(p, now)]
+        if len(alive_positions) >= _MAX_OPEN:
             # P1.1Y: Throttle PAPER_ENTRY_BLOCKED spam (max once per symbol/bucket/reason per 60s)
             bucket_name = bucket or training_bucket or "N/A"
             throttle_key = (symbol, bucket_name, "max_open_exceeded")
-            now_ts = time.time()
             last_log = _PAPER_ENTRY_BLOCKED_THROTTLE.get(throttle_key, 0.0)
-            if now_ts - last_log >= _PAPER_ENTRY_BLOCKED_TTL:
+            if now - last_log >= _PAPER_ENTRY_BLOCKED_TTL:
                 log.error(
                     "[PAPER_ENTRY_BLOCKED] symbol=%s reason=max_open_exceeded open=%d bucket=%s",
                     symbol,
-                    len(_POSITIONS),
+                    len(alive_positions),
                     bucket_name,
                 )
-                _PAPER_ENTRY_BLOCKED_THROTTLE[throttle_key] = now_ts
+                _PAPER_ENTRY_BLOCKED_THROTTLE[throttle_key] = now
             return {"status": "blocked", "reason": "max_open_exceeded"}
 
     trade_id = _generate_trade_id()
@@ -584,15 +778,17 @@ def update_paper_positions(
         entry_price = pos["entry_price"]
         age_s = ts - pos["entry_ts"]
 
-        # Use per-position max_hold_s (for exploration) or default timeout_s
+        # P1.1Z: Use effective hold time (respects training position max_hold_s)
+        effective_hold = _effective_paper_hold_s(pos)
         max_hold = pos.get("max_hold_s", pos.get("timeout_s", _MAX_AGE_S))
+        timeout_s = pos.get("timeout_s", max_hold)
 
         exit_reason = None
         if current_price >= pos["tp"]:
             exit_reason = "TP"
         elif current_price <= pos["sl"]:
             exit_reason = "SL"
-        elif age_s >= max_hold:
+        elif age_s >= effective_hold:
             exit_reason = "TIMEOUT"
 
         if exit_reason:

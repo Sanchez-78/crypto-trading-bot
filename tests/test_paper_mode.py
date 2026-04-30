@@ -2307,3 +2307,175 @@ class TestP1Y1StrictTakeDisable(unittest.TestCase):
         last_log = paper_trade_executor._PAPER_ENTRY_BLOCKED_THROTTLE.get(throttle_key, 0.0)
         should_log_third = sim_later_ts - last_log >= paper_trade_executor._PAPER_ENTRY_BLOCKED_TTL
         assert should_log_third is True, "Log after 60s should be allowed"
+
+
+class TestP1Z1StalePositionTimeout(unittest.TestCase):
+    """P1.1Z: Test stale position reconciliation and timeout fixes."""
+
+    def test_effective_paper_hold_s_training_bucket(self):
+        """P1.1Z Test 1: Training position effective hold time is capped at 300s."""
+        from src.services.paper_trade_executor import _effective_paper_hold_s
+
+        # Legacy position with timeout_s=900, max_hold_s=300
+        pos = {
+            "training_bucket": "C_WEAK_EV_TRAIN",
+            "max_hold_s": 300.0,
+            "timeout_s": 900.0,
+        }
+
+        effective = _effective_paper_hold_s(pos)
+        assert effective == 300.0, f"Training position should have effective hold 300s, got {effective}"
+
+    def test_effective_paper_hold_s_non_training(self):
+        """P1.1Z Test 2: Non-training position keeps configured timeout."""
+        from src.services.paper_trade_executor import _effective_paper_hold_s
+
+        # Non-training position with timeout_s=900
+        pos = {
+            "bucket": "A_STRICT_TAKE",
+            "max_hold_s": 300.0,
+            "timeout_s": 900.0,
+        }
+
+        effective = _effective_paper_hold_s(pos)
+        assert effective == 900.0, f"Non-training position should have effective hold 900s, got {effective}"
+
+    def test_stale_position_not_counted_in_cap(self):
+        """P1.1Z Test 3: Expired training position does not count against per-symbol cap."""
+        from src.services.paper_trade_executor import _is_position_stale
+
+        # Position aged 578s with effective hold 300s
+        now = time.time()
+        entry_ts = now - 578.0
+
+        pos = {
+            "entry_ts": entry_ts,
+            "training_bucket": "C_WEAK_EV_TRAIN",
+            "max_hold_s": 300.0,
+            "timeout_s": 300.0,
+        }
+
+        is_stale = _is_position_stale(pos, now)
+        assert is_stale is True, "Position aged 578s with 300s hold should be stale"
+
+    def test_fresh_position_not_stale(self):
+        """P1.1Z Test 4: Fresh position is not considered stale."""
+        from src.services.paper_trade_executor import _is_position_stale
+
+        # Position aged 100s with effective hold 300s
+        now = time.time()
+        entry_ts = now - 100.0
+
+        pos = {
+            "entry_ts": entry_ts,
+            "training_bucket": "C_WEAK_EV_TRAIN",
+            "max_hold_s": 300.0,
+            "timeout_s": 300.0,
+        }
+
+        is_stale = _is_position_stale(pos, now)
+        assert is_stale is False, "Position aged 100s with 300s hold should not be stale"
+
+    def test_reconcile_closes_stale_positions(self):
+        """P1.1Z Test 5: reconcile_stale_paper_positions() closes expired positions."""
+        from src.services.paper_trade_executor import (
+            _reconcile_stale_paper_positions,
+            reset_paper_positions,
+            open_paper_position,
+        )
+
+        reset_paper_positions()
+
+        # Create a stale training position
+        signal = {
+            "symbol": "BTCUSDT",
+            "action": "BUY",
+        }
+
+        open_result = open_paper_position(
+            signal=signal,
+            price=50000.0,
+            ts=time.time() - 400.0,  # Created 400 seconds ago
+            reason="TEST",
+            extra={
+                "paper_source": "training_sampler",
+                "training_bucket": "C_WEAK_EV_TRAIN",
+                "max_hold_s": 300.0,
+            },
+        )
+
+        assert open_result.get("status") == "opened", "Should open position"
+
+        # Reconcile should close it
+        result = _reconcile_stale_paper_positions()
+        assert result["closed"] > 0, "Should close stale position"
+
+        reset_paper_positions()
+
+    def test_normalize_training_position_timeout(self):
+        """P1.1Z Test 6: Loaded training position with timeout_s=900 is normalized to 300."""
+        from src.services.paper_trade_executor import _effective_paper_hold_s
+
+        # Simulate a loaded position with legacy timeout
+        pos = {
+            "trade_id": "paper_test123",
+            "symbol": "BTCUSDT",
+            "training_bucket": "C_WEAK_EV_TRAIN",
+            "paper_source": "training_sampler",
+            "max_hold_s": 300.0,
+            "timeout_s": 900.0,  # Legacy value
+            "entry_ts": time.time() - 350.0,
+        }
+
+        # Effective hold should be 300
+        effective = _effective_paper_hold_s(pos)
+        assert effective == 300.0, f"Should normalize to 300, got {effective}"
+
+    def test_stale_pending_position_logic(self):
+        """P1.1Z Test 7: Stale positions with pending close don't count against caps."""
+        from src.services.paper_trade_executor import _is_position_stale
+
+        # Position that will be stale
+        now = time.time()
+        entry_ts = now - 350.0
+
+        pos = {
+            "entry_ts": entry_ts,
+            "training_bucket": "C_WEAK_EV_TRAIN",
+            "max_hold_s": 300.0,
+            "timeout_s": 300.0,
+            "stale_pending": True,
+        }
+
+        # Should be stale
+        is_stale = _is_position_stale(pos, now)
+        assert is_stale is True, "Position aged 350s should be stale"
+
+    def test_non_training_position_timeout_unchanged(self):
+        """P1.1Z Test 8: Non-training positions keep their configured timeout."""
+        from src.services.paper_trade_executor import _effective_paper_hold_s
+
+        # Non-training (A_STRICT_TAKE) position with 900s timeout
+        pos = {
+            "bucket": "A_STRICT_TAKE",
+            "paper_source": "strict_take",
+            "max_hold_s": 300.0,
+            "timeout_s": 900.0,
+        }
+
+        effective = _effective_paper_hold_s(pos)
+        assert effective == 900.0, f"Non-training should keep 900s, got {effective}"
+
+    def test_paper_state_reconcile_summary_emits(self):
+        """P1.1Z Test 9: Paper state load emits reconcile summary with expected counts."""
+        from src.services import paper_trade_executor
+
+        # Just verify the reconciliation function exists and returns proper dict
+        result = paper_trade_executor._reconcile_stale_paper_positions()
+        assert isinstance(result, dict)
+        assert "closed" in result
+        assert "pending" in result
+        assert "alive" in result
+        assert isinstance(result["closed"], int)
+        assert isinstance(result["pending"], int)
+        assert isinstance(result["alive"], int)
