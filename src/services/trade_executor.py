@@ -148,6 +148,24 @@ _PAPER_ENTRY_BLOCKED_THROTTLE = {}  # (symbol, bucket, reason) -> last_log_ts
 _PAPER_ENTRY_BLOCKED_TTL = 60.0  # seconds between logs per key
 _unblock_trades_hour = []       # list of timestamps of unblock trades in last 60 min
 
+# P1.1AB: Pipeline tracing counters (per cycle)
+_PIPELINE_CYCLE = {
+    "tick": 0,
+    "raw_signals": 0,
+    "rde_candidates": 0,
+    "accepted_candidates": 0,
+    "training_candidates": 0,
+    "paper_entries": 0,
+    "real_entries": 0,
+    "rejects": 0,
+    "reject_reasons": {},  # reason -> count
+    "last_summary_tick": 0,
+}
+_PIPELINE_LOCK = threading.RLock()
+_PIPELINE_SUMMARY_INTERVAL = 60.0  # seconds
+_PIPELINE_LAST_SUMMARY_TS = [0.0]
+_PIPELINE_STALL_THRESHOLD_S = 600.0  # 10 minutes without new entries
+
 FEE_RT      = 0.0015    # 0.15% round-trip (Binance taker 0.075%×2)
 MIN_TP_PCT  = 0.008     # 0.80% — giving trades room to hit higher RRs
 MIN_SL_PCT  = 0.004     # 0.40% min SL — double the old size to survive spread + fee + noise
@@ -1596,6 +1614,12 @@ def _maybe_route_to_paper_training(signal: dict, current_price: float, reject_re
             current_price=current_price,
         )
 
+        # P1.1AB: Log training sampler check
+        bucket = result.get("bucket", "UNKNOWN")
+        open_symbol = len([p for p in _positions.values() if p.get("symbol") == sym])
+        open_bucket = len([p for p in _positions.values() if p.get("explore_bucket") == bucket])
+        _pipeline_record_training_check(sym, bucket, open_symbol, open_bucket, result.get("allowed", False), result.get("reason", "unknown"))
+
         if result.get("allowed"):
             # Open the paper position using the training sampler result
             try:
@@ -1603,6 +1627,9 @@ def _maybe_route_to_paper_training(signal: dict, current_price: float, reject_re
                 trade_signal = dict(signal)
                 if result.get("side_inferred"):
                     trade_signal["action"] = result["side"]
+
+                # P1.1AB: Log paper entry attempt
+                _pipeline_record_paper_entry_attempt(sym, result.get("bucket", ""), current_price)
 
                 open_result = open_paper_position(
                     signal=trade_signal,
@@ -1626,6 +1653,9 @@ def _maybe_route_to_paper_training(signal: dict, current_price: float, reject_re
                     },
                 )
                 if open_result.get("status") == "opened":
+                    # P1.1AB: Record successful entry
+                    trade_id = open_result.get("trade_id", "UNKNOWN")
+                    _pipeline_record_paper_entry_success(sym, result.get("bucket", ""), trade_id)
                     log.info(
                         "[PAPER_TRAIN_ENTRY] bucket=%s symbol=%s side=%s price=%.8f "
                         "cost_edge_ok=%s expected_move_pct=%.4f side_inferred=%s source=%s",
@@ -1640,6 +1670,8 @@ def _maybe_route_to_paper_training(signal: dict, current_price: float, reject_re
                     )
                     return True
                 else:
+                    # P1.1AB: Record paper entry skip
+                    _pipeline_record_paper_entry_skip(sym, result.get("bucket", ""), open_result.get("reason", "open_failed"))
                     log.info(
                         "[PAPER_TRAIN_BLOCKED] symbol=%s bucket=%s reason=%s",
                         sym,
@@ -1659,10 +1691,114 @@ def _maybe_route_to_paper_training(signal: dict, current_price: float, reject_re
         return False
 
 
+def _pipeline_record_signal(symbol: str, side: str, regime: str, ev: float, p: float, score: float) -> None:
+    """P1.1AB: Log raw signal received."""
+    with _PIPELINE_LOCK:
+        _PIPELINE_CYCLE["raw_signals"] += 1
+    log.info(
+        "[SIGNAL_RAW] symbol=%s side=%s regime=%s ev=%.4f p=%.2f score=%.3f",
+        symbol, side, regime, ev, p, score
+    )
+
+
+def _pipeline_record_rde_candidate(symbol: str, bucket: str, accepted: bool, reason: str) -> None:
+    """P1.1AB: Log RDE candidate status."""
+    with _PIPELINE_LOCK:
+        _PIPELINE_CYCLE["rde_candidates"] += 1
+        if accepted:
+            _PIPELINE_CYCLE["accepted_candidates"] += 1
+        else:
+            _PIPELINE_CYCLE["rejects"] += 1
+            _PIPELINE_CYCLE["reject_reasons"][reason] = _PIPELINE_CYCLE["reject_reasons"].get(reason, 0) + 1
+    log.info(
+        "[RDE_CANDIDATE] symbol=%s bucket=%s accepted=%s reason=%s",
+        symbol, bucket, accepted, reason
+    )
+
+
+def _pipeline_record_training_check(symbol: str, bucket: str, open_symbol: int, open_bucket: int, allowed: bool, reason: str) -> None:
+    """P1.1AB: Log training sampler cap check."""
+    with _PIPELINE_LOCK:
+        _PIPELINE_CYCLE["training_candidates"] += 1
+    log.info(
+        "[TRAINING_SAMPLER_CHECK] symbol=%s bucket=%s open_symbol=%d open_bucket=%d allowed=%s reason=%s",
+        symbol, bucket, open_symbol, open_bucket, allowed, reason
+    )
+
+
+def _pipeline_record_paper_entry_attempt(symbol: str, bucket: str, price: float) -> None:
+    """P1.1AB: Log paper entry attempt."""
+    log.info("[PAPER_ENTRY_ATTEMPT] symbol=%s bucket=%s price=%.8f", symbol, bucket, price)
+
+
+def _pipeline_record_paper_entry_skip(symbol: str, bucket: str, reason: str) -> None:
+    """P1.1AB: Log paper entry skip."""
+    with _PIPELINE_LOCK:
+        _PIPELINE_CYCLE["rejects"] += 1
+        _PIPELINE_CYCLE["reject_reasons"][reason] = _PIPELINE_CYCLE["reject_reasons"].get(reason, 0) + 1
+    log.info("[PAPER_ENTRY_SKIP] symbol=%s bucket=%s reason=%s", symbol, bucket, reason)
+
+
+def _pipeline_record_paper_entry_success(symbol: str, bucket: str, trade_id: str) -> None:
+    """P1.1AB: Log successful paper entry."""
+    with _PIPELINE_LOCK:
+        _PIPELINE_CYCLE["paper_entries"] += 1
+
+
+def _pipeline_emit_summary() -> None:
+    """P1.1AB: Emit cycle summary and check for stalls."""
+    global _PIPELINE_LAST_SUMMARY_TS
+    now = time.time()
+
+    if now - _PIPELINE_LAST_SUMMARY_TS[0] < _PIPELINE_SUMMARY_INTERVAL:
+        return
+
+    _PIPELINE_LAST_SUMMARY_TS[0] = now
+
+    with _PIPELINE_LOCK:
+        cycle = dict(_PIPELINE_CYCLE)
+        top_reject = max(cycle["reject_reasons"].items(), key=lambda x: x[1])[0] if cycle["reject_reasons"] else "NONE"
+        reject_detail = ", ".join(f"{k}:{v}" for k, v in sorted(cycle["reject_reasons"].items(), key=lambda x: x[1], reverse=True)[:3])
+
+    log.warning(
+        "[ENTRY_PIPELINE_SUMMARY] ticks=%d raw_signals=%d rde_candidates=%d "
+        "accepted_candidates=%d training_candidates=%d paper_entries=%d real_entries=%d "
+        "rejects=%d top_reject_reason=%s reject_detail=[%s]",
+        cycle["tick"],
+        cycle["raw_signals"],
+        cycle["rde_candidates"],
+        cycle["accepted_candidates"],
+        cycle["training_candidates"],
+        cycle["paper_entries"],
+        cycle["real_entries"],
+        cycle["rejects"],
+        top_reject,
+        reject_detail,
+    )
+
+    # Check for stall: no entries for >10 min but signals exist
+    if cycle["raw_signals"] > 0 and cycle["paper_entries"] == 0:
+        if now - _PIPELINE_LAST_SUMMARY_TS[0] > _PIPELINE_STALL_THRESHOLD_S:
+            log.error(
+                "[ENTRY_PIPELINE_STALL] no_paper_entries_for=%.0fs raw_signals=%d "
+                "top_reject_reasons=[%s]",
+                _PIPELINE_STALL_THRESHOLD_S,
+                cycle["raw_signals"],
+                reject_detail,
+            )
+
+
 def handle_signal(signal):
     global _last_replace_ts   # V10.10: written directly in efficiency replacement path
     sym     = signal["symbol"]
     regime  = signal.get("regime", "RANGING")
+
+    # P1.1AB: Log raw signal with key attributes
+    side = signal.get("action", signal.get("side", "UNKNOWN"))
+    ev = signal.get("ev", 0.0)
+    p = signal.get("p", signal.get("confidence", 0.5))
+    score = signal.get("score", 0.0)
+    _pipeline_record_signal(sym, side, regime, ev, p, score)
 
     # P1.1X: Paper mode check — use is_paper_mode() from runtime_mode
     # CRITICAL: This must be computed early to route paper signals BEFORE live_trading_allowed() check
@@ -1736,6 +1872,10 @@ def handle_signal(signal):
         log.warning(f"[DEDUP_GUARD_FAIL] {e} — proceeding without dedup checks")
 
     allowed, reason = _allow_trade(sym, signal["action"], regime)
+    # P1.1AB: Log RDE candidate status
+    bucket = signal.get("bucket", "A_STRICT_TAKE")
+    _pipeline_record_rde_candidate(sym, bucket, allowed, reason)
+
     if not allowed:
         if reason == "max_positions":
             # Global 15 s cooldown — covers both V10.10 and V10.4b paths
@@ -2589,6 +2729,11 @@ def handle_signal(signal):
 
 
 def on_price(data):
+    # P1.1AB: Update tick counter and emit pipeline summary
+    with _PIPELINE_LOCK:
+        _PIPELINE_CYCLE["tick"] += 1
+    _pipeline_emit_summary()
+
     # V10.13u+20: Update paper positions before live position handling
     try:
         from src.core.runtime_mode import is_paper_mode as _is_paper_mode
