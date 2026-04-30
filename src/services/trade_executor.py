@@ -2598,6 +2598,13 @@ def on_price(data):
             for _closed_trade in _closed_papers:
                 _save_paper_trade_closed(_closed_trade)
 
+        # P1.1AA: Check and close timeout positions (independent of price updates)
+        from src.services.paper_trade_executor import check_and_close_timeout_positions
+        _timeout_closes = check_and_close_timeout_positions(time.time())
+        if _timeout_closes:
+            for _closed_trade in _timeout_closes:
+                _save_paper_trade_closed(_closed_trade)
+
     if time.time() - _last_flush[0] >= FLUSH_EVERY and BATCH:
         _flush()
 

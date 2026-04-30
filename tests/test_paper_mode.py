@@ -9,6 +9,7 @@ from src.services.paper_trade_executor import (
     close_paper_position,
     get_paper_open_positions,
     reset_paper_positions,
+    check_and_close_timeout_positions,
     _calculate_pnl,
 )
 
@@ -2575,3 +2576,326 @@ class TestP1Z1StalePositionTimeout(unittest.TestCase):
         assert isinstance(result["closed"], int)
         assert isinstance(result["pending"], int)
         assert isinstance(result["alive"], int)
+
+
+class TestP1AA1TimeoutCloseLoop(unittest.TestCase):
+    """P1.1AA: Test fresh-position timeout close loop."""
+
+    def test_fresh_training_position_closes_after_effective_hold_exceeded(self):
+        """P1.1AA Test 1: Fresh C_WEAK_EV_TRAIN closes after 300s effective hold."""
+        from src.services.paper_trade_executor import (
+            check_and_close_timeout_positions,
+            reset_paper_positions,
+            open_paper_position,
+            get_paper_open_positions,
+        )
+
+        reset_paper_positions()
+
+        # Open a fresh training position
+        open_ts = time.time()
+        signal = {"symbol": "BTCUSDT", "action": "BUY"}
+        result = open_paper_position(
+            signal=signal,
+            price=50000.0,
+            ts=open_ts,
+            reason="TEST",
+            extra={
+                "paper_source": "training_sampler",
+                "training_bucket": "C_WEAK_EV_TRAIN",
+                "max_hold_s": 300.0,
+            },
+        )
+        assert result["status"] == "opened"
+        trade_id = result["trade_id"]
+
+        # Position should be open
+        open_positions = get_paper_open_positions()
+        assert len(open_positions) == 1
+
+        # Check timeout at 299s (should NOT close)
+        closed = check_and_close_timeout_positions(open_ts + 299)
+        assert len(closed) == 0, "Position aged 299s should not close"
+
+        # Check timeout at 301s (SHOULD close)
+        closed = check_and_close_timeout_positions(open_ts + 301)
+        assert len(closed) == 1, "Position aged 301s should close"
+        assert closed[0]["trade_id"] == trade_id
+        assert closed[0]["exit_reason"] == "TIMEOUT"
+
+        reset_paper_positions()
+
+    def test_fresh_training_position_stays_open_before_timeout(self):
+        """P1.1AA Test 2: Fresh C_WEAK_EV_TRAIN stays open before 300s."""
+        from src.services.paper_trade_executor import (
+            check_and_close_timeout_positions,
+            reset_paper_positions,
+            open_paper_position,
+            get_paper_open_positions,
+        )
+
+        reset_paper_positions()
+
+        # Open a fresh training position
+        open_ts = time.time()
+        signal = {"symbol": "ETHUSDT", "action": "BUY"}
+        result = open_paper_position(
+            signal=signal,
+            price=2000.0,
+            ts=open_ts,
+            reason="TEST",
+            extra={
+                "paper_source": "training_sampler",
+                "training_bucket": "C_WEAK_EV_TRAIN",
+                "max_hold_s": 300.0,
+            },
+        )
+        assert result["status"] == "opened"
+
+        # Check timeout at 150s (should NOT close)
+        closed = check_and_close_timeout_positions(open_ts + 150)
+        assert len(closed) == 0
+
+        # Position should still be open
+        open_positions = get_paper_open_positions()
+        assert len(open_positions) == 1
+
+        reset_paper_positions()
+
+    def test_timeout_uses_effective_hold_not_raw_timeout_s(self):
+        """P1.1AA Test 3: timeout_s=900 + max_hold_s=300 closes at 300s, not 900s."""
+        from src.services.paper_trade_executor import (
+            check_and_close_timeout_positions,
+            reset_paper_positions,
+            open_paper_position,
+        )
+
+        reset_paper_positions()
+
+        # Open with timeout_s=900 but max_hold_s=300 (training position)
+        open_ts = time.time()
+        signal = {"symbol": "BNBUSDT", "action": "BUY"}
+        result = open_paper_position(
+            signal=signal,
+            price=600.0,
+            ts=open_ts,
+            reason="TEST",
+            extra={
+                "paper_source": "training_sampler",
+                "training_bucket": "C_WEAK_EV_TRAIN",
+                "max_hold_s": 300.0,
+                "timeout_s": 900.0,  # Legacy value that should be capped
+            },
+        )
+        assert result["status"] == "opened"
+
+        # At 350s, should be closed (because effective_hold = 300, not 900)
+        closed = check_and_close_timeout_positions(open_ts + 350)
+        assert len(closed) == 1, "Should close at 350s with max_hold_s=300"
+
+        reset_paper_positions()
+
+    def test_timeout_close_calls_learning_once(self):
+        """P1.1AA Test 4: Timeout close calls learning update exactly once."""
+        from src.services.paper_trade_executor import (
+            check_and_close_timeout_positions,
+            reset_paper_positions,
+            open_paper_position,
+            _CLOSED_TRADES_THIS_SESSION,
+        )
+
+        reset_paper_positions()
+        _CLOSED_TRADES_THIS_SESSION.clear()
+
+        # Open a training position
+        open_ts = time.time()
+        signal = {"symbol": "DOGEUSDT", "action": "BUY"}
+        result = open_paper_position(
+            signal=signal,
+            price=0.5,
+            ts=open_ts,
+            reason="TEST",
+            extra={
+                "paper_source": "training_sampler",
+                "training_bucket": "C_WEAK_EV_TRAIN",
+                "max_hold_s": 300.0,
+            },
+        )
+        trade_id = result["trade_id"]
+
+        # Close via timeout
+        closed = check_and_close_timeout_positions(open_ts + 301)
+        assert len(closed) == 1
+
+        # Verify trade is in deduplication set (means learning was called once)
+        assert trade_id in _CLOSED_TRADES_THIS_SESSION
+
+        reset_paper_positions()
+        _CLOSED_TRADES_THIS_SESSION.clear()
+
+    def test_timeout_close_updates_bucket_metrics(self):
+        """P1.1AA Test 5: Timeout close calls bucket metrics update exactly once."""
+        from src.services.paper_trade_executor import (
+            check_and_close_timeout_positions,
+            reset_paper_positions,
+            open_paper_position,
+        )
+
+        reset_paper_positions()
+
+        # Open a training position
+        open_ts = time.time()
+        signal = {"symbol": "SOLUSDT", "action": "BUY", "ev": 0.05}
+        result = open_paper_position(
+            signal=signal,
+            price=140.0,
+            ts=open_ts,
+            reason="TEST",
+            extra={
+                "paper_source": "training_sampler",
+                "training_bucket": "C_WEAK_EV_TRAIN",
+                "max_hold_s": 300.0,
+            },
+        )
+        assert result["status"] == "opened"
+
+        # Close via timeout and verify metrics update happened
+        closed = check_and_close_timeout_positions(open_ts + 301)
+        assert len(closed) == 1
+        assert "net_pnl_pct" in closed[0]  # Metrics should be present
+
+        reset_paper_positions()
+
+    def test_closed_position_not_counted_in_per_symbol_cap(self):
+        """P1.1AA Test 6: Closed position no longer blocks per-symbol training cap."""
+        from src.services.paper_trade_executor import (
+            check_and_close_timeout_positions,
+            reset_paper_positions,
+            open_paper_position,
+            _check_training_sampler_caps,
+        )
+
+        reset_paper_positions()
+
+        # Open first training position
+        open_ts = time.time()
+        signal = {"symbol": "ADAUSDT", "action": "BUY"}
+        result1 = open_paper_position(
+            signal=signal,
+            price=1.0,
+            ts=open_ts,
+            reason="TEST",
+            extra={
+                "paper_source": "training_sampler",
+                "training_bucket": "C_WEAK_EV_TRAIN",
+                "max_hold_s": 300.0,
+            },
+        )
+        assert result1["status"] == "opened"
+
+        # First position should block second for same symbol
+        cap_check = _check_training_sampler_caps("ADAUSDT", "C_WEAK_EV_TRAIN")
+        assert cap_check is not None, "Should be blocked by first position"
+
+        # Close first position via timeout
+        closed = check_and_close_timeout_positions(open_ts + 301)
+        assert len(closed) == 1
+
+        # Now second position should NOT be blocked
+        cap_check = _check_training_sampler_caps("ADAUSDT", "C_WEAK_EV_TRAIN")
+        assert cap_check is None, "Should not be blocked after first position closes"
+
+        reset_paper_positions()
+
+    def test_closed_position_not_counted_in_bucket_cap(self):
+        """P1.1AA Test 7: Closed position no longer blocks bucket cap."""
+        from src.services.paper_trade_executor import (
+            check_and_close_timeout_positions,
+            reset_paper_positions,
+            open_paper_position,
+            _check_training_sampler_caps,
+        )
+
+        reset_paper_positions()
+
+        # Open first position in bucket (bucket cap = 2)
+        open_ts = time.time()
+        signal = {"symbol": "LTCUSDT", "action": "BUY"}
+        result1 = open_paper_position(
+            signal=signal,
+            price=100.0,
+            ts=open_ts,
+            reason="TEST",
+            extra={
+                "paper_source": "training_sampler",
+                "training_bucket": "C_WEAK_EV_TRAIN",
+                "max_hold_s": 300.0,
+            },
+        )
+        assert result1["status"] == "opened"
+
+        # Open second position in same bucket (100s later)
+        open_ts2 = open_ts + 100
+        signal2 = {"symbol": "MATICUSDT", "action": "BUY"}
+        result2 = open_paper_position(
+            signal=signal2,
+            price=0.7,
+            ts=open_ts2,
+            reason="TEST",
+            extra={
+                "paper_source": "training_sampler",
+                "training_bucket": "C_WEAK_EV_TRAIN",
+                "max_hold_s": 300.0,
+            },
+        )
+        assert result2["status"] == "opened"
+
+        # Now bucket is full (2 positions), third should be blocked
+        cap_check = _check_training_sampler_caps("XLMUSDT", "C_WEAK_EV_TRAIN")
+        assert cap_check is not None, "Should be blocked by bucket cap"
+
+        # Close first position via timeout (at 301s from open_ts)
+        closed = check_and_close_timeout_positions(open_ts + 301)
+        assert len(closed) == 1, f"Should close only first position, got {len(closed)}"
+
+        # Now third position should NOT be blocked
+        cap_check = _check_training_sampler_caps("XLMUSDT", "C_WEAK_EV_TRAIN")
+        assert cap_check is None, "Should not be blocked after position closes"
+
+        reset_paper_positions()
+
+    def test_paper_train_timeout_no_live_order_path(self):
+        """P1.1AA Test 8: Timeout close in paper_train never touches live order path."""
+        from src.services.paper_trade_executor import (
+            check_and_close_timeout_positions,
+            reset_paper_positions,
+            open_paper_position,
+        )
+
+        reset_paper_positions()
+
+        # Open a training position
+        open_ts = time.time()
+        signal = {"symbol": "TRXUSDT", "action": "BUY"}
+        result = open_paper_position(
+            signal=signal,
+            price=0.12,
+            ts=open_ts,
+            reason="TEST",
+            extra={
+                "paper_source": "training_sampler",
+                "training_bucket": "C_WEAK_EV_TRAIN",
+                "max_hold_s": 300.0,
+            },
+        )
+        assert result["status"] == "opened"
+
+        # Close via timeout - should return closed_trade dict, not None
+        closed = check_and_close_timeout_positions(open_ts + 301)
+        assert len(closed) == 1
+        assert closed[0]["exit_reason"] == "TIMEOUT"
+        assert closed[0]["symbol"] == "TRXUSDT"
+        # Should NOT have any live order fields
+        assert "live_order_id" not in closed[0]
+
+        reset_paper_positions()

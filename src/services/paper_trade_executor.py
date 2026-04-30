@@ -28,6 +28,10 @@ _CLOSED_TRADES_LOCK = __import__("threading").RLock()
 _PAPER_ENTRY_BLOCKED_THROTTLE = {}  # (symbol, bucket, reason) -> last_log_ts
 _PAPER_ENTRY_BLOCKED_TTL = 60.0  # seconds between logs per key
 
+# P1.1AA: Throttle PAPER_TIMEOUT_SCAN logs (max once per 60s)
+_PAPER_TIMEOUT_SCAN_THROTTLE = 0.0  # last scan log timestamp
+_PAPER_TIMEOUT_SCAN_TTL = 60.0  # seconds between scan logs
+
 
 def _save_paper_state() -> None:
     """Save open paper positions to disk with atomic writes."""
@@ -802,6 +806,103 @@ def update_paper_positions(
             closed_trade = close_paper_position(position_id=trade_id, price=current_price, ts=ts, reason=exit_reason)
             if closed_trade:
                 closed_trades.append(closed_trade)
+
+    return closed_trades
+
+
+def check_and_close_timeout_positions(now: Optional[float] = None) -> List[dict]:
+    """P1.1AA: Scan all open positions and close those that exceed effective hold time.
+
+    This function runs independently of price updates, ensuring timeout closes
+    happen even if a symbol stops receiving price ticks.
+
+    Args:
+        now: Current timestamp (default: time.time())
+
+    Returns:
+        list of closed trade dicts
+    """
+    global _PAPER_TIMEOUT_SCAN_THROTTLE
+
+    if now is None:
+        now = time.time()
+
+    closed_trades = []
+    positions_to_check = []
+    expired_count = 0
+
+    # Scan all positions (locked read)
+    with _POSITION_LOCK:
+        for trade_id, pos in list(_POSITIONS.items()):
+            entry_ts = _safe_float(pos.get("entry_ts") or pos.get("created_at"), 0.0)
+            if entry_ts <= 0:
+                continue
+
+            age_s = now - entry_ts
+            effective_hold = _effective_paper_hold_s(pos)
+
+            if age_s >= effective_hold:
+                positions_to_check.append((trade_id, pos, age_s, effective_hold))
+                expired_count += 1
+
+        alive_count = len(_POSITIONS) - expired_count
+
+    # Log timeout scan diagnostics (throttled)
+    if now - _PAPER_TIMEOUT_SCAN_THROTTLE >= _PAPER_TIMEOUT_SCAN_TTL:
+        next_expiry_s = None
+        with _POSITION_LOCK:
+            for pos in _POSITIONS.values():
+                entry_ts = _safe_float(pos.get("entry_ts") or pos.get("created_at"), 0.0)
+                if entry_ts > 0:
+                    age_s = now - entry_ts
+                    effective_hold = _effective_paper_hold_s(pos)
+                    remaining_s = max(0.0, effective_hold - age_s)
+                    if next_expiry_s is None or remaining_s < next_expiry_s:
+                        next_expiry_s = remaining_s
+
+        log.info(
+            "[PAPER_TIMEOUT_SCAN] open=%d expired=%d alive=%d next_expiry_s=%.1f",
+            len(_POSITIONS),
+            expired_count,
+            alive_count,
+            next_expiry_s or 0.0,
+        )
+        _PAPER_TIMEOUT_SCAN_THROTTLE = now
+
+    # Close timed-out positions (outside lock to avoid deadlock)
+    for trade_id, pos, age_s, effective_hold in positions_to_check:
+        try:
+            symbol = pos.get("symbol", "UNKNOWN")
+            # Use last known price from position, or entry price as fallback
+            exit_price = pos.get("last_price") or pos.get("entry_price", 0.0)
+
+            log.info(
+                "[PAPER_TIMEOUT_DUE] trade_id=%s symbol=%s age_s=%.1f hold_limit_s=%.1f bucket=%s training_bucket=%s",
+                trade_id,
+                symbol,
+                age_s,
+                effective_hold,
+                pos.get("explore_bucket", "UNKNOWN"),
+                pos.get("training_bucket", ""),
+            )
+
+            closed_trade = close_paper_position(
+                position_id=trade_id,
+                price=exit_price,
+                ts=now,
+                reason="TIMEOUT",
+            )
+
+            if closed_trade:
+                log.info(
+                    "[PAPER_CLOSE_PATH] trade_id=%s symbol=%s reason=TIMEOUT learning_called=%s metrics_called=True",
+                    trade_id,
+                    symbol,
+                    pos.get("paper_source") == "training_sampler",
+                )
+                closed_trades.append(closed_trade)
+        except Exception as e:
+            log.warning(f"[PAPER_TIMEOUT_CLOSE_ERROR] trade_id={trade_id} err={e}")
 
     return closed_trades
 
