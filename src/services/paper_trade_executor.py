@@ -661,17 +661,17 @@ def _canonical_closed_paper_trade(raw: dict) -> dict:
 
 
 def _safe_learning_update_for_paper_trade(pos: dict, pnl_data: dict) -> bool:
-    """P1.1R: Convert closed paper trade to learning_monitor update via safe API. Never raises.
+    """P1.1V: Convert closed paper trade to learning update. Decouple learning from telemetry. Never raises.
 
     Args:
         pos: Position dict (closed trade with metadata)
         pnl_data: PnL breakdown dict with net_pnl_pct, outcome
 
     Returns:
-        True if update succeeded, False if skipped or errored
+        True if learning succeeded, False if skipped or errored
     """
+    # Merge and canonicalize
     try:
-        # Merge position and pnl_data into canonical form
         merged = {**pos, **pnl_data}
         canon = _canonical_closed_paper_trade(merged)
 
@@ -679,48 +679,51 @@ def _safe_learning_update_for_paper_trade(pos: dict, pnl_data: dict) -> bool:
         if not canon["symbol"] or canon["symbol"] == "UNKNOWN":
             log.debug("[LEARNING_UPDATE_SKIP] reason=no_symbol bucket=%s", canon["bucket"])
             return False
+    except Exception as e:
+        log.exception("[LEARNING_UPDATE_ERROR] canonicalization failed: %s", e)
+        return False
 
-        # Import the safe paper learning API (P1.1R: no adapter guessing)
+    # P1.1V: Separate learning update from telemetry (telemetry errors don't mask learning result)
+    ok = False
+    try:
         from src.services.learning_monitor import update_from_paper_trade
+        ok = bool(update_from_paper_trade(canon))
+        log.info(
+            "[LEARNING_UPDATE] ok=%s source=paper_closed_trade symbol=%s regime=%s bucket=%s outcome=%s net_pnl_pct=%.4f",
+            ok,
+            canon["symbol"],
+            canon["regime"],
+            canon["bucket"],
+            canon["outcome"],
+            canon["net_pnl_pct"],
+        )
+    except Exception as e:
+        log.exception(
+            "[LEARNING_UPDATE_ERROR] err=%r symbol=%s bucket=%s fn=update_from_paper_trade",
+            e,
+            canon.get("symbol"),
+            canon.get("bucket"),
+        )
+        return False
+
+    # P1.1V: Telemetry in separate try/except so learning success isn't masked by telemetry errors
+    try:
         from src.services.paper_training_sampler import (
             record_training_closed,
             record_training_learning_update,
         )
-
-        # Record training trade metrics
         record_training_closed(bucket=canon["bucket"], outcome=canon["outcome"])
-
-        # Update learning monitor via safe API
-        ok = update_from_paper_trade(canon)
         if ok:
             record_training_learning_update()
-            log.info(
-                "[LEARNING_UPDATE] source=paper_closed_trade symbol=%s regime=%s bucket=%s outcome=%s net_pnl_pct=%.4f ok=True",
-                canon["symbol"],
-                canon["regime"],
-                canon["bucket"],
-                canon["outcome"],
-                canon["net_pnl_pct"],
-            )
-        else:
-            log.warning(
-                "[LEARNING_UPDATE_ERROR] update_from_paper_trade_false symbol=%s bucket=%s regime=%s",
-                canon["symbol"],
-                canon["bucket"],
-                canon["regime"],
-            )
-
-        return bool(ok)
-
     except Exception as e:
-        bucket = pos.get("training_bucket") or pos.get("explore_bucket") or "UNKNOWN"
-        log.exception(
-            "[LEARNING_UPDATE_ERROR] err=%s symbol=%s bucket=%s fn=update_from_paper_trade",
-            str(e),
-            pos.get("symbol", "UNKNOWN"),
-            bucket,
+        log.warning(
+            "[PAPER_TRAIN_METRICS_ERROR] err=%r symbol=%s bucket=%s",
+            e,
+            canon.get("symbol"),
+            canon.get("bucket"),
         )
-        return False
+
+    return ok
 
 
 def _primary_bucket_for_closed_trade(t: dict) -> str:

@@ -1501,12 +1501,8 @@ def _save_paper_trade_closed(closed_trade: dict) -> None:
         except Exception as e:
             log.debug(f"[METRICS_UPDATE_FAILED] {e}")
 
-        # Update bucket-level metrics for exploration analysis
-        try:
-            from src.services.bucket_metrics import update_bucket_metrics
-            update_bucket_metrics(closed_trade)
-        except Exception as e:
-            log.debug(f"[BUCKET_METRICS_FAILED] {e}")
+        # P1.1V: Bucket metrics already updated by close_paper_position()
+        # via _safe_bucket_metrics_update_for_paper_trade(). Do NOT duplicate.
 
     except Exception as e:
         log.warning(f"[PAPER_SAVE_ERROR] {e}")
@@ -1640,6 +1636,15 @@ def handle_signal(signal):
     global _last_replace_ts   # V10.10: written directly in efficiency replacement path
     sym     = signal["symbol"]
     regime  = signal.get("regime", "RANGING")
+
+    # P1.1V: Defensive initialization — ensure is_paper_mode is always defined in local scope
+    try:
+        from src.core.runtime_mode import get_runtime_mode
+        _mode = get_runtime_mode()
+        _name = getattr(_mode, "mode", "") or getattr(_mode, "name", "")
+        is_paper_mode_local = bool(getattr(_mode, "is_paper", False) or _name in ("paper_live", "paper_train"))
+    except Exception:
+        is_paper_mode_local = False
 
     # EMERGENCY (2026-04-25): Entry gate — block new positions when Firebase degraded
     # Prevents unsafe trading when authoritative state unavailable
@@ -2423,7 +2428,7 @@ def handle_signal(signal):
         pass
 
     # V10.13u+20: Route to paper trading if in paper mode
-    if is_paper_mode():
+    if is_paper_mode_local:
         # P1.1M: Include training metadata for strict TAKE in paper_train mode
         extra_meta = {
             "paper_source": "strict_take",

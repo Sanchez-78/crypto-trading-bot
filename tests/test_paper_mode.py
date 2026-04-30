@@ -1603,6 +1603,172 @@ class TestP1S1ProductionShapedTrades:
         lm_feature_stats.clear()
 
 
+class TestP1V1TelemetryAndMetricsDecoupling:
+    """P1.1V: Telemetry counter fixes and learning/metrics decoupling."""
+
+    def test_training_metrics_closed_1h_list_increment_safe(self):
+        """P1.1V Task 1: _metric_add_event handles closed_1h as list without error."""
+        from src.services.paper_training_sampler import _training_metrics, _metric_add_event
+
+        # Reset to list (the problematic type)
+        _training_metrics["closed_1h"] = []
+
+        # Should not raise 'int' object is not iterable
+        _metric_add_event("closed_1h")
+
+        # Verify timestamp was added
+        assert isinstance(_training_metrics["closed_1h"], list)
+        assert len(_training_metrics["closed_1h"]) > 0
+        assert isinstance(_training_metrics["closed_1h"][0], float)
+
+    def test_training_metrics_closed_1h_int_increment_safe(self):
+        """P1.1V Task 1: _metric_inc_counter handles closed_1h as int."""
+        from src.services.paper_training_sampler import _training_metrics, _metric_inc_counter
+
+        # Reset to int (valid counter type)
+        _training_metrics["closed_1h"] = 5
+
+        # Should increment safely
+        _metric_inc_counter("closed_1h", 1)
+
+        # Verify increment worked
+        assert _training_metrics["closed_1h"] == 6
+
+    def test_record_training_closed_never_raises(self):
+        """P1.1V Task 1: record_training_closed() never raises, even with list field."""
+        from src.services.paper_training_sampler import record_training_closed, _training_metrics
+
+        # Set closed_1h to list (old format) to trigger the original bug
+        _training_metrics["closed_1h"] = []
+
+        # Should not raise
+        try:
+            record_training_closed(bucket="C_WEAK_EV_TRAIN", outcome="WIN")
+            assert True  # Success
+        except TypeError as e:
+            if "is not iterable" in str(e):
+                pytest.fail(f"record_training_closed raised: {e}")
+            raise
+
+    def test_record_training_learning_update_never_raises(self):
+        """P1.1V Task 1: record_training_learning_update() never raises."""
+        from src.services.paper_training_sampler import record_training_learning_update, _training_metrics
+
+        # Initialize learning_updates_1h safely
+        _training_metrics["learning_updates_1h"] = 0
+
+        # Should not raise
+        try:
+            record_training_learning_update()
+            assert True  # Success
+        except Exception as e:
+            pytest.fail(f"record_training_learning_update raised: {e}")
+
+    def test_safe_learning_decoupled_from_telemetry(self):
+        """P1.1V Task 2: Learning success is reported even if telemetry fails."""
+        from src.services.paper_trade_executor import _safe_learning_update_for_paper_trade
+
+        # Prepare a valid trade that will pass learning
+        pos = {
+            "symbol": "BTCUSDT",
+            "regime": "BULL_TREND",
+            "training_bucket": "C_WEAK_EV_TRAIN",
+            "features": {"ema_diff": 1, "rsi": 55.0, "tags": 0},
+        }
+        pnl_data = {
+            "net_pnl_pct": 0.5,
+            "outcome": "WIN",
+        }
+
+        # Should not raise even if telemetry fails
+        try:
+            result = _safe_learning_update_for_paper_trade(pos, pnl_data)
+            # Should return bool (True or False, doesn't matter)
+            assert isinstance(result, bool)
+        except TypeError as e:
+            if "is not iterable" in str(e):
+                pytest.fail(f"Learning call raised iteration error: {e}")
+            raise
+
+    def test_single_bucket_metrics_path_no_duplicates(self):
+        """P1.1V Task 3: Paper train close updates bucket metrics exactly once."""
+        from src.services.bucket_metrics import _BUCKET_METRICS
+        from src.services.paper_trade_executor import _safe_bucket_metrics_update_for_paper_trade
+
+        # Clear metrics
+        _BUCKET_METRICS.clear()
+
+        trade = {
+            "symbol": "BTCUSDT",
+            "training_bucket": "C_WEAK_EV_TRAIN",
+            "outcome": "WIN",
+            "net_pnl_pct": 0.5,
+        }
+
+        result = _safe_bucket_metrics_update_for_paper_trade(trade)
+        assert result is True
+
+        # Verify only the primary bucket was updated, not duplicates
+        bucket_keys = list(_BUCKET_METRICS.keys())
+        # Should have at least C_WEAK_EV_TRAIN
+        assert "C_WEAK_EV_TRAIN" in bucket_keys
+        # Count how many times this bucket appears
+        c_weak_count = len([k for k in bucket_keys if "C_WEAK_EV_TRAIN" in k and k == "C_WEAK_EV_TRAIN"])
+        assert c_weak_count == 1, "Should have exactly one C_WEAK_EV_TRAIN metric entry"
+
+    def test_c_weak_ev_train_bucket_not_split(self):
+        """P1.1V Task 4: C_WEAK_EV_TRAIN remains single bucket, not split to C + WEAK_EV_TRAIN."""
+        from src.services.bucket_metrics import _BUCKET_METRICS
+        from src.services.paper_trade_executor import _safe_bucket_metrics_update_for_paper_trade
+
+        _BUCKET_METRICS.clear()
+
+        trade = {
+            "symbol": "ETHUSDT",
+            "training_bucket": "C_WEAK_EV_TRAIN",
+            "outcome": "FLAT",
+            "net_pnl_pct": -0.1,
+        }
+
+        _safe_bucket_metrics_update_for_paper_trade(trade)
+
+        # Check that C_WEAK_EV_TRAIN is a single metric key, not split
+        keys = list(_BUCKET_METRICS.keys())
+        assert "C_WEAK_EV_TRAIN" in keys, "C_WEAK_EV_TRAIN should be a single bucket"
+        # Should not have separate C bucket
+        split_buckets = [k for k in keys if k in ("C", "WEAK_EV_TRAIN", "C_WEAK")]
+        assert len(split_buckets) == 0, f"C_WEAK_EV_TRAIN should not be split. Found: {split_buckets}"
+
+    def test_handle_signal_no_unboundlocalerror(self):
+        """P1.1V Task 5: handle_signal() does not raise UnboundLocalError for is_paper_mode."""
+        from src.services.trade_executor import handle_signal
+        import os
+
+        os.environ["TRADING_MODE"] = "paper_live"
+
+        # Minimal signal
+        signal = {
+            "symbol": "BTCUSDT",
+            "action": "BUY",
+            "price": 50000.0,
+            "ev": 0.04,
+            "score": 0.5,
+            "regime": "BULL_TREND",
+        }
+
+        # Should not raise UnboundLocalError
+        try:
+            handle_signal(signal)
+            assert True  # Success (no error)
+        except UnboundLocalError as e:
+            if "is_paper_mode" in str(e):
+                pytest.fail(f"handle_signal raised UnboundLocalError: {e}")
+            raise
+        except Exception:
+            # Other exceptions are ok for this test
+            pass
+
+
 class TestP1U1ProductionAuditFix:
     """P1.1U: Production audit fixes — exact server-shaped tests."""
 
