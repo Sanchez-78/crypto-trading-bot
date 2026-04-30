@@ -24,6 +24,10 @@ _STATE_FILE = "data/paper_open_positions.json"
 _CLOSED_TRADES_THIS_SESSION = set()  # trade_id -> (learned, metrics_updated)
 _CLOSED_TRADES_LOCK = __import__("threading").RLock()
 
+# P1.1Y: Throttle PAPER_ENTRY_BLOCKED spam (max once per symbol/bucket/reason per 60s)
+_PAPER_ENTRY_BLOCKED_THROTTLE = {}  # (symbol, bucket, reason) -> last_log_ts
+_PAPER_ENTRY_BLOCKED_TTL = 60.0  # seconds between logs per key
+
 
 def _save_paper_state() -> None:
     """Save open paper positions to disk with atomic writes."""
@@ -350,13 +354,19 @@ def _check_training_sampler_caps(symbol: str, bucket: Optional[str]) -> Optional
 
     # Check symbol cap
     if symbol_count >= PAPER_TRAIN_MAX_OPEN_PER_SYMBOL:
-        log.info(
-            "[PAPER_ENTRY_BLOCKED] reason=training_sampler_max_open_per_symbol "
-            "symbol=%s open_symbol=%d bucket=%s",
-            symbol,
-            symbol_count,
-            bucket,
-        )
+        # P1.1Y: Throttle spam
+        throttle_key = (symbol, bucket, "training_sampler_max_open_per_symbol")
+        now_ts = time.time()
+        last_log = _PAPER_ENTRY_BLOCKED_THROTTLE.get(throttle_key, 0.0)
+        if now_ts - last_log >= _PAPER_ENTRY_BLOCKED_TTL:
+            log.info(
+                "[PAPER_ENTRY_BLOCKED] reason=training_sampler_max_open_per_symbol "
+                "symbol=%s open_symbol=%d bucket=%s",
+                symbol,
+                symbol_count,
+                bucket,
+            )
+            _PAPER_ENTRY_BLOCKED_THROTTLE[throttle_key] = now_ts
         return {
             "status": "blocked",
             "reason": "training_sampler_max_open_per_symbol",
@@ -365,13 +375,19 @@ def _check_training_sampler_caps(symbol: str, bucket: Optional[str]) -> Optional
 
     # Check bucket cap
     if bucket_count >= PAPER_TRAIN_MAX_OPEN_PER_BUCKET:
-        log.info(
-            "[PAPER_ENTRY_BLOCKED] reason=training_sampler_max_open_per_bucket "
-            "bucket=%s open_bucket=%d symbol=%s",
-            bucket,
-            bucket_count,
-            symbol,
-        )
+        # P1.1Y: Throttle spam
+        throttle_key = (symbol, bucket, "training_sampler_max_open_per_bucket")
+        now_ts = time.time()
+        last_log = _PAPER_ENTRY_BLOCKED_THROTTLE.get(throttle_key, 0.0)
+        if now_ts - last_log >= _PAPER_ENTRY_BLOCKED_TTL:
+            log.info(
+                "[PAPER_ENTRY_BLOCKED] reason=training_sampler_max_open_per_bucket "
+                "bucket=%s open_bucket=%d symbol=%s",
+                bucket,
+                bucket_count,
+                symbol,
+            )
+            _PAPER_ENTRY_BLOCKED_THROTTLE[throttle_key] = now_ts
         return {
             "status": "blocked",
             "reason": "training_sampler_max_open_per_bucket",
@@ -401,7 +417,14 @@ def open_paper_position(
         dict: {"trade_id": ..., "status": "opened", "symbol": ..., ...}
     """
     if not price or price <= 0:
-        log.error("[PAPER_ENTRY_BLOCKED] symbol=%s reason=invalid_price", signal.get("symbol"))
+        # P1.1Y: Throttle spam
+        symbol = signal.get("symbol", "UNKNOWN")
+        throttle_key = (symbol, "N/A", "invalid_price")
+        now_ts = time.time()
+        last_log = _PAPER_ENTRY_BLOCKED_THROTTLE.get(throttle_key, 0.0)
+        if now_ts - last_log >= _PAPER_ENTRY_BLOCKED_TTL:
+            log.error("[PAPER_ENTRY_BLOCKED] symbol=%s reason=invalid_price", symbol)
+            _PAPER_ENTRY_BLOCKED_THROTTLE[throttle_key] = now_ts
         return {"status": "blocked", "reason": "invalid_price"}
 
     symbol = signal.get("symbol", "UNKNOWN")
@@ -413,34 +436,53 @@ def open_paper_position(
         # Check exploration-specific exposure caps FIRST (before total max cap)
         cap_check = _check_exploration_exposure_caps(symbol, bucket)
         if cap_check:
-            log.error(
-                "[PAPER_ENTRY_BLOCKED] symbol=%s reason=%s %s",
-                symbol,
-                cap_check["reason"],
-                cap_check["detail"],
-            )
+            # P1.1Y: Throttle spam
+            throttle_key = (symbol, bucket or "N/A", cap_check["reason"])
+            now_ts = time.time()
+            last_log = _PAPER_ENTRY_BLOCKED_THROTTLE.get(throttle_key, 0.0)
+            if now_ts - last_log >= _PAPER_ENTRY_BLOCKED_TTL:
+                log.error(
+                    "[PAPER_ENTRY_BLOCKED] symbol=%s reason=%s %s",
+                    symbol,
+                    cap_check["reason"],
+                    cap_check["detail"],
+                )
+                _PAPER_ENTRY_BLOCKED_THROTTLE[throttle_key] = now_ts
             return cap_check
 
         # Check training sampler-specific caps (P1.1N secondary layer)
         if paper_source == "training_sampler":
             training_cap_check = _check_training_sampler_caps(symbol, training_bucket)
             if training_cap_check:
-                log.error(
-                    "[PAPER_ENTRY_BLOCKED] symbol=%s reason=%s %s",
-                    symbol,
-                    training_cap_check["reason"],
-                    training_cap_check["detail"],
-                )
+                # P1.1Y: Throttle spam
+                throttle_key = (symbol, training_bucket or "N/A", training_cap_check["reason"])
+                now_ts = time.time()
+                last_log = _PAPER_ENTRY_BLOCKED_THROTTLE.get(throttle_key, 0.0)
+                if now_ts - last_log >= _PAPER_ENTRY_BLOCKED_TTL:
+                    log.error(
+                        "[PAPER_ENTRY_BLOCKED] symbol=%s reason=%s %s",
+                        symbol,
+                        training_cap_check["reason"],
+                        training_cap_check["detail"],
+                    )
+                    _PAPER_ENTRY_BLOCKED_THROTTLE[throttle_key] = now_ts
                 return training_cap_check
 
         # Then check total paper position cap
         if len(_POSITIONS) >= _MAX_OPEN:
-            log.error(
-                "[PAPER_ENTRY_BLOCKED] symbol=%s reason=max_open_exceeded open=%d bucket=%s",
-                symbol,
-                len(_POSITIONS),
-                bucket or training_bucket or "N/A",
-            )
+            # P1.1Y: Throttle PAPER_ENTRY_BLOCKED spam (max once per symbol/bucket/reason per 60s)
+            bucket_name = bucket or training_bucket or "N/A"
+            throttle_key = (symbol, bucket_name, "max_open_exceeded")
+            now_ts = time.time()
+            last_log = _PAPER_ENTRY_BLOCKED_THROTTLE.get(throttle_key, 0.0)
+            if now_ts - last_log >= _PAPER_ENTRY_BLOCKED_TTL:
+                log.error(
+                    "[PAPER_ENTRY_BLOCKED] symbol=%s reason=max_open_exceeded open=%d bucket=%s",
+                    symbol,
+                    len(_POSITIONS),
+                    bucket_name,
+                )
+                _PAPER_ENTRY_BLOCKED_THROTTLE[throttle_key] = now_ts
             return {"status": "blocked", "reason": "max_open_exceeded"}
 
     trade_id = _generate_trade_id()

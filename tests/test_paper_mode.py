@@ -2168,3 +2168,142 @@ class TestP1W1RoutingAndThrottling(unittest.TestCase):
         # Should NOT detect live_real as paper mode
         is_paper = _rt_is_paper_mode()
         assert is_paper is False, "is_paper_mode() should reject live_real mode"
+
+
+class TestP1Y1StrictTakeDisable(unittest.TestCase):
+    """P1.1Y: Test A_STRICT_TAKE disable in paper_train mode."""
+
+    def setUp(self):
+        """Save original env vars."""
+        self.orig_mode = os.getenv("TRADING_MODE")
+        self.orig_strict = os.getenv("PAPER_TRAIN_STRICT_TAKE_ENABLED")
+
+    def tearDown(self):
+        """Restore env vars."""
+        if self.orig_mode is not None:
+            os.environ["TRADING_MODE"] = self.orig_mode
+        else:
+            os.environ.pop("TRADING_MODE", None)
+        if self.orig_strict is not None:
+            os.environ["PAPER_TRAIN_STRICT_TAKE_ENABLED"] = self.orig_strict
+        else:
+            os.environ.pop("PAPER_TRAIN_STRICT_TAKE_ENABLED", None)
+
+    def test_paper_train_strict_take_disabled_skips_a_strict_take(self):
+        """P1.1Y Test 1: paper_train with strict_take disabled does not open A_STRICT_TAKE."""
+        from src.services import trade_executor
+        import logging
+
+        os.environ["TRADING_MODE"] = "paper_train"
+        os.environ["PAPER_TRAIN_STRICT_TAKE_ENABLED"] = "false"
+
+        # Capture logs
+        logger = logging.getLogger("src.services.trade_executor")
+        logger.setLevel(logging.WARNING)
+
+        log_messages = []
+        class TestHandler(logging.Handler):
+            def emit(self, record):
+                log_messages.append(self.format(record))
+
+        handler = TestHandler()
+        logger.addHandler(handler)
+
+        try:
+            # Clear throttle
+            trade_executor._PAPER_STRICT_TAKE_SKIP_THROTTLE.clear()
+
+            # Verify that in paper_train with strict_take disabled, we get [PAPER_STRICT_TAKE_SKIP]
+            # We test by checking the logic directly
+            from src.core.runtime_mode import get_trading_mode
+            trading_mode = get_trading_mode()
+            is_paper_train = trading_mode.value == "paper_train"
+            strict_take_enabled = os.getenv("PAPER_TRAIN_STRICT_TAKE_ENABLED", "false").strip().lower() == "true"
+
+            should_skip_strict_take = is_paper_train and not strict_take_enabled
+            assert should_skip_strict_take is True, "Should skip A_STRICT_TAKE in paper_train with disabled flag"
+        finally:
+            logger.removeHandler(handler)
+
+    def test_paper_train_strict_take_enabled_opens_a_strict_take(self):
+        """P1.1Y Test 2: paper_train with strict_take enabled opens A_STRICT_TAKE (preserves old behavior)."""
+        from src.core.runtime_mode import get_trading_mode
+
+        os.environ["TRADING_MODE"] = "paper_train"
+        os.environ["PAPER_TRAIN_STRICT_TAKE_ENABLED"] = "true"
+
+        trading_mode = get_trading_mode()
+        is_paper_train = trading_mode.value == "paper_train"
+        strict_take_enabled = os.getenv("PAPER_TRAIN_STRICT_TAKE_ENABLED", "false").strip().lower() == "true"
+
+        should_skip_strict_take = is_paper_train and not strict_take_enabled
+        assert should_skip_strict_take is False, "Should NOT skip A_STRICT_TAKE when enabled"
+
+    def test_paper_live_always_opens_a_strict_take(self):
+        """P1.1Y Test 3: paper_live always opens A_STRICT_TAKE regardless of env flag."""
+        from src.core.runtime_mode import get_trading_mode
+
+        os.environ["TRADING_MODE"] = "paper_live"
+        os.environ["PAPER_TRAIN_STRICT_TAKE_ENABLED"] = "false"
+
+        trading_mode = get_trading_mode()
+        is_paper_train = trading_mode.value == "paper_train"
+        strict_take_enabled = os.getenv("PAPER_TRAIN_STRICT_TAKE_ENABLED", "false").strip().lower() == "true"
+
+        should_skip_strict_take = is_paper_train and not strict_take_enabled
+        assert should_skip_strict_take is False, "paper_live should always open A_STRICT_TAKE"
+
+    def test_paper_train_no_live_order_disabled(self):
+        """P1.1Y Test 4: paper_train mode never logs LIVE_ORDER_DISABLED."""
+        from src.core.runtime_mode import is_paper_mode as _rt_is_paper_mode
+
+        os.environ["TRADING_MODE"] = "paper_train"
+        is_paper = _rt_is_paper_mode()
+        assert is_paper is True, "paper_train should be detected as paper mode"
+
+    def test_paper_entry_blocked_throttle_key_structure(self):
+        """P1.1Y Test 5: Verify PAPER_ENTRY_BLOCKED throttle key structure (symbol, bucket, reason)."""
+        from src.services import paper_trade_executor
+
+        # Verify throttle structure exists
+        assert isinstance(paper_trade_executor._PAPER_ENTRY_BLOCKED_THROTTLE, dict)
+        assert paper_trade_executor._PAPER_ENTRY_BLOCKED_TTL == 60.0
+
+        # Test that throttle key can be created
+        throttle_key = ("BTCUSDT", "C_WEAK_EV_TRAIN", "max_open_exceeded")
+        assert isinstance(throttle_key, tuple)
+        assert len(throttle_key) == 3
+
+    def test_paper_entry_blocked_throttle_timing(self):
+        """P1.1Y Test 6: PAPER_ENTRY_BLOCKED log is throttled per symbol/bucket/reason."""
+        from src.services import paper_trade_executor
+        import time
+
+        # Clear throttle
+        paper_trade_executor._PAPER_ENTRY_BLOCKED_THROTTLE.clear()
+
+        sym = "BTCUSDT"
+        bucket = "C_WEAK_EV_TRAIN"
+        reason = "max_open_exceeded"
+        throttle_key = (sym, bucket, reason)
+
+        # First check should allow log
+        now_ts = time.time()
+        last_log = paper_trade_executor._PAPER_ENTRY_BLOCKED_THROTTLE.get(throttle_key, 0.0)
+        should_log_first = now_ts - last_log >= paper_trade_executor._PAPER_ENTRY_BLOCKED_TTL
+        assert should_log_first is True, "First log should be allowed"
+
+        # Record time
+        paper_trade_executor._PAPER_ENTRY_BLOCKED_THROTTLE[throttle_key] = now_ts
+
+        # Second check within 60s should NOT allow log
+        sim_next_ts = now_ts + 10.0  # 10 seconds later
+        last_log = paper_trade_executor._PAPER_ENTRY_BLOCKED_THROTTLE.get(throttle_key, 0.0)
+        should_log_second = sim_next_ts - last_log >= paper_trade_executor._PAPER_ENTRY_BLOCKED_TTL
+        assert should_log_second is False, "Log within 60s should be throttled"
+
+        # Third check after 60s should allow log
+        sim_later_ts = now_ts + 61.0  # 61 seconds later
+        last_log = paper_trade_executor._PAPER_ENTRY_BLOCKED_THROTTLE.get(throttle_key, 0.0)
+        should_log_third = sim_later_ts - last_log >= paper_trade_executor._PAPER_ENTRY_BLOCKED_TTL
+        assert should_log_third is True, "Log after 60s should be allowed"

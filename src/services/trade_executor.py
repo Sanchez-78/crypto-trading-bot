@@ -138,6 +138,14 @@ _UNBLOCK_POSITIONS_MAX   = 2    # max 2 concurrent unblock positions
 # P1.1W: Throttle LIVE_ORDER_DISABLED spam (max once per symbol per 60s)
 _LIVE_ORDER_DISABLED_THROTTLE = {}  # symbol -> last_log_ts
 _LIVE_ORDER_DISABLED_TTL = 60.0  # seconds between logs per symbol
+
+# P1.1Y: Throttle PAPER_STRICT_TAKE_SKIP spam (max once per symbol per 60s)
+_PAPER_STRICT_TAKE_SKIP_THROTTLE = {}  # symbol -> last_log_ts
+_PAPER_STRICT_TAKE_SKIP_TTL = 60.0  # seconds between logs per symbol
+
+# P1.1Y: Throttle PAPER_ENTRY_BLOCKED spam (max once per symbol/bucket/reason per 60s)
+_PAPER_ENTRY_BLOCKED_THROTTLE = {}  # (symbol, bucket, reason) -> last_log_ts
+_PAPER_ENTRY_BLOCKED_TTL = 60.0  # seconds between logs per key
 _unblock_trades_hour = []       # list of timestamps of unblock trades in last 60 min
 
 FEE_RT      = 0.0015    # 0.15% round-trip (Binance taker 0.075%×2)
@@ -2450,32 +2458,51 @@ def handle_signal(signal):
     # P1.1W: CRITICAL — Route paper_train signals to paper BEFORE live order gates
     # This prevents LIVE_ORDER_DISABLED spam and ensures paper trades never reach live code
     if is_paper_mode_local:
-        # P1.1M: Include training metadata for strict TAKE in paper_train mode
-        extra_meta = {
-            "paper_source": "strict_take",
-            "training_bucket": "A_STRICT_TAKE",
-            "original_decision": "TAKE",
-            "reject_reason": None,
-            "side_inferred": False,
-            "cost_edge_ok": True,  # Strict TAKE passes cost-edge by definition
-            "expected_move_pct": float(signal.get("ev", 0.0)) * 100,
-            "required_move_pct": 0.23,
-            "size_mult": 1.0,
-            "max_hold_s": int(os.getenv("PAPER_TRAINING_MAX_HOLD_S", "300")),
-            "features": signal.get("features", {}),
-            "regime": regime,
-            "score_at_entry": signal.get("score", 0.0),
-        }
-        _paper_result = open_paper_position(signal, actual_entry, time.time(), "RDE_TAKE", extra=extra_meta)
-        if _paper_result.get("status") == "opened":
-            log.warning(
-                f"[PAPER_ROUTED] symbol={sym} side={signal['action']} "
-                f"price={actual_entry:.8f} ev={signal.get('ev', 0):.4f}"
-            )
+        # P1.1Y: In paper_train mode, check if A_STRICT_TAKE is enabled
+        # Default: disabled (PAPER_TRAIN_STRICT_TAKE_ENABLED=false) to allow C_WEAK_EV_TRAIN training
+        from src.core.runtime_mode import get_trading_mode
+        trading_mode = get_trading_mode()
+        is_paper_train = trading_mode.value == "paper_train"
+        strict_take_enabled = os.getenv("PAPER_TRAIN_STRICT_TAKE_ENABLED", "false").strip().lower() == "true"
+
+        should_skip_strict_take = is_paper_train and not strict_take_enabled
+
+        if should_skip_strict_take:
+            # P1.1Y: Log throttled [PAPER_STRICT_TAKE_SKIP] to allow C_WEAK_EV_TRAIN training
+            now_ts = time.time()
+            last_log = _PAPER_STRICT_TAKE_SKIP_THROTTLE.get(sym, 0.0)
+            if now_ts - last_log >= _PAPER_STRICT_TAKE_SKIP_TTL:
+                log.warning(
+                    f"[PAPER_STRICT_TAKE_SKIP] symbol={sym} mode=paper_train reason=disabled_for_training"
+                )
+                _PAPER_STRICT_TAKE_SKIP_THROTTLE[sym] = now_ts
         else:
-            log.warning(
-                f"[PAPER_BLOCKED] symbol={sym} reason={_paper_result.get('reason', 'unknown')}"
-            )
+            # P1.1M: Include training metadata for strict TAKE in paper_train mode
+            extra_meta = {
+                "paper_source": "strict_take",
+                "training_bucket": "A_STRICT_TAKE",
+                "original_decision": "TAKE",
+                "reject_reason": None,
+                "side_inferred": False,
+                "cost_edge_ok": True,  # Strict TAKE passes cost-edge by definition
+                "expected_move_pct": float(signal.get("ev", 0.0)) * 100,
+                "required_move_pct": 0.23,
+                "size_mult": 1.0,
+                "max_hold_s": int(os.getenv("PAPER_TRAINING_MAX_HOLD_S", "300")),
+                "features": signal.get("features", {}),
+                "regime": regime,
+                "score_at_entry": signal.get("score", 0.0),
+            }
+            _paper_result = open_paper_position(signal, actual_entry, time.time(), "RDE_TAKE", extra=extra_meta)
+            if _paper_result.get("status") == "opened":
+                log.warning(
+                    f"[PAPER_ROUTED] symbol={sym} side={signal['action']} "
+                    f"price={actual_entry:.8f} ev={signal.get('ev', 0):.4f}"
+                )
+            else:
+                log.warning(
+                    f"[PAPER_BLOCKED] symbol={sym} reason={_paper_result.get('reason', 'unknown')}"
+                )
         return  # Paper trades managed separately; do not open in live positions dict
 
     # V10.13u+20: Verify live trading is allowed before opening real orders
