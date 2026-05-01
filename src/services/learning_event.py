@@ -1,6 +1,7 @@
 import time as _time
 import threading as _threading
 import queue as _queue
+import logging as _logging
 from collections import deque as _deque
 
 _lock = _threading.Lock()
@@ -336,6 +337,9 @@ def _update_metrics_locked(signal, trade):
     elif reason == "HARVEST_PROFIT":
         _close_reasons["HARVEST_PROFIT"] = _close_reasons.get("HARVEST_PROFIT", 0) + 1
 
+    # Regime-specific WR (must be defined before SCRATCH_EXIT block below)
+    regime = signal.get("regime", "RANGING")
+
     # V10.13x.2: Record SCRATCH_EXIT details for forensic analysis
     if reason == "SCRATCH_EXIT":
         try:
@@ -354,10 +358,7 @@ def _update_metrics_locked(signal, trade):
                 exit_price=trade.get("exit_price", 0.0),
             )
         except Exception as e:
-            _logging.debug(f"[SCRATCH_FORENSICS] Failed to record: {e}")
-
-    # Regime-specific WR
-    regime = signal.get("regime", "RANGING")
+            _logging.debug("[SCRATCH_FORENSICS] Failed to record: %s", e)
     rs = _regime_stats.setdefault(regime, {"wins": 0, "trades": 0})
     rs["trades"] += 1
     if result == "WIN": rs["wins"] += 1

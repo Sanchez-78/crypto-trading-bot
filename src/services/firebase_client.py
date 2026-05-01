@@ -267,7 +267,9 @@ def should_skip_noncritical_write() -> tuple[bool, str]:
     allowed, current, limit_writes = _can_write(0)  # Check without incrementing
     writes_pct = (current / limit_writes * 100) if limit_writes > 0 else 0
 
-    should_skip = _FIREBASE_WRITE_DEGRADED or writes_pct >= 95
+    _now = time.time()
+    is_write_degraded = _FIREBASE_WRITE_DEGRADED and (_now < _FIREBASE_DEGRADED_UNTIL)
+    should_skip = is_write_degraded or writes_pct >= 95
 
     if should_skip:
         now = time.time()
@@ -409,7 +411,7 @@ def _slim_trade(trade):
         "close_reason": trade.get("close_reason"),
         "confidence":   round(float(trade.get("confidence", 0)), 4),
         "regime":       trade.get("regime", "RANGING"),
-        "strategy":     trade.get("regime", "RANGING"),
+        "strategy":     trade.get("strategy", trade.get("regime", "RANGING")),
         "ws":           round(float(trade.get("ws",  0.5)), 4),   # weighted score at entry
         "ev":           round(float(trade.get("ev",  0.0)), 4),   # expected value at entry
         "timestamp":    trade.get("timestamp", time.time()),
@@ -1055,7 +1057,7 @@ def save_metrics_full(metrics, open_positions=None, execution=None, monitor=None
             try:
                 from src.services.metrics_engine import MetricsEngine
                 engine = MetricsEngine()
-                recent_trades = load_history(limit=500)
+                recent_trades = load_history(limit=HISTORY_LIMIT)  # use cache-aligned limit to avoid quota storm
                 canonical = engine.compute_canonical_trade_stats(recent_trades)
 
                 # Log reconciliation status
@@ -1347,8 +1349,12 @@ def probe_quota_recovered() -> bool:
         # This tests read access without scanning trades/signals
         config_doc = db.collection(col("config")).document("runtime").get()
 
-        # Success: Firebase is responding
-        _log_probe.info("[RECOVERY_PROBE] Firebase quota recovered; read successful")
+        # Success: Firebase is responding — clear degradation flags so writes resume
+        global _FIREBASE_READ_DEGRADED, _FIREBASE_WRITE_DEGRADED, _FIREBASE_DEGRADED_UNTIL
+        _FIREBASE_READ_DEGRADED = False
+        _FIREBASE_WRITE_DEGRADED = False
+        _FIREBASE_DEGRADED_UNTIL = 0
+        _log_probe.info("[RECOVERY_PROBE] Firebase quota recovered; degradation flags cleared")
         return True
 
     except Exception as e:
