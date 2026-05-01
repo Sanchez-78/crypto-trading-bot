@@ -21,8 +21,9 @@ class TrailingStop:
         if signal == "BUY":
             profit = (current_price - entry) / entry
 
-            # break even
-            if profit > atr * self.break_even_trigger:
+            # break even — BUG-003 fix: normalize ATR to % before comparing with profit
+            atr_pct = atr / entry if entry > 0 else 0.0
+            if profit > atr_pct * self.break_even_trigger:
                 sl = max(sl, entry)
 
             # trailing
@@ -35,8 +36,9 @@ class TrailingStop:
         elif signal == "SELL":
             profit = (entry - current_price) / entry
 
-            # break even
-            if profit > atr * self.break_even_trigger:
+            # break even — BUG-003 fix: normalize ATR to % before comparing with profit
+            atr_pct = atr / entry if entry > 0 else 0.0
+            if profit > atr_pct * self.break_even_trigger:
                 sl = min(sl, entry)
 
             # trailing

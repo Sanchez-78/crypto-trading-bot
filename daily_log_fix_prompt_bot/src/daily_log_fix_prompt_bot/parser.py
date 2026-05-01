@@ -12,7 +12,8 @@ class LogParser:
     """Parse CryptoMaster logs and extract structured events."""
 
     # Regex patterns for key events
-    SIGNAL_PATTERN = r"signal.*created|signal_created"
+    SIGNAL_PATTERN = r"signal.*created|signal_created|FORCED signal"  # BUG-035 fix
+    FORCED_SIGNAL_PATTERN = r"FORCED signal"
     DECISION_PATTERN = r"APPROVE|REJECT|BLOCK|decision"
     REJECTION_PATTERN = r"reject.*reason|EV_TOO_LOW|SPREAD_WIDE|OVERTRADING|LOSS_STREAK|DRAWDOWN"
     TRADE_OPEN_PATTERN = r"open.*position|position.*open|order.*sent"
@@ -23,12 +24,16 @@ class LogParser:
     VERSION_PATTERN = r"V\d+\.\d+[a-z]?|commit=([a-f0-9]+)"
     FIREBASE_PATTERN = r"Firebase|firebase|Firestore|quota"
     REDIS_PATTERN = r"Redis|redis|connection.*refused"
+    REDIS_LOSS_PATTERN = r"FLUSH_LM_REDIS_NONE|data LOST"       # BUG-037 fix
+    BOOTSTRAP_PATTERN = r"FAST_FAIL_SOFT_BOOTSTRAP"              # BUG-036 fix
+    LATENCY_PATTERN = r"LATENCY_WARN.*?(\d+\.\d+)ms"            # BUG-038 fix
 
     def __init__(self):
         """Initialize parser."""
         self.events: List[Dict[str, Any]] = []
         self.metrics: Dict[str, Any] = {
             "signals": 0,
+            "forced_signals": 0,
             "decisions": 0,
             "rejections": 0,
             "approvals": 0,
@@ -38,6 +43,10 @@ class LogParser:
             "exceptions": 0,
             "firebase_warnings": 0,
             "redis_warnings": 0,
+            "redis_data_loss": 0,
+            "bootstrap_blocks": 0,
+            "latency_violations": 0,
+            "latency_max_ms": 0.0,
         }
 
     def parse(self, logs: str) -> Dict[str, Any]:
@@ -63,10 +72,14 @@ class LogParser:
         if re.search(self.SIGNAL_PATTERN, line, re.IGNORECASE):
             self.metrics["signals"] += 1
             symbol = self._extract_symbol(line)
+            is_forced = bool(re.search(self.FORCED_SIGNAL_PATTERN, line))
+            if is_forced:
+                self.metrics["forced_signals"] += 1
             self.events.append({
                 "type": "signal",
                 "timestamp": timestamp,
                 "symbol": symbol,
+                "forced": is_forced,
                 "raw": line[:200],
             })
 
@@ -131,6 +144,22 @@ class LogParser:
         # Check for Redis warnings
         if re.search(self.REDIS_PATTERN, line, re.IGNORECASE):
             self.metrics["redis_warnings"] += 1
+
+        # BUG-037 fix: track Redis data loss events
+        if re.search(self.REDIS_LOSS_PATTERN, line):
+            self.metrics["redis_data_loss"] += 1
+
+        # BUG-036 fix: track bootstrap deadlock blocks
+        if re.search(self.BOOTSTRAP_PATTERN, line):
+            self.metrics["bootstrap_blocks"] += 1
+
+        # BUG-038 fix: track latency SLA violations
+        m = re.search(self.LATENCY_PATTERN, line)
+        if m:
+            self.metrics["latency_violations"] += 1
+            ms = float(m.group(1))
+            if ms > self.metrics["latency_max_ms"]:
+                self.metrics["latency_max_ms"] = ms
 
     def _extract_timestamp(self, line: str) -> str:
         """Extract ISO timestamp from log line."""

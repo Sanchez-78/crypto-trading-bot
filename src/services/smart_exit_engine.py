@@ -744,3 +744,7 @@ def evaluate_position_exit(
     )
 
     return smart_exit.evaluate(position, regime)
+
+
+# BUG-002 fix: guard calls evaluate_smart_exit but only evaluate_position_exit was defined
+evaluate_smart_exit = evaluate_position_exit

@@ -1,9 +1,12 @@
+import logging
+import threading
 from src.core.event_bus import event_bus
 from src.core.events import TRADE_EXECUTED, TRADE_CLOSED
 
-import random
+log = logging.getLogger(__name__)
+log.info("Portfolio manager ready")
 
-print("📦 PORTFOLIO MANAGER READY")
+_portfolio_lock = threading.Lock()
 
 portfolio = {
     "open": [],
@@ -12,41 +15,50 @@ portfolio = {
 }
 
 
+def _calc_profit(trade: dict) -> float:
+    """Calculate real P&L from entry/exit prices. BUG-001 fix."""
+    entry = trade.get("price") or trade.get("entry_price", 0)
+    exit_p = trade.get("exit_price") or trade.get("current_price", entry)
+    direction = trade.get("signal", trade.get("direction", "BUY")).upper()
+    if not entry or entry <= 0:
+        return 0.0
+    if direction in ("BUY", "LONG"):
+        return (exit_p - entry) / entry
+    else:
+        return (entry - exit_p) / entry
+
+
 def on_trade_executed(trade):
     try:
         if not isinstance(trade, dict):
-            print("❌ Invalid trade:", trade)
+            log.warning("Invalid trade payload: %s", trade)
             return
-
         price = trade.get("price")
-
         if price is None:
-            print("❌ Missing price in trade:", trade)
+            log.warning("Missing price in trade: %s", trade)
             return
-
-        portfolio["open"].append(trade)
-
+        with _portfolio_lock:
+            portfolio["open"].append(trade)
     except Exception as e:
-        print("❌ portfolio error:", e)
+        log.error("portfolio on_trade_executed error: %s", e)
 
 
 def process_portfolio():
-    for trade in portfolio["open"][:]:
+    with _portfolio_lock:
+        to_process = portfolio["open"][:]
+    for trade in to_process:
         try:
-            profit = random.uniform(-1, 1)
-
+            profit = _calc_profit(trade)
             trade["profit"] = profit
             trade["status"] = "CLOSED"
-
-            portfolio["open"].remove(trade)
-            portfolio["closed"].append(trade)
-
-            print("📦 TRADE CLOSED:", trade)
-
+            with _portfolio_lock:
+                if trade in portfolio["open"]:
+                    portfolio["open"].remove(trade)
+                portfolio["closed"].append(trade)
+            log.info("Trade closed: %s profit=%.4f%%", trade.get("symbol", "?"), profit * 100)
             event_bus.publish(TRADE_CLOSED, trade)
-
         except Exception as e:
-            print("❌ close trade error:", e)
+            log.error("close trade error: %s", e)
 
 
 event_bus.subscribe(TRADE_EXECUTED, on_trade_executed)

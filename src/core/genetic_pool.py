@@ -143,35 +143,37 @@ class GeneticPool:
         # ────────────────────────────────────────────────────────────────
         # Step 4: Diversity check (prevent inbreeding)
         # ────────────────────────────────────────────────────────────────
+        # BUG-034 fix: scale diversity threshold with population size
+        min_diversity = max(3, len(self.population) // 4)
         diversity = self._diversity_score()
-        if diversity < 5:
-            logger.warning(f"Low diversity detected ({diversity}); injecting random strategies...")
-            # Inject random strategies to increase genetic diversity
+        if diversity < min_diversity:
+            logger.warning(f"Low diversity detected ({diversity}/{min_diversity}); injecting random strategies...")
             from src.core.strategy_dna import StrategyDNA
             from src.core.strategy import Strategy
-            
+
             for _ in range(2):
                 random_dna = StrategyDNA()
                 random_strat = Strategy(dna=random_dna, generation=self.evolution_count)
-                # Replace weakest
-                weakest_idx = len(self.population) - 1
+                # BUG-018 fix: find actual weakest strategy, not just last index
+                weakest_idx = min(range(len(self.population)),
+                                  key=lambda i: self.population[i].fitness)
                 self.population[weakest_idx] = random_strat
-            
+
             logger.info(f"Injected random strategies. New diversity={self._diversity_score()}")
         
         # ────────────────────────────────────────────────────────────────
         # Step 5: Preserve global best (anti-collapse safety)
         # ────────────────────────────────────────────────────────────────
-        if self.global_best is not None:
-            # Check if current best is better than global best
-            current_best = max(self.population, key=lambda s: s.fitness)
-            if current_best.fitness > self.global_best.fitness:
-                self.global_best = copy.deepcopy(current_best)
-            else:
-                # Restore global best to population (elite guarantee)
-                weakest_idx = len(self.population) - 1
-                self.population[weakest_idx] = copy.deepcopy(self.global_best)
-                logger.info(f"Restoring global best (fitness={self.global_best.fitness:.3f})")
+        # BUG-019 fix: initialize global_best on first evolution, not skip it
+        current_best = max(self.population, key=lambda s: s.fitness)
+        if self.global_best is None or current_best.fitness > self.global_best.fitness:
+            self.global_best = copy.deepcopy(current_best)
+        else:
+            # Restore global best — BUG-018 fix: replace actual weakest
+            weakest_idx = min(range(len(self.population)),
+                              key=lambda i: self.population[i].fitness)
+            self.population[weakest_idx] = copy.deepcopy(self.global_best)
+            logger.info(f"Restoring global best (fitness={self.global_best.fitness:.3f})")
 
     def _diversity_score(self) -> int:
         """

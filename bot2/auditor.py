@@ -14,11 +14,13 @@ from src.services.learning_event import get_metrics
 from src.services.firebase_client import save_auditor_state, load_auditor_state, save_bot2_advice
 import time as _time
 import logging as _logging
+import threading as _threading
 
 _log = _logging.getLogger(__name__)
 
 _weights = StrategyWeights()
 
+_auditor_lock = _threading.Lock()  # BUG-024 fix: protect global state
 _position_size_mult  = 1.0
 _cooldown            = 0
 _prev_loss_streak    = -1   # -1 = unset (skip bootstrap)

@@ -28,6 +28,11 @@ class IssueDetector:
         self._detect_firebase_issues(metrics, raw_logs)
         self._detect_redis_issues(metrics, raw_logs)
         self._detect_exceptions(events, metrics, raw_logs)
+        # BUG-036, BUG-037, BUG-038 fixes: new detectors
+        self._detect_bootstrap_deadlock(metrics, raw_logs)
+        self._detect_redis_data_loss(metrics, raw_logs)
+        self._detect_latency_violations(metrics, raw_logs)
+        self._detect_forced_signals(metrics, raw_logs)
 
         return self.issues
 
@@ -196,4 +201,78 @@ class IssueDetector:
                 recommended_fix="Inspect traceback, add error handling, write test for edge case",
                 likely_files=["src/services/realtime_decision_engine.py", "src/services/trade_executor.py"],
                 validation_steps=["Read full traceback", "Reproduce locally", "Add unit test"],
+            ))
+
+    def _detect_bootstrap_deadlock(self, metrics: Dict[str, Any], raw_logs: str) -> None:
+        """BUG-036 fix: detect permanent bootstrap loop."""
+        count = metrics.get("bootstrap_blocks", raw_logs.count("FAST_FAIL_SOFT_BOOTSTRAP"))
+        if count > 100:
+            self.issues.append(Issue(
+                id="BOOTSTRAP_DEADLOCK",
+                severity=Severity.CRITICAL,
+                confidence=0.95,
+                title=f"Bootstrap deadlock: {count}x FAST_FAIL_SOFT_BOOTSTRAP blocks",
+                evidence=[f"Bot stuck in bootstrap mode — EV=0 and WR=0% for all pairs after {count} blocks"],
+                probable_root_cause="P&L not being recorded correctly; learning never reaches min_pair_n threshold",
+                recommended_fix="Fix P&L calculation in portfolio_manager.py and verify Redis learning state persistence",
+                likely_files=["src/services/portfolio_manager.py", "src/services/learning_event.py"],
+                validation_steps=["Check ev != 0.0 in logs", "Verify Redis connectivity", "Check completed_trades count vs n per pair"],
+            ))
+
+    def _detect_redis_data_loss(self, metrics: Dict[str, Any], raw_logs: str) -> None:
+        """BUG-037 fix: detect Redis learning state data loss."""
+        count = metrics.get("redis_data_loss", raw_logs.count("FLUSH_LM_REDIS_NONE"))
+        if count > 5:
+            self.issues.append(Issue(
+                id="REDIS_DATA_LOSS",
+                severity=Severity.HIGH,
+                confidence=1.0,
+                title=f"Learning data loss: {count}x Redis FLUSH skipped (data LOST)",
+                evidence=[f"{count} learning state saves dropped — Redis client is None"],
+                probable_root_cause="Redis server unavailable; all learning state lost on restart",
+                recommended_fix="Configure Redis on Railway (add Redis addon) or implement disk-based fallback",
+                likely_files=["src/services/state_manager.py"],
+                validation_steps=["Verify REDIS_URL env var is set", "Check Railway Redis addon status"],
+            ))
+
+    def _detect_latency_violations(self, metrics: Dict[str, Any], raw_logs: str) -> None:
+        """BUG-038 fix: detect latency SLA violations."""
+        import re
+        count = metrics.get("latency_violations", 0)
+        max_ms = metrics.get("latency_max_ms", 0.0)
+        if count == 0:
+            matches = re.findall(r"LATENCY_WARN.*?(\d+\.\d+)ms", raw_logs)
+            if matches:
+                count = len(matches)
+                max_ms = max(float(m) for m in matches)
+        if count > 0:
+            severity = Severity.HIGH if max_ms > 500 else Severity.MEDIUM
+            self.issues.append(Issue(
+                id="LATENCY_SLA_BREACH",
+                severity=severity,
+                confidence=1.0,
+                title=f"Latency SLA breached: {count}x violations, max {max_ms:.0f}ms (SLA=50ms)",
+                evidence=[f"{count} violations detected, worst={max_ms:.0f}ms ({max_ms/50:.0f}x over SLA)"],
+                probable_root_cause="Synchronous Firebase/Redis I/O inside on_price() tick handler",
+                recommended_fix="Move all I/O to async queue outside tick handler; tick path must be <50ms",
+                likely_files=["src/services/trade_executor.py"],
+                validation_steps=["Profile on_price() function", "Measure Firebase write latency separately"],
+            ))
+
+    def _detect_forced_signals(self, metrics: Dict[str, Any], raw_logs: str) -> None:
+        """BUG-035 fix: detect excessive forced (fallback) signals."""
+        forced = metrics.get("forced_signals", raw_logs.count("FORCED signal"))
+        total = metrics.get("signals", 1)
+        if forced > 50:
+            rate = forced / max(total, 1)
+            self.issues.append(Issue(
+                id="FORCED_SIGNALS_DOMINANT",
+                severity=Severity.HIGH,
+                confidence=0.9,
+                title=f"Excessive forced signals: {forced} ({rate:.0%} of all signals)",
+                evidence=[f"{forced} FORCED signals detected — normal signal generation failing"],
+                probable_root_cause="Primary signal engine blocked or returning no candidates; bot using random fallback",
+                recommended_fix="Check signal_engine candidate generation, verify bootstrap exit conditions, fix P&L recording",
+                likely_files=["src/services/signal_engine.py", "src/services/realtime_decision_engine.py"],
+                validation_steps=["Check NO_CANDIDATE_PATTERN count in logs", "Verify bootstrap threshold conditions"],
             ))

@@ -58,7 +58,10 @@ class DQNAgent:
         # Key: discretized state tuple
         # Value: Q-values for each action [q_hold, q_long, q_short]
         # ────────────────────────────────────────────────────────────────
-        self.q_table = {}  # dict of state_key → q_values array
+        # BUG-020 fix: bounded OrderedDict to prevent memory leak
+        from collections import OrderedDict
+        self.q_table = OrderedDict()
+        self._q_table_max = 50_000
         
         # Statistics
         self.training_steps = 0
@@ -159,6 +162,9 @@ class DQNAgent:
             # Q-value update
             q_values[action] += self.learning_rate * td_error
             self.q_table[state_key] = q_values
+            # Evict oldest entries when table grows too large
+            if len(self.q_table) > self._q_table_max:
+                self.q_table.popitem(last=False)
         
         # Decay exploration rate
         if self.epsilon > self.epsilon_min:

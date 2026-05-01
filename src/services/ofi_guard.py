@@ -26,6 +26,7 @@ Called from:
   realtime_decision_engine.py    → is_toxic() / ofi_size_factor()
 """
 
+import threading
 from collections import deque
 
 # Rolling tick window for OFI computation
@@ -34,18 +35,17 @@ _BLOCK_THRESHOLD    = 0.95   # V10.13h: raised 0.90→0.95 — ultra-extreme OFI
 _WARN_THRESHOLD     = 0.40   # |OFI| above this → size reduction
 _SOFT_BLOCK_THRESHOLD = 0.70  # V10.13b: soft penalty zone (0.70-0.95)
 
-# Per-symbol rolling price history
-_price_ticks: dict[str, deque] = {}   # sym → deque(maxlen=_WINDOW+1)
+# Per-symbol rolling price history — BUG-022 fix: protected by lock
+_price_ticks: dict[str, deque] = {}
+_ofi_lock = threading.Lock()
 
 
 def update_price(sym: str, price: float) -> None:
-    """
-    Append latest price tick. Call from track_price() on every price update.
-    O(1) amortized — deque auto-evicts oldest entry.
-    """
-    if sym not in _price_ticks:
-        _price_ticks[sym] = deque(maxlen=_WINDOW + 1)
-    _price_ticks[sym].append(float(price))
+    """Append latest price tick. Thread-safe."""
+    with _ofi_lock:
+        if sym not in _price_ticks:
+            _price_ticks[sym] = deque(maxlen=_WINDOW + 1)
+        _price_ticks[sym].append(float(price))
 
 
 def ofi(sym: str) -> float:
@@ -53,8 +53,9 @@ def ofi(sym: str) -> float:
     Compute rolling OFI for symbol.
     Returns 0.0 when fewer than 5 ticks available (insufficient data).
     """
-    hist = _price_ticks.get(sym, deque())
-    prices = list(hist)
+    with _ofi_lock:
+        hist = _price_ticks.get(sym)
+        prices = list(hist) if hist else []
     if len(prices) < 5:
         return 0.0
     diffs = [prices[i] - prices[i - 1] for i in range(1, len(prices))]

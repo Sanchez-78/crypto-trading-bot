@@ -32,9 +32,10 @@ _recovery_check_interval = 60  # Check recovery status every 60s
 
 class PairQuarantine:
     """Manage reversible quarantine for toxic pairs."""
-    
+
     def __init__(self):
         self.quarantined_pairs = {}  # (sym, regime) -> {until_ts, reason, wr, n}
+        self._lock = threading.Lock()  # BUG-023 fix: thread-safe access
     
     def check_and_quarantine(
         self,
@@ -44,67 +45,54 @@ class PairQuarantine:
         n: int,
         ev: float,
     ) -> Tuple[bool, Optional[str]]:
-        """
-        Check if pair-regime should be quarantined.
-        Returns (should_quarantine, reason).
-        """
+        """Check if pair-regime should be quarantined. Thread-safe (BUG-023 fix)."""
         key = (sym, regime)
-        
-        # Clear expired quarantines
         now = time.time()
-        if key in self.quarantined_pairs:
-            if now >= self.quarantined_pairs[key]["until_ts"]:
-                # Expired — recover
-                log.info(
-                    f"[QUARANTINE] {sym}/{regime} recovered "
-                    f"(was WR {self.quarantined_pairs[key]['wr']:.0%}, n={self.quarantined_pairs[key]['n']})"
-                )
-                del self.quarantined_pairs[key]
-            else:
-                # Still quarantined
-                remaining = self.quarantined_pairs[key]["until_ts"] - now
-                return True, f"Quarantined ({remaining:.0f}s remain): {self.quarantined_pairs[key]['reason']}"
-        
-        # Check quarantine criteria
-        if n >= 6 and wr <= 0.20 and ev <= -0.001:
-            # Trigger quarantine
-            reason = f"Toxic: WR={wr:.0%}, n={n}, EV={ev:.3f}"
-            self.quarantined_pairs[key] = {
-                "until_ts": now + _quarantine_cooldown,
-                "reason": reason,
-                "wr": wr,
-                "n": n,
-                "ev": ev,
-            }
-            log.warning(
-                f"[QUARANTINE] {sym}/{regime} quarantined: {reason} "
-                f"(will lift at {self.quarantined_pairs[key]['until_ts']:.0f})"
-            )
-            return True, reason
-        
-        return False, None
-    
+        with self._lock:
+            if key in self.quarantined_pairs:
+                if now >= self.quarantined_pairs[key]["until_ts"]:
+                    log.info(
+                        f"[QUARANTINE] {sym}/{regime} recovered "
+                        f"(was WR {self.quarantined_pairs[key]['wr']:.0%}, n={self.quarantined_pairs[key]['n']})"
+                    )
+                    del self.quarantined_pairs[key]
+                else:
+                    remaining = self.quarantined_pairs[key]["until_ts"] - now
+                    return True, f"Quarantined ({remaining:.0f}s remain): {self.quarantined_pairs[key]['reason']}"
+
+            if n >= 5 and wr <= 0.20 and ev <= -0.001:
+                reason = f"Toxic: WR={wr:.0%}, n={n}, EV={ev:.3f}"
+                self.quarantined_pairs[key] = {
+                    "until_ts": now + _quarantine_cooldown,
+                    "reason": reason,
+                    "wr": wr,
+                    "n": n,
+                    "ev": ev,
+                }
+                log.warning(f"[QUARANTINE] {sym}/{regime} quarantined: {reason}")
+                return True, reason
+
+            return False, None
+
     def get_size_multiplier(self, sym: str, regime: str) -> float:
-        """Get size multiplier for symbol-regime pair."""
+        """Get size multiplier for symbol-regime pair. Thread-safe."""
         key = (sym, regime)
-        
-        # Clean expired
         now = time.time()
-        if key in self.quarantined_pairs:
-            if now >= self.quarantined_pairs[key]["until_ts"]:
-                del self.quarantined_pairs[key]
-                return 1.0
-            else:
-                return 0.25  # Quarter size when quarantined
-        
+        with self._lock:
+            if key in self.quarantined_pairs:
+                if now >= self.quarantined_pairs[key]["until_ts"]:
+                    del self.quarantined_pairs[key]
+                    return 1.0
+                return 0.25
         return 1.0
-    
+
     def recover(self, sym: str, regime: str) -> bool:
         """Manually recover a pair (for testing or admin override)."""
         key = (sym, regime)
-        if key in self.quarantined_pairs:
-            del self.quarantined_pairs[key]
-            log.info(f"[QUARANTINE] {sym}/{regime} manually recovered")
+        with self._lock:
+            if key in self.quarantined_pairs:
+                del self.quarantined_pairs[key]
+                log.info(f"[QUARANTINE] {sym}/{regime} manually recovered")
             return True
         return False
     
