@@ -212,16 +212,11 @@ def _mark_quota_exhausted(error_msg: str):
     _set_firebase_degraded(is_read=True, is_write=True, reason="quota_429")
 
 def _set_firebase_degraded(is_read=False, is_write=False, reason=None):
-    """
-    EMERGENCY (2026-04-25): Mark Firebase as degraded due to 429/unavailable.
-    Sets safe mode flags to prevent treating unavailable data as empty DB.
-    """
+    """Mark Firebase as degraded due to 429/unavailable."""
     global _FIREBASE_READ_DEGRADED, _FIREBASE_WRITE_DEGRADED, _FIREBASE_DEGRADED_UNTIL, _FIREBASE_LAST_ERROR, _FIREBASE_DEGRADED_REASON
     import logging
     now = time.time()
-    # Set degradation until midnight Pacific reset (allow 60s recovery window before next reset)
-    midnight_offset = 24 * 3600
-    _FIREBASE_DEGRADED_UNTIL = now + midnight_offset
+    _FIREBASE_DEGRADED_UNTIL = now + 24 * 3600
     if is_read:
         _FIREBASE_READ_DEGRADED = True
     if is_write:
@@ -230,20 +225,25 @@ def _set_firebase_degraded(is_read=False, is_write=False, reason=None):
     _FIREBASE_LAST_ERROR = reason
     logging.critical(f"[FIREBASE_DEGRADED] {reason} — safe mode active until quota reset")
 
+
+def _clear_firebase_degradation():
+    """Clear all degradation flags on confirmed Firebase recovery."""
+    global _FIREBASE_READ_DEGRADED, _FIREBASE_WRITE_DEGRADED, _FIREBASE_DEGRADED_UNTIL
+    _FIREBASE_READ_DEGRADED = False
+    _FIREBASE_WRITE_DEGRADED = False
+    _FIREBASE_DEGRADED_UNTIL = 0
+
 def get_firebase_health():
-    """
-    EMERGENCY (2026-04-25): Return Firebase health status.
-    Allows callers to detect degradation and avoid treating unavailable data as empty DB.
-    """
+    """Return Firebase health status for safe-mode decisions."""
     now = time.time()
-    is_degraded = (now < _FIREBASE_DEGRADED_UNTIL and (_FIREBASE_READ_DEGRADED or _FIREBASE_WRITE_DEGRADED))
+    active = now < _FIREBASE_DEGRADED_UNTIL
     return {
-        "available": not is_degraded,
-        "read_degraded": _FIREBASE_READ_DEGRADED and (now < _FIREBASE_DEGRADED_UNTIL),
-        "write_degraded": _FIREBASE_WRITE_DEGRADED and (now < _FIREBASE_DEGRADED_UNTIL),
+        "available": not (active and (_FIREBASE_READ_DEGRADED or _FIREBASE_WRITE_DEGRADED)),
+        "read_degraded": _FIREBASE_READ_DEGRADED and active,
+        "write_degraded": _FIREBASE_WRITE_DEGRADED and active,
         "last_error": _FIREBASE_LAST_ERROR,
-        "degraded_until": _FIREBASE_DEGRADED_UNTIL if is_degraded else None,
-        "reason": _FIREBASE_DEGRADED_REASON if is_degraded else None,
+        "degraded_until": _FIREBASE_DEGRADED_UNTIL if active else None,
+        "reason": _FIREBASE_DEGRADED_REASON if active else None,
     }
 
 
@@ -267,20 +267,17 @@ def should_skip_noncritical_write() -> tuple[bool, str]:
     allowed, current, limit_writes = _can_write(0)  # Check without incrementing
     writes_pct = (current / limit_writes * 100) if limit_writes > 0 else 0
 
-    _now = time.time()
-    is_write_degraded = _FIREBASE_WRITE_DEGRADED and (_now < _FIREBASE_DEGRADED_UNTIL)
+    now = time.time()
+    is_write_degraded = _FIREBASE_WRITE_DEGRADED and (now < _FIREBASE_DEGRADED_UNTIL)
     should_skip = is_write_degraded or writes_pct >= 95
 
-    if should_skip:
-        now = time.time()
-        should_log = (now - _LAST_NONCRITICAL_SKIP_LOG) >= 60.0
-        if should_log:
-            reason = "write_degraded" if _FIREBASE_WRITE_DEGRADED else "quota_95pct"
-            logging.warning(
-                f"[FIREBASE_DEGRADED] write skipped: {reason} "
-                f"({current}/{limit_writes} writes, {writes_pct:.1f}%)"
-            )
-            _LAST_NONCRITICAL_SKIP_LOG = now
+    if should_skip and (now - _LAST_NONCRITICAL_SKIP_LOG) >= 60.0:
+        reason = "write_degraded" if is_write_degraded else "quota_95pct"
+        logging.warning(
+            f"[FIREBASE_DEGRADED] write skipped: {reason} "
+            f"({current}/{limit_writes} writes, {writes_pct:.1f}%)"
+        )
+        _LAST_NONCRITICAL_SKIP_LOG = now
 
     return should_skip, "FIREBASE_QUOTA_EXHAUSTED" if should_skip else ""
 
@@ -1352,10 +1349,7 @@ def probe_quota_recovered() -> bool:
         config_doc = db.collection(col("config")).document("runtime").get()
 
         # Success: Firebase is responding — clear degradation flags so writes resume
-        global _FIREBASE_READ_DEGRADED, _FIREBASE_WRITE_DEGRADED, _FIREBASE_DEGRADED_UNTIL
-        _FIREBASE_READ_DEGRADED = False
-        _FIREBASE_WRITE_DEGRADED = False
-        _FIREBASE_DEGRADED_UNTIL = 0
+        _clear_firebase_degradation()
         _log_probe.info("[RECOVERY_PROBE] Firebase quota recovered; degradation flags cleared")
         return True
 
@@ -1380,35 +1374,3 @@ def probe_quota_recovered() -> bool:
         # Unknown error: don't auto-recover
         _log_probe.warning(f"[RECOVERY_PROBE] Unknown error: {type(e).__name__}: {error_str[:100]}")
         return False
-
-
-def _daily_budget_report_legacy():
-    """
-    Estimate daily Firebase operation counts (call once at startup).
-    Limit: 50 000 reads · 20 000 writes/day (free tier).
-    """
-    mode = "PERFORMANCE" if PERF_MODE else "CONSERVATIVE"
-    hl   = HISTORY_LIMIT
-    ht   = HISTORY_TTL
-    wt   = WEIGHTS_TTL
-
-    cmd_poll = int(float(os.getenv("CMD_POLL_SEC", "30")))
-
-    r_hist     = 500 * (86400 // ht)
-    r_wgt      = 86400 // wt
-    r_cfg      = 86400 // CONFIG_TTL
-    r_advice   = 86400 // ADVICE_TTL
-    r_metrics  = 86400 // BOT2_METRICS_TTL
-    r_commands = 86400 // max(cmd_poll, 1)
-    r_tot      = r_hist + r_wgt + r_cfg + r_advice + r_metrics + r_commands
-
-    print(f"📊 Firebase daily budget  [{mode}]")
-    print(f"   Reads : load_history  ≤ {r_hist:>6}/day  ({hl} docs, cache {ht}s)")
-    print(f"           load_weights  ≤ {r_wgt:>6}/day")
-    print(f"           total reads   ≈ {r_tot:>6}/day  (limit 50 000)  {'✅' if r_tot < 45000 else '⚠️'}")
-    print(f"   Writes: metrics/latest every 10s  =  8 640/day")
-    print(f"           save_batch    every 60s   =  1 440/day")
-    print(f"           save_last_trade (est.)    =    200/day")
-    print(f"   Total : ~10 280 writes/day  (limit 20 000)  ✅")
-    if not PERF_MODE:
-        print(f"   ℹ️  Set PERF_MODE=True when WR>45% AND PF>1.5 for fresher calibration")

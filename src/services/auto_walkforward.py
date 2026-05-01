@@ -1,8 +1,10 @@
-from src.services.firebase_client import load_history, load_auditor_state, save_auditor_state
+from src.services.firebase_client import load_history, load_auditor_state, save_auditor_state, HISTORY_LIMIT
 import time
 import numpy as _np
 
 _LAST_RUN = 0
+# AWO needs enough MAE-tagged trades; use at least HISTORY_LIMIT but cap at 150 for walk-forward validity
+_AWO_LIMIT = max(HISTORY_LIMIT, 150)
 
 def calibrate_limits():
     """
@@ -16,7 +18,7 @@ def calibrate_limits():
     if time.time() - _LAST_RUN < 43200:
         return
         
-    trades = load_history(150)
+    trades = load_history(_AWO_LIMIT)
     # Systém potřebuje plně zahřátá HF Quant data (alespoň 30 obchodů vybavených MAE senzory)
     valid_trades = [t for t in trades if "mae" in t and abs(float(t["mae"])) > 0.0]
     
