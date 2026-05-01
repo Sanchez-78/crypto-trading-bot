@@ -945,3 +945,178 @@ Bot v současném stavu **obchoduje, ale neučí se**. Kořenová příčina je 
 ---
 
 *Report vygenerován: 2026-05-01 | Větev: `claude/code-analysis-bug-report-6PcEa`*
+
+---
+
+## Session 2 — Deep Analysis: "Bot Not Trading" (2026-05-01)
+
+### Root Cause Chain
+
+**BUG-045** was the root cause of "bot not trading". The full causal chain:
+
+1. `print_status()` called every 10s in main loop → `load_history(limit=500)` on every call
+2. Cache keyed at `HISTORY_LIMIT=100-200` → 500 > 200 → **always cache miss**
+3. 500 reads × 8,640 calls/day = **4.3 million reads/day** → quota exhausted in ~11 minutes
+4. 429 error → `_mark_quota_exhausted()` → `_FIREBASE_READ_DEGRADED = True`
+5. `should_skip_noncritical_write()` had no time gate (BUG-042) → permanent True → metrics writes stop
+6. `probe_quota_recovered()` detected recovery but never cleared flags (BUG-043) → degradation permanent
+7. Safe mode active → `should_skip_entry()` returns True → **all new positions blocked**
+8. On restart: cycle repeats (quota bomb fires again in 11 minutes)
+
+### BUG-039 — `regime` NameError in SCRATCH_EXIT handler
+
+**File:** `src/services/learning_event.py:347`  
+**Symptom:** Every SCRATCH_EXIT silently fails; scratch forensics never recorded; scratch rate always 0.  
+**Root cause:** `regime = signal.get("regime", "RANGING")` defined at line 360 but used at line 347 inside the SCRATCH_EXIT block → `NameError` swallowed by bare `except Exception`.  
+**Fix:** Moved `regime` assignment before the SCRATCH_EXIT block.  
+**Commit:** `c4ebdf0`
+
+---
+
+### BUG-040 — `_logging` not imported in `learning_event.py`
+
+**File:** `src/services/learning_event.py`  
+**Symptom:** `NameError: name '_logging' is not defined` in SCRATCH_EXIT except handler; exception swallowed silently.  
+**Root cause:** `_logging` alias used in except clause but never imported at module level.  
+**Fix:** Added `import logging as _logging` at top of file.  
+**Commit:** `c4ebdf0`
+
+---
+
+### BUG-041 — `_slim_trade()` stores regime in strategy field
+
+**File:** `src/services/firebase_client.py:412`  
+**Symptom:** Strategy field in all Firestore trade documents always contains regime value ("RANGING"/"TRENDING"), not actual strategy name. Per-strategy performance analytics permanently corrupted.  
+**Root cause:** `"strategy": trade.get("regime", "RANGING")` — copied regime key instead of strategy key.  
+**Fix:** `"strategy": trade.get("strategy", trade.get("regime", "RANGING"))`.  
+**Commit:** `c4ebdf0`
+
+---
+
+### BUG-042 — Write degradation has no time gate (permanent block after any 429)
+
+**File:** `src/services/firebase_client.py:270`  
+**Symptom:** After any 429 error, `should_skip_noncritical_write()` returns True forever; metrics writes stop permanently until bot restart. Bot's learning data stops accumulating.  
+**Root cause:** `should_skip = _FIREBASE_WRITE_DEGRADED or writes_pct >= 95` — `_FIREBASE_WRITE_DEGRADED` never re-checked against `_FIREBASE_DEGRADED_UNTIL` expiry timestamp.  
+**Fix:** `is_write_degraded = _FIREBASE_WRITE_DEGRADED and (now < _FIREBASE_DEGRADED_UNTIL)`.  
+**Commit:** `c4ebdf0`
+
+---
+
+### BUG-043 — `probe_quota_recovered()` detects recovery but never clears flags
+
+**File:** `src/services/firebase_client.py`  
+**Symptom:** Firebase recovers from 429 → probe succeeds → `_FIREBASE_READ_DEGRADED` stays True → safe mode never clears → entries blocked permanently until restart.  
+**Root cause:** Successful probe returned `True` without resetting the three degradation globals.  
+**Fix:** Added on successful probe:
+```python
+_FIREBASE_READ_DEGRADED = False
+_FIREBASE_WRITE_DEGRADED = False
+_FIREBASE_DEGRADED_UNTIL = 0
+```
+**Commit:** `c4ebdf0`
+
+---
+
+### BUG-044 — `save_metrics_full()` reconciliation uses cache-miss limit
+
+**File:** `src/services/firebase_client.py`  
+**Symptom:** Every metrics save (every 300s) triggers a 500-doc Firestore read → up to 144k reads/day from reconciliation alone.  
+**Root cause:** `load_history(limit=500)` hardcoded in reconciliation path; cache stores at HISTORY_LIMIT (100-200) → limit mismatch → always miss.  
+**Fix:** Changed to `load_history(limit=HISTORY_LIMIT)`.  
+**Commit:** `c4ebdf0`
+
+---
+
+### BUG-045 — `print_status()` quota storm: ROOT CAUSE of bot not trading
+
+**File:** `bot2/main.py`  
+**Symptom:** Firebase quota exhausted in ~11 minutes after startup → safe mode → all entries blocked → 0 trades.  
+**Root cause:** `print_status()` called every 10s in main loop with `load_history(limit=500)` inside. Cache keyed at HISTORY_LIMIT=100-200 → always miss → 500 reads × 8,640/day = **4.3M reads/day**.  
+**Fix:** Changed to `load_history(limit=HISTORY_LIMIT)`.  
+**Commit:** `d540585`
+
+---
+
+### BUG-046 — `daily_budget_report()` uses hardcoded 500 in formula
+
+**File:** `src/services/firebase_client.py`  
+**Symptom:** Budget report printed "≤43,200 reads/day" while actual was 4.3 million. Operator had no visibility into quota exhaustion.  
+**Root cause:** `r_hist = 500 * (86400 // HISTORY_TTL)` — used hardcoded 500 instead of HISTORY_LIMIT; didn't reflect actual cache miss rate.  
+**Fix:** `r_hist = HISTORY_LIMIT * (86400 // ht)`; added ≤45k budget check with ✅/⚠️ indicators.  
+**Commit:** `d540585`
+
+---
+
+### Cache TTL Extension (Quota Mitigation)
+
+**File:** `src/services/firebase_client.py`  
+**Commit:** `d540585`
+
+| Parameter | PERF_MODE Before | PERF_MODE After | Normal Before | Normal After |
+|-----------|-----------------|-----------------|---------------|--------------|
+| `HISTORY_TTL` | 300s | 600s | 21600s | 43200s |
+| `WEIGHTS_TTL` | 120s | 300s | 7200s | 14400s |
+| `SIGNALS_TTL` | 600s | 1200s | 7200s | 14400s |
+
+**Projected daily reads after all fixes:**
+- Normal mode: ~200 reads/day ✅ (was ~4,300,000)
+- PERF_MODE: ~18,900 reads/day ✅
+
+---
+
+### BUG-047 — `lm_economic_health()` calls `load_history(limit=500)` (quota storm #2)
+
+**File:** `src/services/learning_monitor.py:864`  
+**Symptom:** Every ECON health check (60s cache TTL) → 500-doc Firestore read → always cache miss (cache at 100-200) → additional ~720 reads/day, and amplified if cache TTL is lower.  
+**Root cause:** `load_history(limit=500)` hardcoded inside `lm_economic_health()`.  
+**Fix:** Changed to `load_history(limit=HISTORY_LIMIT)` with `HISTORY_LIMIT` imported from `firebase_client`.  
+**Commit:** *(current)*
+
+---
+
+### BUG-048 — `net_pnl` shadow variable causes false ECON BAD on every restart
+
+**File:** `src/services/learning_monitor.py:878,922`  
+**Symptom:** Status = "BAD" immediately after restart even if Firestore has profitable trade history. Deadlock: ECON BAD blocks new trades, but trades are needed to populate in-memory METRICS and escape ECON BAD.  
+**Root cause:**
+- Line 878: `net_pnl = pf_meta["net_pnl"]` (canonical, correct)
+- Line 922: `net_pnl = METRICS.get("net_pnl_total", 0.0)` → **overwrites** with in-memory value (resets to 0.0 on restart)
+- Line 949: `profit_factor < 1.0 AND net_pnl <= 0` → 0.0 ≤ 0 → always True on cold start → status = "BAD"
+
+**Fix:** Removed line 922; preserved canonical `net_pnl` from `pf_meta["net_pnl"]` throughout.  
+**Commit:** *(current)*
+
+---
+
+### BUG-049 — `wins`/`losses` shadow variables corrupt `overall_wr` in ECON health
+
+**File:** `src/services/learning_monitor.py:885-894`  
+**Symptom:** `overall_wr` computed from in-memory METRICS (0 on restart) instead of canonical Firestore history. Trend calculation compares recent trades to wrong baseline → spurious "DECLINING" trend.  
+**Root cause:**
+- Lines 885-886: `wins = pf_meta["wins"]`, `losses = pf_meta["losses"]` (canonical)
+- Lines 893-894: `wins = METRICS.get("wins", 0)`, `losses = METRICS.get("losses", 0)` → **overwrite** with in-memory (0 on restart)
+- Line 894-896: `overall_wr = wins / decisive` → uses METRICS values (0/0 = 0.0)
+
+**Fix:** Removed lines 893-894; `decisive` and `overall_wr` now computed from canonical wins/losses.  
+**Commit:** *(current)*
+
+---
+
+### Remaining Blocking Conditions (by design)
+
+After all 49 bugs fixed, these conditions can still block trading and are **intentional**:
+
+| Condition | Gate | Threshold | How to clear |
+|-----------|------|-----------|--------------|
+| Cold start | Global trades | < 100 | Accumulate trades |
+| Cold start | Min pair trades | Any pair < 15 | All pairs reach 15 trades |
+| FAST_FAIL_HARD | WR + EV | WR < 5% AND EV ≤ 0 | Downgraded to SOFT during cold start |
+| ECON BAD entry | ev | < 0.045 | Improve signal quality |
+| ECON BAD entry | score | < 0.22 | Improve signal quality |
+| ECON BAD entry | win_prob | < 0.54 | Improve signal quality |
+| Firebase safe mode | Any | `is_db_degraded_safe_mode()` | Waits for Firebase recovery (60s check) |
+| MAX_POSITIONS | Open positions | ≥ 3 | Wait for position to close |
+| Tier 4 pair block | WR | n ≥ 30, WR < 10% | Improve pair win rate |
+
+*Session 2 analysis completed: 2026-05-01 | Bugs BUG-039 to BUG-049*

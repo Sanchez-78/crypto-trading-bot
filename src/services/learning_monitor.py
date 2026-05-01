@@ -857,11 +857,11 @@ def lm_economic_health() -> dict:
     """
     try:
         from src.services.learning_event import METRICS, _close_reasons, _recent_results
-        from src.services.firebase_client import load_history
+        from src.services.firebase_client import load_history, HISTORY_LIMIT
         from src.services.canonical_metrics import canonical_profit_factor_with_meta
 
-        # V10.13u+4: Load same 500-trade snapshot as dashboard (authoritative source)
-        canonical_closed_trades = load_history(limit=500)
+        # Load canonical history at cache-aligned limit to avoid quota storms
+        canonical_closed_trades = load_history(limit=HISTORY_LIMIT)
         if not canonical_closed_trades or len(canonical_closed_trades) < 5:
             return {
                 "profit_factor": 0.0,
@@ -889,9 +889,7 @@ def lm_economic_health() -> dict:
         scratch_exits = _close_reasons.get("SCRATCH_EXIT", 0)
         scratch_rate = scratch_exits / trades if trades > 0 else 0.0
 
-        # Recent trend (PATCH 2: Only compute if sufficient sample size)
-        wins = METRICS.get("wins", 0)
-        losses = METRICS.get("losses", 0)
+        # Recent trend — use canonical wins/losses (already set from pf_meta above)
         decisive = wins + losses
         overall_wr = wins / decisive if decisive > 0 else 0.0
 
@@ -918,9 +916,7 @@ def lm_economic_health() -> dict:
                 trend_score = 0.5
 
         # Overall score components (each 0.0-1.0)
-        # V10.13u+3: PF score corrected for unprofitable systems
-        net_pnl = METRICS.get("net_pnl_total", 0.0)
-
+        # net_pnl already set from pf_meta["net_pnl"] (canonical source); do not overwrite with METRICS
         if profit_factor < 1.0:
             pf_score = max(0.0, min(0.35, profit_factor / 3.0))
         elif profit_factor < 1.5:
