@@ -82,7 +82,7 @@ def safe_idle_seconds(last_trade_ts, now=None):
 
 
 from src.services.market_stream import start
-from src.services.firebase_client import init_firebase, daily_budget_report, load_history, save_metrics_full
+from src.services.firebase_client import init_firebase, daily_budget_report, load_history, save_metrics_full, HISTORY_LIMIT
 from src.services.learning_event import get_metrics, bootstrap_from_history
 from src.services.trade_executor import get_open_positions
 from src.services.signal_generator import warmup
@@ -678,7 +678,7 @@ def print_status():
 
     # ── V10.13x.1: Canonical trade stats — single source of truth ────────────
     engine        = MetricsEngine()
-    recent_trades = load_history(limit=500)
+    recent_trades = load_history(limit=HISTORY_LIMIT)  # cache-aligned; limit=500 caused quota storm
     canonical     = engine.compute_canonical_trade_stats(recent_trades)
     recent_stats  = engine.compute_recent_window_stats(recent_trades)
 

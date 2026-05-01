@@ -354,9 +354,9 @@ SIGNALS_LIMIT  = 200
 # V10.15 QUOTA EMERGENCY: Increased TTL to 6 hours to prevent runaway reads (was 1h)
 # Runaway read rate detected: 6000 reads in 36 min = 240k/day vs 50k limit
 # EMERGENCY (2026-04-25): Further increased WEIGHTS_TTL, SIGNALS_TTL to 2h to reduce read storm
-HISTORY_TTL    = 300 if PERF_MODE else 21600  # 5 min vs 6 hours (emergency: was 1 hour)
-WEIGHTS_TTL    = 120 if PERF_MODE else 7200    # 2 min vs 2 hours (emergency: was 1 hour)
-SIGNALS_TTL    = 600 if PERF_MODE else 7200   # 10 min vs 2 hours (emergency: was 1 hour)
+HISTORY_TTL    = 600  if PERF_MODE else 43200  # 10 min vs 12 hours  → ≤14 400 vs ≤200 reads/day
+WEIGHTS_TTL    = 300  if PERF_MODE else 14400  # 5 min vs 4 hours   → ≤288  vs ≤6   reads/day
+SIGNALS_TTL    = 1200 if PERF_MODE else 14400  # 20 min vs 4 hours  → ≤144  vs ≤6   reads/day
 
 
 # ── Init ──────────────────────────────────────────────────────────────────────
@@ -1283,32 +1283,34 @@ def load_commands_since(since_ms: int, limit: int = 10) -> list[dict]:
 
 
 def daily_budget_report():
-    """Estimate daily Firebase operations with the current cache settings."""
+    """Estimate daily Firebase reads and writes against free-tier quota."""
     mode = "PERFORMANCE" if PERF_MODE else "CONSERVATIVE"
     ht = HISTORY_TTL
     wt = WEIGHTS_TTL
     cmd_poll = int(float(os.getenv("CMD_POLL_SEC", "30")))
 
-    r_hist = 500 * (86400 // ht)
-    r_wgt = 86400 // wt
-    r_cfg = 86400 // CONFIG_TTL
-    r_advice = 86400 // ADVICE_TTL
-    r_metrics = 86400 // BOT2_METRICS_TTL
+    # History: HISTORY_LIMIT docs per cache miss, cache-aligned by all callers
+    r_hist     = HISTORY_LIMIT * (86400 // ht)
+    r_wgt      = 86400 // wt
+    r_cfg      = 86400 // CONFIG_TTL
+    r_advice   = 86400 // ADVICE_TTL
+    r_metrics  = 86400 // BOT2_METRICS_TTL
     r_commands = 86400 // max(cmd_poll, 1)
-    r_tot = r_hist + r_wgt + r_cfg + r_advice + r_metrics + r_commands
+    r_tot      = r_hist + r_wgt + r_cfg + r_advice + r_metrics + r_commands
+    budget_ok  = "✅" if r_tot <= 45000 else "⚠️  OVER 45k TARGET"
 
     print(f"[Firebase] daily budget [{mode}]")
-    print(f"   Reads : history       <= {r_hist:>6}/day  (500 docs, cache {ht}s)")
+    print(f"   Reads : history       <= {r_hist:>6}/day  ({HISTORY_LIMIT} docs, cache {ht}s)")
     print(f"           weights       <= {r_wgt:>6}/day  (cache {wt}s)")
     print(f"           runtime cfg   <= {r_cfg:>6}/day  (cache {CONFIG_TTL}s)")
     print(f"           bot2 advice   <= {r_advice:>6}/day  (cache {ADVICE_TTL}s)")
     print(f"           bot2 metrics  <= {r_metrics:>6}/day  (cache {BOT2_METRICS_TTL}s)")
     print(f"           commands poll <= {r_commands:>6}/day  (poll {cmd_poll}s)")
-    print(f"           total reads   ~= {r_tot:>6}/day  (limit 50 000)")
+    print(f"           total reads   ~= {r_tot:>6}/day  (target ≤45 000 / limit 50 000)  {budget_ok}")
     print("   Writes: metrics/latest every 300s =    288/day")
     print("           save_batch    every 60s   =  1 440/day")
     print("           save_last_trade (est.)    =    200/day")
-    print("   Total : ~1 928 writes/day  (limit 20 000)")
+    print("   Total : ~1 928 writes/day  (limit 20 000)  ✅")
 
 
 # ════════════════════════════════════════════════════════════════════════════════
