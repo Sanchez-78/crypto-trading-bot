@@ -117,8 +117,19 @@ class GeneticPool:
         
         # Create offspring to fill population
         while len(new_population) < len(self.population):
-            # Select parent from elite (weighted by fitness)
-            parent = random.choice(elite)
+            # Select parent from elite weighted by fitness
+            total_fit = sum(s.fitness for s in elite)
+            if total_fit <= 0:
+                parent = random.choice(elite)
+            else:
+                pick = random.uniform(0, total_fit)
+                cumulative = 0.0
+                parent = elite[-1]
+                for s in elite:
+                    cumulative += s.fitness
+                    if cumulative >= pick:
+                        parent = s
+                        break
             
             # Clone DNA
             child_dna = copy.deepcopy(parent.dna)

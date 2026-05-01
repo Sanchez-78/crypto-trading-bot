@@ -19,15 +19,13 @@ Example:
 """
 
 import logging
+import threading
 import time
 from typing import Dict, Tuple, Optional, List
 
 log = logging.getLogger(__name__)
 
-# Global state
-_quarantine: Dict[Tuple[str, str], float] = {}  # (sym, regime) -> quarantine_until_ts
 _quarantine_cooldown = 3600  # 60 minutes: duration of quarantine
-_recovery_check_interval = 60  # Check recovery status every 60s
 
 
 class PairQuarantine:
@@ -94,7 +92,6 @@ class PairQuarantine:
                 del self.quarantined_pairs[key]
                 log.info(f"[QUARANTINE] {sym}/{regime} manually recovered")
             return True
-        return False
     
     def status(self) -> Dict[str, List[str]]:
         """Get status of all quarantined pairs."""

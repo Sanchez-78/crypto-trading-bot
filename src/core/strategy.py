@@ -81,7 +81,7 @@ class Strategy:
         
         # Component 1: Expected Value (EV)
         ev = self.pnl_total / self.trades_total if self.trades_total > 0 else 0.0
-        ev_score = min(ev, 0.1) / 0.1  # Normalize to [0, 1], cap at 10% EV
+        ev_score = max(0.0, min(ev, 0.1) / 0.1)  # Normalize to [0, 1], clamp negative EV
         
         # Component 2: Win Rate
         winrate = self.trades_wins / self.trades_total

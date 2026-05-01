@@ -1622,10 +1622,13 @@ def is_cold_start() -> bool:
         if _global_n < 100:
             return True
         
-        # Condition 2: Check if any pair/regime has very few samples
+        # Condition 2: 80% of active pairs must have >= 15 samples.
+        # Using min() caused one newly-seen pair (n=1) to permanently block all
+        # mature pairs from exiting cold start.  20th-percentile is robust.
         if _lc2:
-            _min_pair_n = min(_lc2.values()) if _lc2 else 0
-            if _min_pair_n < 15:
+            _counts = sorted(_lc2.values())
+            _p20 = _counts[max(0, len(_counts) // 5)]
+            if _p20 < 15:
                 return True
         
         # Condition 3: Recent restart (uptime < 60 min) + low trades
@@ -2906,9 +2909,9 @@ def evaluate_signal(signal):
         velocity_penalty = 0.70
 
     # ── V10.10b: Emergency activity failsafe ─────────────────────────────────
-    # If no trade closed in the last 5 min and we have some history → relax.
+    # 30-min inactivity (not 5-min) — short gaps are normal between trades.
     _inactivity   = _time.time() - _last_trade_ts[0] if _last_trade_ts[0] > 0 else 0.0
-    emergency_mode = _last_trade_ts[0] > 0 and _inactivity > 300
+    emergency_mode = _last_trade_ts[0] > 0 and _inactivity > 1800
     if emergency_mode:
         ev_threshold    *= 0.5
         velocity_penalty = max(velocity_penalty, 0.85)
@@ -3192,15 +3195,6 @@ def evaluate_signal(signal):
     ))
     combo_pen = get_combo_penalty(_combo)
 
-    # ── V10.13c: Apply SKIP_SCORE_SOFT penalties ───────────────────────────────────
-    # Initialized here; re-assigned later in the score gate block (line ~1176)
-    _skip_score_soft = False
-    _score_penalty = 1.0
-    if _skip_score_soft:
-        ev *= _score_penalty  # Reduce EV for downstream gates
-        win_prob *= _score_penalty  # Reduce win probability
-        auditor_base *= _score_penalty  # Also reduce auditor exposure
-
     # ── V10.13b: Apply FAST_FAIL_SOFT penalties to score and confidence ─────────────
     if _fast_fail_soft:
         ev *= _ff_score_mult  # Reduce EV for downstream gates
@@ -3418,6 +3412,9 @@ def evaluate_signal(signal):
             soft_range = max(_soft_ceiling - _score_hard_floor, 0.001)
             progress = (_score_adj - _score_hard_floor) / soft_range
             _score_penalty = max(0.30, progress * 0.60 + 0.30)  # 0.30 → 0.90
+            _ev_adj      *= _score_penalty
+            win_prob     *= _score_penalty
+            auditor_base *= _score_penalty
             track_blocked(reason="SKIP_SCORE_SOFT")
             
             # V10.13j: Log adaptive zone telemetry

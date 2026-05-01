@@ -449,7 +449,8 @@ def record_features(features, pnl):
     """
     if not isinstance(features, dict) or not features:
         return
-    credit = 1.0 / len(features)
+    active_bool_count = sum(1 for v in features.values() if isinstance(v, bool) and v)
+    credit = 1.0 / max(1, active_bool_count if active_bool_count > 0 else len(features))
     win = 1 if pnl > 0 else 0
     for name, value in features.items():
         # name is feature name (key); value can be scalar/list/dict but we don't iterate it
@@ -727,7 +728,9 @@ def lm_convergence(sym, reg):
         return 0.0
     recent = float(np.std(evs[-10:]))
     long   = float(np.std(evs))
-    return max(0.0, 1.0 - recent / (long + 1e-6))
+    if long < 1e-6:
+        return 0.0  # All EVs identical (exploration phase) — convergence undefined
+    return max(0.0, 1.0 - recent / long)
 
 
 def lm_edge_strength(sym, reg):

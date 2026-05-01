@@ -664,7 +664,7 @@ def on_price(data):
         import random
         # 30% chance to force generate a signal to maintain data flow
         if random.random() < 0.3:
-            action = random.choice(["LONG", "SHORT"])
+            action = random.choice(["BUY", "SELL"])  # must match executor's BUY/SELL convention
             # Synthesize confidence at mid-level for forced signals
             base_sc = 3  # 3/7
             w_sc = 0.5
