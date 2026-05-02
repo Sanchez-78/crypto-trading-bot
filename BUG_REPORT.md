@@ -1120,3 +1120,155 @@ After all 49 bugs fixed, these conditions can still block trading and are **inte
 | Tier 4 pair block | WR | n ≥ 30, WR < 10% | Improve pair win rate |
 
 *Session 2 analysis completed: 2026-05-01 | Bugs BUG-039 to BUG-049*
+
+---
+
+## Session 3 — Parallel 9-Agent Analysis (2026-05-02)
+
+**Method:** 3 rounds × 3 parallel agents + 1 master synthesis agent  
+**New bugs found:** BUG-050 to BUG-063  
+**Commits:** `01377b2`, `214209c`, `93608ca`
+
+---
+
+### BUG-050 — FORCED_EXPLORE_GATE applied to ALL bootstrap signals
+
+**File:** `src/services/realtime_decision_engine.py`  
+**Symptom:** All signals blocked during bootstrap — `check_spread_quality(0.0)` fails with `0.0 < 3.0bps`.  
+**Root cause:** Gate condition was `if _bootstrap_pair:` → applied when any pair had < 15 trades. `spread_bps` never in signal dict → spread=0.0bps → always blocked.  
+**Fix:** Changed condition to `if signal.get("explore", False):` — gate only applies to actual explore signals.  
+**Commit:** `01377b2`
+
+---
+
+### BUG-051 — QUIET_RSI gate blocked trending market signals
+
+**File:** `src/services/realtime_decision_engine.py`  
+**Symptom:** RSI 40-60 "neutral" in BULL/BEAR blocked. Default RSI=50.0 → all trending signals blocked.  
+**Root cause:** Gate matched neutral RSI in BULL/BEAR regimes; default fallback was 50.0 (always triggers).  
+**Fix:** Removed trend+neutral block entirely; RSI gate now only applies to QUIET_RANGE regime; default changed to `None` with skip if None.  
+**Commit:** `01377b2`
+
+---
+
+### BUG-052 — Duplicate `min_pair_n` bug in `evaluate_signal()` bootstrap detection
+
+**File:** `src/services/realtime_decision_engine.py:3294`  
+**Symptom:** `_bootstrap_pair` remained True indefinitely — same `min()` bug as `is_cold_start()`.  
+**Root cause:** `_p20_3 = _counts3[min(0, len(_counts3) // 5)]` → always index 0 (always bootstrapping).  
+**Fix:** Same p20 percentile logic as `is_cold_start()` fix.  
+**Commit:** `01377b2`
+
+---
+
+### BUG-053 — `ECON_BAD_ENTRY` blocked all exploration signals after 5 losses
+
+**File:** `src/services/realtime_decision_engine.py` (`_econ_bad_entry_quality_gate()`)  
+**Symptom:** After 5 losing trades, exploration-prior `ev ≈ 0.03` always fails `ev >= 0.045` threshold — permanent block.  
+**Root cause:** No bootstrap bypass existed; stale Firebase data from prior session can trigger BAD status on first startup.  
+**Fix:** Added `if METRICS["trades"] < 150: return True, ""` bypass before gate threshold checks.  
+**Commit:** `214209c`  
+**Note:** Gate 2 (`_econ_bad_forced_explore_gate`) still has no bypass → forced signals blocked during bootstrap by design.
+
+---
+
+### BUG-054 — `lm_edge_strength()` returned 0.0 (not None) for new pairs
+
+**File:** `src/services/learning_monitor.py`  
+**Symptom:** `check_edge_bucket()` blocked all explore=True signals for new pairs — `0.0 >= 0.001` is False.  
+**Root cause:** `true_ev()` returns `0.0` for < 10 samples; `if edge is None` guard was dead code.  
+**Fix:** `lm_edge_strength()` now returns `None` for < 10 samples — distinguishes "no data" from "measured zero edge".  
+**Commit:** `214209c`
+
+---
+
+### BUG-055 — Anti-deadlock mechanism dead due to `spread_pct` NameError
+
+**File:** `src/services/realtime_decision_engine.py` (anti-deadlock block in `evaluate_signal()`)  
+**Symptom:** Unblock mechanism completely dead — NameError silently caught on every call.  
+**Root cause:** `spread_pct` referenced at multiple points but never defined in `evaluate_signal()` scope.  
+**Fix:** Added `_spread_pct = (signal.get("spread_bps", 0) or 0) / 10000.0` before usage.  
+**Commit:** `214209c`
+
+---
+
+### BUG-056 — Synthetic warmup prices cause 2-minute MARKET_DEAD_FLAT block
+
+**File:** `src/services/signal_generator.py` (`warmup()`)  
+**Symptom:** On Binance unreachable, synthetic `[100.0]*120` flat prices → `r20=r50=0` → all signals blocked for ~2 minutes.  
+**Root cause:** Flat prices produce zero variance; `_prefilter()` requires `r20 > r50*0.05`.  
+**Fix:** Added ±0.01% random noise to synthetic prices: `synthetic_price * (1 + random.uniform(-0.0001, 0.0001))`.  
+**Commit:** `214209c`
+
+---
+
+### BUG-057 — `_save_paper_trade_closed()` never updates METRICS or lm_pnl_hist
+
+**File:** `src/services/trade_executor.py:1499-1500`  
+**Symptom:** Bot in `paper_live` mode: `METRICS["trades"]` stays 0 forever → `is_bootstrap()` always True → `true_ev()` always 0.0 → bot cannot learn from paper trading at all.  
+**Root cause:**  
+1. `update_metrics(closed_trade)` called with 1 argument but signature is `update_metrics(signal, trade)` → TypeError silently swallowed  
+2. `lm_update()` never called in paper close path → `lm_pnl_hist[(sym, regime)]` never populated  
+**Fix:**  
+- Reconstruct `signal`/`trade` dicts from paper position fields and call `update_metrics(_sig, _trd)` correctly  
+- Add `lm_update(sym, reg, pnl, ws, features)` call in `_save_paper_trade_closed()`  
+**Commit:** `93608ca`
+
+---
+
+### BUG-058 — `explore_bucket="A_STRICT_TAKE"` default blocks same-symbol re-entry
+
+**File:** `src/services/paper_trade_executor.py:476`  
+**Symptom:** A second normal RDE_TAKE entry for the same symbol was blocked by exploration exposure cap.  
+**Root cause:** Stored `explore_bucket` defaulted to `"A_STRICT_TAKE"` (non-None truthy string). `_check_exploration_exposure_caps()` counts all positions with truthy `explore_bucket` → `symbol_count >= 1` → blocked.  
+**Fix:** Default `explore_bucket` and `training_bucket` to `None` for non-explore trades. `_check_exploration_exposure_caps()` already returns `None` when `bucket` is falsy.  
+**Commit:** `93608ca`
+
+---
+
+### BUG-059 — Debounce fail-safe activates during bootstrap on import error
+
+**File:** `src/services/signal_generator.py:624`  
+**Symptom:** If `learning_event` import fails at startup, all symbols throttled to 1 signal/15s — defeating the bootstrap debounce bypass.  
+**Root cause:** `except Exception: _debounce_active = True` — wrong safe default; bootstrap intent is `False`.  
+**Fix:** Changed to `_debounce_active = False`.  
+**Commit:** `93608ca`
+
+---
+
+### BUG-027 — Stabilizer cooldown never decrements (pre-existing, now fixed)
+
+**File:** `bot2/stabilizer.py:22-23`  
+**Symptom:** After first loss streak of 3, `cooldown = 3` set but never decremented → permanently stuck in cooldown.  
+**Root cause:** No `self.cooldown -= 1` decrement in `update()`.  
+**Fix:** Added `self.cooldown = max(0, self.cooldown - 1)` at start of `update()`.  
+**Commit:** `93608ca`
+
+---
+
+### Remaining Open Issues (not yet fixed)
+
+| Bug | File | Severity | Description |
+|-----|------|----------|-------------|
+| BUG-011 | `src/core/strategy_executor.py:147` | CRITICAL | Kelly position_size unclamped — can exceed 1.0 |
+| BUG-012 | `shared/bot1/trade_manager.py` | CRITICAL | Fee deduction missing — P&L inflated by 0.2% per round-trip |
+| BUG-013 | `src/services/strategy_learner.py:58` | CRITICAL | UCB1 uses wrong `total` (sum of all strategy pulls, not per-strategy) |
+| BUG-014 | `src/services/strategy_learner.py:28` | CRITICAL | Session overlap hours 13-15 match "europe" only (first-match) |
+| BUG-015 | `shared/bot1/trade_manager.py` | CRITICAL | TOCTOU race condition on trade close (no Firestore transaction) |
+| BUG-016 | `src/core/genetic_optimizer.py` | CRITICAL | GA offspring fitness never evaluated → evolving on 0.0 fitness |
+| BUG-025 | `src/services/state_manager.py` | HIGH | Redis defaults to localhost — learning state lost on restart |
+| BUG-026 | `src/services/trade_executor.py` | HIGH | Synchronous Firebase/Redis I/O in on_price() hot path (1200ms observed) |
+| BUG-028 | `src/services/probability_calibration.py:148` | HIGH | Inclusive bucket boundary — value at exactly 0.55 falls into two buckets |
+| BUG-029 | `src/services/probability_calibration.py:164` | HIGH | Stale `empirical_p` on insufficient samples — no reset to neutral prior |
+| BUG-030 | `src/services/market_stream.py:148` | MEDIUM | Dead code: `if resp.status == 451` inside urlopen (raises HTTPError on 4xx) |
+| BUG-032 | `bot2/learning_engine.py:69` | MEDIUM | Unbounded `regime_perf` list — slow memory leak on long runs |
+| BUG-033 | `src/services/risk_engine.py:107` | MEDIUM | Unbounded `_corr_memory` dict keys — stale pair entries never cleaned |
+| BUG-NEW-A | `src/services/market_stream.py:55` | HIGH | `SIGNAL_ENGINE_ENABLED` defaults to "0" → push_tick never called → signal_engine thread permanently idle |
+| BUG-NEW-B | `src/services/market_stream.py:262` | HIGH | CoinGecko fallback: 1 tick/30s → 25+ min warmup → zero signals for geo-blocked deployments |
+| BUG-NEW-C | `src/services/realtime_decision_engine.py` | MEDIUM | `_econ_bad_forced_explore_gate()` has no bootstrap bypass → forced signals blocked in ECON_BAD even during bootstrap |
+| BUG-NEW-D | `src/services/realtime_decision_engine.py` | MEDIUM | ECON_BAD deadlock probe window: only 0.001 EV wide (0.0370-0.0380) with p/coh/af all ≥ 0.70 → almost never fires |
+| BUG-NEW-E | `src/core/strategy.py` | LOW | `ev_score` clamped to 0 for negative EV (intentional, but loses sign information for fitness learning) |
+| BUG-NEW-F | signal_generator features | MEDIUM | `pullback` and `wick` features near-always True — structural bias inflates base_score; Gate 2 (SCORE_MIN=3) provides no quality filter |
+| BUG-NEW-G | adaptive threshold | MEDIUM | `get_ws_threshold()` 75th-percentile rises proportionally with improving features — feedback loop self-neutralizes |
+
+*Session 3 analysis completed: 2026-05-02 | Bugs BUG-050 to BUG-059 + known open issues inventory*
