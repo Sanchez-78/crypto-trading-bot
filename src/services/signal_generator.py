@@ -621,7 +621,7 @@ def on_price(data):
         from src.services.learning_event import get_metrics as _lgm
         _debounce_active = _lgm().get("trades", 0) >= 30
     except Exception:
-        _debounce_active = True
+        _debounce_active = False  # Bootstrap-safe: disable debounce when state unavailable
     if _debounce_active and time.time() - _last_ts.get(s, 0) < DEBOUNCE_S:
         if s not in _cycle_prefilter_drops:
             _cycle_prefilter_drops[s] = "DEBOUNCE_ACTIVE"

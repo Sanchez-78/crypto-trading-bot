@@ -473,8 +473,8 @@ def open_paper_position(
         "af_at_entry": signal.get("af", signal.get("auditor_factor", 1.0)),
         "rde_decision": reason,
         "paper_source": extra.get("paper_source") if extra else "normal_rde_take",
-        "explore_bucket": extra.get("explore_bucket") if extra else "A_STRICT_TAKE",
-        "training_bucket": (extra.get("training_bucket") or extra.get("explore_bucket", "A_STRICT_TAKE")) if extra else "A_STRICT_TAKE",  # P1.1M: preserve training bucket
+        "explore_bucket": extra.get("explore_bucket") if extra else None,
+        "training_bucket": (extra.get("training_bucket") or extra.get("explore_bucket")) if extra else None,
         "explore_sub_bucket": extra.get("explore_sub_bucket") if extra else "",  # P1.1i
         "original_decision": extra.get("original_decision") if extra else "TAKE",
         "reject_reason": extra.get("reject_reason") if extra else None,

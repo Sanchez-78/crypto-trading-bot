@@ -11,6 +11,8 @@ class Stabilizer:
     def update(self, signals):
         recent = signals[-10:]
 
+        self.cooldown = max(0, self.cooldown - 1)
+
         losses = sum(1 for s in recent if s.get("result") == "LOSS")
         wins = sum(1 for s in recent if s.get("result") == "WIN")
 

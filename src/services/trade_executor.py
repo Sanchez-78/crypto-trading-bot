@@ -1494,12 +1494,35 @@ def _save_paper_trade_closed(closed_trade: dict) -> None:
         except Exception as e:
             log.warning(f"[LEARNING_WRITE_FAILED] source=paper {e}")
 
-        # Update learning metrics
+        # Update learning metrics — reconstruct signal+trade dicts from paper position fields
         try:
             from src.services.learning_event import update_metrics
-            update_metrics(closed_trade)
+            _sig = {
+                "symbol": closed_trade.get("symbol", ""),
+                "confidence": closed_trade.get("p_at_entry", 0.5),
+                "regime": closed_trade.get("regime", "RANGING"),
+                "action": closed_trade.get("side", "BUY"),
+            }
+            _trd = {
+                "profit": closed_trade.get("unit_pnl", 0.0),
+                "result": closed_trade.get("outcome", "FLAT"),
+            }
+            update_metrics(_sig, _trd)
         except Exception as e:
             log.debug(f"[METRICS_UPDATE_FAILED] {e}")
+
+        # Update learning monitor so lm_pnl_hist / true_ev() reflect paper outcomes
+        try:
+            from src.services.learning_monitor import lm_update
+            _sym = closed_trade.get("symbol", "")
+            _reg = closed_trade.get("regime", "RANGING")
+            _pnl = closed_trade.get("unit_pnl", 0.0)
+            _ws = closed_trade.get("score_at_entry", 0.5)
+            _feats = {k: v for k, v in closed_trade.get("features", {}).items() if isinstance(v, bool)}
+            if _sym:
+                lm_update(_sym, _reg, _pnl, _ws, _feats)
+        except Exception as e:
+            log.debug(f"[LM_UPDATE_FAILED] {e}")
 
         # Update bucket-level metrics for exploration analysis
         try:
