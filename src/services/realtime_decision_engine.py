@@ -2977,16 +2977,13 @@ def evaluate_signal(signal):
     # QUIET_RANGE extreme: require real extreme (≤35 BUY / ≥65 SELL).
     # Bypassed in bootstrap (<50 trades) so data flows in early learning.
     if _M.get("trades", 0) >= 50:
-        _rsi_val    = signal.get("features", {}).get("rsi", 50.0)
+        _rsi_val    = signal.get("features", {}).get("rsi", None)
         _side       = signal.get("action", "BUY")
-        _neutral    = 40.0 <= _rsi_val <= 60.0
-        _is_trend   = regime in ("BULL_TREND", "BEAR_TREND")
-        _is_quiet   = regime == "QUIET_RANGE"
         _skip_rsi   = False
-        if _neutral and _is_trend:
-            _skip_rsi = True   # trending market + no momentum → wait
-        elif _is_quiet:
-            # Dead market: only allow real extremes
+        # Only gate QUIET_RANGE — dead market requires real RSI extremes for mean-reversion.
+        # Removed trend+neutral block: RSI 40-60 is normal in sustained BULL/BEAR trends
+        # and blocking it eliminated most trend-following entries.
+        if _rsi_val is not None and regime == "QUIET_RANGE":
             if (_side == "BUY" and _rsi_val > 35) or (_side == "SELL" and _rsi_val < 65):
                 _skip_rsi = True
         if _skip_rsi:
@@ -3290,11 +3287,13 @@ def evaluate_signal(signal):
             _bootstrap_reasons.append(f"global_trades={_global_n}<100")
 
         # Detect PAIR-level bootstrap (even if global is mature)
+        # Use 20th-percentile — one new pair must not lock all mature pairs (same logic as is_cold_start)
         if _lc3:
-            _min_pair_n = min(_lc3.values()) if _lc3 else 0
-            if _min_pair_n < 15:
+            _counts3 = sorted(_lc3.values())
+            _p20_3 = _counts3[max(0, len(_counts3) // 5)]
+            if _p20_3 < 15:
                 _bootstrap_pair = True
-                _bootstrap_reasons.append(f"min_pair_n={_min_pair_n}<15")
+                _bootstrap_reasons.append(f"p20_pair_n={_p20_3}<15")
 
         # Recent restart condition
         _uptime_min = (_time.time() - _bootstrap_state["start_ts"]) / 60.0
@@ -3320,11 +3319,12 @@ def evaluate_signal(signal):
     except Exception as _esc_err:
         log.debug(f"[IDLE_ESCALATION] Init error: {_esc_err}")
 
-    # V10.13s.4/PATCH 5: Forced-explore quality gates (context-aware)
-    if _bootstrap_pair:
+    # V10.13s.4/PATCH 5: Forced-explore quality gates — only for actual explore signals.
+    # Applying this to ALL bootstrap signals caused a total trading halt: spread_bps is
+    # never in the signal dict, check_spread_quality(0.0) fails, all signals blocked.
+    if signal.get("explore", False):
         try:
             from src.services.forced_explore_gates import is_forced_explore_allowed, format_forced_explore_result
-            # PATCH 5: Pass context: market spread, branch, idle_mode
             _market_spread = signal.get("spread_bps", None)
             _fe_allowed, _fe_results = is_forced_explore_allowed(
                 sym,
