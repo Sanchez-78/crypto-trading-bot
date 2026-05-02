@@ -875,7 +875,10 @@ def warmup(symbols=None, candles=120):
             # Create synthetic historical data: flat prices at a reasonable value
             # This allows indicators to converge quickly once real ticks arrive
             synthetic_price = 100.0  # Placeholder; will be replaced by first real tick
-            synthetic_closes = [synthetic_price] * candles
+            # Tiny random noise so _prefilter r20/r50 > 0 instead of 0/0 = blocked
+            import random as _rand
+            synthetic_closes = [synthetic_price * (1 + _rand.uniform(-0.0001, 0.0001))
+                                 for _ in range(candles)]
             prices[s] = synthetic_closes
             _macd_vals[s] = []
             synthetic_count += 1

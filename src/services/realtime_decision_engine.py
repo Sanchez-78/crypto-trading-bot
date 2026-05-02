@@ -830,6 +830,16 @@ def _econ_bad_entry_quality_gate(
     if not is_bad:
         return True, ""
 
+    # Bootstrap bypass: during early learning, exploration-prior ev=0.03 can never
+    # clear the 0.045 gate — permanently locking out all new pairs after just 5 losses.
+    # Allow pass-through until the system has enough data for ECON_BAD to be meaningful.
+    try:
+        from src.services.learning_event import METRICS as _ebm
+        if _ebm.get("trades", 0) < 150:
+            return True, ""
+    except Exception:
+        pass
+
     # Check minimum thresholds
     if ev < 0.045:
         return False, f"weak_ev (ev={ev:.4f}<0.045)"
@@ -3566,19 +3576,18 @@ def evaluate_signal(signal):
     _anti_deadlock_triggered = False
     if not _unblock_fallback_used and is_unblock_mode():
         try:
-            # Check if signal passes minimum viability checks
             _has_positive_rr = rr >= MIN_RR
-            _has_decent_ev = ev > 0.0 or (ev >= -0.05 and spread_pct <= 0.005)
-            _is_new_pair = _M.get("trades", 0) < 100  # Still in learning phase
+            _spread_pct = (signal.get("spread_bps", 0) or 0) / 10000.0
+            _has_decent_ev = ev > 0.0 or (ev >= -0.05 and _spread_pct <= 0.005)
+            _is_new_pair = _M.get("trades", 0) < 100
             _no_cluster_forever = sym not in _blocked_until
-            
-            # Force accept if all basic checks pass and system is stalled
+
             if _has_positive_rr and (_has_decent_ev or _is_new_pair) and _no_cluster_forever:
                 _anti_deadlock_triggered = True
                 _unblock_fallback_used = True
                 record_unblock_trade()
                 log.warning(f"[V10.12f_ANTI_DEADLOCK] {sym}  forcing micro-trade to break 900s+ stall  "
-                           f"ev={ev:.4f}  rr={rr:.2f}  spread={spread_pct:.4f}")
+                           f"ev={ev:.4f}  rr={rr:.2f}  spread={_spread_pct:.4f}")
         except Exception as _ad_err:
             log.debug("anti-deadlock error: %s", _ad_err)
 

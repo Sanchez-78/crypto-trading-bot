@@ -734,7 +734,12 @@ def lm_convergence(sym, reg):
 
 
 def lm_edge_strength(sym, reg):
-    """Current PnL-based EV for this (sym, reg) pair."""
+    """Current PnL-based EV for this (sym, reg) pair.
+    Returns None when < 10 samples — distinguishes 'no data' from 'measured zero edge'
+    so check_edge_bucket passes new pairs instead of blocking them.
+    """
+    if len(lm_pnl_hist.get((sym, reg), [])) < 10:
+        return None
     return true_ev(sym, reg)
 
 
