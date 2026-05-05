@@ -2,8 +2,8 @@
 app_metrics_contract.py — Pure snapshot builder for Android dashboard.
 
 Builds a stable, JSON-safe Firestore document for app_metrics/latest.
-No Firebase imports. No runtime module imports at module level.
-All runtime/health/quota passed as plain dicts.
+No Firebase imports. No runtime module imports. No learning-monitor imports.
+All runtime/health/quota/learning status is passed as plain dicts.
 
 Schema version: app_metrics_v1
 Android reads: app_metrics/latest (one document, full set())
@@ -192,7 +192,6 @@ def _build_kpis(
     wins_all_time = 0
     losses_all_time = 0
     timeouts_all_time = 0
-    wr_all_time = 0.0
 
     if all_time_stats and isinstance(all_time_stats, dict):
         trades_total_all_time = _safe_int(all_time_stats.get("trades") or all_time_stats.get("trades_total"))
@@ -312,7 +311,10 @@ def _build_last_signals(last_signals: dict, now: float, safe_mode: bool) -> dict
 
 
 def _build_learning_section(session_metrics: dict) -> dict:
-    """Build learning progress section from session metrics."""
+    """Build learning progress section from session metrics only.
+
+    Keep this module pure: no Firebase/runtime/learning-monitor imports here.
+    """
     m = session_metrics or {}
     trades = _safe_int(m.get("trades"))
     wins = _safe_int(m.get("wins"))
@@ -325,11 +327,12 @@ def _build_learning_section(session_metrics: dict) -> dict:
     maturity = min(1.0, _safe_float(trades / 150.0))
     edge = decisive >= 30 and (wr > 0.55 or wr < 0.40)  # edge detected if non-trivial WR
 
-    try:
-        from src.services.learning_monitor import lm_health
-        health = str(lm_health() or "UNKNOWN")
-    except Exception:
-        health = "UNKNOWN"
+    health = str(
+        m.get("lm_health")
+        or m.get("confidence_momentum")
+        or m.get("learning_health")
+        or "UNKNOWN"
+    )
 
     return {
         "progress_to_ready": round(progress, 3),
@@ -357,6 +360,7 @@ def build_app_metrics_snapshot(
     firebase_health: Optional[dict] = None,
     quota_status: Optional[dict] = None,
     now: Optional[float] = None,
+    window_limit_requested: Optional[int] = None,
 ) -> dict:
     """
     Build a stable, JSON-safe app_metrics snapshot for Firestore.
@@ -371,6 +375,7 @@ def build_app_metrics_snapshot(
         firebase_health: Firebase health dict from get_firebase_health()
         quota_status:    Quota dict from get_quota_status()
         now:             Current timestamp (defaults to time.time())
+        window_limit_requested: Actual load_history limit requested by caller.
 
     Returns:
         dict — snapshot ready for Firestore set()
@@ -386,6 +391,8 @@ def build_app_metrics_snapshot(
     quota_status = quota_status or {}
 
     safe_mode = bool(runtime.get("safe_mode"))
+    actual_loaded = len(closed_trades)
+    limit_requested = _safe_int(window_limit_requested, APP_METRICS_WINDOW_LIMIT)
 
     # KPIs
     kpis, all_time_source = _build_kpis(closed_trades, all_time_stats, session_metrics, now)
@@ -459,9 +466,11 @@ def build_app_metrics_snapshot(
 
         "window": {
             "source": "load_history",
-            "limit": APP_METRICS_WINDOW_LIMIT,
-            "count": len(closed_trades),
-            "note": "Breakdowns are based on this recent window unless marked otherwise.",
+            "limit_configured": APP_METRICS_WINDOW_LIMIT,
+            "limit_requested": limit_requested,
+            "actual_loaded": actual_loaded,
+            "count": actual_loaded,
+            "note": "Breakdowns are based on the actual loaded recent window unless marked otherwise.",
         },
 
         "learning": _build_learning_section(session_metrics),
@@ -488,7 +497,7 @@ def build_app_metrics_snapshot(
 
         "app_context_cs": {
             "trades_total_all_time": "Celkový počet uzavřených obchodů z atomického počítadla. Není to jen posledních 500 obchodů.",
-            "window_trades": "Počet obchodů v posledním načteném okně pro detailní statistiky.",
+            "window_trades": "Počet obchodů v posledním skutečně načteném okně pro detailní statistiky.",
             "winrate_all_time": "Úspěšnost z all-time WIN/LOSS počtů, pokud jsou dostupné.",
             "window_winrate": "Úspěšnost v posledním okně obchodů.",
             "profit_factor": "Poměr hrubých zisků vůči hrubým ztrátám. Nad 1.0 systém vydělává, nad 1.5 je zdravější.",
