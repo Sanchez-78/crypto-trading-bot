@@ -1473,6 +1473,17 @@ def _save_paper_trade_closed(closed_trade: dict) -> None:
         closed_trade: Closed paper trade dict from paper_trade_executor
     """
     try:
+        # TIMEOUT_NO_PRICE quarantine: position closed without a real market price —
+        # do not feed fake flat PnL into the learning system.
+        if closed_trade.get("learning_skipped"):
+            log.info(
+                "[LEARNING_SKIPPED] trade_id=%s symbol=%s exit_reason=%s — no real price available",
+                closed_trade.get("trade_id"),
+                closed_trade.get("symbol"),
+                closed_trade.get("exit_reason"),
+            )
+            return
+
         # Prepare paper trade record for Firebase
         paper_record = {
             **closed_trade,
@@ -1489,7 +1500,7 @@ def _save_paper_trade_closed(closed_trade: dict) -> None:
                 log.warning(
                     f"[LEARNING_UPDATE] source=paper_closed_trade symbol={closed_trade.get('symbol')} "
                     f"bucket={closed_trade.get('explore_bucket', 'A_STRICT_TAKE')} "
-                    f"outcome={closed_trade.get('outcome')} net_pnl_pct={closed_trade.get('net_pnl_pct', 0):.4f}"
+                    f"outcome={closed_trade.get('outcome')} net_pnl_pct={closed_trade.get('net_pnl_pct', 0):.4f} ok=True"
                 )
         except Exception as e:
             log.warning(f"[LEARNING_WRITE_FAILED] source=paper {e}")

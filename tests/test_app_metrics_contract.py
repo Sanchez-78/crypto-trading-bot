@@ -155,12 +155,14 @@ def test_per_exit_counts_sum_to_total():
 
 def test_app_metrics_snapshot_limits_open_positions():
     from src.services.app_metrics_contract import APP_METRICS_MAX_OPEN_POSITIONS
+    total = APP_METRICS_MAX_OPEN_POSITIONS + 10
     ops = [{"trade_id": str(i), "symbol": "BTCUSDT", "entry_price": 50000.0, "entry_ts": 1e6}
-           for i in range(APP_METRICS_MAX_OPEN_POSITIONS + 10)]
+           for i in range(total)]
     s = build_app_metrics_snapshot(
         closed_trades=[], session_metrics={}, open_positions=ops, last_signals={}, now=1e6
     )
-    assert s["open_positions"]["count"] <= APP_METRICS_MAX_OPEN_POSITIONS
+    # count = total positions (not capped); items capped at limit
+    assert s["open_positions"]["count"] == total
     assert len(s["open_positions"]["items"]) <= APP_METRICS_MAX_OPEN_POSITIONS
 
 

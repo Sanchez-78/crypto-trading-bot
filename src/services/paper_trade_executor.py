@@ -513,11 +513,16 @@ def open_paper_position(
     }
 
 
+_LAST_KNOWN_PRICE_MAX_AGE_S = float(os.getenv("PAPER_LAST_PRICE_MAX_AGE_S", "120"))
+
+
 def check_and_close_timeout_positions(now: float) -> List[dict]:
     """Scan ALL open paper positions and close those that have exceeded max_hold_s.
 
-    This must be called on a timer (not only on price tick) so that
-    symbols without a recent price tick still get their positions timed out.
+    Uses the last known real market price stored by update_paper_positions().
+    If no recent price is available the position is quarantined with
+    TIMEOUT_NO_PRICE and learning_skipped=True rather than poisoning the
+    learning system with a flat entry-price close.
 
     Args:
         now: Current timestamp
@@ -535,21 +540,57 @@ def check_and_close_timeout_positions(now: float) -> List[dict]:
         age_s = now - pos["entry_ts"]
         max_hold = pos.get("max_hold_s", pos.get("timeout_s", _MAX_AGE_S))
 
-        if age_s >= max_hold:
-            log.info(
-                "[PAPER_TIMEOUT_DUE] trade_id=%s symbol=%s age_s=%d max_hold_s=%d bucket=%s",
+        if age_s < max_hold:
+            continue
+
+        log.info(
+            "[PAPER_TIMEOUT_DUE] trade_id=%s symbol=%s age_s=%d max_hold_s=%d bucket=%s",
+            trade_id,
+            pos["symbol"],
+            int(age_s),
+            int(max_hold),
+            pos.get("training_bucket") or pos.get("explore_bucket") or "N/A",
+        )
+
+        last_price = pos.get("last_price", 0.0)
+        last_price_ts = pos.get("last_price_ts", 0.0)
+        price_age_s = now - last_price_ts if last_price_ts > 0 else float("inf")
+
+        if last_price and last_price > 0 and price_age_s <= _LAST_KNOWN_PRICE_MAX_AGE_S:
+            # Close with real last-known market price
+            closed = close_paper_position(trade_id, last_price, now, "TIMEOUT")
+        else:
+            # No recent price — quarantine: remove from open positions but skip learning
+            log.warning(
+                "[PAPER_TIMEOUT_NO_PRICE] trade_id=%s symbol=%s age_s=%d price_age_s=%.0f"
+                " — closing without learning update",
                 trade_id,
                 pos["symbol"],
                 int(age_s),
-                int(max_hold),
-                pos.get("training_bucket") or pos.get("explore_bucket") or "N/A",
+                price_age_s if price_age_s != float("inf") else -1,
             )
-            # Use last known price if available (0 price → close_paper_position will reject)
-            # We use entry_price as fallback so TIMEOUT always closes even without fresh price
-            fallback_price = pos.get("entry_price", 0.0)
-            closed = close_paper_position(trade_id, fallback_price, now, "TIMEOUT")
-            if closed:
-                closed_trades.append(closed)
+            with _POSITION_LOCK:
+                if trade_id not in _POSITIONS:
+                    continue
+                pos = _POSITIONS.pop(trade_id)
+            # Build a minimal closed trade marked as no-price so callers can filter it
+            closed = {
+                **pos,
+                "exit_price": 0.0,
+                "exit_ts": now,
+                "exit_reason": "TIMEOUT_NO_PRICE",
+                "duration_s": age_s,
+                "gross_pnl_pct": 0.0,
+                "net_pnl_pct": 0.0,
+                "outcome": "FLAT",
+                "unit_pnl": 0.0,
+                "weighted_pnl": 0.0,
+                "learning_skipped": True,
+            }
+            _save_paper_state()
+
+        if closed:
+            closed_trades.append(closed)
 
     return closed_trades
 
@@ -578,6 +619,12 @@ def update_paper_positions(
 
         if not current_price or current_price <= 0:
             continue  # No valid price, skip
+
+        # Store last known price so timeout scanner can use real market price
+        with _POSITION_LOCK:
+            if trade_id in _POSITIONS:
+                _POSITIONS[trade_id]["last_price"] = current_price
+                _POSITIONS[trade_id]["last_price_ts"] = ts
 
         # Check exit conditions
         entry_price = pos["entry_price"]

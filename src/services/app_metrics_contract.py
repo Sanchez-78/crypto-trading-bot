@@ -58,11 +58,15 @@ _NEUTRAL_REASONS = frozenset({
     "timeout", "TIMEOUT", "TIMEOUT_PROFIT", "TIMEOUT_FLAT", "TIMEOUT_LOSS",
     "SCRATCH_EXIT", "STAGNATION_EXIT",
 })
-_FLAT_THRESHOLD = 0.001  # |profit| < this → FLAT regardless of exit
+# |profit| < this on a neutral exit → FLAT
+_FLAT_THRESHOLD = 0.001
+# below this, profit is treated as exactly zero even on non-neutral exits
+_EPS = 1e-9
 
 
 def _extract_profit(trade: dict) -> float:
-    for field in ("profit", "pnl", "net_pnl", "unit_pnl"):
+    # unit_pnl excluded: ambiguous unit (percent vs decimal); use canonical fields only
+    for field in ("profit", "pnl", "net_pnl"):
         if field in trade:
             try:
                 v = float(trade[field] or 0.0)
@@ -77,13 +81,27 @@ def _extract_profit(trade: dict) -> float:
 
 
 def _classify_outcome(trade: dict, profit: float) -> str:
-    """WIN / LOSS / FLAT. Neutral timeouts with tiny pnl → FLAT."""
+    """WIN / LOSS / FLAT.
+
+    Neutral exits (timeout/scratch/stagnation): FLAT when |profit| < threshold.
+    Non-neutral exits: respect stored result field if WIN/LOSS, otherwise classify
+    by sign. Never flatten a real TP/SL trade just because the profit is small.
+    """
     close_reason = str(trade.get("close_reason") or trade.get("exit_reason") or "").lower()
     is_neutral = close_reason in {r.lower() for r in _NEUTRAL_REASONS}
 
-    if abs(profit) < _FLAT_THRESHOLD:
-        return "FLAT"
-    if is_neutral and abs(profit) < _FLAT_THRESHOLD * 5:
+    if is_neutral:
+        if abs(profit) < _FLAT_THRESHOLD:
+            return "FLAT"
+        return "WIN" if profit > 0 else "LOSS"
+
+    # Non-neutral exit: respect stored result if decisive
+    stored = str(trade.get("result") or trade.get("outcome") or "").upper()
+    if stored in ("WIN", "LOSS"):
+        return stored
+
+    # Classify by sign; only truly zero profit is FLAT
+    if abs(profit) < _EPS:
         return "FLAT"
     return "WIN" if profit > 0 else "LOSS"
 
@@ -122,6 +140,7 @@ def _build_kpis(
     closed_trades: list,
     all_time_stats: Optional[dict],
     session_metrics: dict,
+    now: float,
 ) -> tuple[dict, str]:
     """Compute all KPI fields. Returns (kpis_dict, all_time_source)."""
     # Window metrics
@@ -165,7 +184,7 @@ def _build_kpis(
             last_ts = ts
     since_last = None
     if last_ts > 0:
-        since_last = _safe_float(_time.time() - last_ts)
+        since_last = _safe_float(now - last_ts)
 
     # All-time stats — prefer system/stats, fallback to canonical, then session
     all_time_source = "unknown"
@@ -222,21 +241,20 @@ def _build_kpis(
     }, all_time_source
 
 
-def _build_open_positions(open_positions) -> dict:
+def _build_open_positions(open_positions, now: float) -> dict:
     """Normalize open_positions (list or dict) into compact snapshot."""
     if isinstance(open_positions, dict):
-        items = list(open_positions.values())
+        all_items = list(open_positions.values())
     elif isinstance(open_positions, (list, tuple)):
-        items = list(open_positions)
+        all_items = list(open_positions)
     else:
-        items = []
+        all_items = []
 
     # Cap and strip large fields
     compact = []
-    for pos in items[:APP_METRICS_MAX_OPEN_POSITIONS]:
+    for pos in all_items[:APP_METRICS_MAX_OPEN_POSITIONS]:
         if not isinstance(pos, dict):
             continue
-        now = _time.time()
         entry_ts = _safe_float(pos.get("entry_ts") or pos.get("created_at") or 0.0)
         age_s = round(_safe_float(now - entry_ts), 1) if entry_ts > 0 else None
         compact.append({
@@ -250,7 +268,12 @@ def _build_open_positions(open_positions) -> dict:
             "age_s": age_s,
         })
 
-    return {"count": len(compact), "items": compact}
+    return {
+        "count": len(all_items),          # total open positions, not truncated
+        "items_count": len(compact),       # items actually returned
+        "items_limit": APP_METRICS_MAX_OPEN_POSITIONS,
+        "items": compact,
+    }
 
 
 def _build_last_signals(last_signals: dict, now: float, safe_mode: bool) -> dict:
@@ -365,13 +388,13 @@ def build_app_metrics_snapshot(
     safe_mode = bool(runtime.get("safe_mode"))
 
     # KPIs
-    kpis, all_time_source = _build_kpis(closed_trades, all_time_stats, session_metrics)
+    kpis, all_time_source = _build_kpis(closed_trades, all_time_stats, session_metrics, now)
 
     # Window breakdowns
     symbols, regimes, exits = _build_window_breakdowns(closed_trades)
 
     # Open positions
-    open_pos = _build_open_positions(open_positions)
+    open_pos = _build_open_positions(open_positions, now)
 
     # Recommendations per symbol
     recommendations = _build_last_signals(last_signals, now, safe_mode)
