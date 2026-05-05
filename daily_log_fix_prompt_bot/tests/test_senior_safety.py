@@ -1,0 +1,185 @@
+"""Senior safety regression tests for audit bot and app metrics."""
+
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+from daily_log_fix_prompt_bot.src.daily_log_fix_prompt_bot.config import load_config
+from daily_log_fix_prompt_bot.src.daily_log_fix_prompt_bot.models import Issue, LogMetrics, Severity
+from daily_log_fix_prompt_bot.src.daily_log_fix_prompt_bot.report_writer import ReportWriter
+
+
+def test_config_loads_safety_flags(monkeypatch):
+    monkeypatch.setenv("ENABLE_AUTO_FIX", "true")
+    monkeypatch.setenv("ENABLE_REMOTE_WRITE", "true")
+    monkeypatch.setenv("SAVE_UNSANITIZED_RAW_LOGS", "true")
+    monkeypatch.setenv("MAX_LOG_LINES", "123")
+    cfg = load_config()
+    assert cfg.enable_auto_fix is True
+    assert cfg.enable_remote_write is True
+    assert cfg.save_unsanitized_raw_logs is True
+    assert cfg.max_log_lines == 123
+
+
+def test_config_defaults_do_not_save_unsanitized_raw_logs(monkeypatch):
+    monkeypatch.delenv("SAVE_UNSANITIZED_RAW_LOGS", raising=False)
+    cfg = load_config()
+    assert cfg.save_unsanitized_raw_logs is False
+
+
+def test_fix_prompt_does_not_hardcode_stale_commit(tmp_path: Path):
+    out = tmp_path / "fix_prompt_final.md"
+    ReportWriter().write_fix_prompt(out, LogMetrics(), [])
+    text = out.read_text(encoding="utf-8")
+    assert "53acfef" not in text
+    assert "current checked-out commit" in text
+
+
+def test_fix_prompt_does_not_say_push_to_main(tmp_path: Path):
+    out = tmp_path / "fix_prompt_final.md"
+    ReportWriter().write_fix_prompt(out, LogMetrics(), [])
+    text = out.read_text(encoding="utf-8")
+    assert "Push to origin/main" not in text
+    assert "push directly to `main`" in text
+    assert "Create a new branch" in text
+
+
+def test_fix_prompt_says_no_deploy(tmp_path: Path):
+    out = tmp_path / "fix_prompt_final.md"
+    ReportWriter().write_fix_prompt(out, LogMetrics(), [])
+    text = out.read_text(encoding="utf-8")
+    assert "Do not deploy or restart production" in text
+    assert "Deploy only through a separate deployment prompt/checklist" in text
+
+
+def test_app_metrics_contract_has_no_hidden_learning_monitor_import():
+    import inspect
+    import src.services.app_metrics_contract as contract
+
+    source = inspect.getsource(contract)
+    assert "learning_monitor" not in source
+    assert "lm_health" not in source
+
+
+def test_learning_confidence_momentum_from_session_metrics():
+    from src.services.app_metrics_contract import build_app_metrics_snapshot
+
+    snapshot = build_app_metrics_snapshot(
+        closed_trades=[],
+        session_metrics={"confidence_momentum": "RISING"},
+        open_positions=[],
+        last_signals={},
+        now=1_000_000.0,
+    )
+    assert snapshot["learning"]["confidence_momentum"] == "RISING"
+
+
+def test_app_metrics_window_count_matches_loaded_trades():
+    from src.services.app_metrics_contract import build_app_metrics_snapshot
+
+    trades = [
+        {"profit": 0.01, "close_reason": "TP", "timestamp": 1_000_000.0},
+        {"profit": -0.02, "close_reason": "SL", "timestamp": 1_000_001.0},
+    ]
+    snapshot = build_app_metrics_snapshot(
+        closed_trades=trades,
+        session_metrics={},
+        open_positions=[],
+        last_signals={},
+        now=1_000_010.0,
+        window_limit_requested=100,
+    )
+    assert snapshot["window"]["count"] == 2
+    assert snapshot["window"]["actual_loaded"] == 2
+    assert snapshot["window"]["limit_requested"] == 100
+    assert snapshot["window"]["limit_configured"] >= 2
+
+
+def test_run_daily_analysis_saves_sanitized_logs_not_raw_by_default(monkeypatch, tmp_path: Path):
+    import daily_log_fix_prompt_bot.src.daily_log_fix_prompt_bot.main as main_mod
+
+    cfg = SimpleNamespace(
+        local_report_dir=str(tmp_path),
+        service_name="cryptomaster",
+        log_lookback_hours=24,
+        sanitize_secrets=True,
+        save_unsanitized_raw_logs=False,
+    )
+    report_dir = tmp_path / "report"
+    report_dir.mkdir()
+
+    class FakeFetcher:
+        def __init__(self, config):
+            pass
+        def fetch_logs(self):
+            return "API_KEY=SECRET123\nnormal line"
+
+    class FakeSanitizer:
+        def sanitize(self, text):
+            return text.replace("SECRET123", "[REDACTED]")
+
+    class FakeParser:
+        def parse(self, text):
+            return {"events": [], "metrics": {}}
+
+    class FakeDetector:
+        def detect(self, events, metrics, text):
+            return []
+
+    monkeypatch.setattr(main_mod, "load_config", lambda: cfg)
+    monkeypatch.setattr(main_mod, "get_report_dir", lambda config: report_dir)
+    monkeypatch.setattr(main_mod, "LogFetcher", FakeFetcher)
+    monkeypatch.setattr(main_mod, "Sanitizer", FakeSanitizer)
+    monkeypatch.setattr(main_mod, "LogParser", FakeParser)
+    monkeypatch.setattr(main_mod, "IssueDetector", FakeDetector)
+
+    main_mod.run_daily_analysis()
+
+    assert (report_dir / "sanitized_logs.txt").exists()
+    assert "SECRET123" not in (report_dir / "sanitized_logs.txt").read_text(encoding="utf-8")
+    assert not (report_dir / "raw_logs.txt").exists()
+
+
+def test_run_daily_analysis_raw_logs_only_when_enabled(monkeypatch, tmp_path: Path):
+    import daily_log_fix_prompt_bot.src.daily_log_fix_prompt_bot.main as main_mod
+
+    cfg = SimpleNamespace(
+        local_report_dir=str(tmp_path),
+        service_name="cryptomaster",
+        log_lookback_hours=24,
+        sanitize_secrets=True,
+        save_unsanitized_raw_logs=True,
+    )
+    report_dir = tmp_path / "report"
+    report_dir.mkdir()
+
+    class FakeFetcher:
+        def __init__(self, config):
+            pass
+        def fetch_logs(self):
+            return "API_KEY=SECRET123\nnormal line"
+
+    class FakeSanitizer:
+        def sanitize(self, text):
+            return text.replace("SECRET123", "[REDACTED]")
+
+    class FakeParser:
+        def parse(self, text):
+            return {"events": [], "metrics": {}}
+
+    class FakeDetector:
+        def detect(self, events, metrics, text):
+            return []
+
+    monkeypatch.setattr(main_mod, "load_config", lambda: cfg)
+    monkeypatch.setattr(main_mod, "get_report_dir", lambda config: report_dir)
+    monkeypatch.setattr(main_mod, "LogFetcher", FakeFetcher)
+    monkeypatch.setattr(main_mod, "Sanitizer", FakeSanitizer)
+    monkeypatch.setattr(main_mod, "LogParser", FakeParser)
+    monkeypatch.setattr(main_mod, "IssueDetector", FakeDetector)
+
+    main_mod.run_daily_analysis()
+
+    assert (report_dir / "raw_logs.txt").exists()
+    assert "SECRET123" in (report_dir / "raw_logs.txt").read_text(encoding="utf-8")
