@@ -640,6 +640,206 @@ def load_trade_count() -> int | None:
     return load_stats().get("trades", 0)
 
 
+# ── Cached all-time stats ─────────────────────────────────────────────────────
+
+_stats_cache: dict = {}
+_stats_cache_ts: float = 0.0
+
+
+def load_stats_cached(ttl_s: int = 300) -> dict:
+    """Return system/stats with TTL cache. Never raises."""
+    global _stats_cache, _stats_cache_ts
+    try:
+        now = time.time()
+        if _stats_cache and (now - _stats_cache_ts) < ttl_s:
+            return dict(_stats_cache)
+        result = load_stats()
+        if result:
+            _stats_cache = result
+            _stats_cache_ts = now
+        return dict(_stats_cache) if _stats_cache else dict(_local_stats)
+    except Exception:
+        return dict(_local_stats)
+
+
+# ── App metrics snapshot writer ───────────────────────────────────────────────
+
+_APP_METRICS_DOC = col("app_metrics") + "/latest"
+_LAST_APP_METRICS_WRITE_TS: float = 0.0
+_LAST_APP_METRICS_SEMANTIC_HASH: str | None = None
+_LAST_APP_METRICS_HEARTBEAT_TS: float = 0.0
+
+APP_METRICS_MIN_WRITE_INTERVAL_S = int(os.getenv("APP_METRICS_MIN_WRITE_INTERVAL_S", "30"))
+APP_METRICS_HEARTBEAT_INTERVAL_S = int(os.getenv("APP_METRICS_HEARTBEAT_INTERVAL_S", "300"))
+
+
+def _app_metrics_semantic_hash(snapshot: dict) -> str:
+    """Hash snapshot excluding volatile fields so unchanged data is detected."""
+    import copy
+    import json
+    import hashlib
+
+    s = copy.deepcopy(snapshot)
+
+    # Remove volatile fields that change every build
+    s.pop("generated_at", None)
+    kpis = s.get("kpis", {})
+    kpis.pop("since_last_trade_s", None)
+
+    # Remove age_s from open positions items
+    for pos in (s.get("open_positions") or {}).get("items") or []:
+        pos.pop("age_s", None)
+
+    # Remove age_s from recommendations
+    for rec in (s.get("recommendations") or {}).values():
+        if isinstance(rec, dict):
+            rec.pop("age_s", None)
+
+    raw = json.dumps(s, sort_keys=True, default=str)
+    return hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+
+def save_app_metrics_snapshot(snapshot: dict, *, force: bool = False) -> bool:
+    """Write app_metrics/latest to Firestore. Non-critical write.
+
+    Skips: throttle, unchanged, firebase degraded.
+    Writes: changed data, heartbeat after 5min, force=True.
+    Never raises.
+    """
+    global _LAST_APP_METRICS_WRITE_TS, _LAST_APP_METRICS_SEMANTIC_HASH, _LAST_APP_METRICS_HEARTBEAT_TS
+    import logging as _log_am
+    _log = _log_am.getLogger(__name__)
+
+    try:
+        if db is None:
+            return False
+
+        now = time.time()
+
+        # Throttle check
+        if not force and (now - _LAST_APP_METRICS_WRITE_TS) < APP_METRICS_MIN_WRITE_INTERVAL_S:
+            _log.debug("[APP_METRICS_SKIP] reason=throttle")
+            return False
+
+        # Firebase degraded check
+        skip, skip_reason = should_skip_noncritical_write()
+        if skip and not force:
+            _log.debug("[APP_METRICS_SKIP] reason=firebase_degraded detail=%s", skip_reason)
+            return False
+
+        # Semantic hash check (skip unchanged unless heartbeat due)
+        new_hash = _app_metrics_semantic_hash(snapshot)
+        heartbeat_due = (now - _LAST_APP_METRICS_HEARTBEAT_TS) >= APP_METRICS_HEARTBEAT_INTERVAL_S
+
+        if not force and new_hash == _LAST_APP_METRICS_SEMANTIC_HASH and not heartbeat_due:
+            _log.debug("[APP_METRICS_SKIP] reason=unchanged")
+            return False
+
+        reason = "force" if force else ("heartbeat" if heartbeat_due else "changed")
+        db.document(_APP_METRICS_DOC).set(snapshot)
+
+        _LAST_APP_METRICS_WRITE_TS = now
+        _LAST_APP_METRICS_SEMANTIC_HASH = new_hash
+        if heartbeat_due or force:
+            _LAST_APP_METRICS_HEARTBEAT_TS = now
+
+        _log.info(
+            "[APP_METRICS_SAVE] ok=True schema=%s reason=%s",
+            snapshot.get("schema_version", "?"),
+            reason,
+        )
+        return True
+
+    except Exception as e:
+        import logging as _log_err
+        _log_err.getLogger(__name__).warning("[APP_METRICS_ERROR] err=%s", str(e)[:200])
+        return False
+
+
+def publish_app_metrics_snapshot(force: bool = False, recent_trades: list | None = None) -> None:
+    """Build and publish app_metrics/latest snapshot to Firestore.
+
+    Cadence: call from existing metrics loop, no faster than 30s.
+    Never raises into trading loop.
+    """
+    import logging as _log_pub
+    _log = _log_pub.getLogger(__name__)
+    try:
+        if recent_trades is None:
+            recent_trades = load_history(limit=500)
+
+        all_time_stats = load_stats_cached(ttl_s=300)
+
+        try:
+            from src.services.learning_event import get_metrics as _get_metrics
+            m = _get_metrics()
+        except Exception:
+            m = {}
+
+        try:
+            from src.services.paper_trade_executor import get_paper_open_positions
+            ops = get_paper_open_positions()
+        except Exception:
+            ops = []
+
+        last_signals = m.get("last_signals") or {}
+
+        import os as _os
+        try:
+            from src.core.runtime_mode import (
+                get_trading_mode, is_paper_mode, live_trading_allowed, paper_train_enabled
+            )
+            trading_mode = get_trading_mode().value
+            paper_mode = is_paper_mode()
+            live_allowed = live_trading_allowed()
+            pt_enabled = paper_train_enabled()
+        except Exception:
+            trading_mode = "paper_live"
+            paper_mode = True
+            live_allowed = False
+            pt_enabled = False
+
+        runtime = {
+            "trading_mode": trading_mode,
+            "paper_mode": paper_mode,
+            "live_allowed": live_allowed,
+            "paper_training_enabled": pt_enabled,
+            "git_sha": _os.getenv("GIT_SHA", ""),
+            "branch": _os.getenv("GIT_BRANCH", ""),
+            "version": _os.getenv("APP_VERSION", ""),
+        }
+
+        fh = get_firebase_health()
+        qs = get_quota_status()
+
+        from src.services.app_metrics_contract import build_app_metrics_snapshot
+        snapshot = build_app_metrics_snapshot(
+            closed_trades=recent_trades,
+            session_metrics=m,
+            open_positions=ops,
+            last_signals=last_signals,
+            all_time_stats=all_time_stats,
+            runtime=runtime,
+            firebase_health=fh,
+            quota_status=qs,
+        )
+
+        window = len(recent_trades)
+        all_time = snapshot.get("kpis", {}).get("trades_total_all_time", 0)
+        open_count = snapshot.get("open_positions", {}).get("count", 0)
+        alerts = len(snapshot.get("health", {}).get("alerts") or [])
+        _log.info(
+            "[APP_METRICS_BUILD] all_time=%d window=%d open=%d alerts=%d",
+            all_time, window, open_count, alerts,
+        )
+
+        save_app_metrics_snapshot(snapshot, force=force)
+
+    except Exception as e:
+        import logging as _log_err2
+        _log_err2.getLogger(__name__).warning("[APP_METRICS_PUBLISH_ERROR] err=%s", str(e)[:200])
+
+
 # ── Model state (calibrator + learning histories + bayes/bandit) ───────────────
 
 _MODEL_STATE_DOC = col("model_state") + "/latest"   # single document, overwritten each save

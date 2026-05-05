@@ -158,11 +158,10 @@ def _emit_skip_summary(now: float) -> None:
 
 
 def _is_training_enabled() -> bool:
-    """Check if paper training mode is active (paper_train, not paper_live/live_real)."""
+    """Check if paper training mode is active (PAPER_TRAIN only, never paper_live/live_real)."""
     try:
-        from src.core.runtime_mode import is_paper_mode, is_live_trading_enabled
-        # paper_train = paper_mode + NOT live_trading_enabled
-        return _TRAINING_ENABLED and is_paper_mode() and not is_live_trading_enabled()
+        from src.core.runtime_mode import get_trading_mode, TradingMode
+        return _TRAINING_ENABLED and get_trading_mode() == TradingMode.PAPER_TRAIN
     except Exception:
         return False
 

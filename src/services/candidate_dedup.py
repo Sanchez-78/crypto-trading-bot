@@ -74,7 +74,10 @@ def _expire_old_opens(now_ts: float) -> None:
 
 def check_duplicate(signal: dict) -> tuple[bool, str]:
     """
-    Check if this candidate is a duplicate of a recent one.
+    Check if this candidate is a duplicate of a recent one. Read-only — does NOT mark.
+
+    Call mark_candidate_evaluated(signal) after a successful entry attempt
+    or terminal route to prevent the next identical signal from going through.
 
     Returns: (allowed, skip_reason)
       allowed=True   → not a duplicate, proceed
@@ -92,9 +95,21 @@ def check_duplicate(signal: dict) -> tuple[bool, str]:
                  f"regime={fp[2]} price={fp[3]} age={age:.1f}s")
         return False, f"DUPLICATE_CANDIDATE(age={age:.1f}s)"
 
-    # Mark this fingerprint as seen
-    _recent_fingerprints[fp] = now
     return True, ""
+
+
+def mark_candidate_evaluated(signal: dict) -> None:
+    """
+    Mark this candidate's fingerprint as seen, after a successful entry attempt
+    or terminal route (paper open, live open, or confirmed drop).
+
+    Separating check from mark prevents the first candidate from being
+    immediately blocked by its own check_duplicate call (age=0.0s).
+    """
+    now = time.time()
+    fp = _candidate_fingerprint(signal)
+    _recent_fingerprints[fp] = now
+    log.debug(f"[DEDUP_MARK] {fp[0]}/{fp[1]} regime={fp[2]} price={fp[3]}")
 
 
 def check_symbol_side_cooldown(signal: dict) -> tuple[bool, str]:

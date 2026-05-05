@@ -1623,6 +1623,16 @@ def main():
     except Exception as e:
         print(f"  [WARNING] Failed to log runtime config: {e}", file=sys.stderr, flush=True)
 
+    # Boot version marker — prevents confusion about which commit is running
+    import os as _bv_os
+    logging.info(
+        "[BOOT_VERSION] git_sha=%s branch=%s mode=%s app_version=%s",
+        _bv_os.getenv("GIT_SHA", "unknown"),
+        _bv_os.getenv("GIT_BRANCH", "unknown"),
+        _bv_os.getenv("TRADING_MODE", "paper_live"),
+        _bv_os.getenv("APP_VERSION", "unknown"),
+    )
+
     print("  [8/8] Running warmup indicators...", file=sys.stderr, flush=True)
     warmup()
     print("  [8/8] Warmup complete ✓", file=sys.stderr, flush=True)
@@ -1942,6 +1952,13 @@ def main():
 
             # V10.13s.1: Invalidate canonical state cache after metrics flush
             invalidate_cache()
+
+            # Publish Android-readable snapshot to app_metrics/latest
+            try:
+                from src.services.firebase_client import publish_app_metrics_snapshot
+                publish_app_metrics_snapshot()
+            except Exception as _amp_e:
+                logging.debug("[APP_METRICS_PUBLISH_SKIP] %s", _amp_e)
 
         # EMERGENCY (2026-04-25): Gate pre_live_audit on env flag + quota status
         if ENABLE_LIVE_AUDIT and now - _last_pre_audit >= PRE_AUDIT_INTERVAL:

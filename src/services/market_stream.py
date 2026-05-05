@@ -285,9 +285,9 @@ def _rest_poll_loop() -> None:
                 consecutive_errors += 1
                 print(f"⚠️  REST poll failed (errors={consecutive_errors})", file=sys.stderr, flush=True)
                 if consecutive_errors >= 5 and not use_cg:
-                    print("📡 Binance REST failed 5× — switching to CoinGecko")
+                    print("📡 Binance REST failed 5× — switching to CoinGecko (30s rate-limit interval)")
                     use_cg        = True
-                    poll_interval = 2.0
+                    poll_interval = 30.0  # Was 2.0 → caused 429s (210 req/min vs 15 limit)
                     consecutive_errors = 0
         except Exception as e:
             consecutive_errors += 1

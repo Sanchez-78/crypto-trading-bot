@@ -513,6 +513,47 @@ def open_paper_position(
     }
 
 
+def check_and_close_timeout_positions(now: float) -> List[dict]:
+    """Scan ALL open paper positions and close those that have exceeded max_hold_s.
+
+    This must be called on a timer (not only on price tick) so that
+    symbols without a recent price tick still get their positions timed out.
+
+    Args:
+        now: Current timestamp
+
+    Returns:
+        list of closed trade dicts
+    """
+    log.debug("[PAPER_TIMEOUT_SCAN] scanning open_positions=%d", len(_POSITIONS))
+
+    closed_trades = []
+    with _POSITION_LOCK:
+        positions_snapshot = list(_POSITIONS.items())
+
+    for trade_id, pos in positions_snapshot:
+        age_s = now - pos["entry_ts"]
+        max_hold = pos.get("max_hold_s", pos.get("timeout_s", _MAX_AGE_S))
+
+        if age_s >= max_hold:
+            log.info(
+                "[PAPER_TIMEOUT_DUE] trade_id=%s symbol=%s age_s=%d max_hold_s=%d bucket=%s",
+                trade_id,
+                pos["symbol"],
+                int(age_s),
+                int(max_hold),
+                pos.get("training_bucket") or pos.get("explore_bucket") or "N/A",
+            )
+            # Use last known price if available (0 price → close_paper_position will reject)
+            # We use entry_price as fallback so TIMEOUT always closes even without fresh price
+            fallback_price = pos.get("entry_price", 0.0)
+            closed = close_paper_position(trade_id, fallback_price, now, "TIMEOUT")
+            if closed:
+                closed_trades.append(closed)
+
+    return closed_trades
+
+
 def update_paper_positions(
     symbol_prices: Dict[str, float],
     ts: float,
@@ -811,6 +852,13 @@ def close_paper_position(
         if position_id not in _POSITIONS:
             return None
         pos = _POSITIONS.pop(position_id)
+
+    log.info(
+        "[PAPER_CLOSE_PATH] trade_id=%s symbol=%s reason=%s",
+        position_id,
+        pos["symbol"],
+        reason,
+    )
 
     # Calculate PnL
     pnl_data = _calculate_pnl(

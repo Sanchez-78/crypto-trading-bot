@@ -875,6 +875,14 @@ def _econ_bad_forced_explore_gate(signal: dict) -> tuple[bool, str]:
     if not signal.get("forced", False):
         return True, ""
 
+    # Bootstrap bypass: same as Gate 1 — don't block forced signals before 150 in-session trades
+    try:
+        from src.services.learning_event import METRICS as _ebm2
+        if _ebm2.get("trades", 0) < 150:
+            return True, ""
+    except Exception:
+        pass
+
     # Strict thresholds for forced signals during ECON BAD
     ev = signal.get("ev", 0.0)
     p = signal.get("p", signal.get("confidence", 0.5))

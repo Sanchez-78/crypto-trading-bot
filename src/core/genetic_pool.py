@@ -143,7 +143,8 @@ class GeneticPool:
                 dna=child_dna,
                 generation=parent.generation + 1
             )
-            
+            child.fitness = parent.fitness * 0.5  # Inherited seed; overwritten after first trade
+
             new_population.append(child)
         
         # ────────────────────────────────────────────────────────────────
@@ -165,6 +166,7 @@ class GeneticPool:
             for _ in range(2):
                 random_dna = StrategyDNA()
                 random_strat = Strategy(dna=random_dna, generation=self.evolution_count)
+                random_strat.fitness = 0.1  # Neutral seed so random strategies participate in selection
                 # BUG-018 fix: find actual weakest strategy, not just last index
                 weakest_idx = min(range(len(self.population)),
                                   key=lambda i: self.population[i].fitness)

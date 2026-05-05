@@ -1494,42 +1494,77 @@ def _save_paper_trade_closed(closed_trade: dict) -> None:
         except Exception as e:
             log.warning(f"[LEARNING_WRITE_FAILED] source=paper {e}")
 
-        # Update learning metrics — reconstruct signal+trade dicts from paper position fields
-        try:
-            from src.services.learning_event import update_metrics
-            _sig = {
-                "symbol": closed_trade.get("symbol", ""),
-                "confidence": closed_trade.get("p_at_entry", 0.5),
-                "regime": closed_trade.get("regime", "RANGING"),
-                "action": closed_trade.get("side", "BUY"),
-            }
-            _trd = {
-                "profit": closed_trade.get("unit_pnl", 0.0),
-                "result": closed_trade.get("outcome", "FLAT"),
-            }
-            update_metrics(_sig, _trd)
-        except Exception as e:
-            log.debug(f"[METRICS_UPDATE_FAILED] {e}")
+        # Skip duplicate learning updates for training_sampler trades —
+        # close_paper_position() already calls _safe_learning_update_for_paper_trade()
+        _is_training_sampler = closed_trade.get("paper_source") == "training_sampler"
 
-        # Update learning monitor so lm_pnl_hist / true_ev() reflect paper outcomes
-        try:
-            from src.services.learning_monitor import lm_update
-            _sym = closed_trade.get("symbol", "")
-            _reg = closed_trade.get("regime", "RANGING")
-            _pnl = closed_trade.get("unit_pnl", 0.0)
-            _ws = closed_trade.get("score_at_entry", 0.5)
-            _feats = {k: v for k, v in closed_trade.get("features", {}).items() if isinstance(v, bool)}
-            if _sym:
-                lm_update(_sym, _reg, _pnl, _ws, _feats)
-        except Exception as e:
-            log.debug(f"[LM_UPDATE_FAILED] {e}")
+        if not _is_training_sampler:
+            # Update learning metrics — reconstruct signal+trade dicts from paper position fields
+            try:
+                from src.services.learning_event import update_metrics
+                _sig = {
+                    "symbol": closed_trade.get("symbol", ""),
+                    "confidence": closed_trade.get("p_at_entry", 0.5),
+                    "regime": closed_trade.get("regime", "RANGING"),
+                    "action": closed_trade.get("side", "BUY"),
+                }
+                _trd = {
+                    "profit": closed_trade.get("unit_pnl", 0.0),
+                    "result": closed_trade.get("outcome", "FLAT"),
+                    "close_reason": closed_trade.get("exit_reason", ""),  # TIMEOUT neutral guard
+                }
+                update_metrics(_sig, _trd)
+            except Exception as e:
+                log.debug(f"[METRICS_UPDATE_FAILED] {e}")
 
-        # Update bucket-level metrics for exploration analysis
-        try:
-            from src.services.bucket_metrics import update_bucket_metrics
-            update_bucket_metrics(closed_trade)
-        except Exception as e:
-            log.debug(f"[BUCKET_METRICS_FAILED] {e}")
+            # Update canonical trade count so is_bootstrap() reflects paper learning
+            try:
+                from src.services.canonical_state import _canonical_state as _cs
+                _cs["trades_total"] = _cs.get("trades_total", 0) + 1
+            except Exception as e:
+                log.debug(f"[CANONICAL_COUNT_FAILED] {e}")
+
+            # Update learning monitor so lm_pnl_hist / true_ev() reflect paper outcomes
+            try:
+                from src.services.learning_monitor import lm_update
+                _sym = closed_trade.get("symbol", "")
+                _reg = closed_trade.get("regime", "RANGING")
+                _pnl = closed_trade.get("unit_pnl", 0.0)
+                _ws = closed_trade.get("score_at_entry", 0.5)
+                _feats = {k: v for k, v in closed_trade.get("features", {}).items() if isinstance(v, bool)}
+                if _sym:
+                    lm_update(_sym, _reg, _pnl, _ws, _feats)
+            except Exception as e:
+                log.debug(f"[LM_UPDATE_FAILED] {e}")
+
+            # Update Bayesian regime EV and bandit scores
+            try:
+                _sym = closed_trade.get("symbol", "")
+                _reg = closed_trade.get("regime", "RANGING")
+                _pnl = closed_trade.get("unit_pnl", 0.0)
+                if _sym:
+                    bayes_update(_sym, _reg, _pnl)
+                    bandit_update(_sym, _reg, max(-0.05, min(0.05, _pnl)))
+                    record_trade_close(_sym, _reg, _pnl)
+                    update_returns(_sym, _pnl)
+            except Exception as e:
+                log.debug(f"[BAYES_BANDIT_FAILED] {e}")
+
+            # Update probability calibrator and edge stats
+            try:
+                from src.services.realtime_decision_engine import update_calibrator, update_edge_stats
+                _outcome = 1 if closed_trade.get("outcome") == "WIN" else 0
+                _p = closed_trade.get("p_at_entry", 0.5)
+                _feats2 = closed_trade.get("features", {})
+                _reg2 = closed_trade.get("regime", "RANGING")
+                update_calibrator(_p, _outcome)
+                update_edge_stats(_feats2, _outcome, _reg2)
+            except Exception as e:
+                log.debug(f"[CALIBRATOR_EDGE_FAILED] {e}")
+
+        # Bucket metrics are already updated inside close_paper_position()
+        # via _safe_bucket_metrics_update_for_paper_trade(). Do NOT call
+        # update_bucket_metrics() again here — that would double-count every trade.
 
     except Exception as e:
         log.warning(f"[PAPER_SAVE_ERROR] {e}")
@@ -2534,8 +2569,9 @@ def handle_signal(signal):
 
     # ── V10.14: Record the open for deduplication tracking ────────────────────
     try:
-        from src.services.candidate_dedup import record_open
+        from src.services.candidate_dedup import record_open, mark_candidate_evaluated
         record_open(signal)
+        mark_candidate_evaluated(signal)
     except Exception as e:
         log.debug(f"[DEDUP_RECORD_FAIL] {e}")
 
@@ -2556,7 +2592,12 @@ def on_price(data):
         _symbol_prices = {data["symbol"]: data["price"]}
         _closed_papers = update_paper_positions(_symbol_prices, time.time())
         if _closed_papers:
-            # Process closed paper trades for learning
+            # Update watchdog idle timer so paper trade activity resets the exploration escalation
+            try:
+                import bot2.main as _bot2_main
+                _bot2_main.last_trade_ts[0] = time.time()
+            except Exception:
+                pass
             for _closed_trade in _closed_papers:
                 _save_paper_trade_closed(_closed_trade)
 

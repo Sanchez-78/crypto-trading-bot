@@ -36,17 +36,20 @@ EPS = 1e-12
 
 def _extract_trade_profit(trade: dict) -> float:
     """
-    V10.13u+5: Extract profit from trade using dashboard MetricsEngine field priority.
+    V10.13u+5: Extract profit from trade using consistent field priority.
 
-    Matches dashboard _trade_profit() logic:
-    1. profit (top-level, Firestore)
-    2. pnl (top-level, Firestore)
-    3. evaluation.profit (nested, legacy)
+    Priority order:
+    1. profit (top-level, Firestore live trades)
+    2. pnl (top-level, Firestore alternative)
+    3. net_pnl (paper trades store unit_pnl / net_pnl)
+    4. evaluation.profit (nested, legacy replay payloads)
     """
-    if "profit" in trade:
-        return float(trade.get("profit") or 0.0)
-    if "pnl" in trade:
-        return float(trade.get("pnl") or 0.0)
+    for field in ("profit", "pnl", "net_pnl"):
+        if field in trade:
+            try:
+                return float(trade[field] or 0.0)
+            except (ValueError, TypeError):
+                pass
     try:
         return float(trade.get("evaluation", {}).get("profit", 0.0) or 0.0)
     except (ValueError, TypeError):
