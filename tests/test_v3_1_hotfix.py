@@ -60,11 +60,11 @@ def test_timeout_close_uses_last_known_price_not_entry_price(monkeypatch):
 
     closed_trades = []
 
-    def mock_close(trade_id, close_price, ts, reason):
-        closed_trades.append({"trade_id": trade_id, "close_price": close_price, "reason": reason})
+    def mock_close(position_id, price, ts, reason):
+        closed_trades.append({"trade_id": position_id, "close_price": price, "reason": reason})
         with pte._POSITION_LOCK:
-            pte._POSITIONS.pop(trade_id, None)
-        return {"trade_id": trade_id, "close_price": close_price, "reason": reason}
+            pte._POSITIONS.pop(position_id, None)
+        return {"trade_id": position_id, "close_price": price, "reason": reason}
 
     monkeypatch.setattr(pte, "close_paper_position", mock_close)
 

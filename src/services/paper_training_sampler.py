@@ -407,6 +407,39 @@ def _safe_int(value, default: int = 0) -> int:
         return default
 
 
+def _metric_add_event(key: str, ts: float | None = None) -> None:
+    """P1.1V: Safe metric event append. Handles list/deque/int/None fields."""
+    import time
+    now = float(ts or time.time())
+    v = _training_metrics.get(key)
+    if hasattr(v, "append"):
+        # It's a list or deque — append timestamp
+        v.append(now)
+    elif isinstance(v, (int, float)):
+        # It's a counter — convert to list and append
+        _training_metrics[key] = [now]
+    elif v is None:
+        # Not initialized — create list
+        _training_metrics[key] = [now]
+    else:
+        # Unknown type — wrap in list
+        _training_metrics[key] = [now]
+
+
+def _metric_inc_counter(key: str, n: int = 1) -> None:
+    """P1.1V: Safe metric counter increment. Handles list/deque/int fields."""
+    v = _training_metrics.get(key, 0)
+    if isinstance(v, (int, float)):
+        _training_metrics[key] = int(v) + n
+    elif hasattr(v, "append"):
+        # It's a list/deque — append timestamp instead
+        import time
+        _training_metrics[key] = int(n)
+    else:
+        # Unknown type — set to int
+        _training_metrics[key] = n
+
+
 def _maybe_log_training_health(open_positions=None) -> None:
     """Log training health every 10 minutes. P1.1P: Uses f-string to avoid logging TypeError."""
     now = time.time()
@@ -614,11 +647,17 @@ def maybe_open_training_sample(
 
 
 def record_training_closed(bucket: str, outcome: str) -> None:
-    """Record a closed training trade for health metrics."""
-    _training_metrics["closed_1h"] += 1
-    log.info("[PAPER_TRAIN_CLOSED] bucket=%s outcome=%s", bucket, outcome)
+    """P1.1V: Record a closed training trade for health metrics. Never raises."""
+    try:
+        _metric_add_event("closed_1h")
+        log.info("[PAPER_TRAIN_CLOSED] bucket=%s outcome=%s", bucket, outcome)
+    except Exception as e:
+        log.warning("[PAPER_TRAIN_METRICS_ERROR] record_training_closed failed: %s", e)
 
 
 def record_training_learning_update() -> None:
-    """Record a learning update from closed training trade."""
-    _training_metrics["learning_updates_1h"] += 1
+    """P1.1V: Record a learning update from closed training trade. Never raises."""
+    try:
+        _metric_inc_counter("learning_updates_1h", 1)
+    except Exception as e:
+        log.warning("[PAPER_TRAIN_METRICS_ERROR] record_training_learning_update failed: %s", e)

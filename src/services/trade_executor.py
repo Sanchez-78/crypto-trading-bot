@@ -46,12 +46,27 @@ from src.services.exit_pnl import canonical_close_pnl
 
 # V10.13u+20: Paper trading mode integration
 try:
-    from src.core.runtime_mode import is_paper_mode, live_trading_allowed
+    from src.core.runtime_mode import live_trading_allowed as _rt_live_trading_allowed
+    _rt_live_trading_available = True
 except ImportError:
-    def is_paper_mode():
+    _rt_live_trading_available = False
+
+# P1.1X: live_trading_allowed() uses runtime_mode or fallback env check
+def live_trading_allowed():
+    """Check if live order placement is allowed. All conditions must be true:
+    - TRADING_MODE=live_real
+    - ENABLE_REAL_ORDERS=true
+    - LIVE_TRADING_CONFIRMED=true
+    """
+    if _rt_live_trading_available:
+        return _rt_live_trading_allowed()
+    # Fallback: Check env flags directly
+    mode = os.getenv("TRADING_MODE", "").strip().lower()
+    if mode != "live_real":
         return False
-    def live_trading_allowed():
-        return False
+    enable_real = os.getenv("ENABLE_REAL_ORDERS", "false").strip().lower() == "true"
+    confirmed = os.getenv("LIVE_TRADING_CONFIRMED", "false").strip().lower() == "true"
+    return enable_real and confirmed
 
 try:
     from src.services.paper_trade_executor import (
@@ -119,7 +134,37 @@ _meta_state = {                                                        # V10.6b:
 # V10.12d: Unblock mode rate limiting
 _UNBLOCK_TRADES_MAX_HOUR = 6    # max 6 unblock trades per hour
 _UNBLOCK_POSITIONS_MAX   = 2    # max 2 concurrent unblock positions
+
+# P1.1W: Throttle LIVE_ORDER_DISABLED spam (max once per symbol per 60s)
+_LIVE_ORDER_DISABLED_THROTTLE = {}  # symbol -> last_log_ts
+_LIVE_ORDER_DISABLED_TTL = 60.0  # seconds between logs per symbol
+
+# P1.1Y: Throttle PAPER_STRICT_TAKE_SKIP spam (max once per symbol per 60s)
+_PAPER_STRICT_TAKE_SKIP_THROTTLE = {}  # symbol -> last_log_ts
+_PAPER_STRICT_TAKE_SKIP_TTL = 60.0  # seconds between logs per symbol
+
+# P1.1Y: Throttle PAPER_ENTRY_BLOCKED spam (max once per symbol/bucket/reason per 60s)
+_PAPER_ENTRY_BLOCKED_THROTTLE = {}  # (symbol, bucket, reason) -> last_log_ts
+_PAPER_ENTRY_BLOCKED_TTL = 60.0  # seconds between logs per key
 _unblock_trades_hour = []       # list of timestamps of unblock trades in last 60 min
+
+# P1.1AB: Pipeline tracing counters (per cycle)
+_PIPELINE_CYCLE = {
+    "tick": 0,
+    "raw_signals": 0,
+    "rde_candidates": 0,
+    "accepted_candidates": 0,
+    "training_candidates": 0,
+    "paper_entries": 0,
+    "real_entries": 0,
+    "rejects": 0,
+    "reject_reasons": {},  # reason -> count
+    "last_summary_tick": 0,
+}
+_PIPELINE_LOCK = threading.RLock()
+_PIPELINE_SUMMARY_INTERVAL = 60.0  # seconds
+_PIPELINE_LAST_SUMMARY_TS = [0.0]
+_PIPELINE_STALL_THRESHOLD_S = 600.0  # 10 minutes without new entries
 
 FEE_RT      = 0.0015    # 0.15% round-trip (Binance taker 0.075%×2)
 MIN_TP_PCT  = 0.008     # 0.80% — giving trades room to hit higher RRs
@@ -1509,73 +1554,10 @@ def _save_paper_trade_closed(closed_trade: dict) -> None:
         # close_paper_position() already calls _safe_learning_update_for_paper_trade()
         _is_training_sampler = closed_trade.get("paper_source") == "training_sampler"
 
-        if not _is_training_sampler:
-            # Update learning metrics — reconstruct signal+trade dicts from paper position fields
-            try:
-                from src.services.learning_event import update_metrics
-                _sig = {
-                    "symbol": closed_trade.get("symbol", ""),
-                    "confidence": closed_trade.get("p_at_entry", 0.5),
-                    "regime": closed_trade.get("regime", "RANGING"),
-                    "action": closed_trade.get("side", "BUY"),
-                }
-                _trd = {
-                    "profit": closed_trade.get("unit_pnl", 0.0),
-                    "result": closed_trade.get("outcome", "FLAT"),
-                    "close_reason": closed_trade.get("exit_reason", ""),  # TIMEOUT neutral guard
-                }
-                update_metrics(_sig, _trd)
-            except Exception as e:
-                log.debug(f"[METRICS_UPDATE_FAILED] {e}")
-
-            # Update canonical trade count so is_bootstrap() reflects paper learning
-            try:
-                from src.services.canonical_state import _canonical_state as _cs
-                _cs["trades_total"] = _cs.get("trades_total", 0) + 1
-            except Exception as e:
-                log.debug(f"[CANONICAL_COUNT_FAILED] {e}")
-
-            # Update learning monitor so lm_pnl_hist / true_ev() reflect paper outcomes
-            try:
-                from src.services.learning_monitor import lm_update
-                _sym = closed_trade.get("symbol", "")
-                _reg = closed_trade.get("regime", "RANGING")
-                _pnl = closed_trade.get("unit_pnl", 0.0)
-                _ws = closed_trade.get("score_at_entry", 0.5)
-                _feats = {k: v for k, v in closed_trade.get("features", {}).items() if isinstance(v, bool)}
-                if _sym:
-                    lm_update(_sym, _reg, _pnl, _ws, _feats)
-            except Exception as e:
-                log.debug(f"[LM_UPDATE_FAILED] {e}")
-
-            # Update Bayesian regime EV and bandit scores
-            try:
-                _sym = closed_trade.get("symbol", "")
-                _reg = closed_trade.get("regime", "RANGING")
-                _pnl = closed_trade.get("unit_pnl", 0.0)
-                if _sym:
-                    bayes_update(_sym, _reg, _pnl)
-                    bandit_update(_sym, _reg, max(-0.05, min(0.05, _pnl)))
-                    record_trade_close(_sym, _reg, _pnl)
-                    update_returns(_sym, _pnl)
-            except Exception as e:
-                log.debug(f"[BAYES_BANDIT_FAILED] {e}")
-
-            # Update probability calibrator and edge stats
-            try:
-                from src.services.realtime_decision_engine import update_calibrator, update_edge_stats
-                _outcome = 1 if closed_trade.get("outcome") == "WIN" else 0
-                _p = closed_trade.get("p_at_entry", 0.5)
-                _feats2 = closed_trade.get("features", {})
-                _reg2 = closed_trade.get("regime", "RANGING")
-                update_calibrator(_p, _outcome)
-                update_edge_stats(_feats2, _outcome, _reg2)
-            except Exception as e:
-                log.debug(f"[CALIBRATOR_EDGE_FAILED] {e}")
-
-        # Bucket metrics are already updated inside close_paper_position()
-        # via _safe_bucket_metrics_update_for_paper_trade(). Do NOT call
-        # update_bucket_metrics() again here — that would double-count every trade.
+        # P1.1V: Bucket metrics already updated by close_paper_position()
+        # via _safe_bucket_metrics_update_for_paper_trade(). Do NOT duplicate.
+        # All paper trades now routed through training_sampler (P1.1AD); learning
+        # updates are handled by _safe_learning_update_for_paper_trade() there.
 
     except Exception as e:
         log.warning(f"[PAPER_SAVE_ERROR] {e}")
@@ -1642,6 +1624,12 @@ def _maybe_route_to_paper_training(signal: dict, current_price: float, reject_re
             current_price=current_price,
         )
 
+        # P1.1AB: Log training sampler check
+        bucket = result.get("bucket", "UNKNOWN")
+        open_symbol = len([p for p in _positions.values() if p.get("symbol") == sym])
+        open_bucket = len([p for p in _positions.values() if p.get("explore_bucket") == bucket])
+        _pipeline_record_training_check(sym, bucket, open_symbol, open_bucket, result.get("allowed", False), result.get("reason", "unknown"))
+
         if result.get("allowed"):
             # Open the paper position using the training sampler result
             try:
@@ -1649,6 +1637,17 @@ def _maybe_route_to_paper_training(signal: dict, current_price: float, reject_re
                 trade_signal = dict(signal)
                 if result.get("side_inferred"):
                     trade_signal["action"] = result["side"]
+
+                # P1.1AB: Log paper entry attempt
+                _pipeline_record_paper_entry_attempt(sym, result.get("bucket", ""), current_price)
+
+                # P1.1AC: Mark candidate as evaluated (after entry attempt, not before)
+                # This prevents duplicate gate from blocking multiple signals in same cycle
+                try:
+                    from src.services.candidate_dedup import mark_candidate_evaluated
+                    mark_candidate_evaluated(trade_signal)
+                except Exception:
+                    pass  # If dedup unavailable, continue anyway
 
                 open_result = open_paper_position(
                     signal=trade_signal,
@@ -1672,6 +1671,9 @@ def _maybe_route_to_paper_training(signal: dict, current_price: float, reject_re
                     },
                 )
                 if open_result.get("status") == "opened":
+                    # P1.1AB: Record successful entry
+                    trade_id = open_result.get("trade_id", "UNKNOWN")
+                    _pipeline_record_paper_entry_success(sym, result.get("bucket", ""), trade_id)
                     log.info(
                         "[PAPER_TRAIN_ENTRY] bucket=%s symbol=%s side=%s price=%.8f "
                         "cost_edge_ok=%s expected_move_pct=%.4f side_inferred=%s source=%s",
@@ -1686,6 +1688,8 @@ def _maybe_route_to_paper_training(signal: dict, current_price: float, reject_re
                     )
                     return True
                 else:
+                    # P1.1AB: Record paper entry skip
+                    _pipeline_record_paper_entry_skip(sym, result.get("bucket", ""), open_result.get("reason", "open_failed"))
                     log.info(
                         "[PAPER_TRAIN_BLOCKED] symbol=%s bucket=%s reason=%s",
                         sym,
@@ -1705,10 +1709,148 @@ def _maybe_route_to_paper_training(signal: dict, current_price: float, reject_re
         return False
 
 
+def _pipeline_record_signal(symbol: str, side: str, regime: str, ev: float, p: float, score: float) -> None:
+    """P1.1AB: Log raw signal received."""
+    with _PIPELINE_LOCK:
+        _PIPELINE_CYCLE["raw_signals"] += 1
+    log.info(
+        "[SIGNAL_RAW] symbol=%s side=%s regime=%s ev=%.4f p=%.2f score=%.3f",
+        symbol, side, regime, ev, p, score
+    )
+
+
+def _pipeline_record_rde_candidate(symbol: str, bucket: str, accepted: bool, reason: str) -> None:
+    """P1.1AB: Log RDE candidate status."""
+    with _PIPELINE_LOCK:
+        _PIPELINE_CYCLE["rde_candidates"] += 1
+        if accepted:
+            _PIPELINE_CYCLE["accepted_candidates"] += 1
+        else:
+            _PIPELINE_CYCLE["rejects"] += 1
+            _PIPELINE_CYCLE["reject_reasons"][reason] = _PIPELINE_CYCLE["reject_reasons"].get(reason, 0) + 1
+    log.info(
+        "[RDE_CANDIDATE] symbol=%s bucket=%s accepted=%s reason=%s",
+        symbol, bucket, accepted, reason
+    )
+
+
+def _pipeline_record_training_check(symbol: str, bucket: str, open_symbol: int, open_bucket: int, allowed: bool, reason: str) -> None:
+    """P1.1AB: Log training sampler cap check."""
+    with _PIPELINE_LOCK:
+        _PIPELINE_CYCLE["training_candidates"] += 1
+    log.info(
+        "[TRAINING_SAMPLER_CHECK] symbol=%s bucket=%s open_symbol=%d open_bucket=%d allowed=%s reason=%s",
+        symbol, bucket, open_symbol, open_bucket, allowed, reason
+    )
+
+
+def _pipeline_record_paper_entry_attempt(symbol: str, bucket: str, price: float) -> None:
+    """P1.1AB: Log paper entry attempt."""
+    log.info("[PAPER_ENTRY_ATTEMPT] symbol=%s bucket=%s price=%.8f", symbol, bucket, price)
+
+
+def _pipeline_record_paper_entry_skip(symbol: str, bucket: str, reason: str) -> None:
+    """P1.1AB: Log paper entry skip."""
+    with _PIPELINE_LOCK:
+        _PIPELINE_CYCLE["rejects"] += 1
+        _PIPELINE_CYCLE["reject_reasons"][reason] = _PIPELINE_CYCLE["reject_reasons"].get(reason, 0) + 1
+    log.info("[PAPER_ENTRY_SKIP] symbol=%s bucket=%s reason=%s", symbol, bucket, reason)
+
+
+def _pipeline_record_paper_entry_success(symbol: str, bucket: str, trade_id: str) -> None:
+    """P1.1AB: Log successful paper entry."""
+    with _PIPELINE_LOCK:
+        _PIPELINE_CYCLE["paper_entries"] += 1
+
+
+def _pipeline_record_drop(symbol: str, reject_reason: str) -> None:
+    """P1.1AD: Log accepted candidate dropped by portfolio gate without reaching training sampler."""
+    log.info(
+        "[ENTRY_PIPELINE_DROP] symbol=%s reason=%s stage=portfolio_gate",
+        symbol,
+        reject_reason,
+    )
+
+
+def _drop_and_route_to_training(signal: dict, current_price: float, reject_reason: str) -> None:
+    """P1.1AD: Log drop and route accepted candidate to training sampler in paper_train mode."""
+    sym = signal.get("symbol", "UNKNOWN")
+    _pipeline_record_drop(sym, reject_reason)
+    try:
+        from src.core.runtime_mode import get_trading_mode
+        mode = get_trading_mode()
+        if mode.value == "paper_train":
+            _maybe_route_to_paper_training(signal, current_price, f"PORTFOLIO_GATE:{reject_reason}")
+    except Exception:
+        pass
+
+
+def _pipeline_emit_summary() -> None:
+    """P1.1AB: Emit cycle summary and check for stalls."""
+    global _PIPELINE_LAST_SUMMARY_TS
+    now = time.time()
+
+    if now - _PIPELINE_LAST_SUMMARY_TS[0] < _PIPELINE_SUMMARY_INTERVAL:
+        return
+
+    _PIPELINE_LAST_SUMMARY_TS[0] = now
+
+    with _PIPELINE_LOCK:
+        cycle = dict(_PIPELINE_CYCLE)
+        top_reject = max(cycle["reject_reasons"].items(), key=lambda x: x[1])[0] if cycle["reject_reasons"] else "NONE"
+        reject_detail = ", ".join(f"{k}:{v}" for k, v in sorted(cycle["reject_reasons"].items(), key=lambda x: x[1], reverse=True)[:3])
+
+    log.warning(
+        "[ENTRY_PIPELINE_SUMMARY] ticks=%d raw_signals=%d rde_candidates=%d "
+        "accepted_candidates=%d training_candidates=%d paper_entries=%d real_entries=%d "
+        "rejects=%d top_reject_reason=%s reject_detail=[%s]",
+        cycle["tick"],
+        cycle["raw_signals"],
+        cycle["rde_candidates"],
+        cycle["accepted_candidates"],
+        cycle["training_candidates"],
+        cycle["paper_entries"],
+        cycle["real_entries"],
+        cycle["rejects"],
+        top_reject,
+        reject_detail,
+    )
+
+    # Check for stall: no entries for >10 min but signals exist
+    if cycle["raw_signals"] > 0 and cycle["paper_entries"] == 0:
+        if now - _PIPELINE_LAST_SUMMARY_TS[0] > _PIPELINE_STALL_THRESHOLD_S:
+            log.error(
+                "[ENTRY_PIPELINE_STALL] no_paper_entries_for=%.0fs raw_signals=%d "
+                "top_reject_reasons=[%s]",
+                _PIPELINE_STALL_THRESHOLD_S,
+                cycle["raw_signals"],
+                reject_detail,
+            )
+
+
 def handle_signal(signal):
     global _last_replace_ts   # V10.10: written directly in efficiency replacement path
     sym     = signal["symbol"]
     regime  = signal.get("regime", "RANGING")
+
+    # P1.1AB: Log raw signal with key attributes
+    # P1.1AD: Use score_raw/score_final if available (canonical decision score)
+    side = signal.get("action", signal.get("side", "UNKNOWN"))
+    ev = signal.get("ev", 0.0)
+    p = signal.get("p", signal.get("confidence", 0.5))
+    # Use score_raw (from canonical decision) if available, fallback to score
+    score = signal.get("score_raw", signal.get("score_final", signal.get("score", 0.0)))
+    _pipeline_record_signal(sym, side, regime, ev, p, score)
+
+    # P1.1X: Paper mode check — use is_paper_mode() from runtime_mode
+    # CRITICAL: This must be computed early to route paper signals BEFORE live_trading_allowed() check
+    try:
+        from src.core.runtime_mode import is_paper_mode as _rt_is_paper_mode
+        is_paper_mode_local = _rt_is_paper_mode()
+    except Exception:
+        # Fallback: check TRADING_MODE env var directly
+        mode = os.getenv("TRADING_MODE", "").strip().lower()
+        is_paper_mode_local = mode in ("paper_live", "paper_train", "replay_train")
 
     # EMERGENCY (2026-04-25): Entry gate — block new positions when Firebase degraded
     # Prevents unsafe trading when authoritative state unavailable
@@ -1772,6 +1914,14 @@ def handle_signal(signal):
         log.warning(f"[DEDUP_GUARD_FAIL] {e} — proceeding without dedup checks")
 
     allowed, reason = _allow_trade(sym, signal["action"], regime)
+    # P1.1AB: Log RDE candidate status
+    bucket = signal.get("bucket", "A_STRICT_TAKE")
+    _pipeline_record_rde_candidate(sym, bucket, allowed, reason)
+
+    # P1.1AC: If RDE rejected for duplicate gate, log explicitly
+    if not allowed and "DUPLICATE_CANDIDATE" in reason:
+        log.info("[RDE_CANDIDATE] symbol=%s accepted=false reason=%s", sym, reason)
+
     if not allowed:
         if reason == "max_positions":
             # Global 15 s cooldown — covers both V10.10 and V10.4b paths
@@ -1934,22 +2084,39 @@ def handle_signal(signal):
     if not _has_min_edge(entry, tp_est, sl_est):
         log.info(f"    portfolio gate: min_edge  sym={sym}  "
               f"tp={abs(tp_est-entry)/entry:.4f}  sl={abs(sl_est-entry)/entry:.4f}")
+        _drop_and_route_to_training(signal, entry, "min_edge")
         return
     _sig_ev = signal.get("ev", 0.0)   # set by RDE evaluate_signal; 0.0 = conservative
     if _reject_bad_rr(entry, tp_est, sl_est, ev=_sig_ev, atr_pct=atr_pct):
         rr  = abs(tp_est - entry) / max(abs(sl_est - entry), 1e-9)
         log.info(f"    portfolio gate: bad_rr  sym={sym}  rr={rr:.2f}")
+        _drop_and_route_to_training(signal, entry, "bad_rr")
         return
 
     # QUIET_RANGE: skip when ATR < 2.5× round-trip fee.
     # With FEE_RT=0.15%, ATR must exceed 0.375% or the fee alone eats the edge.
     # Not bootstrapped — this is a structural market condition, not a learning gate.
+    # P1.1AD: Bypass for paper_train mode to allow training sample collection
     if regime == "QUIET_RANGE":
         _atr_pct = atr / max(entry, 1e-9)
         if _atr_pct < 2.5 * FEE_RT:
-            log.info(f"    portfolio gate: quiet_atr_fee  sym={sym}  "
-                  f"atr={_atr_pct:.4f}<{2.5*FEE_RT:.4f}")
-            return
+            # P1.1AD: Allow paper_train to bypass quiet_atr_fee for training samples
+            try:
+                from src.core.runtime_mode import get_trading_mode
+                mode = get_trading_mode()
+                if mode.value != "paper_train":
+                    log.info(f"    portfolio gate: quiet_atr_fee  sym={sym}  "
+                          f"atr={_atr_pct:.4f}<{2.5*FEE_RT:.4f}")
+                    _drop_and_route_to_training(signal, entry, "quiet_atr_fee")
+                    return
+                # In paper_train, bypass gate to route to training sampler
+                log.debug(f"    [QUIET_ATR_BYPASS] symbol={sym} paper_train=true "
+                        f"atr={_atr_pct:.4f}<{2.5*FEE_RT:.4f}")
+            except Exception:
+                log.info(f"    portfolio gate: quiet_atr_fee  sym={sym}  "
+                      f"atr={_atr_pct:.4f}<{2.5*FEE_RT:.4f}")
+                _drop_and_route_to_training(signal, entry, "quiet_atr_fee")
+                return
 
     # Bootstrap open: bypass staleness/cost gates until 30 closed trades
     try:
@@ -1965,6 +2132,7 @@ def handle_signal(signal):
     tick_ms = max(100, min(500, int(atr / max(entry, 1e-9) * 100_000)))
     if not bootstrap_open and not valid(sig_ts, tick_ms, vol_f):
         log.info(f"    portfolio gate: stale_signal  sym={sym}")
+        _drop_and_route_to_training(signal, entry, "stale_signal")
         return
 
     # ── Mammon-inspired: dual staleness guards ───────────────────────────────
@@ -1994,6 +2162,7 @@ def handle_signal(signal):
                         "sig=%.6f  cur=%.6f  drift=%.2f%%",
                         sym, entry, _cur, _drift * 100,
                     )
+                    _drop_and_route_to_training(signal, entry, "price_drift")
                     return
 
                 # Guard B — ATR-normalised z-score cancel
@@ -2006,6 +2175,7 @@ def handle_signal(signal):
                             "sig=%.6f  cur=%.6f  z=%.2f>=%.1f",
                             sym, entry, _cur, _z, _CANCEL_Z_SIGMA,
                         )
+                        _drop_and_route_to_training(signal, entry, "mean_dev_cancel")
                         return
         except Exception:
             pass
@@ -2013,6 +2183,7 @@ def handle_signal(signal):
     ws_raw = signal.get("ws", 0.5)
     if not bootstrap_open and not pre_cost(ws_raw, FEE_RT):
         log.info(f"    portfolio gate: pre_cost  sym={sym}  ws={ws_raw:.3f}")
+        _drop_and_route_to_training(signal, entry, "pre_cost")
         return
 
     reg    = signal.get("regime", "RANGING")
@@ -2034,6 +2205,7 @@ def handle_signal(signal):
     if not bootstrap_open and _fw_score < _FW_MIN:
         log.info(f"    portfolio gate: fw_score  sym={sym}  "
               f"score={_fw_score:.2f}<{_FW_MIN}  regime={reg}")
+        _drop_and_route_to_training(signal, entry, "fw_score")
         return
     ws_adj = ob_adjust(ws_raw, ob)
     ws_adj = ev_adjust(ws_adj, sym, reg)
@@ -2047,6 +2219,7 @@ def handle_signal(signal):
     force = _force_trade_guard()
     if force and reg == "QUIET_RANGE":
         log.info(f"    portfolio gate: force_quiet  sym={sym}  regime=QUIET_RANGE")
+        _drop_and_route_to_training(signal, entry, "force_quiet")
         return
 
     import math
@@ -2077,6 +2250,7 @@ def handle_signal(signal):
                           economic_size_mult=_econ_mult_v1013)
     if base == 0.0:
         log.info(f"    portfolio gate: exposure_full  sym={sym}")
+        _drop_and_route_to_training(signal, entry, "exposure_full")
         return
     thr      = get_ev_threshold()
     ws_thr   = ws_threshold()
@@ -2152,6 +2326,7 @@ def handle_signal(signal):
                                 volatility=atr_pct)
     if _meta == 0.0:
         log.info(f"    portfolio gate: meta_hard_stop  DD={_dd_mc:.1%}  sym={sym}")
+        _drop_and_route_to_training(signal, entry, "meta_hard_stop")
         return
     size *= _meta
 
@@ -2315,6 +2490,7 @@ def handle_signal(signal):
     ctrl = failure_control(_positions)
     if ctrl == 0.0:
         log.info(f"    portfolio gate: failure_halt  sym={sym}  mode={bootstrap_mode()}")
+        _drop_and_route_to_training(signal, entry, "failure_halt")
         return
     size *= ctrl
 
@@ -2358,6 +2534,7 @@ def handle_signal(signal):
     if not cost_guard_bootstrap(edge):
         log.info(f"    portfolio gate: cost_guard  sym={sym}  "
               f"edge={edge:.4f}  mode={bootstrap_mode()}")
+        _drop_and_route_to_training(signal, entry, "cost_guard")
         return
 
     # ── V10.12b: Portfolio Risk Budget ────────────────────────────────────────
@@ -2491,42 +2668,83 @@ def handle_signal(signal):
     except Exception:
         pass
 
-    # V10.13u+20: Route to paper trading if in paper mode
-    if is_paper_mode():
-        # P1.1M: Include training metadata for strict TAKE in paper_train mode
-        extra_meta = {
-            "paper_source": "strict_take",
-            "training_bucket": "A_STRICT_TAKE",
-            "original_decision": "TAKE",
-            "reject_reason": None,
-            "side_inferred": False,
-            "cost_edge_ok": True,  # Strict TAKE passes cost-edge by definition
-            "expected_move_pct": float(signal.get("ev", 0.0)) * 100,
-            "required_move_pct": 0.23,
-            "size_mult": 1.0,
-            "max_hold_s": int(os.getenv("PAPER_TRAINING_MAX_HOLD_S", "300")),
-            "features": signal.get("features", {}),
-            "regime": regime,
-            "score_at_entry": signal.get("score", 0.0),
-        }
-        _paper_result = open_paper_position(signal, actual_entry, time.time(), "RDE_TAKE", extra=extra_meta)
-        if _paper_result.get("status") == "opened":
-            log.warning(
-                f"[PAPER_ROUTED] symbol={sym} side={signal['action']} "
-                f"price={actual_entry:.8f} ev={signal.get('ev', 0):.4f}"
+    # P1.1W: CRITICAL — Route paper_train signals to paper BEFORE live order gates
+    # This prevents LIVE_ORDER_DISABLED spam and ensures paper trades never reach live code
+    if is_paper_mode_local:
+        # P1.1Y: In paper_train mode, check if A_STRICT_TAKE is enabled
+        # Default: disabled (PAPER_TRAIN_STRICT_TAKE_ENABLED=false) to allow C_WEAK_EV_TRAIN training
+        from src.core.runtime_mode import get_trading_mode
+        trading_mode = get_trading_mode()
+        is_paper_train = trading_mode.value == "paper_train"
+        strict_take_enabled = os.getenv("PAPER_TRAIN_STRICT_TAKE_ENABLED", "false").strip().lower() == "true"
+
+        should_skip_strict_take = is_paper_train and not strict_take_enabled
+
+        if should_skip_strict_take:
+            # P1.1Y: Log throttled [PAPER_STRICT_TAKE_SKIP] to allow C_WEAK_EV_TRAIN training
+            # P1.1AD: Route accepted A_STRICT_TAKE candidate into training sampler instead of dropping
+            now_ts = time.time()
+            last_log = _PAPER_STRICT_TAKE_SKIP_THROTTLE.get(sym, 0.0)
+            if now_ts - last_log >= _PAPER_STRICT_TAKE_SKIP_TTL:
+                log.warning(
+                    f"[PAPER_STRICT_TAKE_SKIP] symbol={sym} mode=paper_train reason=disabled_for_training"
+                )
+                _PAPER_STRICT_TAKE_SKIP_THROTTLE[sym] = now_ts
+
+            # P1.1AD: Bridge accepted A_STRICT_TAKE candidates into training sampler
+            log.info(
+                "[PAPER_TRAIN_BRIDGE] symbol=%s from_bucket=A_STRICT_TAKE "
+                "training_bucket=C_WEAK_EV_TRAIN reason=strict_take_disabled_for_training",
+                sym
+            )
+            _maybe_route_to_paper_training(
+                signal=signal,
+                current_price=actual_entry,
+                reject_reason="STRICT_TAKE_ROUTED_TO_TRAINING"
             )
         else:
-            log.warning(
-                f"[PAPER_BLOCKED] symbol={sym} reason={_paper_result.get('reason', 'unknown')}"
-            )
+            # P1.1M: Include training metadata for strict TAKE in paper_train mode
+            extra_meta = {
+                "paper_source": "strict_take",
+                "training_bucket": "A_STRICT_TAKE",
+                "original_decision": "TAKE",
+                "reject_reason": None,
+                "side_inferred": False,
+                "cost_edge_ok": True,  # Strict TAKE passes cost-edge by definition
+                "expected_move_pct": float(signal.get("ev", 0.0)) * 100,
+                "required_move_pct": 0.23,
+                "size_mult": 1.0,
+                "max_hold_s": int(os.getenv("PAPER_TRAINING_MAX_HOLD_S", "300")),
+                "features": signal.get("features", {}),
+                "regime": regime,
+                "score_at_entry": signal.get("score", 0.0),
+            }
+            _paper_result = open_paper_position(signal, actual_entry, time.time(), "RDE_TAKE", extra=extra_meta)
+            if _paper_result.get("status") == "opened":
+                log.warning(
+                    f"[PAPER_ROUTED] symbol={sym} side={signal['action']} "
+                    f"price={actual_entry:.8f} ev={signal.get('ev', 0):.4f}"
+                )
+            else:
+                log.warning(
+                    f"[PAPER_BLOCKED] symbol={sym} reason={_paper_result.get('reason', 'unknown')}"
+                )
         return  # Paper trades managed separately; do not open in live positions dict
 
     # V10.13u+20: Verify live trading is allowed before opening real orders
     if not live_trading_allowed():
-        log.warning(
-            f"[LIVE_ORDER_DISABLED] symbol={sym} mode check failed "
-            f"(TRADING_MODE required, real orders disabled)"
-        )
+        # P1.1W: Throttle spam — max once per symbol per 60s
+        now_ts = time.time()
+        last_log = _LIVE_ORDER_DISABLED_THROTTLE.get(sym, 0.0)
+        if now_ts - last_log >= _LIVE_ORDER_DISABLED_TTL:
+            mode = os.getenv("TRADING_MODE", "unknown").strip()
+            real_orders = os.getenv("ENABLE_REAL_ORDERS", "false").strip().lower() == "true"
+            confirmed = os.getenv("LIVE_TRADING_CONFIRMED", "false").strip().lower() == "true"
+            log.warning(
+                f"[LIVE_ORDER_DISABLED] symbol={sym} mode={mode} "
+                f"real_orders={real_orders} confirmed={confirmed} reason=not_live_real"
+            )
+            _LIVE_ORDER_DISABLED_THROTTLE[sym] = now_ts
         return
 
     with _positions_lock:
@@ -2598,8 +2816,19 @@ def handle_signal(signal):
 
 
 def on_price(data):
+    # P1.1AB: Update tick counter and emit pipeline summary
+    with _PIPELINE_LOCK:
+        _PIPELINE_CYCLE["tick"] += 1
+    _pipeline_emit_summary()
+
     # V10.13u+20: Update paper positions before live position handling
-    if is_paper_mode():
+    try:
+        from src.core.runtime_mode import is_paper_mode as _is_paper_mode
+        _is_paper_mode_local = _is_paper_mode()
+    except Exception:
+        _is_paper_mode_local = os.getenv("TRADING_MODE", "").strip().lower() in ("paper_live", "paper_train", "replay_train")
+
+    if _is_paper_mode_local:
         _symbol_prices = {data["symbol"]: data["price"]}
         _closed_papers = update_paper_positions(_symbol_prices, time.time())
         if _closed_papers:
@@ -2610,6 +2839,13 @@ def on_price(data):
             except Exception:
                 pass
             for _closed_trade in _closed_papers:
+                _save_paper_trade_closed(_closed_trade)
+
+        # P1.1AA: Check and close timeout positions (independent of price updates)
+        from src.services.paper_trade_executor import check_and_close_timeout_positions
+        _timeout_closes = check_and_close_timeout_positions(time.time())
+        if _timeout_closes:
+            for _closed_trade in _timeout_closes:
                 _save_paper_trade_closed(_closed_trade)
 
     if time.time() - _last_flush[0] >= FLUSH_EVERY and BATCH:

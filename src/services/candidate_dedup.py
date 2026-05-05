@@ -79,6 +79,9 @@ def check_duplicate(signal: dict) -> tuple[bool, str]:
     Call mark_candidate_evaluated(signal) after a successful entry attempt
     or terminal route to prevent the next identical signal from going through.
 
+    P1.1AC: Do NOT mark as seen. Only check. Marking happens separately
+    after entry attempt or success via mark_candidate_evaluated().
+
     Returns: (allowed, skip_reason)
       allowed=True   → not a duplicate, proceed
       allowed=False  → is a duplicate, skip with reason
@@ -91,25 +94,34 @@ def check_duplicate(signal: dict) -> tuple[bool, str]:
     if fp in _recent_fingerprints:
         last_seen = _recent_fingerprints[fp]
         age = now - last_seen
-        log.debug(f"[DEDUP] candidate is duplicate: {fp[0]}/{fp[1]} "
-                 f"regime={fp[2]} price={fp[3]} age={age:.1f}s")
+        log.info(f"[CANDIDATE_GATE_CHECK] symbol={fp[0]} side={fp[1]} "
+                 f"regime={fp[2]} duplicate=True age_s={age:.1f} ttl_s={DEDUP_WINDOW_SECONDS} "
+                 f"action=block")
         return False, f"DUPLICATE_CANDIDATE(age={age:.1f}s)"
 
+    # P1.1AC: Don't mark yet - only check. Mark happens after entry attempt.
+    log.info(f"[CANDIDATE_GATE_CHECK] symbol={fp[0]} side={fp[1]} "
+             f"regime={fp[2]} duplicate=False age_s=0.0 ttl_s={DEDUP_WINDOW_SECONDS} "
+             f"action=allow")
     return True, ""
 
 
 def mark_candidate_evaluated(signal: dict) -> None:
-    """
-    Mark this candidate's fingerprint as seen, after a successful entry attempt
-    or terminal route (paper open, live open, or confirmed drop).
+    """P1.1AC: Mark a candidate as evaluated/attempted.
 
-    Separating check from mark prevents the first candidate from being
-    immediately blocked by its own check_duplicate call (age=0.0s).
+    Call this AFTER the candidate reaches entry attempt (not before).
+    This prevents the dedup gate from blocking multiple signals in the same cycle.
     """
     now = time.time()
     fp = _candidate_fingerprint(signal)
-    _recent_fingerprints[fp] = now
-    log.debug(f"[DEDUP_MARK] {fp[0]}/{fp[1]} regime={fp[2]} price={fp[3]}")
+
+    if fp not in _recent_fingerprints:
+        _recent_fingerprints[fp] = now
+        log.info(f"[CANDIDATE_GATE_MARK] symbol={fp[0]} side={fp[1]} "
+                 f"stage=entry_attempt source=dedup_gate")
+    else:
+        log.debug(f"[CANDIDATE_GATE_MARK] symbol={fp[0]} side={fp[1]} "
+                  f"already marked, skipping")
 
 
 def check_symbol_side_cooldown(signal: dict) -> tuple[bool, str]:

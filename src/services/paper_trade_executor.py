@@ -24,6 +24,14 @@ _STATE_FILE = "data/paper_open_positions.json"
 _CLOSED_TRADES_THIS_SESSION = set()  # trade_id -> (learned, metrics_updated)
 _CLOSED_TRADES_LOCK = __import__("threading").RLock()
 
+# P1.1Y: Throttle PAPER_ENTRY_BLOCKED spam (max once per symbol/bucket/reason per 60s)
+_PAPER_ENTRY_BLOCKED_THROTTLE = {}  # (symbol, bucket, reason) -> last_log_ts
+_PAPER_ENTRY_BLOCKED_TTL = 60.0  # seconds between logs per key
+
+# P1.1AA: Throttle PAPER_TIMEOUT_SCAN logs (max once per 60s)
+_PAPER_TIMEOUT_SCAN_THROTTLE = 0.0  # last scan log timestamp
+_PAPER_TIMEOUT_SCAN_TTL = 60.0  # seconds between scan logs
+
 
 def _save_paper_state() -> None:
     """Save open paper positions to disk with atomic writes."""
@@ -119,6 +127,26 @@ def _convert_list_to_dict(positions_list: list) -> dict:
     return result
 
 
+def _safe_float(value, default=0.0) -> float:
+    """P1.1Z: Safely convert value to float with fallback."""
+    try:
+        if value is None:
+            return float(default)
+        return float(value)
+    except (ValueError, TypeError):
+        return float(default)
+
+
+def _safe_int(value, default=0) -> int:
+    """P1.1Z: Safely convert value to int with fallback."""
+    try:
+        if value is None:
+            return int(default)
+        return int(float(value))
+    except (ValueError, TypeError):
+        return int(default)
+
+
 def _load_paper_state() -> None:
     """Load open paper positions from disk at startup.
 
@@ -162,6 +190,49 @@ def _load_paper_state() -> None:
                 positions_data[trade_id] = _migrate_legacy_position(pos)
                 migrated_count += 1
 
+        # P1.1Z: Normalize training positions to fix legacy timeout values
+        normalized_count = 0
+        for trade_id, pos in positions_data.items():
+            training_bucket = pos.get("training_bucket")
+            paper_source = pos.get("paper_source")
+            is_training = (
+                training_bucket == "C_WEAK_EV_TRAIN"
+                or paper_source == "training_sampler"
+            )
+
+            if is_training:
+                # Ensure training bucket is set
+                if not training_bucket:
+                    pos["training_bucket"] = "C_WEAK_EV_TRAIN"
+
+                # Normalize timeout to effective hold time (max 300s for training)
+                max_hold = _safe_float(pos.get("max_hold_s"), 300.0)
+                timeout = _safe_float(pos.get("timeout_s"), max_hold)
+                effective_timeout = min(max_hold or 300.0, timeout or 300.0, 300.0)
+
+                if timeout != effective_timeout:
+                    pos["timeout_s"] = effective_timeout
+                    normalized_count += 1
+
+                # Ensure entry_ts and created_at are consistent
+                entry_ts = pos.get("entry_ts") or pos.get("created_at")
+                if entry_ts:
+                    if "entry_ts" not in pos:
+                        pos["entry_ts"] = entry_ts
+                    if "created_at" not in pos:
+                        pos["created_at"] = entry_ts
+
+                if normalized_count > 0 or (timeout != effective_timeout):
+                    log.info(
+                        "[PAPER_POSITION_NORMALIZED] trade_id=%s symbol=%s training_bucket=C_WEAK_EV_TRAIN "
+                        "timeout_s=%.0f max_hold_s=%.0f",
+                        trade_id,
+                        pos.get("symbol", "UNKNOWN"),
+                        effective_timeout,
+                        max_hold,
+                    )
+                    positions_data[trade_id] = pos
+
         with _POSITION_LOCK:
             _POSITIONS.update(positions_data)
 
@@ -176,6 +247,21 @@ def _load_paper_state() -> None:
                 migrated_count,
             )
 
+        # P1.1Z: Reconcile stale positions (non-fatal — separate error handling)
+        try:
+            reconcile_result = _reconcile_stale_paper_positions()
+            alive_count = len(_POSITIONS)
+            log.info(
+                "[PAPER_STATE_RECONCILE_SUMMARY] loaded=%d normalized=%d stale_closed=%d stale_pending=%d alive=%d",
+                len(positions_data),
+                normalized_count,
+                reconcile_result.get("closed", 0),
+                reconcile_result.get("pending", 0),
+                alive_count,
+            )
+        except Exception as e:
+            log.exception("[PAPER_STATE_RECONCILE_ERROR] source=%s err=%s", _STATE_FILE, str(e))
+
         # If we did a list->dict conversion, save back in canonical format
         if list_to_dict_count > 0:
             _save_paper_state()
@@ -184,10 +270,6 @@ def _load_paper_state() -> None:
         log.warning("[PAPER_STATE_LOAD_ERROR] source=%s err=json_decode err_detail=%s", _STATE_FILE, str(e))
     except Exception as e:
         log.warning("[PAPER_STATE_LOAD_ERROR] source=%s err=%s", _STATE_FILE, str(e))
-
-
-# Load paper positions from disk on module init
-_load_paper_state()
 
 
 def _normalize_side(side_raw: str) -> tuple[str, str]:
@@ -213,6 +295,40 @@ def _normalize_side(side_raw: str) -> tuple[str, str]:
 def _generate_trade_id() -> str:
     """Generate unique trade ID."""
     return f"paper_{uuid.uuid4().hex[:12]}"
+
+
+def _effective_paper_hold_s(pos: dict) -> float:
+    """P1.1Z: Calculate effective hold time for training positions.
+
+    Training positions (C_WEAK_EV_TRAIN) must not stay open longer than max_hold_s (300s).
+    Non-training positions use their configured timeout.
+
+    Args:
+        pos: Position dict with training_bucket, max_hold_s, timeout_s, etc.
+
+    Returns:
+        Effective hold time in seconds
+    """
+    if not isinstance(pos, dict):
+        return 300.0
+
+    bucket = str(pos.get("training_bucket") or pos.get("bucket") or pos.get("explore_bucket") or "")
+    source = str(pos.get("paper_source") or pos.get("mode") or "")
+
+    is_training = (
+        bucket == "C_WEAK_EV_TRAIN"
+        or source == "training_sampler"
+    )
+
+    max_hold = _safe_float(pos.get("max_hold_s"), 300.0)
+    timeout = _safe_float(pos.get("timeout_s"), max_hold)
+
+    if is_training:
+        # Training positions: effective hold is min of max_hold and timeout, capped at 300s
+        return max(30.0, min(max_hold or 300.0, timeout or 300.0, 300.0))
+
+    # Non-training: use configured timeout or max_hold
+    return max(30.0, timeout or max_hold or 300.0)
 
 
 def _calculate_pnl(
@@ -273,6 +389,86 @@ def _calculate_pnl(
     }
 
 
+def _reconcile_stale_paper_positions(now: Optional[float] = None, price_by_symbol: Optional[dict] = None) -> dict:
+    """P1.1Z: Close stale training positions that exceed effective hold time.
+
+    Args:
+        now: Current timestamp (default: time.time())
+        price_by_symbol: Dict of current prices by symbol
+
+    Returns:
+        dict with counts: {"closed": N, "pending": N, "alive": N}
+    """
+    if now is None:
+        now = time.time()
+    if price_by_symbol is None:
+        price_by_symbol = {}
+
+    closed_count = 0
+    pending_count = 0
+    positions_to_close = []
+
+    with _POSITION_LOCK:
+        for trade_id, pos in list(_POSITIONS.items()):
+            entry_ts = _safe_float(pos.get("entry_ts") or pos.get("created_at"), 0.0)
+            if entry_ts <= 0:
+                continue
+
+            age_s = now - entry_ts
+            effective_hold = _effective_paper_hold_s(pos)
+
+            if age_s >= effective_hold:
+                positions_to_close.append((trade_id, pos, age_s, effective_hold))
+
+    # Close positions outside lock to avoid deadlock
+    for trade_id, pos, age_s, effective_hold in positions_to_close:
+        try:
+            symbol = pos.get("symbol", "UNKNOWN")
+            exit_price = price_by_symbol.get(symbol) or pos.get("last_price") or pos.get("entry_price", 0.0)
+
+            close_paper_position(
+                position_id=trade_id,
+                price=exit_price,
+                ts=now,
+                reason="TIMEOUT",
+            )
+
+            log.info(
+                "[PAPER_STALE_RECONCILE] trade_id=%s symbol=%s age_s=%.1f effective_hold_s=%.1f action=closed reason=TIMEOUT",
+                trade_id,
+                symbol,
+                age_s,
+                effective_hold,
+            )
+            closed_count += 1
+        except Exception as e:
+            log.warning(f"[PAPER_STALE_RECONCILE_ERROR] trade_id={trade_id} err={e}")
+            pending_count += 1
+
+    with _POSITION_LOCK:
+        alive_count = len(_POSITIONS)
+
+    return {
+        "closed": closed_count,
+        "pending": pending_count,
+        "alive": alive_count,
+    }
+
+
+def _is_position_stale(pos: dict, now: Optional[float] = None) -> bool:
+    """P1.1Z: Check if a position has exceeded its effective hold time."""
+    if now is None:
+        now = time.time()
+
+    entry_ts = _safe_float(pos.get("entry_ts") or pos.get("created_at"), 0.0)
+    if entry_ts <= 0:
+        return False
+
+    age_s = now - entry_ts
+    effective_hold = _effective_paper_hold_s(pos)
+    return age_s >= effective_hold
+
+
 def _check_exploration_exposure_caps(symbol: str, bucket: Optional[str]) -> Optional[dict]:
     """Check exploration-specific exposure caps.
 
@@ -281,17 +477,26 @@ def _check_exploration_exposure_caps(symbol: str, bucket: Optional[str]) -> Opti
     - max_open_per_bucket = 2
     - max_open_per_symbol_bucket = 1
 
+    P1.1Z: Ignore stale positions in cap counts.
+
     Returns:
         None if caps OK, else {"status": "blocked", "reason": ..., "detail": ...}
     """
     if not bucket:
         return None  # Not an exploration trade, skip caps
 
-    symbol_count = sum(1 for p in _POSITIONS.values() if p["symbol"] == symbol and p.get("explore_bucket"))
-    bucket_count = sum(1 for p in _POSITIONS.values() if p.get("explore_bucket") == bucket)
+    now = time.time()
+    symbol_count = sum(
+        1 for p in _POSITIONS.values()
+        if p["symbol"] == symbol and p.get("explore_bucket") and not _is_position_stale(p, now)
+    )
+    bucket_count = sum(
+        1 for p in _POSITIONS.values()
+        if p.get("explore_bucket") == bucket and not _is_position_stale(p, now)
+    )
     symbol_bucket_count = sum(
         1 for p in _POSITIONS.values()
-        if p["symbol"] == symbol and p.get("explore_bucket") == bucket
+        if p["symbol"] == symbol and p.get("explore_bucket") == bucket and not _is_position_stale(p, now)
     )
 
     # Check symbol cap
@@ -328,6 +533,8 @@ def _check_training_sampler_caps(symbol: str, bucket: Optional[str]) -> Optional
     - max_open_per_symbol = 1 (PAPER_TRAIN_MAX_OPEN_PER_SYMBOL)
     - max_open_per_bucket = 2 (PAPER_TRAIN_MAX_OPEN_PER_BUCKET)
 
+    P1.1Z: Ignore stale positions in cap counts.
+
     Returns:
         None if caps OK, else {"status": "blocked", "reason": ..., "detail": ...}
     """
@@ -339,24 +546,31 @@ def _check_training_sampler_caps(symbol: str, bucket: Optional[str]) -> Optional
     except Exception:
         return None
 
+    now = time.time()
     symbol_count = sum(
         1 for p in _POSITIONS.values()
-        if p["symbol"] == symbol and p.get("paper_source") == "training_sampler"
+        if p["symbol"] == symbol and p.get("paper_source") == "training_sampler" and not _is_position_stale(p, now)
     )
     bucket_count = sum(
         1 for p in _POSITIONS.values()
-        if p.get("training_bucket") == bucket and p.get("paper_source") == "training_sampler"
+        if p.get("training_bucket") == bucket and p.get("paper_source") == "training_sampler" and not _is_position_stale(p, now)
     )
 
     # Check symbol cap
     if symbol_count >= PAPER_TRAIN_MAX_OPEN_PER_SYMBOL:
-        log.info(
-            "[PAPER_ENTRY_BLOCKED] reason=training_sampler_max_open_per_symbol "
-            "symbol=%s open_symbol=%d bucket=%s",
-            symbol,
-            symbol_count,
-            bucket,
-        )
+        # P1.1Y: Throttle spam
+        throttle_key = (symbol, bucket, "training_sampler_max_open_per_symbol")
+        now_ts = time.time()
+        last_log = _PAPER_ENTRY_BLOCKED_THROTTLE.get(throttle_key, 0.0)
+        if now_ts - last_log >= _PAPER_ENTRY_BLOCKED_TTL:
+            log.info(
+                "[PAPER_ENTRY_BLOCKED] reason=training_sampler_max_open_per_symbol "
+                "symbol=%s open_symbol=%d bucket=%s",
+                symbol,
+                symbol_count,
+                bucket,
+            )
+            _PAPER_ENTRY_BLOCKED_THROTTLE[throttle_key] = now_ts
         return {
             "status": "blocked",
             "reason": "training_sampler_max_open_per_symbol",
@@ -365,13 +579,19 @@ def _check_training_sampler_caps(symbol: str, bucket: Optional[str]) -> Optional
 
     # Check bucket cap
     if bucket_count >= PAPER_TRAIN_MAX_OPEN_PER_BUCKET:
-        log.info(
-            "[PAPER_ENTRY_BLOCKED] reason=training_sampler_max_open_per_bucket "
-            "bucket=%s open_bucket=%d symbol=%s",
-            bucket,
-            bucket_count,
-            symbol,
-        )
+        # P1.1Y: Throttle spam
+        throttle_key = (symbol, bucket, "training_sampler_max_open_per_bucket")
+        now_ts = time.time()
+        last_log = _PAPER_ENTRY_BLOCKED_THROTTLE.get(throttle_key, 0.0)
+        if now_ts - last_log >= _PAPER_ENTRY_BLOCKED_TTL:
+            log.info(
+                "[PAPER_ENTRY_BLOCKED] reason=training_sampler_max_open_per_bucket "
+                "bucket=%s open_bucket=%d symbol=%s",
+                bucket,
+                bucket_count,
+                symbol,
+            )
+            _PAPER_ENTRY_BLOCKED_THROTTLE[throttle_key] = now_ts
         return {
             "status": "blocked",
             "reason": "training_sampler_max_open_per_bucket",
@@ -401,7 +621,14 @@ def open_paper_position(
         dict: {"trade_id": ..., "status": "opened", "symbol": ..., ...}
     """
     if not price or price <= 0:
-        log.error("[PAPER_ENTRY_BLOCKED] symbol=%s reason=invalid_price", signal.get("symbol"))
+        # P1.1Y: Throttle spam
+        symbol = signal.get("symbol", "UNKNOWN")
+        throttle_key = (symbol, "N/A", "invalid_price")
+        now_ts = time.time()
+        last_log = _PAPER_ENTRY_BLOCKED_THROTTLE.get(throttle_key, 0.0)
+        if now_ts - last_log >= _PAPER_ENTRY_BLOCKED_TTL:
+            log.error("[PAPER_ENTRY_BLOCKED] symbol=%s reason=invalid_price", symbol)
+            _PAPER_ENTRY_BLOCKED_THROTTLE[throttle_key] = now_ts
         return {"status": "blocked", "reason": "invalid_price"}
 
     symbol = signal.get("symbol", "UNKNOWN")
@@ -413,34 +640,54 @@ def open_paper_position(
         # Check exploration-specific exposure caps FIRST (before total max cap)
         cap_check = _check_exploration_exposure_caps(symbol, bucket)
         if cap_check:
-            log.error(
-                "[PAPER_ENTRY_BLOCKED] symbol=%s reason=%s %s",
-                symbol,
-                cap_check["reason"],
-                cap_check["detail"],
-            )
+            # P1.1Y: Throttle spam
+            throttle_key = (symbol, bucket or "N/A", cap_check["reason"])
+            now_ts = time.time()
+            last_log = _PAPER_ENTRY_BLOCKED_THROTTLE.get(throttle_key, 0.0)
+            if now_ts - last_log >= _PAPER_ENTRY_BLOCKED_TTL:
+                log.error(
+                    "[PAPER_ENTRY_BLOCKED] symbol=%s reason=%s %s",
+                    symbol,
+                    cap_check["reason"],
+                    cap_check["detail"],
+                )
+                _PAPER_ENTRY_BLOCKED_THROTTLE[throttle_key] = now_ts
             return cap_check
 
         # Check training sampler-specific caps (P1.1N secondary layer)
         if paper_source == "training_sampler":
             training_cap_check = _check_training_sampler_caps(symbol, training_bucket)
             if training_cap_check:
-                log.error(
-                    "[PAPER_ENTRY_BLOCKED] symbol=%s reason=%s %s",
-                    symbol,
-                    training_cap_check["reason"],
-                    training_cap_check["detail"],
-                )
+                # P1.1Y: Throttle spam
+                throttle_key = (symbol, training_bucket or "N/A", training_cap_check["reason"])
+                now_ts = time.time()
+                last_log = _PAPER_ENTRY_BLOCKED_THROTTLE.get(throttle_key, 0.0)
+                if now_ts - last_log >= _PAPER_ENTRY_BLOCKED_TTL:
+                    log.error(
+                        "[PAPER_ENTRY_BLOCKED] symbol=%s reason=%s %s",
+                        symbol,
+                        training_cap_check["reason"],
+                        training_cap_check["detail"],
+                    )
+                    _PAPER_ENTRY_BLOCKED_THROTTLE[throttle_key] = now_ts
                 return training_cap_check
 
-        # Then check total paper position cap
-        if len(_POSITIONS) >= _MAX_OPEN:
-            log.error(
-                "[PAPER_ENTRY_BLOCKED] symbol=%s reason=max_open_exceeded open=%d bucket=%s",
-                symbol,
-                len(_POSITIONS),
-                bucket or training_bucket or "N/A",
-            )
+        # Then check total paper position cap (P1.1Z: exclude stale positions)
+        now = time.time()
+        alive_positions = [p for p in _POSITIONS.values() if not _is_position_stale(p, now)]
+        if len(alive_positions) >= _MAX_OPEN:
+            # P1.1Y: Throttle PAPER_ENTRY_BLOCKED spam (max once per symbol/bucket/reason per 60s)
+            bucket_name = bucket or training_bucket or "N/A"
+            throttle_key = (symbol, bucket_name, "max_open_exceeded")
+            last_log = _PAPER_ENTRY_BLOCKED_THROTTLE.get(throttle_key, 0.0)
+            if now - last_log >= _PAPER_ENTRY_BLOCKED_TTL:
+                log.error(
+                    "[PAPER_ENTRY_BLOCKED] symbol=%s reason=max_open_exceeded open=%d bucket=%s",
+                    symbol,
+                    len(alive_positions),
+                    bucket_name,
+                )
+                _PAPER_ENTRY_BLOCKED_THROTTLE[throttle_key] = now
             return {"status": "blocked", "reason": "max_open_exceeded"}
 
     trade_id = _generate_trade_id()
@@ -516,65 +763,106 @@ def open_paper_position(
 _LAST_KNOWN_PRICE_MAX_AGE_S = float(os.getenv("PAPER_LAST_PRICE_MAX_AGE_S", "120"))
 
 
-def check_and_close_timeout_positions(now: float) -> List[dict]:
-    """Scan ALL open paper positions and close those that have exceeded max_hold_s.
+def check_and_close_timeout_positions(now: Optional[float] = None) -> List[dict]:
+    """P1.1AA+V3.1: Scan all open positions and close those that exceed effective hold time.
 
-    Uses the last known real market price stored by update_paper_positions().
+    Runs independently of price updates so timeout closes happen even when a symbol
+    stops receiving price ticks.
+
+    V3.1: Uses last known real market price (last_price/last_price_ts).
     If no recent price is available the position is quarantined with
-    TIMEOUT_NO_PRICE and learning_skipped=True rather than poisoning the
-    learning system with a flat entry-price close.
+    TIMEOUT_NO_PRICE and learning_skipped=True — never uses entry_price fallback
+    which would produce fake flat PnL that poisons learning.
 
     Args:
-        now: Current timestamp
+        now: Current timestamp (default: time.time())
 
     Returns:
         list of closed trade dicts
     """
-    log.debug("[PAPER_TIMEOUT_SCAN] scanning open_positions=%d", len(_POSITIONS))
+    global _PAPER_TIMEOUT_SCAN_THROTTLE
+
+    if now is None:
+        now = time.time()
 
     closed_trades = []
+    positions_to_check = []
+    expired_count = 0
+    alive_count = 0
+
     with _POSITION_LOCK:
-        positions_snapshot = list(_POSITIONS.items())
+        for trade_id, pos in list(_POSITIONS.items()):
+            entry_ts = _safe_float(pos.get("entry_ts") or pos.get("created_at"), 0.0)
+            if entry_ts <= 0:
+                continue
+            age_s = now - entry_ts
+            effective_hold = _effective_paper_hold_s(pos)
+            if age_s >= effective_hold:
+                positions_to_check.append((trade_id, pos, age_s, effective_hold))
+                expired_count += 1
+            else:
+                alive_count += 1
 
-    for trade_id, pos in positions_snapshot:
-        age_s = now - pos["entry_ts"]
-        max_hold = pos.get("max_hold_s", pos.get("timeout_s", _MAX_AGE_S))
-
-        if age_s < max_hold:
-            continue
-
+    # Throttled diagnostic log
+    if now - _PAPER_TIMEOUT_SCAN_THROTTLE >= _PAPER_TIMEOUT_SCAN_TTL:
+        next_expiry_s = None
+        with _POSITION_LOCK:
+            for pos in _POSITIONS.values():
+                entry_ts = _safe_float(pos.get("entry_ts") or pos.get("created_at"), 0.0)
+                if entry_ts > 0:
+                    remaining_s = max(0.0, _effective_paper_hold_s(pos) - (now - entry_ts))
+                    if next_expiry_s is None or remaining_s < next_expiry_s:
+                        next_expiry_s = remaining_s
         log.info(
-            "[PAPER_TIMEOUT_DUE] trade_id=%s symbol=%s age_s=%d max_hold_s=%d bucket=%s",
-            trade_id,
-            pos["symbol"],
-            int(age_s),
-            int(max_hold),
-            pos.get("training_bucket") or pos.get("explore_bucket") or "N/A",
+            "[PAPER_TIMEOUT_SCAN] open=%d expired=%d alive=%d next_expiry_s=%.1f",
+            len(_POSITIONS),
+            expired_count,
+            alive_count,
+            next_expiry_s or 0.0,
         )
+        _PAPER_TIMEOUT_SCAN_THROTTLE = now
 
+    # Close timed-out positions (outside lock to avoid deadlock)
+    for trade_id, pos, age_s, effective_hold in positions_to_check:
+        symbol = pos.get("symbol", "UNKNOWN")
         last_price = pos.get("last_price", 0.0)
         last_price_ts = pos.get("last_price_ts", 0.0)
         price_age_s = now - last_price_ts if last_price_ts > 0 else float("inf")
 
+        log.info(
+            "[PAPER_TIMEOUT_DUE] trade_id=%s symbol=%s age_s=%.1f hold_limit_s=%.1f bucket=%s training_bucket=%s",
+            trade_id, symbol, age_s, effective_hold,
+            pos.get("explore_bucket", "UNKNOWN"),
+            pos.get("training_bucket", ""),
+        )
+
         if last_price and last_price > 0 and price_age_s <= _LAST_KNOWN_PRICE_MAX_AGE_S:
-            # Close with real last-known market price
-            closed = close_paper_position(trade_id, last_price, now, "TIMEOUT")
+            # Close with real last-known market price (V3.1: no entry_price fallback)
+            try:
+                closed_trade = close_paper_position(
+                    position_id=trade_id, price=last_price, ts=now, reason="TIMEOUT"
+                )
+                if closed_trade:
+                    log.info(
+                        "[PAPER_CLOSE_PATH] trade_id=%s symbol=%s reason=TIMEOUT learning_called=%s metrics_called=True",
+                        trade_id, symbol, pos.get("paper_source") == "training_sampler",
+                    )
+                    closed_trades.append(closed_trade)
+            except Exception as e:
+                log.warning("[PAPER_TIMEOUT_CLOSE_ERROR] trade_id=%s err=%s", trade_id, e)
         else:
-            # No recent price — quarantine: remove from open positions but skip learning
+            # No recent price — quarantine: free the cap but skip learning
             log.warning(
                 "[PAPER_TIMEOUT_NO_PRICE] trade_id=%s symbol=%s age_s=%d price_age_s=%.0f"
                 " — closing without learning update",
-                trade_id,
-                pos["symbol"],
-                int(age_s),
+                trade_id, symbol, int(age_s),
                 price_age_s if price_age_s != float("inf") else -1,
             )
             with _POSITION_LOCK:
                 if trade_id not in _POSITIONS:
                     continue
                 pos = _POSITIONS.pop(trade_id)
-            # Build a minimal closed trade marked as no-price so callers can filter it
-            closed = {
+            closed_trade = {
                 **pos,
                 "exit_price": 0.0,
                 "exit_ts": now,
@@ -588,9 +876,7 @@ def check_and_close_timeout_positions(now: float) -> List[dict]:
                 "learning_skipped": True,
             }
             _save_paper_state()
-
-        if closed:
-            closed_trades.append(closed)
+            closed_trades.append(closed_trade)
 
     return closed_trades
 
@@ -630,19 +916,21 @@ def update_paper_positions(
         entry_price = pos["entry_price"]
         age_s = ts - pos["entry_ts"]
 
-        # Use per-position max_hold_s (for exploration) or default timeout_s
+        # P1.1Z: Use effective hold time (respects training position max_hold_s)
+        effective_hold = _effective_paper_hold_s(pos)
         max_hold = pos.get("max_hold_s", pos.get("timeout_s", _MAX_AGE_S))
+        timeout_s = pos.get("timeout_s", max_hold)
 
         exit_reason = None
         if current_price >= pos["tp"]:
             exit_reason = "TP"
         elif current_price <= pos["sl"]:
             exit_reason = "SL"
-        elif age_s >= max_hold:
+        elif age_s >= effective_hold:
             exit_reason = "TIMEOUT"
 
         if exit_reason:
-            closed_trade = close_paper_position(trade_id, current_price, ts, exit_reason)
+            closed_trade = close_paper_position(position_id=trade_id, price=current_price, ts=ts, reason=exit_reason)
             if closed_trade:
                 closed_trades.append(closed_trade)
 
@@ -749,17 +1037,17 @@ def _canonical_closed_paper_trade(raw: dict) -> dict:
 
 
 def _safe_learning_update_for_paper_trade(pos: dict, pnl_data: dict) -> bool:
-    """P1.1R: Convert closed paper trade to learning_monitor update via safe API. Never raises.
+    """P1.1V: Convert closed paper trade to learning update. Decouple learning from telemetry. Never raises.
 
     Args:
         pos: Position dict (closed trade with metadata)
         pnl_data: PnL breakdown dict with net_pnl_pct, outcome
 
     Returns:
-        True if update succeeded, False if skipped or errored
+        True if learning succeeded, False if skipped or errored
     """
+    # Merge and canonicalize
     try:
-        # Merge position and pnl_data into canonical form
         merged = {**pos, **pnl_data}
         canon = _canonical_closed_paper_trade(merged)
 
@@ -767,48 +1055,51 @@ def _safe_learning_update_for_paper_trade(pos: dict, pnl_data: dict) -> bool:
         if not canon["symbol"] or canon["symbol"] == "UNKNOWN":
             log.debug("[LEARNING_UPDATE_SKIP] reason=no_symbol bucket=%s", canon["bucket"])
             return False
+    except Exception as e:
+        log.exception("[LEARNING_UPDATE_ERROR] canonicalization failed: %s", e)
+        return False
 
-        # Import the safe paper learning API (P1.1R: no adapter guessing)
+    # P1.1V: Separate learning update from telemetry (telemetry errors don't mask learning result)
+    ok = False
+    try:
         from src.services.learning_monitor import update_from_paper_trade
+        ok = bool(update_from_paper_trade(canon))
+        log.info(
+            "[LEARNING_UPDATE] ok=%s source=paper_closed_trade symbol=%s regime=%s bucket=%s outcome=%s net_pnl_pct=%.4f",
+            ok,
+            canon["symbol"],
+            canon["regime"],
+            canon["bucket"],
+            canon["outcome"],
+            canon["net_pnl_pct"],
+        )
+    except Exception as e:
+        log.exception(
+            "[LEARNING_UPDATE_ERROR] err=%r symbol=%s bucket=%s fn=update_from_paper_trade",
+            e,
+            canon.get("symbol"),
+            canon.get("bucket"),
+        )
+        return False
+
+    # P1.1V: Telemetry in separate try/except so learning success isn't masked by telemetry errors
+    try:
         from src.services.paper_training_sampler import (
             record_training_closed,
             record_training_learning_update,
         )
-
-        # Record training trade metrics
         record_training_closed(bucket=canon["bucket"], outcome=canon["outcome"])
-
-        # Update learning monitor via safe API
-        ok = update_from_paper_trade(canon)
         if ok:
             record_training_learning_update()
-            log.info(
-                "[LEARNING_UPDATE] source=paper_closed_trade symbol=%s regime=%s bucket=%s outcome=%s net_pnl_pct=%.4f ok=True",
-                canon["symbol"],
-                canon["regime"],
-                canon["bucket"],
-                canon["outcome"],
-                canon["net_pnl_pct"],
-            )
-        else:
-            log.warning(
-                "[LEARNING_UPDATE_ERROR] update_from_paper_trade_false symbol=%s bucket=%s regime=%s",
-                canon["symbol"],
-                canon["bucket"],
-                canon["regime"],
-            )
-
-        return bool(ok)
-
     except Exception as e:
-        bucket = pos.get("training_bucket") or pos.get("explore_bucket") or "UNKNOWN"
-        log.exception(
-            "[LEARNING_UPDATE_ERROR] err=%s symbol=%s bucket=%s fn=update_from_paper_trade",
-            str(e),
-            pos.get("symbol", "UNKNOWN"),
-            bucket,
+        log.warning(
+            "[PAPER_TRAIN_METRICS_ERROR] err=%r symbol=%s bucket=%s",
+            e,
+            canon.get("symbol"),
+            canon.get("bucket"),
         )
-        return False
+
+    return ok
 
 
 def _primary_bucket_for_closed_trade(t: dict) -> str:
@@ -996,3 +1287,27 @@ def reset_paper_positions():
     """Reset all open positions (for testing)."""
     with _POSITION_LOCK:
         _POSITIONS.clear()
+
+
+# P1.1Z2: Startup initialization — load paper state after all functions are defined
+_PAPER_STATE_INITIALIZED = False
+
+
+def _init_paper_state_once() -> None:
+    """Initialize paper state once at module load time.
+
+    Called at module bottom after all helper functions are defined.
+    Prevents NameError for _reconcile_stale_paper_positions() and other helpers.
+    """
+    global _PAPER_STATE_INITIALIZED
+    if _PAPER_STATE_INITIALIZED:
+        return
+    _PAPER_STATE_INITIALIZED = True
+    try:
+        _load_paper_state()
+    except Exception as e:
+        log.exception("[PAPER_STATE_LOAD_ERROR] source=%s err=%s", _STATE_FILE, e)
+
+
+# Call startup initializer after all functions are defined
+_init_paper_state_once()
