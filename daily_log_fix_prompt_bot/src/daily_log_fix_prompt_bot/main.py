@@ -20,6 +20,12 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 
+def _write_text(path: Path, content: str) -> None:
+    """Write UTF-8 text to disk."""
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content)
+
+
 def run_daily_analysis() -> Path:
     """Run the complete daily log analysis."""
     config = load_config()
@@ -43,23 +49,30 @@ def run_daily_analysis() -> Path:
         log.error("No logs fetched; aborting")
         return report_dir
 
-    # Save raw logs (graceful skip if disk unavailable)
-    if disk_available:
-        try:
-            raw_log_path = report_dir / "raw_logs.txt"
-            with open(raw_log_path, "w", encoding="utf-8") as f:
-                f.write(raw_logs)
-            log.info(f"Raw logs saved to {raw_log_path}")
-        except (OSError, IOError, PermissionError) as e:
-            log.error(f"⚠️  Failed to write raw logs to disk: {e}")
-            disk_available = False
-    else:
-        log.warning("⚠️  Skipping raw logs save (disk unavailable)")
-
-    # Step 2: Sanitize logs
+    # Step 2: Sanitize logs BEFORE writing anything to disk.
+    # P0 safety: raw server logs can contain secrets. Do not persist them by default.
     log.info("Sanitizing logs...")
     sanitizer = Sanitizer()
-    sanitized_logs = sanitizer.sanitize(raw_logs)
+    sanitized_logs = sanitizer.sanitize(raw_logs) if config.sanitize_secrets else raw_logs
+
+    if disk_available:
+        try:
+            sanitized_log_path = report_dir / "sanitized_logs.txt"
+            _write_text(sanitized_log_path, sanitized_logs)
+            log.info(f"Sanitized logs saved to {sanitized_log_path}")
+
+            if config.save_unsanitized_raw_logs:
+                raw_log_path = report_dir / "raw_logs.txt"
+                _write_text(raw_log_path, raw_logs)
+                log.warning(
+                    "Unsanitized raw logs saved because SAVE_UNSANITIZED_RAW_LOGS=true: %s",
+                    raw_log_path,
+                )
+        except (OSError, IOError, PermissionError) as e:
+            log.error(f"⚠️  Failed to write logs to disk: {e}")
+            disk_available = False
+    else:
+        log.warning("⚠️  Skipping log save (disk unavailable)")
 
     # Step 3: Parse logs
     log.info("Parsing logs...")
@@ -94,7 +107,7 @@ def run_daily_analysis() -> Path:
         try:
             # Save detected issues
             issues_path = report_dir / "detected_issues.json"
-            with open(issues_path, "w") as f:
+            with open(issues_path, "w", encoding="utf-8") as f:
                 json.dump([issue.to_dict() for issue in issues], f, indent=2)
             log.info(f"Issues saved to {issues_path}")
 
@@ -112,12 +125,14 @@ def run_daily_analysis() -> Path:
 
             # Save metadata
             metadata_path = report_dir / "run_metadata.json"
-            with open(metadata_path, "w") as f:
+            with open(metadata_path, "w", encoding="utf-8") as f:
                 json.dump({
                     "run_date": datetime.now().isoformat(),
                     "config": {
                         "service": config.service_name,
                         "lookback_hours": config.log_lookback_hours,
+                        "sanitized_logs_saved": True,
+                        "raw_logs_saved": bool(config.save_unsanitized_raw_logs),
                     },
                     "stats": {
                         "log_lines": len(sanitized_logs.split("\n")),
