@@ -74,7 +74,10 @@ def _expire_old_opens(now_ts: float) -> None:
 
 def check_duplicate(signal: dict) -> tuple[bool, str]:
     """
-    Check if this candidate is a duplicate of a recent one.
+    Check if this candidate is a duplicate of a recent one. Read-only — does NOT mark.
+
+    Call mark_candidate_evaluated(signal) after a successful entry attempt
+    or terminal route to prevent the next identical signal from going through.
 
     P1.1AC: Do NOT mark as seen. Only check. Marking happens separately
     after entry attempt or success via mark_candidate_evaluated().
@@ -104,8 +107,7 @@ def check_duplicate(signal: dict) -> tuple[bool, str]:
 
 
 def mark_candidate_evaluated(signal: dict) -> None:
-    """
-    P1.1AC: Mark a candidate as evaluated/attempted.
+    """P1.1AC: Mark a candidate as evaluated/attempted.
 
     Call this AFTER the candidate reaches entry attempt (not before).
     This prevents the dedup gate from blocking multiple signals in the same cycle.

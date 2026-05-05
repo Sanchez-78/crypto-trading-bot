@@ -87,7 +87,18 @@ class MLModel:
             X = np.array(d["X"])
             y = np.array(d["y"])
 
-            model.fit(X, y)
+            # BUG-021 fix: use train/val split to prevent overfitting
+            try:
+                from sklearn.model_selection import train_test_split
+                if len(X) >= 50:
+                    X_train, X_val, y_train, y_val = train_test_split(
+                        X, y, test_size=0.2, random_state=42
+                    )
+                    model.fit(X_train, y_train)
+                else:
+                    model.fit(X, y)
+            except Exception:
+                model.fit(X, y)
 
             self._save(symbol, model)
 

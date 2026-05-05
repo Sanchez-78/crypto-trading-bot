@@ -137,16 +137,16 @@ class AdaptiveEVGate:
         Returns:
             String: "STRICT", "NORMAL", "RELAXED", "CRITICAL"
         """
+        # BUG-007 fix: diff>0 means threshold was lowered (relaxed), diff<=0 means normal/strict
         diff = self.base_threshold - self.current_threshold
-        
-        if diff < 0:
-            return "STRICT"
-        elif diff < 0.01:
+        if diff <= 0:
             return "NORMAL"
-        elif diff < 0.03:
+        elif diff < 0.01:
             return "RELAXED"
-        else:
+        elif diff < 0.03:
             return "CRITICAL"
+        else:
+            return "EXTREME"
     
     def reset(self):
         """Reset to base threshold."""

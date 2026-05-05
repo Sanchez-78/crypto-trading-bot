@@ -27,8 +27,9 @@ class StrategyLearner:
     }
     SESSIONS = {
         "asia": (0, 8),
+        "overlap": (13, 16),   # EU-US overlap checked before europe/us
         "europe": (8, 16),
-        "us": (13, 22),
+        "us": (16, 22),
     }
 
     def __init__(self, strategies: List[str]):
@@ -55,7 +56,7 @@ class StrategyLearner:
             return random.choice(self.strategies)
 
         # Exploit: use UCB1 to pick best strategy
-        total = sum(self._n[ctx].values()) + 1
+        total = max(1, sum(self._n[ctx].values()))  # max(1,...) guards log(0) when all n < MIN_PULLS
         scores = {}
 
         for s in self.strategies:

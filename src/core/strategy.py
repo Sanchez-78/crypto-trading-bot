@@ -51,11 +51,15 @@ class Strategy:
         if pnl > 0.0:
             self.trades_wins += 1
         
-        # Update max drawdown
-        cumsum = sum(self.trade_history)
-        peak = max(self.trade_history) if self.trade_history else 0
-        dd = abs(min(0, cumsum - peak)) if peak > 0 else 0
-        self.max_drawdown = max(self.max_drawdown, dd)
+        # Update max drawdown — BUG-009 fix: track peak equity, not peak single trade
+        cumulative = 0.0
+        peak_eq = 0.0
+        max_dd = 0.0
+        for p in self.trade_history:
+            cumulative += p
+            peak_eq = max(peak_eq, cumulative)
+            max_dd = max(max_dd, peak_eq - cumulative)
+        self.max_drawdown = max_dd
         
         # Recalculate fitness
         self._update_fitness()
@@ -77,7 +81,7 @@ class Strategy:
         
         # Component 1: Expected Value (EV)
         ev = self.pnl_total / self.trades_total if self.trades_total > 0 else 0.0
-        ev_score = min(ev, 0.1) / 0.1  # Normalize to [0, 1], cap at 10% EV
+        ev_score = max(0.0, min(ev, 0.1) / 0.1)  # Normalize to [0, 1], clamp negative EV
         
         # Component 2: Win Rate
         winrate = self.trades_wins / self.trades_total

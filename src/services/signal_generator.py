@@ -621,7 +621,7 @@ def on_price(data):
         from src.services.learning_event import get_metrics as _lgm
         _debounce_active = _lgm().get("trades", 0) >= 30
     except Exception:
-        _debounce_active = True
+        _debounce_active = False  # Bootstrap-safe: disable debounce when state unavailable
     if _debounce_active and time.time() - _last_ts.get(s, 0) < DEBOUNCE_S:
         if s not in _cycle_prefilter_drops:
             _cycle_prefilter_drops[s] = "DEBOUNCE_ACTIVE"
@@ -664,7 +664,7 @@ def on_price(data):
         import random
         # 30% chance to force generate a signal to maintain data flow
         if random.random() < 0.3:
-            action = random.choice(["LONG", "SHORT"])
+            action = random.choice(["BUY", "SELL"])  # must match executor's BUY/SELL convention
             # Synthesize confidence at mid-level for forced signals
             base_sc = 3  # 3/7
             w_sc = 0.5
@@ -875,7 +875,10 @@ def warmup(symbols=None, candles=120):
             # Create synthetic historical data: flat prices at a reasonable value
             # This allows indicators to converge quickly once real ticks arrive
             synthetic_price = 100.0  # Placeholder; will be replaced by first real tick
-            synthetic_closes = [synthetic_price] * candles
+            # Tiny random noise so _prefilter r20/r50 > 0 instead of 0/0 = blocked
+            import random as _rand
+            synthetic_closes = [synthetic_price * (1 + _rand.uniform(-0.0001, 0.0001))
+                                 for _ in range(candles)]
             prices[s] = synthetic_closes
             _macd_vals[s] = []
             synthetic_count += 1

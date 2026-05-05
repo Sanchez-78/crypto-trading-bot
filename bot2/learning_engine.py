@@ -80,6 +80,24 @@ class LearningEngine:
             "epsilon": 0.1
         }
 
+    # BUG-008 fix: moved from module-level standalone functions into class
+    def update_features(self, features, reward, learning_rate=0.01):
+        """Update feature importance weights from reward signals."""
+        if not hasattr(self, 'feature_weights'):
+            self.feature_weights = {}
+        for f in features:
+            self.feature_weights.setdefault(f, 0.0)
+            self.feature_weights[f] += learning_rate * reward
+
+    def learn_bias(self, batch):
+        """Update bias term from mini-batch of (state, action, reward, next_state) tuples."""
+        if not hasattr(self, 'bias'):
+            self.bias = 0.0
+        if not batch:
+            return
+        avg_reward = sum(r for _, _, r, *_ in batch) / len(batch)
+        self.bias += 0.01 * avg_reward
+
 
 # ────────────────────────────────────────────────────────────────────────────────
 # PATCH 8: Reward Engine — Proper reward calculation with portfolio penalties
@@ -153,51 +171,9 @@ def hourly_update(agent, memory):
 
 
 # ────────────────────────────────────────────────────────────────────────────────
-# PATCH 10: Feature Weight Updates — Online learning from trade outcomes
+# PATCH 10 & 11 — BUG-008 fix: these were standalone functions with `self` param
+# Moved inside LearningEngine class as proper instance methods.
 # ────────────────────────────────────────────────────────────────────────────────
-def update_features(self, features, reward, learning_rate=0.01):
-    """PATCH 10: Update feature importance weights from reward signals.
-    
-    Args:
-        features: dict of feature names to values
-        reward: float, outcome reward from trade
-        learning_rate: float, step size for weight updates
-    """
-    if not hasattr(self, 'feature_weights'):
-        self.feature_weights = {}
-    
-    for f in features:
-        if f not in self.feature_weights:
-            self.feature_weights[f] = 0.0
-        
-        # Gradient step: increase weight if reward is positive
-        self.feature_weights[f] += learning_rate * reward
-
-
-# ────────────────────────────────────────────────────────────────────────────────
-# PATCH 11: RL Bias Update — Track system-level bias for adaptive control
-# ────────────────────────────────────────────────────────────────────────────────
-def learn_bias(self, batch):
-    """PATCH 11: Update agent bias term from mini-batch.
-    
-    The bias term captures systematic performance trends:
-    - Positive bias: system is outperforming expectations
-    - Negative bias: system is underperforming
-    
-    This drives meta-adaptive control (mode switching, size adjustments).
-    """
-    if not hasattr(self, 'bias'):
-        self.bias = 0.0
-    
-    total_reward = 0.0
-    for state, action, reward, next_state in batch:
-        total_reward += reward
-    
-    # Average reward from batch
-    avg_reward = total_reward / max(len(batch), 1)
-    
-    # Update bias with learning rate
-    self.bias += 0.01 * avg_reward
 
 
 # ────────────────────────────────────────────────────────────────────────────────

@@ -89,6 +89,20 @@ def _load_from_redis() -> dict:
         return None
 
 
+def _extract_profit(trade: dict) -> float:
+    """Extract profit from trade using consistent field priority."""
+    for field in ("profit", "pnl", "net_pnl"):
+        if field in trade:
+            try:
+                return float(trade[field] or 0.0)
+            except (TypeError, ValueError):
+                pass
+    try:
+        return float(trade.get("evaluation", {}).get("profit", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def _load_from_history(history: list) -> dict:
     """Compute canonical state from loaded trade history."""
     if not history:
@@ -99,8 +113,8 @@ def _load_from_history(history: list) -> dict:
             "trades_lost": 0,
         }
 
-    won = sum(1 for t in history if t.get("pnl_closed", 0) > 0)
-    lost = sum(1 for t in history if t.get("pnl_closed", 0) <= 0)
+    won = sum(1 for t in history if _extract_profit(t) > 0)
+    lost = sum(1 for t in history if _extract_profit(t) <= 0)
 
     return {
         "source": "history",

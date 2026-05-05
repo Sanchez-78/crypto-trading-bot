@@ -200,62 +200,77 @@ class StrategyExecutor:
         return np.array(ema)
 
     def _rsi(self, prices, period):
-        """Calculate RSI."""
-        if len(prices) < period:
+        """Calculate RSI using Wilder's smoothing. BUG-010 fix."""
+        if len(prices) < period + 1:
             return np.zeros(len(prices))
         delta = np.diff(prices)
-        gain = np.where(delta > 0, delta, 0)
-        loss = np.where(delta < 0, -delta, 0)
-        
-        avg_gain = np.mean(gain[:period])
-        avg_loss = np.mean(loss[:period])
-        
+
+        avg_gain = np.mean(np.maximum(delta[:period], 0))
+        avg_loss = np.mean(np.maximum(-delta[:period], 0))
+
         rsi_values = []
         for i in range(period, len(prices)):
             if i > period:
-                avg_gain = (avg_gain * (period - 1) + (1 if delta[i-1] > 0 else 0) * delta[i-1]) / period
-                avg_loss = (avg_loss * (period - 1) + (1 if delta[i-1] < 0 else 0) * abs(delta[i-1])) / period
-            
+                gain = max(delta[i - 1], 0)
+                loss = max(-delta[i - 1], 0)
+                avg_gain = (avg_gain * (period - 1) + gain) / period
+                avg_loss = (avg_loss * (period - 1) + loss) / period
+
             if avg_loss == 0:
-                rsi = 100 if avg_gain > 0 else 0
+                rsi = 100.0 if avg_gain > 0 else 50.0
             else:
                 rs = avg_gain / avg_loss
-                rsi = 100 - (100 / (1 + rs))
-            
+                rsi = 100.0 - (100.0 / (1.0 + rs))
             rsi_values.append(rsi)
-        
-        result = np.zeros(len(prices))
+
+        result = np.full(len(prices), 50.0)
         result[period:] = rsi_values
         return result
 
     def _adx(self, high, low, close, period):
-        """Calculate ADX (simplified)."""
+        """Calculate ADX with proper Wilder smoothing per bar. BUG-006 fix."""
         high_diff = np.diff(high)
         low_diff = -np.diff(low)
-        
-        # Determine +DM and -DM
-        plus_dm = np.where((high_diff > low_diff) & (high_diff > 0), high_diff, 0)
-        minus_dm = np.where((low_diff > high_diff) & (low_diff > 0), low_diff, 0)
-        
+
+        plus_dm = np.where((high_diff > low_diff) & (high_diff > 0), high_diff, 0.0)
+        minus_dm = np.where((low_diff > high_diff) & (low_diff > 0), low_diff, 0.0)
+
         tr = np.maximum(
             np.maximum(high[1:] - low[1:], np.abs(high[1:] - close[:-1])),
             np.abs(low[1:] - close[:-1])
         )
-        
-        # Smooth
-        smoothed_tr = np.mean(tr[:period])
-        smoothed_plus = np.mean(plus_dm[:period])
-        smoothed_minus = np.mean(minus_dm[:period])
-        
-        if smoothed_tr == 0:
+
+        n = len(tr)
+        if n < period:
             return np.zeros(len(close))
-        
-        di_plus = (smoothed_plus / smoothed_tr) * 100
-        di_minus = (smoothed_minus / smoothed_tr) * 100
-        dx = (np.abs(di_plus - di_minus) / (di_plus + di_minus)) * 100
-        
-        adx = np.full(len(close), dx)
-        return adx
+
+        atr_w = np.zeros(n)
+        pdm_w = np.zeros(n)
+        mdm_w = np.zeros(n)
+        atr_w[period - 1] = np.sum(tr[:period])
+        pdm_w[period - 1] = np.sum(plus_dm[:period])
+        mdm_w[period - 1] = np.sum(minus_dm[:period])
+        for i in range(period, n):
+            atr_w[i] = atr_w[i - 1] - (atr_w[i - 1] / period) + tr[i]
+            pdm_w[i] = pdm_w[i - 1] - (pdm_w[i - 1] / period) + plus_dm[i]
+            mdm_w[i] = mdm_w[i - 1] - (mdm_w[i - 1] / period) + minus_dm[i]
+
+        with np.errstate(divide='ignore', invalid='ignore'):
+            di_plus  = np.where(atr_w > 0, (pdm_w / atr_w) * 100, 0.0)
+            di_minus = np.where(atr_w > 0, (mdm_w / atr_w) * 100, 0.0)
+            denom    = di_plus + di_minus
+            dx       = np.where(denom > 0, (np.abs(di_plus - di_minus) / denom) * 100, 0.0)
+
+        adx_w = np.zeros(n)
+        start = 2 * period - 2
+        if start < n:
+            adx_w[start] = np.mean(dx[period - 1:2 * period - 1])
+            for i in range(start + 1, n):
+                adx_w[i] = (adx_w[i - 1] * (period - 1) + dx[i]) / period
+
+        result = np.zeros(len(close))
+        result[1:] = adx_w
+        return result
 
     def _bollinger(self, prices, period, std_dev):
         """Calculate Bollinger Bands."""

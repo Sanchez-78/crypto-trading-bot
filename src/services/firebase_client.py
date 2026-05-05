@@ -212,16 +212,11 @@ def _mark_quota_exhausted(error_msg: str):
     _set_firebase_degraded(is_read=True, is_write=True, reason="quota_429")
 
 def _set_firebase_degraded(is_read=False, is_write=False, reason=None):
-    """
-    EMERGENCY (2026-04-25): Mark Firebase as degraded due to 429/unavailable.
-    Sets safe mode flags to prevent treating unavailable data as empty DB.
-    """
+    """Mark Firebase as degraded due to 429/unavailable."""
     global _FIREBASE_READ_DEGRADED, _FIREBASE_WRITE_DEGRADED, _FIREBASE_DEGRADED_UNTIL, _FIREBASE_LAST_ERROR, _FIREBASE_DEGRADED_REASON
     import logging
     now = time.time()
-    # Set degradation until midnight Pacific reset (allow 60s recovery window before next reset)
-    midnight_offset = 24 * 3600
-    _FIREBASE_DEGRADED_UNTIL = now + midnight_offset
+    _FIREBASE_DEGRADED_UNTIL = now + 24 * 3600
     if is_read:
         _FIREBASE_READ_DEGRADED = True
     if is_write:
@@ -230,20 +225,25 @@ def _set_firebase_degraded(is_read=False, is_write=False, reason=None):
     _FIREBASE_LAST_ERROR = reason
     logging.critical(f"[FIREBASE_DEGRADED] {reason} — safe mode active until quota reset")
 
+
+def _clear_firebase_degradation():
+    """Clear all degradation flags on confirmed Firebase recovery."""
+    global _FIREBASE_READ_DEGRADED, _FIREBASE_WRITE_DEGRADED, _FIREBASE_DEGRADED_UNTIL
+    _FIREBASE_READ_DEGRADED = False
+    _FIREBASE_WRITE_DEGRADED = False
+    _FIREBASE_DEGRADED_UNTIL = 0
+
 def get_firebase_health():
-    """
-    EMERGENCY (2026-04-25): Return Firebase health status.
-    Allows callers to detect degradation and avoid treating unavailable data as empty DB.
-    """
+    """Return Firebase health status for safe-mode decisions."""
     now = time.time()
-    is_degraded = (now < _FIREBASE_DEGRADED_UNTIL and (_FIREBASE_READ_DEGRADED or _FIREBASE_WRITE_DEGRADED))
+    active = now < _FIREBASE_DEGRADED_UNTIL
     return {
-        "available": not is_degraded,
-        "read_degraded": _FIREBASE_READ_DEGRADED and (now < _FIREBASE_DEGRADED_UNTIL),
-        "write_degraded": _FIREBASE_WRITE_DEGRADED and (now < _FIREBASE_DEGRADED_UNTIL),
+        "available": not (active and (_FIREBASE_READ_DEGRADED or _FIREBASE_WRITE_DEGRADED)),
+        "read_degraded": _FIREBASE_READ_DEGRADED and active,
+        "write_degraded": _FIREBASE_WRITE_DEGRADED and active,
         "last_error": _FIREBASE_LAST_ERROR,
-        "degraded_until": _FIREBASE_DEGRADED_UNTIL if is_degraded else None,
-        "reason": _FIREBASE_DEGRADED_REASON if is_degraded else None,
+        "degraded_until": _FIREBASE_DEGRADED_UNTIL if active else None,
+        "reason": _FIREBASE_DEGRADED_REASON if active else None,
     }
 
 
@@ -267,18 +267,17 @@ def should_skip_noncritical_write() -> tuple[bool, str]:
     allowed, current, limit_writes = _can_write(0)  # Check without incrementing
     writes_pct = (current / limit_writes * 100) if limit_writes > 0 else 0
 
-    should_skip = _FIREBASE_WRITE_DEGRADED or writes_pct >= 95
+    now = time.time()
+    is_write_degraded = _FIREBASE_WRITE_DEGRADED and (now < _FIREBASE_DEGRADED_UNTIL)
+    should_skip = is_write_degraded or writes_pct >= 95
 
-    if should_skip:
-        now = time.time()
-        should_log = (now - _LAST_NONCRITICAL_SKIP_LOG) >= 60.0
-        if should_log:
-            reason = "write_degraded" if _FIREBASE_WRITE_DEGRADED else "quota_95pct"
-            logging.warning(
-                f"[FIREBASE_DEGRADED] write skipped: {reason} "
-                f"({current}/{limit_writes} writes, {writes_pct:.1f}%)"
-            )
-            _LAST_NONCRITICAL_SKIP_LOG = now
+    if should_skip and (now - _LAST_NONCRITICAL_SKIP_LOG) >= 60.0:
+        reason = "write_degraded" if is_write_degraded else "quota_95pct"
+        logging.warning(
+            f"[FIREBASE_DEGRADED] write skipped: {reason} "
+            f"({current}/{limit_writes} writes, {writes_pct:.1f}%)"
+        )
+        _LAST_NONCRITICAL_SKIP_LOG = now
 
     return should_skip, "FIREBASE_QUOTA_EXHAUSTED" if should_skip else ""
 
@@ -352,9 +351,9 @@ SIGNALS_LIMIT  = 200
 # V10.15 QUOTA EMERGENCY: Increased TTL to 6 hours to prevent runaway reads (was 1h)
 # Runaway read rate detected: 6000 reads in 36 min = 240k/day vs 50k limit
 # EMERGENCY (2026-04-25): Further increased WEIGHTS_TTL, SIGNALS_TTL to 2h to reduce read storm
-HISTORY_TTL    = 300 if PERF_MODE else 21600  # 5 min vs 6 hours (emergency: was 1 hour)
-WEIGHTS_TTL    = 120 if PERF_MODE else 7200    # 2 min vs 2 hours (emergency: was 1 hour)
-SIGNALS_TTL    = 600 if PERF_MODE else 7200   # 10 min vs 2 hours (emergency: was 1 hour)
+HISTORY_TTL    = 600  if PERF_MODE else 43200  # 10 min vs 12 hours  → ≤14 400 vs ≤200 reads/day
+WEIGHTS_TTL    = 300  if PERF_MODE else 14400  # 5 min vs 4 hours   → ≤288  vs ≤6   reads/day
+SIGNALS_TTL    = 1200 if PERF_MODE else 14400  # 20 min vs 4 hours  → ≤144  vs ≤6   reads/day
 
 
 # ── Init ──────────────────────────────────────────────────────────────────────
@@ -409,7 +408,7 @@ def _slim_trade(trade):
         "close_reason": trade.get("close_reason"),
         "confidence":   round(float(trade.get("confidence", 0)), 4),
         "regime":       trade.get("regime", "RANGING"),
-        "strategy":     trade.get("regime", "RANGING"),
+        "strategy":     trade.get("strategy", trade.get("regime", "RANGING")),
         "ws":           round(float(trade.get("ws",  0.5)), 4),   # weighted score at entry
         "ev":           round(float(trade.get("ev",  0.0)), 4),   # expected value at entry
         "timestamp":    trade.get("timestamp", time.time()),
@@ -639,6 +638,206 @@ def load_stats() -> dict:
 def load_trade_count() -> int | None:
     """Legacy shim for learning_event.py."""
     return load_stats().get("trades", 0)
+
+
+# ── Cached all-time stats ─────────────────────────────────────────────────────
+
+_stats_cache: dict = {}
+_stats_cache_ts: float = 0.0
+
+
+def load_stats_cached(ttl_s: int = 300) -> dict:
+    """Return system/stats with TTL cache. Never raises."""
+    global _stats_cache, _stats_cache_ts
+    try:
+        now = time.time()
+        if _stats_cache and (now - _stats_cache_ts) < ttl_s:
+            return dict(_stats_cache)
+        result = load_stats()
+        if result:
+            _stats_cache = result
+            _stats_cache_ts = now
+        return dict(_stats_cache) if _stats_cache else dict(_local_stats)
+    except Exception:
+        return dict(_local_stats)
+
+
+# ── App metrics snapshot writer ───────────────────────────────────────────────
+
+_APP_METRICS_DOC = col("app_metrics") + "/latest"
+_LAST_APP_METRICS_WRITE_TS: float = 0.0
+_LAST_APP_METRICS_SEMANTIC_HASH: str | None = None
+_LAST_APP_METRICS_HEARTBEAT_TS: float = 0.0
+
+APP_METRICS_MIN_WRITE_INTERVAL_S = int(os.getenv("APP_METRICS_MIN_WRITE_INTERVAL_S", "30"))
+APP_METRICS_HEARTBEAT_INTERVAL_S = int(os.getenv("APP_METRICS_HEARTBEAT_INTERVAL_S", "300"))
+
+
+def _app_metrics_semantic_hash(snapshot: dict) -> str:
+    """Hash snapshot excluding volatile fields so unchanged data is detected."""
+    import copy
+    import json
+    import hashlib
+
+    s = copy.deepcopy(snapshot)
+
+    # Remove volatile fields that change every build
+    s.pop("generated_at", None)
+    kpis = s.get("kpis", {})
+    kpis.pop("since_last_trade_s", None)
+
+    # Remove age_s from open positions items
+    for pos in (s.get("open_positions") or {}).get("items") or []:
+        pos.pop("age_s", None)
+
+    # Remove age_s from recommendations
+    for rec in (s.get("recommendations") or {}).values():
+        if isinstance(rec, dict):
+            rec.pop("age_s", None)
+
+    raw = json.dumps(s, sort_keys=True, default=str)
+    return hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+
+def save_app_metrics_snapshot(snapshot: dict, *, force: bool = False) -> bool:
+    """Write app_metrics/latest to Firestore. Non-critical write.
+
+    Skips: throttle, unchanged, firebase degraded.
+    Writes: changed data, heartbeat after 5min, force=True.
+    Never raises.
+    """
+    global _LAST_APP_METRICS_WRITE_TS, _LAST_APP_METRICS_SEMANTIC_HASH, _LAST_APP_METRICS_HEARTBEAT_TS
+    import logging as _log_am
+    _log = _log_am.getLogger(__name__)
+
+    try:
+        if db is None:
+            return False
+
+        now = time.time()
+
+        # Throttle check
+        if not force and (now - _LAST_APP_METRICS_WRITE_TS) < APP_METRICS_MIN_WRITE_INTERVAL_S:
+            _log.debug("[APP_METRICS_SKIP] reason=throttle")
+            return False
+
+        # Firebase degraded check
+        skip, skip_reason = should_skip_noncritical_write()
+        if skip and not force:
+            _log.debug("[APP_METRICS_SKIP] reason=firebase_degraded detail=%s", skip_reason)
+            return False
+
+        # Semantic hash check (skip unchanged unless heartbeat due)
+        new_hash = _app_metrics_semantic_hash(snapshot)
+        heartbeat_due = (now - _LAST_APP_METRICS_HEARTBEAT_TS) >= APP_METRICS_HEARTBEAT_INTERVAL_S
+
+        if not force and new_hash == _LAST_APP_METRICS_SEMANTIC_HASH and not heartbeat_due:
+            _log.debug("[APP_METRICS_SKIP] reason=unchanged")
+            return False
+
+        reason = "force" if force else ("heartbeat" if heartbeat_due else "changed")
+        db.document(_APP_METRICS_DOC).set(snapshot)
+
+        _LAST_APP_METRICS_WRITE_TS = now
+        _LAST_APP_METRICS_SEMANTIC_HASH = new_hash
+        if heartbeat_due or force:
+            _LAST_APP_METRICS_HEARTBEAT_TS = now
+
+        _log.info(
+            "[APP_METRICS_SAVE] ok=True schema=%s reason=%s",
+            snapshot.get("schema_version", "?"),
+            reason,
+        )
+        return True
+
+    except Exception as e:
+        import logging as _log_err
+        _log_err.getLogger(__name__).warning("[APP_METRICS_ERROR] err=%s", str(e)[:200])
+        return False
+
+
+def publish_app_metrics_snapshot(force: bool = False, recent_trades: list | None = None) -> None:
+    """Build and publish app_metrics/latest snapshot to Firestore.
+
+    Cadence: call from existing metrics loop, no faster than 30s.
+    Never raises into trading loop.
+    """
+    import logging as _log_pub
+    _log = _log_pub.getLogger(__name__)
+    try:
+        if recent_trades is None:
+            recent_trades = load_history(limit=500)
+
+        all_time_stats = load_stats_cached(ttl_s=300)
+
+        try:
+            from src.services.learning_event import get_metrics as _get_metrics
+            m = _get_metrics()
+        except Exception:
+            m = {}
+
+        try:
+            from src.services.paper_trade_executor import get_paper_open_positions
+            ops = get_paper_open_positions()
+        except Exception:
+            ops = []
+
+        last_signals = m.get("last_signals") or {}
+
+        import os as _os
+        try:
+            from src.core.runtime_mode import (
+                get_trading_mode, is_paper_mode, live_trading_allowed, paper_train_enabled
+            )
+            trading_mode = get_trading_mode().value
+            paper_mode = is_paper_mode()
+            live_allowed = live_trading_allowed()
+            pt_enabled = paper_train_enabled()
+        except Exception:
+            trading_mode = "paper_live"
+            paper_mode = True
+            live_allowed = False
+            pt_enabled = False
+
+        runtime = {
+            "trading_mode": trading_mode,
+            "paper_mode": paper_mode,
+            "live_allowed": live_allowed,
+            "paper_training_enabled": pt_enabled,
+            "git_sha": _os.getenv("GIT_SHA", ""),
+            "branch": _os.getenv("GIT_BRANCH", ""),
+            "version": _os.getenv("APP_VERSION", ""),
+        }
+
+        fh = get_firebase_health()
+        qs = get_quota_status()
+
+        from src.services.app_metrics_contract import build_app_metrics_snapshot
+        snapshot = build_app_metrics_snapshot(
+            closed_trades=recent_trades,
+            session_metrics=m,
+            open_positions=ops,
+            last_signals=last_signals,
+            all_time_stats=all_time_stats,
+            runtime=runtime,
+            firebase_health=fh,
+            quota_status=qs,
+        )
+
+        window = len(recent_trades)
+        all_time = snapshot.get("kpis", {}).get("trades_total_all_time", 0)
+        open_count = snapshot.get("open_positions", {}).get("count", 0)
+        alerts = len(snapshot.get("health", {}).get("alerts") or [])
+        _log.info(
+            "[APP_METRICS_BUILD] all_time=%d window=%d open=%d alerts=%d",
+            all_time, window, open_count, alerts,
+        )
+
+        save_app_metrics_snapshot(snapshot, force=force)
+
+    except Exception as e:
+        import logging as _log_err2
+        _log_err2.getLogger(__name__).warning("[APP_METRICS_PUBLISH_ERROR] err=%s", str(e)[:200])
 
 
 # ── Model state (calibrator + learning histories + bayes/bandit) ───────────────
@@ -1055,7 +1254,7 @@ def save_metrics_full(metrics, open_positions=None, execution=None, monitor=None
             try:
                 from src.services.metrics_engine import MetricsEngine
                 engine = MetricsEngine()
-                recent_trades = load_history(limit=500)
+                recent_trades = load_history(limit=HISTORY_LIMIT)  # use cache-aligned limit to avoid quota storm
                 canonical = engine.compute_canonical_trade_stats(recent_trades)
 
                 # Log reconciliation status
@@ -1281,32 +1480,34 @@ def load_commands_since(since_ms: int, limit: int = 10) -> list[dict]:
 
 
 def daily_budget_report():
-    """Estimate daily Firebase operations with the current cache settings."""
+    """Estimate daily Firebase reads and writes against free-tier quota."""
     mode = "PERFORMANCE" if PERF_MODE else "CONSERVATIVE"
     ht = HISTORY_TTL
     wt = WEIGHTS_TTL
     cmd_poll = int(float(os.getenv("CMD_POLL_SEC", "30")))
 
-    r_hist = 500 * (86400 // ht)
-    r_wgt = 86400 // wt
-    r_cfg = 86400 // CONFIG_TTL
-    r_advice = 86400 // ADVICE_TTL
-    r_metrics = 86400 // BOT2_METRICS_TTL
+    # History: HISTORY_LIMIT docs per cache miss, cache-aligned by all callers
+    r_hist     = HISTORY_LIMIT * (86400 // ht)
+    r_wgt      = 86400 // wt
+    r_cfg      = 86400 // CONFIG_TTL
+    r_advice   = 86400 // ADVICE_TTL
+    r_metrics  = 86400 // BOT2_METRICS_TTL
     r_commands = 86400 // max(cmd_poll, 1)
-    r_tot = r_hist + r_wgt + r_cfg + r_advice + r_metrics + r_commands
+    r_tot      = r_hist + r_wgt + r_cfg + r_advice + r_metrics + r_commands
+    budget_ok  = "✅" if r_tot <= 45000 else "⚠️  OVER 45k TARGET"
 
     print(f"[Firebase] daily budget [{mode}]")
-    print(f"   Reads : history       <= {r_hist:>6}/day  (500 docs, cache {ht}s)")
+    print(f"   Reads : history       <= {r_hist:>6}/day  ({HISTORY_LIMIT} docs, cache {ht}s)")
     print(f"           weights       <= {r_wgt:>6}/day  (cache {wt}s)")
     print(f"           runtime cfg   <= {r_cfg:>6}/day  (cache {CONFIG_TTL}s)")
     print(f"           bot2 advice   <= {r_advice:>6}/day  (cache {ADVICE_TTL}s)")
     print(f"           bot2 metrics  <= {r_metrics:>6}/day  (cache {BOT2_METRICS_TTL}s)")
     print(f"           commands poll <= {r_commands:>6}/day  (poll {cmd_poll}s)")
-    print(f"           total reads   ~= {r_tot:>6}/day  (limit 50 000)")
+    print(f"           total reads   ~= {r_tot:>6}/day  (target ≤45 000 / limit 50 000)  {budget_ok}")
     print("   Writes: metrics/latest every 300s =    288/day")
     print("           save_batch    every 60s   =  1 440/day")
     print("           save_last_trade (est.)    =    200/day")
-    print("   Total : ~1 928 writes/day  (limit 20 000)")
+    print("   Total : ~1 928 writes/day  (limit 20 000)  ✅")
 
 
 # ════════════════════════════════════════════════════════════════════════════════
@@ -1347,8 +1548,9 @@ def probe_quota_recovered() -> bool:
         # This tests read access without scanning trades/signals
         config_doc = db.collection(col("config")).document("runtime").get()
 
-        # Success: Firebase is responding
-        _log_probe.info("[RECOVERY_PROBE] Firebase quota recovered; read successful")
+        # Success: Firebase is responding — clear degradation flags so writes resume
+        _clear_firebase_degradation()
+        _log_probe.info("[RECOVERY_PROBE] Firebase quota recovered; degradation flags cleared")
         return True
 
     except Exception as e:
@@ -1372,35 +1574,3 @@ def probe_quota_recovered() -> bool:
         # Unknown error: don't auto-recover
         _log_probe.warning(f"[RECOVERY_PROBE] Unknown error: {type(e).__name__}: {error_str[:100]}")
         return False
-
-
-def _daily_budget_report_legacy():
-    """
-    Estimate daily Firebase operation counts (call once at startup).
-    Limit: 50 000 reads · 20 000 writes/day (free tier).
-    """
-    mode = "PERFORMANCE" if PERF_MODE else "CONSERVATIVE"
-    hl   = HISTORY_LIMIT
-    ht   = HISTORY_TTL
-    wt   = WEIGHTS_TTL
-
-    cmd_poll = int(float(os.getenv("CMD_POLL_SEC", "30")))
-
-    r_hist     = 500 * (86400 // ht)
-    r_wgt      = 86400 // wt
-    r_cfg      = 86400 // CONFIG_TTL
-    r_advice   = 86400 // ADVICE_TTL
-    r_metrics  = 86400 // BOT2_METRICS_TTL
-    r_commands = 86400 // max(cmd_poll, 1)
-    r_tot      = r_hist + r_wgt + r_cfg + r_advice + r_metrics + r_commands
-
-    print(f"📊 Firebase daily budget  [{mode}]")
-    print(f"   Reads : load_history  ≤ {r_hist:>6}/day  ({hl} docs, cache {ht}s)")
-    print(f"           load_weights  ≤ {r_wgt:>6}/day")
-    print(f"           total reads   ≈ {r_tot:>6}/day  (limit 50 000)  {'✅' if r_tot < 45000 else '⚠️'}")
-    print(f"   Writes: metrics/latest every 10s  =  8 640/day")
-    print(f"           save_batch    every 60s   =  1 440/day")
-    print(f"           save_last_trade (est.)    =    200/day")
-    print(f"   Total : ~10 280 writes/day  (limit 20 000)  ✅")
-    if not PERF_MODE:
-        print(f"   ℹ️  Set PERF_MODE=True when WR>45% AND PF>1.5 for fresher calibration")
