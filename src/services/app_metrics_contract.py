@@ -328,8 +328,7 @@ def _build_learning_section(session_metrics: dict) -> dict:
     edge = decisive >= 30 and (wr > 0.55 or wr < 0.40)  # edge detected if non-trivial WR
 
     health = str(
-        m.get("lm_health")
-        or m.get("confidence_momentum")
+        m.get("confidence_momentum")
         or m.get("learning_health")
         or "UNKNOWN"
     )
