@@ -7,11 +7,13 @@ import sys
 import pytest
 
 # The audit bot uses a src/ layout and is not installed as a package in CI.
-# Add its src dir explicitly so tests work from a fresh GitHub Actions checkout.
+# Add both repo root and auditbot src explicitly for fresh GitHub Actions checkouts.
 REPO_ROOT = Path(__file__).resolve().parents[2]
 AUDITBOT_SRC = REPO_ROOT / "daily_log_fix_prompt_bot" / "src"
-if str(AUDITBOT_SRC) not in sys.path:
-    sys.path.insert(0, str(AUDITBOT_SRC))
+for path in (REPO_ROOT, AUDITBOT_SRC):
+    path_s = str(path)
+    if path_s not in sys.path:
+        sys.path.insert(0, path_s)
 
 from daily_log_fix_prompt_bot.config import load_config
 from daily_log_fix_prompt_bot.models import LogMetrics
