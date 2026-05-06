@@ -2,12 +2,20 @@
 
 from pathlib import Path
 from types import SimpleNamespace
+import sys
 
 import pytest
 
-from daily_log_fix_prompt_bot.src.daily_log_fix_prompt_bot.config import load_config
-from daily_log_fix_prompt_bot.src.daily_log_fix_prompt_bot.models import Issue, LogMetrics, Severity
-from daily_log_fix_prompt_bot.src.daily_log_fix_prompt_bot.report_writer import ReportWriter
+# The audit bot uses a src/ layout and is not installed as a package in CI.
+# Add its src dir explicitly so tests work from a fresh GitHub Actions checkout.
+REPO_ROOT = Path(__file__).resolve().parents[2]
+AUDITBOT_SRC = REPO_ROOT / "daily_log_fix_prompt_bot" / "src"
+if str(AUDITBOT_SRC) not in sys.path:
+    sys.path.insert(0, str(AUDITBOT_SRC))
+
+from daily_log_fix_prompt_bot.config import load_config
+from daily_log_fix_prompt_bot.models import LogMetrics
+from daily_log_fix_prompt_bot.report_writer import ReportWriter
 
 
 def test_config_loads_safety_flags(monkeypatch):
@@ -97,7 +105,7 @@ def test_app_metrics_window_count_matches_loaded_trades():
 
 
 def test_run_daily_analysis_saves_sanitized_logs_not_raw_by_default(monkeypatch, tmp_path: Path):
-    import daily_log_fix_prompt_bot.src.daily_log_fix_prompt_bot.main as main_mod
+    import daily_log_fix_prompt_bot.main as main_mod
 
     cfg = SimpleNamespace(
         local_report_dir=str(tmp_path),
@@ -142,7 +150,7 @@ def test_run_daily_analysis_saves_sanitized_logs_not_raw_by_default(monkeypatch,
 
 
 def test_run_daily_analysis_raw_logs_only_when_enabled(monkeypatch, tmp_path: Path):
-    import daily_log_fix_prompt_bot.src.daily_log_fix_prompt_bot.main as main_mod
+    import daily_log_fix_prompt_bot.main as main_mod
 
     cfg = SimpleNamespace(
         local_report_dir=str(tmp_path),
