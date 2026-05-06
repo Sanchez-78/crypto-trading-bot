@@ -8,3 +8,4 @@ joblib
 python-dotenv
 aiohttp
 websocket-client
+paramiko
