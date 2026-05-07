@@ -12,6 +12,7 @@ from .issue_detector import IssueDetector
 from .models import AnalysisResult, LogMetrics
 from .report_writer import ReportWriter
 from .disk_retry import queue_for_retry, get_pending_queue_stats
+from .health_reporter import build_hetzner_health, write_health_reports
 
 logging.basicConfig(
     level=logging.INFO,
@@ -45,8 +46,20 @@ def run_daily_analysis() -> Path:
     log.info("Fetching logs from server...")
     fetcher = LogFetcher(config)
     raw_logs = fetcher.fetch_logs()
+    log_source = getattr(fetcher, "last_source", "unknown")
+    if log_source == "none":
+        log_source = "unknown"
+
     if not raw_logs:
-        log.error("No logs fetched; aborting")
+        log.error("No logs fetched; writing UNKNOWN health report and aborting")
+        health = build_hetzner_health(
+            logs="",
+            service_name=config.service_name,
+            log_source=log_source or "empty",
+            generated_at=datetime.now().isoformat(),
+        )
+        if disk_available:
+            write_health_reports(report_dir, config.local_report_dir, health)
         return report_dir
 
     # Step 2: Sanitize logs BEFORE writing anything to disk.
@@ -80,6 +93,16 @@ def run_daily_analysis() -> Path:
     parse_result = parser.parse(sanitized_logs)
     events = parse_result["events"]
     metrics_dict = parse_result["metrics"]
+
+    # Step 3b: Build Hetzner health report from sanitized logs
+    log.info("Building Hetzner health report...")
+    health = build_hetzner_health(
+        logs=sanitized_logs,
+        service_name=config.service_name,
+        log_source=log_source,
+        generated_at=datetime.now().isoformat(),
+    )
+    log.info("Health status: %s", health["status"])
 
     # Step 4: Detect issues
     log.info("Detecting issues...")
@@ -123,6 +146,9 @@ def run_daily_analysis() -> Path:
             writer.write_fix_prompt(prompt_path, metrics, issues)
             log.info(f"Fix prompt written to {prompt_path}")
 
+            # Write Hetzner health reports
+            write_health_reports(report_dir, config.local_report_dir, health)
+
             # Save metadata
             metadata_path = report_dir / "run_metadata.json"
             with open(metadata_path, "w", encoding="utf-8") as f:
@@ -138,6 +164,12 @@ def run_daily_analysis() -> Path:
                         "log_lines": len(sanitized_logs.split("\n")),
                         "events_detected": len(events),
                         "issues_detected": len(issues),
+                    },
+                    "health": {
+                        "status": health["status"],
+                        "log_source": health["log_source"],
+                        "boot_version_seen": health["boot_version_seen"],
+                        "trading_mode": health["trading_mode"],
                     },
                 }, f, indent=2)
             log.info(f"Analysis complete. Report saved to {report_dir}")
