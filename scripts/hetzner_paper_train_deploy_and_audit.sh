@@ -111,19 +111,19 @@ fi
 
 # Refuse dangerous local environment config before pulling/restarting.
 if [ -f .env ]; then
-  if grep -E '^TRADING_MODE=live_real\b' .env >/dev/null; then
+  if grep -iE '^(export[[:space:]]+)?TRADING_MODE=["]?live_real["]?([[:space:]]|$)' .env >/dev/null; then
     status="CRITICAL"
     message="blocked: .env contains TRADING_MODE=live_real"
     write_reports
     exit 1
   fi
-  if grep -E '^ENABLE_REAL_ORDERS=true\b' .env >/dev/null; then
+  if grep -iE '^(export[[:space:]]+)?ENABLE_REAL_ORDERS=["]?true["]?([[:space:]]|$)' .env >/dev/null; then
     status="CRITICAL"
     message="blocked: .env contains ENABLE_REAL_ORDERS=true"
     write_reports
     exit 1
   fi
-  if grep -E '^LIVE_TRADING_CONFIRMED=true\b' .env >/dev/null; then
+  if grep -iE '^(export[[:space:]]+)?LIVE_TRADING_CONFIRMED=["]?true["]?([[:space:]]|$)' .env >/dev/null; then
     status="CRITICAL"
     message="blocked: .env contains LIVE_TRADING_CONFIRMED=true"
     write_reports
