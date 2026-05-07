@@ -24,8 +24,14 @@ class LogFetcher:
         self.ssh = None
         self.last_source = "none"
         try:
-            self.ssh = SSHClient(config.hetzner_host, config.hetzner_port,
-                                config.hetzner_user, config.ssh_key_path)
+            self.ssh = SSHClient(
+                config.hetzner_host,
+                config.hetzner_port,
+                config.hetzner_user,
+                config.ssh_key_path,
+                known_hosts_path=config.ssh_known_hosts_path,
+                strict_host_key_checking=config.ssh_strict_host_key_checking,
+            )
         except Exception as e:
             log.warning(f"SSH client init failed: {e}; will use local logs only")
 

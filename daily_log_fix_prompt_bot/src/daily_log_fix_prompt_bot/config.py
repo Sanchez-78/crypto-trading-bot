@@ -30,6 +30,8 @@ class Settings:
     hetzner_port: int = 22
     hetzner_user: str = "root"
     ssh_key_path: str = "~/.ssh/id_ed25519"
+    ssh_known_hosts_path: str = "~/.ssh/known_hosts"
+    ssh_strict_host_key_checking: bool = True
     service_name: str = "cryptomaster"
     log_lookback_hours: int = 24
     local_report_dir: str = "reports"
@@ -49,14 +51,17 @@ class Settings:
 def load_config() -> Settings:
     """Load configuration from environment.
 
-    Defaults are intentionally safe: no remote writes, no auto-fix, and no
-    unsanitized raw log persistence unless explicitly enabled.
+    Defaults are intentionally safe: no remote writes, no auto-fix, no
+    unsanitized raw log persistence, and strict SSH host key checking unless
+    explicitly disabled for a controlled local/dev scenario.
     """
     return Settings(
         hetzner_host=os.getenv("HETZNER_HOST", "127.0.0.1"),
         hetzner_port=_env_int("HETZNER_PORT", 22),
         hetzner_user=os.getenv("HETZNER_USER", "root"),
         ssh_key_path=os.getenv("SSH_KEY_PATH", "~/.ssh/id_ed25519"),
+        ssh_known_hosts_path=os.getenv("SSH_KNOWN_HOSTS_PATH", "~/.ssh/known_hosts"),
+        ssh_strict_host_key_checking=_env_bool("SSH_STRICT_HOST_KEY_CHECKING", True),
         service_name=os.getenv("SERVICE_NAME", "cryptomaster"),
         log_lookback_hours=_env_int("LOG_LOOKBACK_HOURS", 24),
         local_report_dir=os.getenv("LOCAL_REPORT_DIR", "reports"),
