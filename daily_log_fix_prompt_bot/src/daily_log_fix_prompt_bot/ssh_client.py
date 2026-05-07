@@ -9,12 +9,7 @@ log = logging.getLogger(__name__)
 
 
 class SSHClient:
-    """SSH client for remote log fetching.
-
-    Defaults to strict SSH host key checking. This prevents silent MITM exposure
-    when the audit bot fetches Hetzner logs remotely. For controlled local/dev
-    scenarios only, callers may set strict_host_key_checking=False.
-    """
+    """SSH client for remote log fetching."""
 
     def __init__(
         self,
@@ -25,7 +20,6 @@ class SSHClient:
         known_hosts_path: str = "~/.ssh/known_hosts",
         strict_host_key_checking: bool = True,
     ):
-        """Initialize SSH client."""
         self.host = host
         self.port = port
         self.user = user
@@ -38,26 +32,19 @@ class SSHClient:
         """Establish SSH connection."""
         try:
             self.client = paramiko.SSHClient()
-            self.client.load_system_host_keys()
-
-            if self.known_hosts_path.exists():
-                self.client.load_host_keys(str(self.known_hosts_path))
-            elif self.strict_host_key_checking:
-                log.warning(
-                    "Known hosts file does not exist: %s; strict SSH host key "
-                    "checking will reject unknown hosts",
-                    self.known_hosts_path,
-                )
-
             if self.strict_host_key_checking:
+                # Load system-wide and user known_hosts; reject unknown keys.
+                self.client.load_system_host_keys()
+                if self.known_hosts_path.exists():
+                    self.client.load_host_keys(str(self.known_hosts_path))
                 self.client.set_missing_host_key_policy(paramiko.RejectPolicy())
             else:
+                # Only acceptable in isolated test/local environments.
                 log.warning(
-                    "SSH_STRICT_HOST_KEY_CHECKING is disabled; unknown host keys "
-                    "will be auto-added. Use only for controlled dev/local runs."
+                    "SSH host key checking disabled (SSH_STRICT_HOST_KEY_CHECKING=false)"
+                    " — MITM attacks will not be detected"
                 )
-                self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-
+                self.client.set_missing_host_key_policy(paramiko.WarningPolicy())
             self.client.connect(
                 self.host,
                 port=self.port,
@@ -92,10 +79,8 @@ class SSHClient:
             log.info("SSH connection closed")
 
     def __enter__(self):
-        """Context manager entry."""
         self.connect()
         return self
 
     def __exit__(self, *args):
-        """Context manager exit."""
         self.close()

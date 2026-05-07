@@ -1,0 +1,342 @@
+name: Hetzner One-Time Timer Install
+
+# Manual-only workflow. Never runs automatically.
+# Performs the one-time systemd timer installation for the CryptoMaster
+# deploy/audit/health loop on the real Hetzner VPS.
+#
+# Required GitHub Secrets:
+#   HETZNER_HOST          - server IP or hostname
+#   HETZNER_USER          - SSH login user (typically root)
+#   HETZNER_SSH_KEY       - private key (PEM / OpenSSH format)
+#   HETZNER_PROJECT_DIR   - absolute path on server (e.g. /opt/CryptoMaster_srv)
+#   HETZNER_SERVICE_NAME  - systemd service to restart (e.g. cryptomaster)
+#
+# Optional inputs (override per-run):
+#   hetzner_port   - SSH port (default 22)
+#   python_bin     - Python 3 binary on server (default python3)
+#   dry_run        - Skip all systemctl commands (default false)
+
+on:
+  workflow_dispatch:
+    inputs:
+      hetzner_port:
+        description: 'SSH port on the Hetzner server'
+        required: false
+        default: '22'
+      python_bin:
+        description: 'Python 3 binary on the server'
+        required: false
+        default: 'python3'
+      dry_run:
+        description: 'Dry run — skip systemctl restart/enable (safety test only)'
+        required: false
+        default: 'false'
+        type: choice
+        options: ['false', 'true']
+
+jobs:
+  install:
+    name: Install systemd timer on Hetzner
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── 1. Checkout ────────────────────────────────────────────────────────
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      # ── 2. Local pre-flight — syntax check only (full tests run on server) ─
+      - name: Syntax-check deploy script
+        run: bash -n scripts/hetzner_paper_train_deploy_and_audit.sh
+
+      # ── 3. SSH setup with host-key pinning ─────────────────────────────────
+      - name: Set up SSH key and pin host key
+        env:
+          HETZNER_SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          SSH_PORT: ${{ inputs.hetzner_port }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+
+          # Write private key
+          printf '%s\n' "$HETZNER_SSH_KEY" > ~/.ssh/hetzner_deploy_key
+          chmod 600 ~/.ssh/hetzner_deploy_key
+
+          # Pin host key via ssh-keyscan — no blind acceptance
+          PORT="${SSH_PORT:-22}"
+          echo "Scanning host key for $HETZNER_HOST:$PORT ..."
+          ssh-keyscan -p "$PORT" -T 15 "$HETZNER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          if [ ! -s ~/.ssh/known_hosts ]; then
+            echo "CRITICAL: ssh-keyscan returned no keys — host unreachable or wrong IP"
+            exit 1
+          fi
+          chmod 600 ~/.ssh/known_hosts
+          echo "Host key pinned."
+
+      # ── 4. Remote install ──────────────────────────────────────────────────
+      - name: Run remote install script on Hetzner
+        env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          HETZNER_USER: ${{ secrets.HETZNER_USER }}
+          HETZNER_PROJECT_DIR: ${{ secrets.HETZNER_PROJECT_DIR }}
+          HETZNER_SERVICE_NAME: ${{ secrets.HETZNER_SERVICE_NAME }}
+          SSH_PORT: ${{ inputs.hetzner_port }}
+          PYTHON_BIN: ${{ inputs.python_bin }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          PORT="${SSH_PORT:-22}"
+          PYTHON="${PYTHON_BIN:-python3}"
+
+          # Build common SSH options (StrictHostKeyChecking=yes enforces pinned key)
+          SSH_OPTS="-p $PORT -i ~/.ssh/hetzner_deploy_key \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile=~/.ssh/known_hosts \
+            -o ConnectTimeout=30 \
+            -o BatchMode=yes"
+
+          # Pipe the install script via stdin; values injected as env prefix.
+          # This avoids SCP residue and keeps secrets out of remote filesystem.
+          ssh $SSH_OPTS \
+            "$HETZNER_USER@$HETZNER_HOST" \
+            "PROJECT_DIR='$HETZNER_PROJECT_DIR' \
+             SERVICE_NAME='$HETZNER_SERVICE_NAME' \
+             PYTHON_BIN='$PYTHON' \
+             DRY_RUN='$DRY_RUN' \
+             bash -s" << 'REMOTE_EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          # ── Variables from runner ───────────────────────────────────────────
+          : "${PROJECT_DIR:?HETZNER_PROJECT_DIR secret not set}"
+          : "${SERVICE_NAME:?HETZNER_SERVICE_NAME secret not set}"
+          : "${PYTHON_BIN:=python3}"
+          : "${DRY_RUN:=false}"
+
+          RUN_TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          REPORT_DIR="$PROJECT_DIR/reports"
+          echo ""
+          echo "════════════════════════════════════════════════════════════════"
+          echo "  CryptoMaster — One-Time Hetzner Timer Install"
+          echo "  $RUN_TS"
+          echo "════════════════════════════════════════════════════════════════"
+          echo "  PROJECT_DIR   : $PROJECT_DIR"
+          echo "  SERVICE_NAME  : $SERVICE_NAME"
+          echo "  PYTHON_BIN    : $PYTHON_BIN"
+          echo "  DRY_RUN       : $DRY_RUN"
+          echo ""
+
+          # ── Helper: normalise .env value ────────────────────────────────────
+          env_value() {
+            local key="$1" file="${2:-.env}"
+            [ -f "$file" ] || return 0
+            awk -F= -v key="$key" '
+              /^[[:space:]]*#/ { next }
+              /^[[:space:]]*$/ { next }
+              {
+                k=$1
+                sub(/^[[:space:]]*export[[:space:]]+/, "", k)
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", k)
+                if (k == key) {
+                  v=substr($0, index($0,"=")+1)
+                  sub(/[[:space:]]+#.*$/, "", v)
+                  gsub(/^[[:space:]]+|[[:space:]]+$/, "", v)
+                  gsub(/^\047|\047$/, "", v)
+                  gsub(/^\"|\"$/, "", v)
+                  print tolower(v)
+                }
+              }' "$file" | tail -n 1
+          }
+
+          block_if_env_equals() {
+            local key="$1" blocked="$2"
+            local actual; actual="$(env_value "$key" "$PROJECT_DIR/.env")"
+            if [ "$actual" = "$blocked" ]; then
+              echo "CRITICAL: .env contains ${key}=${actual} — live trading blocked"
+              exit 1
+            fi
+          }
+
+          block_if_env_true() {
+            local key="$1"
+            local actual; actual="$(env_value "$key" "$PROJECT_DIR/.env")"
+            case "$actual" in
+              true|1|yes|on)
+                echo "CRITICAL: .env contains ${key}=${actual} — live trading blocked"
+                exit 1
+                ;;
+            esac
+          }
+
+          # ── 1. Verify systemd host ──────────────────────────────────────────
+          echo "[1/9] Verifying systemd host..."
+          if ! command -v systemctl &>/dev/null; then
+            echo "CRITICAL: systemctl not found — not a systemd host"
+            exit 1
+          fi
+          if [ ! -d /run/systemd/system ]; then
+            echo "CRITICAL: /run/systemd/system missing — systemd not running as PID 1"
+            exit 1
+          fi
+          SYSTEMD_PID="$(cat /proc/1/comm 2>/dev/null || echo unknown)"
+          if [ "$SYSTEMD_PID" != "systemd" ]; then
+            echo "WARNING: PID 1 is '$SYSTEMD_PID', not 'systemd' — container environment?"
+          fi
+          echo "  systemd host: OK ($SYSTEMD_PID as PID 1)"
+
+          # ── 2. Verify project directory ─────────────────────────────────────
+          echo "[2/9] Verifying project directory..."
+          if [ ! -d "$PROJECT_DIR" ]; then
+            echo "CRITICAL: PROJECT_DIR '$PROJECT_DIR' does not exist"
+            exit 1
+          fi
+          if [ ! -d "$PROJECT_DIR/.git" ]; then
+            echo "CRITICAL: '$PROJECT_DIR' is not a git repository"
+            exit 1
+          fi
+          echo "  Project dir OK: $PROJECT_DIR"
+
+          # ── 3. Safety gate: .env live-trading flags ─────────────────────────
+          echo "[3/9] Checking .env safety flags..."
+          cd "$PROJECT_DIR"
+          if [ -f .env ]; then
+            block_if_env_equals "TRADING_MODE" "live_real"
+            block_if_env_equals "TRADING_MODE" "paper_live"
+            block_if_env_true "ENABLE_REAL_ORDERS"
+            block_if_env_true "LIVE_TRADING_CONFIRMED"
+            TRADING_MODE_VAL="$(env_value TRADING_MODE .env)"
+            echo "  .env safety OK (TRADING_MODE=${TRADING_MODE_VAL:-not set})"
+          else
+            echo "  .env not found — will use systemd environment defaults"
+          fi
+
+          # ── 4. Git: fetch and reset to origin/main ──────────────────────────
+          echo "[4/9] Updating to origin/main..."
+          OLD_SHA="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
+          git fetch origin main 2>&1 | tail -5
+          git checkout main 2>&1 || true
+          git reset --hard origin/main 2>&1
+          NEW_SHA="$(git rev-parse HEAD)"
+          echo "  SHA: $OLD_SHA → $NEW_SHA"
+
+          # ── 5. Compile + test ───────────────────────────────────────────────
+          echo "[5/9] Running compile and tests..."
+          $PYTHON_BIN -m compileall src bot2 daily_log_fix_prompt_bot start.py -q
+          echo "  compileall: OK"
+
+          $PYTHON_BIN -m pytest tests/test_paper_mode.py -q --tb=short 2>&1 | tail -5
+          $PYTHON_BIN -m pytest tests/test_app_metrics_contract.py -q --tb=short 2>&1 | tail -5
+          $PYTHON_BIN -m pytest tests/test_v3_1_hotfix.py -q --tb=short 2>&1 | tail -5
+          $PYTHON_BIN -m pytest daily_log_fix_prompt_bot/tests -q --tb=short 2>&1 | tail -5
+          bash -n scripts/hetzner_paper_train_deploy_and_audit.sh
+          echo "  pytest + bash -n: OK"
+
+          # ── 6. Install systemd units ────────────────────────────────────────
+          echo "[6/9] Installing systemd units..."
+          chmod +x scripts/hetzner_paper_train_deploy_and_audit.sh
+
+          # If project is not at the expected /opt/CryptoMaster_srv path,
+          # create a symlink so the hard-coded paths in the unit files work.
+          EXPECTED_PATH="/opt/CryptoMaster_srv"
+          if [ "$PROJECT_DIR" != "$EXPECTED_PATH" ] && [ ! -e "$EXPECTED_PATH" ]; then
+            ln -sfn "$PROJECT_DIR" "$EXPECTED_PATH"
+            echo "  Symlink created: $EXPECTED_PATH → $PROJECT_DIR"
+          elif [ "$PROJECT_DIR" != "$EXPECTED_PATH" ]; then
+            echo "  WARNING: $EXPECTED_PATH already exists and is not a symlink to $PROJECT_DIR"
+            ls -la "$EXPECTED_PATH" || true
+          fi
+
+          # Install units (use override drop-in to set correct paths)
+          cp systemd/cryptomaster-autodeploy.service /etc/systemd/system/
+          cp systemd/cryptomaster-autodeploy.timer   /etc/systemd/system/
+
+          # Create drop-in to set actual service name and paths from secrets
+          DROPIN_DIR="/etc/systemd/system/cryptomaster-autodeploy.service.d"
+          mkdir -p "$DROPIN_DIR"
+          cat > "$DROPIN_DIR/override.conf" << DROPIN
+          [Service]
+          Environment=CRYPTOMASTER_PROJECT_DIR=$PROJECT_DIR
+          Environment=CRYPTOMASTER_SERVICE_NAME=$SERVICE_NAME
+          Environment=CRYPTOMASTER_REPORT_DIR=$REPORT_DIR
+          ReadWritePaths=$PROJECT_DIR $REPORT_DIR /tmp
+          DROPIN
+          echo "  Units installed + drop-in override written"
+
+          if [ "$DRY_RUN" = "true" ]; then
+            echo ""
+            echo "DRY_RUN=true — skipping daemon-reload, enable, start"
+            echo ""
+          else
+            # ── 7. Activate timer ─────────────────────────────────────────────
+            echo "[7/9] Activating timer..."
+            systemctl daemon-reload
+            systemctl enable --now cryptomaster-autodeploy.timer
+            echo "  Timer enabled"
+
+            # ── 8. Run first manual cycle ─────────────────────────────────────
+            echo "[8/9] Running first deploy/audit cycle..."
+            mkdir -p "$REPORT_DIR"
+            systemctl start cryptomaster-autodeploy.service || true
+            sleep 5
+          fi
+
+          # ── 9. Collect status ─────────────────────────────────────────────
+          echo "[9/9] Collecting status..."
+          echo ""
+
+          TIMER_ACTIVE="$(systemctl is-active cryptomaster-autodeploy.timer 2>/dev/null || echo inactive)"
+          SVC_ACTIVE="$(systemctl is-active "$SERVICE_NAME" 2>/dev/null || echo inactive)"
+          NEXT_TIMER="$(systemctl list-timers cryptomaster-autodeploy.timer --no-pager 2>/dev/null | grep cryptomaster | awk '{print $1, $2}' || echo unknown)"
+
+          DEPLOY_STATUS="not generated yet"
+          HEALTH_STATUS="not generated yet"
+          DEPLOY_STATUS_OK="no"
+          HEALTH_STATUS_OK="no"
+
+          if [ -f "$REPORT_DIR/latest_deploy_status.md" ]; then
+            DEPLOY_STATUS="$(grep -m1 '^[A-Z]' "$REPORT_DIR/latest_deploy_status.md" | head -1 || echo unknown)"
+            DEPLOY_STATUS_OK="yes"
+          fi
+          if [ -f "$REPORT_DIR/latest_health.md" ]; then
+            HEALTH_STATUS="$(grep -m1 '^\*\*\|^[A-Z]' "$REPORT_DIR/latest_health.md" | sed 's/\*//g' | head -1 || echo unknown)"
+            HEALTH_STATUS_OK="yes"
+          fi
+
+          # ── Mobile-readable final summary ─────────────────────────────────
+          echo ""
+          echo "════════════════════════════════════════════════════════════════"
+          echo "  FINAL STATUS — CryptoMaster Hetzner Timer Install"
+          echo "════════════════════════════════════════════════════════════════"
+          echo ""
+          echo "  Hetzner timer:           $TIMER_ACTIVE"
+          echo "  cryptomaster service:    $SVC_ACTIVE"
+          echo "  deployed git sha:        $NEW_SHA"
+          echo "  deploy status:           $DEPLOY_STATUS"
+          echo "  health status:           $HEALTH_STATUS"
+          echo "  next timer run:          $NEXT_TIMER"
+          echo ""
+          echo "  live_real enabled:       no (safety-checked)"
+          echo "  ENABLE_REAL_ORDERS:      no (safety-checked)"
+          echo "  LIVE_TRADING_CONFIRMED:  no (safety-checked)"
+          echo ""
+          echo "  latest_deploy_status.md: $DEPLOY_STATUS_OK"
+          echo "  latest_health.md:        $HEALTH_STATUS_OK"
+          echo ""
+
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "  *** DRY RUN — systemctl commands were skipped ***"
+            echo ""
+          fi
+
+          echo "  systemctl status cryptomaster:"
+          systemctl status "$SERVICE_NAME" --no-pager -n 20 2>&1 || true
+          echo ""
+          echo "  systemctl status cryptomaster-autodeploy.service:"
+          systemctl status cryptomaster-autodeploy.service --no-pager -n 10 2>&1 || true
+          echo ""
+          echo "  Timer list:"
+          systemctl list-timers cryptomaster-autodeploy.timer --no-pager 2>&1 || true
+          echo ""
+          echo "════════════════════════════════════════════════════════════════"
+          REMOTE_EOF
