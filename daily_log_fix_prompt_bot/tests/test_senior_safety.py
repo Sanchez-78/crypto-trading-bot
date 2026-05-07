@@ -15,7 +15,8 @@ for path in (REPO_ROOT, AUDITBOT_SRC):
     if path_s not in sys.path:
         sys.path.insert(0, path_s)
 
-from daily_log_fix_prompt_bot.config import load_config
+from daily_log_fix_prompt_bot.config import Settings, load_config
+from daily_log_fix_prompt_bot.log_fetcher import LogFetcher
 from daily_log_fix_prompt_bot.models import LogMetrics
 from daily_log_fix_prompt_bot.report_writer import ReportWriter
 
@@ -104,6 +105,58 @@ def test_app_metrics_window_count_matches_loaded_trades():
     assert snapshot["window"]["actual_loaded"] == 2
     assert snapshot["window"]["limit_requested"] == 100
     assert snapshot["window"]["limit_configured"] >= 2
+
+
+def test_log_fetcher_uses_local_journalctl_when_ssh_unavailable(monkeypatch):
+    cfg = Settings(service_name="cryptomaster", use_journalctl=True, max_log_lines=50000)
+
+    # Avoid real SSH creation in unit test.
+    monkeypatch.setattr("daily_log_fix_prompt_bot.log_fetcher.SSHClient", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("no ssh")))
+
+    class FakeCompleted:
+        returncode = 0
+        stdout = "2026-05-07 cryptomaster[1]: [BOOT_VERSION] git_sha=abc mode=paper_train\n"
+        stderr = ""
+
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        return FakeCompleted()
+
+    monkeypatch.setattr("daily_log_fix_prompt_bot.log_fetcher.subprocess.run", fake_run)
+
+    fetcher = LogFetcher(cfg)
+    logs = fetcher.fetch_logs()
+
+    assert "[BOOT_VERSION]" in logs
+    assert fetcher.last_source == "local_journalctl"
+    assert calls[0][:3] == ["journalctl", "-u", "cryptomaster"]
+
+
+def test_log_fetcher_falls_back_to_local_file_when_journalctl_fails(monkeypatch, tmp_path: Path):
+    cfg = Settings(service_name="cryptomaster", use_journalctl=True, max_log_lines=50000)
+    monkeypatch.setattr("daily_log_fix_prompt_bot.log_fetcher.SSHClient", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("no ssh")))
+
+    class FakeCompleted:
+        returncode = 1
+        stdout = ""
+        stderr = "journal unavailable"
+
+    monkeypatch.setattr("daily_log_fix_prompt_bot.log_fetcher.subprocess.run", lambda *args, **kwargs: FakeCompleted())
+
+    # _fetch_local_logs checks ../bot.log relative to cwd.
+    workdir = tmp_path / "project" / "daily_log_fix_prompt_bot"
+    workdir.mkdir(parents=True)
+    bot_log = tmp_path / "project" / "bot.log"
+    bot_log.write_text("local bot log line", encoding="utf-8")
+    monkeypatch.chdir(workdir)
+
+    fetcher = LogFetcher(cfg)
+    logs = fetcher.fetch_logs()
+
+    assert "local bot log line" in logs
+    assert fetcher.last_source == "local_file"
 
 
 def test_run_daily_analysis_saves_sanitized_logs_not_raw_by_default(monkeypatch, tmp_path: Path):
