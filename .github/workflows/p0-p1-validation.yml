@@ -1,0 +1,45 @@
+name: P0/P1 Senior Fix Validation
+
+on:
+  push:
+    branches:
+      - p0-p1-senior-fixes-v31
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Compile project
+        run: |
+          python -m compileall src bot2 daily_log_fix_prompt_bot start.py
+
+      - name: Run selected regression tests
+        run: |
+          pytest tests/test_paper_mode.py -q
+          pytest tests/test_app_metrics_contract.py -q
+          pytest tests/test_v3_1_hotfix.py -q
+          pytest daily_log_fix_prompt_bot/tests -q
