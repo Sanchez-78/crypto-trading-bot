@@ -9,7 +9,7 @@ PROJECT_DIR="${CRYPTOMASTER_PROJECT_DIR:-/opt/CryptoMaster_srv}"
 SERVICE_NAME="${CRYPTOMASTER_SERVICE_NAME:-cryptomaster}"
 REPORT_DIR="${CRYPTOMASTER_REPORT_DIR:-$PROJECT_DIR/reports}"
 LOCK_FILE="${CRYPTOMASTER_DEPLOY_LOCK:-/tmp/cryptomaster-paper-train-deploy.lock}"
-PYTHON_BIN="${PYTHON_BIN:-python}"
+PYTHON_BIN="${PYTHON_BIN:-python3}"
 RUN_FULL_TESTS="${RUN_FULL_TESTS:-true}"
 REMOTE_NAME="${REMOTE_NAME:-origin}"
 BRANCH_NAME="${BRANCH_NAME:-main}"
@@ -158,11 +158,11 @@ fi
 # Restart only when there was a code change. Still run audit every cycle.
 if [ "$changed" = "true" ]; then
   echo "[$RUN_TS] restarting $SERVICE_NAME" | tee -a "$LOG_FILE"
-  sudo systemctl restart "$SERVICE_NAME"
+  systemctl restart "$SERVICE_NAME"
   sleep 8
 fi
 
-if sudo systemctl is-active --quiet "$SERVICE_NAME"; then
+if systemctl is-active --quiet "$SERVICE_NAME"; then
   service_active="true"
 else
   service_active="false"
@@ -184,7 +184,8 @@ export SAVE_UNSANITIZED_RAW_LOGS="false"
 
 if [ -d daily_log_fix_prompt_bot ]; then
   echo "[$RUN_TS] running audit bot health/report cycle" | tee -a "$LOG_FILE"
-  $PYTHON_BIN -m daily_log_fix_prompt_bot.src.daily_log_fix_prompt_bot.main | tee -a "$LOG_FILE" || true
+  PYTHONPATH="$PROJECT_DIR/daily_log_fix_prompt_bot/src" \
+    $PYTHON_BIN -m daily_log_fix_prompt_bot.main | tee -a "$LOG_FILE" || true
 fi
 
 status="OK"

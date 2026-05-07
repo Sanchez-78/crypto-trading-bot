@@ -10,6 +10,8 @@ Environment=CRYPTOMASTER_PROJECT_DIR=/opt/CryptoMaster_srv
 Environment=CRYPTOMASTER_SERVICE_NAME=cryptomaster
 Environment=CRYPTOMASTER_REPORT_DIR=/opt/CryptoMaster_srv/reports
 Environment=RUN_FULL_TESTS=true
+Environment=PYTHON_BIN=python3
+Environment="PATH=/usr/local/bin:/usr/bin:/bin"
 ExecStart=/bin/bash /opt/CryptoMaster_srv/scripts/hetzner_paper_train_deploy_and_audit.sh
 
 # Hardening
