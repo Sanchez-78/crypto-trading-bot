@@ -1,0 +1,129 @@
+name: Hetzner Paper Train Deploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: hetzner-paper-train-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Validate before deploy
+        run: |
+          python -m compileall src bot2 daily_log_fix_prompt_bot start.py
+          pytest tests/test_paper_mode.py -q
+          pytest tests/test_app_metrics_contract.py -q
+          pytest tests/test_v3_1_hotfix.py -q
+          pytest daily_log_fix_prompt_bot/tests -q
+
+      - name: Verify deploy secrets
+        env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          HETZNER_USER: ${{ secrets.HETZNER_USER }}
+          HETZNER_SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
+          HETZNER_PROJECT_DIR: ${{ secrets.HETZNER_PROJECT_DIR }}
+        run: |
+          test -n "$HETZNER_HOST" || (echo "Missing HETZNER_HOST" && exit 1)
+          test -n "$HETZNER_USER" || (echo "Missing HETZNER_USER" && exit 1)
+          test -n "$HETZNER_SSH_KEY" || (echo "Missing HETZNER_SSH_KEY" && exit 1)
+          test -n "$HETZNER_PROJECT_DIR" || (echo "Missing HETZNER_PROJECT_DIR" && exit 1)
+
+      - name: Prepare SSH key
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.HETZNER_SSH_KEY }}" > ~/.ssh/hetzner_key
+          chmod 600 ~/.ssh/hetzner_key
+          ssh-keyscan -H "${{ secrets.HETZNER_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Deploy PAPER_TRAIN to Hetzner
+        env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          HETZNER_USER: ${{ secrets.HETZNER_USER }}
+          HETZNER_PROJECT_DIR: ${{ secrets.HETZNER_PROJECT_DIR }}
+          SERVICE_NAME: ${{ secrets.HETZNER_SERVICE_NAME || 'cryptomaster' }}
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          ssh -i ~/.ssh/hetzner_key "$HETZNER_USER@$HETZNER_HOST" "bash -s" <<'REMOTE'
+          set -euo pipefail
+
+          PROJECT_DIR="${HETZNER_PROJECT_DIR}"
+          SERVICE_NAME="${SERVICE_NAME:-cryptomaster}"
+          EXPECTED_SHA="${EXPECTED_SHA}"
+
+          cd "$PROJECT_DIR"
+          echo "[DEPLOY] project=$PROJECT_DIR service=$SERVICE_NAME expected_sha=$EXPECTED_SHA"
+
+          git fetch origin main
+          git checkout main
+          git reset --hard origin/main
+
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          test "$ACTUAL_SHA" = "$EXPECTED_SHA" || (echo "SHA mismatch actual=$ACTUAL_SHA expected=$EXPECTED_SHA" && exit 1)
+
+          if [ -f .env ]; then
+            echo "[DEPLOY] checking .env safety flags"
+            if grep -E '^TRADING_MODE=live_real\b' .env; then
+              echo "BLOCKED: TRADING_MODE=live_real in .env"
+              exit 1
+            fi
+            if grep -E '^ENABLE_REAL_ORDERS=true\b' .env; then
+              echo "BLOCKED: ENABLE_REAL_ORDERS=true in .env"
+              exit 1
+            fi
+            if grep -E '^LIVE_TRADING_CONFIRMED=true\b' .env; then
+              echo "BLOCKED: LIVE_TRADING_CONFIRMED=true in .env"
+              exit 1
+            fi
+          fi
+
+          export TRADING_MODE=paper_train
+          export ENABLE_REAL_ORDERS=false
+          export LIVE_TRADING_CONFIRMED=false
+
+          python -m compileall src bot2 daily_log_fix_prompt_bot start.py
+
+          if [ -f requirements.txt ]; then
+            python -m pip install -r requirements.txt
+          fi
+
+          sudo systemctl restart "$SERVICE_NAME"
+          sleep 8
+          sudo systemctl is-active --quiet "$SERVICE_NAME"
+
+          echo "[DEPLOY] service active"
+          journalctl -u "$SERVICE_NAME" -n 120 --no-pager | grep -E "BOOT_VERSION|TRADING_MODE|live_allowed|PAPER_TRAIN|LEARNING_UPDATE|APP_METRICS_SAVE" || true
+          REMOTE
+
+      - name: Post-deploy status summary
+        env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          HETZNER_USER: ${{ secrets.HETZNER_USER }}
+          SERVICE_NAME: ${{ secrets.HETZNER_SERVICE_NAME || 'cryptomaster' }}
+        run: |
+          ssh -i ~/.ssh/hetzner_key "$HETZNER_USER@$HETZNER_HOST" "journalctl -u ${SERVICE_NAME:-cryptomaster} -n 300 --no-pager | tail -n 120"
