@@ -15,7 +15,26 @@ main update
 → repeat every 2 hours
 ```
 
-This avoids relying on GitHub Actions and avoids requiring the user to run bash from mobile.
+This avoids relying on GitHub Actions and avoids requiring the user to run bash from mobile after the one-time real Hetzner install.
+
+## Important environment note
+
+This timer requires a real Linux host with systemd as PID 1. It will not activate correctly inside a Docker/container sandbox where `systemctl` cannot control services.
+
+Expected real server state:
+
+```text
+systemd is PID 1
+cryptomaster service exists
+project path is /opt/CryptoMaster_srv or CRYPTOMASTER_PROJECT_DIR overrides it
+Python environment can run python3 -m pytest
+```
+
+If your real project path is `/home/user/crypto-trading-bot`, either update the systemd Environment values or create the symlink once:
+
+```bash
+sudo ln -sfn /home/user/crypto-trading-bot /opt/CryptoMaster_srv
+```
 
 ## Files
 
@@ -62,12 +81,42 @@ LIVE_TRADING_CONFIRMED=false
 
 The timer never enables paper_live or live_real.
 
-## Install on Hetzner
+## SSH log fetching safety
+
+Remote SSH log fetching uses strict host key checking by default.
+
+Recommended setup before using remote SSH mode:
+
+```bash
+mkdir -p ~/.ssh
+ssh-keyscan -H <HETZNER_HOST> >> ~/.ssh/known_hosts
+```
+
+Relevant env vars:
+
+```text
+SSH_KNOWN_HOSTS_PATH=~/.ssh/known_hosts
+SSH_STRICT_HOST_KEY_CHECKING=true
+```
+
+Only disable strict mode for controlled local/dev troubleshooting:
+
+```text
+SSH_STRICT_HOST_KEY_CHECKING=false
+```
+
+## Install on real Hetzner
 
 Run once on the Hetzner server after pulling this commit:
 
 ```bash
 cd /opt/CryptoMaster_srv
+python3 -m compileall src bot2 daily_log_fix_prompt_bot start.py
+python3 -m pytest tests/test_paper_mode.py -q
+python3 -m pytest tests/test_app_metrics_contract.py -q
+python3 -m pytest tests/test_v3_1_hotfix.py -q
+python3 -m pytest daily_log_fix_prompt_bot/tests -q
+bash -n scripts/hetzner_paper_train_deploy_and_audit.sh
 chmod +x scripts/hetzner_paper_train_deploy_and_audit.sh
 sudo cp systemd/cryptomaster-autodeploy.service /etc/systemd/system/cryptomaster-autodeploy.service
 sudo cp systemd/cryptomaster-autodeploy.timer /etc/systemd/system/cryptomaster-autodeploy.timer
@@ -78,7 +127,7 @@ sudo systemctl enable --now cryptomaster-autodeploy.timer
 ## Check status
 
 ```bash
-systemctl list-timers cryptomaster-autodeploy.timer
+systemctl list-timers cryptomaster-autodeploy.timer --no-pager
 systemctl status cryptomaster-autodeploy.service --no-pager
 journalctl -u cryptomaster-autodeploy.service -n 200 --no-pager
 ```
@@ -141,10 +190,10 @@ Override via systemd Environment lines if needed:
 CRYPTOMASTER_PROJECT_DIR=/path/to/project
 CRYPTOMASTER_SERVICE_NAME=cryptomaster
 CRYPTOMASTER_REPORT_DIR=/path/to/reports
-PYTHON_BIN=/path/to/python
+PYTHON_BIN=/path/to/python3
 RUN_FULL_TESTS=true|false
 ```
 
 ## Notes
 
-The systemd service is expected to run as root unless a dedicated deployment user with permission to restart `cryptomaster` is configured. The service is install-only and does not activate until `systemctl enable --now cryptomaster-autodeploy.timer` is run once on Hetzner.
+The systemd service is expected to run as root unless a dedicated deployment user with permission to restart `cryptomaster` is configured. The service is install-only and does not activate until `systemctl enable --now cryptomaster-autodeploy.timer` is run once on a real Hetzner VPS.
