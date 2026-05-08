@@ -1272,3 +1272,256 @@ After all 49 bugs fixed, these conditions can still block trading and are **inte
 | BUG-NEW-G | adaptive threshold | MEDIUM | `get_ws_threshold()` 75th-percentile rises proportionally with improving features — feedback loop self-neutralizes |
 
 *Session 3 analysis completed: 2026-05-02 | Bugs BUG-050 to BUG-059 + known open issues inventory*
+
+---
+
+## Session 4 — Hetzner Deploy/Audit Infrastructure Review (2026-05-07)
+
+**Method:** Full review of `scripts/hetzner_paper_train_deploy_and_audit.sh`, `systemd/`, `daily_log_fix_prompt_bot/`, and one-time Hetzner install validation  
+**New bugs found:** BUG-060 to BUG-074  
+**Commits:** `b399efc` (`.gitignore`), `fb75983` (PR #6 merge — deploy/audit infrastructure), PR #4 (health reporter)
+
+---
+
+### BUG-060 — `.env` safety checks missed 5 of 10 dangerous live-trading variants [FIXED]
+
+**File:** `scripts/hetzner_paper_train_deploy_and_audit.sh`  
+**Severity:** CRITICAL  
+**Merged:** PR #6 (`fb75983`)
+
+The deploy script used simple `grep` to block dangerous `.env` configuration before restarting the bot:
+
+```bash
+grep -E '^TRADING_MODE=live_real\b' .env
+grep -E '^ENABLE_REAL_ORDERS=true\b' .env
+grep -E '^LIVE_TRADING_CONFIRMED=true\b' .env
+```
+
+These patterns silently passed (no block) when the `.env` contained:
+- Quoted values: `TRADING_MODE="live_real"`
+- `export` prefix: `export TRADING_MODE=live_real`
+- Uppercase: `TRADING_MODE=LIVE_REAL`
+- Truthy variants: `ENABLE_REAL_ORDERS=1`, `=yes`, `=on`
+- Inline comments: `ENABLE_REAL_ORDERS=true  # set by ops`
+
+A developer could unintentionally deploy to live-real mode with any of these common `.env` forms.
+
+**Fix:** Replaced grep-based checks with an `env_value()` awk helper that handles export prefix, whitespace, quotes, inline comments, and case normalisation. Wrapper functions `block_if_env_equals()` and `block_if_env_true()` cover all truthy variants (`true`, `1`, `yes`, `on`).
+
+---
+
+### BUG-061 — Audit bot invoked via wrong Python namespace path [FIXED]
+
+**File:** `scripts/hetzner_paper_train_deploy_and_audit.sh`  
+**Severity:** CRITICAL  
+**Merged:** PR #6 (`fb75983`)
+
+The deploy script invoked the audit bot as:
+
+```bash
+$PYTHON_BIN -m daily_log_fix_prompt_bot.src.daily_log_fix_prompt_bot.main
+```
+
+The package source lives at `daily_log_fix_prompt_bot/src/daily_log_fix_prompt_bot/`. Traversing `src` as a namespace package segment (PEP 420) worked accidentally but produced wrong logger names (`daily_log_fix_prompt_bot.src.daily_log_fix_prompt_bot.*`) and would break with any `__init__.py` added at the `src/` level.
+
+**Fix:**
+
+```bash
+PYTHONPATH="$PROJECT_DIR/daily_log_fix_prompt_bot/src" \
+  $PYTHON_BIN -m daily_log_fix_prompt_bot.main
+```
+
+---
+
+### BUG-062 — `PYTHON_BIN` defaulted to `python` (Python 2 / not found) [FIXED]
+
+**File:** `scripts/hetzner_paper_train_deploy_and_audit.sh`  
+**Severity:** CRITICAL  
+**Merged:** PR #6 (`fb75983`)
+
+`PYTHON_BIN="${PYTHON_BIN:-python}"` silently invokes Python 2 on older systems where `python` maps to `python2`, or fails with `command not found` on Debian/Ubuntu 20+ where only `python3` is available. All downstream compile and test steps would then fail or use the wrong interpreter.
+
+**Fix:** Default changed to `python3`.
+
+---
+
+### BUG-063 — `sudo systemctl` blocked by `NoNewPrivileges=true` in systemd service [FIXED]
+
+**File:** `scripts/hetzner_paper_train_deploy_and_audit.sh`, `systemd/cryptomaster-autodeploy.service`  
+**Severity:** CRITICAL  
+**Merged:** PR #6 (`fb75983`)
+
+The deploy script called `sudo systemctl restart "$SERVICE_NAME"` and `sudo systemctl is-active`. The service unit contained `NoNewPrivileges=true`, which blocks PAM-based `sudo` privilege escalation even when the process is already running as root. Every service restart attempt failed with a permission error when run under the systemd timer.
+
+**Fix:** Removed `sudo` from all `systemctl` calls. The script runs as root under the systemd service unit; `sudo` is unnecessary and contraindicated by `NoNewPrivileges`.
+
+---
+
+### BUG-064 — `lm_health` key in learning-health fallback violated purity contract [FIXED]
+
+**File:** `src/services/app_metrics_contract.py`  
+**Severity:** HIGH  
+**Fixed:** Direct commit this session
+
+The learning health fallback chain included `m.get("lm_health")`:
+
+```python
+health = str(
+    m.get("lm_health")
+    or m.get("confidence_momentum")
+    or m.get("learning_health")
+    or "UNKNOWN"
+)
+```
+
+`test_app_metrics_contract_has_no_hidden_learning_monitor_import` asserts the string `lm_health` is absent from the source, enforcing that `app_metrics_contract` has no hidden coupling to the deprecated `learning_monitor` module. The test failed.
+
+**Fix:** Removed `m.get("lm_health")` from the chain. Remaining fallback: `confidence_momentum` → `learning_health` → `UNKNOWN`.
+
+---
+
+### BUG-065 — `reports/` directory missing from `.gitignore` [FIXED]
+
+**File:** `.gitignore`  
+**Severity:** MEDIUM  
+**Fixed:** Commit `b399efc`
+
+The `reports/` directory generated by the audit bot and deploy loop at runtime was not in `.gitignore`. Any audit bot run left untracked files in the working tree, causing git status hooks, CI dirty-state checks, and manual `git status` to report false positives.
+
+**Fix:** Added `reports/` to `.gitignore`.
+
+---
+
+### BUG-066 — Health reporter missing from audit bot (architecture gap) [FIXED]
+
+**Files:** `daily_log_fix_prompt_bot/src/daily_log_fix_prompt_bot/health_reporter.py` (new), `main.py` (updated)  
+**Severity:** MEDIUM  
+**Merged:** PR #4
+
+The audit bot analysed logs and wrote a human-readable summary, but produced no machine-readable health signal. The deploy script had no structured way to determine whether the bot was operating safely without parsing markdown.
+
+**Fix:** Added `health_reporter.py` with:
+- `build_hetzner_health(logs, service_name, log_source, generated_at)` — pure function returning a schema-versioned dict (`hetzner_health_v1`)
+- `write_health_reports(dated_dir, local_report_dir, health)` — writes `hetzner_health.json`, `hetzner_health.md`, `latest_health.json`, `latest_health.md`
+- Status classification: CRITICAL (live-real flags, error counts, crash loop) → UNKNOWN (no boot/mode detected) → WARNING → OK
+- Readiness gates: `paper_live_ready` requires ≥10 learning updates + ≥10 exits + OK status; `live_real_guarded_ready` always False
+
+---
+
+### BUG-067 — SSH host key verification disabled (MITM vulnerability) [OPEN]
+
+**File:** `daily_log_fix_prompt_bot/src/daily_log_fix_prompt_bot/ssh_client.py`, line ~26  
+**Severity:** HIGH
+
+```python
+self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+```
+
+`AutoAddPolicy` accepts any host key on first connection without verification, making the SSH client vulnerable to man-in-the-middle attacks. An attacker between the audit bot and Hetzner could intercept SSH credentials, inject fake log data, or forge health reports.
+
+**Recommended fix:** Use `paramiko.RejectPolicy()` with an explicit known-hosts file, or load the expected host key from a config value (`HETZNER_HOST_KEY_FINGERPRINT`).
+
+---
+
+### BUG-068 — Shell command injection in SSH log fetcher via config values [OPEN]
+
+**File:** `daily_log_fix_prompt_bot/src/daily_log_fix_prompt_bot/log_fetcher.py`, lines ~74–90  
+**Severity:** HIGH
+
+Remote commands are built with f-strings using environment variable config:
+
+```python
+command = f"journalctl -u {self.config.service_name} --since ..."
+command = f"tail -n {self.config.max_log_lines} {self.config.remote_log_glob}"
+```
+
+Shell metacharacters in `service_name`, `max_log_lines`, or `remote_log_glob` are passed unescaped to the remote shell, enabling remote code execution on the log server.
+
+**Recommended fix:** Validate `service_name` against `^[a-zA-Z0-9_-]+$`, `max_log_lines` as a positive integer, and use `shlex.quote()` for any value interpolated into a shell command string.
+
+---
+
+### BUG-069 — `../bot.log` relative path in local log fallback resolves to CWD-dependent path [OPEN]
+
+**File:** `daily_log_fix_prompt_bot/src/daily_log_fix_prompt_bot/log_fetcher.py`, line ~143  
+**Severity:** HIGH
+
+```python
+local_log = Path("../bot.log")
+```
+
+This resolves relative to the process working directory at runtime. When the audit bot is invoked via systemd (`WorkingDirectory=/opt/CryptoMaster_srv`), cron, or a test runner, the path resolves differently than expected. The local fallback silently returns no logs, causing every audit run in non-SSH environments to produce an UNKNOWN health status.
+
+**Recommended fix:** Use an absolute path from config (`config.local_log_path`), or resolve relative to the package root: `Path(__file__).parents[4] / "bot.log"`.
+
+---
+
+### BUG-070 — `paramiko` not declared in `requirements.txt` [OPEN]
+
+**File:** `daily_log_fix_prompt_bot/` package  
+**Severity:** MEDIUM
+
+`paramiko` is imported by `ssh_client.py` but absent from `daily_log_fix_prompt_bot/requirements.txt` (or any package manifest). A fresh `pip install -e .` does not install it; SSH log fetching silently falls back to local mode, often producing UNKNOWN health with no diagnostic message about the missing dependency.
+
+**Recommended fix:** Add `paramiko>=3.0` to the audit bot's requirements.
+
+---
+
+### BUG-071 — Race condition in disk-retry queue: list mutated across threads without consistent locking [OPEN]
+
+**File:** `daily_log_fix_prompt_bot/src/daily_log_fix_prompt_bot/disk_retry.py`  
+**Severity:** MEDIUM
+
+`get_pending_queue_stats()` reads `len(_pending_save_queue)` without holding `_retry_lock`. The retry worker updates the list with `_pending_save_queue[:] = still_pending` inside the lock. Concurrent reads produce stale counts. Additionally, `_retry_running = False` is set outside the lock, allowing a racing `queue_for_retry()` call to start a second thread before the first exits.
+
+**Recommended fix:** Replace the list with `queue.Queue`; use `threading.Event` for shutdown signalling.
+
+---
+
+### BUG-072 — Bare `except Exception` in config loader masks all configuration errors [OPEN]
+
+**File:** `daily_log_fix_prompt_bot/src/daily_log_fix_prompt_bot/config.py`, line ~21  
+**Severity:** MEDIUM
+
+```python
+except Exception:
+    return default
+```
+
+This catches `SystemExit`, `KeyboardInterrupt`, and `MemoryError` alongside expected `ValueError`/`TypeError`. A misconfigured env var (`LOG_LOOKBACK_HOURS=abc`) silently uses the default with no log output, making configuration errors invisible during deployment.
+
+**Recommended fix:** `except (ValueError, TypeError)` with a `log.warning()` before returning the default.
+
+---
+
+### BUG-073 — Retry thread uses `time.sleep(7200)` with no interrupt mechanism [OPEN]
+
+**File:** `daily_log_fix_prompt_bot/src/daily_log_fix_prompt_bot/disk_retry.py`  
+**Severity:** LOW
+
+`stop_retry_thread()` joins with a 5-second timeout but the thread sleeps 7,200 seconds between retries. The join always times out; the thread flag `_retry_running = False` is set but the thread continues sleeping. Process shutdown with pending retries hangs for up to 2 hours or leaves a dangling thread.
+
+**Recommended fix:** Replace `time.sleep(7200)` with `_stop_event.wait(timeout=7200)` using `threading.Event`; set the event in `stop_retry_thread()`.
+
+---
+
+### BUG-074 — Regex patterns in sanitizer use unbounded quantifiers (ReDoS risk) [OPEN]
+
+**File:** `daily_log_fix_prompt_bot/src/daily_log_fix_prompt_bot/sanitizer.py`  
+**Severity:** LOW
+
+Patterns such as `[a-zA-Z0-9+/]{40,}={0,2}` and `password['\"]?\s*[:=]\s*['\"]?[^\s'\"]+` use unbounded repetition. Adversarially crafted log lines that match the prefix but not the suffix trigger catastrophic backtracking, pinning a CPU core for seconds per line.
+
+**Recommended fix:** Cap all quantifiers (`{40,128}` not `{40,}`); test patterns against adversarial inputs; consider the `regex` library for guaranteed linear-time matching.
+
+---
+
+### Infrastructure Cross-cutting Notes (Session 4)
+
+**Two-pytest-installation trap:** The reference Hetzner server had two pytest installs. Bare `pytest` resolved to `/root/.local/bin/pytest` (no `firebase_admin` in its environment) and consistently failed Firebase-dependent tests. `python3 -m pytest` resolved the correct environment and passed all 230 tests. All scripts and CI must use `python3 -m pytest`, never bare `pytest`.
+
+**Path symlink requirement undocumented:** The systemd units hard-code `/opt/CryptoMaster_srv`. The actual project root is `/home/user/crypto-trading-bot`. A symlink `ln -sfn /home/user/crypto-trading-bot /opt/CryptoMaster_srv` is required on every fresh server provisioning and is not mentioned in any deployment documentation. This should be added to `docs/HETZNER_CONNECTED_DEPLOY_AUDIT_LOOP.md`.
+
+**systemd unavailable in Docker:** This session was conducted inside a Docker container where systemd is not PID 1. The timer/service unit files were installed to `/etc/systemd/system/` but `systemctl daemon-reload` fails. All validation was performed by running the deploy script and audit bot directly. The deploy script correctly reported CRITICAL (no `cryptomaster` service) and the audit bot correctly wrote UNKNOWN health (no logs available). All report pipelines were verified to function correctly.
+
+*Session 4 analysis completed: 2026-05-07 | BUG-060 to BUG-074 | Infrastructure: deploy script, systemd, audit bot*
