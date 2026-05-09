@@ -120,7 +120,7 @@ env_value() {
         sub(/[[:space:]]+#.*$/, "", v)
         gsub(/^[[:space:]]+|[[:space:]]+$/, "", v)
         gsub(/^\047|\047$/, "", v)
-        gsub(/^\"|\"$/, "", v)
+        gsub(/^"|"$/, "", v)
         print tolower(v)
       }
     }
@@ -170,6 +170,10 @@ if [ -f .env ]; then
   block_if_env_true "ENABLE_REAL_ORDERS"
   block_if_env_true "LIVE_TRADING_CONFIRMED"
 fi
+
+# Git 2.35+ rejects repos owned by a different user (common when systemd
+# runs as root but the repo was cloned by another user). Mark safe explicitly.
+git config --global --add safe.directory "$PROJECT_DIR" 2>/dev/null || true
 
 old_sha="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
 git fetch "$REMOTE_NAME" "$BRANCH_NAME" | tee -a "$LOG_FILE"
