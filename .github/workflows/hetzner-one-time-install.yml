@@ -143,7 +143,7 @@ jobs:
                   sub(/[[:space:]]+#.*$/, "", v)
                   gsub(/^[[:space:]]+|[[:space:]]+$/, "", v)
                   gsub(/^\047|\047$/, "", v)
-                  gsub(/^\"|\"$/, "", v)
+                  gsub(/^"|"$/, "", v)
                   print tolower(v)
                 }
               }' "$file" | tail -n 1
@@ -224,6 +224,12 @@ jobs:
           echo "[5/9] Running compile and tests..."
           $PYTHON_BIN -m compileall src bot2 daily_log_fix_prompt_bot start.py -q
           echo "  compileall: OK"
+
+          # Ensure pytest is available — not always in system python on Hetzner images
+          if ! $PYTHON_BIN -m pytest --version &>/dev/null 2>&1; then
+            echo "  pytest not found in $PYTHON_BIN; installing to user site..."
+            $PYTHON_BIN -m pip install pytest --user -q
+          fi
 
           $PYTHON_BIN -m pytest tests/test_paper_mode.py -q --tb=short 2>&1 | tail -5
           $PYTHON_BIN -m pytest tests/test_app_metrics_contract.py -q --tb=short 2>&1 | tail -5
