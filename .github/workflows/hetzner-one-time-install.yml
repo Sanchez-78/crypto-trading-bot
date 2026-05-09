@@ -227,8 +227,12 @@ jobs:
 
           # Ensure pytest is available — not always in system python on Hetzner images
           if ! $PYTHON_BIN -m pytest --version &>/dev/null 2>&1; then
-            echo "  pytest not found in $PYTHON_BIN; installing to user site..."
-            $PYTHON_BIN -m pip install pytest --user -q
+            echo "  pytest not found; installing..."
+            # Try pip --user first; on Debian 12+ PEP 668 requires --break-system-packages
+            # (installs to ~/.local, does not modify system packages)
+            if ! $PYTHON_BIN -m pip install pytest --user -q --break-system-packages 2>/dev/null; then
+              apt-get install -y -q python3-pytest
+            fi
           fi
 
           $PYTHON_BIN -m pytest tests/test_paper_mode.py -q --tb=short 2>&1 | tail -5
