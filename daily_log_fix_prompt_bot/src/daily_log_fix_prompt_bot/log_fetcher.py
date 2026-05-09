@@ -10,8 +10,9 @@ from .ssh_client import SSHClient
 
 log = logging.getLogger(__name__)
 
-# Only alphanumeric, slashes, dots, asterisks, hyphens, underscores — no shell metacharacters.
-_SAFE_GLOB_RE = re.compile(r"^[a-zA-Z0-9/_.*-]+$")
+# Allow safe glob chars: alphanumeric, path separators, wildcards (* ? [ ]), hyphen, underscore.
+# Reject shell metacharacters: ; | & $ ` > < ( ) { } space newline etc.
+_SAFE_GLOB_RE = re.compile(r"^[a-zA-Z0-9/_.*?\[\]-]+$")
 
 
 class LogFetcher:
@@ -154,7 +155,7 @@ class LogFetcher:
 
     def _fetch_local_logs(self) -> str:
         """Fetch logs from local bot.log file."""
-        local_log = Path(self.config.project_root) / "bot.log"
+        local_log = Path(self.config.project_root).expanduser() / "bot.log"
         if local_log.exists():
             try:
                 with open(local_log, "r", encoding="utf-8", errors="ignore") as f:
