@@ -12,6 +12,7 @@ Environment=CRYPTOMASTER_REPORT_DIR=/opt/CryptoMaster_srv/reports
 Environment=RUN_FULL_TESTS=true
 Environment=PYTHON_BIN=python3
 Environment="PATH=/usr/local/bin:/usr/bin:/bin"
+ExecStartPre=/bin/bash -c 'git config --global --add safe.directory "${CRYPTOMASTER_PROJECT_DIR}" 2>/dev/null || true'
 ExecStart=/bin/bash /opt/CryptoMaster_srv/scripts/hetzner_paper_train_deploy_and_audit.sh
 
 # Hardening
