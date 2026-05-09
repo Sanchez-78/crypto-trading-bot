@@ -16,7 +16,7 @@ for path in (REPO_ROOT, AUDITBOT_SRC):
         sys.path.insert(0, path_s)
 
 from daily_log_fix_prompt_bot.config import Settings, load_config
-from daily_log_fix_prompt_bot.log_fetcher import LogFetcher
+from daily_log_fix_prompt_bot.log_fetcher import LogFetcher, _SAFE_GLOB_RE
 from daily_log_fix_prompt_bot.models import LogMetrics
 from daily_log_fix_prompt_bot.report_writer import ReportWriter
 
@@ -299,3 +299,53 @@ def test_run_daily_analysis_raw_logs_only_when_enabled(monkeypatch, tmp_path: Pa
 
     assert (report_dir / "raw_logs.txt").exists()
     assert "SECRET123" in (report_dir / "raw_logs.txt").read_text(encoding="utf-8")
+
+
+# ── Glob regex tests ────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("pattern", [
+    "/var/log/cryptomaster/*.log",
+    "/var/log/cryptomaster/bot-2026-05-??.log",
+    "/var/log/cryptomaster/bot-[0-9].log",
+    "/var/log/cryptomaster/bot-[abc].log",
+    "/opt/CryptoMaster_srv/bot.log",
+    "/var/log/*.log",
+])
+def test_safe_glob_re_allows_valid_patterns(pattern):
+    assert _SAFE_GLOB_RE.match(pattern), f"Should be allowed: {pattern!r}"
+
+
+@pytest.mark.parametrize("pattern", [
+    "/var/log/cryptomaster/*.log; rm -rf /",
+    "/var/log/cryptomaster/*.log | cat",
+    "/var/log/cryptomaster/$(whoami).log",
+    "/var/log/cryptomaster/`whoami`.log",
+    "/var/log/cryptomaster/*.log > /tmp/x",
+    "/var/log/cryptomaster/*.log\n/etc/passwd",
+])
+def test_safe_glob_re_rejects_metacharacters(pattern):
+    assert not _SAFE_GLOB_RE.match(pattern), f"Should be rejected: {pattern!r}"
+
+
+# ── expanduser test ─────────────────────────────────────────────────────────
+
+
+def test_fetch_local_logs_expands_user_tilde(monkeypatch, tmp_path: Path):
+    """_fetch_local_logs calls expanduser() so ~/... paths resolve correctly."""
+    home = tmp_path / "fakehome"
+    project = home / "CryptoMaster_srv"
+    project.mkdir(parents=True)
+    bot_log = project / "bot.log"
+    bot_log.write_text("tilde-expand log line", encoding="utf-8")
+
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr(
+        "daily_log_fix_prompt_bot.log_fetcher.SSHClient",
+        lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("no ssh")),
+    )
+
+    cfg = Settings(project_root="~/CryptoMaster_srv", use_journalctl=False)
+    fetcher = LogFetcher(cfg)
+    logs = fetcher._fetch_local_logs()
+    assert "tilde-expand log line" in logs
