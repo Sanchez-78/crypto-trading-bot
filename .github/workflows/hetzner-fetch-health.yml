@@ -1,0 +1,154 @@
+name: Hetzner Health Fetch
+
+# Read-only observability workflow.
+# SSHes into Hetzner, reads latest_health.md / latest_deploy_status.md and
+# a sanitized journalctl tail, then publishes them as GitHub Actions artifacts.
+#
+# SAFETY: no writes, no restarts, no trading-core changes. Read-only.
+#
+# Required GitHub Secrets (shared with hetzner-one-time-install):
+#   HETZNER_HOST          - server IP or hostname
+#   HETZNER_USER          - SSH login user
+#   HETZNER_SSH_KEY       - private key
+#   HETZNER_PROJECT_DIR   - absolute path on server
+#   HETZNER_SERVICE_NAME  - systemd service name
+#
+# Optional:
+#   HETZNER_PORT          - SSH port (default 22)
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Every 2 hours — aligns with the 2h autodeploy timer cadence.
+    - cron: '5 */2 * * *'
+
+jobs:
+  fetch:
+    name: Fetch health reports from Hetzner
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── 1. SSH setup ────────────────────────────────────────────────────────
+      - name: Set up SSH key and pin host key
+        env:
+          HETZNER_SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          SSH_PORT: ${{ vars.HETZNER_PORT || '22' }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$HETZNER_SSH_KEY" > ~/.ssh/hetzner_deploy_key
+          chmod 600 ~/.ssh/hetzner_deploy_key
+          PORT="${SSH_PORT:-22}"
+          ssh-keyscan -p "$PORT" -T 15 "$HETZNER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          if [ ! -s ~/.ssh/known_hosts ]; then
+            echo "CRITICAL: ssh-keyscan returned no keys — host unreachable"
+            exit 1
+          fi
+          chmod 600 ~/.ssh/known_hosts
+
+      # ── 2. Fetch reports + sanitized log tail from server ─────────────────
+      - name: Fetch health reports and sanitized logs
+        env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          HETZNER_USER: ${{ secrets.HETZNER_USER }}
+          HETZNER_PROJECT_DIR: ${{ secrets.HETZNER_PROJECT_DIR }}
+          HETZNER_SERVICE_NAME: ${{ secrets.HETZNER_SERVICE_NAME }}
+          SSH_PORT: ${{ vars.HETZNER_PORT || '22' }}
+        run: |
+          PORT="${SSH_PORT:-22}"
+          SSH_OPTS="-p $PORT -i ~/.ssh/hetzner_deploy_key \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile=~/.ssh/known_hosts \
+            -o ConnectTimeout=30 \
+            -o BatchMode=yes"
+
+          mkdir -p artifacts
+
+          # ── Read latest_deploy_status.md ─────────────────────────────────
+          ssh $SSH_OPTS "$HETZNER_USER@$HETZNER_HOST" \
+            "cat '$HETZNER_PROJECT_DIR/reports/latest_deploy_status.md' 2>/dev/null || echo 'NOT FOUND'" \
+            > artifacts/latest_deploy_status.md
+
+          # ── Read latest_deploy_status.json ───────────────────────────────
+          ssh $SSH_OPTS "$HETZNER_USER@$HETZNER_HOST" \
+            "cat '$HETZNER_PROJECT_DIR/reports/latest_deploy_status.json' 2>/dev/null || echo 'null'" \
+            > artifacts/latest_deploy_status.json
+
+          # ── Read latest_health.md ─────────────────────────────────────────
+          ssh $SSH_OPTS "$HETZNER_USER@$HETZNER_HOST" \
+            "cat '$HETZNER_PROJECT_DIR/reports/latest_health.md' 2>/dev/null || echo 'NOT FOUND'" \
+            > artifacts/latest_health.md
+
+          # ── Read latest_health.json ───────────────────────────────────────
+          ssh $SSH_OPTS "$HETZNER_USER@$HETZNER_HOST" \
+            "cat '$HETZNER_PROJECT_DIR/reports/latest_health.json' 2>/dev/null || echo 'null'" \
+            > artifacts/latest_health.json
+
+          # ── Fetch sanitized journalctl tail (last 300 lines) ──────────────
+          # Redact common secret patterns before leaving the server.
+          ssh $SSH_OPTS "$HETZNER_USER@$HETZNER_HOST" "
+            journalctl -u '$HETZNER_SERVICE_NAME' -n 300 --no-pager -o short-iso 2>/dev/null \
+              | sed 's/\(key\|token\|secret\|password\|api_key\|apikey\|passwd\)\([=: ]\+\)[^ ,\"'\'']\+/\1\2[REDACTED]/gi' \
+              || echo 'journalctl unavailable'
+          " > artifacts/log_tail_sanitized.txt
+
+          # ── Quick service status ──────────────────────────────────────────
+          ssh $SSH_OPTS "$HETZNER_USER@$HETZNER_HOST" "
+            echo '=== cryptomaster service ===' && \
+            systemctl status '$HETZNER_SERVICE_NAME' --no-pager -n 5 2>&1 || true && \
+            echo '' && \
+            echo '=== autodeploy timer ===' && \
+            systemctl list-timers '*-autodeploy.timer' --no-pager 2>&1 || true
+          " > artifacts/service_status.txt
+
+      # ── 3. Print mobile-readable summary ──────────────────────────────────
+      - name: Print mobile summary
+        run: |
+          echo ""
+          echo "════════════════════════════════════════════════════════════════"
+          echo "  CryptoMaster — Hetzner Health Fetch"
+          echo "  $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "════════════════════════════════════════════════════════════════"
+          echo ""
+          echo "── latest_deploy_status.md ─────────────────────────────────────"
+          cat artifacts/latest_deploy_status.md
+          echo ""
+          echo "── latest_health.md ─────────────────────────────────────────────"
+          cat artifacts/latest_health.md
+          echo ""
+          echo "── service_status.txt ────────────────────────────────────────────"
+          cat artifacts/service_status.txt
+          echo ""
+          echo "── Key counters from health.json ─────────────────────────────────"
+          python3 -c "
+          import json, sys
+          try:
+              h = json.load(open('artifacts/latest_health.json'))
+              fields = [
+                  'status','trading_mode','live_allowed',
+                  'paper_train_entry_count','paper_exit_count',
+                  'learning_update_ok_count','learning_update_error_count',
+                  'bucket_metrics_error_count','app_metrics_save_ok_count',
+                  'boot_version_seen','deployed_git_sha',
+              ]
+              for f in fields:
+                  print(f'  {f}: {h.get(f, \"(not present)\")}')
+              r = h.get('readiness', {})
+              print(f'  paper_train_ok: {r.get(\"paper_train_ok\")}')
+          except Exception as e:
+              print(f'  (could not parse health.json: {e})')
+          " 2>/dev/null || echo "  (python3 json parse failed)"
+          echo ""
+          echo "  live_real enabled:       no (read-only fetch, no changes made)"
+          echo "  ENABLE_REAL_ORDERS:      no"
+          echo "  LIVE_TRADING_CONFIRMED:  no"
+          echo "════════════════════════════════════════════════════════════════"
+
+      # ── 4. Upload as artifacts ─────────────────────────────────────────────
+      - name: Upload health artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cryptomaster-health-${{ github.run_number }}
+          path: artifacts/
+          retention-days: 14
