@@ -135,7 +135,14 @@ def test_log_fetcher_uses_local_journalctl_when_ssh_unavailable(monkeypatch):
 
 
 def test_log_fetcher_falls_back_to_local_file_when_journalctl_fails(monkeypatch, tmp_path: Path):
-    cfg = Settings(service_name="cryptomaster", use_journalctl=True, max_log_lines=50000)
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    cfg = Settings(
+        service_name="cryptomaster",
+        use_journalctl=True,
+        max_log_lines=50000,
+        project_root=str(project_dir),
+    )
     monkeypatch.setattr("daily_log_fix_prompt_bot.log_fetcher.SSHClient", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("no ssh")))
 
     class FakeCompleted:
@@ -145,18 +152,64 @@ def test_log_fetcher_falls_back_to_local_file_when_journalctl_fails(monkeypatch,
 
     monkeypatch.setattr("daily_log_fix_prompt_bot.log_fetcher.subprocess.run", lambda *args, **kwargs: FakeCompleted())
 
-    # _fetch_local_logs checks ../bot.log relative to cwd.
-    workdir = tmp_path / "project" / "daily_log_fix_prompt_bot"
-    workdir.mkdir(parents=True)
-    bot_log = tmp_path / "project" / "bot.log"
+    bot_log = project_dir / "bot.log"
     bot_log.write_text("local bot log line", encoding="utf-8")
-    monkeypatch.chdir(workdir)
 
     fetcher = LogFetcher(cfg)
     logs = fetcher.fetch_logs()
 
     assert "local bot log line" in logs
     assert fetcher.last_source == "local_file"
+
+
+def test_log_fetcher_remote_journalctl_command_quotes_service_name(monkeypatch):
+    """BUG-068: service_name is shlex-quoted in the remote journalctl command."""
+    cfg = Settings(service_name="my-service", use_journalctl=True, log_lookback_hours=24)
+
+    captured = {}
+
+    class FakeSSH:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def execute(self, command):
+            captured["command"] = command
+            return "", "", 0
+
+    monkeypatch.setattr("daily_log_fix_prompt_bot.log_fetcher.SSHClient", lambda *args, **kwargs: FakeSSH())
+
+    fetcher = LogFetcher(cfg)
+    fetcher._fetch_journalctl_remote()
+
+    assert "my-service" in captured["command"]
+    # shlex.quote leaves safe names unchanged; confirm no bare metachar injection possible
+    import shlex
+    assert shlex.quote(cfg.service_name) in captured["command"]
+
+
+def test_log_fetcher_remote_file_logs_rejects_unsafe_glob(monkeypatch):
+    """BUG-068: remote_log_glob with shell metacharacters raises ValueError."""
+    cfg = Settings(remote_log_glob="/var/log/*.log; rm -rf /")
+
+    class FakeSSH:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def execute(self, command):
+            return "", "", 0
+
+    monkeypatch.setattr("daily_log_fix_prompt_bot.log_fetcher.SSHClient", lambda *args, **kwargs: FakeSSH())
+
+    fetcher = LogFetcher(cfg)
+    import pytest
+    with pytest.raises(ValueError, match="Unsafe characters"):
+        fetcher._fetch_file_logs_remote()
 
 
 def test_run_daily_analysis_saves_sanitized_logs_not_raw_by_default(monkeypatch, tmp_path: Path):

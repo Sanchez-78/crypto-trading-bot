@@ -1,12 +1,17 @@
 """Fetch logs from server or local sources."""
 
 import logging
+import re
+import shlex
 import subprocess
 from pathlib import Path
 from .config import Settings
 from .ssh_client import SSHClient
 
 log = logging.getLogger(__name__)
+
+# Only alphanumeric, slashes, dots, asterisks, hyphens, underscores — no shell metacharacters.
+_SAFE_GLOB_RE = re.compile(r"^[a-zA-Z0-9/_.*-]+$")
 
 
 class LogFetcher:
@@ -78,8 +83,8 @@ class LogFetcher:
     def _fetch_journalctl_remote(self) -> str:
         """Fetch logs from remote journalctl."""
         command = (
-            f"journalctl -u {self.config.service_name} "
-            f"--since '{self.config.log_lookback_hours} hours ago' "
+            f"journalctl -u {shlex.quote(self.config.service_name)} "
+            f"--since '{int(self.config.log_lookback_hours)} hours ago' "
             f"--no-pager -o short-iso"
         )
 
@@ -93,7 +98,10 @@ class LogFetcher:
 
     def _fetch_file_logs_remote(self) -> str:
         """Fetch logs from remote files."""
-        command = f"tail -n {self.config.max_log_lines} {self.config.remote_log_glob} 2>/dev/null"
+        glob = self.config.remote_log_glob
+        if not _SAFE_GLOB_RE.match(glob):
+            raise ValueError(f"Unsafe characters in remote_log_glob: {glob!r}")
+        command = f"tail -n {int(self.config.max_log_lines)} {glob} 2>/dev/null"
 
         with self.ssh as client:
             out, err, code = client.execute(command)
@@ -146,7 +154,7 @@ class LogFetcher:
 
     def _fetch_local_logs(self) -> str:
         """Fetch logs from local bot.log file."""
-        local_log = Path("../bot.log")
+        local_log = Path(self.config.project_root) / "bot.log"
         if local_log.exists():
             try:
                 with open(local_log, "r", encoding="utf-8", errors="ignore") as f:

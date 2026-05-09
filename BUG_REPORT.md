@@ -1423,10 +1423,11 @@ self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
 ---
 
-### BUG-068 — Shell command injection in SSH log fetcher via config values [OPEN]
+### BUG-068 — Shell command injection in SSH log fetcher via config values [FIXED]
 
-**File:** `daily_log_fix_prompt_bot/src/daily_log_fix_prompt_bot/log_fetcher.py`, lines ~74–90  
-**Severity:** HIGH
+**File:** `daily_log_fix_prompt_bot/src/daily_log_fix_prompt_bot/log_fetcher.py`  
+**Severity:** HIGH  
+**Fixed in:** branch `claude/code-analysis-bug-report-6PcEa`, commit `1703f72`
 
 Remote commands are built with f-strings using environment variable config:
 
@@ -1437,33 +1438,39 @@ command = f"tail -n {self.config.max_log_lines} {self.config.remote_log_glob}"
 
 Shell metacharacters in `service_name`, `max_log_lines`, or `remote_log_glob` are passed unescaped to the remote shell, enabling remote code execution on the log server.
 
-**Recommended fix:** Validate `service_name` against `^[a-zA-Z0-9_-]+$`, `max_log_lines` as a positive integer, and use `shlex.quote()` for any value interpolated into a shell command string.
+**Fix applied:**
+- `_fetch_journalctl_remote`: `shlex.quote(service_name)` and explicit `int()` cast for lookback hours
+- `_fetch_file_logs_remote`: validates `remote_log_glob` against `_SAFE_GLOB_RE = re.compile(r"^[a-zA-Z0-9/_.*-]+$")` — raises `ValueError` on unsafe input
+- Two new tests added: `test_log_fetcher_remote_journalctl_command_quotes_service_name`, `test_log_fetcher_remote_file_logs_rejects_unsafe_glob`
 
 ---
 
-### BUG-069 — `../bot.log` relative path in local log fallback resolves to CWD-dependent path [OPEN]
+### BUG-069 — `../bot.log` relative path in local log fallback resolves to CWD-dependent path [FIXED]
 
-**File:** `daily_log_fix_prompt_bot/src/daily_log_fix_prompt_bot/log_fetcher.py`, line ~143  
-**Severity:** HIGH
+**File:** `daily_log_fix_prompt_bot/src/daily_log_fix_prompt_bot/log_fetcher.py`  
+**Severity:** HIGH  
+**Fixed in:** branch `claude/code-analysis-bug-report-6PcEa`, commit `1703f72`
 
 ```python
 local_log = Path("../bot.log")
 ```
 
-This resolves relative to the process working directory at runtime. When the audit bot is invoked via systemd (`WorkingDirectory=/opt/CryptoMaster_srv`), cron, or a test runner, the path resolves differently than expected. The local fallback silently returns no logs, causing every audit run in non-SSH environments to produce an UNKNOWN health status.
+This resolved relative to the process CWD — non-deterministic and wrong when the audit bot is invoked via systemd, cron, or a test runner in different directories. The local fallback silently returned no logs, causing UNKNOWN health status on non-SSH deployments.
 
-**Recommended fix:** Use an absolute path from config (`config.local_log_path`), or resolve relative to the package root: `Path(__file__).parents[4] / "bot.log"`.
+**Fix applied:**
+```python
+local_log = Path(self.config.project_root) / "bot.log"
+```
+Uses `config.project_root` (default `/opt/CryptoMaster_srv`, overridable via `PROJECT_ROOT` env) for an explicit, predictable path. Existing test updated to use `project_root` config instead of `monkeypatch.chdir`.
 
 ---
 
-### BUG-070 — `paramiko` not declared in `requirements.txt` [OPEN]
+### BUG-070 — `paramiko` not declared in `requirements.txt` [ALREADY FIXED]
 
-**File:** `daily_log_fix_prompt_bot/` package  
+**File:** `daily_log_fix_prompt_bot/requirements.txt`  
 **Severity:** MEDIUM
 
-`paramiko` is imported by `ssh_client.py` but absent from `daily_log_fix_prompt_bot/requirements.txt` (or any package manifest). A fresh `pip install -e .` does not install it; SSH log fetching silently falls back to local mode, often producing UNKNOWN health with no diagnostic message about the missing dependency.
-
-**Recommended fix:** Add `paramiko>=3.0` to the audit bot's requirements.
+`paramiko` is imported by `ssh_client.py`. Verified that `paramiko>=3.0.0` was already present in `daily_log_fix_prompt_bot/requirements.txt` before this session — BUG-070 was not actually present in the current codebase. No change required.
 
 ---
 
@@ -1525,3 +1532,18 @@ Patterns such as `[a-zA-Z0-9+/]{40,}={0,2}` and `password['\"]?\s*[:=]\s*['\"]?[
 **systemd unavailable in Docker:** This session was conducted inside a Docker container where systemd is not PID 1. The timer/service unit files were installed to `/etc/systemd/system/` but `systemctl daemon-reload` fails. All validation was performed by running the deploy script and audit bot directly. The deploy script correctly reported CRITICAL (no `cryptomaster` service) and the audit bot correctly wrote UNKNOWN health (no logs available). All report pipelines were verified to function correctly.
 
 *Session 4 analysis completed: 2026-05-07 | BUG-060 to BUG-074 | Infrastructure: deploy script, systemd, audit bot*
+
+---
+
+## Session 5 — 2026-05-08 — Trade/Learn/Autofix Loop Activation
+
+**Scope:** Low-risk audit bot fixes (BUG-068, BUG-069, BUG-070 review); Hetzner activation status; Czech readiness report.
+
+**Bugs fixed this session:** BUG-068 (shell injection), BUG-069 (relative path)  
+**Bug found not present:** BUG-070 (paramiko already in requirements.txt)  
+**Open (requires manual-approval PR):** BUG-071, BUG-072, BUG-073, BUG-074  
+
+**Tests:** 232 passed (38 audit bot + 194 core), 0 failed.  
+**Branch:** `claude/code-analysis-bug-report-6PcEa`, commit `1703f72`
+
+*Session 5 analysis completed: 2026-05-08 | BUG-068 to BUG-070 reviewed | Audit bot log_fetcher hardening*
