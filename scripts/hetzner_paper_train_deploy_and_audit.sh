@@ -172,8 +172,10 @@ if [ -f .env ]; then
 fi
 
 # Git 2.35+ rejects repos owned by a different user (common when systemd
-# runs as root but the repo was cloned by another user). Mark safe explicitly.
-git config --global --add safe.directory "$PROJECT_DIR" 2>/dev/null || true
+# runs as root but the repo was cloned by another user). Use wildcard to
+# avoid symlink path-mismatch; HOME=/root ensures the config is written even
+# if systemd does not propagate HOME to the service environment.
+HOME=/root git config --global --add safe.directory '*' 2>/dev/null || true
 
 old_sha="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
 git fetch "$REMOTE_NAME" "$BRANCH_NAME" | tee -a "$LOG_FILE"
