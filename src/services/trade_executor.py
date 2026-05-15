@@ -1661,6 +1661,9 @@ def _maybe_route_to_paper_training(signal: dict, current_price: float, reject_re
                         "reject_reason": reject_reason,
                         "side_inferred": result.get("side_inferred", False),
                         "cost_edge_ok": result.get("cost_edge_ok", False),
+                        "cost_edge_bypassed": result.get("cost_edge_bypassed", False),
+                        "cost_edge_bypass_reason": result.get("cost_edge_bypass_reason", "none"),
+                        "bootstrap_closed_trades": result.get("bootstrap_closed_trades", 0),
                         "expected_move_pct": result.get("expected_move_pct", 0.0),
                         "required_move_pct": result.get("required_move_pct", 0.0),
                         "size_mult": result.get("size_mult", 0.0),
@@ -1678,12 +1681,15 @@ def _maybe_route_to_paper_training(signal: dict, current_price: float, reject_re
                     _pipeline_record_paper_entry_success(sym, result.get("bucket", ""), trade_id)
                     log.info(
                         "[PAPER_TRAIN_ENTRY] bucket=%s symbol=%s side=%s price=%.8f "
-                        "cost_edge_ok=%s expected_move_pct=%.4f side_inferred=%s source=%s",
+                        "cost_edge_ok=%s cost_edge_bypassed=%s bypass_reason=%s bootstrap_closed=%d expected_move_pct=%.4f side_inferred=%s source=%s",
                         result.get("bucket", ""),
                         sym,
                         result["side"],
                         current_price,
                         result.get("cost_edge_ok", False),
+                        result.get("cost_edge_bypassed", False),
+                        result.get("cost_edge_bypass_reason", "none"),
+                        result.get("bootstrap_closed_trades", 0),
                         result.get("expected_move_pct", 0.0),
                         result.get("side_inferred", False),
                         reject_reason,

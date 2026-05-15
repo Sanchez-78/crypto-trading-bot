@@ -3840,3 +3840,135 @@ class TestP1_1AJ_LiveModeUnchanged:
         from src.services.paper_trade_executor import _is_training_position
         pos = {"paper_source": None, "training_bucket": None}
         assert _is_training_position(pos) == False
+
+
+class TestP1_1AK_TradeIdInPaperExit:
+    """P1.1AK Test 1: trade_id in PAPER_EXIT log."""
+
+    def test_trade_id_in_paper_exit_log(self, clean_positions, caplog):
+        """P1.1AK Test 1: trade_id present in PAPER_EXIT."""
+        caplog.set_level(logging.WARNING)
+        signal = {"symbol": "BTCUSDT", "action": "BUY", "ev": 0.055, "score": 0.30}
+        result = open_paper_position(signal, 50000.0, time.time(), "TEST")
+        assert result["status"] == "opened"
+        trade_id = result["trade_id"]
+
+        # Close the position
+        close_paper_position(trade_id, 50500.0, time.time(), "TEST")
+
+        # Verify trade_id appears in PAPER_EXIT log
+        assert f"trade_id={trade_id}" in caplog.text
+        assert "[PAPER_EXIT]" in caplog.text
+
+
+class TestP1_1AK_CostEdgeBypassContext:
+    """P1.1AK Tests 2-3: Cost-edge bypass fields."""
+
+    def test_bypass_fields_propagate_to_position(self, clean_positions, caplog):
+        """P1.1AK Test 2: cost_edge_bypassed fields logged."""
+        caplog.set_level(logging.INFO)
+        signal = {"symbol": "ETHUSDT", "action": "BUY", "ev": 0.045}
+        extra = {
+            "paper_source": "training_sampler",
+            "training_bucket": "C_WEAK_EV_TRAIN",
+            "cost_edge_ok": False,
+            "cost_edge_bypassed": True,
+            "cost_edge_bypass_reason": "bootstrap_sample trades=10",
+            "bootstrap_closed_trades": 10,
+        }
+        result = open_paper_position(signal, 2000.0, time.time(), "TEST", extra=extra)
+        assert result["status"] == "opened"
+
+        # Verify bypass fields appear in PAPER_TRAIN_QUALITY_ENTRY log
+        assert "cost_edge_bypassed=True" in caplog.text
+        assert "bypass_reason=bootstrap_sample" in caplog.text
+
+    def test_anomaly_when_cost_edge_false_without_bypass(self, clean_positions, caplog):
+        """P1.1AK Test 3: Anomaly when cost_edge_ok=False but not bypassed."""
+        caplog.set_level(logging.WARNING)
+        signal = {"symbol": "ADAUSDT", "action": "BUY", "ev": 0.035}
+        extra = {
+            "paper_source": "training_sampler",
+            "training_bucket": "C_WEAK_EV_TRAIN",
+            "cost_edge_ok": False,
+            "cost_edge_bypassed": False,
+            "cost_edge_bypass_reason": "none",
+            "bootstrap_closed_trades": 0,
+        }
+        result = open_paper_position(signal, 1.2, time.time(), "TEST", extra=extra)
+        assert result["status"] == "opened"
+
+        # Verify anomaly is logged
+        assert "[PAPER_TRAIN_ANOMALY]" in caplog.text
+        assert "cost_edge_false_without_bypass" in caplog.text
+
+
+class TestP1_1AK_EconSummary:
+    """P1.1AK Test 4: Economic summary logging."""
+
+    def test_econ_summary_log_exists(self, clean_positions):
+        """P1.1AK Test 4: PAPER_TRAIN_ECON_SUMMARY can be emitted."""
+        from src.services.paper_trade_executor import _maybe_log_paper_train_econ_summary
+        
+        # Synthetic trade data
+        trades = [
+            {
+                "side": "BUY",
+                "exit_reason": "TP",
+                "entry_price": 100.0,
+                "max_seen": 105.0,
+                "min_seen": 99.0,
+                "tp_pct_at_entry": 0.05,
+                "sl_pct_at_entry": 0.02,
+                "net_pnl_pct": 0.048,
+                "outcome": "WIN",
+                "regime": "BULL_TREND",
+                "cost_edge_bypassed": False,
+            }
+        ]
+        
+        # Call econ summary function (should not raise)
+        _maybe_log_paper_train_econ_summary(trades)  # No assertion needed; verify no exception
+
+
+class TestP1_1AK_TradeIdCorrelation:
+    """P1.1AK Test 5: Trade-ID correlation helper."""
+
+    def test_is_training_position_gate(self, clean_positions):
+        """P1.1AK Test 5: _is_training_position recognizes training positions."""
+        from src.services.paper_trade_executor import _is_training_position
+        
+        # Training sampler source
+        assert _is_training_position({"paper_source": "training_sampler"}) is True
+        
+        # Training bucket
+        assert _is_training_position({"training_bucket": "C_WEAK_EV_TRAIN"}) is True
+        
+        # Both
+        assert _is_training_position({
+            "paper_source": "training_sampler",
+            "training_bucket": "C_WEAK_EV_TRAIN"
+        }) is True
+        
+        # Non-training
+        assert _is_training_position({"paper_source": "rde_routed"}) is False
+        assert _is_training_position({}) is False
+
+
+class TestP1_1AK_LiveIsolation:
+    """P1.1AK Test 6: Live mode not affected."""
+
+    def test_non_training_position_no_bypass(self, clean_positions):
+        """P1.1AK Test 6: Non-training positions never have bypass fields set."""
+        signal = {"symbol": "LTCUSDT", "action": "BUY", "ev": 0.060}
+        # Open without training context
+        result = open_paper_position(signal, 150.0, time.time(), "TEST")
+        assert result["status"] == "opened"
+        
+        # Verify position does not have training-specific bypass fields
+        from src.services.paper_trade_executor import get_paper_trade_by_id
+        pos = get_paper_trade_by_id(result["trade_id"])
+        assert pos is not None
+        # Bypass fields default to False/none for non-training positions
+        assert pos.get("cost_edge_bypassed") is False
+        assert pos.get("cost_edge_bypass_reason") == "none"

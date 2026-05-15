@@ -303,6 +303,11 @@ def _training_quality_gate(
     Returns:
         {"allowed": bool, "reason": str, ...} via _skip() or _allow()
     """
+    # P1.1AK: Track bypass metadata for diagnostics
+    cost_edge_bypassed = False
+    cost_edge_bypass_reason = "none"
+    bootstrap_closed_trades = 0
+
     now = _now()
     _prune(now)
 
@@ -337,6 +342,10 @@ def _training_quality_gate(
                 if trades_closed < 50:
                     allow_bootstrap_bypass = True
                     bypass_reason = f"bootstrap_training_sample trades={trades_closed}"
+                    # P1.1AK: Set bypass metadata for diagnostics
+                    cost_edge_bypassed = True
+                    cost_edge_bypass_reason = bypass_reason
+                    bootstrap_closed_trades = trades_closed
         except Exception as e:
             pass  # If check fails, use normal cost_edge rejection
 
@@ -422,7 +431,16 @@ def _training_quality_gate(
     _entry_times_minute.append(now)
     _entry_times_hour.append(now)
 
-    return _allow(symbol=symbol, side=side, bucket=bucket, source_reject=source_reject)
+    # P1.1AK: Include bypass metadata in gate result
+    return _allow(
+        symbol=symbol,
+        side=side,
+        bucket=bucket,
+        source_reject=source_reject,
+        cost_edge_bypassed=cost_edge_bypassed,
+        cost_edge_bypass_reason=cost_edge_bypass_reason,
+        bootstrap_closed_trades=bootstrap_closed_trades,
+    )
 
 
 def _safe_int_count(value) -> int:
@@ -657,6 +675,7 @@ def maybe_open_training_sample(
         _training_metrics["entries_1h"].append(time.time())
         _maybe_log_training_health()
 
+        # P1.1AK: Include bypass metadata from gate result
         return {
             "allowed": True,
             "bucket": bucket,
@@ -665,6 +684,9 @@ def maybe_open_training_sample(
             "side": side,
             "side_inferred": side_inferred,
             "cost_edge_ok": cost_edge_ok,
+            "cost_edge_bypassed": gate_result.get("cost_edge_bypassed", False),
+            "cost_edge_bypass_reason": gate_result.get("cost_edge_bypass_reason", "none"),
+            "bootstrap_closed_trades": gate_result.get("bootstrap_closed_trades", 0),
             "expected_move_pct": expected_move_pct,
             "required_move_pct": 0.23,  # reference from P1.1j
             "max_hold_s": _MAX_HOLD_S,

@@ -802,6 +802,9 @@ def open_paper_position(
         "reject_reason": extra.get("reject_reason") if extra else None,
         "side_inferred": extra.get("side_inferred") if extra else False,  # P1.1M
         "cost_edge_ok": extra.get("cost_edge_ok") if extra else True,  # P1.1M
+        "cost_edge_bypassed": extra.get("cost_edge_bypassed", False) if extra else False,  # P1.1AK
+        "cost_edge_bypass_reason": extra.get("cost_edge_bypass_reason", "none") if extra else "none",  # P1.1AK
+        "bootstrap_closed_trades": extra.get("bootstrap_closed_trades", 0) if extra else 0,  # P1.1AK
         "expected_move_pct": extra.get("expected_move_pct") if extra else 0.0,  # P1.1M
         "required_move_pct": extra.get("required_move_pct") if extra else 0.23,  # P1.1M
         "size_mult": extra.get("size_mult") if extra else 1.0,
@@ -1327,7 +1330,8 @@ def close_paper_position(
     canonical_bucket = pos.get("bucket") or pos.get("training_bucket") or pos.get("explore_bucket") or "A_STRICT_TAKE"
 
     log.warning(
-        "[PAPER_EXIT] symbol=%s reason=%s entry=%.8f exit=%.8f net_pnl_pct=%.4f outcome=%s hold_s=%d max_hold_s=%d bucket=%s training_bucket=%s",
+        "[PAPER_EXIT] trade_id=%s symbol=%s reason=%s entry=%.8f exit=%.8f net_pnl_pct=%.4f outcome=%s hold_s=%d max_hold_s=%d bucket=%s training_bucket=%s",
+        position_id,
         pos["symbol"],
         reason,
         pos["entry_price"],
@@ -1597,8 +1601,12 @@ def _log_paper_train_quality_entry(position: dict, signal: dict) -> None:
         score_raw_str = f"{score_raw:.3f}" if score_raw is not None else "na"
         score_final_str = f"{score_final:.3f}" if score_final is not None else "na"
 
+        # P1.1AK: Extract bypass context fields
+        cost_edge_bypassed = position.get("cost_edge_bypassed", False)
+        cost_edge_bypass_reason = position.get("cost_edge_bypass_reason", "none")
+
         log.info(
-            "[PAPER_TRAIN_QUALITY_ENTRY] trade_id=%s symbol=%s side=%s source=%s bucket=%s training_bucket=%s regime=%s ev=%.4f p=%.3f score_raw=%s score_final=%s score_missing=%s coh=%.3f expected_move_pct=%.3f expected_move_src=%s cost_edge_ok=%s entry=%.8f tp=%.8f sl=%.8f tp_pct=%.3f sl_pct=%.3f rr=%.3f atr=%.8f spread=%.8f hold_limit_s=%d",
+            "[PAPER_TRAIN_QUALITY_ENTRY] trade_id=%s symbol=%s side=%s source=%s bucket=%s training_bucket=%s regime=%s ev=%.4f p=%.3f score_raw=%s score_final=%s score_missing=%s coh=%.3f expected_move_pct=%.3f expected_move_src=%s cost_edge_ok=%s cost_edge_bypassed=%s bypass_reason=%s entry=%.8f tp=%.8f sl=%.8f tp_pct=%.3f sl_pct=%.3f rr=%.3f atr=%.8f spread=%.8f hold_limit_s=%d",
             trade_id,
             symbol,
             side,
@@ -1615,6 +1623,8 @@ def _log_paper_train_quality_entry(position: dict, signal: dict) -> None:
             expected_move_pct,
             expected_move_src,
             cost_edge_ok,
+            cost_edge_bypassed,
+            cost_edge_bypass_reason,
             entry,
             tp,
             sl,
@@ -1625,6 +1635,15 @@ def _log_paper_train_quality_entry(position: dict, signal: dict) -> None:
             spread,
             hold_limit_s,
         )
+
+        # P1.1AK: Anomaly detection — cost_edge_ok=False but not bypassed
+        if cost_edge_ok is False and cost_edge_bypassed is False:
+            log.warning(
+                "[PAPER_TRAIN_ANOMALY] type=cost_edge_false_without_bypass trade_id=%s symbol=%s source=%s",
+                trade_id,
+                symbol,
+                source,
+            )
 
         # P1.1AJ: Log diagnostic context when score is missing
         if score_missing and score_raw is None and score_final is None:
@@ -1680,6 +1699,99 @@ def _log_paper_train_quality_entry(position: dict, signal: dict) -> None:
         log.warning("[PAPER_TRAIN_QUALITY_ENTRY_ERROR] err=%s", str(e))
 
 
+def _maybe_log_paper_train_econ_summary(trades: list) -> None:
+    """Log economic summary of paper training trades (TP/SL geometry, near-miss metrics)."""
+    if not trades:
+        return
+
+    try:
+        closed = len(trades)
+        timeouts = [t for t in trades if "TIMEOUT" in t.get("exit_reason", "")]
+        timeout_rate = len(timeouts) / closed if closed > 0 else 0.0
+
+        # near-TP timeout: TIMEOUT where mfe >= 70% of tp_pct
+        # near-SL timeout: TIMEOUT where mae >= 70% of sl_pct
+        # both_touch: trades where mfe >= tp_pct AND mae >= sl_pct
+        near_tp = 0
+        near_sl = 0
+        both_touch = 0
+
+        for t in trades:
+            entry = float(t.get("entry_price", 0.0))
+            max_seen = float(t.get("max_seen", entry))
+            min_seen = float(t.get("min_seen", entry))
+            side = t.get("side", "BUY")
+            tp_pct = abs(float(t.get("tp_pct_at_entry", 0.012)))
+            sl_pct = abs(float(t.get("sl_pct_at_entry", 0.012)))
+
+            if entry > 0:
+                if side == "BUY":
+                    mfe = (max_seen - entry) / entry
+                    mae = (entry - min_seen) / entry
+                else:
+                    mfe = (entry - min_seen) / entry
+                    mae = (max_seen - entry) / entry
+            else:
+                mfe = 0.0
+                mae = 0.0
+
+            # Near-TP for TIMEOUT positions
+            if "TIMEOUT" in t.get("exit_reason", "") and tp_pct > 0 and mfe / tp_pct >= 0.7:
+                near_tp += 1
+            # Near-SL for TIMEOUT positions
+            if "TIMEOUT" in t.get("exit_reason", "") and sl_pct > 0 and mae / sl_pct >= 0.7:
+                near_sl += 1
+            # Both TP and SL touched
+            if tp_pct > 0 and sl_pct > 0 and mfe >= tp_pct and mae >= sl_pct:
+                both_touch += 1
+
+        both_touch_rate = both_touch / closed if closed > 0 else 0.0
+        avg_tp_pct = sum(abs(float(t.get("tp_pct_at_entry", 0.0))) for t in trades) / closed if closed > 0 else 0.0
+        avg_sl_pct = sum(abs(float(t.get("sl_pct_at_entry", 0.0))) for t in trades) / closed if closed > 0 else 0.0
+        cost_bypassed_count = sum(1 for t in trades if t.get("cost_edge_bypassed"))
+        avg_pnl = sum(float(t.get("net_pnl_pct", 0.0)) for t in trades) / closed if closed > 0 else 0.0
+
+        # Group by side and regime
+        by_side = {}
+        by_regime = {}
+        for t in trades:
+            side_key = t.get("side", "BUY")
+            regime_key = t.get("regime", "UNKNOWN")
+
+            for grp, key in [(by_side, side_key), (by_regime, regime_key)]:
+                if key not in grp:
+                    grp[key] = {"n": 0, "win": 0, "pnl": 0.0}
+                grp[key]["n"] += 1
+                grp[key]["win"] += int(t.get("outcome") == "WIN")
+                grp[key]["pnl"] += float(t.get("net_pnl_pct", 0.0))
+
+        by_side_str = ",".join(
+            f"{k}:n={v['n']} wr={v['win']/v['n']:.2f} avg_pnl={v['pnl']/v['n']:.4f}"
+            for k, v in sorted(by_side.items())
+        )
+        by_regime_str = ",".join(
+            f"{k}:n={v['n']} wr={v['win']/v['n']:.2f}" for k, v in sorted(by_regime.items())
+        )
+
+        log.info(
+            "[PAPER_TRAIN_ECON_SUMMARY] window_s=%.0f closed=%d timeout_rate=%.3f near_tp_timeout=%d near_sl_timeout=%d both_touch_rate=%.3f avg_tp_pct=%.4f avg_sl_pct=%.4f avg_pnl=%.4f cost_edge_bypassed=%d by_side=[%s] by_regime=[%s]",
+            _PAPER_SUMMARY_INTERVAL,
+            closed,
+            timeout_rate,
+            near_tp,
+            near_sl,
+            both_touch_rate,
+            avg_tp_pct,
+            avg_sl_pct,
+            avg_pnl,
+            cost_bypassed_count,
+            by_side_str,
+            by_regime_str,
+        )
+    except Exception as e:
+        log.warning("[PAPER_TRAIN_ECON_SUMMARY_ERROR] err=%s", str(e))
+
+
 def _maybe_log_paper_quality_summary() -> None:
     """Log a summary of paper training quality every 5 minutes."""
     global _PAPER_SUMMARY_LAST_LOG
@@ -1692,6 +1804,9 @@ def _maybe_log_paper_quality_summary() -> None:
         _PAPER_CLOSED_TRADES_BUFFER.clear()
 
     _PAPER_SUMMARY_LAST_LOG = now
+
+    # P1.1AK: Log economic summary from the same snapshot
+    _maybe_log_paper_train_econ_summary(trades)
 
     try:
         # Count open positions for "opened" metric
