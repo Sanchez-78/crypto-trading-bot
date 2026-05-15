@@ -32,6 +32,12 @@ _PAPER_ENTRY_BLOCKED_TTL = 60.0  # seconds between logs per key
 _PAPER_TIMEOUT_SCAN_THROTTLE = 0.0  # last scan log timestamp
 _PAPER_TIMEOUT_SCAN_TTL = 60.0  # seconds between scan logs
 
+# P1.1AG: Paper training quality summary aggregator
+_PAPER_CLOSED_TRADES_BUFFER = []  # List of closed trades for summary aggregation
+_PAPER_CLOSED_TRADES_LOCK = __import__("threading").RLock()
+_PAPER_SUMMARY_LAST_LOG = 0.0  # Last summary log timestamp
+_PAPER_SUMMARY_INTERVAL = 300.0  # 5 minutes between summary logs
+
 
 def _save_paper_state() -> None:
     """Save open paper positions to disk with atomic writes."""
@@ -736,6 +742,9 @@ def open_paper_position(
         "max_hold_s": extra.get("max_hold_s") if extra else _MAX_AGE_S,
         "tags": extra.get("tags") if extra else [],
         "created_at": ts,
+        # P1.1AG: Track MFE/MAE for diagnostics
+        "max_seen": price,
+        "min_seen": price,
     }
 
     with _POSITION_LOCK:
@@ -751,6 +760,10 @@ def open_paper_position(
         position["score_at_entry"],
         reason,
     )
+
+    # P1.1AG: Add entry quality diagnostics for paper training
+    if paper_source == "training_sampler":
+        _log_paper_train_quality_entry(position, signal)
 
     # Persist state after opening position
     _save_paper_state()
@@ -910,10 +923,14 @@ def update_paper_positions(
             continue  # No valid price, skip
 
         # Store last known price so timeout scanner can use real market price
+        # P1.1AG: Track max_seen and min_seen for MFE/MAE calculation
         with _POSITION_LOCK:
             if trade_id in _POSITIONS:
                 _POSITIONS[trade_id]["last_price"] = current_price
                 _POSITIONS[trade_id]["last_price_ts"] = ts
+                # Update extremes
+                _POSITIONS[trade_id]["max_seen"] = max(_POSITIONS[trade_id].get("max_seen", current_price), current_price)
+                _POSITIONS[trade_id]["min_seen"] = min(_POSITIONS[trade_id].get("min_seen", current_price), current_price)
 
         # Check exit conditions
         entry_price = pos["entry_price"]
@@ -1244,6 +1261,10 @@ def close_paper_position(
         pos.get("training_bucket", ""),
     )
 
+    # P1.1AG: Log exit quality before deduplication (so we capture all exits)
+    if pos.get("paper_source") == "training_sampler":
+        _log_paper_train_quality_exit(closed_trade, pos)
+
     # P1.1Q Phase 5: Deduplication — ensure we only update learning/metrics once per trade_id
     with _CLOSED_TRADES_LOCK:
         if position_id in _CLOSED_TRADES_THIS_SESSION:
@@ -1259,8 +1280,15 @@ def close_paper_position(
     # P1.1Q: Update bucket metrics with safe adapter
     _safe_bucket_metrics_update_for_paper_trade(closed_trade)
 
+    # P1.1AG: Add to closed trades buffer for summary aggregation
+    with _PAPER_CLOSED_TRADES_LOCK:
+        _PAPER_CLOSED_TRADES_BUFFER.append(closed_trade)
+
     # Persist state after closing position
     _save_paper_state()
+
+    # P1.1AG: Check if we should log summary
+    _maybe_log_paper_quality_summary()
 
     return closed_trade
 
@@ -1294,6 +1322,320 @@ def reset_paper_positions():
     """Reset all open positions (for testing)."""
     with _POSITION_LOCK:
         _POSITIONS.clear()
+
+
+# P1.1AG: Paper training quality diagnostics helpers
+
+def _log_paper_train_quality_entry(position: dict, signal: dict) -> None:
+    """Log entry quality snapshot for paper training positions.
+
+    Args:
+        position: The opened position dict
+        signal: The original signal that triggered the entry
+    """
+    try:
+        # Extract fields with defensive defaults
+        trade_id = position.get("trade_id", "na")
+        symbol = position.get("symbol", "na")
+        side = position.get("side", "na")
+        source = position.get("paper_source", "na")
+        bucket = position.get("bucket") or position.get("training_bucket", "na")
+        training_bucket = position.get("training_bucket", "na")
+        regime = position.get("regime", "na")
+
+        # Score fields - try canonical decision first
+        score_raw = signal.get("score_raw", signal.get("score", 0.0))
+        score_final = signal.get("score_final", signal.get("score", 0.0))
+
+        ev = float(signal.get("ev") or 0.0)
+        p = float(signal.get("p") or signal.get("confidence") or 0.5)
+        coh = float(signal.get("coh") or signal.get("coherence") or 1.0)
+        expected_move_pct = float(position.get("expected_move_pct") or 0.0)
+        cost_edge_ok = position.get("cost_edge_ok", True)
+
+        entry = position.get("entry_price", 0.0)
+        tp = position.get("tp", 0.0)
+        sl = position.get("sl", 0.0)
+
+        # Calculate TP/SL pcts
+        if entry and entry > 0:
+            tp_pct = ((tp - entry) / entry * 100.0) if side == "BUY" else ((entry - tp) / entry * 100.0)
+            sl_pct = ((entry - sl) / entry * 100.0) if side == "BUY" else ((sl - entry) / entry * 100.0)
+            rr = tp_pct / sl_pct if sl_pct > 0 else 0.0
+        else:
+            tp_pct, sl_pct, rr = 0.0, 0.0, 0.0
+
+        atr = signal.get("atr", 0.0)
+        spread = signal.get("spread", 0.0)
+        hold_limit_s = int(position.get("max_hold_s") or 300)
+
+        log.info(
+            "[PAPER_TRAIN_QUALITY_ENTRY] trade_id=%s symbol=%s side=%s source=%s bucket=%s training_bucket=%s regime=%s ev=%.4f p=%.3f score_raw=%.3f score_final=%.3f coh=%.3f expected_move_pct=%.3f cost_edge_ok=%s entry=%.8f tp=%.8f sl=%.8f tp_pct=%.3f sl_pct=%.3f rr=%.3f atr=%.8f spread=%.8f hold_limit_s=%d",
+            trade_id,
+            symbol,
+            side,
+            source,
+            bucket,
+            training_bucket,
+            regime,
+            ev,
+            p,
+            score_raw,
+            score_final,
+            coh,
+            expected_move_pct,
+            cost_edge_ok,
+            entry,
+            tp,
+            sl,
+            tp_pct,
+            sl_pct,
+            rr,
+            atr,
+            spread,
+            hold_limit_s,
+        )
+
+        # P1.1AG: Log anomalies detected at entry
+        if score_raw == 0.0 and score_final == 0.0 and ev > 0:
+            log.warning(
+                "[PAPER_TRAIN_ANOMALY] type=score_zero_but_take symbol=%s ev=%.4f score_raw=%.3f score_final=%.3f source=%s",
+                symbol,
+                ev,
+                score_raw,
+                score_final,
+                source,
+            )
+
+        if expected_move_pct > 5.0:
+            log.warning(
+                "[PAPER_TRAIN_ANOMALY] type=expected_move_extreme symbol=%s expected_move_pct=%.3f source=%s",
+                symbol,
+                expected_move_pct,
+                source,
+            )
+
+        if (side == "BUY" and tp <= entry) or (side == "SELL" and tp >= entry):
+            log.error(
+                "[PAPER_TRAIN_ANOMALY] type=tp_sl_invalid symbol=%s entry=%.8f tp=%.8f sl=%.8f side=%s",
+                symbol,
+                entry,
+                tp,
+                sl,
+                side,
+            )
+    except Exception as e:
+        log.warning("[PAPER_TRAIN_QUALITY_ENTRY_ERROR] err=%s", str(e))
+
+
+def _maybe_log_paper_quality_summary() -> None:
+    """Log a summary of paper training quality every 5 minutes."""
+    global _PAPER_SUMMARY_LAST_LOG
+    now = time.time()
+    if now - _PAPER_SUMMARY_LAST_LOG < _PAPER_SUMMARY_INTERVAL:
+        return
+
+    with _PAPER_CLOSED_TRADES_LOCK:
+        if not _PAPER_CLOSED_TRADES_BUFFER:
+            return
+
+        trades = list(_PAPER_CLOSED_TRADES_BUFFER)
+        _PAPER_CLOSED_TRADES_BUFFER.clear()
+
+    _PAPER_SUMMARY_LAST_LOG = now
+
+    try:
+        # Aggregate stats
+        closed_count = len(trades)
+        win_count = sum(1 for t in trades if t.get("outcome") == "WIN")
+        loss_count = sum(1 for t in trades if t.get("outcome") == "LOSS")
+        flat_count = sum(1 for t in trades if t.get("outcome") == "FLAT")
+
+        wr = (win_count / closed_count) if closed_count > 0 else 0.0
+        avg_pnl = sum(t.get("net_pnl_pct", 0.0) for t in trades) / closed_count if closed_count > 0 else 0.0
+
+        # MFE/MAE aggregates
+        mfe_values = []
+        mae_values = []
+        for t in trades:
+            entry = t.get("entry_price", 0.0)
+            max_seen = t.get("max_seen", entry)
+            min_seen = t.get("min_seen", entry)
+            side = t.get("side", "BUY")
+
+            if side == "BUY":
+                mfe = ((max_seen - entry) / entry * 100.0) if entry > 0 else 0.0
+                mae = ((min_seen - entry) / entry * 100.0) if entry > 0 else 0.0
+            else:
+                mfe = ((entry - min_seen) / entry * 100.0) if entry > 0 else 0.0
+                mae = ((entry - max_seen) / entry * 100.0) if entry > 0 else 0.0
+
+            mfe_values.append(mfe)
+            mae_values.append(mae)
+
+        avg_mfe = sum(mfe_values) / len(mfe_values) if mfe_values else 0.0
+        avg_mae = sum(mae_values) / len(mae_values) if mae_values else 0.0
+
+        timeout_count = sum(1 for t in trades if t.get("exit_reason") == "TIMEOUT")
+        timeout_rate = (timeout_count / closed_count) if closed_count > 0 else 0.0
+
+        # Group by source
+        by_source = {}
+        for t in trades:
+            source = t.get("paper_source", "unknown")
+            if source not in by_source:
+                by_source[source] = {"n": 0, "wins": 0, "pnls": []}
+            by_source[source]["n"] += 1
+            if t.get("outcome") == "WIN":
+                by_source[source]["wins"] += 1
+            by_source[source]["pnls"].append(t.get("net_pnl_pct", 0.0))
+
+        # Group by regime
+        by_regime = {}
+        for t in trades:
+            regime = t.get("regime", "UNKNOWN")
+            if regime not in by_regime:
+                by_regime[regime] = {"n": 0, "wins": 0, "pnls": []}
+            by_regime[regime]["n"] += 1
+            if t.get("outcome") == "WIN":
+                by_regime[regime]["wins"] += 1
+            by_regime[regime]["pnls"].append(t.get("net_pnl_pct", 0.0))
+
+        # Format summary string
+        by_source_str = ", ".join(
+            f"{src}:n={v['n']} wr={v['wins']/v['n']:.2f}" for src, v in sorted(by_source.items())
+        )
+        by_regime_str = ", ".join(
+            f"{reg}:n={v['n']} wr={v['wins']/v['n']:.2f}" for reg, v in sorted(by_regime.items())
+        )
+
+        log.info(
+            "[PAPER_TRAIN_QUALITY_SUMMARY] window_s=%.0f closed=%d win=%d loss=%d flat=%d wr=%.4f avg_pnl=%.4f avg_mfe=%.4f avg_mae=%.4f timeout_rate=%.4f by_source=[%s] by_regime=[%s]",
+            _PAPER_SUMMARY_INTERVAL,
+            closed_count,
+            win_count,
+            loss_count,
+            flat_count,
+            wr,
+            avg_pnl,
+            avg_mfe,
+            avg_mae,
+            timeout_rate,
+            by_source_str,
+            by_regime_str,
+        )
+    except Exception as e:
+        log.warning("[PAPER_TRAIN_QUALITY_SUMMARY_ERROR] err=%s", str(e))
+
+
+def _log_paper_train_quality_exit(closed_trade: dict, position: dict) -> None:
+    """Log exit quality snapshot for paper training positions.
+
+    Args:
+        closed_trade: The closed trade dict with exit data
+        position: The original position dict with entry data
+    """
+    try:
+        # Extract fields
+        trade_id = closed_trade.get("trade_id", "na")
+        symbol = closed_trade.get("symbol", "na")
+        side = closed_trade.get("side", "na")
+        source = closed_trade.get("paper_source", "na")
+        entry_regime = position.get("regime", "na")
+        # Exit regime would need to come from current market state - use entry regime as fallback
+        exit_regime = entry_regime
+        training_bucket = closed_trade.get("training_bucket", "na")
+        reason = closed_trade.get("exit_reason", "na")
+        outcome = closed_trade.get("outcome", "na")
+
+        entry = float(closed_trade.get("entry_price") or 0.0)
+        exit_price = float(closed_trade.get("exit_price") or 0.0)
+        net_pnl_pct = float(closed_trade.get("net_pnl_pct") or 0.0)
+
+        # Calculate MFE/MAE - use position max_seen/min_seen if available
+        max_seen = float(position.get("max_seen") or entry)
+        min_seen = float(position.get("min_seen") or entry)
+
+        if side == "BUY":
+            mfe_pct = ((max_seen - entry) / entry * 100.0) if entry > 0 else 0.0
+            mae_pct = ((min_seen - entry) / entry * 100.0) if entry > 0 else 0.0
+        else:  # SELL
+            mfe_pct = ((entry - min_seen) / entry * 100.0) if entry > 0 else 0.0
+            mae_pct = ((entry - max_seen) / entry * 100.0) if entry > 0 else 0.0
+
+        # Exit efficiency: net_pnl / mfe
+        if mfe_pct > 0:
+            exit_efficiency = net_pnl_pct / mfe_pct
+        else:
+            exit_efficiency = 0.0
+
+        duration_s = closed_trade.get("duration_s")
+        hold_s = int(duration_s) if duration_s is not None else 0
+        hold_limit_s = int(position.get("max_hold_s") or 300)
+
+        # Track if TP/SL were touched
+        tp = float(position.get("tp") or 0.0)
+        sl = float(position.get("sl") or 0.0)
+
+        if side == "BUY":
+            touched_tp = max_seen >= tp if tp > 0 else False
+            touched_sl = min_seen <= sl if sl > 0 else False
+        else:  # SELL
+            touched_tp = min_seen <= tp if tp > 0 else False
+            touched_sl = max_seen >= sl if sl > 0 else False
+
+        log.info(
+            "[PAPER_TRAIN_QUALITY_EXIT] trade_id=%s symbol=%s side=%s source=%s entry_regime=%s exit_regime=%s training_bucket=%s reason=%s outcome=%s entry=%.8f exit=%.8f net_pnl_pct=%.4f mfe_pct=%.4f mae_pct=%.4f hold_s=%d hold_limit_s=%d touched_tp=%s touched_sl=%s exit_efficiency=%.4f",
+            trade_id,
+            symbol,
+            side,
+            source,
+            entry_regime,
+            exit_regime,
+            training_bucket,
+            reason,
+            outcome,
+            entry,
+            exit_price,
+            net_pnl_pct,
+            mfe_pct,
+            mae_pct,
+            hold_s,
+            hold_limit_s,
+            touched_tp,
+            touched_sl,
+            exit_efficiency,
+        )
+
+        # P1.1AG: Log anomalies detected at exit
+        if reason == "TIMEOUT" and mfe_pct >= 0.75 * (tp - entry) / entry * 100.0 if entry > 0 else False:
+            log.warning(
+                "[PAPER_TRAIN_ANOMALY] type=timeout_near_tp symbol=%s mfe_pct=%.3f tp_pct=%.3f net_pnl_pct=%.3f",
+                symbol,
+                mfe_pct,
+                ((tp - entry) / entry * 100.0) if entry > 0 else 0.0,
+                net_pnl_pct,
+            )
+
+        if reason == "TIMEOUT" and abs(mae_pct) >= 0.75 * abs(sl - entry) / entry * 100.0 if entry > 0 else False:
+            log.warning(
+                "[PAPER_TRAIN_ANOMALY] type=timeout_deep_adverse symbol=%s mae_pct=%.3f sl_pct=%.3f net_pnl_pct=%.3f",
+                symbol,
+                mae_pct,
+                abs((sl - entry) / entry * 100.0) if entry > 0 else 0.0,
+                net_pnl_pct,
+            )
+
+        if entry_regime != exit_regime and entry_regime != "na" and exit_regime != "na":
+            log.warning(
+                "[PAPER_TRAIN_ANOMALY] type=regime_flip symbol=%s entry_regime=%s exit_regime=%s outcome=%s",
+                symbol,
+                entry_regime,
+                exit_regime,
+                outcome,
+            )
+    except Exception as e:
+        log.warning("[PAPER_TRAIN_QUALITY_EXIT_ERROR] err=%s", str(e))
 
 
 # P1.1Z2: Startup initialization — load paper state after all functions are defined

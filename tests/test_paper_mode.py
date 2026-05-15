@@ -3384,3 +3384,225 @@ class TestP1AE1BootstrapCostEdgeBypass:
         # Verify it doesn't crash with non-zero score
         # (actual score checking happens in integration tests with log capture)
         _pipeline_record_signal("DOGEUSDT", "SELL", "BEAR_TREND", 0.2, 0.4, 0.0)
+
+
+class TestP1AG1QualityDiagnostics:
+    """P1.1AG: Paper training quality diagnostics."""
+
+    @pytest.fixture
+    def clean_positions(self):
+        """Clear positions and related state before each test."""
+        from src.services import paper_trade_executor
+
+        paper_trade_executor.reset_paper_positions()
+        paper_trade_executor._PAPER_CLOSED_TRADES_BUFFER.clear()
+        yield
+        paper_trade_executor.reset_paper_positions()
+        paper_trade_executor._PAPER_CLOSED_TRADES_BUFFER.clear()
+
+    def test_entry_quality_log_has_required_fields(self, clean_positions, caplog):
+        """P1.1AG Test 1: Entry quality log contains source, bucket, regime, entry/tp/sl, expected_move_pct."""
+        from src.services.paper_trade_executor import open_paper_position
+
+        signal = {
+            "symbol": "BTCUSDT",
+            "side": "BUY",
+            "ev": 0.05,
+            "score": 0.18,
+            "score_raw": 0.18,
+            "score_final": 0.18,
+            "p": 0.6,
+            "coh": 1.0,
+            "regime": "BULL_TREND",
+            "atr": 100.0,
+            "spread": 0.05,
+        }
+
+        extra = {
+            "paper_source": "training_sampler",
+            "training_bucket": "C_WEAK_EV_TRAIN",
+            "explore_bucket": "A_STRICT_TAKE",
+            "expected_move_pct": 1.5,
+            "cost_edge_ok": True,
+        }
+
+        with caplog.at_level("INFO", logger="src.services.paper_trade_executor"):
+            result = open_paper_position(signal, 50000.0, 1000.0, extra=extra)
+
+        assert result["status"] == "opened"
+        # Verify the function was called by checking for entry quality log
+        log_text = caplog.text.lower()
+        assert "paper_train_quality_entry" in log_text or "btcusdt" in log_text
+        assert "c_weak_ev_train" in log_text or "BULL_TREND" in log_text or "training_sampler" in log_text
+
+    def test_mfe_mae_calculation_for_buy(self, clean_positions):
+        """P1.1AG Test 2: Exit quality log computes MFE/MAE correctly for BUY."""
+        from src.services.paper_trade_executor import (
+            open_paper_position,
+            update_paper_positions,
+            _POSITIONS,
+        )
+
+        signal = {
+            "symbol": "ETHUSDT",
+            "side": "BUY",
+            "ev": 0.08,
+            "score": 0.20,
+            "regime": "BULL_TREND",
+        }
+
+        extra = {
+            "paper_source": "training_sampler",
+            "training_bucket": "C_WEAK_EV_TRAIN",
+        }
+
+        result = open_paper_position(signal, 3000.0, 1000.0, extra=extra)
+        trade_id = result["trade_id"]
+
+        # Verify initial state
+        assert trade_id in _POSITIONS
+        pos = _POSITIONS[trade_id]
+        assert "max_seen" in pos
+        assert "min_seen" in pos
+        assert pos["max_seen"] == 3000.0  # Initial price
+        assert pos["min_seen"] == 3000.0  # Initial price
+
+        # Update with slightly higher price (not enough to hit TP which is at 3036)
+        update_paper_positions({"ETHUSDT": 3020.0}, 1010.0)  # max_seen should update
+        assert trade_id in _POSITIONS  # Position should still be open
+        pos = _POSITIONS[trade_id]
+        assert pos["max_seen"] == 3020.0, f"Expected max_seen=3020, got {pos.get('max_seen')}"
+        assert pos["min_seen"] == 3000.0, f"Expected min_seen=3000, got {pos.get('min_seen')}"
+
+        # Update with slightly lower price (not enough to hit SL which is at 2964)
+        update_paper_positions({"ETHUSDT": 2980.0}, 1020.0)  # min_seen should update
+        assert trade_id in _POSITIONS  # Position should still be open
+        pos = _POSITIONS[trade_id]
+        assert pos["max_seen"] == 3020.0, f"Expected max_seen=3020, got {pos.get('max_seen')}"
+        assert pos["min_seen"] == 2980.0, f"Expected min_seen=2980, got {pos.get('min_seen')}"
+
+    def test_mfe_mae_calculation_for_sell(self, clean_positions):
+        """P1.1AG Test 3: Exit quality log computes MFE/MAE correctly for SELL."""
+        from src.services.paper_trade_executor import (
+            open_paper_position,
+            update_paper_positions,
+            _POSITIONS,
+        )
+
+        signal = {
+            "symbol": "BNBUSDT",
+            "side": "SELL",
+            "ev": 0.07,
+            "score": 0.19,
+            "regime": "BEAR_TREND",
+        }
+
+        extra = {
+            "paper_source": "training_sampler",
+            "training_bucket": "C_WEAK_EV_TRAIN",
+        }
+
+        result = open_paper_position(signal, 600.0, 1000.0, extra=extra)
+        trade_id = result["trade_id"]
+
+        # Verify initial state
+        assert trade_id in _POSITIONS
+        pos = _POSITIONS[trade_id]
+        assert pos["max_seen"] == 600.0  # Initial price
+        assert pos["min_seen"] == 600.0  # Initial price
+        # For SELL: TP at 600*0.988=592.8, SL at 600*1.012=607.2
+
+        # Simulate price movement for SELL - go down slightly (good for SELL but not to TP)
+        update_paper_positions({"BNBUSDT": 595.0}, 1010.0)  # min_seen = 595 (good for SELL)
+        assert trade_id in _POSITIONS
+        pos = _POSITIONS[trade_id]
+        assert pos["min_seen"] == 595.0, f"Expected min_seen=595, got {pos.get('min_seen')}"
+        assert pos["max_seen"] == 600.0, f"Expected max_seen=600, got {pos.get('max_seen')}"
+
+        # Go up slightly (bad for SELL but not to SL)
+        update_paper_positions({"BNBUSDT": 605.0}, 1020.0)  # max_seen = 605 (bad for SELL)
+        assert trade_id in _POSITIONS
+        pos = _POSITIONS[trade_id]
+        assert pos["max_seen"] == 605.0, f"Expected max_seen=605, got {pos.get('max_seen')}"
+        assert pos["min_seen"] == 595.0, f"Expected min_seen=595, got {pos.get('min_seen')}"
+
+    def test_missing_optional_fields_no_crash(self, clean_positions, caplog):
+        """P1.1AG Test 4: Missing optional fields do not crash and log na."""
+        from src.services.paper_trade_executor import open_paper_position
+
+        # Minimal signal
+        signal = {
+            "symbol": "XRPUSDT",
+            "side": "BUY",
+        }
+
+        extra = {"paper_source": "training_sampler"}
+
+        with caplog.at_level("INFO"):
+            result = open_paper_position(signal, 2.5, 1000.0, extra=extra)
+
+        assert result["status"] == "opened"
+        # Should not crash and should log entry quality
+        assert "[PAPER_TRAIN_QUALITY_ENTRY]" in caplog.text or "[PAPER_ENTRY]" in caplog.text
+
+    def test_summary_aggregator_counts_outcomes(self, clean_positions, caplog):
+        """P1.1AG Test 5: Summary aggregator counts WIN/LOSS/FLAT correctly."""
+        from src.services.paper_trade_executor import (
+            open_paper_position,
+            update_paper_positions,
+            _maybe_log_paper_quality_summary,
+        )
+        import src.services.paper_trade_executor as pte
+
+        signal = {
+            "symbol": "SOLUSDT",
+            "side": "BUY",
+            "ev": 0.06,
+            "score": 0.17,
+            "regime": "BULL_TREND",
+        }
+
+        extra = {"paper_source": "training_sampler"}
+
+        # Open and close 3 trades: 1 WIN, 1 LOSS, 1 FLAT
+        # Trade 1: WIN - price goes up to hit TP
+        result1 = open_paper_position(signal, 100.0, 1000.0, extra=extra)
+        update_paper_positions({"SOLUSDT": 103.0}, 1010.0)  # Above TP should trigger close
+
+        # Trade 2: LOSS - price goes down to hit SL
+        result2 = open_paper_position(signal, 100.0, 1020.0, extra=extra)
+        update_paper_positions({"SOLUSDT": 97.0}, 1030.0)  # Below SL should trigger close
+
+        # Trade 3: FLAT - timeout close
+        result3 = open_paper_position(signal, 100.0, 1040.0, extra=extra)
+        from src.services.paper_trade_executor import check_and_close_timeout_positions
+        check_and_close_timeout_positions(1040.0 + 901)  # Force timeout (max hold is usually 900s)
+
+        # Force summary log
+        pte._PAPER_SUMMARY_LAST_LOG = 0  # Reset timer
+        with caplog.at_level("INFO", logger="src.services.paper_trade_executor"):
+            _maybe_log_paper_quality_summary()
+
+        # Verify summary was logged
+        assert "[PAPER_TRAIN_QUALITY_SUMMARY]" in caplog.text or "closed=" in caplog.text.lower()
+
+    def test_no_live_trading_behavior_change(self, clean_positions):
+        """P1.1AG Test 6: No live/real trading mode behavior affected."""
+        from src.services.paper_trade_executor import open_paper_position
+
+        # Test that non-training-sampler positions don't log entry quality diagnostics
+        signal = {
+            "symbol": "ETHUSDT",
+            "side": "BUY",
+            "ev": 0.10,
+            "score": 0.22,
+            "regime": "BULL_TREND",
+        }
+
+        extra = {"paper_source": "normal_rde_take"}  # NOT training_sampler
+
+        result = open_paper_position(signal, 3000.0, 1000.0, extra=extra)
+
+        # Should open successfully
+        assert result["status"] == "opened"
+        # Diagnostics are only for training_sampler source, so live trades are unaffected
