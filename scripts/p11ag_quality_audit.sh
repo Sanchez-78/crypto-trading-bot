@@ -65,6 +65,7 @@ ANOMALIES=$(count_logs "PAPER_TRAIN_ANOMALY")
 SUMMARIES=$(count_logs "PAPER_TRAIN_QUALITY_SUMMARY")
 EXITS=$(count_logs "PAPER_EXIT")
 LEARNING=$(count_logs "LEARNING_UPDATE ok=True")
+LM_STATE_AFTER=$(count_logs "LM_STATE_AFTER_UPDATE")
 
 echo "PAPER_TRAIN_ENTRY:           $ENTRIES"
 echo "PAPER_TRAIN_QUALITY_ENTRY:   $QUALITY_ENTRIES"
@@ -74,6 +75,7 @@ echo "PAPER_TRAIN_ANOMALY:         $ANOMALIES"
 echo "PAPER_TRAIN_QUALITY_SUMMARY: $SUMMARIES"
 echo "PAPER_EXIT:                  $EXITS"
 echo "LEARNING_UPDATE ok=True:     $LEARNING"
+echo "LM_STATE_AFTER_UPDATE:       $LM_STATE_AFTER"
 echo ""
 
 # State
@@ -114,8 +116,10 @@ elif [ "$EXITS" -gt 0 ]; then
     echo "✓ Exit logs present ($QUALITY_EXITS)"
 fi
 
-if [ "$EXITS" -gt 0 ] && [ "$LEARNING" -eq 0 ]; then
-    echo "⚠️  Paper exits exist but learning updates not seen"
+if [ "$EXITS" -gt 0 ] && [ "$LEARNING" -eq 0 ] && [ "$LM_STATE_AFTER" -eq 0 ]; then
+    echo "⚠️  Paper exits exist but no learning update logs (neither LEARNING_UPDATE ok=True nor LM_STATE_AFTER_UPDATE)"
+elif [ "$EXITS" -gt 0 ] && ([ "$LEARNING" -gt 0 ] || [ "$LM_STATE_AFTER" -gt 0 ]); then
+    echo "✓ Learning update logs present (LEARNING_UPDATE ok=True: $LEARNING, LM_STATE_AFTER_UPDATE: $LM_STATE_AFTER)"
 fi
 
 echo ""

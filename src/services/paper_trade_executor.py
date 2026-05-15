@@ -711,6 +711,30 @@ def open_paper_position(
     if extra and "final_size_usd" in extra:
         size_usd = extra["final_size_usd"]
 
+    # P1.1AI: Use side-aware TP/SL for paper training
+    tp_sl = normalize_paper_tp_sl(side, price, price * 1.012, price * 0.988)
+    if tp_sl is None:
+        log.error(
+            "[PAPER_ENTRY_BLOCKED] symbol=%s reason=tp_sl_impossible side=%s entry=%.8f",
+            symbol,
+            side,
+            price,
+        )
+        return {"status": "blocked", "reason": "tp_sl_impossible"}
+
+    if tp_sl.get("repaired"):
+        log.warning(
+            "[PAPER_TRAIN_TP_SL_REPAIRED] trade_id=%s symbol=%s side=%s old_tp=%.8f old_sl=%.8f new_tp=%.8f new_sl=%.8f reason=%s",
+            trade_id,
+            symbol,
+            side,
+            price * 1.012,
+            price * 0.988,
+            tp_sl["tp"],
+            tp_sl["sl"],
+            tp_sl["repair_reason"],
+        )
+
     position = {
         "trade_id": trade_id,
         "mode": "paper_live",
@@ -720,13 +744,18 @@ def open_paper_position(
         "entry_price": price,
         "entry_ts": ts,
         "size_usd": size_usd,
-        "tp": price * 1.012,  # 1.2% TP placeholder
-        "sl": price * 0.988,  # 1.2% SL placeholder
+        "tp": tp_sl["tp"],
+        "sl": tp_sl["sl"],
+        "tp_pct_at_entry": tp_sl["tp_pct"],  # Store for diagnostics
+        "sl_pct_at_entry": tp_sl["sl_pct"],
+        "rr_at_entry": tp_sl["rr"],
         "timeout_s": _MAX_AGE_S,
         "regime": signal.get("regime", "NEUTRAL"),
         "features": signal.get("features", {}),
         "ev_at_entry": signal.get("ev", 0.0),
         "score_at_entry": signal.get("score", 0.0),
+        "score_raw_at_entry": extra.get("score_raw") if extra else None,  # P1.1AI: canonical score fields
+        "score_final_at_entry": extra.get("score_final") if extra else None,
         "p_at_entry": signal.get("p", signal.get("confidence", 0.5)),
         "coh_at_entry": signal.get("coh", signal.get("coherence", 1.0)),
         "af_at_entry": signal.get("af", signal.get("auditor_factor", 1.0)),
@@ -895,6 +924,11 @@ def check_and_close_timeout_positions(now: Optional[float] = None) -> List[dict]
                 "weighted_pnl": 0.0,
                 "learning_skipped": True,
             }
+
+            # P1.1AI: Emit quality exit for TIMEOUT_NO_PRICE (entry/exit same, MFE/MAE = 0)
+            if pos.get("paper_source") == "training_sampler":
+                _log_paper_train_quality_exit(closed_trade, pos)
+
             _save_paper_state()
             closed_trades.append(closed_trade)
 
@@ -936,9 +970,10 @@ def update_paper_positions(
                 _POSITIONS[trade_id]["max_seen"] = max(_POSITIONS[trade_id].get("max_seen", current_price), current_price)
                 _POSITIONS[trade_id]["min_seen"] = min(_POSITIONS[trade_id].get("min_seen", current_price), current_price)
 
-        # Check exit conditions
+        # Check exit conditions (P1.1AI: side-aware)
         entry_price = pos["entry_price"]
         age_s = ts - pos["entry_ts"]
+        side = pos.get("side", "BUY")
 
         # P1.1Z: Use effective hold time (respects training position max_hold_s)
         effective_hold = _effective_paper_hold_s(pos)
@@ -946,9 +981,17 @@ def update_paper_positions(
         timeout_s = pos.get("timeout_s", max_hold)
 
         exit_reason = None
-        if current_price >= pos["tp"]:
+        # P1.1AI: Side-aware TP/SL check
+        if side == "BUY":
+            tp_hit = current_price >= pos["tp"]
+            sl_hit = current_price <= pos["sl"]
+        else:  # SELL
+            tp_hit = current_price <= pos["tp"]
+            sl_hit = current_price >= pos["sl"]
+
+        if tp_hit:
             exit_reason = "TP"
-        elif current_price <= pos["sl"]:
+        elif sl_hit:
             exit_reason = "SL"
         elif age_s >= effective_hold:
             exit_reason = "TIMEOUT"
@@ -1328,6 +1371,73 @@ def reset_paper_positions():
         _POSITIONS.clear()
 
 
+def normalize_paper_tp_sl(side: str, entry: float, tp: float, sl: float) -> dict:
+    """P1.1AI: Compute side-valid TP/SL distances and repair inverted levels.
+
+    BUY:  tp > entry > sl (TP above, SL below)
+    SELL: sl > entry > tp (SL above, TP below)
+
+    If SELL arrives with BUY-style levels (tp > entry, sl < entry), reflect
+    distances around entry to fix the inversion.
+
+    Args:
+        side: "BUY" or "SELL"
+        entry: Entry price
+        tp: Take-profit price (may need repair)
+        sl: Stop-loss price (may need repair)
+
+    Returns:
+        dict with keys: tp, sl, tp_pct, sl_pct, rr, repaired, repair_reason
+        tp/sl are corrected for the side. If impossible after repair, returns None.
+    """
+    if entry <= 0:
+        return None
+
+    repaired = False
+    repair_reason = None
+
+    # Check if SELL arrived with inverted levels and repair if needed
+    if side == "SELL" and tp > entry and sl < entry:
+        # Reflect distances: swap to correct SELL semantics
+        old_tp, old_sl = tp, sl
+        tp = entry - abs(old_tp - entry)  # Pull TP below entry
+        sl = entry + abs(entry - old_sl)  # Pull SL above entry
+        repaired = True
+        repair_reason = "sell_levels_inverted"
+
+    # Validate corrected levels
+    if side == "BUY":
+        tp_valid = tp > entry
+        sl_valid = sl < entry
+    else:  # SELL
+        tp_valid = tp < entry
+        sl_valid = sl > entry
+
+    if not (tp_valid and sl_valid):
+        # Impossible levels even after repair
+        return None
+
+    # Compute distances and RR
+    if side == "BUY":
+        tp_pct = abs(tp - entry) / entry * 100.0 if entry > 0 else 0.0
+        sl_pct = abs(entry - sl) / entry * 100.0 if entry > 0 else 0.0
+    else:  # SELL
+        tp_pct = abs(entry - tp) / entry * 100.0 if entry > 0 else 0.0
+        sl_pct = abs(sl - entry) / entry * 100.0 if entry > 0 else 0.0
+
+    rr = tp_pct / sl_pct if sl_pct > 0 else 0.0
+
+    return {
+        "tp": tp,
+        "sl": sl,
+        "tp_pct": tp_pct,
+        "sl_pct": sl_pct,
+        "rr": rr,
+        "repaired": repaired,
+        "repair_reason": repair_reason,
+    }
+
+
 def check_quality_entry_mismatch(trade_id: str, symbol: str, source: str) -> None:
     """P1.1AH: Check if a paper training entry has a corresponding quality entry log.
 
@@ -1386,24 +1496,69 @@ def _log_paper_train_quality_entry(position: dict, signal: dict) -> None:
         expected_move_pct = float(position.get("expected_move_pct") or 0.0)
         cost_edge_ok = position.get("cost_edge_ok", True)
 
-        entry = position.get("entry_price", 0.0)
-        tp = position.get("tp", 0.0)
-        sl = position.get("sl", 0.0)
+        entry = float(position.get("entry_price") or 0.0)
+        tp = float(position.get("tp") or 0.0)
+        sl = float(position.get("sl") or 0.0)
 
-        # Calculate TP/SL pcts
-        if entry and entry > 0:
-            tp_pct = ((tp - entry) / entry * 100.0) if side == "BUY" else ((entry - tp) / entry * 100.0)
-            sl_pct = ((entry - sl) / entry * 100.0) if side == "BUY" else ((sl - entry) / entry * 100.0)
-            rr = tp_pct / sl_pct if sl_pct > 0 else 0.0
+        # P1.1AI: Handle expected_move_pct units — ATR absolute can be mislabeled as percent
+        atr = float(signal.get("atr") or 0.0)
+        expected_move_src = "position"
+        if expected_move_pct > 2.0 and atr > 0 and abs(expected_move_pct - atr) < 0.1:
+            # Heuristic: if expected_move_pct ≈ atr and both are > 2, likely mislabeled absolute ATR
+            if entry > 0 and atr < entry * 0.02:  # If ATR < 2% of price, treat as absolute
+                expected_move_pct_corrected = (atr / entry) * 100.0
+                log.warning(
+                    "[PAPER_TRAIN_ANOMALY] type=expected_move_unit_mismatch symbol=%s atr=%.8f entry=%.8f reported_pct=%.3f corrected_pct=%.3f",
+                    symbol,
+                    atr,
+                    entry,
+                    expected_move_pct,
+                    expected_move_pct_corrected,
+                )
+                expected_move_pct = expected_move_pct_corrected
+                expected_move_src = "atr_abs_corrected"
+
+        # Calculate TP/SL pcts (should already be correct from normalize_paper_tp_sl)
+        tp_pct = position.get("tp_pct_at_entry", 0.0)
+        sl_pct = position.get("sl_pct_at_entry", 0.0)
+        rr = position.get("rr_at_entry", 0.0)
+
+        # P1.1AI: Properly handle score fields — detect missing vs zero
+        score_raw_pos = position.get("score_raw_at_entry")
+        score_final_pos = position.get("score_final_at_entry")
+        score_missing = score_raw_pos is None and score_final_pos is None
+
+        if score_raw_pos is not None:
+            score_raw = float(score_raw_pos)
+        elif score_final_pos is not None:
+            score_raw = float(score_final_pos)
         else:
-            tp_pct, sl_pct, rr = 0.0, 0.0, 0.0
+            score_raw = signal.get("score_raw", signal.get("score", None))
+            if score_raw is not None:
+                score_raw = float(score_raw)
+            else:
+                score_raw = None
 
-        atr = signal.get("atr", 0.0)
-        spread = signal.get("spread", 0.0)
+        if score_final_pos is not None:
+            score_final = float(score_final_pos)
+        elif score_raw_pos is not None:
+            score_final = float(score_raw_pos)
+        else:
+            score_final = signal.get("score_final", signal.get("score", None))
+            if score_final is not None:
+                score_final = float(score_final)
+            else:
+                score_final = None
+
+        spread = float(signal.get("spread") or 0.0)
         hold_limit_s = int(position.get("max_hold_s") or 300)
 
+        # Format score fields for logging
+        score_raw_str = f"{score_raw:.3f}" if score_raw is not None else "na"
+        score_final_str = f"{score_final:.3f}" if score_final is not None else "na"
+
         log.info(
-            "[PAPER_TRAIN_QUALITY_ENTRY] trade_id=%s symbol=%s side=%s source=%s bucket=%s training_bucket=%s regime=%s ev=%.4f p=%.3f score_raw=%.3f score_final=%.3f coh=%.3f expected_move_pct=%.3f cost_edge_ok=%s entry=%.8f tp=%.8f sl=%.8f tp_pct=%.3f sl_pct=%.3f rr=%.3f atr=%.8f spread=%.8f hold_limit_s=%d",
+            "[PAPER_TRAIN_QUALITY_ENTRY] trade_id=%s symbol=%s side=%s source=%s bucket=%s training_bucket=%s regime=%s ev=%.4f p=%.3f score_raw=%s score_final=%s score_missing=%s coh=%.3f expected_move_pct=%.3f expected_move_src=%s cost_edge_ok=%s entry=%.8f tp=%.8f sl=%.8f tp_pct=%.3f sl_pct=%.3f rr=%.3f atr=%.8f spread=%.8f hold_limit_s=%d",
             trade_id,
             symbol,
             side,
@@ -1413,10 +1568,12 @@ def _log_paper_train_quality_entry(position: dict, signal: dict) -> None:
             regime,
             ev,
             p,
-            score_raw,
-            score_final,
+            score_raw_str,
+            score_final_str,
+            score_missing,
             coh,
             expected_move_pct,
+            expected_move_src,
             cost_edge_ok,
             entry,
             tp,
@@ -1429,14 +1586,23 @@ def _log_paper_train_quality_entry(position: dict, signal: dict) -> None:
             hold_limit_s,
         )
 
-        # P1.1AG: Log anomalies detected at entry
-        if score_raw == 0.0 and score_final == 0.0 and ev > 0:
+        # P1.1AI: Log anomalies detected at entry
+        # Only log score_zero_but_take if score is truly present and zero
+        if score_raw is not None and score_final is not None:
+            if score_raw == 0.0 and score_final == 0.0 and ev > 0:
+                log.warning(
+                    "[PAPER_TRAIN_ANOMALY] type=score_zero_but_take symbol=%s ev=%.4f score_raw=%.3f score_final=%.3f source=%s",
+                    symbol,
+                    ev,
+                    score_raw,
+                    score_final,
+                    source,
+                )
+        elif score_missing and ev > 0:
             log.warning(
-                "[PAPER_TRAIN_ANOMALY] type=score_zero_but_take symbol=%s ev=%.4f score_raw=%.3f score_final=%.3f source=%s",
+                "[PAPER_TRAIN_ANOMALY] type=score_missing_for_take symbol=%s ev=%.4f source=%s",
                 symbol,
                 ev,
-                score_raw,
-                score_final,
                 source,
             )
 
@@ -1645,6 +1811,21 @@ def _log_paper_train_quality_exit(closed_trade: dict, position: dict) -> None:
                 symbol,
                 ",".join(missing_fields),
             )
+
+        # P1.1AI: Validate TP/SL are side-aware at exit
+        if entry > 0 and tp > 0 and sl > 0:
+            if side == "BUY":
+                if not (tp > entry > sl):
+                    log.warning(
+                        "[PAPER_TRAIN_ANOMALY] type=tp_sl_invalid_at_exit trade_id=%s symbol=%s side=%s entry=%.8f tp=%.8f sl=%.8f",
+                        trade_id, symbol, side, entry, tp, sl
+                    )
+            elif side == "SELL":
+                if not (entry > tp and sl > entry):
+                    log.warning(
+                        "[PAPER_TRAIN_ANOMALY] type=tp_sl_invalid_at_exit trade_id=%s symbol=%s side=%s entry=%.8f tp=%.8f sl=%.8f",
+                        trade_id, symbol, side, entry, tp, sl
+                    )
 
         log.info(
             "[PAPER_TRAIN_QUALITY_EXIT] trade_id=%s symbol=%s side=%s source=%s entry_regime=%s exit_regime=%s training_bucket=%s reason=%s outcome=%s entry=%.8f exit=%.8f net_pnl_pct=%.4f mfe_pct=%.4f mae_pct=%.4f hold_s=%d hold_limit_s=%d touched_tp=%s touched_sl=%s exit_efficiency=%.4f",

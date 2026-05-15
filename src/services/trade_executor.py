@@ -1668,6 +1668,8 @@ def _maybe_route_to_paper_training(signal: dict, current_price: float, reject_re
                         "features": signal.get("features", {}),
                         "regime": signal.get("regime", "RANGING"),
                         "score_at_entry": signal.get("score", 0.0),
+                        "score_raw": trade_signal.get("score_raw", trade_signal.get("score", None)),
+                        "score_final": trade_signal.get("score_final", trade_signal.get("score", None)),
                     },
                 )
                 if open_result.get("status") == "opened":
@@ -2059,6 +2061,8 @@ def handle_signal(signal):
                                     "size_mult": ov["size_mult"],
                                     "max_hold_s": ov["max_hold_s"],
                                     "tags": ov["tags"],
+                                    "score_raw": signal.get("score_raw", signal.get("score", None)),
+                                    "score_final": signal.get("score_final", signal.get("score", None)),
                                 },
                             )
                             log.warning(
@@ -2723,6 +2727,8 @@ def handle_signal(signal):
                 "features": signal.get("features", {}),
                 "regime": regime,
                 "score_at_entry": signal.get("score", 0.0),
+                "score_raw": signal.get("score_raw", signal.get("score", None)),
+                "score_final": signal.get("score_final", signal.get("score", None)),
             }
             _paper_result = open_paper_position(signal, actual_entry, time.time(), "RDE_TAKE", extra=extra_meta)
             if _paper_result.get("status") == "opened":
