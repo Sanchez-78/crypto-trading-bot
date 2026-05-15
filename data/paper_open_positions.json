@@ -1,5 +1,5 @@
 {
-  "paper_e619b1cfee62": {
+  "paper_c0b79d4a92f7": {
     "af_at_entry": 1.0,
     "bootstrap_closed_trades": 0,
     "bucket": null,
@@ -7,9 +7,9 @@
     "cost_edge_bypass_reason": "none",
     "cost_edge_bypassed": false,
     "cost_edge_ok": true,
-    "created_at": 1778848677.7881775,
+    "created_at": 1778849386.5507574,
     "entry_price": 150.0,
-    "entry_ts": 1778848677.7881775,
+    "entry_ts": 1778849386.5507574,
     "ev_at_entry": 0.06,
     "expected_move_pct": 0.0,
     "explore_bucket": null,
@@ -42,7 +42,7 @@
     "timeout_s": 900.0,
     "tp": 151.8,
     "tp_pct_at_entry": 1.2000000000000077,
-    "trade_id": "paper_e619b1cfee62",
+    "trade_id": "paper_c0b79d4a92f7",
     "training_bucket": null
   }
 }

@@ -6,6 +6,20 @@
 
 set -e
 
+# P1.1AL: Safe counter helpers
+to_int() {
+    local v
+    v="$(printf '%s\n' "$1" | head -n1 | tr -dc '0-9')"
+    [ -n "$v" ] && echo "$v" || echo 0
+}
+
+count_pattern() {
+    local pattern="$1"
+    local value
+    value="$(grep -E "$pattern" "$LOG_TMP" 2>/dev/null | wc -l | tr -d '[:space:]')"
+    to_int "$value"
+}
+
 # Parse arguments
 SINCE="${2:--1h}"
 if [ "$1" = "--since" ]; then
@@ -63,33 +77,33 @@ echo ""
 # All counters use the snapshot file (no further journalctl calls)
 count_logs() {
     local filter="$1"
-    grep -c "$filter" "$LOG_TMP" 2>/dev/null || echo "0"
+    count_pattern "$filter"
 }
 
 echo "Log Counts:"
 echo "-------"
 
 # Core pipeline counts
-ENTRIES=$(count_logs "PAPER_TRAIN_ENTRY")
-QUALITY_ENTRIES=$(count_logs "PAPER_TRAIN_QUALITY_ENTRY")
-QUALITY_EXITS=$(count_logs "PAPER_TRAIN_QUALITY_EXIT")
-QUALITY_EXIT_MISSING=$(count_logs "PAPER_TRAIN_QUALITY_EXIT_MISSING")
-MISMATCHES=$(count_logs "PAPER_TRAIN_QUALITY_MISMATCH")
-ANOMALIES=$(count_logs "PAPER_TRAIN_ANOMALY")
-SUMMARIES=$(count_logs "PAPER_TRAIN_QUALITY_SUMMARY")
-EXITS=$(count_logs "PAPER_EXIT")
-LEARNING=$(count_logs "LEARNING_UPDATE ok=True")
-LM_STATE_AFTER=$(count_logs "LM_STATE_AFTER_UPDATE")
-LM_MISMATCH=$(count_logs "LM_UPDATE_MISMATCH")
-SCORE_MISSING_CTX=$(count_logs "PAPER_SCORE_MISSING_CONTEXT")
+ENTRIES=$(to_int "$(count_logs "PAPER_TRAIN_ENTRY")")
+QUALITY_ENTRIES=$(to_int "$(count_logs "PAPER_TRAIN_QUALITY_ENTRY")")
+QUALITY_EXITS=$(to_int "$(count_logs "PAPER_TRAIN_QUALITY_EXIT")")
+QUALITY_EXIT_MISSING=$(to_int "$(count_logs "PAPER_TRAIN_QUALITY_EXIT_MISSING")")
+MISMATCHES=$(to_int "$(count_logs "PAPER_TRAIN_QUALITY_MISMATCH")")
+ANOMALIES=$(to_int "$(count_logs "PAPER_TRAIN_ANOMALY")")
+SUMMARIES=$(to_int "$(count_logs "PAPER_TRAIN_QUALITY_SUMMARY")")
+EXITS=$(to_int "$(count_logs "PAPER_EXIT")")
+LEARNING=$(to_int "$(count_logs "LEARNING_UPDATE ok=True")")
+LM_STATE_AFTER=$(to_int "$(count_logs "LM_STATE_AFTER_UPDATE")")
+LM_MISMATCH=$(to_int "$(count_logs "LM_UPDATE_MISMATCH")")
+SCORE_MISSING_CTX=$(to_int "$(count_logs "PAPER_SCORE_MISSING_CONTEXT")")
 
 # P1.1AK: Split counters by source and training bucket
-ENTRIES_REAL=$(grep "PAPER_TRAIN_ENTRY" "$LOG_TMP" | grep -c "bucket=C_WEAK_EV_TRAIN" 2>/dev/null || echo "0")
-EXITS_TRAINING=$(grep "PAPER_EXIT" "$LOG_TMP" | grep -c "training_bucket=C_WEAK_EV_TRAIN" 2>/dev/null || echo "0")
-QUALITY_EXITS_TRAINING=$(grep "PAPER_TRAIN_QUALITY_EXIT" "$LOG_TMP" | grep -c "training_bucket=C_WEAK_EV_TRAIN" 2>/dev/null || echo "0")
-QUALITY_EXITS_TIMEOUT_NP=$(count_logs "PAPER_TRAIN_QUALITY_EXIT.*reason=TIMEOUT_NO_PRICE")
-COST_EDGE_BYPASS=$(count_logs "COST_EDGE_BYPASS")
-ECON_SUMMARY=$(count_logs "PAPER_TRAIN_ECON_SUMMARY")
+ENTRIES_REAL=$(to_int "$(grep "PAPER_TRAIN_ENTRY" "$LOG_TMP" 2>/dev/null | grep -c "bucket=C_WEAK_EV_TRAIN" 2>/dev/null || echo "0")")
+EXITS_TRAINING=$(to_int "$(grep "PAPER_EXIT" "$LOG_TMP" 2>/dev/null | grep -c "training_bucket=C_WEAK_EV_TRAIN" 2>/dev/null || echo "0")")
+QUALITY_EXITS_TRAINING=$(to_int "$(grep "PAPER_TRAIN_QUALITY_EXIT" "$LOG_TMP" 2>/dev/null | grep -c "training_bucket=C_WEAK_EV_TRAIN" 2>/dev/null || echo "0")")
+QUALITY_EXITS_TIMEOUT_NP=$(to_int "$(count_logs "PAPER_TRAIN_QUALITY_EXIT.*reason=TIMEOUT_NO_PRICE")")
+COST_EDGE_BYPASS=$(to_int "$(count_logs "COST_EDGE_BYPASS")")
+ECON_SUMMARY=$(to_int "$(count_logs "PAPER_TRAIN_ECON_SUMMARY")")
 
 echo "PAPER_TRAIN_ENTRY:                $ENTRIES"
 echo "PAPER_TRAIN_ENTRY_REAL (training): $ENTRIES_REAL"
@@ -135,7 +149,8 @@ echo ""
 # LM State
 echo "LM State:"
 echo "-------"
-LM_COUNT=$(grep "Total trades in LM" "$LOG_TMP" 2>/dev/null | tail -1 | grep -oE "[0-9]+" | tail -1 || echo "?")
+LM_COUNT=$(grep "Total trades in LM" "$LOG_TMP" 2>/dev/null | tail -1 | grep -oE "[0-9]+" | tail -1 || true)
+LM_COUNT=$(to_int "${LM_COUNT:-0}")
 echo "Latest Total trades in LM: $LM_COUNT"
 echo ""
 

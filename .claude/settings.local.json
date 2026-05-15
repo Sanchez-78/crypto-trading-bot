@@ -184,7 +184,8 @@
       "Bash(awk '/test_v10_13u19f_override_missing_logs_bug_reason/,/FAILED|PASSED/')",
       "PowerShell(\\(Get-Content \"C:\\\\Projects\\\\CryptoMaster_srv\\\\tests\\\\test_v10_13u_patches.py\" | Measure-Object -Line\\).Lines)",
       "PowerShell(winget upgrade *)",
-      "Bash(awk -F: '$1 >= 1799')"
+      "Bash(awk -F: '$1 >= 1799')",
+      "Bash(bash *)"
     ]
   }
 }
