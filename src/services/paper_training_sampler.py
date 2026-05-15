@@ -313,8 +313,46 @@ def _training_quality_gate(
     source_reject = str(source_reject or "UNKNOWN")
 
     # Cost-edge: do not open weak EV train if edge cannot cover costs
+    # P1.1AE: Bootstrap training sample bypass - allow weak EV during cold-start in paper_train mode
     if bucket == "C_WEAK_EV_TRAIN" and cost_edge_ok is False:
-        return _skip("cost_edge_too_low", symbol=symbol, bucket=bucket, source_reject=source_reject)
+        # Check for bootstrap training bypass conditions
+        allow_bootstrap_bypass = False
+        bypass_reason = ""
+
+        try:
+            from src.core.runtime_mode import get_trading_mode
+            from src.services.learning_event import get_metrics as _gm_p11ae
+
+            mode = get_trading_mode()
+            is_paper_train = mode.value == "paper_train"
+
+            # P1.1AE: Bypass cost_edge_too_low only if:
+            # - paper_train mode
+            # - routed from STRICT_TAKE_ROUTED_TO_TRAINING
+            # - bootstrap active (< 50 closed trades or 0 total LM trades)
+            if is_paper_train and "STRICT_TAKE_ROUTED_TO_TRAINING" in source_reject:
+                metrics = _gm_p11ae()
+                trades_closed = metrics.get("trades", 0)
+
+                # Bootstrap active if < 50 closed trades
+                if trades_closed < 50:
+                    allow_bootstrap_bypass = True
+                    bypass_reason = f"bootstrap_training_sample trades={trades_closed}"
+        except Exception as e:
+            pass  # If check fails, use normal cost_edge rejection
+
+        if not allow_bootstrap_bypass:
+            return _skip("cost_edge_too_low", symbol=symbol, bucket=bucket, source_reject=source_reject)
+
+        # P1.1AE: Log the bypass
+        import logging
+        log_p11ae = logging.getLogger(__name__)
+        log_p11ae.info(
+            "[COST_EDGE_BYPASS] mode=paper_train symbol=%s bucket=C_WEAK_EV_TRAIN "
+            "reason=%s source=STRICT_TAKE_ROUTED_TO_TRAINING",
+            symbol,
+            bypass_reason,
+        )
 
     # Dedicated duplicate candidate cooldown
     from src.core.runtime_mode import PAPER_TRAIN_DUPLICATE_CANDIDATE_COOLDOWN_S
