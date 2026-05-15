@@ -626,9 +626,12 @@ _paper_train_model_state = {}
 
 def update_from_paper_trade(trade: dict) -> bool:
     """
-    P1.1T: Paper-train-only safe learning update. Completely isolated, never unsafe.
+    P1.1T/P1.1AF: Paper-train-only safe learning update that also updates canonical LM state.
     Never calls lm_update(). Never calls record_features(). Never iterates scalar feature values.
     Never raises.
+
+    P1.1AF: Updates canonical lm_count, lm_pnl_hist, lm_wr_hist to ensure health/report
+    reflects paper training trades.
 
     Args:
         trade: Closed paper trade dict with symbol, regime, net_pnl_pct, outcome, features, etc.
@@ -653,8 +656,13 @@ def update_from_paper_trade(trade: dict) -> bool:
             log.debug(f"[PAPER_TRAIN_LEARNING_UPDATE] skip: symbol={sym} regime={reg}")
             return False
 
-        # P1.1T: Use isolated module-level state, not global legacy state
+        # P1.1AF: Capture canonical state before update for mismatch detection
         key = f"{sym}_{reg}"
+        canonical_key = (sym, reg)
+        count_before = lm_count.get(canonical_key, 0)
+        pnl_hist_before = len(lm_pnl_hist.get(canonical_key, []))
+
+        # P1.1T: Use isolated module-level state, not global legacy state
         row = _paper_train_model_state.setdefault(key, {
             "symbol": sym,
             "regime": reg,
@@ -707,6 +715,42 @@ def update_from_paper_trade(trade: dict) -> bool:
                 for fname, fvalue in features.items():
                     # Count feature presence only; never iterate scalar values
                     fc[str(fname)] = int(fc.get(str(fname)) or 0) + 1
+
+        # P1.1AF: Update canonical LM state for health/report visibility
+        lm_count[canonical_key] = lm_count.get(canonical_key, 0) + 1
+
+        # Update canonical PnL history
+        pnl_lst = lm_pnl_hist.setdefault(canonical_key, [])
+        pnl_lst.append(float(pnl))
+        if len(pnl_lst) > 200:
+            del pnl_lst[:-200]
+
+        # Update canonical win rate history
+        wr = 1.0 if outcome == "WIN" else (0.0 if outcome == "LOSS" else 0.5)
+        wr_lst = lm_wr_hist.setdefault(canonical_key, [])
+        wr_lst.append(wr)
+        if len(wr_lst) > 200:
+            del wr_lst[:-200]
+
+        # P1.1AF: Verify state was actually mutated
+        count_after = lm_count.get(canonical_key, 0)
+        pnl_hist_after = len(lm_pnl_hist.get(canonical_key, []))
+        state_changed = count_after > count_before
+
+        if not state_changed:
+            log.warning(
+                "[LM_UPDATE_MISMATCH] ok=True but canonical_total_unchanged "
+                "before=%d after=%d symbol=%s regime=%s bucket=%s",
+                count_before, count_after, sym, reg, bucket,
+            )
+
+        # P1.1AF: Log state after update for verification
+        total_trades = sum(lm_count.values())
+        log.debug(
+            "[LM_STATE_AFTER_UPDATE] source=paper_closed_trade symbol=%s regime=%s "
+            "bucket=%s total_trades=%d pair_n=%d pnl_hist_len=%d updated=%s",
+            sym, reg, bucket, total_trades, len(lm_count), pnl_hist_after, state_changed,
+        )
 
         return True
 

@@ -632,8 +632,10 @@ def open_paper_position(
         return {"status": "blocked", "reason": "invalid_price"}
 
     symbol = signal.get("symbol", "UNKNOWN")
-    bucket = extra.get("explore_bucket") if extra else None
+    # P1.1AF: Ensure bucket field is set (primary is training_bucket, fallback to explore_bucket)
     training_bucket = extra.get("training_bucket") if extra else None
+    explore_bucket = extra.get("explore_bucket") if extra else None
+    bucket = training_bucket or explore_bucket  # Primary: training_bucket, fallback: explore_bucket
     paper_source = extra.get("paper_source") if extra else None
 
     with _POSITION_LOCK:
@@ -720,8 +722,9 @@ def open_paper_position(
         "af_at_entry": signal.get("af", signal.get("auditor_factor", 1.0)),
         "rde_decision": reason,
         "paper_source": extra.get("paper_source") if extra else "normal_rde_take",
-        "explore_bucket": extra.get("explore_bucket") if extra else None,
-        "training_bucket": (extra.get("training_bucket") or extra.get("explore_bucket")) if extra else None,
+        "explore_bucket": explore_bucket,
+        "training_bucket": training_bucket,
+        "bucket": bucket,  # P1.1AF: Canonical bucket field for learning state propagation
         "explore_sub_bucket": extra.get("explore_sub_bucket") if extra else "",  # P1.1i
         "original_decision": extra.get("original_decision") if extra else "TAKE",
         "reject_reason": extra.get("reject_reason") if extra else None,
@@ -966,10 +969,11 @@ def _canonical_closed_paper_trade(raw: dict) -> dict:
     else:
         side = "UNKNOWN"
 
-    # Buckets - prefer training_bucket, fallback to explore_bucket
+    # Buckets - P1.1AF: prefer canonical bucket field, then training_bucket, then explore_bucket
+    bucket_raw = str(raw.get("bucket") or "").strip() or None
     training_bucket = str(raw.get("training_bucket") or "").strip() or None
     explore_bucket = str(raw.get("explore_bucket") or "").strip() or None
-    bucket = training_bucket or explore_bucket or "UNKNOWN"
+    bucket = bucket_raw or training_bucket or explore_bucket or "UNKNOWN"
 
     # Ensure both are set for consistency
     if not training_bucket:
@@ -1223,6 +1227,9 @@ def close_paper_position(
         "weighted_pnl": (pnl_data["net_pnl_pct"] / 100.0) * pos["size_usd"],
     }
 
+    # P1.1AF: Log canonical bucket field (set from training_bucket or explore_bucket)
+    canonical_bucket = pos.get("bucket") or pos.get("training_bucket") or pos.get("explore_bucket") or "A_STRICT_TAKE"
+
     log.warning(
         "[PAPER_EXIT] symbol=%s reason=%s entry=%.8f exit=%.8f net_pnl_pct=%.4f outcome=%s hold_s=%d max_hold_s=%d bucket=%s training_bucket=%s",
         pos["symbol"],
@@ -1233,7 +1240,7 @@ def close_paper_position(
         pnl_data["outcome"],
         int(duration_s),
         int(pos.get("max_hold_s") or _MAX_AGE_S),
-        pos.get("explore_bucket", "A_STRICT_TAKE"),
+        canonical_bucket,
         pos.get("training_bucket", ""),
     )
 
