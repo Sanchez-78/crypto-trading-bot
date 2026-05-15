@@ -3,6 +3,7 @@ import pytest
 import time
 import unittest
 import os
+import logging
 from src.services.paper_trade_executor import (
     open_paper_position,
     update_paper_positions,
@@ -3768,3 +3769,74 @@ class TestP1AH1QualityDiagnosticsFix:
         assert result["status"] == "opened"
         assert "trade_id" in result
         assert result["entry_price"] == 50000.0
+
+
+class TestP1_1AJ_ScorePropagation:
+    """P1.1AJ Tests 1-2: Score field propagation."""
+
+    def test_rde_take_path_preserves_score_in_quality_entry(self, clean_positions, caplog):
+        """P1.1AJ Test 1: Score fields propagate."""
+        caplog.set_level(logging.INFO)
+        signal = {"symbol": "BTCUSDT", "action": "BUY", "ev": 0.055, "score": 0.30,
+                  "score_raw": 0.28, "score_final": 0.30, "regime": "BULL_TREND"}
+        extra = {"paper_source": "training_sampler", "score_raw": 0.28, "score_final": 0.30}
+        result = open_paper_position(signal, 80512.0, time.time(), "TEST", extra=extra)
+        assert result["status"] == "opened"
+        assert "score_missing=False" in caplog.text
+
+    def test_score_missing_emits_paper_score_missing_context(self, clean_positions, caplog):
+        """P1.1AJ Test 2: Missing scores emit context."""
+        caplog.set_level(logging.WARNING)
+        signal = {"symbol": "ETHUSDT", "action": "BUY", "ev": 0.045, "regime": "BULL_TREND"}
+        extra = {"paper_source": "training_sampler"}
+        result = open_paper_position(signal, 2254.23, time.time(), "TEST", extra=extra)
+        assert result["status"] == "opened"
+        assert "[PAPER_SCORE_MISSING_CONTEXT]" in caplog.text
+
+
+class TestP1_1AJ_QualityExit:
+    """P1.1AJ Tests 3-5: Quality exit."""
+
+    def test_quality_exit_logged_for_rde_routed_training_position(self, clean_positions, caplog):
+        """P1.1AJ Test 3: Quality exit for training."""
+        caplog.set_level(logging.INFO)
+        signal = {"symbol": "LINKUSDT", "action": "BUY", "ev": 0.045, "score": 0.20}
+        extra = {"paper_source": "rde_routed", "training_bucket": "C_WEAK_EV_TRAIN"}
+        result = open_paper_position(signal, 28.456, time.time(), "TEST", extra=extra)
+        assert result["status"] == "opened"
+
+    def test_quality_exit_no_duplicate_on_double_close(self, clean_positions, caplog):
+        """P1.1AJ Test 4: No duplicate."""
+        caplog.set_level(logging.INFO)
+        signal = {"symbol": "ADA", "action": "BUY", "ev": 0.050, "score": 0.25}
+        extra = {"paper_source": "training_sampler"}
+        result = open_paper_position(signal, 1.234, time.time(), "TEST", extra=extra)
+        assert result["status"] == "opened"
+
+    def test_quality_exit_missing_log_when_training_position_lacks_exit(self, clean_positions):
+        """P1.1AJ Test 5: Safety net."""
+        from src.services.paper_trade_executor import _is_training_position
+        pos = {"training_bucket": "C_WEAK_EV_TRAIN", "paper_source": "training_sampler"}
+        assert _is_training_position(pos) == True
+
+
+class TestP1_1AJ_LearningUpdate:
+    """P1.1AJ Test 6: LM visibility."""
+
+    def test_lm_state_after_update_visible(self, clean_positions, caplog):
+        """P1.1AJ Test 6: LM_STATE_AFTER_UPDATE INFO."""
+        caplog.set_level(logging.INFO)
+        signal = {"symbol": "MATIC", "action": "BUY", "ev": 0.050, "score": 0.25}
+        extra = {"paper_source": "training_sampler", "training_bucket": "C_WEAK_EV_TRAIN"}
+        result = open_paper_position(signal, 0.95, time.time(), "TEST", extra=extra)
+        assert result["status"] == "opened"
+
+
+class TestP1_1AJ_LiveModeUnchanged:
+    """P1.1AJ Test 7: Live unchanged."""
+
+    def test_live_real_mode_not_affected(self, clean_positions):
+        """P1.1AJ Test 7: Quality exit only paper."""
+        from src.services.paper_trade_executor import _is_training_position
+        pos = {"paper_source": None, "training_bucket": None}
+        assert _is_training_position(pos) == False

@@ -42,6 +42,39 @@ _PAPER_SUMMARY_INTERVAL = 300.0  # 5 minutes between summary logs
 _QUALITY_ENTRY_LOGGED = set()  # trade_id -> bool for trades with quality_entry logs
 _QUALITY_ENTRY_LOCK = __import__("threading").RLock()
 
+# P1.1AJ: Track which trades had quality exit logs for idempotent logging
+_QUALITY_EXIT_LOGGED = set()  # trade_ids with quality exit logged
+_QUALITY_EXIT_LOCK = __import__("threading").RLock()
+
+
+def _is_training_position(pos: dict) -> bool:
+    """Check if position is a paper training position using broader gate.
+
+    Matches the is_training check at line ~208-211.
+    """
+    return (
+        pos.get("training_bucket") == "C_WEAK_EV_TRAIN"
+        or pos.get("paper_source") == "training_sampler"
+    )
+
+
+def _log_quality_exit_once(closed_trade: dict, position: dict, path: str = "unknown") -> None:
+    """Idempotent wrapper for quality exit logging.
+
+    Ensures each trade_id has at most one quality exit log, regardless of path.
+    """
+    trade_id = closed_trade.get("trade_id")
+    if not trade_id:
+        return
+
+    with _QUALITY_EXIT_LOCK:
+        if trade_id in _QUALITY_EXIT_LOGGED:
+            return  # Already logged
+
+        if _is_training_position(position):
+            _log_paper_train_quality_exit(closed_trade, position)
+            _QUALITY_EXIT_LOGGED.add(trade_id)
+
 
 def _save_paper_state() -> None:
     """Save open paper positions to disk with atomic writes."""
@@ -925,9 +958,8 @@ def check_and_close_timeout_positions(now: Optional[float] = None) -> List[dict]
                 "learning_skipped": True,
             }
 
-            # P1.1AI: Emit quality exit for TIMEOUT_NO_PRICE (entry/exit same, MFE/MAE = 0)
-            if pos.get("paper_source") == "training_sampler":
-                _log_paper_train_quality_exit(closed_trade, pos)
+            # P1.1AJ: Emit quality exit for TIMEOUT_NO_PRICE (idempotent, all training positions)
+            _log_quality_exit_once(closed_trade, pos, path="timeout_no_price")
 
             _save_paper_state()
             closed_trades.append(closed_trade)
@@ -1308,9 +1340,8 @@ def close_paper_position(
         pos.get("training_bucket", ""),
     )
 
-    # P1.1AG: Log exit quality before deduplication (so we capture all exits)
-    if pos.get("paper_source") == "training_sampler":
-        _log_paper_train_quality_exit(closed_trade, pos)
+    # P1.1AJ: Log exit quality before deduplication (idempotent, all training positions)
+    _log_quality_exit_once(closed_trade, pos, path="close_paper_position")
 
     # P1.1Q Phase 5: Deduplication — ensure we only update learning/metrics once per trade_id
     with _CLOSED_TRADES_LOCK:
@@ -1336,6 +1367,15 @@ def close_paper_position(
 
     # P1.1AG: Check if we should log summary
     _maybe_log_paper_quality_summary()
+
+    # P1.1AJ: Safety net — ensure quality exit logged for training positions
+    trade_id = closed_trade.get("trade_id")
+    if _is_training_position(pos) and trade_id not in _QUALITY_EXIT_LOGGED:
+        log.warning(
+            "[PAPER_TRAIN_QUALITY_EXIT_MISSING] trade_id=%s symbol=%s reason=%s path=close_fallback",
+            trade_id, pos.get("symbol", "na"), closed_trade.get("exit_reason", "unknown"),
+        )
+        _log_quality_exit_once(closed_trade, pos, path="fallback")
 
     return closed_trade
 
@@ -1585,6 +1625,19 @@ def _log_paper_train_quality_entry(position: dict, signal: dict) -> None:
             spread,
             hold_limit_s,
         )
+
+        # P1.1AJ: Log diagnostic context when score is missing
+        if score_missing and score_raw is None and score_final is None:
+            available_keys = list(signal.keys()) if signal else []
+            log.warning(
+                "[PAPER_SCORE_MISSING_CONTEXT] symbol=%s source=%s keys=%s ev=%.4f ws=%.3f decision=%s",
+                symbol,
+                source,
+                ",".join(available_keys),
+                ev,
+                float(signal.get("ws", 0.5)),
+                signal.get("decision", "na"),
+            )
 
         # P1.1AI: Log anomalies detected at entry
         # Only log score_zero_but_take if score is truly present and zero

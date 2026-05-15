@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# P1.1AH: Journal-safe quality diagnostics audit
+# P1.1AJ: Journal-safe quality diagnostics audit
 # Analyzes paper training quality logs without modifying service state
 # Usage: bash p11ag_quality_audit.sh [--since "30 min ago"]
 
@@ -17,10 +17,34 @@ get_pid() {
     systemctl show -p MainPID --value cryptomaster 2>/dev/null || echo "UNKNOWN"
 }
 
-# Safe journalctl with fallback
+# Get service start time
+get_start_time() {
+    systemctl show -p ActiveEnterTimestamp --value cryptomaster 2>/dev/null || echo "unknown"
+}
+
+# Get git HEAD
+get_git_head() {
+    git -C /opt/cryptomaster rev-parse --short HEAD 2>/dev/null || echo "N/A"
+}
+
+# Safe journalctl with PID filtering and fallback
 safe_journalctl() {
     local filter="$1"
-    journalctl -u cryptomaster --since "$SINCE" --no-pager 2>/dev/null | grep -E "$filter" || true
+    local output
+
+    # Try primary query with PID filter
+    output=$(journalctl -u cryptomaster --since "$SINCE" --no-pager 2>/dev/null | grep "cryptomaster\[$PID\]" | grep -E "$filter" 2>/dev/null || true)
+
+    # If query failed or is empty and we have a PID, warn about potential journal corruption
+    if [ -z "$output" ] && [ "$PID" != "UNKNOWN" ]; then
+        # Try fallback with start time
+        output=$(journalctl -u cryptomaster --since "$(get_start_time)" --no-pager 2>/dev/null | grep "cryptomaster\[$PID\]" | grep -E "$filter" 2>/dev/null || true)
+        if [ -z "$output" ]; then
+            return 0  # Return empty, don't error
+        fi
+    fi
+
+    echo "$output"
 }
 
 # Count logs safely
@@ -35,11 +59,16 @@ latest_lm_count() {
 }
 
 echo "============================================================"
-echo "P1.1AG Quality Diagnostics Audit"
+echo "P1.1AJ Quality Diagnostics Audit"
 echo "============================================================"
 
 PID=$(get_pid)
+START_TIME=$(get_start_time)
+GIT_HEAD=$(get_git_head)
+
 echo "Service PID: $PID"
+echo "Service start: $START_TIME"
+echo "Git HEAD: $GIT_HEAD"
 echo "Since: $SINCE"
 echo ""
 
@@ -60,22 +89,28 @@ echo "-------"
 ENTRIES=$(count_logs "PAPER_TRAIN_ENTRY")
 QUALITY_ENTRIES=$(count_logs "PAPER_TRAIN_QUALITY_ENTRY")
 QUALITY_EXITS=$(count_logs "PAPER_TRAIN_QUALITY_EXIT")
+QUALITY_EXIT_MISSING=$(count_logs "PAPER_TRAIN_QUALITY_EXIT_MISSING")
 MISMATCHES=$(count_logs "PAPER_TRAIN_QUALITY_MISMATCH")
 ANOMALIES=$(count_logs "PAPER_TRAIN_ANOMALY")
 SUMMARIES=$(count_logs "PAPER_TRAIN_QUALITY_SUMMARY")
 EXITS=$(count_logs "PAPER_EXIT")
 LEARNING=$(count_logs "LEARNING_UPDATE ok=True")
 LM_STATE_AFTER=$(count_logs "LM_STATE_AFTER_UPDATE")
+LM_MISMATCH=$(count_logs "LM_UPDATE_MISMATCH")
+SCORE_MISSING_CTX=$(count_logs "PAPER_SCORE_MISSING_CONTEXT")
 
-echo "PAPER_TRAIN_ENTRY:           $ENTRIES"
-echo "PAPER_TRAIN_QUALITY_ENTRY:   $QUALITY_ENTRIES"
-echo "PAPER_TRAIN_QUALITY_EXIT:    $QUALITY_EXITS"
-echo "PAPER_TRAIN_QUALITY_MISMATCH: $MISMATCHES"
-echo "PAPER_TRAIN_ANOMALY:         $ANOMALIES"
-echo "PAPER_TRAIN_QUALITY_SUMMARY: $SUMMARIES"
-echo "PAPER_EXIT:                  $EXITS"
-echo "LEARNING_UPDATE ok=True:     $LEARNING"
-echo "LM_STATE_AFTER_UPDATE:       $LM_STATE_AFTER"
+echo "PAPER_TRAIN_ENTRY:                $ENTRIES"
+echo "PAPER_TRAIN_QUALITY_ENTRY:        $QUALITY_ENTRIES"
+echo "PAPER_TRAIN_QUALITY_EXIT:         $QUALITY_EXITS"
+echo "PAPER_TRAIN_QUALITY_EXIT_MISSING: $QUALITY_EXIT_MISSING"
+echo "PAPER_TRAIN_QUALITY_MISMATCH:     $MISMATCHES"
+echo "PAPER_TRAIN_ANOMALY:              $ANOMALIES"
+echo "PAPER_TRAIN_QUALITY_SUMMARY:      $SUMMARIES"
+echo "PAPER_EXIT:                       $EXITS"
+echo "LEARNING_UPDATE ok=True:          $LEARNING"
+echo "LM_STATE_AFTER_UPDATE:            $LM_STATE_AFTER"
+echo "LM_UPDATE_MISMATCH:               $LM_MISMATCH"
+echo "PAPER_SCORE_MISSING_CONTEXT:      $SCORE_MISSING_CTX"
 echo ""
 
 # State
@@ -106,8 +141,16 @@ if [ "$MISMATCHES" -gt 0 ]; then
     echo "⚠️  Found $MISMATCHES quality entry mismatches"
 fi
 
+if [ "$QUALITY_EXIT_MISSING" -gt 0 ]; then
+    echo "⚠️  Found $QUALITY_EXIT_MISSING missing quality exit logs (should be 0)"
+fi
+
 if [ "$ANOMALIES" -gt 0 ]; then
     echo "⚠️  Found $ANOMALIES quality anomalies"
+fi
+
+if [ "$SCORE_MISSING_CTX" -gt 0 ]; then
+    echo "ℹ️  Found $SCORE_MISSING_CTX score missing context logs"
 fi
 
 if [ "$EXITS" -gt 0 ] && [ "$QUALITY_EXITS" -eq 0 ]; then
@@ -122,10 +165,14 @@ elif [ "$EXITS" -gt 0 ] && ([ "$LEARNING" -gt 0 ] || [ "$LM_STATE_AFTER" -gt 0 ]
     echo "✓ Learning update logs present (LEARNING_UPDATE ok=True: $LEARNING, LM_STATE_AFTER_UPDATE: $LM_STATE_AFTER)"
 fi
 
+if [ "$LM_MISMATCH" -gt 0 ]; then
+    echo "⚠️  Found $LM_MISMATCH LM update mismatches (should be 0)"
+fi
+
 echo ""
 echo "Sample logs (last 20):"
 echo "-------"
-safe_journalctl "PAPER_TRAIN_QUALITY_ENTRY|PAPER_TRAIN_QUALITY_EXIT|PAPER_TRAIN_QUALITY_SUMMARY|PAPER_TRAIN_ANOMALY" | tail -20
+safe_journalctl "PAPER_TRAIN_QUALITY_ENTRY|PAPER_TRAIN_QUALITY_EXIT|PAPER_TRAIN_QUALITY_SUMMARY|PAPER_TRAIN_ANOMALY|PAPER_SCORE_MISSING_CONTEXT" | tail -20
 
 echo ""
 echo "============================================================"

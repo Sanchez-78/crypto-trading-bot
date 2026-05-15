@@ -744,12 +744,12 @@ def update_from_paper_trade(trade: dict) -> bool:
                 count_before, count_after, sym, reg, bucket,
             )
 
-        # P1.1AF: Log state after update for verification
-        total_trades = sum(lm_count.values())
-        log.debug(
+        # P1.1AJ: Log state after update for verification (promoted from debug→info)
+        total_trades_after = sum(lm_count.values())
+        log.info(
             "[LM_STATE_AFTER_UPDATE] source=paper_closed_trade symbol=%s regime=%s "
-            "bucket=%s total_trades=%d pair_n=%d pnl_hist_len=%d updated=%s",
-            sym, reg, bucket, total_trades, len(lm_count), pnl_hist_after, state_changed,
+            "key=(%s,%s) before_total=%d after_total=%d before_key=%d after_key=%d outcome=%s net_pnl_pct=%.4f",
+            sym, reg, sym, reg, count_before, total_trades_after, count_before, count_after, outcome, pnl,
         )
 
         return True

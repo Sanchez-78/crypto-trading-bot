@@ -3717,6 +3717,9 @@ def evaluate_signal(signal):
                     "size_mult": sampler_result.get("size_mult", 1.0),
                     "max_hold_s": sampler_result.get("max_hold_s", 300),
                     "tags": sampler_result.get("tags", []),
+                    "score_raw": round(_score_before_adj, 6),
+                    "score_final": round(_score_adj, 6),
+                    "decision_score": round(_score_adj, 6),
                 }
 
                 open_paper_position(
@@ -3766,6 +3769,11 @@ def evaluate_signal(signal):
     signal["unblock_fallback"] = _unblock_fallback_used
     signal["anti_deadlock"]    = _anti_deadlock_triggered
     signal["unblock_size_mult"] = _unblock_size_mult
+
+    # P1.1AJ: Canonical score fields for paper training diagnostics
+    signal["score_raw"]   = round(_score_before_adj, 6)
+    signal["score_final"] = round(_score_adj, 6)
+    signal["score"]       = round(_score_adj, 6)
 
     # V10.13u+16: ECON BAD entry quality gate — block weak signals
     _econ_bad_allowed, _econ_bad_reason = _econ_bad_entry_quality_gate(
@@ -3899,6 +3907,9 @@ def evaluate_signal(signal):
                         "size_mult": sampler_result.get("size_mult", 1.0),
                         "max_hold_s": sampler_result.get("max_hold_s", 300),
                         "tags": sampler_result.get("tags", []),
+                        "score_raw": round(_score_before_adj, 6),
+                        "score_final": round(_score_adj, 6),
+                        "decision_score": round(_score_adj, 6),
                     }
 
                     open_paper_position(
@@ -3960,6 +3971,9 @@ def evaluate_signal(signal):
                     "size_mult": sampler_result.get("size_mult", 1.0),
                     "max_hold_s": sampler_result.get("max_hold_s", 300),
                     "tags": sampler_result.get("tags", []),
+                    "score_raw": round(_score_before_adj, 6),
+                    "score_final": round(_score_adj, 6),
+                    "decision_score": round(_score_adj, 6),
                 }
 
                 open_paper_position(
