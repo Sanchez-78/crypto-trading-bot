@@ -1,0 +1,11 @@
+[Unit]
+Description=Run CryptoMaster paper_train deploy + audit loop every 2 hours
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=2h
+Persistent=true
+Unit=cryptomaster-autodeploy.service
+
+[Install]
+WantedBy=timers.target

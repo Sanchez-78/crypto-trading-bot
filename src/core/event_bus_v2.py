@@ -23,7 +23,8 @@ class EventBus:
     
     def __init__(self):
         self.subscribers = defaultdict(list)  # event_type -> [handler, ...]
-        self.event_log = []                    # append-only audit trail
+        from collections import deque
+        self.event_log = deque(maxlen=50_000)  # BUG-017 fix: bounded to prevent OOM
         self.lock = threading.Lock()
         self.event_count = [0]
     

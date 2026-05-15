@@ -830,6 +830,16 @@ def _econ_bad_entry_quality_gate(
     if not is_bad:
         return True, ""
 
+    # Bootstrap bypass: during early learning, exploration-prior ev=0.03 can never
+    # clear the 0.045 gate — permanently locking out all new pairs after just 5 losses.
+    # Allow pass-through until the system has enough data for ECON_BAD to be meaningful.
+    try:
+        from src.services.learning_event import METRICS as _ebm
+        if _ebm.get("trades", 0) < 150:
+            return True, ""
+    except Exception:
+        pass
+
     # Check minimum thresholds
     if ev < 0.045:
         return False, f"weak_ev (ev={ev:.4f}<0.045)"
@@ -864,6 +874,14 @@ def _econ_bad_forced_explore_gate(signal: dict) -> tuple[bool, str]:
 
     if not signal.get("forced", False):
         return True, ""
+
+    # Bootstrap bypass: same as Gate 1 — don't block forced signals before 150 in-session trades
+    try:
+        from src.services.learning_event import METRICS as _ebm2
+        if _ebm2.get("trades", 0) < 150:
+            return True, ""
+    except Exception:
+        pass
 
     # Strict thresholds for forced signals during ECON BAD
     ev = signal.get("ev", 0.0)
@@ -1622,10 +1640,13 @@ def is_cold_start() -> bool:
         if _global_n < 100:
             return True
         
-        # Condition 2: Check if any pair/regime has very few samples
+        # Condition 2: 80% of active pairs must have >= 15 samples.
+        # Using min() caused one newly-seen pair (n=1) to permanently block all
+        # mature pairs from exiting cold start.  20th-percentile is robust.
         if _lc2:
-            _min_pair_n = min(_lc2.values()) if _lc2 else 0
-            if _min_pair_n < 15:
+            _counts = sorted(_lc2.values())
+            _p20 = _counts[max(0, len(_counts) // 5)]
+            if _p20 < 15:
                 return True
         
         # Condition 3: Recent restart (uptime < 60 min) + low trades
@@ -2906,9 +2927,9 @@ def evaluate_signal(signal):
         velocity_penalty = 0.70
 
     # ── V10.10b: Emergency activity failsafe ─────────────────────────────────
-    # If no trade closed in the last 5 min and we have some history → relax.
+    # 30-min inactivity (not 5-min) — short gaps are normal between trades.
     _inactivity   = _time.time() - _last_trade_ts[0] if _last_trade_ts[0] > 0 else 0.0
-    emergency_mode = _last_trade_ts[0] > 0 and _inactivity > 300
+    emergency_mode = _last_trade_ts[0] > 0 and _inactivity > 1800
     if emergency_mode:
         ev_threshold    *= 0.5
         velocity_penalty = max(velocity_penalty, 0.85)
@@ -2974,16 +2995,13 @@ def evaluate_signal(signal):
     # QUIET_RANGE extreme: require real extreme (≤35 BUY / ≥65 SELL).
     # Bypassed in bootstrap (<50 trades) so data flows in early learning.
     if _M.get("trades", 0) >= 50:
-        _rsi_val    = signal.get("features", {}).get("rsi", 50.0)
+        _rsi_val    = signal.get("features", {}).get("rsi", None)
         _side       = signal.get("action", "BUY")
-        _neutral    = 40.0 <= _rsi_val <= 60.0
-        _is_trend   = regime in ("BULL_TREND", "BEAR_TREND")
-        _is_quiet   = regime == "QUIET_RANGE"
         _skip_rsi   = False
-        if _neutral and _is_trend:
-            _skip_rsi = True   # trending market + no momentum → wait
-        elif _is_quiet:
-            # Dead market: only allow real extremes
+        # Only gate QUIET_RANGE — dead market requires real RSI extremes for mean-reversion.
+        # Removed trend+neutral block: RSI 40-60 is normal in sustained BULL/BEAR trends
+        # and blocking it eliminated most trend-following entries.
+        if _rsi_val is not None and regime == "QUIET_RANGE":
             if (_side == "BUY" and _rsi_val > 35) or (_side == "SELL" and _rsi_val < 65):
                 _skip_rsi = True
         if _skip_rsi:
@@ -3192,15 +3210,6 @@ def evaluate_signal(signal):
     ))
     combo_pen = get_combo_penalty(_combo)
 
-    # ── V10.13c: Apply SKIP_SCORE_SOFT penalties ───────────────────────────────────
-    # Initialized here; re-assigned later in the score gate block (line ~1176)
-    _skip_score_soft = False
-    _score_penalty = 1.0
-    if _skip_score_soft:
-        ev *= _score_penalty  # Reduce EV for downstream gates
-        win_prob *= _score_penalty  # Reduce win probability
-        auditor_base *= _score_penalty  # Also reduce auditor exposure
-
     # ── V10.13b: Apply FAST_FAIL_SOFT penalties to score and confidence ─────────────
     if _fast_fail_soft:
         ev *= _ff_score_mult  # Reduce EV for downstream gates
@@ -3296,11 +3305,13 @@ def evaluate_signal(signal):
             _bootstrap_reasons.append(f"global_trades={_global_n}<100")
 
         # Detect PAIR-level bootstrap (even if global is mature)
+        # Use 20th-percentile — one new pair must not lock all mature pairs (same logic as is_cold_start)
         if _lc3:
-            _min_pair_n = min(_lc3.values()) if _lc3 else 0
-            if _min_pair_n < 15:
+            _counts3 = sorted(_lc3.values())
+            _p20_3 = _counts3[max(0, len(_counts3) // 5)]
+            if _p20_3 < 15:
                 _bootstrap_pair = True
-                _bootstrap_reasons.append(f"min_pair_n={_min_pair_n}<15")
+                _bootstrap_reasons.append(f"p20_pair_n={_p20_3}<15")
 
         # Recent restart condition
         _uptime_min = (_time.time() - _bootstrap_state["start_ts"]) / 60.0
@@ -3326,11 +3337,12 @@ def evaluate_signal(signal):
     except Exception as _esc_err:
         log.debug(f"[IDLE_ESCALATION] Init error: {_esc_err}")
 
-    # V10.13s.4/PATCH 5: Forced-explore quality gates (context-aware)
-    if _bootstrap_pair:
+    # V10.13s.4/PATCH 5: Forced-explore quality gates — only for actual explore signals.
+    # Applying this to ALL bootstrap signals caused a total trading halt: spread_bps is
+    # never in the signal dict, check_spread_quality(0.0) fails, all signals blocked.
+    if signal.get("explore", False):
         try:
             from src.services.forced_explore_gates import is_forced_explore_allowed, format_forced_explore_result
-            # PATCH 5: Pass context: market spread, branch, idle_mode
             _market_spread = signal.get("spread_bps", None)
             _fe_allowed, _fe_results = is_forced_explore_allowed(
                 sym,
@@ -3418,6 +3430,9 @@ def evaluate_signal(signal):
             soft_range = max(_soft_ceiling - _score_hard_floor, 0.001)
             progress = (_score_adj - _score_hard_floor) / soft_range
             _score_penalty = max(0.30, progress * 0.60 + 0.30)  # 0.30 → 0.90
+            _ev_adj      *= _score_penalty
+            win_prob     *= _score_penalty
+            auditor_base *= _score_penalty
             track_blocked(reason="SKIP_SCORE_SOFT")
             
             # V10.13j: Log adaptive zone telemetry
@@ -3569,19 +3584,18 @@ def evaluate_signal(signal):
     _anti_deadlock_triggered = False
     if not _unblock_fallback_used and is_unblock_mode():
         try:
-            # Check if signal passes minimum viability checks
             _has_positive_rr = rr >= MIN_RR
-            _has_decent_ev = ev > 0.0 or (ev >= -0.05 and spread_pct <= 0.005)
-            _is_new_pair = _M.get("trades", 0) < 100  # Still in learning phase
+            _spread_pct = (signal.get("spread_bps", 0) or 0) / 10000.0
+            _has_decent_ev = ev > 0.0 or (ev >= -0.05 and _spread_pct <= 0.005)
+            _is_new_pair = _M.get("trades", 0) < 100
             _no_cluster_forever = sym not in _blocked_until
-            
-            # Force accept if all basic checks pass and system is stalled
+
             if _has_positive_rr and (_has_decent_ev or _is_new_pair) and _no_cluster_forever:
                 _anti_deadlock_triggered = True
                 _unblock_fallback_used = True
                 record_unblock_trade()
                 log.warning(f"[V10.12f_ANTI_DEADLOCK] {sym}  forcing micro-trade to break 900s+ stall  "
-                           f"ev={ev:.4f}  rr={rr:.2f}  spread={spread_pct:.4f}")
+                           f"ev={ev:.4f}  rr={rr:.2f}  spread={_spread_pct:.4f}")
         except Exception as _ad_err:
             log.debug("anti-deadlock error: %s", _ad_err)
 

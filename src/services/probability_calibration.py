@@ -142,12 +142,15 @@ def recompute_calibration(min_samples_per_bucket: int = 10) -> None:
         raw_p = record["raw_p"]
         win = record["win"]
 
-        # Find bucket
+        # Find bucket — use < on upper bound to prevent boundary values landing in two buckets
         bucket_id = None
         for bid, bucket in _calibration_buckets.items():
-            if bucket.raw_p_min <= raw_p <= bucket.raw_p_max:
+            if bucket.raw_p_min <= raw_p < bucket.raw_p_max:
                 bucket_id = bid
                 break
+        # Handle raw_p == 1.0 edge (above all half-open intervals): assign to bucket 5
+        if bucket_id is None and raw_p >= 0.80:
+            bucket_id = 5
 
         if bucket_id is None:
             continue  # Skip if out of range
@@ -162,7 +165,14 @@ def recompute_calibration(min_samples_per_bucket: int = 10) -> None:
         total = counts["wins"] + counts["losses"]
 
         if total < min_samples_per_bucket:
-            continue  # Not enough data, keep default
+            # Reset to research prior rather than holding stale empirical value
+            _DEFAULT_P = {1: 0.50, 2: 0.58, 3: 0.68, 4: 0.80, 5: 0.90}
+            bucket = _calibration_buckets[bucket_id]
+            bucket.empirical_p = _DEFAULT_P.get(bucket_id, 0.5)
+            bucket.sample_count = 0
+            bucket.actual_wins = 0
+            bucket.actual_losses = 0
+            continue
 
         empirical_p = counts["wins"] / total if total > 0 else 0.5
 
@@ -189,10 +199,10 @@ def get_reliability_bucket(raw_probability: float) -> int:
         int: Bucket ID (1-5)
     """
     for bucket_id, bucket in _calibration_buckets.items():
-        if bucket.raw_p_min <= raw_probability <= bucket.raw_p_max:
+        if bucket.raw_p_min <= raw_probability < bucket.raw_p_max:
             return bucket_id
-    # Default to bucket 3 (middle)
-    return 3
+    # Handle raw_p == 1.0: assign to bucket 5; anything else defaults to bucket 3
+    return 5 if raw_probability >= 0.80 else 3
 
 
 def calibrate_probability(raw_probability: float) -> float:

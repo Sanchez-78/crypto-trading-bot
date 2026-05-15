@@ -9,21 +9,55 @@ log = logging.getLogger(__name__)
 
 
 class SSHClient:
-    """SSH client for remote log fetching."""
+    """SSH client for remote log fetching.
 
-    def __init__(self, host: str, port: int, user: str, key_path: str):
+    Defaults to strict SSH host key checking. This prevents silent MITM exposure
+    when the audit bot fetches Hetzner logs remotely. For controlled local/dev
+    scenarios only, callers may set strict_host_key_checking=False.
+    """
+
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        user: str,
+        key_path: str,
+        known_hosts_path: str = "~/.ssh/known_hosts",
+        strict_host_key_checking: bool = True,
+    ):
         """Initialize SSH client."""
         self.host = host
         self.port = port
         self.user = user
         self.key_path = Path(key_path).expanduser()
+        self.known_hosts_path = Path(known_hosts_path).expanduser()
+        self.strict_host_key_checking = strict_host_key_checking
         self.client: Optional[paramiko.SSHClient] = None
 
     def connect(self) -> bool:
         """Establish SSH connection."""
         try:
             self.client = paramiko.SSHClient()
-            self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            self.client.load_system_host_keys()
+
+            if self.known_hosts_path.exists():
+                self.client.load_host_keys(str(self.known_hosts_path))
+            elif self.strict_host_key_checking:
+                log.warning(
+                    "Known hosts file does not exist: %s; strict SSH host key "
+                    "checking will reject unknown hosts",
+                    self.known_hosts_path,
+                )
+
+            if self.strict_host_key_checking:
+                self.client.set_missing_host_key_policy(paramiko.RejectPolicy())
+            else:
+                log.warning(
+                    "SSH_STRICT_HOST_KEY_CHECKING is disabled; unknown host keys "
+                    "will be auto-added. Use only for controlled dev/local runs."
+                )
+                self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
             self.client.connect(
                 self.host,
                 port=self.port,

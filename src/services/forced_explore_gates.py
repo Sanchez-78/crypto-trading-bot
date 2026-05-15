@@ -43,6 +43,9 @@ def check_spread_quality(
     Returns:
         (pass: bool, detail: str)
     """
+    if market_spread_bps is None:
+        return True, "no_spread_data"
+
     try:
         from src.services.idle_escalation import get_admission_policy
         policy = get_admission_policy(idle_mode, branch)

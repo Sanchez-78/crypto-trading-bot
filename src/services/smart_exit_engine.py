@@ -189,13 +189,23 @@ def _estimated_close_cost_pct(position) -> float:
     return abs(float(fee)) + abs(float(slip))
 
 
+_ECON_BAD_CACHE = {"v": False, "ts": 0.0}
+_ECON_BAD_TTL   = 60.0  # refresh at most once per minute
+
+
 def _econ_bad() -> bool:
-    """Check if Economic Health status is BAD."""
+    """Check if Economic Health status is BAD (cached 60 s to avoid per-tick computation)."""
+    import time as _t
+    now = _t.time()
+    if now - _ECON_BAD_CACHE["ts"] < _ECON_BAD_TTL:
+        return _ECON_BAD_CACHE["v"]
     try:
         from src.services.learning_monitor import lm_economic_health
-        return lm_economic_health().get("status") == "BAD"
+        result = lm_economic_health().get("status") == "BAD"
     except Exception:
-        return False
+        result = False
+    _ECON_BAD_CACHE.update({"v": result, "ts": now})
+    return result
 
 
 def _is_emergency_exit_context(position) -> bool:
@@ -744,3 +754,7 @@ def evaluate_position_exit(
     )
 
     return smart_exit.evaluate(position, regime)
+
+
+# BUG-002 fix: guard calls evaluate_smart_exit but only evaluate_position_exit was defined
+evaluate_smart_exit = evaluate_position_exit

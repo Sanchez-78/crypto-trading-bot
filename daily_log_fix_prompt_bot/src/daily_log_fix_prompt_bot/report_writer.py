@@ -106,18 +106,22 @@ Fix the highest-priority bugs and regressions detected from today's live trading
 ## Hard Rules
 
 - **Inspect real code first** before any edit.
-- **No auto-deploy** or force-push; changes are local until human approval.
+- **Create a new branch** for any code changes.
+- **Do not push directly to `main`**.
+- **Do not deploy or restart production** from this prompt.
+- **No force-push**; open a PR or provide a diff for human review.
 - **No secret printing** (keys, tokens, Firebase credentials).
 - **Preserve architecture**: no refactors, no moving files.
 - **Minimal safe diffs**: fix the bug, nothing extra.
 - **Firebase quota safe**: no new heavy reads/writes.
-- **Preserve metrics contracts**: no schema changes.
+- **Preserve metrics contracts**: no schema changes unless explicitly required.
 
 ## Context
 
 **System**: CryptoMaster_srv (Python crypto trading bot on Hetzner)
 **Log Period**: Last 24 hours
-**Branch**: main (commit 53acfef)
+**Git Ref**: Use the current checked-out commit. If unknown, record it as `unknown` in the final report.
+**Workflow**: branch -> tests -> PR/diff -> human approval -> deploy handled separately.
 
 ## Priority Issues
 
@@ -144,8 +148,9 @@ Fix the highest-priority bugs and regressions detected from today's live trading
 **What to Do**:
 1. Inspect the actual code in the files listed above
 2. Verify the bug matches the evidence
-3. Implement minimal fix (1-5 line change if possible)
-4. Add validation step: {issue.validation_steps[0] if issue.validation_steps else 'Run tests'}
+3. Implement the smallest safe fix
+4. Add or update tests when practical
+5. Add validation step: {issue.validation_steps[0] if issue.validation_steps else 'Run tests'}
 
 """
 
@@ -154,27 +159,30 @@ Fix the highest-priority bugs and regressions detected from today's live trading
 
 Run after any fix:
 ```bash
-python -m compileall src/
+python -m compileall src bot2 daily_log_fix_prompt_bot start.py
 python -m pytest tests/ -q
-python start.py  # manual smoke test
+python -m pytest daily_log_fix_prompt_bot/tests -q
 ```
 
 ## Safety Checklist
 
+- [ ] Working branch created
 - [ ] Compiled without errors
-- [ ] Tests pass (no new failures)
+- [ ] Tests pass or failures are documented as pre-existing
 - [ ] No secrets printed to logs
-- [ ] No Firestore schema changes
+- [ ] No Firestore schema changes unless explicitly required
 - [ ] No deleted files or features
-- [ ] Diff is < 20 lines
-- [ ] Commit message is clear
+- [ ] Diff is minimal and reviewed
+- [ ] PR/diff prepared for human approval
+- [ ] No deploy/restart performed
 
 ## Next Steps (After Fix)
 
-1. Verify fix locally in trading loop
-2. Create commit with clear message
-3. Push to origin/main (CI will deploy)
-4. Monitor logs for regression
+1. Verify fix locally
+2. Create a commit with a clear message
+3. Open a PR or provide the diff for review
+4. Wait for human approval
+5. Deploy only through a separate deployment prompt/checklist
 
 ---
 

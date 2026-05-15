@@ -91,9 +91,13 @@ class ExitOptimizer:
             "reason": "NORMAL",
         }
         
-        # GREEN ZONE: Trade is working
-        if current > entry:
-            # Market is moving our direction
+        # GREEN ZONE: Trade is working — BUG-005 fix: check direction
+        direction = trade.get("direction", "LONG").upper()
+        is_profitable = (
+            (direction in ("LONG", "BUY") and current > entry) or
+            (direction in ("SHORT", "SELL") and current < entry)
+        )
+        if is_profitable:
             analysis["reason"] = "PROFITABLE"
             analysis["exit_decision"] = ExitDecision.HOLD
             return analysis
@@ -112,8 +116,8 @@ class ExitOptimizer:
             return analysis
         
         if duration >= self.tight_duration:
-            # Tighten TP: move closer to current price
-            tight_tp = current + (tp - current) * 0.7  # 70% of original TP
+            # Tighten TP: move closer to current price — BUG-004 fix: 0.3 not 0.7
+            tight_tp = current + (tp - current) * 0.3  # 30% of remaining distance
             logger.info(f"🟡 TIGHTEN TP: {tp:.8f} → {tight_tp:.8f}")
             analysis["exit_decision"] = ExitDecision.TIGHTEN_TP
             analysis["adjusted_tp"] = tight_tp

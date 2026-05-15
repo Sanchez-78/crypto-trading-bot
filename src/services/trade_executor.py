@@ -1518,6 +1518,17 @@ def _save_paper_trade_closed(closed_trade: dict) -> None:
         closed_trade: Closed paper trade dict from paper_trade_executor
     """
     try:
+        # TIMEOUT_NO_PRICE quarantine: position closed without a real market price —
+        # do not feed fake flat PnL into the learning system.
+        if closed_trade.get("learning_skipped"):
+            log.info(
+                "[LEARNING_SKIPPED] trade_id=%s symbol=%s exit_reason=%s — no real price available",
+                closed_trade.get("trade_id"),
+                closed_trade.get("symbol"),
+                closed_trade.get("exit_reason"),
+            )
+            return
+
         # Prepare paper trade record for Firebase
         paper_record = {
             **closed_trade,
@@ -1534,20 +1545,19 @@ def _save_paper_trade_closed(closed_trade: dict) -> None:
                 log.warning(
                     f"[LEARNING_UPDATE] source=paper_closed_trade symbol={closed_trade.get('symbol')} "
                     f"bucket={closed_trade.get('explore_bucket', 'A_STRICT_TAKE')} "
-                    f"outcome={closed_trade.get('outcome')} net_pnl_pct={closed_trade.get('net_pnl_pct', 0):.4f}"
+                    f"outcome={closed_trade.get('outcome')} net_pnl_pct={closed_trade.get('net_pnl_pct', 0):.4f} ok=True"
                 )
         except Exception as e:
             log.warning(f"[LEARNING_WRITE_FAILED] source=paper {e}")
 
-        # Update learning metrics
-        try:
-            from src.services.learning_event import update_metrics
-            update_metrics(closed_trade)
-        except Exception as e:
-            log.debug(f"[METRICS_UPDATE_FAILED] {e}")
+        # Skip duplicate learning updates for training_sampler trades —
+        # close_paper_position() already calls _safe_learning_update_for_paper_trade()
+        _is_training_sampler = closed_trade.get("paper_source") == "training_sampler"
 
         # P1.1V: Bucket metrics already updated by close_paper_position()
         # via _safe_bucket_metrics_update_for_paper_trade(). Do NOT duplicate.
+        # All paper trades now routed through training_sampler (P1.1AD); learning
+        # updates are handled by _safe_learning_update_for_paper_trade() there.
 
     except Exception as e:
         log.warning(f"[PAPER_SAVE_ERROR] {e}")
@@ -2788,8 +2798,9 @@ def handle_signal(signal):
 
     # ── V10.14: Record the open for deduplication tracking ────────────────────
     try:
-        from src.services.candidate_dedup import record_open
+        from src.services.candidate_dedup import record_open, mark_candidate_evaluated
         record_open(signal)
+        mark_candidate_evaluated(signal)
     except Exception as e:
         log.debug(f"[DEDUP_RECORD_FAIL] {e}")
 
@@ -2821,7 +2832,12 @@ def on_price(data):
         _symbol_prices = {data["symbol"]: data["price"]}
         _closed_papers = update_paper_positions(_symbol_prices, time.time())
         if _closed_papers:
-            # Process closed paper trades for learning
+            # Update watchdog idle timer so paper trade activity resets the exploration escalation
+            try:
+                import bot2.main as _bot2_main
+                _bot2_main.last_trade_ts[0] = time.time()
+            except Exception:
+                pass
             for _closed_trade in _closed_papers:
                 _save_paper_trade_closed(_closed_trade)
 

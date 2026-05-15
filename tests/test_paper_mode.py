@@ -2593,6 +2593,7 @@ class TestP1AA1TimeoutCloseLoop(unittest.TestCase):
             check_and_close_timeout_positions,
             reset_paper_positions,
             open_paper_position,
+            update_paper_positions,
             get_paper_open_positions,
         )
 
@@ -2623,7 +2624,10 @@ class TestP1AA1TimeoutCloseLoop(unittest.TestCase):
         closed = check_and_close_timeout_positions(open_ts + 299)
         assert len(closed) == 0, "Position aged 299s should not close"
 
-        # Check timeout at 301s (SHOULD close)
+        # Simulate a price tick arriving before timeout (V3.1: last_price must be set)
+        update_paper_positions({"BTCUSDT": 50000.0}, open_ts + 299)
+
+        # Check timeout at 301s (SHOULD close with real price)
         closed = check_and_close_timeout_positions(open_ts + 301)
         assert len(closed) == 1, "Position aged 301s should close"
         assert closed[0]["trade_id"] == trade_id
@@ -2707,6 +2711,7 @@ class TestP1AA1TimeoutCloseLoop(unittest.TestCase):
             check_and_close_timeout_positions,
             reset_paper_positions,
             open_paper_position,
+            update_paper_positions,
             _CLOSED_TRADES_THIS_SESSION,
         )
 
@@ -2728,6 +2733,9 @@ class TestP1AA1TimeoutCloseLoop(unittest.TestCase):
             },
         )
         trade_id = result["trade_id"]
+
+        # Simulate price tick so timeout scanner has a real price (V3.1 requirement)
+        update_paper_positions({"DOGEUSDT": 0.5}, open_ts + 299)
 
         # Close via timeout
         closed = check_and_close_timeout_positions(open_ts + 301)
@@ -2876,6 +2884,7 @@ class TestP1AA1TimeoutCloseLoop(unittest.TestCase):
             check_and_close_timeout_positions,
             reset_paper_positions,
             open_paper_position,
+            update_paper_positions,
         )
 
         reset_paper_positions()
@@ -2895,6 +2904,9 @@ class TestP1AA1TimeoutCloseLoop(unittest.TestCase):
             },
         )
         assert result["status"] == "opened"
+
+        # Simulate price tick so timeout scanner has a real price (V3.1 requirement)
+        update_paper_positions({"TRXUSDT": 0.12}, open_ts + 299)
 
         # Close via timeout - should return closed_trade dict, not None
         closed = check_and_close_timeout_positions(open_ts + 301)

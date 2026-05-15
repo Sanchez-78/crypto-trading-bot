@@ -461,7 +461,8 @@ def portfolio_momentum(positions: dict | None = None) -> float:
         if den > 1e-9:
             slope = num / den   # PnL change per second
             # Normalize by typical PnL magnitude; cap at ±1
-            norm = max(abs(my) * 0.01, 1e-6)
+            # Use max(abs(my), 0.01) to prevent near-zero mean from amplifying to ±1 spuriously
+            norm = max(abs(my), 0.01) * 0.01
             return max(-1.0, min(1.0, slope / norm))
 
     # ── Fallback: direction of current open positions ─────────────────────────

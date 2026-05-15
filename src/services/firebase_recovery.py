@@ -42,6 +42,7 @@ def attempt_recovery_rehydrate():
             load_history,
             load_model_state,
             get_firebase_health,
+            HISTORY_LIMIT,
         )
 
         health = get_firebase_health()
@@ -71,7 +72,7 @@ def attempt_recovery_rehydrate():
 
         # Step 2: Load recent trade history
         try:
-            history = load_history(limit=200)  # Load last 200 trades
+            history = load_history(limit=max(HISTORY_LIMIT, 200))  # rehydration needs broader history
             if history and len(history) > 0:
                 trades_loaded = len(history)
                 logging.info(

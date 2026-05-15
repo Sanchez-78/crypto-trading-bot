@@ -7,15 +7,18 @@ class MetricsEngine:
         """
         Read profit from both legacy replay payloads and live Firestore history.
 
-        Firestore trade history stores pnl at top level (`profit` / `pnl`),
-        while some legacy evaluator/replay payloads nest it under
-        `evaluation.profit`.
+        Priority: profit → pnl → net_pnl → evaluation.profit
         """
-        if "profit" in trade:
-            return float(trade.get("profit") or 0.0)
-        if "pnl" in trade:
-            return float(trade.get("pnl") or 0.0)
-        return float(trade.get("evaluation", {}).get("profit", 0.0) or 0.0)
+        for field in ("profit", "pnl", "net_pnl"):
+            if field in trade:
+                try:
+                    return float(trade[field] or 0.0)
+                except (ValueError, TypeError):
+                    pass
+        try:
+            return float(trade.get("evaluation", {}).get("profit", 0.0) or 0.0)
+        except (ValueError, TypeError):
+            return 0.0
 
     def compute(self, trades):
         if not trades:
