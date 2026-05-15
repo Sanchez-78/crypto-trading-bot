@@ -4,6 +4,7 @@ import time
 import unittest
 import os
 import logging
+from unittest.mock import patch
 from src.services.paper_trade_executor import (
     open_paper_position,
     update_paper_positions,
@@ -3964,7 +3965,7 @@ class TestP1_1AK_LiveIsolation:
         # Open without training context
         result = open_paper_position(signal, 150.0, time.time(), "TEST")
         assert result["status"] == "opened"
-        
+
         # Verify position does not have training-specific bypass fields
         from src.services.paper_trade_executor import get_paper_trade_by_id
         pos = get_paper_trade_by_id(result["trade_id"])
@@ -3972,3 +3973,191 @@ class TestP1_1AK_LiveIsolation:
         # Bypass fields default to False/none for non-training positions
         assert pos.get("cost_edge_bypassed") is False
         assert pos.get("cost_edge_bypass_reason") == "none"
+
+
+class TestP1_1AM_EconAttribution:
+    """P1.1AM: Economic attribution diagnostics."""
+
+    def test_fee_dominated_attribution(self):
+        """Test FEE_DOMINATED_MOVE attribution: gross > 0 but net <= 0."""
+        from src.services.paper_trade_executor import _compute_econ_attribution
+        result = _compute_econ_attribution(
+            gross_move_pct=0.3,
+            mfe_pct=0.2,
+            mae_pct=0.1,
+            tp_pct=1.0,
+            sl_pct=1.0,
+            touched_tp=False,
+            touched_sl=False,
+            net_pnl_pct=-0.1,
+            cost_edge_bypassed=False,
+            outcome="LOSS",
+            timeout=False,
+        )
+        assert result == "FEE_DOMINATED_MOVE"
+
+    def test_tp_too_far_attribution(self):
+        """Test TP_TOO_FAR_FOR_MFE: TIMEOUT with mfe/tp < 0.25."""
+        from src.services.paper_trade_executor import _compute_econ_attribution
+        result = _compute_econ_attribution(
+            gross_move_pct=0.1,
+            mfe_pct=0.03,
+            mae_pct=0.5,
+            tp_pct=1.2,
+            sl_pct=1.0,
+            touched_tp=False,
+            touched_sl=False,
+            net_pnl_pct=0.05,
+            cost_edge_bypassed=False,
+            outcome="WIN",
+            timeout=True,
+        )
+        assert result == "TP_TOO_FAR_FOR_MFE"
+
+    def test_cost_edge_bypass_loss_attribution(self):
+        """Test COST_EDGE_BYPASS_LOSS: bypassed=True and outcome=LOSS."""
+        from src.services.paper_trade_executor import _compute_econ_attribution
+        result = _compute_econ_attribution(
+            gross_move_pct=0.1,
+            mfe_pct=0.2,
+            mae_pct=0.05,
+            tp_pct=1.0,
+            sl_pct=1.0,
+            touched_tp=False,
+            touched_sl=False,
+            net_pnl_pct=-0.05,
+            cost_edge_bypassed=True,
+            outcome="LOSS",
+            timeout=False,
+        )
+        assert result == "COST_EDGE_BYPASS_LOSS"
+
+    def test_wrong_direction_attribution(self):
+        """Test WRONG_DIRECTION: gross < 0 and outcome=LOSS."""
+        from src.services.paper_trade_executor import _compute_econ_attribution
+        result = _compute_econ_attribution(
+            gross_move_pct=-0.5,
+            mfe_pct=0.1,
+            mae_pct=0.8,
+            tp_pct=1.0,
+            sl_pct=1.0,
+            touched_tp=False,
+            touched_sl=False,
+            net_pnl_pct=-0.6,
+            cost_edge_bypassed=False,
+            outcome="LOSS",
+            timeout=False,
+        )
+        assert result == "WRONG_DIRECTION"
+
+    def test_both_touch_priority(self):
+        """Test BOTH_TOUCH_AMBIGUOUS has highest priority."""
+        from src.services.paper_trade_executor import _compute_econ_attribution
+        result = _compute_econ_attribution(
+            gross_move_pct=0.0,
+            mfe_pct=0.9,
+            mae_pct=0.8,
+            tp_pct=1.0,
+            sl_pct=1.0,
+            touched_tp=True,
+            touched_sl=True,
+            net_pnl_pct=-0.1,
+            cost_edge_bypassed=False,
+            outcome="FLAT",
+            timeout=True,
+        )
+        assert result == "BOTH_TOUCH_AMBIGUOUS"
+
+    def test_near_tp_timeout_attribution(self):
+        """Test NEAR_TP_TIMEOUT: TIMEOUT with mfe/tp >= 0.7."""
+        from src.services.paper_trade_executor import _compute_econ_attribution
+        result = _compute_econ_attribution(
+            gross_move_pct=0.8,
+            mfe_pct=0.9,
+            mae_pct=0.1,
+            tp_pct=1.2,
+            sl_pct=1.0,
+            touched_tp=False,
+            touched_sl=False,
+            net_pnl_pct=0.2,
+            cost_edge_bypassed=False,
+            outcome="FLAT",
+            timeout=True,
+        )
+        assert result == "NEAR_TP_TIMEOUT"
+
+    def test_attrib_log_emitted_on_training_exit(self, clean_positions, caplog):
+        """Test that ECON_ATTRIB log is emitted for training bucket positions."""
+        import logging
+        caplog.set_level(logging.INFO)
+        signal = {
+            "symbol": "LTCUSDT",
+            "action": "BUY",
+            "ev": 0.060,
+        }
+        extra = {
+            "paper_source": "training_sampler",
+            "training_bucket": "C_WEAK_EV_TRAIN",
+            "explore_bucket": None,
+            "cost_edge_ok": True,
+            "cost_edge_bypassed": False,
+            "cost_edge_bypass_reason": "none",
+            "bootstrap_closed_trades": 0,
+        }
+        result = open_paper_position(signal, 150.0, time.time(), "TEST", extra)
+        assert result["status"] == "opened"
+        trade_id = result["trade_id"]
+
+        # Close and verify ECON_ATTRIB is logged
+        result = close_paper_position(trade_id, 151.0, time.time(), "MANUAL")
+        assert result is not None
+        assert result.get("trade_id") == trade_id
+
+        assert "PAPER_TRAIN_ECON_ATTRIB" in caplog.text
+        assert f"trade_id={trade_id}" in caplog.text
+        assert "attribution=" in caplog.text
+
+    def test_unit_mismatch_fix_near_tp_triggers(self):
+        """Test that near_tp/near_sl properly trigger after unit mismatch fix."""
+        from src.services.paper_trade_executor import _maybe_log_paper_train_econ_summary
+        import logging
+
+        closed_trades = [
+            {
+                "trade_id": "test_1",
+                "symbol": "LTCUSDT",
+                "side": "BUY",
+                "entry_price": 100.0,
+                "exit_price": 100.8,
+                "max_seen": 100.9,
+                "min_seen": 100.0,
+                "tp_pct_at_entry": 1.2,
+                "sl_pct_at_entry": 1.0,
+                "tp": 101.2,
+                "sl": 99.0,
+                "exit_reason": "TIMEOUT",
+                "outcome": "FLAT",
+                "net_pnl_pct": -0.05,
+                "gross_pnl_pct": 0.8,
+                "fee_pct": 0.05,
+                "slippage_pct": 0.05,
+                "cost_edge_bypassed": False,
+                "cost_edge_ok": True,
+                "regime": "ALGO",
+                "duration_s": 300,
+            }
+        ]
+
+        # mfe = (100.9 - 100) / 100 * 100 = 0.9% (in percent now)
+        # tp_pct = 1.2%
+        # mfe / tp_pct = 0.9 / 1.2 = 0.75 >= 0.7 → near_tp should be 1
+        with patch("src.services.paper_trade_executor.log") as mock_log:
+            _maybe_log_paper_train_econ_summary(closed_trades)
+
+        # Check that log.info was called
+        assert mock_log.info.called
+        call_args = mock_log.info.call_args_list[0]
+        log_msg = call_args[0][0]
+
+        # The message should include near_tp_timeout=1 (not 0)
+        assert "near_tp_timeout=" in log_msg

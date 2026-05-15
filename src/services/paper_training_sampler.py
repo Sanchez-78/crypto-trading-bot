@@ -356,7 +356,7 @@ def _training_quality_gate(
         import logging
         log_p11ae = logging.getLogger(__name__)
         log_p11ae.info(
-            "[COST_EDGE_BYPASS] mode=paper_train symbol=%s bucket=C_WEAK_EV_TRAIN "
+            "[COST_EDGE_BYPASS_CANDIDATE] mode=paper_train symbol=%s bucket=C_WEAK_EV_TRAIN "
             "reason=%s source=STRICT_TAKE_ROUTED_TO_TRAINING",
             symbol,
             bypass_reason,
@@ -674,6 +674,18 @@ def maybe_open_training_sample(
         # All gates passed; record entry metric
         _training_metrics["entries_1h"].append(time.time())
         _maybe_log_training_health()
+
+        # P1.1AM: Log final acceptance of bypassed entries
+        if gate_result.get("cost_edge_bypassed"):
+            import logging
+            log_p11am = logging.getLogger(__name__)
+            log_p11am.info(
+                "[COST_EDGE_BYPASS_ACCEPTED] symbol=%s bucket=%s reason=%s trades_closed=%d",
+                symbol,
+                bucket,
+                gate_result.get("cost_edge_bypass_reason", "none"),
+                gate_result.get("bootstrap_closed_trades", 0),
+            )
 
         # P1.1AK: Include bypass metadata from gate result
         return {

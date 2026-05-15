@@ -105,6 +105,16 @@ QUALITY_EXITS_TIMEOUT_NP=$(to_int "$(count_logs "PAPER_TRAIN_QUALITY_EXIT.*reaso
 COST_EDGE_BYPASS=$(to_int "$(count_logs "COST_EDGE_BYPASS")")
 ECON_SUMMARY=$(to_int "$(count_logs "PAPER_TRAIN_ECON_SUMMARY")")
 
+# P1.1AM: Attribution and bypass log split
+ECON_ATTRIB=$(to_int "$(count_logs "PAPER_TRAIN_ECON_ATTRIB")")
+ATTR_FEE_DOMINATED=$(to_int "$(count_logs "attribution=FEE_DOMINATED_MOVE")")
+ATTR_TP_TOO_FAR=$(to_int "$(count_logs "attribution=TP_TOO_FAR_FOR_MFE")")
+ATTR_COST_BYPASS_LOSS=$(to_int "$(count_logs "attribution=COST_EDGE_BYPASS_LOSS")")
+ATTR_WRONG_DIR=$(to_int "$(count_logs "attribution=WRONG_DIRECTION")")
+ATTR_LOW_VOL=$(to_int "$(count_logs "attribution=LOW_VOL_TIMEOUT")")
+COST_EDGE_CANDIDATE=$(to_int "$(count_logs "COST_EDGE_BYPASS_CANDIDATE")")
+COST_EDGE_ACCEPTED=$(to_int "$(count_logs "COST_EDGE_BYPASS_ACCEPTED")")
+
 echo "PAPER_TRAIN_ENTRY:                $ENTRIES"
 echo "PAPER_TRAIN_ENTRY_REAL (training): $ENTRIES_REAL"
 echo "PAPER_TRAIN_QUALITY_ENTRY:        $QUALITY_ENTRIES"
@@ -123,6 +133,18 @@ echo "LM_UPDATE_MISMATCH:               $LM_MISMATCH"
 echo "PAPER_SCORE_MISSING_CONTEXT:      $SCORE_MISSING_CTX"
 echo "COST_EDGE_BYPASS:                 $COST_EDGE_BYPASS"
 echo "PAPER_TRAIN_ECON_SUMMARY:         $ECON_SUMMARY"
+echo ""
+
+echo "Attribution Counts:"
+echo "-------"
+echo "PAPER_TRAIN_ECON_ATTRIB:          $ECON_ATTRIB"
+echo "ATTR_FEE_DOMINATED_MOVE:          $ATTR_FEE_DOMINATED"
+echo "ATTR_TP_TOO_FAR_FOR_MFE:          $ATTR_TP_TOO_FAR"
+echo "ATTR_COST_EDGE_BYPASS_LOSS:       $ATTR_COST_BYPASS_LOSS"
+echo "ATTR_WRONG_DIRECTION:             $ATTR_WRONG_DIR"
+echo "ATTR_LOW_VOL_TIMEOUT:             $ATTR_LOW_VOL"
+echo "COST_EDGE_BYPASS_CANDIDATE:       $COST_EDGE_CANDIDATE"
+echo "COST_EDGE_BYPASS_ACCEPTED:        $COST_EDGE_ACCEPTED"
 echo ""
 
 # P1.1AK: Trade-ID correlation (per-trade quality exit verification)
@@ -218,6 +240,11 @@ echo ""
 echo "Sample logs (last 25 quality events):"
 echo "-------"
 grep -E "PAPER_TRAIN_QUALITY_ENTRY|PAPER_TRAIN_QUALITY_EXIT|PAPER_TRAIN_QUALITY_SUMMARY|PAPER_TRAIN_ANOMALY|PAPER_SCORE_MISSING_CONTEXT|PAPER_TRAIN_ECON_SUMMARY|COST_EDGE_BYPASS" "$LOG_TMP" 2>/dev/null | tail -25
+
+echo ""
+echo "Sample attribution logs (last 10):"
+echo "-------"
+grep "PAPER_TRAIN_ECON_ATTRIB" "$LOG_TMP" 2>/dev/null | tail -10
 
 echo ""
 echo "============================================================"

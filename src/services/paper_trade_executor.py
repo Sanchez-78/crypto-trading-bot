@@ -1726,22 +1726,22 @@ def _maybe_log_paper_train_econ_summary(trades: list) -> None:
 
             if entry > 0:
                 if side == "BUY":
-                    mfe = (max_seen - entry) / entry
-                    mae = (entry - min_seen) / entry
+                    mfe = (max_seen - entry) / entry * 100.0
+                    mae = (entry - min_seen) / entry * 100.0
                 else:
-                    mfe = (entry - min_seen) / entry
-                    mae = (max_seen - entry) / entry
+                    mfe = (entry - min_seen) / entry * 100.0
+                    mae = (max_seen - entry) / entry * 100.0
             else:
                 mfe = 0.0
                 mae = 0.0
 
-            # Near-TP for TIMEOUT positions
+            # Near-TP for TIMEOUT positions (tp_pct stored as percent, mfe now in percent too)
             if "TIMEOUT" in t.get("exit_reason", "") and tp_pct > 0 and mfe / tp_pct >= 0.7:
                 near_tp += 1
             # Near-SL for TIMEOUT positions
             if "TIMEOUT" in t.get("exit_reason", "") and sl_pct > 0 and mae / sl_pct >= 0.7:
                 near_sl += 1
-            # Both TP and SL touched
+            # Both TP and SL touched (mfe/mae now in percent, tp_pct/sl_pct in percent)
             if tp_pct > 0 and sl_pct > 0 and mfe >= tp_pct and mae >= sl_pct:
                 both_touch += 1
 
@@ -1773,8 +1773,76 @@ def _maybe_log_paper_train_econ_summary(trades: list) -> None:
             f"{k}:n={v['n']} wr={v['win']/v['n']:.2f}" for k, v in sorted(by_regime.items())
         )
 
+        # P1.1AM: Attribution breakdown
+        by_attrib = {}
+        mfe_to_tp_ratios = []
+        mae_to_sl_ratios = []
+        bypass_n = bypass_win = cost_ok_n = cost_ok_win = 0
+
+        for t in trades:
+            entry = float(t.get("entry_price", 0))
+            max_seen = float(t.get("max_seen", entry))
+            min_seen = float(t.get("min_seen", entry))
+            side = t.get("side", "BUY")
+            tp_pct = abs(float(t.get("tp_pct_at_entry", 0)))
+            sl_pct = abs(float(t.get("sl_pct_at_entry", 0)))
+            gross_pnl_pct = float(t.get("gross_pnl_pct", 0))
+            net_pnl_pct_t = float(t.get("net_pnl_pct", 0))
+            outcome = t.get("outcome", "FLAT")
+            exit_reason = t.get("exit_reason", "")
+            cost_edge_bypassed = bool(t.get("cost_edge_bypassed"))
+            cost_edge_ok = bool(t.get("cost_edge_ok"))
+            tp_abs = float(t.get("tp", 0))
+            sl_abs = float(t.get("sl", 0))
+
+            if entry > 0:
+                if side == "BUY":
+                    mfe = (max_seen - entry) / entry * 100.0
+                    mae = (entry - min_seen) / entry * 100.0
+                    t_touched_tp = max_seen >= tp_abs if tp_abs > 0 else False
+                    t_touched_sl = min_seen <= sl_abs if sl_abs > 0 else False
+                else:
+                    mfe = (entry - min_seen) / entry * 100.0
+                    mae = (max_seen - entry) / entry * 100.0
+                    t_touched_tp = min_seen <= tp_abs if tp_abs > 0 else False
+                    t_touched_sl = max_seen >= sl_abs if sl_abs > 0 else False
+            else:
+                mfe = mae = 0.0
+                t_touched_tp = t_touched_sl = False
+
+            attr = _compute_econ_attribution(
+                gross_pnl_pct, mfe, abs(mae), tp_pct, sl_pct,
+                t_touched_tp, t_touched_sl, net_pnl_pct_t, cost_edge_bypassed, outcome,
+                "TIMEOUT" in exit_reason
+            )
+            if attr not in by_attrib:
+                by_attrib[attr] = {"n": 0, "win": 0, "pnl": 0.0}
+            by_attrib[attr]["n"] += 1
+            by_attrib[attr]["win"] += int(outcome == "WIN")
+            by_attrib[attr]["pnl"] += net_pnl_pct_t
+
+            if tp_pct > 0: mfe_to_tp_ratios.append(mfe / tp_pct)
+            if sl_pct > 0: mae_to_sl_ratios.append(abs(mae) / sl_pct)
+
+            if cost_edge_bypassed:
+                bypass_n += 1
+                bypass_win += int(outcome == "WIN")
+            if cost_edge_ok:
+                cost_ok_n += 1
+                cost_ok_win += int(outcome == "WIN")
+
+        avg_mfe_to_tp_ratio = sum(mfe_to_tp_ratios) / len(mfe_to_tp_ratios) if mfe_to_tp_ratios else 0.0
+        avg_mae_to_sl_ratio = sum(mae_to_sl_ratios) / len(mae_to_sl_ratios) if mae_to_sl_ratios else 0.0
+        bypass_wr = bypass_win / bypass_n if bypass_n > 0 else 0.0
+        cost_ok_wr = cost_ok_win / cost_ok_n if cost_ok_n > 0 else 0.0
+
+        by_attrib_str = ",".join(
+            f"{k}:n={v['n']} wr={v['win']/v['n']:.2f} avg_pnl={v['pnl']/v['n']:.4f}"
+            for k, v in sorted(by_attrib.items())
+        )
+
         log.info(
-            "[PAPER_TRAIN_ECON_SUMMARY] window_s=%.0f closed=%d timeout_rate=%.3f near_tp_timeout=%d near_sl_timeout=%d both_touch_rate=%.3f avg_tp_pct=%.4f avg_sl_pct=%.4f avg_pnl=%.4f cost_edge_bypassed=%d by_side=[%s] by_regime=[%s]",
+            "[PAPER_TRAIN_ECON_SUMMARY] window_s=%.0f closed=%d timeout_rate=%.3f near_tp_timeout=%d near_sl_timeout=%d both_touch_rate=%.3f avg_tp_pct=%.4f avg_sl_pct=%.4f avg_pnl=%.4f avg_mfe_to_tp_ratio=%.3f avg_mae_to_sl_ratio=%.3f cost_edge_bypassed_n=%d cost_edge_bypassed_wr=%.2f cost_edge_ok_n=%d cost_edge_ok_wr=%.2f by_side=[%s] by_regime=[%s] by_attribution=[%s]",
             _PAPER_SUMMARY_INTERVAL,
             closed,
             timeout_rate,
@@ -1784,9 +1852,15 @@ def _maybe_log_paper_train_econ_summary(trades: list) -> None:
             avg_tp_pct,
             avg_sl_pct,
             avg_pnl,
+            avg_mfe_to_tp_ratio,
+            avg_mae_to_sl_ratio,
             cost_bypassed_count,
+            bypass_wr,
+            cost_ok_n,
+            cost_ok_wr,
             by_side_str,
             by_regime_str,
+            by_attrib_str,
         )
     except Exception as e:
         log.warning("[PAPER_TRAIN_ECON_SUMMARY_ERROR] err=%s", str(e))
@@ -1903,6 +1977,50 @@ def _maybe_log_paper_quality_summary() -> None:
         log.warning("[PAPER_TRAIN_QUALITY_SUMMARY_ERROR] err=%s", str(e))
 
 
+def _compute_econ_attribution(
+    gross_move_pct: float,
+    mfe_pct: float,
+    mae_pct: float,
+    tp_pct: float,
+    sl_pct: float,
+    touched_tp: bool,
+    touched_sl: bool,
+    net_pnl_pct: float,
+    cost_edge_bypassed: bool,
+    outcome: str,
+    timeout: bool,
+) -> str:
+    """P1.1AM: Determine primary economic reason for paper trade outcome.
+
+    Priority order from spec: BOTH_TOUCH → NEAR_TP/SL → COST_EDGE_LOSS → FEE_DOM →
+    WRONG_DIR → TP_TOO_FAR → LOW_VOL_TIMEOUT → NORMAL_*.
+    """
+    mfe_to_tp = mfe_pct / tp_pct if tp_pct > 0 else 0.0
+    mae_to_sl = mae_pct / sl_pct if sl_pct > 0 else 0.0
+
+    if touched_tp and touched_sl:
+        return "BOTH_TOUCH_AMBIGUOUS"
+    if timeout and mfe_to_tp >= 0.7:
+        return "NEAR_TP_TIMEOUT"
+    if timeout and mae_to_sl >= 0.7:
+        return "NEAR_SL_TIMEOUT"
+    if cost_edge_bypassed and outcome == "LOSS":
+        return "COST_EDGE_BYPASS_LOSS"
+    if gross_move_pct > 0 and net_pnl_pct <= 0:
+        return "FEE_DOMINATED_MOVE"
+    if gross_move_pct < 0 and outcome == "LOSS":
+        return "WRONG_DIRECTION"
+    if timeout and mfe_to_tp < 0.25:
+        return "TP_TOO_FAR_FOR_MFE"
+    if timeout:
+        return "LOW_VOL_TIMEOUT"
+    if outcome == "WIN":
+        return "NORMAL_WIN"
+    if outcome == "LOSS":
+        return "NORMAL_LOSS"
+    return "FLAT_NO_SIGNAL"
+
+
 def _log_paper_train_quality_exit(closed_trade: dict, position: dict) -> None:
     """Log exit quality snapshot for paper training positions.
 
@@ -2017,6 +2135,39 @@ def _log_paper_train_quality_exit(closed_trade: dict, position: dict) -> None:
             touched_sl,
             exit_efficiency,
         )
+
+        # P1.1AM: Economic attribution for training bucket exits
+        if training_bucket == "C_WEAK_EV_TRAIN":
+            tp_pct = abs(float(position.get("tp_pct_at_entry") or 0.0))
+            sl_pct = abs(float(position.get("sl_pct_at_entry") or 0.0))
+            gross_pnl_pct = float(closed_trade.get("gross_pnl_pct") or 0.0)
+            fee_drag_pct = (float(closed_trade.get("fee_pct") or 0.0) + float(closed_trade.get("slippage_pct") or 0.0))
+            timeout = "TIMEOUT" in reason
+            cost_edge_bypassed = bool(position.get("cost_edge_bypassed"))
+            cost_edge_ok = bool(position.get("cost_edge_ok"))
+            bypass_reason = position.get("cost_edge_bypass_reason", "none")
+            mfe_to_tp_ratio = mfe_pct / tp_pct if tp_pct > 0 else 0.0
+            mae_to_sl_ratio = abs(mae_pct) / sl_pct if sl_pct > 0 else 0.0
+            near_tp = timeout and mfe_to_tp_ratio >= 0.7
+            near_sl = timeout and mae_to_sl_ratio >= 0.7
+
+            attribution = _compute_econ_attribution(
+                gross_pnl_pct, mfe_pct, abs(mae_pct), tp_pct, sl_pct,
+                touched_tp, touched_sl, net_pnl_pct, cost_edge_bypassed, outcome, timeout
+            )
+
+            log.info(
+                "[PAPER_TRAIN_ECON_ATTRIB] trade_id=%s symbol=%s side=%s entry_regime=%s exit_regime=%s "
+                "source=%s training_bucket=%s cost_edge_ok=%s cost_edge_bypassed=%s bypass_reason=%s "
+                "entry=%.8f exit=%.8f net_pnl_pct=%.4f gross_move_pct=%.4f fee_drag_pct=%.4f "
+                "mfe_pct=%.4f mae_pct=%.4f tp_pct=%.4f sl_pct=%.4f mfe_to_tp_ratio=%.3f mae_to_sl_ratio=%.3f "
+                "touched_tp=%s touched_sl=%s near_tp=%s near_sl=%s hold_s=%d hold_limit_s=%d timeout=%s outcome=%s attribution=%s",
+                trade_id, symbol, side, entry_regime, exit_regime,
+                source, training_bucket, cost_edge_ok, cost_edge_bypassed, bypass_reason,
+                entry, exit_price, net_pnl_pct, gross_pnl_pct, fee_drag_pct,
+                mfe_pct, abs(mae_pct), tp_pct, sl_pct, mfe_to_tp_ratio, mae_to_sl_ratio,
+                touched_tp, touched_sl, near_tp, near_sl, hold_s, hold_limit_s, timeout, outcome, attribution,
+            )
 
         # P1.1AG: Log anomalies detected at exit
         if reason == "TIMEOUT" and mfe_pct >= 0.75 * (tp - entry) / entry * 100.0 if entry > 0 else False:
