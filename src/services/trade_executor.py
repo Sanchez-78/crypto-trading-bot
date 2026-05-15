@@ -1686,6 +1686,11 @@ def _maybe_route_to_paper_training(signal: dict, current_price: float, reject_re
                         result.get("side_inferred", False),
                         reject_reason,
                     )
+
+                    # P1.1AH: Check for quality entry mismatch
+                    from src.services.paper_trade_executor import check_quality_entry_mismatch
+                    check_quality_entry_mismatch(trade_id, sym, "training_sampler")
+
                     return True
                 else:
                     # P1.1AB: Record paper entry skip

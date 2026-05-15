@@ -183,7 +183,8 @@
       "Bash(awk '/test_v10_13u19d_low_quality_weak_ev_still_rejected/,/FAILED|PASSED/')",
       "Bash(awk '/test_v10_13u19f_override_missing_logs_bug_reason/,/FAILED|PASSED/')",
       "PowerShell(\\(Get-Content \"C:\\\\Projects\\\\CryptoMaster_srv\\\\tests\\\\test_v10_13u_patches.py\" | Measure-Object -Line\\).Lines)",
-      "PowerShell(winget upgrade *)"
+      "PowerShell(winget upgrade *)",
+      "Bash(awk -F: '$1 >= 1799')"
     ]
   }
 }

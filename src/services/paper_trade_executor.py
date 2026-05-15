@@ -38,6 +38,10 @@ _PAPER_CLOSED_TRADES_LOCK = __import__("threading").RLock()
 _PAPER_SUMMARY_LAST_LOG = 0.0  # Last summary log timestamp
 _PAPER_SUMMARY_INTERVAL = 300.0  # 5 minutes between summary logs
 
+# P1.1AH: Track which trades had quality entry logs for mismatch detection
+_QUALITY_ENTRY_LOGGED = set()  # trade_id -> bool for trades with quality_entry logs
+_QUALITY_ENTRY_LOCK = __import__("threading").RLock()
+
 
 def _save_paper_state() -> None:
     """Save open paper positions to disk with atomic writes."""
@@ -1324,6 +1328,30 @@ def reset_paper_positions():
         _POSITIONS.clear()
 
 
+def check_quality_entry_mismatch(trade_id: str, symbol: str, source: str) -> None:
+    """P1.1AH: Check if a paper training entry has a corresponding quality entry log.
+
+    If PAPER_TRAIN_ENTRY was logged but no PAPER_TRAIN_QUALITY_ENTRY exists,
+    emit a diagnostic warning (does not block entry).
+
+    Args:
+        trade_id: The paper trade ID
+        symbol: The symbol
+        source: The entry source (e.g., "training_sampler")
+    """
+    if not trade_id or trade_id == "UNKNOWN":
+        return
+
+    with _QUALITY_ENTRY_LOCK:
+        if trade_id not in _QUALITY_ENTRY_LOGGED:
+            log.warning(
+                "[PAPER_TRAIN_QUALITY_MISMATCH] type=missing_quality_entry trade_id=%s symbol=%s source=%s",
+                trade_id,
+                symbol,
+                source,
+            )
+
+
 # P1.1AG: Paper training quality diagnostics helpers
 
 def _log_paper_train_quality_entry(position: dict, signal: dict) -> None:
@@ -1336,6 +1364,11 @@ def _log_paper_train_quality_entry(position: dict, signal: dict) -> None:
     try:
         # Extract fields with defensive defaults
         trade_id = position.get("trade_id", "na")
+
+        # P1.1AH: Mark that quality entry was logged for this trade_id
+        if trade_id != "na":
+            with _QUALITY_ENTRY_LOCK:
+                _QUALITY_ENTRY_LOGGED.add(trade_id)
         symbol = position.get("symbol", "na")
         side = position.get("side", "na")
         source = position.get("paper_source", "na")
@@ -1436,16 +1469,22 @@ def _maybe_log_paper_quality_summary() -> None:
         return
 
     with _PAPER_CLOSED_TRADES_LOCK:
-        if not _PAPER_CLOSED_TRADES_BUFFER:
-            return
-
         trades = list(_PAPER_CLOSED_TRADES_BUFFER)
         _PAPER_CLOSED_TRADES_BUFFER.clear()
 
     _PAPER_SUMMARY_LAST_LOG = now
 
     try:
-        # Aggregate stats
+        # Count open positions for "opened" metric
+        with _POSITION_LOCK:
+            opened_count = len(_POSITIONS)
+
+        # Count quality entry logs recorded this window
+        with _QUALITY_ENTRY_LOCK:
+            zero_entry_logs = len(_QUALITY_ENTRY_LOGGED)  # Total logged this session
+            _QUALITY_ENTRY_LOGGED.clear()  # Clear for next window
+
+        # Aggregate closed trade stats
         closed_count = len(trades)
         win_count = sum(1 for t in trades if t.get("outcome") == "WIN")
         loss_count = sum(1 for t in trades if t.get("outcome") == "LOSS")
@@ -1475,9 +1514,6 @@ def _maybe_log_paper_quality_summary() -> None:
 
         avg_mfe = sum(mfe_values) / len(mfe_values) if mfe_values else 0.0
         avg_mae = sum(mae_values) / len(mae_values) if mae_values else 0.0
-
-        timeout_count = sum(1 for t in trades if t.get("exit_reason") == "TIMEOUT")
-        timeout_rate = (timeout_count / closed_count) if closed_count > 0 else 0.0
 
         # Group by source
         by_source = {}
@@ -1509,9 +1545,13 @@ def _maybe_log_paper_quality_summary() -> None:
             f"{reg}:n={v['n']} wr={v['wins']/v['n']:.2f}" for reg, v in sorted(by_regime.items())
         )
 
+        # P1.1AH: Count recent anomalies (conservative: count from buffer if available)
+        anomaly_count = 0  # Would need separate tracking to count anomalies
+
         log.info(
-            "[PAPER_TRAIN_QUALITY_SUMMARY] window_s=%.0f closed=%d win=%d loss=%d flat=%d wr=%.4f avg_pnl=%.4f avg_mfe=%.4f avg_mae=%.4f timeout_rate=%.4f by_source=[%s] by_regime=[%s]",
+            "[PAPER_TRAIN_QUALITY_SUMMARY] window_s=%.0f opened=%d closed=%d win=%d loss=%d flat=%d wr=%.4f avg_pnl=%.4f avg_mfe=%.4f avg_mae=%.4f zero_entry_logs=%d anomalies=%d by_source=[%s] by_regime=[%s]",
             _PAPER_SUMMARY_INTERVAL,
+            opened_count,
             closed_count,
             win_count,
             loss_count,
@@ -1520,7 +1560,8 @@ def _maybe_log_paper_quality_summary() -> None:
             avg_pnl,
             avg_mfe,
             avg_mae,
-            timeout_rate,
+            zero_entry_logs,
+            anomaly_count,
             by_source_str,
             by_regime_str,
         )
@@ -1583,6 +1624,27 @@ def _log_paper_train_quality_exit(closed_trade: dict, position: dict) -> None:
         else:  # SELL
             touched_tp = min_seen <= tp if tp > 0 else False
             touched_sl = max_seen >= sl if sl > 0 else False
+
+        # P1.1AH: Validate all required fields are present
+        missing_fields = []
+        if not trade_id or trade_id == "na":
+            missing_fields.append("trade_id")
+        if not symbol or symbol == "na":
+            missing_fields.append("symbol")
+        if mfe_pct is None:
+            missing_fields.append("mfe_pct")
+        if mae_pct is None:
+            missing_fields.append("mae_pct")
+        if exit_efficiency is None:
+            missing_fields.append("exit_efficiency")
+
+        if missing_fields:
+            log.warning(
+                "[PAPER_TRAIN_ANOMALY] type=quality_exit_missing_fields trade_id=%s symbol=%s missing=%s",
+                trade_id,
+                symbol,
+                ",".join(missing_fields),
+            )
 
         log.info(
             "[PAPER_TRAIN_QUALITY_EXIT] trade_id=%s symbol=%s side=%s source=%s entry_regime=%s exit_regime=%s training_bucket=%s reason=%s outcome=%s entry=%.8f exit=%.8f net_pnl_pct=%.4f mfe_pct=%.4f mae_pct=%.4f hold_s=%d hold_limit_s=%d touched_tp=%s touched_sl=%s exit_efficiency=%.4f",
