@@ -170,6 +170,27 @@ echo "NEG_EV_PROBE_BLOCKED:             $NEG_EV_PROBE_BLOCKED"
 echo "NEG_EV_PROBE_EXITS:               $NEG_EV_PROBE_EXITS"
 echo ""
 
+# P1.1AQ: Candidate-to-Entry Flow
+echo "Candidate-to-Entry Flow:"
+echo "-------"
+BYPASS_FLOW_CANDIDATE=$(to_int "$(count_logs "COST_EDGE_BYPASS_FLOW.*stage=candidate")")
+BYPASS_FLOW_DROP=$(to_int "$(count_logs "COST_EDGE_BYPASS_FLOW.*stage=drop")")
+BYPASS_FLOW_DROP_SAMPLER_SYMBOL=$(to_int "$(count_logs "COST_EDGE_BYPASS_FLOW.*stage=drop.*sampler_max_open_per_symbol")")
+BYPASS_FLOW_DROP_SAMPLER_BUCKET=$(to_int "$(count_logs "COST_EDGE_BYPASS_FLOW.*stage=drop.*sampler_max_open_per_bucket")")
+BYPASS_FLOW_DROP_SAMPLER_RATE=$(to_int "$(count_logs "COST_EDGE_BYPASS_FLOW.*stage=drop.*sampler_rate_cap")")
+BYPASS_FLOW_DROP_DUPLICATE=$(to_int "$(count_logs "COST_EDGE_BYPASS_FLOW.*stage=drop.*duplicate_candidate")")
+echo "COST_EDGE_BYPASS_FLOW_CANDIDATE:   $BYPASS_FLOW_CANDIDATE"
+echo "COST_EDGE_BYPASS_FLOW_DROP:        $BYPASS_FLOW_DROP"
+echo ""
+
+echo "Bypass Drop Reasons:"
+echo "-------"
+echo "sampler_max_open_per_symbol:      $BYPASS_FLOW_DROP_SAMPLER_SYMBOL"
+echo "sampler_max_open_per_bucket:      $BYPASS_FLOW_DROP_SAMPLER_BUCKET"
+echo "sampler_rate_cap:                 $BYPASS_FLOW_DROP_SAMPLER_RATE"
+echo "duplicate_candidate:              $BYPASS_FLOW_DROP_DUPLICATE"
+echo ""
+
 # P1.1AK: Trade-ID correlation (per-trade quality exit verification)
 echo "Trade-ID Correlation:"
 echo "-------"
@@ -275,6 +296,30 @@ if [ "$NEG_EV_PROBE_ACCEPTED" -gt 0 ] && [ "$NEG_EV_PROBE_EXITS" -eq 0 ]; then
 fi
 if [ "$NEG_EV_PROBE_EXITS" -gt 0 ]; then
     echo "✓ Probe exits reached (exits=$NEG_EV_PROBE_EXITS)"
+fi
+
+# P1.1AQ: Bypass flow interpretation
+if [ "$COST_EDGE_CANDIDATE" -gt 0 ] && [ "$COST_EDGE_ACCEPTED" -gt 0 ] && [ "$ENTRIES_REAL" -gt 0 ]; then
+    echo "✓ Bypass candidate-to-entry flow is active"
+elif [ "$COST_EDGE_CANDIDATE" -gt 0 ] && [ "$COST_EDGE_ACCEPTED" -eq 0 ] && [ "$ENTRIES_REAL" -eq 0 ]; then
+    if [ "$BYPASS_FLOW_DROP" -gt 0 ]; then
+        echo "⚠️  Bypass candidates are being dropped before paper entry"
+        TOP_DROP_REASON="unknown"
+        if [ "$BYPASS_FLOW_DROP_SAMPLER_SYMBOL" -gt 0 ]; then
+            TOP_DROP_REASON="sampler_max_open_per_symbol ($BYPASS_FLOW_DROP_SAMPLER_SYMBOL)"
+        elif [ "$BYPASS_FLOW_DROP_SAMPLER_BUCKET" -gt 0 ]; then
+            TOP_DROP_REASON="sampler_max_open_per_bucket ($BYPASS_FLOW_DROP_SAMPLER_BUCKET)"
+        elif [ "$BYPASS_FLOW_DROP_SAMPLER_RATE" -gt 0 ]; then
+            TOP_DROP_REASON="sampler_rate_cap ($BYPASS_FLOW_DROP_SAMPLER_RATE)"
+        elif [ "$BYPASS_FLOW_DROP_DUPLICATE" -gt 0 ]; then
+            TOP_DROP_REASON="duplicate_candidate ($BYPASS_FLOW_DROP_DUPLICATE)"
+        fi
+        echo "  Top drop reason: $TOP_DROP_REASON"
+    else
+        echo "⚠️  Bypass candidates vanish without a drop log — instrumentation gap remains"
+    fi
+elif [ "$COST_EDGE_CANDIDATE" -eq 0 ] && [ "$ENTRIES_REAL" -eq 0 ]; then
+    echo "ℹ️  No bypass candidates in this window; check if cost_edge is blocking entry generation"
 fi
 
 echo ""

@@ -69,6 +69,10 @@ _PROBE_MAX_LIFETIME_CLOSED = 20     # probe auto-stops after this many closed tr
 _PROBE_STARVATION_IDLE_S = 1800.0   # idle threshold: 30 min since last training entry
 _PROBE_STARVATION_LOG_S = 60.0      # emit starvation state log at most once per minute
 
+# P1.1AQ: Bypass flow diagnostics throttling
+_BYPASS_FLOW_LAST_LOG = {}  # (symbol, stage, reason) -> timestamp
+_BYPASS_FLOW_THROTTLE_S = 10.0  # throttle period for bypass flow logs
+
 
 def _now() -> float:
     """Get current timestamp."""
@@ -111,6 +115,34 @@ def _allow(**kw) -> dict:
     """Record entry event and return allow result."""
     _health["entries"] += 1
     return {"allowed": True, **kw}
+
+
+def _log_bypass_flow(stage: str, symbol: str, reason: str, **kw) -> None:
+    """P1.1AQ: Log bypass flow with throttling to prevent spam.
+
+    Throttle by (symbol, stage, reason) every 10 seconds.
+    """
+    now = time.time()
+    key = (str(symbol), str(stage), str(reason))
+
+    last = _BYPASS_FLOW_LAST_LOG.get(key, 0.0)
+    if now - last < _BYPASS_FLOW_THROTTLE_S:
+        return  # Still throttled
+
+    _BYPASS_FLOW_LAST_LOG[key] = now
+
+    # Format extra fields
+    extra_s = " ".join(f"{k}={v}" for k, v in kw.items() if v is not None)
+    if extra_s:
+        extra_s = " " + extra_s
+
+    log.info(
+        "[COST_EDGE_BYPASS_FLOW] stage=%s symbol=%s reason=%s%s",
+        stage,
+        symbol,
+        reason,
+        extra_s if extra_s else "",
+    )
 
 
 def _log_train_skip_once(reason: str, symbol: str, side: str, bucket: str, source_reject: str, **extra) -> None:
@@ -385,15 +417,9 @@ def _training_quality_gate(
         if not allow_bootstrap_bypass:
             return _skip("cost_edge_too_low", symbol=symbol, bucket=bucket, source_reject=source_reject)
 
-        # P1.1AE: Log the bypass
-        import logging
-        log_p11ae = logging.getLogger(__name__)
-        log_p11ae.info(
-            "[COST_EDGE_BYPASS_CANDIDATE] mode=paper_train symbol=%s bucket=C_WEAK_EV_TRAIN "
-            "reason=%s source=STRICT_TAKE_ROUTED_TO_TRAINING",
-            symbol,
-            bypass_reason,
-        )
+        # P1.1AE: Log the bypass candidate
+        # P1.1AQ: Add flow diagnostics
+        _log_bypass_flow("candidate", symbol, bypass_reason, bucket="C_WEAK_EV_TRAIN", source="STRICT_TAKE_ROUTED_TO_TRAINING")
 
     # Dedicated duplicate candidate cooldown
     from src.core.runtime_mode import PAPER_TRAIN_DUPLICATE_CANDIDATE_COOLDOWN_S
@@ -402,6 +428,10 @@ def _training_quality_gate(
         dk = f"{symbol}:{side}:DUPLICATE_CANDIDATE"
         last = _recent_dup_candidate.get(dk)
         if last is not None and now - last < PAPER_TRAIN_DUPLICATE_CANDIDATE_COOLDOWN_S:
+            # P1.1AQ: Log drop if this was a bypass candidate
+            if cost_edge_bypassed:
+                dup_age_s = now - last if last else 0.0
+                _log_bypass_flow("drop", symbol, "duplicate_candidate", source=source_reject, duplicate_age_s=f"{dup_age_s:.1f}")
             return _skip(
                 "duplicate_candidate_cooldown",
                 symbol=symbol,
@@ -433,9 +463,13 @@ def _training_quality_gate(
     )
 
     if len(_entry_times_minute) >= PAPER_TRAIN_MAX_ENTRIES_PER_MINUTE:
+        if cost_edge_bypassed:
+            _log_bypass_flow("drop", symbol, "sampler_rate_cap", source=source_reject)
         return _skip("max_entries_per_minute", symbol=symbol, bucket=bucket, source_reject=source_reject)
 
     if len(_entry_times_hour) >= PAPER_TRAIN_MAX_ENTRIES_PER_HOUR:
+        if cost_edge_bypassed:
+            _log_bypass_flow("drop", symbol, "sampler_rate_cap", source=source_reject)
         return _skip("max_entries_per_hour", symbol=symbol, bucket=bucket, source_reject=source_reject)
 
     # P1.1AO: Probe-specific hard caps (independent of PAPER_TRAIN_MAX_OPEN_PER_BUCKET)
@@ -463,6 +497,8 @@ def _training_quality_gate(
                 open_bucket += 1
 
     if open_symbol >= PAPER_TRAIN_MAX_OPEN_PER_SYMBOL:
+        if cost_edge_bypassed:
+            _log_bypass_flow("drop", symbol, "sampler_max_open_per_symbol", source=source_reject, open_symbol=open_symbol)
         return _skip(
             "max_open_per_symbol",
             symbol=symbol,
@@ -471,13 +507,19 @@ def _training_quality_gate(
         )
 
     if open_bucket >= PAPER_TRAIN_MAX_OPEN_PER_BUCKET:
+        if cost_edge_bypassed:
+            _log_bypass_flow("drop", symbol, "sampler_max_open_per_bucket", source=source_reject, open_bucket=open_bucket)
         return _skip("max_open_per_bucket", symbol=symbol, bucket=bucket, open_bucket=open_bucket)
+
+    # Count total open positions
+    open_total = len(open_positions)
 
     # All gates passed; record entry times for rate limiting
     _entry_times_minute.append(now)
     _entry_times_hour.append(now)
 
     # P1.1AK: Include bypass metadata in gate result
+    # P1.1AQ: Include open position counts for diagnostics
     return _allow(
         symbol=symbol,
         side=side,
@@ -486,6 +528,9 @@ def _training_quality_gate(
         cost_edge_bypassed=cost_edge_bypassed,
         cost_edge_bypass_reason=cost_edge_bypass_reason,
         bootstrap_closed_trades=bootstrap_closed_trades,
+        open_symbol=open_symbol,
+        open_bucket=open_bucket,
+        open_total=open_total,
     )
 
 
@@ -747,15 +792,20 @@ def maybe_open_training_sample(
         _maybe_log_training_health()
 
         # P1.1AM: Log final acceptance of bypassed entries
+        # P1.1AQ: Add open position counts and source for diagnostics
         if gate_result.get("cost_edge_bypassed"):
             import logging
             log_p11am = logging.getLogger(__name__)
             log_p11am.info(
-                "[COST_EDGE_BYPASS_ACCEPTED] symbol=%s bucket=%s reason=%s trades_closed=%d",
+                "[COST_EDGE_BYPASS_ACCEPTED] mode=paper_train symbol=%s bucket=%s reason=%s source=%s "
+                "open_symbol=%d open_bucket=%d open_total=%d",
                 symbol,
                 bucket,
                 gate_result.get("cost_edge_bypass_reason", "none"),
-                gate_result.get("bootstrap_closed_trades", 0),
+                reason,
+                gate_result.get("open_symbol", 0),
+                gate_result.get("open_bucket", 0),
+                gate_result.get("open_total", 0),
             )
 
         # P1.1AO: Log probe acceptance
