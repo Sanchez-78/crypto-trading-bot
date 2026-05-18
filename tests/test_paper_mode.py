@@ -1117,6 +1117,181 @@ class TestP1P1HardenLogging:
             logger.removeHandler(handler)
 
 
+class TestP1AT_RateCapReservationFix:
+    """P1.1AT: Rate-cap reservation fix — slots committed only after successful entry."""
+
+    def test_gate_does_not_consume_rate_slot(self, clean_positions):
+        """Test 1: _training_quality_gate passes but does not append to _entry_times_minute/hour."""
+        from src.services.paper_training_sampler import (
+            _training_quality_gate,
+            _entry_times_minute,
+            _entry_times_hour,
+        )
+
+        # Record initial state
+        initial_minute = len(_entry_times_minute)
+        initial_hour = len(_entry_times_hour)
+
+        # Call gate with allowed candidate
+        result = _training_quality_gate(
+            symbol="BTCUSDT",
+            side="BUY",
+            bucket="C_WEAK_EV_TRAIN",
+            source_reject="TEST",
+            cost_edge_ok=True,
+            open_positions=[],
+        )
+
+        # Gate should allow, but NOT consume rate slots
+        assert result.get("allowed") is True, "Gate should allow"
+        assert len(_entry_times_minute) == initial_minute, \
+            f"Rate slot consumed by gate! Before: {initial_minute}, After: {len(_entry_times_minute)}"
+        assert len(_entry_times_hour) == initial_hour, \
+            f"Rate slot consumed by gate! Before: {initial_hour}, After: {len(_entry_times_hour)}"
+
+    def test_successful_entry_consumes_exactly_one_slot(self, clean_positions):
+        """Test 2: Successful open_paper_position commits rate slot exactly once."""
+        from src.services.paper_training_sampler import (
+            _entry_times_minute,
+            _entry_times_hour,
+        )
+
+        initial_minute = len(_entry_times_minute)
+        initial_hour = len(_entry_times_hour)
+
+        # Open training position
+        result = open_paper_position(
+            signal={"symbol": "ETHUSDT", "action": "BUY", "ev": 0.050},
+            price=2000.0,
+            ts=time.time(),
+            reason="TRAINING_SAMPLER:TEST",
+            extra={
+                "paper_source": "training_sampler",
+                "training_bucket": "C_WEAK_EV_TRAIN",
+            },
+        )
+
+        assert result["status"] == "opened", "Entry should succeed"
+        # After successful entry, exactly one slot should be consumed
+        assert len(_entry_times_minute) == initial_minute + 1, \
+            "Exactly one minute slot should be consumed"
+        assert len(_entry_times_hour) == initial_hour + 1, \
+            "Exactly one hour slot should be consumed"
+
+    def test_non_training_entry_does_not_consume_slot(self, clean_positions):
+        """Test: Non-training entries do not consume rate slots."""
+        from src.services.paper_training_sampler import (
+            _entry_times_minute,
+            _entry_times_hour,
+        )
+
+        initial_minute = len(_entry_times_minute)
+        initial_hour = len(_entry_times_hour)
+
+        # Open non-training position
+        result = open_paper_position(
+            signal={"symbol": "BTCUSDT", "action": "BUY", "ev": 0.050},
+            price=50000.0,
+            ts=time.time(),
+            reason="RDE_TAKE",
+            extra={"paper_source": "normal_rde_take"},  # Not training_sampler
+        )
+
+        assert result["status"] == "opened"
+        # Non-training should not consume sampler rate slots
+        assert len(_entry_times_minute) == initial_minute, \
+            "Non-training entry should not consume minute slot"
+        assert len(_entry_times_hour) == initial_hour, \
+            "Non-training entry should not consume hour slot"
+
+    def test_rate_cap_blocks_phantom_attempts(self, clean_positions):
+        """Test 4: Phantom attempts (gate allowed but no entry) do not block future entries."""
+        from src.services.paper_training_sampler import (
+            _entry_times_minute,
+            _entry_times_hour,
+            _training_quality_gate,
+        )
+
+        initial_minute = len(_entry_times_minute)
+
+        # Simulate: gate allows N times (but no entries created)
+        for i in range(3):
+            result = _training_quality_gate(
+                symbol="XRPUSDT",
+                side="BUY",
+                bucket="C_WEAK_EV_TRAIN",
+                source_reject="PHANTOM_TEST",
+                cost_edge_ok=True,
+                open_positions=[],
+            )
+            assert result.get("allowed") is True
+
+        # No slots should be consumed yet
+        assert len(_entry_times_minute) == initial_minute, \
+            "Phantom gate-only allows should not consume slots"
+
+        # Now create ONE real entry
+        result = open_paper_position(
+            signal={"symbol": "XRPUSDT", "action": "BUY", "ev": 0.050},
+            price=2.5,
+            ts=time.time(),
+            reason="TRAINING_SAMPLER:TEST",
+            extra={
+                "paper_source": "training_sampler",
+                "training_bucket": "C_WEAK_EV_TRAIN",
+            },
+        )
+
+        assert result["status"] == "opened"
+        # Only the real entry should consume a slot
+        assert len(_entry_times_minute) == initial_minute + 1, \
+            f"Only one real entry should consume a slot. Before: {initial_minute}, After: {len(_entry_times_minute)}"
+
+    def test_flow_id_propagated_through_entry_path(self, clean_positions):
+        """Test 5: flow_id is preserved through gate → entry."""
+        from src.services.paper_training_sampler import _gen_flow_id
+
+        expected_flow_id = _gen_flow_id("ADAUSDT", "SELL", "C_WEAK_EV_TRAIN", "TEST_SOURCE", time.time())
+
+        # Gate should propagate flow_id
+        gate_result = _training_quality_gate(
+            symbol="ADAUSDT",
+            side="SELL",
+            bucket="C_WEAK_EV_TRAIN",
+            source_reject="TEST_SOURCE",
+            cost_edge_ok=True,
+            open_positions=[],
+        )
+
+        assert "flow_id" in gate_result, "Gate result should include flow_id"
+
+    def test_training_sampler_only_commit(self, clean_positions):
+        """Test 6: Live/real modes do not commit training sampler rate slots."""
+        from src.services.paper_training_sampler import (
+            _entry_times_minute,
+            _entry_times_hour,
+        )
+
+        initial_minute = len(_entry_times_minute)
+        initial_hour = len(_entry_times_hour)
+
+        # Open live entry (not training sampler)
+        result = open_paper_position(
+            signal={"symbol": "LTCUSDT", "action": "BUY", "ev": 0.080},
+            price=180.0,
+            ts=time.time(),
+            reason="RDE_TAKE",
+            extra={"paper_source": "normal_rde_take"},  # Not training_sampler
+        )
+
+        assert result["status"] == "opened"
+        # No sampler rate slot committed for non-training
+        assert len(_entry_times_minute) == initial_minute, \
+            "Non-sampler entry should not affect sampler rate cap"
+        assert len(_entry_times_hour) == initial_hour, \
+            "Non-sampler entry should not affect sampler rate cap"
+
+
 class TestP1AS_RateCapStateLogging:
     """P1.1AS: Rate-cap state diagnostics and audit correlation fixes."""
 

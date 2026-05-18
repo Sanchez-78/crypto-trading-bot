@@ -582,9 +582,9 @@ def _training_quality_gate(
             _log_bypass_flow("drop", symbol, "sampler_max_open_per_bucket", source=source_reject, open_bucket=open_bucket, flow_id=flow_id)
         return _skip("max_open_per_bucket", symbol=symbol, bucket=bucket, open_bucket=open_bucket)
 
-    # All gates passed; record entry times for rate limiting
-    _entry_times_minute.append(now)
-    _entry_times_hour.append(now)
+    # P1.1AT: Do NOT commit rate-cap timestamps here. They will be committed in open_paper_position()
+    # after the actual paper training entry is successfully created.
+    # This prevents phantom rate-cap consumption when entry creation fails downstream.
 
     # P1.1AK: Include bypass metadata in gate result
     # P1.1AQ: Include open position counts for diagnostics
@@ -940,6 +940,22 @@ def maybe_open_training_sample(
             "side_inferred": False,
             "max_hold_s": 0,
         }
+
+
+def commit_training_sampler_rate_slot(now: float = None) -> None:
+    """P1.1AT: Commit rate-cap timestamps ONLY after successful paper training entry creation.
+
+    This must be called from open_paper_position() AFTER the position is successfully
+    added to _POSITIONS, NOT from _training_quality_gate() which happens too early.
+
+    Args:
+        now: Current timestamp (defaults to current time)
+    """
+    if now is None:
+        now = time.time()
+
+    _entry_times_minute.append(now)
+    _entry_times_hour.append(now)
 
 
 def record_training_closed(bucket: str, outcome: str) -> None:

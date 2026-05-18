@@ -837,6 +837,15 @@ def open_paper_position(
     # Persist state after opening position
     _save_paper_state()
 
+    # P1.1AT: Commit rate-cap slot ONLY after successful entry creation and persistence
+    # This ensures rate-cap accounting reflects real paper training entries, not phantom attempts
+    if paper_source == "training_sampler":
+        try:
+            from src.services.paper_training_sampler import commit_training_sampler_rate_slot
+            commit_training_sampler_rate_slot(now=ts)
+        except Exception as e:
+            log.warning("[PAPER_TRAIN_RATE_SLOT_COMMIT_ERROR] trade_id=%s err=%s", trade_id, str(e))
+
     return {
         "status": "opened",
         "trade_id": trade_id,
