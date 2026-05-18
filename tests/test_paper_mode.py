@@ -3823,19 +3823,20 @@ class TestP1AG1QualityDiagnostics:
         assert pos["max_seen"] == 3000.0  # Initial price
         assert pos["min_seen"] == 3000.0  # Initial price
 
-        # Update with slightly higher price (not enough to hit TP which is at 3036)
-        update_paper_positions({"ETHUSDT": 3020.0}, 1010.0)  # max_seen should update
+        # P1.1AN: TP is now calibrated to ~0.21-0.45%, much lower than old 1.2%
+        # Update with slightly higher price (not enough to hit calibrated TP)
+        update_paper_positions({"ETHUSDT": 3003.0}, 1010.0)  # max_seen should update
         assert trade_id in _POSITIONS  # Position should still be open
         pos = _POSITIONS[trade_id]
-        assert pos["max_seen"] == 3020.0, f"Expected max_seen=3020, got {pos.get('max_seen')}"
+        assert pos["max_seen"] == 3003.0, f"Expected max_seen=3003, got {pos.get('max_seen')}"
         assert pos["min_seen"] == 3000.0, f"Expected min_seen=3000, got {pos.get('min_seen')}"
 
-        # Update with slightly lower price (not enough to hit SL which is at 2964)
-        update_paper_positions({"ETHUSDT": 2980.0}, 1020.0)  # min_seen should update
+        # Update with slightly lower price (not enough to hit SL)
+        update_paper_positions({"ETHUSDT": 2997.0}, 1020.0)  # min_seen should update
         assert trade_id in _POSITIONS  # Position should still be open
         pos = _POSITIONS[trade_id]
-        assert pos["max_seen"] == 3020.0, f"Expected max_seen=3020, got {pos.get('max_seen')}"
-        assert pos["min_seen"] == 2980.0, f"Expected min_seen=2980, got {pos.get('min_seen')}"
+        assert pos["max_seen"] == 3003.0, f"Expected max_seen=3003, got {pos.get('max_seen')}"
+        assert pos["min_seen"] == 2997.0, f"Expected min_seen=2997, got {pos.get('min_seen')}"
 
     def test_mfe_mae_calculation_for_sell(self, clean_positions):
         """P1.1AG Test 3: Exit quality log computes MFE/MAE correctly for SELL."""
@@ -3866,21 +3867,21 @@ class TestP1AG1QualityDiagnostics:
         pos = _POSITIONS[trade_id]
         assert pos["max_seen"] == 600.0  # Initial price
         assert pos["min_seen"] == 600.0  # Initial price
-        # For SELL: TP at 600*0.988=592.8, SL at 600*1.012=607.2
+        # P1.1AN: TP is now calibrated to ~0.21-0.45%, not old 1.2%
 
         # Simulate price movement for SELL - go down slightly (good for SELL but not to TP)
-        update_paper_positions({"BNBUSDT": 595.0}, 1010.0)  # min_seen = 595 (good for SELL)
+        update_paper_positions({"BNBUSDT": 599.4}, 1010.0)  # min_seen = 599.4 (good for SELL)
         assert trade_id in _POSITIONS
         pos = _POSITIONS[trade_id]
-        assert pos["min_seen"] == 595.0, f"Expected min_seen=595, got {pos.get('min_seen')}"
+        assert pos["min_seen"] == 599.4, f"Expected min_seen=599.4, got {pos.get('min_seen')}"
         assert pos["max_seen"] == 600.0, f"Expected max_seen=600, got {pos.get('max_seen')}"
 
         # Go up slightly (bad for SELL but not to SL)
-        update_paper_positions({"BNBUSDT": 605.0}, 1020.0)  # max_seen = 605 (bad for SELL)
+        update_paper_positions({"BNBUSDT": 600.6}, 1020.0)  # max_seen = 600.6 (bad for SELL)
         assert trade_id in _POSITIONS
         pos = _POSITIONS[trade_id]
-        assert pos["max_seen"] == 605.0, f"Expected max_seen=605, got {pos.get('max_seen')}"
-        assert pos["min_seen"] == 595.0, f"Expected min_seen=595, got {pos.get('min_seen')}"
+        assert pos["max_seen"] == 600.6, f"Expected max_seen=600.6, got {pos.get('max_seen')}"
+        assert pos["min_seen"] == 599.4, f"Expected min_seen=599.4, got {pos.get('min_seen')}"
 
     def test_missing_optional_fields_no_crash(self, clean_positions, caplog):
         """P1.1AG Test 4: Missing optional fields do not crash and log na."""
