@@ -20,6 +20,10 @@ from typing import Optional
 
 log = logging.getLogger(__name__)
 
+# P1.1AO: HBLOCK log throttle (10s per symbol/blocker/result key)
+_HBLOCK_LAST_LOG: dict = {}
+_HBLOCK_THROTTLE_S = 10.0
+
 
 def log_adaptive_block(
     blocker_name: str,
@@ -36,7 +40,7 @@ def log_adaptive_block(
 ) -> None:
     """
     Log adaptive block decision with telemetry.
-    
+
     Args:
         blocker_name: Type of blocker (OFI_TOXIC_HARD, SKIP_SCORE_HARD, FAST_FAIL_HARD)
         symbol: Trading pair
@@ -50,6 +54,13 @@ def log_adaptive_block(
         reason: Optional detailed reason
         penalty_multiplier: Soft-penalty multiplier (0.3-1.0)
     """
+    # P1.1AO: Throttle HBLOCK logs (10s per symbol/blocker/result)
+    _key = (blocker_name, symbol, result)
+    _now = time.time()
+    if _now - _HBLOCK_LAST_LOG.get(_key, 0.0) < _HBLOCK_THROTTLE_S:
+        return
+    _HBLOCK_LAST_LOG[_key] = _now
+
     log.info(
         f"[HBLOCK] {blocker_name:20} {symbol:8} "
         f"score={score:.3f} health={health:.2f} idle={idle_seconds:.0f}s "

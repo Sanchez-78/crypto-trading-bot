@@ -115,6 +115,15 @@ ATTR_LOW_VOL=$(to_int "$(count_logs "attribution=LOW_VOL_TIMEOUT")")
 COST_EDGE_CANDIDATE=$(to_int "$(count_logs "COST_EDGE_BYPASS_CANDIDATE")")
 COST_EDGE_ACCEPTED=$(to_int "$(count_logs "COST_EDGE_BYPASS_ACCEPTED")")
 
+# P1.1AO: Cold-start starvation diagnostics
+NEG_EV_REJECTS=$(to_int "$(count_logs "REJECT_NEGATIVE_EV")")
+UNKNOWN_BUCKET_SKIPS=$(to_int "$(count_logs "PAPER_EXPLORE_SKIP.*no_bucket_matched")")
+STARVATION_STATE=$(to_int "$(count_logs "PAPER_TRAIN_STARVATION_STATE")")
+STATE_MISMATCH=$(to_int "$(count_logs "PAPER_TRAIN_STATE_MISMATCH")")
+NEG_EV_PROBE_ACCEPTED=$(to_int "$(count_logs "PAPER_NEG_EV_PROBE_ACCEPTED")")
+NEG_EV_PROBE_BLOCKED=$(to_int "$(grep "PAPER_NEG_EV_PROBE_BLOCKED\|probe_cap_" "$LOG_TMP" 2>/dev/null | wc -l | tr -d '[:space:]')")
+NEG_EV_PROBE_EXITS=$(to_int "$(grep "PAPER_EXIT" "$LOG_TMP" 2>/dev/null | grep -c "C_NEG_EV_PROBE" 2>/dev/null || echo "0")")
+
 echo "PAPER_TRAIN_ENTRY:                $ENTRIES"
 echo "PAPER_TRAIN_ENTRY_REAL (training): $ENTRIES_REAL"
 echo "PAPER_TRAIN_QUALITY_ENTRY:        $QUALITY_ENTRIES"
@@ -145,6 +154,17 @@ echo "ATTR_WRONG_DIRECTION:             $ATTR_WRONG_DIR"
 echo "ATTR_LOW_VOL_TIMEOUT:             $ATTR_LOW_VOL"
 echo "COST_EDGE_BYPASS_CANDIDATE:       $COST_EDGE_CANDIDATE"
 echo "COST_EDGE_BYPASS_ACCEPTED:        $COST_EDGE_ACCEPTED"
+echo ""
+
+echo "Cold-Start Starvation:"
+echo "-------"
+echo "NEGATIVE_EV_REJECTS:              $NEG_EV_REJECTS"
+echo "UNKNOWN_BUCKET_SKIPS:             $UNKNOWN_BUCKET_SKIPS"
+echo "STARVATION_STATE_LOGS:            $STARVATION_STATE"
+echo "STATE_MISMATCH_LOGS:              $STATE_MISMATCH"
+echo "NEG_EV_PROBE_ACCEPTED:            $NEG_EV_PROBE_ACCEPTED"
+echo "NEG_EV_PROBE_BLOCKED:             $NEG_EV_PROBE_BLOCKED"
+echo "NEG_EV_PROBE_EXITS:               $NEG_EV_PROBE_EXITS"
 echo ""
 
 # P1.1AK: Trade-ID correlation (per-trade quality exit verification)
@@ -234,6 +254,16 @@ fi
 
 if [ "$ECON_SUMMARY" -gt 0 ]; then
     echo "✓ Economic summary logged (count=$ECON_SUMMARY)"
+fi
+
+if [ "$STARVATION_STATE" -gt 0 ] && [ "$NEG_EV_PROBE_ACCEPTED" -eq 0 ]; then
+    echo "⚠️  Starvation detected but no probes accepted — check caps/conditions"
+fi
+if [ "$NEG_EV_PROBE_ACCEPTED" -gt 0 ] && [ "$NEG_EV_PROBE_EXITS" -eq 0 ]; then
+    echo "ℹ️  Probe entries exist but no exits yet (trades still open)"
+fi
+if [ "$NEG_EV_PROBE_EXITS" -gt 0 ]; then
+    echo "✓ Probe exits reached (exits=$NEG_EV_PROBE_EXITS)"
 fi
 
 echo ""

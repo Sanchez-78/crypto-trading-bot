@@ -57,6 +57,18 @@ _SKIP_COUNTERS = {}  # reason -> count
 _LAST_SKIP_SUMMARY_TS = [0.0]  # [timestamp] for shared mutable reference
 _SKIP_SUMMARY_WINDOW_S = 600.0  # 10 minutes
 
+# P1.1AO: Cold-start probe state
+_probe_state: dict = {
+    "lifetime_closed": 0,           # C_NEG_EV_PROBE trades closed this process
+    "entry_times_10m": deque(),     # probe entry timestamps for 10-min rate cap
+    "starvation_last_log_ts": 0.0,  # throttle starvation state log
+}
+_PROBE_MAX_OPEN_TOTAL = 2           # max open probe positions globally
+_PROBE_MAX_NEW_PER_10M = 2          # max new probe entries per 10 min
+_PROBE_MAX_LIFETIME_CLOSED = 20     # probe auto-stops after this many closed trades
+_PROBE_STARVATION_IDLE_S = 1800.0   # idle threshold: 30 min since last training entry
+_PROBE_STARVATION_LOG_S = 60.0      # emit starvation state log at most once per minute
+
 
 def _now() -> float:
     """Get current timestamp."""
@@ -72,6 +84,10 @@ def _prune(now: float) -> None:
         _entry_times_minute.popleft()
     while _entry_times_hour and now - _entry_times_hour[0] > 3600:
         _entry_times_hour.popleft()
+
+    # P1.1AO: Prune probe rate-limit window (10 minutes)
+    while _probe_state["entry_times_10m"] and now - _probe_state["entry_times_10m"][0] > 600:
+        _probe_state["entry_times_10m"].popleft()
 
     # Prune dedupe dict
     for k, ts in list(_recent_dedupe.items()):
@@ -266,6 +282,11 @@ def _get_training_bucket(signal: dict, ctx: dict, reject_reason: str) -> Tuple[s
             size_mult = min(0.08, max(0.03, ev * 0.5))
             return ("C_WEAK_EV_TRAIN", size_mult)
 
+    # P1.1AO: C_NEG_EV_PROBE: cold-start starvation recovery (paper_train only)
+    if ev <= 0 and _is_cold_start_starvation():
+        if _probe_state["lifetime_closed"] < _PROBE_MAX_LIFETIME_CLOSED:
+            return ("C_NEG_EV_PROBE", 0.01)
+
     return ("", 0.0)
 
 
@@ -288,6 +309,18 @@ def _check_hourly_cap(bucket: str) -> bool:
 
     cap_info["count"] += 1
     return True
+
+
+def _is_cold_start_starvation() -> bool:
+    """P1.1AO: True when global_trades < 100 AND no training entries in last 30 min."""
+    try:
+        from src.services.learning_event import get_metrics
+        if get_metrics().get("trades", 0) >= 100:
+            return False
+        now = time.time()
+        return not any(now - ts < _PROBE_STARVATION_IDLE_S for ts in _entry_times_hour)
+    except Exception:
+        return False
 
 
 def _training_quality_gate(
@@ -404,6 +437,19 @@ def _training_quality_gate(
 
     if len(_entry_times_hour) >= PAPER_TRAIN_MAX_ENTRIES_PER_HOUR:
         return _skip("max_entries_per_hour", symbol=symbol, bucket=bucket, source_reject=source_reject)
+
+    # P1.1AO: Probe-specific hard caps (independent of PAPER_TRAIN_MAX_OPEN_PER_BUCKET)
+    if bucket == "C_NEG_EV_PROBE":
+        # Rate cap: 2 new probes per 10 minutes
+        if len(_probe_state["entry_times_10m"]) >= _PROBE_MAX_NEW_PER_10M:
+            return _skip("probe_cap_rate", symbol=symbol, bucket=bucket, source_reject=source_reject)
+        # Total open cap: 2 probe positions globally
+        probe_open = sum(
+            1 for p in (open_positions or [])
+            if p.get("training_bucket") == "C_NEG_EV_PROBE"
+        )
+        if probe_open >= _PROBE_MAX_OPEN_TOTAL:
+            return _skip("probe_cap_total_open", symbol=symbol, bucket=bucket, source_reject=source_reject)
 
     # Open-position caps per symbol and bucket
     open_positions = open_positions or []
@@ -625,6 +671,31 @@ def maybe_open_training_sample(
 
         # Get training bucket
         bucket, size_mult = _get_training_bucket(signal, ctx, reason)
+
+        # P1.1AO: Starvation state log (throttled, 60s interval)
+        _ts_now = time.time()
+        if _is_cold_start_starvation() and _ts_now - _probe_state["starvation_last_log_ts"] >= _PROBE_STARVATION_LOG_S:
+            _probe_state["starvation_last_log_ts"] = _ts_now
+            try:
+                from src.services.learning_event import get_metrics as _gm_ao
+                _ao_gt = _gm_ao().get("trades", 0)
+                log.info(
+                    "[PAPER_TRAIN_STARVATION_STATE] mode=paper_train global_trades=%d "
+                    "probe_lifetime_closed=%d ev=%.4f reason=cold_start_starvation",
+                    _ao_gt,
+                    _probe_state["lifetime_closed"],
+                    float(signal.get("ev", 0.0)) if signal else 0.0,
+                )
+                # State mismatch: probe closed but global_trades still zero
+                if _probe_state["lifetime_closed"] > 0 and _ao_gt == 0:
+                    log.warning(
+                        "[PAPER_TRAIN_STATE_MISMATCH] probe_lifetime_closed=%d "
+                        "global_trades=0 reason=probe_closed_but_lm_not_counting",
+                        _probe_state["lifetime_closed"],
+                    )
+            except Exception:
+                pass
+
         if not bucket:
             return {
                 "allowed": False,
@@ -687,6 +758,19 @@ def maybe_open_training_sample(
                 gate_result.get("bootstrap_closed_trades", 0),
             )
 
+        # P1.1AO: Log probe acceptance
+        if bucket == "C_NEG_EV_PROBE":
+            _probe_state["entry_times_10m"].append(time.time())
+            log.info(
+                "[PAPER_NEG_EV_PROBE_ACCEPTED] symbol=%s side=%s bucket=C_NEG_EV_PROBE "
+                "original_decision=REJECT_NEGATIVE_EV ev=%.4f probe_lifetime_closed=%d "
+                "reason=cold_start_starvation",
+                symbol,
+                side,
+                float(signal.get("ev", 0.0)) if signal else 0.0,
+                _probe_state["lifetime_closed"],
+            )
+
         # P1.1AK: Include bypass metadata from gate result
         return {
             "allowed": True,
@@ -722,7 +806,10 @@ def record_training_closed(bucket: str, outcome: str) -> None:
     """P1.1V: Record a closed training trade for health metrics. Never raises."""
     try:
         _metric_add_event("closed_1h")
-        log.info("[PAPER_TRAIN_CLOSED] bucket=%s outcome=%s", bucket, outcome)
+        if bucket == "C_NEG_EV_PROBE":
+            _probe_state["lifetime_closed"] += 1
+        log.info("[PAPER_TRAIN_CLOSED] bucket=%s outcome=%s probe_lifetime_closed=%d",
+                 bucket, outcome, _probe_state["lifetime_closed"])
     except Exception as e:
         log.warning("[PAPER_TRAIN_METRICS_ERROR] record_training_closed failed: %s", e)
 

@@ -1,0 +1,95 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                    CORE FLOW LOGGING — QUICK REFERENCE                      ║
+║                V10.13k: See What Your Bot Actually Does                     ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+┌─ WATCH LOGS WITH COLOR ───────────────────────────────────────────────────────┐
+│                                                                                 │
+│  bash scripts/p11ak_core_flow_viewer.sh                                        │
+│  bash scripts/p11ak_core_flow_viewer.sh --since "60 min ago"                   │
+│  bash scripts/p11ak_core_flow_viewer.sh --color off > export.txt               │
+│                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌─ WHAT YOU'LL SEE ─────────────────────────────────────────────────────────────┐
+│                                                                                 │
+│  → ENTRIES  (🟢 GREEN)      ✓ ETHUSDT bucket=C_WEAK_EV_TRAIN ev=+0.0523      │
+│  ← EXITS    (🟣 MAGENTA)    ✓ ETHUSDT outcome=PROFIT pnl=+0.80%               │
+│  📚 LEARN   (🔵 CYAN)       ✓ LM trades=15                                     │
+│  ⚠️ ERRORS  (🔴 RED)        ✗ QUALITY_EXIT_MISSING                             │
+│  📊 ATTR    (🟡 YELLOW)     📊 FEE_DOMINATED_MOVE loss=-0.3%                  │
+│                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌─ USE IN CODE ─────────────────────────────────────────────────────────────────┐
+│                                                                                 │
+│  from src.services.core_flow_logging import (                                  │
+│      log_trade_entry, log_trade_exit, log_learning_update,                     │
+│      log_error, log_attribution, log_diag                                      │
+│  )                                                                               │
+│                                                                                 │
+│  # Log a trade entry (CORE FLOW)                                               │
+│  log_trade_entry(                                                               │
+│      symbol="ETHUSDT", side="BUY", price=1800,                                 │
+│      bucket="C_WEAK_EV_TRAIN", source="PAPER", ev=0.05                         │
+│  )                                                                               │
+│                                                                                 │
+│  # Log a trade exit (CORE FLOW)                                                │
+│  log_trade_exit(                                                                │
+│      symbol="ETHUSDT", trade_id="t1", outcome="PROFIT",                        │
+│      pnl_pct=0.8, bucket="C_WEAK_EV_TRAIN", reason="TARGET"                    │
+│  )                                                                               │
+│                                                                                 │
+│  # Log learning (CORE FLOW)                                                    │
+│  log_learning_update(                                                           │
+│      trades_in_lm=15, calibration_confidence=0.85                              │
+│  )                                                                               │
+│                                                                                 │
+│  # Log error (CORE FLOW, RED)                                                  │
+│  log_error("MISMATCH", "Trade closed but no quality exit", trade_id="t1")      │
+│                                                                                 │
+│  # Log diagnostic detail (DIAGNOSTICS, DIM)                                    │
+│  log_diag("Throttle passed", key=("HBLOCK", "ETH"), elapsed_s=15)              │
+│                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌─ COLOR CODES ─────────────────────────────────────────────────────────────────┐
+│                                                                                 │
+│  🟢 GREEN    ENTRY      Trade opened, signal accepted                         │
+│  🟣 MAGENTA  EXIT       Trade closed, position resolved                       │
+│  🔵 CYAN     LEARN      LM state updated                                      │
+│  🔴 RED      ERROR      Mismatch, failure, inconsistency                      │
+│  🟡 YELLOW   ATTR       Attribution, loss reason                              │
+│  🔷 BLUE     INFO       Generic info                                          │
+│  ⚫ DIM      DIAG       Diagnostic detail (collapsed)                         │
+│                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌─ MONITORING WORKFLOW ─────────────────────────────────────────────────────────┐
+│                                                                                 │
+│  During Development:                                                           │
+│    bash scripts/p11ak_core_flow_viewer.sh --since "10 min ago"                 │
+│                                                                                 │
+│  Post-Deploy Check:                                                            │
+│    bash scripts/p11ak_core_flow_viewer.sh --since "30 min ago"                 │
+│    (verify ENTRIES, EXITS, LEARNING are visible)                               │
+│                                                                                 │
+│  Error Analysis:                                                               │
+│    bash scripts/p11ak_core_flow_viewer.sh | grep "ERROR"                       │
+│                                                                                 │
+│  Full Diagnostics (if needed):                                                 │
+│    journalctl -u cryptomaster --since "30 min ago" | grep "HBLOCK"             │
+│                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌─ FILES ───────────────────────────────────────────────────────────────────────┐
+│                                                                                 │
+│  src/services/core_flow_logging.py          Logging module (functions)         │
+│  scripts/p11ak_core_flow_viewer.sh          Log viewer script                 │
+│  CORE_FLOW_LOGGING.md                       Full integration guide             │
+│                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+═══════════════════════════════════════════════════════════════════════════════════
+See actual trading flow (not noise) — CORE FLOW separates signal from diagnostics
+═══════════════════════════════════════════════════════════════════════════════════

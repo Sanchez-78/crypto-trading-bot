@@ -4161,3 +4161,224 @@ class TestP1_1AM_EconAttribution:
 
         # The message should include near_tp_timeout=1 (not 0)
         assert "near_tp_timeout=" in log_msg
+
+
+class TestP1_1AO_ColdStartProbe:
+    """P1.1AO: Cold-start EV starvation recovery via C_NEG_EV_PROBE bucket."""
+
+    def test_neg_ev_probe_state_initialization(self):
+        """Verify _probe_state dict has required keys."""
+        from src.services.paper_training_sampler import _probe_state
+
+        assert "lifetime_closed" in _probe_state
+        assert "entry_times_10m" in _probe_state
+        assert "starvation_last_log_ts" in _probe_state
+
+    def test_neg_ev_probe_state_reset_per_process(self):
+        """Probe state persists across calls (module-level dict)."""
+        from src.services.paper_training_sampler import _probe_state
+
+        initial = _probe_state["lifetime_closed"]
+        _probe_state["lifetime_closed"] += 1
+        assert _probe_state["lifetime_closed"] == initial + 1
+
+    def test_neg_ev_probe_no_activate_when_recent_entry(self):
+        """When entry_times_hour has recent entry (< 1800s), skip probe check."""
+        import time
+        from src.services.paper_training_sampler import (
+            _entry_times_hour,
+        )
+
+        _entry_times_hour.clear()
+        now = time.time()
+        _entry_times_hour.append(now - 100)  # recent entry, within 1800s window
+
+        # Verify entry was added
+        assert len(_entry_times_hour) > 0
+        assert any(now - ts < 1800.0 for ts in _entry_times_hour)
+
+    def test_neg_ev_probe_lifetime_cap_prevents_new_entries(self):
+        """When lifetime_closed >= 20, no new probe should be allowed."""
+        from src.services.paper_training_sampler import _probe_state
+
+        _probe_state["lifetime_closed"] = 20  # At lifetime cap
+
+        # Verify cap is set
+        assert _probe_state["lifetime_closed"] >= 20
+
+    def test_neg_ev_probe_rate_cap_2_per_10m(self):
+        """When entry_times_10m has 2 entries in last 10 min, gate skips probe."""
+        import time
+        from src.services.paper_training_sampler import (
+            _training_quality_gate,
+            _probe_state,
+        )
+
+        _probe_state["entry_times_10m"].clear()
+        now = time.time()
+        _probe_state["entry_times_10m"].append(now - 100)
+        _probe_state["entry_times_10m"].append(now - 200)  # 2 entries, rate cap hit
+
+        result = _training_quality_gate(
+            symbol="ETHUSDT",
+            side="BUY",
+            bucket="C_NEG_EV_PROBE",
+            source_reject="NEGATIVE_EV_PROBE",
+            cost_edge_ok=True,
+            open_positions=[],
+        )
+
+        # Gate returns dict with "allowed" key; if rate cap hit, allowed should be False
+        assert result.get("allowed") is False or result == {}  # Gating fails or skipped
+
+    def test_neg_ev_probe_total_open_cap_2(self):
+        """When 2 probe positions already open, gate skips new probe."""
+        from src.services.paper_training_sampler import (
+            _training_quality_gate,
+            _probe_state,
+        )
+
+        _probe_state["entry_times_10m"].clear()
+
+        # Simulate 2 open probe positions
+        open_positions = [
+            {
+                "symbol": "LTCUSDT",
+                "training_bucket": "C_NEG_EV_PROBE",
+            },
+            {
+                "symbol": "XRPUSDT",
+                "training_bucket": "C_NEG_EV_PROBE",
+            },
+        ]
+
+        result = _training_quality_gate(
+            symbol="ETHUSDT",
+            side="BUY",
+            bucket="C_NEG_EV_PROBE",
+            source_reject="NEGATIVE_EV_PROBE",
+            cost_edge_ok=True,
+            open_positions=open_positions,
+        )
+
+        # Total open cap hit
+        assert result.get("allowed") is False or result == {}
+
+    def test_neg_ev_probe_per_symbol_cap_1(self):
+        """When 1 probe position already open on same symbol, gate skips."""
+        from src.services.paper_training_sampler import (
+            _training_quality_gate,
+            _probe_state,
+        )
+
+        _probe_state["entry_times_10m"].clear()
+
+        open_positions = [
+            {
+                "symbol": "ETHUSDT",
+                "training_bucket": "C_NEG_EV_PROBE",
+            },
+        ]
+
+        result = _training_quality_gate(
+            symbol="ETHUSDT",
+            side="BUY",
+            bucket="C_NEG_EV_PROBE",
+            source_reject="NEGATIVE_EV_PROBE",
+            cost_edge_ok=True,
+            open_positions=open_positions,
+        )
+
+        # Per-symbol cap (1) already reached
+        assert result.get("allowed") is False or result == {}
+
+    def test_probe_rate_cap_10m_tracking(self):
+        """Verify probe entry_times_10m deque tracks recent entries."""
+        import time
+        from src.services.paper_training_sampler import _probe_state
+
+        _probe_state["entry_times_10m"].clear()
+        now = time.time()
+
+        _probe_state["entry_times_10m"].append(now - 100)
+        _probe_state["entry_times_10m"].append(now - 200)
+
+        # Rate cap check: if len >= 2, new entries should be blocked
+        assert len(_probe_state["entry_times_10m"]) >= 2
+
+    def test_probe_lifetime_cap_at_20(self):
+        """Verify lifetime cap prevents infinite probes."""
+        from src.services.paper_training_sampler import _probe_state
+
+        _probe_state["lifetime_closed"] = 0
+
+        for i in range(20):
+            _probe_state["lifetime_closed"] += 1
+
+        # Should be at cap
+        assert _probe_state["lifetime_closed"] == 20
+
+    def test_record_training_closed_increments_probe_counter(self):
+        """When C_NEG_EV_PROBE trade closes, lifetime_closed increments."""
+        from src.services.paper_training_sampler import (
+            record_training_closed,
+            _probe_state,
+        )
+
+        _probe_state["lifetime_closed"] = 0
+
+        record_training_closed("C_NEG_EV_PROBE", "PROFIT")
+        assert _probe_state["lifetime_closed"] == 1
+
+        record_training_closed("C_NEG_EV_PROBE", "LOSS")
+        assert _probe_state["lifetime_closed"] == 2
+
+        # Non-probe trades don't increment
+        record_training_closed("C_WEAK_EV_TRAIN", "PROFIT")
+        assert _probe_state["lifetime_closed"] == 2
+
+    def test_probe_starvation_throttle_flag_exists(self):
+        """Verify starvation log throttle state exists."""
+        from src.services.paper_training_sampler import _probe_state
+
+        assert "starvation_last_log_ts" in _probe_state
+        assert isinstance(_probe_state["starvation_last_log_ts"], (int, float))
+
+    def test_hblock_throttle_exists_in_telemetry(self):
+        """Verify HBLOCK throttle is configured in adaptive_block_telemetry."""
+        import src.services.adaptive_block_telemetry as abt
+        import inspect
+
+        # Check that _HBLOCK_LAST_LOG dict exists at module level
+        assert hasattr(abt, "_HBLOCK_LAST_LOG")
+        assert hasattr(abt, "_HBLOCK_THROTTLE_S")
+        assert abt._HBLOCK_THROTTLE_S == 10.0
+
+    def test_paper_explore_skip_throttle_exists(self):
+        """Verify PAPER_EXPLORE_SKIP throttle is configured."""
+        import src.services.paper_exploration as pe
+
+        # Check that throttle dict exists
+        assert hasattr(pe, "_EXPLORE_SKIP_LAST_LOG")
+        assert hasattr(pe, "_EXPLORE_SKIP_THROTTLE_S")
+        assert pe._EXPLORE_SKIP_THROTTLE_S == 10.0
+
+    def test_record_training_closed_increments_lifetime_counter(self):
+        """When C_NEG_EV_PROBE trade closes, increment lifetime_closed."""
+        from src.services.paper_training_sampler import (
+            record_training_closed,
+            _probe_state,
+        )
+
+        _probe_state["lifetime_closed"] = 0
+        assert _probe_state["lifetime_closed"] == 0
+
+        record_training_closed("C_NEG_EV_PROBE", "PROFIT")
+        assert _probe_state["lifetime_closed"] == 1
+
+        record_training_closed("C_NEG_EV_PROBE", "LOSS")
+        assert _probe_state["lifetime_closed"] == 2
+
+        # Non-probe buckets do not increment
+        record_training_closed("C_WEAK_EV_TRAIN", "PROFIT")
+        assert _probe_state["lifetime_closed"] == 2

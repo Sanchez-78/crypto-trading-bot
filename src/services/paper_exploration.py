@@ -56,6 +56,10 @@ _skip_counters = {
 _last_skip_summary_ts = 0
 _skip_summary_interval_s = 600  # 10 minutes
 
+# P1.1AO: Throttle for repeated no_bucket_matched skips (10s per (original_decision, reject_reason, symbol) key)
+_EXPLORE_SKIP_LAST_LOG: dict = {}
+_EXPLORE_SKIP_THROTTLE_S = 10.0
+
 
 def _normalize_pct_or_decimal(value: float) -> Tuple[float, float]:
     """Normalize percent or decimal to both forms.
@@ -657,9 +661,17 @@ def maybe_open_paper_exploration_from_reject(
         ov = paper_exploration_override(signal, explore_ctx)
 
         if not ov.get("allowed"):
+            _skip_reason = ov.get("reason", "not_allowed")
+            # P1.1AO: Throttle repeated no_bucket_matched skips (10s per key)
+            if _skip_reason == "no_bucket_matched":
+                _sk_key = (original_decision, reject_reason, symbol)
+                _sk_now = time.time()
+                if _sk_now - _EXPLORE_SKIP_LAST_LOG.get(_sk_key, 0.0) < _EXPLORE_SKIP_THROTTLE_S:
+                    return False
+                _EXPLORE_SKIP_LAST_LOG[_sk_key] = _sk_now
             log.warning(
                 "[PAPER_EXPLORE_SKIP] reason=%s bucket=%s symbol=%s original_decision=%s reject_reason=%s",
-                ov.get("reason", "not_allowed"),
+                _skip_reason,
                 ov.get("bucket", "UNKNOWN"),
                 symbol,
                 original_decision,
