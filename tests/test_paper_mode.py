@@ -26,8 +26,59 @@ from src.services.candidate_dedup import (
 def clean_positions():
     """Fixture to ensure clean state before/after tests."""
     reset_paper_positions()
+    _reset_paper_sampler_test_state()
     yield
     reset_paper_positions()
+    _reset_paper_sampler_test_state()
+
+
+def _reset_paper_sampler_test_state():
+    """Reset paper training sampler state for test isolation.
+
+    Clears rate-cap timers, deduplication caches, and throttle state
+    that can accumulate across tests and cause failures.
+    """
+    import src.services.paper_training_sampler as pts
+
+    # Clear rate-cap tracking
+    for name in ("_entry_times_minute", "_entry_times_hour"):
+        obj = getattr(pts, name, None)
+        if hasattr(obj, "clear"):
+            obj.clear()
+
+    # Clear deduplication and recent candidate caches
+    for name in (
+        "_recent_dedupe",
+        "_recent_dup_candidate",
+    ):
+        obj = getattr(pts, name, None)
+        if hasattr(obj, "clear"):
+            obj.clear()
+
+    # Clear skip log state and counters
+    for name in (
+        "_SKIP_LOG_TS",
+        "_SKIP_COUNTERS",
+    ):
+        obj = getattr(pts, name, None)
+        if hasattr(obj, "clear"):
+            obj.clear()
+
+    # Clear throttles
+    for name in (
+        "_BYPASS_FLOW_LAST_LOG",
+        "_RATE_CAP_STATE_LAST_LOG",
+    ):
+        obj = getattr(pts, name, None)
+        if hasattr(obj, "clear"):
+            obj.clear()
+
+    # Clear probe state if present
+    if hasattr(pts, '_probe_state') and isinstance(pts._probe_state, dict):
+        if 'entry_times_10m' in pts._probe_state:
+            obj = pts._probe_state.get('entry_times_10m')
+            if hasattr(obj, "clear"):
+                obj.clear()
 
 
 class TestPaperExecutorBasics:
@@ -1210,7 +1261,15 @@ class TestP1AT_RateCapReservationFix:
             _entry_times_minute,
             _entry_times_hour,
             _training_quality_gate,
+            _recent_dedupe,
+            _recent_dup_candidate,
         )
+
+        # Clear state after import to ensure we have fresh references
+        _entry_times_minute.clear()
+        _entry_times_hour.clear()
+        _recent_dedupe.clear()
+        _recent_dup_candidate.clear()
 
         initial_minute = len(_entry_times_minute)
 
@@ -1220,11 +1279,11 @@ class TestP1AT_RateCapReservationFix:
                 symbol="XRPUSDT",
                 side="BUY",
                 bucket="C_WEAK_EV_TRAIN",
-                source_reject="PHANTOM_TEST",
+                source_reject=f"PHANTOM_TEST_{i}",  # Unique per iteration to avoid dedupe rejection
                 cost_edge_ok=True,
                 open_positions=[],
             )
-            assert result.get("allowed") is True
+            assert result.get("allowed") is True, f"Iteration {i}: {result}"
 
         # No slots should be consumed yet
         assert len(_entry_times_minute) == initial_minute, \
@@ -1249,7 +1308,20 @@ class TestP1AT_RateCapReservationFix:
 
     def test_flow_id_propagated_through_entry_path(self, clean_positions):
         """Test 5: flow_id is preserved through gate → entry."""
-        from src.services.paper_training_sampler import _gen_flow_id
+        from src.services.paper_training_sampler import (
+            _gen_flow_id,
+            _training_quality_gate,
+            _entry_times_minute,
+            _entry_times_hour,
+            _recent_dedupe,
+            _recent_dup_candidate,
+        )
+
+        # Clear state after import to ensure we have fresh references
+        _entry_times_minute.clear()
+        _entry_times_hour.clear()
+        _recent_dedupe.clear()
+        _recent_dup_candidate.clear()
 
         expected_flow_id = _gen_flow_id("ADAUSDT", "SELL", "C_WEAK_EV_TRAIN", "TEST_SOURCE", time.time())
 
@@ -1326,8 +1398,13 @@ class TestP1AS_RateCapStateLogging:
 
     def test_drop_logs_include_flow_id(self):
         """Bypass flow drop logs include flow_id for correlation."""
+        import src.services.paper_training_sampler as pts
         from src.services.paper_training_sampler import _log_bypass_flow
         import logging
+        import time
+
+        # Clear throttle to ensure this test's logs are emitted
+        pts._BYPASS_FLOW_LAST_LOG.clear()
 
         log_capture = []
         class LogCapture(logging.Handler):
@@ -1337,17 +1414,23 @@ class TestP1AS_RateCapStateLogging:
         logger = logging.getLogger("src.services.paper_training_sampler")
         handler = LogCapture()
         logger.addHandler(handler)
+        old_level = logger.level
+        logger.setLevel(logging.DEBUG)
 
         try:
+            # Use unique flow_id to avoid collision with other tests
+            unique_flow_id = f"TEST_SYMBOL:{int(time.time() * 1000)}:C_WEAK_EV_TRAIN:123456"
+
             # Log a drop with flow_id
-            _log_bypass_flow("drop", "BTCUSDT", "sampler_rate_cap",
-                           source="TEST", flow_id="BTCUSDT:BUY:C_WEAK_EV_TRAIN:1234567890")
+            _log_bypass_flow("drop", "TEST_SYMBOL", "sampler_rate_cap",
+                           source="TEST_ISOLATION", flow_id=unique_flow_id)
 
             # Find log message
             drop_logs = [msg for msg in log_capture if "stage=drop" in msg]
-            assert len(drop_logs) > 0, "No drop logs found"
-            assert "flow_id=" in drop_logs[0], "flow_id not in drop log"
+            assert len(drop_logs) > 0, f"No drop logs found. Captured: {log_capture}"
+            assert "flow_id=" in drop_logs[0], f"flow_id not in drop log: {drop_logs[0]}"
         finally:
+            logger.setLevel(old_level)
             logger.removeHandler(handler)
 
     def test_audit_script_syntax_valid(self):
