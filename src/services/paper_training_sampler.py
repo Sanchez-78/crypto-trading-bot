@@ -481,7 +481,7 @@ def _training_quality_gate(
             # P1.1AQ: Log drop if this was a bypass candidate
             if cost_edge_bypassed:
                 dup_age_s = now - last if last else 0.0
-                _log_bypass_flow("drop", symbol, "duplicate_candidate", source=source_reject, duplicate_age_s=f"{dup_age_s:.1f}")
+                _log_bypass_flow("drop", symbol, "duplicate_candidate", source=source_reject, duplicate_age_s=f"{dup_age_s:.1f}", flow_id=flow_id)
             return _skip(
                 "duplicate_candidate_cooldown",
                 symbol=symbol,
@@ -504,6 +504,18 @@ def _training_quality_gate(
         )
     _recent_dedupe[dedupe_key] = now
 
+    # P1.1AS: Compute open position counts BEFORE rate-cap checks to enable proper state logging
+    open_positions = open_positions or []
+    open_symbol = 0
+    open_bucket = 0
+    for p in open_positions:
+        if (p.get("paper_source") == "training_sampler") or p.get("training_bucket"):
+            if str(p.get("symbol", "")).upper() == symbol:
+                open_symbol += 1
+            if str(p.get("training_bucket", "")) == bucket:
+                open_bucket += 1
+    open_total = len(open_positions)
+
     # Global rate caps (per minute and per hour)
     from src.core.runtime_mode import (
         PAPER_TRAIN_MAX_ENTRIES_PER_MINUTE,
@@ -514,30 +526,30 @@ def _training_quality_gate(
 
     if len(_entry_times_minute) >= PAPER_TRAIN_MAX_ENTRIES_PER_MINUTE:
         if cost_edge_bypassed:
-            _log_bypass_flow("drop", symbol, "sampler_rate_cap", source=source_reject)
-            # P1.1AR: Log rate-cap state when bypassed candidate is dropped
+            _log_bypass_flow("drop", symbol, "sampler_rate_cap", source=source_reject, flow_id=flow_id)
+            # P1.1AS: Fix missing rate-cap state logging by using now-computed open counts
             try:
                 from src.services.learning_event import get_metrics as _gm_ar
                 closed = _gm_ar().get("trades", 0)
                 next_allowed_s = 60.0 - (now - _entry_times_minute[0]) if _entry_times_minute else 60.0
                 _log_rate_cap_state(symbol, bucket, source_reject, now,
                                    len(_entry_times_minute), PAPER_TRAIN_MAX_ENTRIES_PER_MINUTE,
-                                   next_allowed_s, open_symbol, open_bucket, len(open_positions), closed)
+                                   next_allowed_s, open_symbol, open_bucket, open_total, closed)
             except Exception:
                 pass
         return _skip("max_entries_per_minute", symbol=symbol, bucket=bucket, source_reject=source_reject)
 
     if len(_entry_times_hour) >= PAPER_TRAIN_MAX_ENTRIES_PER_HOUR:
         if cost_edge_bypassed:
-            _log_bypass_flow("drop", symbol, "sampler_rate_cap", source=source_reject)
-            # P1.1AR: Log rate-cap state when bypassed candidate is dropped
+            _log_bypass_flow("drop", symbol, "sampler_rate_cap", source=source_reject, flow_id=flow_id)
+            # P1.1AS: Fix missing rate-cap state logging by using now-computed open counts
             try:
                 from src.services.learning_event import get_metrics as _gm_ar
                 closed = _gm_ar().get("trades", 0)
                 next_allowed_s = 3600.0 - (now - _entry_times_hour[0]) if _entry_times_hour else 3600.0
                 _log_rate_cap_state(symbol, bucket, source_reject, now,
                                    len(_entry_times_hour), PAPER_TRAIN_MAX_ENTRIES_PER_HOUR,
-                                   next_allowed_s, open_symbol, open_bucket, len(open_positions), closed)
+                                   next_allowed_s, open_symbol, open_bucket, open_total, closed)
             except Exception:
                 pass
         return _skip("max_entries_per_hour", symbol=symbol, bucket=bucket, source_reject=source_reject)
@@ -549,26 +561,15 @@ def _training_quality_gate(
             return _skip("probe_cap_rate", symbol=symbol, bucket=bucket, source_reject=source_reject)
         # Total open cap: 2 probe positions globally
         probe_open = sum(
-            1 for p in (open_positions or [])
+            1 for p in open_positions
             if p.get("training_bucket") == "C_NEG_EV_PROBE"
         )
         if probe_open >= _PROBE_MAX_OPEN_TOTAL:
             return _skip("probe_cap_total_open", symbol=symbol, bucket=bucket, source_reject=source_reject)
 
-    # Open-position caps per symbol and bucket
-    open_positions = open_positions or []
-    open_symbol = 0
-    open_bucket = 0
-    for p in open_positions:
-        if (p.get("paper_source") == "training_sampler") or p.get("training_bucket"):
-            if str(p.get("symbol", "")).upper() == symbol:
-                open_symbol += 1
-            if str(p.get("training_bucket", "")) == bucket:
-                open_bucket += 1
-
     if open_symbol >= PAPER_TRAIN_MAX_OPEN_PER_SYMBOL:
         if cost_edge_bypassed:
-            _log_bypass_flow("drop", symbol, "sampler_max_open_per_symbol", source=source_reject, open_symbol=open_symbol)
+            _log_bypass_flow("drop", symbol, "sampler_max_open_per_symbol", source=source_reject, open_symbol=open_symbol, flow_id=flow_id)
         return _skip(
             "max_open_per_symbol",
             symbol=symbol,
@@ -578,11 +579,8 @@ def _training_quality_gate(
 
     if open_bucket >= PAPER_TRAIN_MAX_OPEN_PER_BUCKET:
         if cost_edge_bypassed:
-            _log_bypass_flow("drop", symbol, "sampler_max_open_per_bucket", source=source_reject, open_bucket=open_bucket)
+            _log_bypass_flow("drop", symbol, "sampler_max_open_per_bucket", source=source_reject, open_bucket=open_bucket, flow_id=flow_id)
         return _skip("max_open_per_bucket", symbol=symbol, bucket=bucket, open_bucket=open_bucket)
-
-    # Count total open positions
-    open_total = len(open_positions)
 
     # All gates passed; record entry times for rate limiting
     _entry_times_minute.append(now)

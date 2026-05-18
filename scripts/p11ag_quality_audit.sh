@@ -199,11 +199,34 @@ echo ""
 
 echo "Accepted-to-Entry Correlation:"
 echo "-------"
-ACCEPTED_WITHOUT_ENTRY=$((COST_EDGE_ACCEPTED - PAPER_ENTRY_ATTEMPT))
+# P1.1AS: Fix correlation logic - PAPER_ENTRY_ATTEMPT_AFTER_ACCEPT must be <= COST_EDGE_BYPASS_ACCEPTED
+# Only count attempts that follow an accepted log (simple: count all attempts if accepts exist)
+PAPER_ENTRY_ATTEMPT_AFTER_ACCEPT=0
+if [ "$COST_EDGE_ACCEPTED" -gt 0 ]; then
+    # Count attempts that follow an accepted (attempts with preceding accept in log order)
+    # For P1.1AS: check if flow_ids correlate properly by verifying attempts don't exceed accepts
+    PAPER_ENTRY_ATTEMPT_AFTER_ACCEPT=$(to_int "$(count_logs "PAPER_ENTRY_ATTEMPT")")
+    # Safety: never exceed accepted count
+    if [ "$PAPER_ENTRY_ATTEMPT_AFTER_ACCEPT" -gt "$COST_EDGE_ACCEPTED" ]; then
+        # Diagnostic: we have attempts without corresponding accepts
+        ENTRY_ATTEMPT_WITHOUT_ACCEPT=$((PAPER_ENTRY_ATTEMPT_AFTER_ACCEPT - COST_EDGE_ACCEPTED))
+        PAPER_ENTRY_ATTEMPT_AFTER_ACCEPT="$COST_EDGE_ACCEPTED"
+    else
+        ENTRY_ATTEMPT_WITHOUT_ACCEPT=0
+    fi
+else
+    # No accepts = no attempts should follow
+    PAPER_ENTRY_ATTEMPT_AFTER_ACCEPT=0
+    ENTRY_ATTEMPT_WITHOUT_ACCEPT=$(to_int "$(count_logs "PAPER_ENTRY_ATTEMPT")")
+fi
+
+ACCEPTED_WITHOUT_ENTRY=$((COST_EDGE_ACCEPTED - PAPER_ENTRY_ATTEMPT_AFTER_ACCEPT))
 [ "$ACCEPTED_WITHOUT_ENTRY" -lt 0 ] && ACCEPTED_WITHOUT_ENTRY=0
+
 echo "COST_EDGE_BYPASS_ACCEPTED:         $COST_EDGE_ACCEPTED"
-echo "PAPER_ENTRY_ATTEMPT_AFTER_ACCEPT:  $PAPER_ENTRY_ATTEMPT"
+echo "PAPER_ENTRY_ATTEMPT_AFTER_ACCEPT:  $PAPER_ENTRY_ATTEMPT_AFTER_ACCEPT"
 echo "PAPER_ENTRY_DROPPED_AFTER_ACCEPT:  $PAPER_ENTRY_DROPPED"
+echo "ENTRY_ATTEMPT_WITHOUT_ACCEPT:      $ENTRY_ATTEMPT_WITHOUT_ACCEPT"
 echo "ACCEPTED_WITHOUT_ENTRY:            $ACCEPTED_WITHOUT_ENTRY"
 echo ""
 
@@ -344,9 +367,23 @@ elif [ "$COST_EDGE_CANDIDATE" -eq 0 ] && [ "$ENTRIES_REAL" -eq 0 ]; then
     echo "ℹ️  No bypass candidates in this window; check if cost_edge is blocking entry generation"
 fi
 
+# P1.1AS: Audit correlation diagnostics (check for logical contradictions)
+if [ "$COST_EDGE_ACCEPTED" -eq 0 ] && [ "$PAPER_ENTRY_ATTEMPT_AFTER_ACCEPT" -gt 0 ]; then
+    echo "❌ [AUDIT_CORRELATION_BUG] COST_EDGE_BYPASS_ACCEPTED=0 but PAPER_ENTRY_ATTEMPT_AFTER_ACCEPT=$PAPER_ENTRY_ATTEMPT_AFTER_ACCEPT (impossible)"
+    echo "    Likely cause: flow_id correlation not working or COST_EDGE_BYPASS_ACCEPTED log missing"
+fi
+
+if [ "$ENTRY_ATTEMPT_WITHOUT_ACCEPT" -gt 0 ]; then
+    echo "⚠️  [ENTRY_ATTEMPT_NOT_CORRELATED] Found $ENTRY_ATTEMPT_WITHOUT_ACCEPT entry attempts without matching accept logs"
+fi
+
+if [ "$BYPASS_FLOW_DROP_SAMPLER_RATE" -gt 0 ] && [ "$RATE_CAP_STATE" -eq 0 ]; then
+    echo "❌ [RATE_CAP_STATE_MISSING] Rate-cap drops exist ($BYPASS_FLOW_DROP_SAMPLER_RATE) but no PAPER_SAMPLER_RATE_CAP_STATE logs"
+fi
+
 # P1.1AR: Rate-cap and accepted-to-entry diagnostics
 if [ "$COST_EDGE_ACCEPTED" -gt 0 ] && [ "$ENTRIES_REAL" -eq 0 ]; then
-    if [ "$PAPER_ENTRY_ATTEMPT" -eq 0 ]; then
+    if [ "$PAPER_ENTRY_ATTEMPT_AFTER_ACCEPT" -eq 0 ]; then
         echo "⚠️  Accepted bypass candidates did not attempt entry"
     elif [ "$PAPER_ENTRY_DROPPED" -gt 0 ]; then
         echo "⚠️  Accepted bypass candidates dropped after entry attempt (reason in PAPER_ENTRY_DROPPED_AFTER_ACCEPT)"

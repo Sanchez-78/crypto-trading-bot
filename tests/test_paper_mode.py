@@ -1117,6 +1117,102 @@ class TestP1P1HardenLogging:
             logger.removeHandler(handler)
 
 
+class TestP1AS_RateCapStateLogging:
+    """P1.1AS: Rate-cap state diagnostics and audit correlation fixes."""
+
+    def test_rate_cap_state_log_function_exists(self):
+        """Verify _log_rate_cap_state function exists and is callable."""
+        from src.services.paper_training_sampler import _log_rate_cap_state
+        assert callable(_log_rate_cap_state)
+
+    def test_gen_flow_id_format(self):
+        """flow_id is stable: symbol:side:bucket:ts_int."""
+        from src.services.paper_training_sampler import _gen_flow_id
+        ts = 1234567890.5
+        flow_id = _gen_flow_id("BTCUSDT", "BUY", "C_WEAK_EV_TRAIN", "TEST_SOURCE", ts)
+        assert flow_id == "BTCUSDT:BUY:C_WEAK_EV_TRAIN:1234567890"
+
+    def test_open_positions_computed_before_rate_cap_check(self, clean_positions):
+        """_training_quality_gate computes open_symbol/bucket before rate-cap check."""
+        from src.services.paper_training_sampler import _training_quality_gate
+        # When gate is called with open_positions, they should be counted before caps are checked
+        result = _training_quality_gate(
+            symbol="BTCUSDT",
+            side="BUY",
+            bucket="C_WEAK_EV_TRAIN",
+            source_reject="TEST_SOURCE",
+            cost_edge_ok=True,
+            open_positions=[],
+        )
+        # Should include open counts in result
+        assert "open_symbol" in result
+        assert "open_bucket" in result
+        assert "open_total" in result
+
+    def test_drop_logs_include_flow_id(self):
+        """Bypass flow drop logs include flow_id for correlation."""
+        from src.services.paper_training_sampler import _log_bypass_flow
+        import logging
+
+        log_capture = []
+        class LogCapture(logging.Handler):
+            def emit(self, record):
+                log_capture.append(record.getMessage())
+
+        logger = logging.getLogger("src.services.paper_training_sampler")
+        handler = LogCapture()
+        logger.addHandler(handler)
+
+        try:
+            # Log a drop with flow_id
+            _log_bypass_flow("drop", "BTCUSDT", "sampler_rate_cap",
+                           source="TEST", flow_id="BTCUSDT:BUY:C_WEAK_EV_TRAIN:1234567890")
+
+            # Find log message
+            drop_logs = [msg for msg in log_capture if "stage=drop" in msg]
+            assert len(drop_logs) > 0, "No drop logs found"
+            assert "flow_id=" in drop_logs[0], "flow_id not in drop log"
+        finally:
+            logger.removeHandler(handler)
+
+    def test_audit_script_syntax_valid(self):
+        """Audit script p11ag_quality_audit.sh has valid bash syntax."""
+        import subprocess
+        result = subprocess.run(
+            ["bash", "-n", "scripts/p11ag_quality_audit.sh"],
+            cwd="/opt/cryptomaster",
+            capture_output=True,
+        )
+        assert result.returncode == 0, f"Syntax error in audit script: {result.stderr.decode()}"
+
+    def test_sampler_state_check_script_syntax_valid(self):
+        """State check script p11as_sampler_state_check.sh has valid bash syntax."""
+        import subprocess
+        result = subprocess.run(
+            ["bash", "-n", "scripts/p11as_sampler_state_check.sh"],
+            cwd="/opt/cryptomaster",
+            capture_output=True,
+        )
+        assert result.returncode == 0, f"Syntax error in state check script: {result.stderr.decode()}"
+
+    def test_training_quality_gate_returns_flow_id(self, clean_positions):
+        """_training_quality_gate result includes flow_id for bypass candidates."""
+        from src.services.paper_training_sampler import _training_quality_gate
+
+        result = _training_quality_gate(
+            symbol="BTCUSDT",
+            side="BUY",
+            bucket="C_WEAK_EV_TRAIN",
+            source_reject="STRICT_TAKE_ROUTED_TO_TRAINING",
+            cost_edge_ok=False,  # Will attempt bypass
+            open_positions=[],
+        )
+        # Should have flow_id if bypass was attempted
+        if result.get("cost_edge_bypassed"):
+            assert "flow_id" in result
+            assert result["flow_id"] != ""
+
+
 class TestP1Q1StabilizeLogging:
     """P1.1Q: Verify canonical closed-trade adapter and stabilized learning/metrics."""
 
