@@ -70,26 +70,32 @@ done
 
 echo ""
 
-# EXITS
+# EXITS (only [PAPER_EXIT] lines, exclude quality/attrib diagnostics)
 echo -e "${MAGENTA}${BOLD}← EXITS:${RESET}"
-grep "PAPER_EXIT\|PAPER_TRAIN_CLOSED" "$LOG_TMP" 2>/dev/null | tail -20 | while read line; do
+grep "\\[PAPER_EXIT\\]" "$LOG_TMP" 2>/dev/null | grep -v "PAPER_TRAIN_QUALITY_EXIT\|PAPER_TRAIN_ECON_ATTRIB" | tail -20 | while read line; do
     symbol=$(echo "$line" | grep -oE "symbol=[^ ]+" | cut -d= -f2)
     outcome=$(echo "$line" | grep -oE "outcome=[^ ]+" | cut -d= -f2)
     pnl=$(echo "$line" | grep -oE "pnl_pct=[^ ]+" | cut -d= -f2)
     reason=$(echo "$line" | grep -oE "reason=[^ ]+" | cut -d= -f2)
-    echo -e "  ${MAGENTA}✓${RESET} $symbol outcome=$outcome pnl=$pnl reason=$reason"
+    # Only print if all required fields present
+    if [ -n "$symbol" ] && [ -n "$outcome" ] && [ -n "$pnl" ] && [ -n "$reason" ]; then
+        echo -e "  ${MAGENTA}✓${RESET} $symbol outcome=$outcome pnl=$pnl reason=$reason"
+    fi
 done
 
 echo ""
 
 # LEARNING UPDATES
 echo -e "${CYAN}${BOLD}📚 LEARNING UPDATES:${RESET}"
-grep "LM_STATE_AFTER_UPDATE\|LEARNING_UPDATE" "$LOG_TMP" 2>/dev/null | tail -10 | while read line; do
-    trades=$(echo "$line" | grep -oE "trades[_in_lm]*=[0-9]+" | cut -d= -f2 | head -1)
-    if [ -z "$trades" ]; then
-        trades=$(echo "$line" | grep -oE "Total trades in LM[^,]*" | grep -oE "[0-9]+$")
+grep "\\[LM_STATE_AFTER_UPDATE\\]" "$LOG_TMP" 2>/dev/null | tail -10 | while read line; do
+    symbol=$(echo "$line" | grep -oE "symbol=[^ ]+" | cut -d= -f2)
+    regime=$(echo "$line" | grep -oE "regime=[^ ]+" | cut -d= -f2)
+    before=$(echo "$line" | grep -oE "before_total=[0-9]+" | cut -d= -f2)
+    after=$(echo "$line" | grep -oE "after_total=[0-9]+" | cut -d= -f2)
+    outcome=$(echo "$line" | grep -oE "outcome=[^ ]+" | cut -d= -f2)
+    if [ -n "$symbol" ] && [ -n "$before" ] && [ -n "$after" ]; then
+        echo -e "  ${CYAN}✓${RESET} $symbol $regime before_total=$before after_total=$after outcome=$outcome"
     fi
-    echo -e "  ${CYAN}✓${RESET} LM trades=$trades"
 done
 
 echo ""

@@ -1,0 +1,96 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║              CORE FLOW LOGOVÁNÍ — STRUČNÝ PŘEHLED (ČESKY)                   ║
+║             V10.13k: Vidět Co Tvůj Bot Skutečně Dělá                        ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+┌─ SLEDUJ LOGY S BARVAMI ────────────────────────────────────────────────────┐
+│                                                                              │
+│  bash scripts/p11ak_core_flow_viewer_cs.sh                                 │
+│  bash scripts/p11ak_core_flow_viewer_cs.sh --since "60 min ago"            │
+│  bash scripts/p11ak_core_flow_viewer_cs.sh --color off > export.txt        │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌─ CO UVIDÍŠ ───────────────────────────────────────────────────────────────┐
+│                                                                            │
+│  → VSTUPY   (🟢 ZELENÁ)      ✓ ETHUSDT bucket=C_WEAK_EV_TRAIN ev=+0.0523 │
+│  ← VÝSTUPY  (🟣 PURPUROVÁ)   ✓ ETHUSDT vysledek=ZISK pnl=+0.80%         │
+│  📚 UČENÍ   (🔵 CYAN)        ✓ LM obchody=15                              │
+│  ⚠️ CHYBY   (🔴 ČERVENÁ)     ✗ KVALITA_VYSTUP_CHYBEJICI                  │
+│  📊 ATTR    (🟡 ŽLUTÁ)       📊 POPLATEK_DOMINUJE_POHYB ztrata=-0.3%    │
+│                                                                            │
+└────────────────────────────────────────────────────────────────────────────┘
+
+┌─ POUŽITÍ V KÓDU ──────────────────────────────────────────────────────────┐
+│                                                                            │
+│  from src.services.core_flow_logging_cs import (                          │
+│      log_vstup_obchodu, log_vystup_obchodu,                               │
+│      log_aktualizace_uceni, log_chyba, log_atribuce, log_diag             │
+│  )                                                                          │
+│                                                                            │
+│  # Zaloguj vstup obchodu (CORE FLOW)                                      │
+│  log_vstup_obchodu(                                                        │
+│      symbol="ETHUSDT", strana="KOUPIT", cena=1800,                        │
+│      bucket="C_WEAK_EV_TRAIN", zdroj="PAPIROVY", ev=0.05                  │
+│  )                                                                          │
+│                                                                            │
+│  # Zaloguj výstup obchodu (CORE FLOW)                                     │
+│  log_vystup_obchodu(                                                       │
+│      symbol="ETHUSDT", trade_id="t1", vysledek="ZISK",                    │
+│      pnl_pct=0.8, bucket="C_WEAK_EV_TRAIN", duvod="CIL"                   │
+│  )                                                                          │
+│                                                                            │
+│  # Zaloguj učení (CORE FLOW)                                              │
+│  log_aktualizace_uceni(                                                    │
+│      obchody_v_lm=15, spolehlivost_kalibrace=0.85                         │
+│  )                                                                          │
+│                                                                            │
+│  # Zaloguj chybu (CORE FLOW, ČERVENÁ)                                     │
+│  log_chyba("NESHODA", "Obchod zavřen ale bez quality exit", trade_id="t1")
+│                                                                            │
+│  # Zaloguj technickou detail (DIAGNOSTIKA, TMAVÁ)                         │
+│  log_diag("Kontrola Throttle prošla", symbol="ETH", elapsed_s=15)         │
+│                                                                            │
+└────────────────────────────────────────────────────────────────────────────┘
+
+┌─ BAREVNÉ KÓDY ────────────────────────────────────────────────────────────┐
+│                                                                            │
+│  🟢 ZELENÁ    VSTUP      Obchod otevřen, signál přijat                   │
+│  🟣 PURPUROVÁ VÝSTUP     Obchod zavřen, pozice vyřešena                  │
+│  🔵 CYAN     UČENÍ      LM stav aktualizován                             │
+│  🔴 ČERVENÁ  CHYBA      Neshoda, selhání, nekonzistence                 │
+│  🟡 ŽLUTÁ    ATRIBUCE    Atribuce, důvod ztráty                           │
+│  🔷 MODRÁ    INFO       Obecná informace                                 │
+│  ⚫ TMAVÁ    DIAG       Technická detail (skryto)                        │
+│                                                                            │
+└────────────────────────────────────────────────────────────────────────────┘
+
+┌─ MONITOROVACÍ POSTUP ─────────────────────────────────────────────────────┐
+│                                                                            │
+│  Během Vývoje:                                                             │
+│    bash scripts/p11ak_core_flow_viewer_cs.sh --since "10 min ago"         │
+│                                                                            │
+│  Po Nasazení Ověření:                                                      │
+│    bash scripts/p11ak_core_flow_viewer_cs.sh --since "30 min ago"         │
+│    (ověř VSTUPY, VÝSTUPY, UČENÍ jsou viditelné)                           │
+│                                                                            │
+│  Analýza Chyb:                                                             │
+│    bash scripts/p11ak_core_flow_viewer_cs.sh | grep "CHYBA"               │
+│                                                                            │
+│  Úplná Diagnostika (pokud je potřeba):                                     │
+│    journalctl -u cryptomaster --since "30 min ago" | grep "HBLOCK"        │
+│                                                                            │
+└────────────────────────────────────────────────────────────────────────────┘
+
+┌─ SOUBORY ──────────────────────────────────────────────────────────────────┐
+│                                                                            │
+│  src/services/core_flow_logging_cs.py       Modul logování (česky)        │
+│  scripts/p11ak_core_flow_viewer_cs.sh       Prohlížeč logů (česky)        │
+│  scripts/p11ag_quality_audit_cs.sh          Audit script (česky)          │
+│  CORE_FLOW_LOGGING_CS.md                    Úplný průvodce               │
+│                                                                            │
+└────────────────────────────────────────────────────────────────────────────┘
+
+═══════════════════════════════════════════════════════════════════════════════
+Vidět skutečný obchodní tok (ne hluk) — CORE FLOW odděluje signál od diagnostiky
+═══════════════════════════════════════════════════════════════════════════════

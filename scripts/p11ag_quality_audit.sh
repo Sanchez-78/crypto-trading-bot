@@ -134,6 +134,9 @@ echo "PAPER_TRAIN_ANOMALY:              $ANOMALIES"
 echo "PAPER_TRAIN_QUALITY_SUMMARY:      $SUMMARIES"
 echo "PAPER_EXIT:                       $EXITS"
 echo "PAPER_EXIT_TRAINING_BUCKET:       $EXITS_TRAINING"
+PAPER_EXIT_NON_TRAINING=$((EXITS - EXITS_TRAINING))
+[ "$PAPER_EXIT_NON_TRAINING" -lt 0 ] && PAPER_EXIT_NON_TRAINING=0
+echo "PAPER_EXIT_NON_TRAINING:          $PAPER_EXIT_NON_TRAINING"
 echo "PAPER_TRAIN_QUALITY_EXIT_TRAINING_BUCKET: $QUALITY_EXITS_TRAINING"
 echo "PAPER_TRAIN_QUALITY_EXIT_TIMEOUT_NO_PRICE: $QUALITY_EXITS_TIMEOUT_NP"
 echo "LEARNING_UPDATE ok=True:          $LEARNING"
@@ -256,8 +259,16 @@ if [ "$ECON_SUMMARY" -gt 0 ]; then
     echo "✓ Economic summary logged (count=$ECON_SUMMARY)"
 fi
 
-if [ "$STARVATION_STATE" -gt 0 ] && [ "$NEG_EV_PROBE_ACCEPTED" -eq 0 ]; then
-    echo "⚠️  Starvation detected but no probes accepted — check caps/conditions"
+if [ "$PAPER_EXIT_NON_TRAINING" -gt 0 ]; then
+    echo "ℹ️  Found $PAPER_EXIT_NON_TRAINING non-training/orphan paper exit(s); excluded from training quality correlation"
+fi
+
+if [ "$STARVATION_STATE" -gt 0 ]; then
+    if [ "$ENTRIES_REAL" -gt 0 ]; then
+        echo "✓ Normal training entries present; probe not required"
+    elif [ "$NEG_EV_PROBE_ACCEPTED" -eq 0 ] && ([ "$NEG_EV_REJECTS" -gt 0 ] || [ "$UNKNOWN_BUCKET_SKIPS" -gt 0 ]); then
+        echo "⚠️  Starvation detected but no probes accepted — check caps/conditions"
+    fi
 fi
 if [ "$NEG_EV_PROBE_ACCEPTED" -gt 0 ] && [ "$NEG_EV_PROBE_EXITS" -eq 0 ]; then
     echo "ℹ️  Probe entries exist but no exits yet (trades still open)"
