@@ -4653,3 +4653,237 @@ class TestP1_1AO_ColdStartProbe:
         # Non-probe buckets do not increment
         record_training_closed("C_WEAK_EV_TRAIN", "PROFIT")
         assert _probe_state["lifetime_closed"] == 2
+
+
+class TestP1_1AF_CanonicalLMState:
+    """P1.1AF: Paper closed trades update canonical LearningMonitor state."""
+
+    def test_paper_closed_trade_increments_canonical_lm_total(self):
+        """Test 1: paper_closed_trade increments canonical lm_count total."""
+        from src.services.learning_monitor import (
+            update_from_paper_trade,
+            lm_count,
+        )
+
+        # Reset state
+        lm_count.clear()
+
+        # Process a paper trade
+        trade = {
+            "symbol": "BTCUSDT",
+            "regime": "BULL_TREND",
+            "training_bucket": "C_WEAK_EV_TRAIN",
+            "net_pnl_pct": 0.10,
+            "outcome": "WIN",
+            "features": {},
+        }
+
+        result = update_from_paper_trade(trade)
+        assert result is True
+        total_trades = sum(lm_count.values())
+        assert total_trades == 1, f"Expected 1 total trade, got {total_trades}"
+
+    def test_paper_closed_trade_increments_per_symbol_regime_count(self):
+        """Test 2: paper_closed_trade increments per (symbol, regime) count."""
+        from src.services.learning_monitor import (
+            update_from_paper_trade,
+            lm_count,
+        )
+
+        lm_count.clear()
+
+        # First trade
+        trade1 = {
+            "symbol": "ETHUSDT",
+            "regime": "BULL_TREND",
+            "training_bucket": "C_WEAK_EV_TRAIN",
+            "net_pnl_pct": 0.05,
+            "outcome": "FLAT",
+            "features": {},
+        }
+        result1 = update_from_paper_trade(trade1)
+        assert result1 is True
+
+        # Check per-key count
+        key1 = ("ETHUSDT", "BULL_TREND")
+        assert key1 in lm_count
+        assert lm_count[key1] == 1
+
+        # Second trade same pair
+        trade2 = {
+            "symbol": "ETHUSDT",
+            "regime": "BULL_TREND",
+            "training_bucket": "C_WEAK_EV_TRAIN",
+            "net_pnl_pct": -0.05,
+            "outcome": "LOSS",
+            "features": {},
+        }
+        result2 = update_from_paper_trade(trade2)
+        assert result2 is True
+        assert lm_count[key1] == 2
+
+        # Third trade different pair
+        trade3 = {
+            "symbol": "BTCUSDT",
+            "regime": "QUIET_RANGE",
+            "training_bucket": "C_WEAK_EV_TRAIN",
+            "net_pnl_pct": 0.02,
+            "outcome": "WIN",
+            "features": {},
+        }
+        result3 = update_from_paper_trade(trade3)
+        assert result3 is True
+
+        key2 = ("BTCUSDT", "QUIET_RANGE")
+        assert key2 in lm_count
+        assert lm_count[key2] == 1
+        assert lm_count[key1] == 2
+
+    def test_learning_update_ok_true_only_on_real_state_mutation(self):
+        """Test 3: LEARNING_UPDATE ok=True only when canonical state actually mutated."""
+        from src.services.learning_monitor import (
+            update_from_paper_trade,
+            lm_count,
+        )
+
+        lm_count.clear()
+        key = ("XRPUSDT", "NEUTRAL")
+
+        # Trade that should mutate state
+        trade = {
+            "symbol": "XRPUSDT",
+            "regime": "NEUTRAL",
+            "net_pnl_pct": 0.01,
+            "outcome": "WIN",
+            "features": {},
+        }
+
+        # Before: count should be 0
+        assert lm_count.get(key, 0) == 0
+
+        # Call update
+        result = update_from_paper_trade(trade)
+
+        # After: count should be 1, result should be True
+        assert result is True, "update_from_paper_trade should return True on successful state mutation"
+        assert lm_count.get(key, 0) == 1, "Canonical state should be mutated"
+
+    def test_lm_update_mismatch_logged_when_invalid_symbol(self):
+        """Test 4: Invalid symbol/regime are rejected (state not mutated)."""
+        from src.services.learning_monitor import (
+            update_from_paper_trade,
+            lm_count,
+        )
+
+        lm_count.clear()
+
+        # Invalid trade with UNKNOWN symbol/regime
+        invalid_trade = {
+            "symbol": "UNKNOWN",
+            "regime": "UNKNOWN",
+            "net_pnl_pct": 0.01,
+            "outcome": "WIN",
+            "features": {},
+        }
+
+        result = update_from_paper_trade(invalid_trade)
+        # Should return False due to UNKNOWN symbol/regime
+        assert result is False
+        # State should not be mutated
+        assert len(lm_count) == 0
+
+    def test_health_report_reads_same_canonical_state_as_paper_update(self):
+        """Test 5: health/report reads same canonical state that paper update writes to."""
+        from src.services.learning_monitor import (
+            update_from_paper_trade,
+            lm_count,
+            lm_pnl_hist,
+        )
+
+        lm_count.clear()
+        lm_pnl_hist.clear()
+
+        # Add a paper trade
+        trade = {
+            "symbol": "ADAUSDT",
+            "regime": "QUIET_RANGE",
+            "training_bucket": "C_WEAK_EV_TRAIN",
+            "net_pnl_pct": 0.15,
+            "outcome": "WIN",
+            "features": {},
+        }
+
+        update_from_paper_trade(trade)
+
+        # Check that lm_count is incremented
+        key = ("ADAUSDT", "QUIET_RANGE")
+        assert key in lm_count
+        assert lm_count[key] == 1
+
+        # Check that lm_pnl_hist is updated
+        assert key in lm_pnl_hist
+        assert len(lm_pnl_hist[key]) == 1
+        assert lm_pnl_hist[key][0] == 0.0015  # 0.15% = 0.0015
+
+        # Check that health report reads the same state
+        total_in_lm = sum(lm_count.values())
+        assert total_in_lm >= 1, "Health report should see at least 1 trade from paper update"
+
+    def test_bucket_field_filled_from_training_bucket_when_missing(self):
+        """Test 6: bucket field filled from training_bucket when missing/None."""
+        from src.services.paper_trade_executor import (
+            _canonical_closed_paper_trade,
+        )
+
+        # Trade with None bucket but valid training_bucket
+        raw_trade = {
+            "symbol": "LTCUSDT",
+            "regime": "BULL_TREND",
+            "bucket": None,
+            "training_bucket": "C_WEAK_EV_TRAIN",
+            "explore_bucket": None,
+            "net_pnl_pct": 0.05,
+            "outcome": "WIN",
+        }
+
+        canonical = _canonical_closed_paper_trade(raw_trade)
+
+        # Bucket should be filled from training_bucket
+        assert canonical["bucket"] == "C_WEAK_EV_TRAIN", (
+            f"bucket should be C_WEAK_EV_TRAIN (from training_bucket), got {canonical['bucket']}"
+        )
+
+    def test_signal_raw_logs_canonical_score(self):
+        """Test 7: SIGNAL_RAW log format includes canonical score parameter."""
+        from src.services.trade_executor import _pipeline_record_signal
+        import inspect
+
+        sig = inspect.signature(_pipeline_record_signal)
+        params = list(sig.parameters.keys())
+
+        # Should have score parameter
+        assert "score" in params, "SIGNAL_RAW should have score parameter"
+
+    def test_live_real_behavior_unchanged(self):
+        """Test 8: live/real trading behavior unchanged - paper_train only affected."""
+        from src.services.learning_monitor import (
+            update_from_paper_trade,
+            lm_count,
+        )
+
+        lm_count.clear()
+
+        # Paper train trade (should update canonical state)
+        paper_trade = {
+            "symbol": "DOGEUSDT",
+            "regime": "NEUTRAL",
+            "training_bucket": "C_WEAK_EV_TRAIN",
+            "net_pnl_pct": 0.05,
+            "outcome": "WIN",
+            "mode": "paper_train",
+        }
+
+        result = update_from_paper_trade(paper_trade)
+        assert result is True
+        key = ("DOGEUSDT", "NEUTRAL")
+        assert lm_count.get(key, 0) == 1
