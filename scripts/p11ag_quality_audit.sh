@@ -171,6 +171,7 @@ echo "NEG_EV_PROBE_EXITS:               $NEG_EV_PROBE_EXITS"
 echo ""
 
 # P1.1AQ: Candidate-to-Entry Flow
+# P1.1AR: Add rate-cap state and accepted-to-entry correlation
 echo "Candidate-to-Entry Flow:"
 echo "-------"
 BYPASS_FLOW_CANDIDATE=$(to_int "$(count_logs "COST_EDGE_BYPASS_FLOW.*stage=candidate")")
@@ -179,8 +180,13 @@ BYPASS_FLOW_DROP_SAMPLER_SYMBOL=$(to_int "$(count_logs "COST_EDGE_BYPASS_FLOW.*s
 BYPASS_FLOW_DROP_SAMPLER_BUCKET=$(to_int "$(count_logs "COST_EDGE_BYPASS_FLOW.*stage=drop.*sampler_max_open_per_bucket")")
 BYPASS_FLOW_DROP_SAMPLER_RATE=$(to_int "$(count_logs "COST_EDGE_BYPASS_FLOW.*stage=drop.*sampler_rate_cap")")
 BYPASS_FLOW_DROP_DUPLICATE=$(to_int "$(count_logs "COST_EDGE_BYPASS_FLOW.*stage=drop.*duplicate_candidate")")
+PAPER_ENTRY_ATTEMPT=$(to_int "$(count_logs "PAPER_ENTRY_ATTEMPT")")
+PAPER_ENTRY_DROPPED=$(to_int "$(count_logs "PAPER_ENTRY_DROPPED_AFTER_ACCEPT")")
+RATE_CAP_STATE=$(to_int "$(count_logs "PAPER_SAMPLER_RATE_CAP_STATE")")
 echo "COST_EDGE_BYPASS_FLOW_CANDIDATE:   $BYPASS_FLOW_CANDIDATE"
 echo "COST_EDGE_BYPASS_FLOW_DROP:        $BYPASS_FLOW_DROP"
+echo "PAPER_ENTRY_ATTEMPT:               $PAPER_ENTRY_ATTEMPT"
+echo "PAPER_ENTRY_DROPPED_AFTER_ACCEPT:  $PAPER_ENTRY_DROPPED"
 echo ""
 
 echo "Bypass Drop Reasons:"
@@ -189,6 +195,21 @@ echo "sampler_max_open_per_symbol:      $BYPASS_FLOW_DROP_SAMPLER_SYMBOL"
 echo "sampler_max_open_per_bucket:      $BYPASS_FLOW_DROP_SAMPLER_BUCKET"
 echo "sampler_rate_cap:                 $BYPASS_FLOW_DROP_SAMPLER_RATE"
 echo "duplicate_candidate:              $BYPASS_FLOW_DROP_DUPLICATE"
+echo ""
+
+echo "Accepted-to-Entry Correlation:"
+echo "-------"
+ACCEPTED_WITHOUT_ENTRY=$((COST_EDGE_ACCEPTED - PAPER_ENTRY_ATTEMPT))
+[ "$ACCEPTED_WITHOUT_ENTRY" -lt 0 ] && ACCEPTED_WITHOUT_ENTRY=0
+echo "COST_EDGE_BYPASS_ACCEPTED:         $COST_EDGE_ACCEPTED"
+echo "PAPER_ENTRY_ATTEMPT_AFTER_ACCEPT:  $PAPER_ENTRY_ATTEMPT"
+echo "PAPER_ENTRY_DROPPED_AFTER_ACCEPT:  $PAPER_ENTRY_DROPPED"
+echo "ACCEPTED_WITHOUT_ENTRY:            $ACCEPTED_WITHOUT_ENTRY"
+echo ""
+
+echo "Sampler Rate-Cap State:"
+echo "-------"
+echo "PAPER_SAMPLER_RATE_CAP_STATE:      $RATE_CAP_STATE"
 echo ""
 
 # P1.1AK: Trade-ID correlation (per-trade quality exit verification)
@@ -299,6 +320,7 @@ if [ "$NEG_EV_PROBE_EXITS" -gt 0 ]; then
 fi
 
 # P1.1AQ: Bypass flow interpretation
+# P1.1AR: Add rate-cap and accepted-to-entry interpretation
 if [ "$COST_EDGE_CANDIDATE" -gt 0 ] && [ "$COST_EDGE_ACCEPTED" -gt 0 ] && [ "$ENTRIES_REAL" -gt 0 ]; then
     echo "✓ Bypass candidate-to-entry flow is active"
 elif [ "$COST_EDGE_CANDIDATE" -gt 0 ] && [ "$COST_EDGE_ACCEPTED" -eq 0 ] && [ "$ENTRIES_REAL" -eq 0 ]; then
@@ -320,6 +342,24 @@ elif [ "$COST_EDGE_CANDIDATE" -gt 0 ] && [ "$COST_EDGE_ACCEPTED" -eq 0 ] && [ "$
     fi
 elif [ "$COST_EDGE_CANDIDATE" -eq 0 ] && [ "$ENTRIES_REAL" -eq 0 ]; then
     echo "ℹ️  No bypass candidates in this window; check if cost_edge is blocking entry generation"
+fi
+
+# P1.1AR: Rate-cap and accepted-to-entry diagnostics
+if [ "$COST_EDGE_ACCEPTED" -gt 0 ] && [ "$ENTRIES_REAL" -eq 0 ]; then
+    if [ "$PAPER_ENTRY_ATTEMPT" -eq 0 ]; then
+        echo "⚠️  Accepted bypass candidates did not attempt entry"
+    elif [ "$PAPER_ENTRY_DROPPED" -gt 0 ]; then
+        echo "⚠️  Accepted bypass candidates dropped after entry attempt (reason in PAPER_ENTRY_DROPPED_AFTER_ACCEPT)"
+    fi
+fi
+
+if [ "$BYPASS_FLOW_DROP_SAMPLER_RATE" -gt 0 ]; then
+    echo "ℹ️  Rate-cap is dominant blocker ($BYPASS_FLOW_DROP_SAMPLER_RATE drops)"
+    if [ "$RATE_CAP_STATE" -gt 0 ]; then
+        echo "    Rate-cap state logged; check recent_entries vs limit and next_allowed_s"
+    else
+        echo "    No rate-cap state logs; may indicate stale window or miscalculation"
+    fi
 fi
 
 echo ""

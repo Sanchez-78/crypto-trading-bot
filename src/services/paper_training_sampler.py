@@ -73,6 +73,10 @@ _PROBE_STARVATION_LOG_S = 60.0      # emit starvation state log at most once per
 _BYPASS_FLOW_LAST_LOG = {}  # (symbol, stage, reason) -> timestamp
 _BYPASS_FLOW_THROTTLE_S = 10.0  # throttle period for bypass flow logs
 
+# P1.1AR: Rate-cap state and accepted-to-entry diagnostics
+_RATE_CAP_STATE_LAST_LOG = {}  # (symbol, bucket) -> timestamp
+_RATE_CAP_STATE_THROTTLE_S = 10.0  # throttle period for rate-cap state logs
+
 
 def _now() -> float:
     """Get current timestamp."""
@@ -115,6 +119,48 @@ def _allow(**kw) -> dict:
     """Record entry event and return allow result."""
     _health["entries"] += 1
     return {"allowed": True, **kw}
+
+
+def _gen_flow_id(symbol: str, side: str, bucket: str, source: str, ts: float) -> str:
+    """P1.1AR: Generate stable flow_id for correlation.
+
+    Format: symbol:side:bucket[:ts_int]
+    """
+    ts_int = int(ts)
+    return f"{symbol}:{side}:{bucket}:{ts_int}"
+
+
+def _log_rate_cap_state(symbol: str, bucket: str, source: str, now: float,
+                        recent_entries: int, rate_limit: int,
+                        next_allowed_s: float, open_symbol: int, open_bucket: int,
+                        open_total: int, closed_training: int) -> None:
+    """P1.1AR: Log rate-cap state with throttling.
+
+    Throttle by (symbol, bucket) every 10 seconds.
+    """
+    key = (str(symbol), str(bucket))
+    last = _RATE_CAP_STATE_LAST_LOG.get(key, 0.0)
+    if now - last < _RATE_CAP_STATE_THROTTLE_S:
+        return  # Still throttled
+
+    _RATE_CAP_STATE_LAST_LOG[key] = now
+
+    log.info(
+        "[PAPER_SAMPLER_RATE_CAP_STATE] symbol=%s bucket=%s source=%s reason=sampler_rate_cap "
+        "now=%.1f window_s=60 recent_entries=%d rate_limit=%d next_allowed_s=%.1f "
+        "open_symbol=%d open_bucket=%d open_total=%d closed_training=%d mode=paper_train",
+        symbol,
+        bucket,
+        source,
+        now,
+        recent_entries,
+        rate_limit,
+        next_allowed_s,
+        open_symbol,
+        open_bucket,
+        open_total,
+        closed_training,
+    )
 
 
 def _log_bypass_flow(stage: str, symbol: str, reason: str, **kw) -> None:
@@ -369,9 +415,11 @@ def _training_quality_gate(
         {"allowed": bool, "reason": str, ...} via _skip() or _allow()
     """
     # P1.1AK: Track bypass metadata for diagnostics
+    # P1.1AR: Initialize flow_id
     cost_edge_bypassed = False
     cost_edge_bypass_reason = "none"
     bootstrap_closed_trades = 0
+    flow_id = ""
 
     now = _now()
     _prune(now)
@@ -419,7 +467,9 @@ def _training_quality_gate(
 
         # P1.1AE: Log the bypass candidate
         # P1.1AQ: Add flow diagnostics
-        _log_bypass_flow("candidate", symbol, bypass_reason, bucket="C_WEAK_EV_TRAIN", source="STRICT_TAKE_ROUTED_TO_TRAINING")
+        # P1.1AR: Generate flow_id for correlation
+        flow_id = _gen_flow_id(symbol, side, bucket, "STRICT_TAKE_ROUTED_TO_TRAINING", now)
+        _log_bypass_flow("candidate", symbol, bypass_reason, bucket="C_WEAK_EV_TRAIN", source="STRICT_TAKE_ROUTED_TO_TRAINING", flow_id=flow_id)
 
     # Dedicated duplicate candidate cooldown
     from src.core.runtime_mode import PAPER_TRAIN_DUPLICATE_CANDIDATE_COOLDOWN_S
@@ -465,11 +515,31 @@ def _training_quality_gate(
     if len(_entry_times_minute) >= PAPER_TRAIN_MAX_ENTRIES_PER_MINUTE:
         if cost_edge_bypassed:
             _log_bypass_flow("drop", symbol, "sampler_rate_cap", source=source_reject)
+            # P1.1AR: Log rate-cap state when bypassed candidate is dropped
+            try:
+                from src.services.learning_event import get_metrics as _gm_ar
+                closed = _gm_ar().get("trades", 0)
+                next_allowed_s = 60.0 - (now - _entry_times_minute[0]) if _entry_times_minute else 60.0
+                _log_rate_cap_state(symbol, bucket, source_reject, now,
+                                   len(_entry_times_minute), PAPER_TRAIN_MAX_ENTRIES_PER_MINUTE,
+                                   next_allowed_s, open_symbol, open_bucket, len(open_positions), closed)
+            except Exception:
+                pass
         return _skip("max_entries_per_minute", symbol=symbol, bucket=bucket, source_reject=source_reject)
 
     if len(_entry_times_hour) >= PAPER_TRAIN_MAX_ENTRIES_PER_HOUR:
         if cost_edge_bypassed:
             _log_bypass_flow("drop", symbol, "sampler_rate_cap", source=source_reject)
+            # P1.1AR: Log rate-cap state when bypassed candidate is dropped
+            try:
+                from src.services.learning_event import get_metrics as _gm_ar
+                closed = _gm_ar().get("trades", 0)
+                next_allowed_s = 3600.0 - (now - _entry_times_hour[0]) if _entry_times_hour else 3600.0
+                _log_rate_cap_state(symbol, bucket, source_reject, now,
+                                   len(_entry_times_hour), PAPER_TRAIN_MAX_ENTRIES_PER_HOUR,
+                                   next_allowed_s, open_symbol, open_bucket, len(open_positions), closed)
+            except Exception:
+                pass
         return _skip("max_entries_per_hour", symbol=symbol, bucket=bucket, source_reject=source_reject)
 
     # P1.1AO: Probe-specific hard caps (independent of PAPER_TRAIN_MAX_OPEN_PER_BUCKET)
@@ -520,6 +590,7 @@ def _training_quality_gate(
 
     # P1.1AK: Include bypass metadata in gate result
     # P1.1AQ: Include open position counts for diagnostics
+    # P1.1AR: Include flow_id for correlation
     return _allow(
         symbol=symbol,
         side=side,
@@ -531,6 +602,7 @@ def _training_quality_gate(
         open_symbol=open_symbol,
         open_bucket=open_bucket,
         open_total=open_total,
+        flow_id=flow_id,
     )
 
 
@@ -793,12 +865,14 @@ def maybe_open_training_sample(
 
         # P1.1AM: Log final acceptance of bypassed entries
         # P1.1AQ: Add open position counts and source for diagnostics
+        # P1.1AR: Add flow_id for correlation
         if gate_result.get("cost_edge_bypassed"):
             import logging
             log_p11am = logging.getLogger(__name__)
+            flow_id = gate_result.get("flow_id", f"{symbol}:{side}:{bucket}:{int(time.time())}")
             log_p11am.info(
                 "[COST_EDGE_BYPASS_ACCEPTED] mode=paper_train symbol=%s bucket=%s reason=%s source=%s "
-                "open_symbol=%d open_bucket=%d open_total=%d",
+                "open_symbol=%d open_bucket=%d open_total=%d flow_id=%s",
                 symbol,
                 bucket,
                 gate_result.get("cost_edge_bypass_reason", "none"),
@@ -806,6 +880,19 @@ def maybe_open_training_sample(
                 gate_result.get("open_symbol", 0),
                 gate_result.get("open_bucket", 0),
                 gate_result.get("open_total", 0),
+                flow_id,
+            )
+            # P1.1AR: Log entry attempt after acceptance
+            log.info(
+                "[PAPER_ENTRY_ATTEMPT] flow_id=%s symbol=%s side=%s bucket=%s source=%s "
+                "cost_edge_ok=%s cost_edge_bypassed=True bypass_reason=%s",
+                flow_id,
+                symbol,
+                side,
+                bucket,
+                reason,
+                cost_edge_ok,
+                gate_result.get("cost_edge_bypass_reason", "none"),
             )
 
         # P1.1AO: Log probe acceptance
@@ -822,6 +909,10 @@ def maybe_open_training_sample(
             )
 
         # P1.1AK: Include bypass metadata from gate result
+        # P1.1AR: Include flow_id for correlation
+        flow_id = ""
+        if gate_result.get("cost_edge_bypassed"):
+            flow_id = gate_result.get("flow_id", f"{symbol}:{side}:{bucket}:{int(time.time())}")
         return {
             "allowed": True,
             "bucket": bucket,
@@ -837,6 +928,7 @@ def maybe_open_training_sample(
             "required_move_pct": 0.23,  # reference from P1.1j
             "max_hold_s": _MAX_HOLD_S,
             "tags": ["training_sampler", bucket.lower()],
+            "flow_id": flow_id,
         }
 
     except Exception as e:
