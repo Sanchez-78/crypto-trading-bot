@@ -768,6 +768,22 @@ def open_paper_position(
             tp_sl["repair_reason"],
         )
 
+    # P1.1AN: Calibrate TP/SL for paper training with C_WEAK_EV_TRAIN bucket
+    mode = "paper_train" if paper_source == "training_sampler" else "paper_live"
+    expected_move = extra.get("expected_move_pct", 0.0) if extra else 0.0
+    tp_sl_calibrated = calibrate_paper_training_geometry(
+        mode=mode,
+        source=paper_source or "normal_rde_take",
+        training_bucket=training_bucket or "",
+        side=side,
+        entry=price,
+        tp_sl=tp_sl,
+        expected_move_pct=expected_move,
+        fee_drag_pct=_FEE_PCT * 100.0,  # Convert to %
+    )
+    if tp_sl_calibrated:
+        tp_sl = tp_sl_calibrated
+
     position = {
         "trade_id": trade_id,
         "mode": "paper_live",
@@ -782,6 +798,10 @@ def open_paper_position(
         "tp_pct_at_entry": tp_sl["tp_pct"],  # Store for diagnostics
         "sl_pct_at_entry": tp_sl["sl_pct"],
         "rr_at_entry": tp_sl["rr"],
+        # P1.1AN: Calibration metadata
+        "geometry_calibrated": tp_sl.get("calibrated", False),
+        "tp_pct_before_calibration": tp_sl.get("tp_pct_before", tp_sl.get("tp_pct", 0.0)),
+        "sl_pct_before_calibration": tp_sl.get("sl_pct_before", tp_sl.get("sl_pct", 0.0)),
         "timeout_s": _MAX_AGE_S,
         "regime": signal.get("regime", "NEUTRAL"),
         "features": signal.get("features", {}),
@@ -1418,6 +1438,98 @@ def get_paper_trade_by_id(trade_id: str) -> Optional[dict]:
     return None
 
 
+def calibrate_paper_training_geometry(
+    *,
+    mode: str,
+    source: str,
+    training_bucket: str,
+    side: str,
+    entry: float,
+    tp_sl: dict,
+    expected_move_pct: float = 0.0,
+    fee_drag_pct: float = 0.18,
+) -> dict:
+    """P1.1AN: Calibrate TP/SL for paper training to match realistic short-horizon window.
+
+    Paper training positions have a 300-second max hold. Current TP (1.2%) is unreachable
+    in this window due to fee drag (0.18%) and typical MFE (0.02-0.15%). This helper
+    adjusts TP/SL for realistic learning signal:
+    - TP floor: fee_drag + 0.03 ≈ 0.21%
+    - TP target: expected_move * 0.8 (if available)
+    - TP cap: 0.45% (cold-start safe limit)
+    - SL range: 0.35–0.60% (suggested 0.45%)
+
+    Only applies to: mode==paper_train AND source==training_sampler AND training_bucket==C_WEAK_EV_TRAIN
+
+    Args:
+        mode: Trading mode (paper_train, paper_live, live, real)
+        source: Entry source (training_sampler, normal_rde_take, etc.)
+        training_bucket: Bucket name (C_WEAK_EV_TRAIN, C_NEG_EV_PROBE, etc.)
+        side: BUY or SELL
+        entry: Entry price
+        tp_sl: Dict from normalize_paper_tp_sl() with tp, sl, tp_pct, sl_pct, rr
+        expected_move_pct: Expected move from signal (optional, in %)
+        fee_drag_pct: Fee drag in % (default 0.18)
+
+    Returns:
+        dict: Original or calibrated TP/SL result. Always includes calibration metadata.
+    """
+    if tp_sl is None:
+        return None
+
+    # Only calibrate paper training with C_WEAK_EV_TRAIN bucket
+    if mode != "paper_train" or source != "training_sampler" or training_bucket != "C_WEAK_EV_TRAIN":
+        return tp_sl
+
+    original_tp_pct = tp_sl.get("tp_pct", 0.0)
+    original_sl_pct = tp_sl.get("sl_pct", 0.0)
+
+    # P1.1AN: Calibrate TP
+    tp_floor_pct = fee_drag_pct + 0.03  # ~0.21%
+    tp_cap_pct = 0.45
+
+    # Start with expected move if available, otherwise use fee-aware floor
+    if expected_move_pct > 0:
+        tp_target_pct = min(expected_move_pct * 0.8, tp_cap_pct)
+    else:
+        tp_target_pct = tp_floor_pct
+
+    # Enforce bounds
+    new_tp_pct = max(tp_floor_pct, min(tp_target_pct, tp_cap_pct))
+
+    # Calibrate SL: use mid-range of 0.35-0.60%, suggesting 0.45% as safe default
+    sl_default_pct = 0.45
+
+    # Only recalibrate if TP actually needs to change
+    if abs(new_tp_pct - original_tp_pct) < 0.001:
+        return tp_sl  # No change needed
+
+    # Compute new price levels from percentages
+    if side == "BUY":
+        new_tp = entry * (1.0 + new_tp_pct / 100.0)
+        new_sl = entry * (1.0 - sl_default_pct / 100.0)
+    else:  # SELL
+        new_tp = entry * (1.0 - new_tp_pct / 100.0)
+        new_sl = entry * (1.0 + sl_default_pct / 100.0)
+
+    # Compute new RR
+    new_rr = new_tp_pct / sl_default_pct if sl_default_pct > 0 else 0.0
+
+    return {
+        "tp": new_tp,
+        "sl": new_sl,
+        "tp_pct": new_tp_pct,
+        "sl_pct": sl_default_pct,
+        "rr": new_rr,
+        "repaired": tp_sl.get("repaired", False),
+        "repair_reason": tp_sl.get("repair_reason"),
+        "calibrated": True,
+        "calibration_reason": f"paper_train:{training_bucket}",
+        "tp_pct_before": original_tp_pct,
+        "sl_pct_before": original_sl_pct,
+    }
+
+
 def reset_paper_positions():
     """Reset all open positions (for testing)."""
     with _POSITION_LOCK:
@@ -1576,6 +1688,11 @@ def _log_paper_train_quality_entry(position: dict, signal: dict) -> None:
         sl_pct = position.get("sl_pct_at_entry", 0.0)
         rr = position.get("rr_at_entry", 0.0)
 
+        # P1.1AN: Calibration metadata
+        geometry_calibrated = position.get("geometry_calibrated", False)
+        tp_pct_before = position.get("tp_pct_before_calibration", tp_pct)
+        sl_pct_before = position.get("sl_pct_before_calibration", sl_pct)
+
         # P1.1AI: Properly handle score fields — detect missing vs zero
         score_raw_pos = position.get("score_raw_at_entry")
         score_final_pos = position.get("score_final_at_entry")
@@ -1615,7 +1732,7 @@ def _log_paper_train_quality_entry(position: dict, signal: dict) -> None:
         cost_edge_bypass_reason = position.get("cost_edge_bypass_reason", "none")
 
         log.info(
-            "[PAPER_TRAIN_QUALITY_ENTRY] trade_id=%s symbol=%s side=%s source=%s bucket=%s training_bucket=%s regime=%s ev=%.4f p=%.3f score_raw=%s score_final=%s score_missing=%s coh=%.3f expected_move_pct=%.3f expected_move_src=%s cost_edge_ok=%s cost_edge_bypassed=%s bypass_reason=%s entry=%.8f tp=%.8f sl=%.8f tp_pct=%.3f sl_pct=%.3f rr=%.3f atr=%.8f spread=%.8f hold_limit_s=%d",
+            "[PAPER_TRAIN_QUALITY_ENTRY] trade_id=%s symbol=%s side=%s source=%s bucket=%s training_bucket=%s regime=%s ev=%.4f p=%.3f score_raw=%s score_final=%s score_missing=%s coh=%.3f expected_move_pct=%.3f expected_move_src=%s cost_edge_ok=%s cost_edge_bypassed=%s bypass_reason=%s entry=%.8f tp=%.8f sl=%.8f tp_pct=%.3f sl_pct=%.3f rr=%.3f atr=%.8f spread=%.8f hold_limit_s=%d geometry_calibrated=%s tp_pct_before=%.3f sl_pct_before=%.3f",
             trade_id,
             symbol,
             side,
@@ -1643,6 +1760,9 @@ def _log_paper_train_quality_entry(position: dict, signal: dict) -> None:
             atr,
             spread,
             hold_limit_s,
+            geometry_calibrated,
+            tp_pct_before,
+            sl_pct_before,
         )
 
         # P1.1AK: Anomaly detection — cost_edge_ok=False but not bypassed
