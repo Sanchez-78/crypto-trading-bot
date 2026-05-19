@@ -392,8 +392,9 @@ def _check_hourly_cap(bucket: str) -> bool:
 def _is_cold_start_starvation() -> bool:
     """P1.1AO: True when global_trades < 100 AND no training entries in last 30 min."""
     try:
-        from src.services.learning_event import get_metrics
-        if get_metrics().get("trades", 0) >= 100:
+        # P1.1AU: Use canonical training count from LM, not stale learning_event metrics
+        from src.services.learning_monitor import get_canonical_training_trade_count
+        if get_canonical_training_trade_count() >= 100:
             return False
         now = time.time()
         return not any(now - ts < _PROBE_STARVATION_IDLE_S for ts in _entry_times_hour)
@@ -438,7 +439,7 @@ def _training_quality_gate(
 
         try:
             from src.core.runtime_mode import get_trading_mode
-            from src.services.learning_event import get_metrics as _gm_p11ae
+            from src.services.learning_monitor import get_canonical_training_trade_count
 
             mode = get_trading_mode()
             is_paper_train = mode.value == "paper_train"
@@ -448,8 +449,8 @@ def _training_quality_gate(
             # - routed from STRICT_TAKE_ROUTED_TO_TRAINING
             # - bootstrap active (< 50 closed trades or 0 total LM trades)
             if is_paper_train and "STRICT_TAKE_ROUTED_TO_TRAINING" in source_reject:
-                metrics = _gm_p11ae()
-                trades_closed = metrics.get("trades", 0)
+                # P1.1AU: Use canonical training count from LM, not stale learning_event metrics
+                trades_closed = get_canonical_training_trade_count()
 
                 # Bootstrap active if < 50 closed trades
                 if trades_closed < 50:
@@ -529,8 +530,9 @@ def _training_quality_gate(
             _log_bypass_flow("drop", symbol, "sampler_rate_cap", source=source_reject, flow_id=flow_id)
             # P1.1AS: Fix missing rate-cap state logging by using now-computed open counts
             try:
-                from src.services.learning_event import get_metrics as _gm_ar
-                closed = _gm_ar().get("trades", 0)
+                # P1.1AU: Use canonical training count for diagnostics
+                from src.services.learning_monitor import get_canonical_training_trade_count as _gtc_1
+                closed = _gtc_1()
                 next_allowed_s = 60.0 - (now - _entry_times_minute[0]) if _entry_times_minute else 60.0
                 _log_rate_cap_state(symbol, bucket, source_reject, now,
                                    len(_entry_times_minute), PAPER_TRAIN_MAX_ENTRIES_PER_MINUTE,
@@ -544,8 +546,9 @@ def _training_quality_gate(
             _log_bypass_flow("drop", symbol, "sampler_rate_cap", source=source_reject, flow_id=flow_id)
             # P1.1AS: Fix missing rate-cap state logging by using now-computed open counts
             try:
-                from src.services.learning_event import get_metrics as _gm_ar
-                closed = _gm_ar().get("trades", 0)
+                # P1.1AU: Use canonical training count for diagnostics
+                from src.services.learning_monitor import get_canonical_training_trade_count as _gtc_2
+                closed = _gtc_2()
                 next_allowed_s = 3600.0 - (now - _entry_times_hour[0]) if _entry_times_hour else 3600.0
                 _log_rate_cap_state(symbol, bucket, source_reject, now,
                                    len(_entry_times_hour), PAPER_TRAIN_MAX_ENTRIES_PER_HOUR,
@@ -792,8 +795,9 @@ def maybe_open_training_sample(
         if _is_cold_start_starvation() and _ts_now - _probe_state["starvation_last_log_ts"] >= _PROBE_STARVATION_LOG_S:
             _probe_state["starvation_last_log_ts"] = _ts_now
             try:
-                from src.services.learning_event import get_metrics as _gm_ao
-                _ao_gt = _gm_ao().get("trades", 0)
+                # P1.1AU: Use canonical training count for diagnostics
+                from src.services.learning_monitor import get_canonical_training_trade_count as _gtc_3
+                _ao_gt = _gtc_3()
                 log.info(
                     "[PAPER_TRAIN_STARVATION_STATE] mode=paper_train global_trades=%d "
                     "probe_lifetime_closed=%d ev=%.4f reason=cold_start_starvation",

@@ -3661,12 +3661,12 @@ class TestP1AE1BootstrapCostEdgeBypass:
 
         monkeypatch.setenv("TRADING_MODE", "paper_train")
 
-        # Simulate non-bootstrap mode (>= 50 closed trades)
-        def mock_get_metrics():
-            return {"trades": 100}
+        # P1.1AU: Mock canonical trade count instead of learning_event.get_metrics
+        def mock_canonical_count():
+            return 100  # Non-bootstrap: >= 50 closed trades
 
-        import src.services.learning_event as le
-        monkeypatch.setattr(le, "get_metrics", mock_get_metrics)
+        import src.services.learning_monitor as lm
+        monkeypatch.setattr(lm, "get_canonical_training_trade_count", mock_canonical_count)
 
         # Same conditions but non-bootstrap
         result = _training_quality_gate(

@@ -1522,3 +1522,15 @@ def print_learning_monitor():
         pass
 
     print("=" * 24)
+
+
+def get_canonical_training_trade_count() -> int:
+    """P1.1AU: Get canonical total training trade count from LM state.
+
+    Returns the sum of all trades in lm_count across all (symbol, regime) pairs.
+    This is the authoritative source for bootstrap bypass decisions.
+
+    Returns:
+        int: Total number of paper closed trades in canonical LM state
+    """
+    return sum(lm_count.values())
