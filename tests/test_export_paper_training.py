@@ -170,6 +170,25 @@ class TestParseExitLog:
         assert result["outcome"] == "FLAT"
         assert result["net_pnl_pct"] == 0.01
 
+    def test_exit_with_metadata_for_backfill(self):
+        """Exit log can include metadata for backfilling missing entry log."""
+        line = (
+            "[PAPER_TRAIN_QUALITY_EXIT] trade_id=paper_750d95d13fdf "
+            "symbol=ETHUSDT side=SELL source=training_sampler "
+            "training_bucket=C_WEAK_EV_TRAIN entry_regime=BEAR_TREND "
+            "exit=2143.62 outcome=WIN net_pnl_pct=0.5"
+        )
+        result = parse_exit_log(line)
+        assert result is not None
+        assert result["trade_id"] == "paper_750d95d13fdf"
+        assert result["symbol"] == "ETHUSDT"
+        assert result["side"] == "SELL"
+        assert result["source"] == "training_sampler"
+        assert result["training_bucket"] == "C_WEAK_EV_TRAIN"
+        assert result["entry_regime"] == "BEAR_TREND"
+        assert result["outcome"] == "WIN"
+        assert result["net_pnl_pct"] == 0.5
+
 
 class TestParseAttributionLog:
     """Test attribution log parsing."""
@@ -186,6 +205,25 @@ class TestParseAttributionLog:
         line = "trade_id=paper_001 attribution=tp_hit"
         result = parse_attribution_log(line)
         assert result is None
+
+    def test_attribution_with_metadata_for_backfill(self):
+        """Attribution log can include metadata for backfilling missing entry log."""
+        line = (
+            "[PAPER_TRAIN_ECON_ATTRIB] trade_id=paper_5c50052b35aa "
+            "symbol=BNBUSDT side=BUY source=training_sampler "
+            "training_bucket=C_WEAK_EV_TRAIN entry_regime=BEAR_TREND "
+            "attribution=NORMAL_WIN reason=tp_hit net_pnl_pct=0.75"
+        )
+        result = parse_attribution_log(line)
+        assert result is not None
+        assert result["trade_id"] == "paper_5c50052b35aa"
+        assert result["symbol"] == "BNBUSDT"
+        assert result["side"] == "BUY"
+        assert result["source"] == "training_sampler"
+        assert result["training_bucket"] == "C_WEAK_EV_TRAIN"
+        assert result["entry_regime"] == "BEAR_TREND"
+        assert result["attribution"] == "NORMAL_WIN"
+        assert result["net_pnl_pct"] == 0.75
 
 
 class TestParseLMStateLog:
@@ -276,6 +314,100 @@ class TestJoinTradeRecords:
             expected_keys = set(result[0].keys())
             for record in result:
                 assert set(record.keys()) == expected_keys
+
+    def test_metadata_backfill_from_exit_log(self):
+        """Metadata (symbol, side, source, bucket) backfills from exit log if entry missing."""
+        entries = {}  # No entry log
+        exits = {
+            "T004": {
+                "log_type": "PAPER_TRAIN_QUALITY_EXIT",
+                "trade_id": "T004",
+                "symbol": "ETHUSDT",
+                "side": "SELL",
+                "source": "training_sampler",
+                "training_bucket": "C_WEAK_EV_TRAIN",
+                "entry_regime": "BEAR_TREND",
+                "outcome": "WIN",
+                "net_pnl_pct": 0.5,
+            }
+        }
+        attrs = {}
+        lm_updates = {}
+
+        result = join_trade_records(entries, exits, attrs, lm_updates)
+        assert len(result) == 1
+        record = result[0]
+        assert record["symbol"] == "ETHUSDT"
+        assert record["side"] == "SELL"
+        assert record["source"] == "training_sampler"
+        assert record["training_bucket"] == "C_WEAK_EV_TRAIN"
+        assert record["entry_regime"] == "BEAR_TREND"
+        assert record["outcome"] == "WIN"
+
+    def test_metadata_backfill_from_attribution_log(self):
+        """Metadata backfills from attribution log if entry and exit missing."""
+        entries = {}  # No entry log
+        exits = {}  # No exit log
+        attrs = {
+            "T005": {
+                "log_type": "PAPER_TRAIN_ECON_ATTRIB",
+                "trade_id": "T005",
+                "symbol": "BNBUSDT",
+                "side": "BUY",
+                "source": "training_sampler",
+                "training_bucket": "C_WEAK_EV_TRAIN",
+                "entry_regime": "BULL_TREND",
+                "attribution": "NORMAL_WIN",
+                "net_pnl_pct": 0.75,
+            }
+        }
+        lm_updates = {}
+
+        result = join_trade_records(entries, exits, attrs, lm_updates)
+        assert len(result) == 1
+        record = result[0]
+        assert record["symbol"] == "BNBUSDT"
+        assert record["side"] == "BUY"
+        assert record["source"] == "training_sampler"
+        assert record["training_bucket"] == "C_WEAK_EV_TRAIN"
+        assert record["entry_regime"] == "BULL_TREND"
+        assert record["attribution"] == "NORMAL_WIN"
+
+    def test_metadata_entry_takes_precedence(self):
+        """Entry log metadata takes precedence over exit/attr logs."""
+        entries = {
+            "T006": {
+                "trade_id": "T006",
+                "symbol": "BTCUSDT",
+                "side": "BUY",
+                "source": "primary",
+                "training_bucket": "C_WEAK_EV_TRAIN",
+                "entry_regime": "BULL",
+            }
+        }
+        exits = {
+            "T006": {
+                "trade_id": "T006",
+                "symbol": "WRONG_SYMBOL",
+                "side": "SELL",
+                "source": "wrong_source",
+                "training_bucket": "WRONG_BUCKET",
+                "entry_regime": "BEAR",
+                "outcome": "WIN",
+            }
+        }
+        attrs = {}
+        lm_updates = {}
+
+        result = join_trade_records(entries, exits, attrs, lm_updates)
+        assert len(result) == 1
+        record = result[0]
+        # Entry takes precedence
+        assert record["symbol"] == "BTCUSDT"
+        assert record["side"] == "BUY"
+        assert record["source"] == "primary"
+        assert record["training_bucket"] == "C_WEAK_EV_TRAIN"
+        assert record["entry_regime"] == "BULL"
 
 
 class TestExportJsonl:
@@ -391,6 +523,63 @@ Random garbage [PAPER_TRAIN_QUALITY_EXIT] incomplete
             records = process_log_file(temp_path)
             # Should process what it can
             assert isinstance(records, list)
+        finally:
+            Path(temp_path).unlink()
+
+    def test_metadata_backfill_integration_missing_entry(self):
+        """Integration test: metadata backfills from exit when entry log missing."""
+        # Real-world scenario: entry log missing but exit has all metadata
+        log_content = """
+2026-05-19 10:00:00 [PAPER_TRAIN_QUALITY_EXIT] trade_id=paper_750d95d13fdf symbol=ETHUSDT side=SELL source=training_sampler training_bucket=C_WEAK_EV_TRAIN entry_regime=BEAR_TREND exit=2143.62 outcome=WIN net_pnl_pct=0.5 gross_move_pct=0.6 fee_drag_pct=0.1
+2026-05-19 10:01:00 [PAPER_TRAIN_ECON_ATTRIB] trade_id=paper_750d95d13fdf attribution=NORMAL_WIN
+"""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".log", delete=False) as f:
+            f.write(log_content)
+            f.flush()
+            temp_path = f.name
+
+        try:
+            records = process_log_file(temp_path)
+            assert len(records) == 1
+            record = records[0]
+            assert record["trade_id"] == "paper_750d95d13fdf"
+            # Metadata should be backfilled from exit log
+            assert record["symbol"] == "ETHUSDT"
+            assert record["side"] == "SELL"
+            assert record["source"] == "training_sampler"
+            assert record["training_bucket"] == "C_WEAK_EV_TRAIN"
+            assert record["entry_regime"] == "BEAR_TREND"
+            # Exit-specific fields
+            assert record["outcome"] == "WIN"
+            assert record["net_pnl_pct"] == 0.5
+        finally:
+            Path(temp_path).unlink()
+
+    def test_metadata_backfill_integration_attr_only(self):
+        """Integration test: metadata backfills from attribution when entry/exit missing."""
+        # Real-world scenario: only attribution log has metadata
+        log_content = """
+2026-05-19 10:00:00 [PAPER_TRAIN_ECON_ATTRIB] trade_id=paper_5c50052b35aa symbol=BNBUSDT side=BUY source=training_sampler training_bucket=C_WEAK_EV_TRAIN entry_regime=BULL_TREND attribution=NORMAL_WIN reason=tp_hit net_pnl_pct=0.75
+"""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".log", delete=False) as f:
+            f.write(log_content)
+            f.flush()
+            temp_path = f.name
+
+        try:
+            records = process_log_file(temp_path)
+            assert len(records) == 1
+            record = records[0]
+            assert record["trade_id"] == "paper_5c50052b35aa"
+            # Metadata should be backfilled from attribution log
+            assert record["symbol"] == "BNBUSDT"
+            assert record["side"] == "BUY"
+            assert record["source"] == "training_sampler"
+            assert record["training_bucket"] == "C_WEAK_EV_TRAIN"
+            assert record["entry_regime"] == "BULL_TREND"
+            # Attribution fields
+            assert record["attribution"] == "NORMAL_WIN"
+            assert record["net_pnl_pct"] == 0.75
         finally:
             Path(temp_path).unlink()
 

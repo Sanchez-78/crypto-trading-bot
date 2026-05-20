@@ -119,6 +119,9 @@ def parse_exit_log(line: str) -> Optional[dict]:
 
     Expected format:
     [PAPER_TRAIN_QUALITY_EXIT] trade_id=paper_x exit=2143.62 outcome=WIN hold_s=52 ...
+
+    May also contain metadata fields for backfilling:
+    - symbol, side, source, training_bucket, entry_regime
     """
     if "[PAPER_TRAIN_QUALITY_EXIT]" not in line:
         return None
@@ -140,6 +143,13 @@ def parse_exit_log(line: str) -> Optional[dict]:
             "log_type": "PAPER_TRAIN_QUALITY_EXIT",
             "exit_ts_raw": ts_raw,
             "trade_id": kv.get("trade_id"),
+            # Metadata (for backfilling if entry log missing)
+            "symbol": kv.get("symbol"),
+            "side": kv.get("side"),
+            "source": kv.get("source"),
+            "training_bucket": kv.get("training_bucket"),
+            "entry_regime": kv.get("entry_regime") or kv.get("regime"),
+            # Exit-specific fields
             "exit": _safe_float(kv.get("exit")),
             "exit_regime": kv.get("exit_regime") or kv.get("regime"),
             "outcome": kv.get("outcome"),
@@ -168,6 +178,9 @@ def parse_attribution_log(line: str) -> Optional[dict]:
 
     Expected format:
     [PAPER_TRAIN_ECON_ATTRIB] trade_id=paper_x ... attribution=NORMAL_WIN ...
+
+    May also contain metadata fields for backfilling:
+    - symbol, side, source, training_bucket, entry_regime
     """
     if "[PAPER_TRAIN_ECON_ATTRIB]" not in line:
         return None
@@ -188,6 +201,13 @@ def parse_attribution_log(line: str) -> Optional[dict]:
             "log_type": "PAPER_TRAIN_ECON_ATTRIB",
             "ts_raw": ts_raw,
             "trade_id": kv.get("trade_id"),
+            # Metadata (for backfilling if entry log missing)
+            "symbol": kv.get("symbol"),
+            "side": kv.get("side"),
+            "source": kv.get("source"),
+            "training_bucket": kv.get("training_bucket"),
+            "entry_regime": kv.get("entry_regime") or kv.get("regime"),
+            # Attribution fields
             "attribution": kv.get("attribution"),
             "reason": kv.get("reason"),
             "entry": _safe_float(kv.get("entry")),
@@ -257,7 +277,7 @@ def join_trade_records(
     Returns:
         list of merged trade records with canonical schema
     """
-    all_trade_ids = set(entries.keys()) | set(exits.keys())
+    all_trade_ids = set(entries.keys()) | set(exits.keys()) | set(attrs.keys()) | set(lm_updates.keys())
     records = []
 
     for trade_id in sorted(all_trade_ids):
@@ -278,7 +298,7 @@ def join_trade_records(
             "source": entry.get("source") or exit_rec.get("source") or attr.get("source"),
             "bucket": entry.get("bucket"),
             "training_bucket": entry.get("training_bucket") or exit_rec.get("training_bucket") or attr.get("training_bucket"),
-            "entry_regime": entry.get("entry_regime") or attr.get("entry_regime"),
+            "entry_regime": entry.get("entry_regime") or exit_rec.get("entry_regime") or attr.get("entry_regime"),
             "exit_regime": exit_rec.get("exit_regime") or attr.get("exit_regime"),
             # Price/geometry
             "entry": entry.get("entry") or exit_rec.get("entry") or attr.get("entry"),
