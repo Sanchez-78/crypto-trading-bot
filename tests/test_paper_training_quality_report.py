@@ -171,14 +171,17 @@ class TestDatasetSummary:
     def test_summary_basic(self, sample_trades):
         """Compute dataset summary."""
         summary = compute_dataset_summary(sample_trades)
-        assert summary["total_trades"] == 3
+        assert summary["total_records"] == 3
+        assert summary["completed_trades_with_exit"] == 3
+        assert summary["open_or_incomplete_records"] == 0
         assert summary["unique_symbols"] == 2  # BTC/USDT, ETH/USDT
         assert summary["unique_buckets"] == 2  # C_WEAK_EV_TRAIN, C_NEG_EV_PROBE
 
     def test_summary_empty(self):
         """Empty dataset."""
         summary = compute_dataset_summary([])
-        assert summary["total_trades"] == 0
+        assert summary["total_records"] == 0
+        assert summary["completed_trades_with_exit"] == 0
         assert summary["unique_symbols"] == 0
 
 
@@ -196,7 +199,7 @@ class TestOutcomeStats:
     def test_outcome_empty(self):
         """Empty list."""
         outcomes = compute_outcome_stats([])
-        assert outcomes["total"] == 0
+        assert outcomes["total_completed_trades"] == 0
         assert len(outcomes["outcome_counts"]) == 0
 
 
@@ -309,13 +312,13 @@ class TestFeeViability:
         assert fees["records_with_fee_data"] == 3
         mean_fee = (0.06 + 0.08 + 0.06) / 3
         assert fees["mean_fee_drag_pct"] == round(mean_fee, 4)
-        # T002 has positive gross_move (-0.50) but negative net_pnl (-0.45)
-        # Actually, T002 gross = -0.50, so net is worse than gross (fee drag added)
-        # T001: gross=0.75 > net=0.75 (no fee ate gain here, fee reduces but still positive)
-        # T003: gross=-0.05 < net=0.01 (fee actually helped, strange case)
-        # Fee ate gain: should be when gross > 0 but net <= 0
-        fee_ate = sum(1 for t in sample_trades if t.get("gross_move_pct", 0) > 0 and t.get("net_pnl_pct", 0) <= 0)
-        assert fees["trades_where_fee_ate_gain"] == fee_ate
+        # Gross positive but net negative: when gross > 0 but net <= 0
+        # T001: gross=0.75 > net=0.75 (no — net is positive)
+        # T002: gross=-0.50 < net=-0.45 (no — both negative)
+        # T003: gross=-0.05 < net=0.01 (no — gross is negative)
+        # Result: 0 trades match
+        gross_pos_net_neg = sum(1 for t in sample_trades if t.get("gross_move_pct", 0) > 0 and t.get("net_pnl_pct", 0) <= 0)
+        assert fees["gross_positive_net_negative_count"] == gross_pos_net_neg
 
     def test_fee_no_data(self):
         """No fee data."""
@@ -372,14 +375,14 @@ class TestLearningWarnings:
         assert "Empty dataset" in warnings
 
     def test_warning_small_dataset(self):
-        """Small dataset warning."""
-        trades = [{"outcome": "WIN"}]
+        """Small completed sample warning."""
+        trades = [{"outcome": "WIN", "exit": 100.0}]
         warnings = check_learning_warnings(trades)
-        assert any("Small dataset" in w for w in warnings)
+        assert any("Small completed sample" in w for w in warnings)
 
     def test_warning_high_win_rate(self):
         """High win rate warning."""
-        trades = [{"outcome": "WIN"} for _ in range(7)] + [{"outcome": "LOSS"} for _ in range(3)]
+        trades = [{"outcome": "WIN", "exit": 100.0} for _ in range(7)] + [{"outcome": "LOSS", "exit": 100.0} for _ in range(3)]
         warnings = check_learning_warnings(trades)
         assert any("win rate" in w.lower() and "suspiciously" in w.lower() for w in warnings)
 
@@ -395,7 +398,8 @@ class TestMarkdownReport:
         assert "## 2. Outcome Distribution" in report
         assert "## 3. PnL Summary" in report
         assert "## 14. Android Dashboard Metric Recommendations" in report
-        assert "Total Trades:" in report and "3" in report
+        assert "Total Records:" in report and "3" in report
+        assert "Completed Trades" in report
         assert "WIN" in report
 
     def test_markdown_report_empty(self):
@@ -417,12 +421,14 @@ class TestJSONSummary:
         assert "attribution" in summary
         assert "regime_performance" in summary
         assert "warnings" in summary
-        assert summary["dataset"]["total_trades"] == 3
+        assert summary["dataset"]["total_records"] == 3
+        assert summary["dataset"]["completed_trades_with_exit"] == 3
 
     def test_json_summary_empty(self):
         """JSON summary with empty data."""
         summary = generate_json_summary([])
-        assert summary["dataset"]["total_trades"] == 0
+        assert summary["dataset"]["total_records"] == 0
+        assert summary["dataset"]["completed_trades_with_exit"] == 0
 
 
 class TestCLIInterface:
@@ -473,7 +479,7 @@ class TestCLIInterface:
                 assert json_path.exists()
                 with open(json_path) as f:
                     summary = json.load(f)
-                assert summary["dataset"]["total_trades"] == 3
+                assert summary["dataset"]["total_records"] == 3
             finally:
                 sys.argv = original_argv
 

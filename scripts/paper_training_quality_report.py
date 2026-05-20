@@ -39,43 +39,65 @@ def safe_div(num: Union[int, float], denom: Union[int, float], default: float = 
     return float(num) / float(denom)
 
 
+def filter_completed_trades(records: list[dict]) -> list[dict]:
+    """Filter to only completed trades (have exit price and outcome)."""
+    return [r for r in records if r.get("exit") is not None and r.get("outcome") is not None]
+
+
+def filter_trades_with_attribution(records: list[dict]) -> list[dict]:
+    """Filter to trades with economic attribution data."""
+    return [r for r in records if r.get("attribution") is not None]
+
+
 def compute_dataset_summary(records: list[dict]) -> dict:
-    """Dataset summary stats."""
+    """Dataset summary: all records, completed, with attribution."""
+    total_records = len(records)
+    completed = filter_completed_trades(records)
+    completed_count = len(completed)
+    with_attribution = filter_trades_with_attribution(records)
+    with_attribution_count = len(with_attribution)
+    incomplete_count = total_records - completed_count
+
     return {
-        "total_trades": len(records),
-        "unique_symbols": len(set(r.get("symbol") for r in records if r.get("symbol"))),
-        "unique_buckets": len(set(r.get("bucket") for r in records if r.get("bucket"))),
+        "total_records": total_records,
+        "completed_trades_with_exit": completed_count,
+        "trades_with_econ_attribution": with_attribution_count,
+        "open_or_incomplete_records": incomplete_count,
+        "unique_symbols": len(set(r.get("symbol") for r in completed if r.get("symbol"))),
+        "unique_buckets": len(set(r.get("bucket") for r in completed if r.get("bucket"))),
         "date_range": {
-            "earliest_ts": min((r.get("entry_ts_raw") for r in records if r.get("entry_ts_raw")), default=None),
-            "latest_ts": max((r.get("exit_ts_raw") for r in records if r.get("exit_ts_raw")), default=None),
+            "earliest_ts": min((r.get("entry_ts_raw") for r in completed if r.get("entry_ts_raw")), default=None),
+            "latest_ts": max((r.get("exit_ts_raw") for r in completed if r.get("exit_ts_raw")), default=None),
         }
     }
 
 
 def compute_outcome_stats(records: list[dict]) -> dict:
-    """Win/loss/flat distribution."""
+    """Win/loss/flat distribution (completed trades only)."""
+    completed = filter_completed_trades(records)
     outcomes = defaultdict(int)
-    for r in records:
+    for r in completed:
         outcome = r.get("outcome")
         if outcome:
             outcomes[outcome] += 1
-    total = len(records)
+    total = len(completed)
     return {
+        "total_completed_trades": total,
         "outcome_counts": dict(outcomes),
         "outcome_rates": {
             k: round(safe_div(v, total), 4) for k, v in outcomes.items()
         },
-        "total": total,
     }
 
 
 def compute_pnl_summary(records: list[dict]) -> dict:
-    """PnL metrics."""
-    pnls = [r.get("net_pnl_pct") for r in records if r.get("net_pnl_pct") is not None]
+    """PnL metrics (completed trades only)."""
+    completed = filter_completed_trades(records)
+    pnls = [r.get("net_pnl_pct") for r in completed if r.get("net_pnl_pct") is not None]
     if not pnls:
-        return {"total_records": len(records), "pnl_records_with_values": 0}
+        return {"total_completed_trades": len(completed), "pnl_records_with_values": 0}
     return {
-        "total_records": len(records),
+        "total_completed_trades": len(completed),
         "pnl_records_with_values": len(pnls),
         "mean_pnl_pct": round(sum(pnls) / len(pnls), 4),
         "min_pnl_pct": round(min(pnls), 4),
@@ -87,14 +109,16 @@ def compute_pnl_summary(records: list[dict]) -> dict:
 
 
 def compute_attribution_stats(records: list[dict]) -> dict:
-    """Attribution distribution."""
+    """Attribution distribution (completed trades only)."""
+    completed = filter_completed_trades(records)
     attrs = defaultdict(int)
-    for r in records:
+    for r in completed:
         attr = r.get("attribution")
         if attr:
             attrs[attr] += 1
-    total = len(records)
+    total = len(completed)
     return {
+        "total_completed_trades": total,
         "attribution_counts": dict(attrs),
         "attribution_rates": {
             k: round(safe_div(v, total), 4) for k, v in attrs.items()
@@ -103,9 +127,10 @@ def compute_attribution_stats(records: list[dict]) -> dict:
 
 
 def compute_regime_performance(records: list[dict]) -> dict:
-    """Win rates by entry regime."""
+    """Win rates by entry regime (completed trades only)."""
+    completed = filter_completed_trades(records)
     regimes = defaultdict(lambda: {"wins": 0, "total": 0})
-    for r in records:
+    for r in completed:
         regime = r.get("entry_regime")
         if regime:
             regimes[regime]["total"] += 1
@@ -122,9 +147,10 @@ def compute_regime_performance(records: list[dict]) -> dict:
 
 
 def compute_symbol_performance(records: list[dict]) -> dict:
-    """Win rates by symbol."""
+    """Win rates by symbol (completed trades only)."""
+    completed = filter_completed_trades(records)
     symbols = defaultdict(lambda: {"wins": 0, "total": 0, "pnls": []})
-    for r in records:
+    for r in completed:
         sym = r.get("symbol")
         if sym:
             symbols[sym]["total"] += 1
@@ -144,9 +170,10 @@ def compute_symbol_performance(records: list[dict]) -> dict:
 
 
 def compute_side_performance(records: list[dict]) -> dict:
-    """BUY vs SELL performance."""
+    """BUY vs SELL performance (completed trades only)."""
+    completed = filter_completed_trades(records)
     sides = defaultdict(lambda: {"wins": 0, "total": 0, "pnls": []})
-    for r in records:
+    for r in completed:
         side = r.get("side")
         if side:
             sides[side]["total"] += 1
@@ -166,11 +193,12 @@ def compute_side_performance(records: list[dict]) -> dict:
 
 
 def compute_barrier_distribution(records: list[dict]) -> dict:
-    """TP/SL/timeout exit distribution."""
-    tp_count = sum(1 for r in records if r.get("touched_tp") is True)
-    sl_count = sum(1 for r in records if r.get("touched_sl") is True)
-    timeout_count = sum(1 for r in records if r.get("timeout") is True)
-    total = len(records)
+    """TP/SL/timeout exit distribution (completed trades only)."""
+    completed = filter_completed_trades(records)
+    tp_count = sum(1 for r in completed if r.get("touched_tp") is True)
+    sl_count = sum(1 for r in completed if r.get("touched_sl") is True)
+    timeout_count = sum(1 for r in completed if r.get("timeout") is True)
+    total = len(completed)
     return {
         "touched_tp": tp_count,
         "touched_sl": sl_count,
@@ -182,29 +210,32 @@ def compute_barrier_distribution(records: list[dict]) -> dict:
 
 
 def compute_fee_viability(records: list[dict]) -> dict:
-    """Fee viability analysis."""
-    with_fee_drag = [r for r in records if r.get("fee_drag_pct") is not None]
+    """Fee viability analysis (completed trades only)."""
+    completed = filter_completed_trades(records)
+    with_fee_drag = [r for r in completed if r.get("fee_drag_pct") is not None]
     if not with_fee_drag:
-        return {"total": len(records), "records_with_fee_data": 0}
+        return {"total_completed_trades": len(completed), "records_with_fee_data": 0}
     fees = [r.get("fee_drag_pct") for r in with_fee_drag]
     gross_pnls = [r.get("gross_move_pct") for r in with_fee_drag if r.get("gross_move_pct") is not None]
     net_pnls = [r.get("net_pnl_pct") for r in with_fee_drag if r.get("net_pnl_pct") is not None]
-    fee_ate_gain = sum(1 for r in with_fee_drag if r.get("gross_move_pct", 0) > 0 and r.get("net_pnl_pct", 0) <= 0)
+    # Gross positive but net negative due to fees
+    gross_pos_net_neg = sum(1 for r in with_fee_drag if r.get("gross_move_pct", 0) > 0 and r.get("net_pnl_pct", 0) <= 0)
     return {
-        "total_trades": len(records),
+        "total_completed_trades": len(completed),
         "records_with_fee_data": len(with_fee_drag),
         "mean_fee_drag_pct": round(safe_div(sum(fees), len(fees)), 4),
         "mean_gross_move_pct": round(safe_div(sum(gross_pnls), len(gross_pnls)), 4) if gross_pnls else None,
         "mean_net_pnl_pct": round(safe_div(sum(net_pnls), len(net_pnls)), 4) if net_pnls else None,
-        "trades_where_fee_ate_gain": fee_ate_gain,
-        "fee_ate_gain_rate": round(safe_div(fee_ate_gain, len(with_fee_drag)), 4) if with_fee_drag else 0,
+        "gross_positive_net_negative_count": gross_pos_net_neg,
+        "gross_positive_net_negative_rate": round(safe_div(gross_pos_net_neg, len(with_fee_drag)), 4) if with_fee_drag else 0,
     }
 
 
 def compute_geometry_impact(records: list[dict]) -> dict:
-    """Impact of geometry calibration."""
-    calibrated = [r for r in records if r.get("geometry_calibrated") is True]
-    uncalibrated = [r for r in records if r.get("geometry_calibrated") is False]
+    """Impact of geometry calibration (completed trades only)."""
+    completed = filter_completed_trades(records)
+    calibrated = [r for r in completed if r.get("geometry_calibrated") is True]
+    uncalibrated = [r for r in completed if r.get("geometry_calibrated") is False]
     cal_wins = sum(1 for r in calibrated if r.get("outcome") == "WIN")
     uncal_wins = sum(1 for r in uncalibrated if r.get("outcome") == "WIN")
     return {
@@ -216,9 +247,10 @@ def compute_geometry_impact(records: list[dict]) -> dict:
 
 
 def compute_cost_edge_performance(records: list[dict]) -> dict:
-    """Cost-edge bypass performance."""
-    edge_ok = [r for r in records if r.get("cost_edge_ok") is True]
-    edge_bypassed = [r for r in records if r.get("cost_edge_bypassed") is True]
+    """Cost-edge bypass performance (completed trades only)."""
+    completed = filter_completed_trades(records)
+    edge_ok = [r for r in completed if r.get("cost_edge_ok") is True]
+    edge_bypassed = [r for r in completed if r.get("cost_edge_bypassed") is True]
     ok_wins = sum(1 for r in edge_ok if r.get("outcome") == "WIN")
     bypass_wins = sum(1 for r in edge_bypassed if r.get("outcome") == "WIN")
     return {
@@ -230,9 +262,10 @@ def compute_cost_edge_performance(records: list[dict]) -> dict:
 
 
 def compute_mfe_mae_quality(records: list[dict]) -> dict:
-    """MFE/MAE stats."""
-    mfes = [r.get("mfe_pct") for r in records if r.get("mfe_pct") is not None]
-    maes = [r.get("mae_pct") for r in records if r.get("mae_pct") is not None]
+    """MFE/MAE stats (completed trades only)."""
+    completed = filter_completed_trades(records)
+    mfes = [r.get("mfe_pct") for r in completed if r.get("mfe_pct") is not None]
+    maes = [r.get("mae_pct") for r in completed if r.get("mae_pct") is not None]
     return {
         "mfe_records": len(mfes),
         "mae_records": len(maes),
@@ -248,19 +281,46 @@ def check_learning_warnings(records: list[dict]) -> list[str]:
     warnings = []
     if not records:
         warnings.append("Empty dataset")
-    if len(records) < 10:
-        warnings.append(f"Small dataset: only {len(records)} trades (insufficient for statistical significance)")
+
+    completed = filter_completed_trades(records)
+    total_records = len(records)
+    completed_count = len(completed)
+    incomplete_count = total_records - completed_count
+
+    # P1.1AO: Small completed sample warning
+    if completed_count < 10:
+        warnings.append(f"Small completed sample: only {completed_count} completed trades (need >=10 for significance)")
+
+    # P1.1AO: Incomplete records warning
+    if incomplete_count > 0:
+        warnings.append(f"Incomplete records present: {incomplete_count} records missing exit or outcome")
+
     outcomes = compute_outcome_stats(records)
-    if outcomes["outcome_rates"].get("WIN", 0) > 0.65:
+    win_rate = outcomes["outcome_rates"].get("WIN", 0)
+
+    # P1.1AO: No winning trades warning
+    if win_rate == 0 and completed_count > 0:
+        warnings.append("No winning trades: 0% win rate — learning may be ineffective")
+
+    if win_rate > 0.65:
         warnings.append("Suspiciously high win rate (>65%) — check for lookahead bias or overfitting")
-    if outcomes["outcome_rates"].get("WIN", 0) < 0.30:
+    if 0 < win_rate < 0.30:
         warnings.append("Low win rate (<30%) — model may need recalibration or regime filtering")
+
     pnl = compute_pnl_summary(records)
-    if pnl.get("pnl_records_with_values", 0) < len(records) * 0.5:
-        warnings.append("Many trades missing PnL data — check parser or log completeness")
+    if pnl.get("pnl_records_with_values", 0) < completed_count * 0.5:
+        warnings.append("Many completed trades missing PnL data — check parser or log completeness")
+
     fees = compute_fee_viability(records)
-    if fees.get("fee_ate_gain_rate", 0) > 0.25:
-        warnings.append("Fees ate gain in >25% of winning moves — consider wider TP or tighter stop logic")
+    if fees.get("gross_positive_net_negative_rate", 0) > 0.25:
+        warnings.append("Gross move positive but net negative in >25% of trades — consider wider TP or tighter fee structure")
+
+    # P1.1AO: Fee drag exceeds gross move warning
+    mean_fee = fees.get("mean_fee_drag_pct")
+    mean_gross = fees.get("mean_gross_move_pct")
+    if mean_fee is not None and mean_gross is not None and mean_fee > mean_gross:
+        warnings.append(f"Fee drag ({mean_fee:.4f}%) exceeds mean gross move ({mean_gross:.4f}%) — position sizing may be too small")
+
     return warnings
 
 
@@ -274,7 +334,10 @@ def generate_markdown_report(records: list[dict], dataset_path: str) -> str:
     # Dataset Summary
     ds = compute_dataset_summary(records)
     md.append("## 1. Dataset Summary\n")
-    md.append(f"- **Total Trades:** {ds['total_trades']}\n")
+    md.append(f"- **Total Records:** {ds['total_records']}\n")
+    md.append(f"- **Completed Trades (with exit):** {ds['completed_trades_with_exit']}\n")
+    md.append(f"- **Incomplete/Open Records:** {ds['open_or_incomplete_records']}\n")
+    md.append(f"- **With Economic Attribution:** {ds['trades_with_econ_attribution']}\n")
     md.append(f"- **Unique Symbols:** {ds['unique_symbols']}\n")
     md.append(f"- **Unique Buckets:** {ds['unique_buckets']}\n")
     if ds['date_range']['earliest_ts']:
@@ -356,7 +419,7 @@ def generate_markdown_report(records: list[dict], dataset_path: str) -> str:
         md.append(f"- **Mean Fee Drag:** {fees['mean_fee_drag_pct']}%\n")
         md.append(f"- **Mean Gross Move:** {fees['mean_gross_move_pct']}%\n")
         md.append(f"- **Mean Net PnL (after fees):** {fees['mean_net_pnl_pct']}%\n")
-        md.append(f"- **Fee Ate Gain:** {fees['trades_where_fee_ate_gain']} trades ({fees['fee_ate_gain_rate']*100:.1f}%)\n")
+        md.append(f"- **Gross positive but net negative:** {fees['gross_positive_net_negative_count']} trades ({fees['gross_positive_net_negative_rate']*100:.1f}%)\n")
     else:
         md.append("- No fee data\n")
     md.append("\n")
@@ -407,14 +470,26 @@ def generate_markdown_report(records: list[dict], dataset_path: str) -> str:
     # Android Dashboard Recommendations
     md.append("## 14. Android Dashboard Metric Recommendations\n")
     md.append("Based on this dataset, prioritize these metrics on the dashboard:\n\n")
-    best_regime = max(regime_perf.items(), key=lambda x: x[1]['win_rate'], default=(None, {}))[0]
-    best_symbol = max(sym_perf.items(), key=lambda x: x[1]['win_rate'], default=(None, {}))[0]
-    md.append(f"1. **Best Regime:** {best_regime or 'N/A'}\n")
-    md.append(f"2. **Best Symbol:** {best_symbol or 'N/A'}\n")
-    md.append(f"3. **Overall Win Rate:** {outcomes['outcome_rates'].get('WIN', 0)*100:.1f}%\n")
+
+    # P1.1AO: Filter regime by sample >= 10 and win_rate > 0%
+    valid_regimes = [(r, s) for r, s in regime_perf.items() if s['total'] >= 10 and s['win_rate'] > 0]
+    best_regime = max(valid_regimes, key=lambda x: x[1]['win_rate'], default=(None, {}))[0] if valid_regimes else None
+
+    # P1.1AO: Filter symbol by sample >= 10 and win_rate > 0%
+    valid_symbols = [(s, st) for s, st in sym_perf.items() if st['total'] >= 10 and st['win_rate'] > 0]
+    best_symbol = max(valid_symbols, key=lambda x: x[1]['win_rate'], default=(None, {}))[0] if valid_symbols else None
+
+    overall_win_rate = outcomes['outcome_rates'].get('WIN', 0)
+    regime_label = f"{best_regime}" if best_regime else "N/A — insufficient positive outcomes"
+    symbol_label = f"{best_symbol}" if best_symbol else "N/A — insufficient positive outcomes"
+
+    md.append(f"1. **Best Regime:** {regime_label}\n")
+    md.append(f"2. **Best Symbol:** {symbol_label}\n")
+    md.append(f"3. **Overall Win Rate:** {overall_win_rate*100:.1f}%\n")
     if pnl.get('mean_pnl_pct'):
         md.append(f"4. **Mean Trade PnL:** {pnl['mean_pnl_pct']}%\n")
-    md.append(f"5. **Fee Drag Impact:** {fees.get('fee_ate_gain_rate', 0)*100:.1f}% of winning moves eaten\n")
+    if fees.get('gross_positive_net_negative_count', 0) > 0 and overall_win_rate > 0:
+        md.append(f"5. **Fee Impact:** {fees.get('gross_positive_net_negative_rate', 0)*100:.1f}% of trades had gross move positive but net negative due to fees\n")
     md.append("\n")
 
     return "".join(md)
