@@ -1518,6 +1518,15 @@ def _save_paper_trade_closed(closed_trade: dict) -> None:
         closed_trade: Closed paper trade dict from paper_trade_executor
     """
     try:
+        # P1.1AP-E: Skip quarantined positions entirely — no learning, no Firebase write
+        if closed_trade.get("quarantined"):
+            log.info(
+                "[LEARNING_SKIPPED] trade_id=%s symbol=%s reason=quarantined — position has stale/corrupt data",
+                closed_trade.get("trade_id"),
+                closed_trade.get("symbol"),
+            )
+            return
+
         # TIMEOUT_NO_PRICE quarantine: position closed without a real market price —
         # do not feed fake flat PnL into the learning system.
         if closed_trade.get("learning_skipped"):

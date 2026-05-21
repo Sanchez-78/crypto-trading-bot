@@ -275,5 +275,89 @@ class TestQuarantineInClosePosition:
         assert remaining[0]["trade_id"] == trade_id_1, "Normal position should remain"
 
 
+class TestQuarantineSkipsLearningUpdate:
+    """Test that quarantined positions skip all learning paths."""
+
+    @patch("src.services.paper_trade_executor._safe_learning_update_for_paper_trade")
+    @patch("src.services.paper_trade_executor._safe_bucket_metrics_update_for_paper_trade")
+    @patch("src.services.paper_trade_executor.log")
+    def test_stale_position_no_learning_update_call(self, mock_log, mock_metrics, mock_learning):
+        """Stale position does NOT call _safe_learning_update_for_paper_trade."""
+        signal = {
+            "symbol": "ETHUSDT",
+            "side": "BUY",
+            "ev": 0.01,
+            "score": 0.5,
+        }
+        extra = {
+            "paper_source": "training_sampler",
+            "training_bucket": "C_WEAK_EV_TRAIN",
+        }
+        pos = open_paper_position(
+            signal=signal,
+            price=2500.0,
+            ts=1700000000.0,
+            extra=extra,
+        )
+
+        assert pos is not None
+        trade_id = pos["trade_id"]
+
+        # Close with stale data (14.88% drop, triggers quarantine)
+        closed_trade = close_paper_position(
+            position_id=trade_id,
+            price=2129.725,  # Stale data
+            ts=1700000000.0 + 60,
+            reason="TIMEOUT",
+        )
+
+        # Verify quarantine happened
+        assert closed_trade is not None
+        assert closed_trade.get("quarantined") is True, "Closed trade should be marked quarantined"
+
+        # Verify learning NOT called
+        assert not mock_learning.called, "Learning should not be called for quarantined position"
+
+    @patch("src.services.paper_trade_executor._safe_learning_update_for_paper_trade")
+    @patch("src.services.paper_trade_executor._safe_bucket_metrics_update_for_paper_trade")
+    @patch("src.services.paper_trade_executor.log")
+    def test_normal_position_calls_learning_update(self, mock_log, mock_metrics, mock_learning):
+        """Normal position DOES call _safe_learning_update_for_paper_trade."""
+        signal = {
+            "symbol": "BTCUSDT",
+            "side": "BUY",
+            "ev": 0.01,
+            "score": 0.5,
+        }
+        extra = {
+            "paper_source": "training_sampler",
+            "training_bucket": "C_WEAK_EV_TRAIN",
+        }
+        pos = open_paper_position(
+            signal=signal,
+            price=50000.0,
+            ts=1700000000.0,
+            extra=extra,
+        )
+
+        assert pos is not None
+        trade_id = pos["trade_id"]
+
+        # Close with normal TP data (+2.2% gain)
+        closed_trade = close_paper_position(
+            position_id=trade_id,
+            price=51100.0,  # Normal TP exit
+            ts=1700000000.0 + 60,
+            reason="TP",
+        )
+
+        # Verify no quarantine for normal position
+        assert closed_trade is not None
+        assert closed_trade.get("quarantined") is not True, "Normal position should not be marked quarantined"
+
+        # Verify learning IS called
+        assert mock_learning.called, "Learning should be called for normal position"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

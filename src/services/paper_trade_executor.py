@@ -1387,7 +1387,7 @@ def close_paper_position(
         "weighted_pnl": (pnl_data["net_pnl_pct"] / 100.0) * pos["size_usd"],
     }
 
-    # P1.1AP-C: Stale position quarantine — check BEFORE all quality/econ/learning logs
+    # P1.1AP-E: Stale position quarantine — check BEFORE all quality/econ/learning logs
     is_stale, stale_reason = _is_stale_paper_position(pnl_data, pos["entry_price"], price, pos)
     if is_stale:
         log.warning(
@@ -1400,6 +1400,8 @@ def close_paper_position(
             pnl_data["net_pnl_pct"],
             stale_reason,
         )
+        # Mark trade as quarantined so downstream handlers (e.g., _save_paper_trade_closed) skip learning updates
+        closed_trade["quarantined"] = True
         # Skip all quality/econ/learning logs and return early
         _save_paper_state()
         return closed_trade
