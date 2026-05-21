@@ -1254,6 +1254,13 @@ def _canonical_closed_paper_trade(raw: dict) -> dict:
     }
 
 
+def _is_d_neg_control_trade(trade: dict) -> bool:
+    """P1.1AP-I: Check if trade is D_NEG_EV_CONTROL (diagnostic control bucket, not canonical learning)."""
+    bucket = trade.get("bucket")
+    training_bucket = trade.get("training_bucket")
+    return bucket == "D_NEG_EV_CONTROL" or training_bucket == "D_NEG_EV_CONTROL"
+
+
 def _safe_learning_update_for_paper_trade(pos: dict, pnl_data: dict) -> bool:
     """P1.1V: Convert closed paper trade to learning update. Decouple learning from telemetry. Never raises.
 
@@ -1275,6 +1282,23 @@ def _safe_learning_update_for_paper_trade(pos: dict, pnl_data: dict) -> bool:
             return False
     except Exception as e:
         log.exception("[LEARNING_UPDATE_ERROR] canonicalization failed: %s", e)
+        return False
+
+    # P1.1AP-I: Skip canonical learning for D_NEG_EV_CONTROL (diagnostic control bucket)
+    # but log explicit skip and continue with bucket metrics
+    if _is_d_neg_control_trade(canon):
+        log.warning(
+            "[PAPER_LEARNING_SHADOW_SKIP] trade_id=%s symbol=%s bucket=%s training_bucket=%s outcome=%s net_pnl_pct=%.4f reason=%s",
+            canon.get("trade_id", "UNKNOWN"),
+            canon["symbol"],
+            canon["bucket"],
+            canon.get("training_bucket", "UNKNOWN"),
+            canon["outcome"],
+            canon["net_pnl_pct"],
+            "d_neg_ev_control_shadow_only",
+        )
+        # Mark as shadow-only so downstream knows this was intentional skip
+        canon["learning_shadow_only"] = True
         return False
 
     # P1.1V: Separate learning update from telemetry (telemetry errors don't mask learning result)
