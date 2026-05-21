@@ -364,7 +364,7 @@ def generate_markdown_report(
         md.append(f"- **Count:** {stats['count']}\n")
         if stats['count'] > 0:
             md.append(f"- **Win rate:** {stats['win_rate']*100:.1f}%\n")
-            md.append(f"- **Avg PnL:** {stats['avg_pnl_pct']*100:.2f}%\n")
+            md.append(f"- **Avg PnL:** {stats['avg_pnl_pct']:.2f}%\n")
         md.append(f"- **Outcomes:** {stats['outcomes']}\n\n")
 
     # Attribution by Bucket (skip if records not provided)
@@ -395,13 +395,17 @@ def generate_markdown_report(
 
     md.append("### WRONG_DIRECTION\n")
     md.append(f"- **Count:** {wd.get('count', 0)} ({wd.get('percent', 0):.1f}%)\n")
-    md.append(f"- **Avg net PnL:** {wd.get('avg_pnl_pct', 0)*100:.2f}%\n")
-    md.append(f"- **Avg gross move:** {wd.get('avg_gross_move_pct', 0)*100:.2f}%\n\n")
+    wd_pnl = wd.get('avg_pnl_pct') or 0
+    wd_gross = wd.get('avg_gross_move_pct') or 0
+    md.append(f"- **Avg net PnL:** {wd_pnl:.2f}%\n")
+    md.append(f"- **Avg gross move:** {wd_gross:.2f}%\n\n")
 
     md.append("### FEE_DOMINATED_MOVE\n")
     md.append(f"- **Count:** {fd.get('count', 0)} ({fd.get('percent', 0):.1f}%)\n")
-    md.append(f"- **Avg net PnL:** {fd.get('avg_pnl_pct', 0)*100:.2f}%\n")
-    md.append(f"- **Avg gross move:** {fd.get('avg_gross_move_pct', 0)*100:.2f}%\n\n")
+    fd_pnl = fd.get('avg_pnl_pct') or 0
+    fd_gross = fd.get('avg_gross_move_pct') or 0
+    md.append(f"- **Avg net PnL:** {fd_pnl:.2f}%\n")
+    md.append(f"- **Avg gross move:** {fd_gross:.2f}%\n\n")
 
     if wd.get('percent', 0) > 50:
         md.append("⚠️ **Flag:** WRONG_DIRECTION dominates (>50%)\n\n")
@@ -416,7 +420,7 @@ def generate_markdown_report(
         md.append(f"### {regime}\n")
         md.append(f"- **Count:** {stats['count']}\n")
         md.append(f"- **Win rate:** {stats['win_rate']*100:.1f}%\n")
-        md.append(f"- **Avg PnL:** {stats['avg_pnl_pct']*100:.2f}%\n")
+        md.append(f"- **Avg PnL:** {stats['avg_pnl_pct']:.2f}%\n")
         if stats.get('win_rate', 0) == 0 and stats.get('count', 0) >= 20:
             md.append("⚠️ **Flag:** Zero win rate with n≥20\n")
         md.append("\n")
@@ -427,7 +431,7 @@ def generate_markdown_report(
     for symbol, stats in top_symbols:
         md.append(f"### {symbol} (n={stats.get('count', 0)})\n")
         md.append(f"- **Win rate:** {stats['win_rate']*100:.1f}%\n")
-        md.append(f"- **Avg PnL:** {stats['avg_pnl_pct']*100:.2f}%\n\n")
+        md.append(f"- **Avg PnL:** {stats['avg_pnl_pct']:.2f}%\n\n")
 
     # Exclusion Scenarios
     md.append("## 7. Exclusion Scenarios\n")
@@ -437,7 +441,7 @@ def generate_markdown_report(
         md.append(f"### {scenario}\n")
         md.append(f"- **Remaining trades:** {stats['count']}\n")
         md.append(f"- **Win rate:** {stats.get('win_rate', 0)*100:.1f}%\n")
-        md.append(f"- **Avg PnL:** {stats.get('avg_pnl_pct', 0)*100:.2f}%\n\n")
+        md.append(f"- **Avg PnL:** {stats.get('avg_pnl_pct', 0):.2f}%\n\n")
 
     md.append("## 8. Recommendation\n")
     md.append(f"`{recommendation}`\n")

@@ -833,5 +833,169 @@ class TestCLIRegression:
             assert md_content.count("###") >= 2  # At least section headers
 
 
+class TestPercentFormatting:
+    """Test percent field formatting (P1.1AT regression: don't multiply by 100 twice)."""
+
+    def test_bucket_avg_pnl_pct_not_scaled_100x(self):
+        """avg_pnl_pct=-0.174 should display as -0.17%, not -17.40%."""
+        records = [
+            {
+                "trade_id": "T001",
+                "exit": 100.0,
+                "outcome": "LOSS",
+                "net_pnl_pct": -0.174,  # -0.174%
+                "training_bucket": "C_WEAK_EV_TRAIN",
+            },
+        ]
+
+        # Verify markdown formatting does NOT multiply by 100
+        summary = compute_dataset_summary(records)
+        by_bucket = separate_by_bucket(records)
+
+        # Compute bucket stats from separated buckets
+        bucket_stats = {}
+        for bucket, bucket_records in by_bucket.items():
+            bucket_stats[bucket] = compute_bucket_stats(bucket_records)
+
+        regime_stats = compute_regime_quality(records)
+        symbol_stats = compute_symbol_quality(records)
+        side_regime = compute_side_regime_matrix(records)
+        excl_scenarios = compute_exclusion_scenarios(records)
+
+        md_report = generate_markdown_report(
+            summary,
+            bucket_stats,
+            {},
+            {},
+            regime_stats,
+            symbol_stats,
+            side_regime,
+            excl_scenarios,
+            "No patch recommended",
+            records=None,
+        )
+
+        # Check that -0.17% appears (not -17.40%)
+        assert "-0.17%" in md_report, f"Expected -0.17% in report, got: {md_report}"
+        assert "-17.40%" not in md_report, f"Should not have -17.40%, got: {md_report}"
+        assert "-17.4%" not in md_report, f"Should not have -17.4%, got: {md_report}"
+
+    def test_economic_severity_pnl_and_gross_move_not_scaled(self):
+        """avg_pnl_pct and avg_gross_move_pct should not be multiplied by 100."""
+        records = [
+            {
+                "trade_id": "T001",
+                "exit": 100.0,
+                "outcome": "LOSS",
+                "net_pnl_pct": -0.15,
+                "gross_move_pct": 0.5,
+                "mfe_pct": 0.8,
+                "mae_pct": -0.3,
+                "attribution": "WRONG_DIRECTION",
+            },
+            {
+                "trade_id": "T002",
+                "exit": 105.0,
+                "outcome": "WIN",
+                "net_pnl_pct": 0.10,
+                "gross_move_pct": 0.45,
+                "mfe_pct": 0.7,
+                "mae_pct": -0.2,
+                "attribution": "WRONG_DIRECTION",
+            },
+        ]
+
+        econ_severity = compute_economic_severity(records)
+        wd = econ_severity["WRONG_DIRECTION"]
+
+        # avg_pnl_pct should be around -0.025
+        assert abs(wd["avg_pnl_pct"] - (-0.025)) < 0.01
+        # avg_gross_move_pct should be around 0.475
+        assert abs(wd["avg_gross_move_pct"] - 0.475) < 0.01
+
+        summary = compute_dataset_summary(records)
+        by_bucket = separate_by_bucket(records)
+
+        # Compute bucket stats from separated buckets
+        bucket_stats = {}
+        for bucket, bucket_records in by_bucket.items():
+            bucket_stats[bucket] = compute_bucket_stats(bucket_records)
+
+        regime_stats = compute_regime_quality(records)
+        symbol_stats = compute_symbol_quality(records)
+        side_regime = compute_side_regime_matrix(records)
+        excl_scenarios = compute_exclusion_scenarios(records)
+
+        md_report = generate_markdown_report(
+            summary,
+            bucket_stats,
+            {},
+            econ_severity,
+            regime_stats,
+            symbol_stats,
+            side_regime,
+            excl_scenarios,
+            "No patch recommended",
+            records=None,
+        )
+
+        # Check formatting: should display -0.02% or -0.03%, not -2.50%
+        # (exact value depends on rounding)
+        assert "-2.50%" not in md_report, f"Should not have -2.50%, got: {md_report}"
+        # avg_gross_move_pct around 0.475 should display as ~0.47% or 0.48%
+        assert "0.4" in md_report or "0.5" in md_report  # Reasonable percentage display
+
+    def test_win_rate_still_scaled_by_100(self):
+        """win_rate (ratio 0-1) should still be multiplied by 100 for display."""
+        records = [
+            {
+                "trade_id": "T001",
+                "exit": 100.0,
+                "outcome": "WIN",
+                "net_pnl_pct": 0.05,
+                "training_bucket": "TEST",
+            },
+            {
+                "trade_id": "T002",
+                "exit": 105.0,
+                "outcome": "LOSS",
+                "net_pnl_pct": -0.05,
+                "training_bucket": "TEST",
+            },
+        ]
+
+        summary = compute_dataset_summary(records)
+        by_bucket = separate_by_bucket(records)
+
+        # Compute bucket stats from separated buckets
+        bucket_stats = {}
+        for bucket, bucket_records in by_bucket.items():
+            bucket_stats[bucket] = compute_bucket_stats(bucket_records)
+
+        # 1 win out of 2 = 0.5 win_rate (ratio)
+        assert bucket_stats["TEST"]["win_rate"] == 0.5
+
+        regime_stats = compute_regime_quality(records)
+        symbol_stats = compute_symbol_quality(records)
+        side_regime = compute_side_regime_matrix(records)
+        excl_scenarios = compute_exclusion_scenarios(records)
+
+        md_report = generate_markdown_report(
+            summary,
+            bucket_stats,
+            {},
+            {},
+            regime_stats,
+            symbol_stats,
+            side_regime,
+            excl_scenarios,
+            "No patch recommended",
+            records=None,
+        )
+
+        # win_rate should display as 50.0%, not 0.5%
+        assert "50.0%" in md_report, f"Expected 50.0% win rate, got: {md_report}"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
