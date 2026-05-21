@@ -406,10 +406,10 @@ def _generate_trade_id() -> str:
 def _effective_paper_hold_s(pos: dict) -> float:
     """P1.1Z: Calculate effective hold time for training positions.
 
-    P1.1AP-G: Respect max_hold_s for all paper positions, including C_WEAK_EV exploration.
+    P1.1AP-G: For exploration positions (explore_bucket set), respect explicit max_hold_s.
     - Training positions: capped at 300s
     - Exploration positions: use explicit max_hold_s if provided
-    - Fallback: timeout_s or _MAX_AGE_S
+    - Non-exploration: use configured timeout_s
 
     Args:
         pos: Position dict with training_bucket, max_hold_s, timeout_s, etc.
@@ -422,6 +422,7 @@ def _effective_paper_hold_s(pos: dict) -> float:
 
     bucket = str(pos.get("training_bucket") or pos.get("bucket") or pos.get("explore_bucket") or "")
     source = str(pos.get("paper_source") or pos.get("mode") or "")
+    explore_bucket = str(pos.get("explore_bucket") or "")
 
     is_training = (
         bucket == "C_WEAK_EV_TRAIN"
@@ -435,12 +436,12 @@ def _effective_paper_hold_s(pos: dict) -> float:
         # Training positions: effective hold is min of max_hold and timeout, capped at 300s
         return max(30.0, min(max_hold or 300.0, timeout or 300.0, 300.0))
 
-    # Non-training exploration (C_WEAK_EV, B_RECOVERY_READY, etc.):
-    # P1.1AP-G: Prefer explicit max_hold_s over generic timeout
-    if max_hold and max_hold > 30.0:
+    # Non-training: P1.1AP-G - respect max_hold_s for exploration positions
+    # (those with explicit explore_bucket like C_WEAK_EV)
+    if explore_bucket and max_hold and max_hold > 30.0:
         return float(max_hold)
 
-    # Fallback: use timeout if set, else default timeout
+    # Non-exploration: use configured timeout or default
     return max(30.0, timeout or _MAX_AGE_S)
 
 
