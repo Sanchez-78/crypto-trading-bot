@@ -58,28 +58,34 @@ def _is_training_position(pos: dict) -> bool:
     )
 
 
-# P1.1AB: Stale position quarantine thresholds
-_PAPER_MAX_PNL_PCT_TRAINING = 2.0  # Max abs(net_pnl_pct) for paper training
-_PAPER_MAX_PRICE_DEVIATION = 0.05  # Max abs(entry/exit - 1) = 5%
+# P1.1AP-D: Stale position quarantine thresholds (refined to exclude normal TP/SL)
+_PAPER_MAX_PRICE_DEVIATION_PCT = 5.0  # Max price deviation % (entry/exit price difference)
+_PAPER_MAX_PNL_PCT_EXTREME = 5.0  # Max abs(net_pnl_pct) for extreme corruption cases
 
 
 def _is_stale_paper_position(pnl_data: dict, entry_price: float, exit_price: float, position: dict) -> tuple[bool, str]:
-    """Check if paper position is stale/outlier and should be quarantined.
+    """Check if paper position is stale/corrupt and should be quarantined.
+
+    Detects positions with impossible price movements or extreme P&L that indicate
+    data corruption (e.g., from file restore or price sync errors). Normal TP/SL
+    exits around +/-2% are allowed.
 
     Returns:
         (is_stale, reason_string)
     """
     net_pnl_pct = pnl_data.get("net_pnl_pct", 0.0)
 
-    # Check for suspiciously large loss/gain (>2% for paper training)
-    if abs(net_pnl_pct) > _PAPER_MAX_PNL_PCT_TRAINING:
-        return True, f"excessive_pnl_pct={net_pnl_pct:.4f}"
-
-    # Check for impossible price movement (entry and exit too far apart = stale data)
+    # Check for impossible price movement (primary stale indicator)
+    # If entry/exit prices differ by >5%, data is likely corrupt (restored or synced incorrectly)
     if entry_price > 0 and exit_price > 0:
-        price_deviation = abs(entry_price / exit_price - 1.0)
-        if price_deviation > _PAPER_MAX_PRICE_DEVIATION:
-            return True, f"impossible_price_deviation={price_deviation:.4f}"
+        price_deviation_pct = abs(exit_price - entry_price) / entry_price * 100.0
+        if price_deviation_pct > _PAPER_MAX_PRICE_DEVIATION_PCT:
+            return True, f"price_deviation_pct={price_deviation_pct:.2f}"
+
+    # Check for extreme P&L (only >5%, to allow normal TP/SL around +/-2%)
+    # This catches cases like restored positions with corrupt prices
+    if abs(net_pnl_pct) > _PAPER_MAX_PNL_PCT_EXTREME:
+        return True, f"extreme_pnl_pct={net_pnl_pct:.4f}"
 
     return False, ""
 

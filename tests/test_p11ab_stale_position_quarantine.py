@@ -20,49 +20,47 @@ from src.services.paper_trade_executor import (
     close_paper_position,
     get_paper_open_positions,
     open_paper_position,
-    _PAPER_MAX_PNL_PCT_TRAINING,
-    _PAPER_MAX_PRICE_DEVIATION,
 )
 
 
 class TestStalePositionDetection:
     """Test stale position validation logic."""
 
-    def test_stale_position_excessive_loss(self):
-        """Position with >2% loss is detected as stale."""
-        pnl_data = {"net_pnl_pct": -15.0}  # Way too large
+    def test_stale_position_extreme_loss(self):
+        """Position with >5% loss is detected as stale (extreme P&L)."""
+        pnl_data = {"net_pnl_pct": -15.0}  # Extreme loss indicates corruption
         entry_price = 2500.0
-        exit_price = 2128.0
+        exit_price = 2128.0  # Also 15% price deviation
         position = {"entry_price": entry_price}
 
         is_stale, reason = _is_stale_paper_position(pnl_data, entry_price, exit_price, position)
-        assert is_stale, "Should detect excessive loss as stale"
-        assert "excessive_pnl_pct" in reason
+        assert is_stale, "Should detect extreme loss as stale"
+        assert "extreme_pnl_pct" in reason or "price_deviation_pct" in reason
 
-    def test_stale_position_excessive_gain(self):
-        """Position with >2% gain is detected as stale."""
-        pnl_data = {"net_pnl_pct": 5.0}  # Way too large
+    def test_stale_position_extreme_gain(self):
+        """Position with >5% gain is detected as stale (extreme P&L)."""
+        pnl_data = {"net_pnl_pct": 6.5}  # Extreme gain = stale data
         entry_price = 100.0
-        exit_price = 105.0
+        exit_price = 106.5
         position = {"entry_price": entry_price}
 
         is_stale, reason = _is_stale_paper_position(pnl_data, entry_price, exit_price, position)
-        assert is_stale, "Should detect excessive gain as stale"
-        assert "excessive_pnl_pct" in reason
+        assert is_stale, "Should detect extreme gain as stale"
+        assert "extreme_pnl_pct" in reason or "price_deviation_pct" in reason
 
     def test_stale_position_impossible_price_movement(self):
         """Position with 5%+ price deviation is detected as stale."""
-        pnl_data = {"net_pnl_pct": -0.15}  # Reasonable loss
+        pnl_data = {"net_pnl_pct": -14.72}  # Large loss
         entry_price = 2500.0
-        exit_price = 2128.0  # 15% below entry = stale data
+        exit_price = 2128.0  # 14.88% below entry = stale data
         position = {"entry_price": entry_price}
 
         is_stale, reason = _is_stale_paper_position(pnl_data, entry_price, exit_price, position)
         assert is_stale, "Should detect impossible price movement"
-        assert "impossible_price_deviation" in reason
+        assert "price_deviation_pct" in reason
 
     def test_normal_position_small_loss(self):
-        """Normal position with <0.5% loss is not stale."""
+        """Normal position with <1% loss is not stale."""
         pnl_data = {"net_pnl_pct": -0.174}  # Small, realistic loss
         entry_price = 2128.0
         exit_price = 2126.3
@@ -73,7 +71,7 @@ class TestStalePositionDetection:
         assert reason == ""
 
     def test_normal_position_small_gain(self):
-        """Normal position with <0.5% gain is not stale."""
+        """Normal position with <1% gain is not stale."""
         pnl_data = {"net_pnl_pct": 0.2}  # Small, realistic gain
         entry_price = 2128.0
         exit_price = 2132.3
@@ -83,25 +81,29 @@ class TestStalePositionDetection:
         assert not is_stale, "Should not detect normal gain as stale"
         assert reason == ""
 
-    def test_threshold_boundary_at_max_pnl(self):
-        """Position at exactly 2.0% loss is not stale."""
-        pnl_data = {"net_pnl_pct": -2.0}  # Exactly at threshold
-        entry_price = 100.0
-        exit_price = 98.0
+    def test_normal_tp_around_2_percent(self):
+        """Normal TP around +2% is not stale (allows regular profitable exits)."""
+        # BTCUSDT: entry=50000 exit=51100 = +2.2% gain (normal TP)
+        pnl_data = {"net_pnl_pct": 2.02}  # Normal TP exit
+        entry_price = 50000.0
+        exit_price = 51100.0
         position = {"entry_price": entry_price}
 
         is_stale, reason = _is_stale_paper_position(pnl_data, entry_price, exit_price, position)
-        assert not is_stale, "Should allow exactly 2.0%"
+        assert not is_stale, "Should allow normal TP exits around +2%"
+        assert reason == ""
 
-    def test_threshold_boundary_above_max_pnl(self):
-        """Position at 2.01% loss is stale."""
-        pnl_data = {"net_pnl_pct": -2.01}  # Just above threshold
+    def test_stale_position_at_5_percent_loss(self):
+        """Position at exactly 5% loss boundary (triggers stale threshold)."""
+        pnl_data = {"net_pnl_pct": -5.01}  # Just above extreme threshold
         entry_price = 100.0
-        exit_price = 97.99
+        exit_price = 94.99
         position = {"entry_price": entry_price}
 
         is_stale, reason = _is_stale_paper_position(pnl_data, entry_price, exit_price, position)
-        assert is_stale, "Should detect just above 2.0% as stale"
+        assert is_stale, "Should detect loss >5% as stale"
+        # Either price_deviation_pct or extreme_pnl_pct can trigger
+        assert "extreme_pnl_pct" in reason or "price_deviation_pct" in reason
 
 
 class TestQuarantineInClosePosition:
