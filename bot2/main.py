@@ -190,6 +190,8 @@ def _init_event_handlers():
 
 _last_audit      = 0
 _last_metrics    = 0
+_last_dashboard_snapshot = 0  # Publish dashboard_snapshot
+_last_signal_summary = 0      # Publish signal_summary
 _last_pre_audit  = 0
 _last_health_check = 0  # Timestamp of last Firebase health check (refresh every 60s)
 
@@ -214,6 +216,8 @@ METRICS_INTERVAL    = 300      # Save metrics every 5 minutes (reduced from 30s 
 # ~1,440 reads/day from audit loop at 60s interval; increased to 3600s + gated by env flag
 ENABLE_LIVE_AUDIT   = os.getenv("ENABLE_LIVE_AUDIT", "false").lower() == "true"
 PRE_AUDIT_INTERVAL  = 3600     # Run pre_live_audit every hour (was 60s)
+DASHBOARD_SNAPSHOT_INTERVAL = 30  # Publish dashboard_snapshot/latest every 30s (mobile dashboard)
+SIGNAL_SUMMARY_INTERVAL = 60      # Publish signal_summary/latest every 60s (signal log)
 
 # ────────────────────────────────────────────────────────────────────────────
 # PATCH 3.1: Renderer Lock — Atomic rendering with deduplication
@@ -1959,6 +1963,24 @@ def main():
                 publish_app_metrics_snapshot()
             except Exception as _amp_e:
                 logging.debug("[APP_METRICS_PUBLISH_SKIP] %s", _amp_e)
+
+        # Publish dashboard_snapshot/latest every 30s for mobile dashboard
+        if now - _last_dashboard_snapshot >= DASHBOARD_SNAPSHOT_INTERVAL:
+            try:
+                from src.services.firebase_client import publish_dashboard_snapshot
+                publish_dashboard_snapshot()
+            except Exception as _dbs_e:
+                logging.debug("[DASHBOARD_SNAPSHOT_PUBLISH_SKIP] %s", _dbs_e)
+            _last_dashboard_snapshot = now
+
+        # Publish signal_summary/latest every 60s for signal log
+        if now - _last_signal_summary >= SIGNAL_SUMMARY_INTERVAL:
+            try:
+                from src.services.firebase_client import publish_signal_summary
+                publish_signal_summary()
+            except Exception as _ss_e:
+                logging.debug("[SIGNAL_SUMMARY_PUBLISH_SKIP] %s", _ss_e)
+            _last_signal_summary = now
 
         # EMERGENCY (2026-04-25): Gate pre_live_audit on env flag + quota status
         if ENABLE_LIVE_AUDIT and now - _last_pre_audit >= PRE_AUDIT_INTERVAL:

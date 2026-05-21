@@ -1,0 +1,673 @@
+{
+  "description": "CryptoMaster Android Dashboard Firebase Data Contract V1.0",
+  "note": "Read-only schema for Android app. Source of truth remains bot services and Firestore.",
+  "dashboard": {
+    "description": "Main dashboard snapshot",
+    "bot_status": {
+      "type": "string",
+      "enum": ["running", "paused", "error"],
+      "unit": "status",
+      "source": "bot2/main.py runtime",
+      "priority": "P0",
+      "tooltip_cz": "Aktuální stav běhu robota"
+    },
+    "trading_mode": {
+      "type": "string",
+      "enum": ["live_real", "paper_train", "paper_live"],
+      "unit": "mode",
+      "source": "src/core/runtime_mode.py",
+      "priority": "P0",
+      "tooltip_cz": "Aktivní režim obchodování. live_real = skutečné obchody!"
+    },
+    "last_heartbeat_ts": {
+      "type": "number",
+      "unit": "unix_timestamp_seconds",
+      "source": "event bus",
+      "priority": "P0",
+      "tooltip_cz": "Čas poslední aktivity. >60s = offline"
+    },
+    "total_trades": {
+      "type": "integer",
+      "unit": "count",
+      "source": "Firebase trades collection",
+      "priority": "P0",
+      "tooltip_cz": "Počet kompletních obchodů"
+    },
+    "closed_trades_live": {
+      "type": "integer",
+      "unit": "count",
+      "source": "Firebase trades WHERE mode=live_real",
+      "priority": "P1",
+      "tooltip_cz": "Živé obchody (bez paper)"
+    },
+    "winrate_pct": {
+      "type": "number",
+      "unit": "percent",
+      "source": "LearningMonitor / Firebase",
+      "priority": "P0",
+      "tooltip_cz": "Úspěšnost: % vítězných obchodů"
+    },
+    "net_pnl_pct": {
+      "type": "number",
+      "unit": "percent",
+      "source": "LearningMonitor economic health",
+      "priority": "P0",
+      "tooltip_cz": "Čistý zisk v procentech"
+    },
+    "open_positions_count": {
+      "type": "integer",
+      "unit": "count",
+      "source": "Firebase open_positions collection",
+      "priority": "P0",
+      "tooltip_cz": "Počet aktuálně otevřených pozic"
+    },
+    "market_feed_status": {
+      "type": "string",
+      "enum": ["connected", "fallback", "offline"],
+      "unit": "status",
+      "source": "market_stream.py WebSocket state",
+      "priority": "P0",
+      "tooltip_cz": "Zdroj tržních cen: WS / REST fallback / offline"
+    },
+    "last_price_tick_ts": {
+      "type": "number",
+      "unit": "unix_timestamp_ms",
+      "source": "market_stream.py latest price update",
+      "priority": "P1",
+      "tooltip_cz": "Čas poslední ceny. >10s = zastaralé"
+    },
+    "read_quota_pct": {
+      "type": "number",
+      "unit": "percent",
+      "source": "firebase_client.py quota tracking",
+      "priority": "P1",
+      "tooltip_cz": "Zbývající Firestore čtení. <20% = varování"
+    },
+    "quota_state": {
+      "type": "string",
+      "enum": ["normal", "warning", "exhausted"],
+      "unit": "state",
+      "source": "firebase_client.py quota check",
+      "priority": "P0",
+      "tooltip_cz": "Stav Firestore kvóty"
+    }
+  },
+  "bot_health": {
+    "status": {
+      "type": "string",
+      "enum": ["running", "paused", "error"],
+      "unit": "status",
+      "source": "runtime",
+      "priority": "P0",
+      "tooltip_cz": "Status robota"
+    },
+    "pid": {
+      "type": "integer",
+      "unit": "process_id",
+      "source": "os.getpid()",
+      "priority": "P2",
+      "tooltip_cz": "Identifikátor procesu na serveru"
+    },
+    "git_head": {
+      "type": "string",
+      "unit": "sha1",
+      "source": "git rev-parse HEAD",
+      "priority": "P2",
+      "tooltip_cz": "Commit SHA pro debug"
+    },
+    "version_marker": {
+      "type": "string",
+      "unit": "version_string",
+      "source": "bot codebase version marker",
+      "priority": "P2",
+      "tooltip_cz": "Verze bota (V10.13m+)"
+    },
+    "uptime_seconds": {
+      "type": "integer",
+      "unit": "seconds",
+      "source": "now() - bot_start_ts",
+      "priority": "P1",
+      "tooltip_cz": "Doba běhu bez restartů"
+    },
+    "error_count_recent": {
+      "type": "integer",
+      "unit": "count",
+      "source": "logging / exception tracking",
+      "priority": "P1",
+      "tooltip_cz": "Počet chyb v posledních 60 min"
+    },
+    "restart_count_24h": {
+      "type": "integer",
+      "unit": "count",
+      "source": "bot state tracking",
+      "priority": "P1",
+      "tooltip_cz": "Počet restartů za 24 hodin"
+    }
+  },
+  "market_health": {
+    "feed_status": {
+      "type": "string",
+      "enum": ["connected", "fallback", "offline"],
+      "unit": "status",
+      "source": "market_stream.py WebSocket",
+      "priority": "P0",
+      "tooltip_cz": "WebSocket / REST fallback / offline"
+    },
+    "last_price_tick_ts": {
+      "type": "number",
+      "unit": "unix_timestamp_ms",
+      "source": "market_stream latest price",
+      "priority": "P1",
+      "tooltip_cz": "Čas poslední ceny"
+    },
+    "seconds_since_last_tick": {
+      "type": "number",
+      "unit": "seconds",
+      "source": "now() - last_price_tick_ts",
+      "priority": "P0",
+      "tooltip_cz": "Věk poslední ceny v sekundách"
+    },
+    "ws_connected": {
+      "type": "boolean",
+      "unit": "boolean",
+      "source": "WebSocket.is_connected()",
+      "priority": "P1",
+      "tooltip_cz": "Je WebSocket připojen?"
+    },
+    "ws_reconnect_count": {
+      "type": "integer",
+      "unit": "count",
+      "source": "market_stream reconnect counter",
+      "priority": "P2",
+      "tooltip_cz": "Počet reconnectů za poslední hodinu"
+    },
+    "active_symbols_count": {
+      "type": "integer",
+      "unit": "count",
+      "source": "count(symbols with recent prices)",
+      "priority": "P1",
+      "tooltip_cz": "Počet symbolů s aktuálními cenami"
+    },
+    "symbols": {
+      "type": "array",
+      "items": {
+        "symbol": {
+          "type": "string",
+          "unit": "symbol",
+          "example": "BTCUSDT"
+        },
+        "last_price": {
+          "type": "number",
+          "unit": "price_usd",
+          "example": 42500.50
+        },
+        "last_price_ts": {
+          "type": "number",
+          "unit": "unix_timestamp_ms",
+          "example": 1716129600000
+        },
+        "seconds_since_tick": {
+          "type": "number",
+          "unit": "seconds",
+          "example": 2.5
+        },
+        "bid_ask_spread_pct": {
+          "type": "number",
+          "unit": "percent",
+          "example": 0.01
+        }
+      },
+      "priority": "P1",
+      "tooltip_cz": "Detaily per-symbol"
+    }
+  },
+  "trade_summary": {
+    "total_trades": {
+      "type": "integer",
+      "unit": "count",
+      "source": "Firebase trades collection count()",
+      "priority": "P0",
+      "tooltip_cz": "Celkový počet obchodů"
+    },
+    "closed_trades_live": {
+      "type": "integer",
+      "unit": "count",
+      "source": "Firebase trades WHERE mode=live_real",
+      "priority": "P1",
+      "tooltip_cz": "Počet živých obchodů"
+    },
+    "open_positions_count": {
+      "type": "integer",
+      "unit": "count",
+      "source": "Firebase open_positions count()",
+      "priority": "P0",
+      "tooltip_cz": "Otevřené pozice"
+    },
+    "win_count": {
+      "type": "integer",
+      "unit": "count",
+      "source": "count(trades WHERE pnl > 0)",
+      "priority": "P1",
+      "tooltip_cz": "Počet vítězných obchodů"
+    },
+    "loss_count": {
+      "type": "integer",
+      "unit": "count",
+      "source": "count(trades WHERE pnl < 0)",
+      "priority": "P1",
+      "tooltip_cz": "Počet ztracených obchodů"
+    },
+    "flat_count": {
+      "type": "integer",
+      "unit": "count",
+      "source": "count(trades WHERE pnl == 0)",
+      "priority": "P2",
+      "tooltip_cz": "Počet neutrálních obchodů"
+    },
+    "winrate": {
+      "type": "number",
+      "unit": "percent",
+      "source": "(win_count / total_trades) * 100",
+      "priority": "P0",
+      "tooltip_cz": "Úspěšnost"
+    },
+    "net_pnl_pct": {
+      "type": "number",
+      "unit": "percent",
+      "source": "sum(pnl) / initial_capital * 100",
+      "priority": "P0",
+      "tooltip_cz": "Čistý zisk v %"
+    },
+    "gross_pnl_pct": {
+      "type": "number",
+      "unit": "percent",
+      "source": "sum(absolute pnl) / initial_capital * 100",
+      "priority": "P2",
+      "tooltip_cz": "Brutto zisk bez poplatků"
+    },
+    "fee_total_pct": {
+      "type": "number",
+      "unit": "percent",
+      "source": "sum(fees) / initial_capital * 100",
+      "priority": "P2",
+      "tooltip_cz": "Celkové poplatky"
+    },
+    "max_drawdown_pct": {
+      "type": "number",
+      "unit": "percent",
+      "source": "max loss from peak",
+      "priority": "P1",
+      "tooltip_cz": "Maximální pokles"
+    },
+    "profit_factor": {
+      "type": "number",
+      "unit": "ratio",
+      "source": "sum(wins) / abs(sum(losses))",
+      "priority": "P1",
+      "tooltip_cz": "Zisk / Ztráta poměr"
+    },
+    "last_trade_ts": {
+      "type": "number",
+      "unit": "unix_timestamp_seconds",
+      "source": "max(exit_ts)",
+      "priority": "P1",
+      "tooltip_cz": "Čas posledního obchodu"
+    }
+  },
+  "open_positions": {
+    "type": "array",
+    "items": {
+      "trade_id": {
+        "type": "string",
+        "unit": "uuid",
+        "priority": "P0"
+      },
+      "symbol": {
+        "type": "string",
+        "unit": "symbol",
+        "example": "BTCUSDT",
+        "priority": "P0"
+      },
+      "side": {
+        "type": "string",
+        "enum": ["BUY", "SELL"],
+        "priority": "P0"
+      },
+      "entry_price": {
+        "type": "number",
+        "unit": "price_usd",
+        "priority": "P0"
+      },
+      "current_price": {
+        "type": "number",
+        "unit": "price_usd",
+        "priority": "P0"
+      },
+      "unrealized_pnl_pct": {
+        "type": "number",
+        "unit": "percent",
+        "priority": "P0"
+      },
+      "size_usd": {
+        "type": "number",
+        "unit": "usd",
+        "priority": "P0"
+      },
+      "entry_ts": {
+        "type": "number",
+        "unit": "unix_timestamp_seconds",
+        "priority": "P0"
+      },
+      "hold_seconds": {
+        "type": "number",
+        "unit": "seconds",
+        "priority": "P1"
+      },
+      "tp_pct": {
+        "type": "number",
+        "unit": "percent",
+        "priority": "P1"
+      },
+      "sl_pct": {
+        "type": "number",
+        "unit": "percent",
+        "priority": "P1"
+      },
+      "distance_to_tp_pct": {
+        "type": "number",
+        "unit": "percent",
+        "priority": "P1"
+      },
+      "distance_to_sl_pct": {
+        "type": "number",
+        "unit": "percent",
+        "priority": "P1"
+      },
+      "regime": {
+        "type": "string",
+        "unit": "regime_name",
+        "priority": "P2"
+      },
+      "bucket": {
+        "type": "string",
+        "unit": "bucket_name",
+        "priority": "P2"
+      },
+      "training_bucket": {
+        "type": "string",
+        "unit": "training_bucket_name",
+        "priority": "P2"
+      },
+      "cost_edge_ok": {
+        "type": "boolean",
+        "priority": "P2"
+      },
+      "cost_edge_bypassed": {
+        "type": "boolean",
+        "priority": "P2"
+      },
+      "geometry_calibrated": {
+        "type": "boolean",
+        "priority": "P2"
+      }
+    },
+    "priority": "P0",
+    "tooltip_cz": "Seznam otevřených pozic"
+  },
+  "learning": {
+    "lm_total_trades": {
+      "type": "integer",
+      "unit": "count",
+      "source": "sum(lm_count.values())",
+      "priority": "P1",
+      "tooltip_cz": "Počet trades v LearningMonitor"
+    },
+    "lm_count_by_symbol_regime": {
+      "type": "object",
+      "unit": "dict",
+      "source": "lm_count canonical state",
+      "priority": "P2",
+      "tooltip_cz": "Počet per-symbol-regime"
+    },
+    "lm_wr_by_symbol_regime": {
+      "type": "object",
+      "unit": "dict",
+      "source": "lm_wr canonical state",
+      "priority": "P2",
+      "tooltip_cz": "Win-rate per-symbol-regime"
+    },
+    "learning_health_pct": {
+      "type": "number",
+      "unit": "percent",
+      "source": "lm_health() composite score",
+      "priority": "P1",
+      "tooltip_cz": "Zdraví učení"
+    },
+    "cold_start_active": {
+      "type": "boolean",
+      "unit": "boolean",
+      "source": "lm_total_trades < 100",
+      "priority": "P1",
+      "tooltip_cz": "Probíhá cold-start fase?"
+    },
+    "canonical_training_trade_count": {
+      "type": "integer",
+      "unit": "count",
+      "source": "learning_monitor.get_canonical_training_trade_count()",
+      "priority": "P1",
+      "tooltip_cz": "Kanonický počet training trades"
+    },
+    "last_lm_update_ts": {
+      "type": "number",
+      "unit": "unix_timestamp_seconds",
+      "source": "max(lm update timestamps)",
+      "priority": "P2",
+      "tooltip_cz": "Čas poslední LM aktualizace"
+    }
+  },
+  "paper_training": {
+    "paper_train_entry_count": {
+      "type": "integer",
+      "unit": "count",
+      "source": "log count PAPER_TRAIN_ENTRY",
+      "priority": "P2",
+      "tooltip_cz": "Počet pokusů o paper vstup"
+    },
+    "paper_train_quality_entry_count": {
+      "type": "integer",
+      "unit": "count",
+      "source": "log count PAPER_TRAIN_QUALITY_ENTRY",
+      "priority": "P2",
+      "tooltip_cz": "Kvalitní paper vstupy"
+    },
+    "paper_train_winrate": {
+      "type": "number",
+      "unit": "percent",
+      "source": "(wins in paper trades) / (total paper trades) * 100",
+      "priority": "P1",
+      "tooltip_cz": "Win-rate papíru"
+    },
+    "paper_train_avg_mfe": {
+      "type": "number",
+      "unit": "percent",
+      "source": "average MFE of paper trades",
+      "priority": "P1",
+      "tooltip_cz": "Průměrný maximální gain papíru"
+    },
+    "paper_train_avg_mae": {
+      "type": "number",
+      "unit": "percent",
+      "source": "average MAE of paper trades",
+      "priority": "P1",
+      "tooltip_cz": "Průměrný maximální loss papíru"
+    },
+    "paper_train_econ_attrib": {
+      "type": "object",
+      "unit": "dict",
+      "source": "log pattern PAPER_TRAIN_ECON_ATTRIB",
+      "priority": "P1",
+      "tooltip_cz": "Atribuce ztrát papíru"
+    },
+    "cost_edge_bypass_accepted": {
+      "type": "integer",
+      "unit": "count",
+      "source": "log count COST_EDGE_BYPASS_ACCEPTED",
+      "priority": "P2",
+      "tooltip_cz": "Počet cost-edge bypass"
+    },
+    "negative_ev_probe_accepted": {
+      "type": "integer",
+      "unit": "count",
+      "source": "log count PAPER_NEG_EV_PROBE_ACCEPTED",
+      "priority": "P2",
+      "tooltip_cz": "Počet negative EV probe vchodů"
+    }
+  },
+  "signal_pipeline": {
+    "raw_signals_count": {
+      "type": "integer",
+      "unit": "count",
+      "source": "log count SIGNAL_RAW",
+      "priority": "P2",
+      "tooltip_cz": "Počet generovaných signálů"
+    },
+    "accepted_signals_count": {
+      "type": "integer",
+      "unit": "count",
+      "source": "count(signals with TAKE decision)",
+      "priority": "P1",
+      "tooltip_cz": "Počet přijatých signálů"
+    },
+    "rejected_signals_count": {
+      "type": "integer",
+      "unit": "count",
+      "source": "count(signals with REJECT decision)",
+      "priority": "P1",
+      "tooltip_cz": "Počet zamítnutých signálů"
+    },
+    "reject_rate_pct": {
+      "type": "number",
+      "unit": "percent",
+      "source": "(rejected / (rejected + accepted)) * 100",
+      "priority": "P1",
+      "tooltip_cz": "Procento zamítnutých"
+    },
+    "last_signal_ts": {
+      "type": "number",
+      "unit": "unix_timestamp_seconds",
+      "source": "max(signal timestamps)",
+      "priority": "P2",
+      "tooltip_cz": "Čas posledního signálu"
+    },
+    "last_accept_decision_ts": {
+      "type": "number",
+      "unit": "unix_timestamp_seconds",
+      "source": "max(accept decision timestamps)",
+      "priority": "P2",
+      "tooltip_cz": "Čas posledního přjetí"
+    }
+  },
+  "risk": {
+    "risk_budget_usd": {
+      "type": "number",
+      "unit": "usd",
+      "source": "max_daily_risk - used_risk_today",
+      "priority": "P1",
+      "tooltip_cz": "Zbývající denní riziko"
+    },
+    "portfolio_heat": {
+      "type": "number",
+      "unit": "percent",
+      "source": "current_exposure / risk_budget",
+      "priority": "P1",
+      "tooltip_cz": "Procento rizika využitého"
+    },
+    "drawdown_halt_active": {
+      "type": "boolean",
+      "unit": "boolean",
+      "source": "risk_engine halt check",
+      "priority": "P0",
+      "tooltip_cz": "Je halt aktivní (drawdown)?"
+    },
+    "loss_cluster_active": {
+      "type": "boolean",
+      "unit": "boolean",
+      "source": "risk_engine loss cluster detect",
+      "priority": "P1",
+      "tooltip_cz": "Detekce série ztrát?"
+    }
+  },
+  "alerts": {
+    "type": "array",
+    "items": {
+      "alert_id": {
+        "type": "string",
+        "unit": "uuid"
+      },
+      "level": {
+        "type": "string",
+        "enum": ["info", "warning", "critical"],
+        "unit": "level"
+      },
+      "message_cz": {
+        "type": "string",
+        "unit": "text"
+      },
+      "timestamp": {
+        "type": "number",
+        "unit": "unix_timestamp_seconds"
+      },
+      "source": {
+        "type": "string",
+        "unit": "component_name"
+      }
+    },
+    "priority": "P0",
+    "tooltip_cz": "Aktivní varování a chyby"
+  },
+  "data_quality": {
+    "firestore_read_count_day": {
+      "type": "integer",
+      "unit": "count",
+      "source": "firebase_client.py quota tracking",
+      "priority": "P1",
+      "tooltip_cz": "Firestore čtení za 24h"
+    },
+    "firestore_write_count_day": {
+      "type": "integer",
+      "unit": "count",
+      "source": "firebase_client.py quota tracking",
+      "priority": "P1",
+      "tooltip_cz": "Firestore zápisy za 24h"
+    },
+    "read_quota_pct": {
+      "type": "number",
+      "unit": "percent",
+      "source": "(50000 - read_count) / 50000 * 100",
+      "priority": "P1",
+      "tooltip_cz": "Zbývající čtení %"
+    },
+    "write_quota_pct": {
+      "type": "number",
+      "unit": "percent",
+      "source": "(20000 - write_count) / 20000 * 100",
+      "priority": "P1",
+      "tooltip_cz": "Zbývající zápisy %"
+    },
+    "quota_state": {
+      "type": "string",
+      "enum": ["normal", "warning", "exhausted"],
+      "unit": "state",
+      "source": "firebase_client.py quota check",
+      "priority": "P0",
+      "tooltip_cz": "Stav Firestore kvóty"
+    },
+    "mismatch_count": {
+      "type": "integer",
+      "unit": "count",
+      "source": "log count LM_UPDATE_MISMATCH",
+      "priority": "P2",
+      "tooltip_cz": "Počet state mismatch events"
+    }
+  }
+}

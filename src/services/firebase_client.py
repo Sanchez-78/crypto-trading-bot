@@ -840,6 +840,189 @@ def publish_app_metrics_snapshot(force: bool = False, recent_trades: list | None
         _log_err2.getLogger(__name__).warning("[APP_METRICS_PUBLISH_ERROR] err=%s", str(e)[:200])
 
 
+# ── Dashboard Snapshot (mobile dashboard) ──────────────────────────────────────
+
+_DASHBOARD_SNAPSHOT_DOC = col("dashboard_snapshot") + "/latest"
+_LAST_DASHBOARD_SNAPSHOT_WRITE_TS: float = 0.0
+_LAST_DASHBOARD_SNAPSHOT_SEMANTIC_HASH: str | None = None
+_LAST_DASHBOARD_SNAPSHOT_HEARTBEAT_TS: float = 0.0
+
+DASHBOARD_SNAPSHOT_MIN_WRITE_INTERVAL_S = int(os.getenv("DASHBOARD_SNAPSHOT_MIN_WRITE_INTERVAL_S", "30"))
+DASHBOARD_SNAPSHOT_HEARTBEAT_INTERVAL_S = int(os.getenv("DASHBOARD_SNAPSHOT_HEARTBEAT_INTERVAL_S", "300"))
+
+
+def save_dashboard_snapshot(snapshot: dict, *, force: bool = False) -> bool:
+    """Write dashboard_snapshot/latest to Firestore. Non-critical write.
+
+    Throttles, checks for unchanged data, respects Firebase health.
+    """
+    global _LAST_DASHBOARD_SNAPSHOT_WRITE_TS, _LAST_DASHBOARD_SNAPSHOT_SEMANTIC_HASH, _LAST_DASHBOARD_SNAPSHOT_HEARTBEAT_TS
+    import logging as _log_ds
+    import copy, json, hashlib
+    _log = _log_ds.getLogger(__name__)
+
+    try:
+        if db is None:
+            return False
+
+        now = time.time()
+
+        # Throttle check
+        if not force and (now - _LAST_DASHBOARD_SNAPSHOT_WRITE_TS) < DASHBOARD_SNAPSHOT_MIN_WRITE_INTERVAL_S:
+            return False
+
+        # Firebase degraded check
+        skip, skip_reason = should_skip_noncritical_write()
+        if skip and not force:
+            return False
+
+        # Semantic hash check (skip unchanged unless heartbeat due)
+        s = copy.deepcopy(snapshot)
+        s.pop("generated_at", None)
+        s.pop("generated_at_ts", None)
+        raw = json.dumps(s, sort_keys=True, default=str)
+        new_hash = hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+        heartbeat_due = (now - _LAST_DASHBOARD_SNAPSHOT_HEARTBEAT_TS) >= DASHBOARD_SNAPSHOT_HEARTBEAT_INTERVAL_S
+
+        if not force and new_hash == _LAST_DASHBOARD_SNAPSHOT_SEMANTIC_HASH and not heartbeat_due:
+            return False
+
+        db.document(_DASHBOARD_SNAPSHOT_DOC).set(snapshot)
+
+        _LAST_DASHBOARD_SNAPSHOT_WRITE_TS = now
+        _LAST_DASHBOARD_SNAPSHOT_SEMANTIC_HASH = new_hash
+        if heartbeat_due or force:
+            _LAST_DASHBOARD_SNAPSHOT_HEARTBEAT_TS = now
+
+        _log.debug("[DASHBOARD_SNAPSHOT_SAVE] ok=True")
+        return True
+
+    except Exception as e:
+        import logging as _log_err_ds
+        _log_err_ds.getLogger(__name__).warning("[DASHBOARD_SNAPSHOT_ERROR] err=%s", str(e)[:200])
+        return False
+
+
+def publish_dashboard_snapshot(force: bool = False) -> None:
+    """Build and publish dashboard_snapshot/latest to Firestore.
+
+    Cadence: call from main loop, no faster than 30s.
+    Never raises into trading loop.
+    """
+    import logging as _log_pub_ds
+    _log = _log_pub_ds.getLogger(__name__)
+    try:
+        recent_trades = load_history(limit=500)
+        all_time_stats = load_stats_cached(ttl_s=300)
+
+        try:
+            from src.services.learning_event import get_metrics as _get_metrics
+            m = _get_metrics()
+        except Exception:
+            m = {}
+
+        try:
+            from src.services.dashboard_snapshot_contract import build_dashboard_snapshot
+            snapshot = build_dashboard_snapshot(
+                closed_trades=recent_trades,
+                session_metrics=m,
+                all_time_stats=all_time_stats,
+            )
+            save_dashboard_snapshot(snapshot, force=force)
+        except Exception as e:
+            _log.warning("[DASHBOARD_SNAPSHOT_BUILD_ERROR] err=%s", str(e)[:200])
+
+    except Exception as e:
+        import logging as _log_err_pub_ds
+        _log_err_pub_ds.getLogger(__name__).warning("[DASHBOARD_SNAPSHOT_PUBLISH_ERROR] err=%s", str(e)[:200])
+
+
+# ── Signal Summary (signal decision log) ───────────────────────────────────────
+
+_SIGNAL_SUMMARY_DOC = col("signal_summary") + "/latest"
+_LAST_SIGNAL_SUMMARY_WRITE_TS: float = 0.0
+_LAST_SIGNAL_SUMMARY_SEMANTIC_HASH: str | None = None
+_LAST_SIGNAL_SUMMARY_HEARTBEAT_TS: float = 0.0
+
+SIGNAL_SUMMARY_MIN_WRITE_INTERVAL_S = int(os.getenv("SIGNAL_SUMMARY_MIN_WRITE_INTERVAL_S", "60"))
+SIGNAL_SUMMARY_HEARTBEAT_INTERVAL_S = int(os.getenv("SIGNAL_SUMMARY_HEARTBEAT_INTERVAL_S", "600"))
+
+
+def save_signal_summary(snapshot: dict, *, force: bool = False) -> bool:
+    """Write signal_summary/latest to Firestore. Non-critical write."""
+    global _LAST_SIGNAL_SUMMARY_WRITE_TS, _LAST_SIGNAL_SUMMARY_SEMANTIC_HASH, _LAST_SIGNAL_SUMMARY_HEARTBEAT_TS
+    import logging as _log_ss
+    import copy, json, hashlib
+    _log = _log_ss.getLogger(__name__)
+
+    try:
+        if db is None:
+            return False
+
+        now = time.time()
+
+        if not force and (now - _LAST_SIGNAL_SUMMARY_WRITE_TS) < SIGNAL_SUMMARY_MIN_WRITE_INTERVAL_S:
+            return False
+
+        skip, skip_reason = should_skip_noncritical_write()
+        if skip and not force:
+            return False
+
+        s = copy.deepcopy(snapshot)
+        s.pop("generated_at", None)
+        s.pop("generated_at_ts", None)
+        raw = json.dumps(s, sort_keys=True, default=str)
+        new_hash = hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+        heartbeat_due = (now - _LAST_SIGNAL_SUMMARY_HEARTBEAT_TS) >= SIGNAL_SUMMARY_HEARTBEAT_INTERVAL_S
+
+        if not force and new_hash == _LAST_SIGNAL_SUMMARY_SEMANTIC_HASH and not heartbeat_due:
+            return False
+
+        db.document(_SIGNAL_SUMMARY_DOC).set(snapshot)
+
+        _LAST_SIGNAL_SUMMARY_WRITE_TS = now
+        _LAST_SIGNAL_SUMMARY_SEMANTIC_HASH = new_hash
+        if heartbeat_due or force:
+            _LAST_SIGNAL_SUMMARY_HEARTBEAT_TS = now
+
+        _log.debug("[SIGNAL_SUMMARY_SAVE] ok=True")
+        return True
+
+    except Exception as e:
+        import logging as _log_err_ss
+        _log_err_ss.getLogger(__name__).warning("[SIGNAL_SUMMARY_ERROR] err=%s", str(e)[:200])
+        return False
+
+
+def publish_signal_summary(force: bool = False) -> None:
+    """Build and publish signal_summary/latest to Firestore.
+
+    Cadence: call from main loop, no faster than 60s.
+    Never raises into trading loop.
+    """
+    import logging as _log_pub_ss
+    _log = _log_pub_ss.getLogger(__name__)
+    try:
+        try:
+            from src.services.learning_event import get_metrics as _get_metrics
+            m = _get_metrics()
+        except Exception:
+            m = {}
+
+        try:
+            from src.services.signal_summary_contract import build_signal_summary_snapshot
+            snapshot = build_signal_summary_snapshot(session_metrics=m)
+            save_signal_summary(snapshot, force=force)
+        except Exception as e:
+            _log.warning("[SIGNAL_SUMMARY_BUILD_ERROR] err=%s", str(e)[:200])
+
+    except Exception as e:
+        import logging as _log_err_pub_ss
+        _log_err_pub_ss.getLogger(__name__).warning("[SIGNAL_SUMMARY_PUBLISH_ERROR] err=%s", str(e)[:200])
+
+
 # ── Model state (calibrator + learning histories + bayes/bandit) ───────────────
 
 _MODEL_STATE_DOC = col("model_state") + "/latest"   # single document, overwritten each save
