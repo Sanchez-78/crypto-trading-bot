@@ -145,11 +145,12 @@ def test_canonical_rr_basic():
 
 
 def test_canonical_rr_handles_zero_sl():
-    """PATCH 4: Return 0.0 if SL invalid."""
+    """PATCH 4: Return 0.0 if SL invalid (zero)."""
     from src.services.realtime_decision_engine import canonical_rr
 
     assert canonical_rr(tp_distance=0.02, sl_distance=0.0) == 0.0
-    assert canonical_rr(tp_distance=0.02, sl_distance=-0.005) == 0.0
+    # Signed SL distances are valid and use absolute values
+    assert canonical_rr(tp_distance=0.02, sl_distance=-0.005) == pytest.approx(4.0)
 
 
 def test_canonical_rr_abs_values():
