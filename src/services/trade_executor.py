@@ -350,10 +350,10 @@ def _try_acquire_close_lock(sym: str, pos: dict, reason: str, now: float = None)
             _release_stale_close_lock(key, meta, now)
             # Continue and acquire fresh lock below
         else:
-            # V10.13u+13: Duplicate log throttled by key, max once per CLOSE_DUP_LOG_INTERVAL_S (10s)
+            # V10.13u+13: Duplicate log throttled by key, max once per CLOSE_DUP_LOG_INTERVAL_S (5s)
             meta["attempts"] = meta.get("attempts", 0) + 1
             last_log = meta.get("last_log", 0)
-            if now - last_log >= CLOSE_DUP_LOG_INTERVAL_S:
+            if now - last_log > CLOSE_DUP_LOG_INTERVAL_S:
                 meta["last_log"] = now
                 log.warning(
                     "[CLOSE_SKIP_DUPLICATE] %s reason=%s key=%s status=already_closing age=%.1fs attempts=%s",
