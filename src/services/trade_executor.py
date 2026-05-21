@@ -189,7 +189,7 @@ _CLOSE_LOCK_HEALTH_LAST_LOG = [0.0]  # timestamp of last CLOSE_LOCK_HEALTH log
 # V10.13u+13: Force reconciliation constants for stuck close loops
 CLOSE_LOCK_FORCE_RECONCILE_AFTER = 3   # force reconcile after 3+ stale releases
 CLOSE_LOCK_MAX_ATTEMPTS = 250          # force reconcile if attempts > 250
-CLOSE_DUP_LOG_INTERVAL_S = 10.0        # throttle duplicate close logs to every 10s/key
+CLOSE_DUP_LOG_INTERVAL_S = 5.0         # throttle duplicate close logs to every 5s/key
 
 # V10.13u+14: Distinguish full vs. partial close operations
 FULL_CLOSE_TYPES = {

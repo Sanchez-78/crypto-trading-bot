@@ -24,6 +24,7 @@ import numpy as np
 log = logging.getLogger(__name__)
 from src.services.firebase_client import load_history
 from src.services.learning_event  import track_blocked, track_regime, trades_in_window
+from src.services.learning_monitor import lm_count
 
 # V10.15 QUOTA EMERGENCY FIX: Cache history at module level
 # Prevents calling load_history() on every signal (was causing 6000 reads/36min!)
@@ -830,16 +831,6 @@ def _econ_bad_entry_quality_gate(
     if not is_bad:
         return True, ""
 
-    # Bootstrap bypass: during early learning, exploration-prior ev=0.03 can never
-    # clear the 0.045 gate — permanently locking out all new pairs after just 5 losses.
-    # Allow pass-through until the system has enough data for ECON_BAD to be meaningful.
-    try:
-        from src.services.learning_event import METRICS as _ebm
-        if _ebm.get("trades", 0) < 150:
-            return True, ""
-    except Exception:
-        pass
-
     # Check minimum thresholds
     if ev < 0.045:
         return False, f"weak_ev (ev={ev:.4f}<0.045)"
@@ -874,14 +865,6 @@ def _econ_bad_forced_explore_gate(signal: dict) -> tuple[bool, str]:
 
     if not signal.get("forced", False):
         return True, ""
-
-    # Bootstrap bypass: same as Gate 1 — don't block forced signals before 150 in-session trades
-    try:
-        from src.services.learning_event import METRICS as _ebm2
-        if _ebm2.get("trades", 0) < 150:
-            return True, ""
-    except Exception:
-        pass
 
     # Strict thresholds for forced signals during ECON BAD
     ev = signal.get("ev", 0.0)
@@ -1903,6 +1886,19 @@ def _get_maturity_trade_count(metrics: dict) -> int:
     return int(metrics.get("completed_trades_runtime", 0))
 
 
+def get_canonical_state() -> dict:
+    """PATCH 1: Get canonical state from startup oracle.
+
+    Compatibility wrapper for testing and patching.
+    Returns dict with trade counts from canonical source, or empty dict if unavailable.
+    """
+    try:
+        from src.services.canonical_state import get_canonical_state as _gcs
+        return _gcs()
+    except Exception:
+        return {}
+
+
 def _safe_get(obj, key, default=None):
     """Safe dict accessor for mixed type objects."""
     if isinstance(obj, dict):
@@ -1923,7 +1919,7 @@ def canonical_rr(tp_distance: float, sl_distance: float) -> float:
     Returns:
         Risk-reward ratio (TP / SL), or 0.0 if SL invalid
     """
-    if sl_distance <= 0:
+    if abs(sl_distance) <= 0:
         return 0.0
     return abs(tp_distance) / abs(sl_distance)
 
@@ -1975,9 +1971,7 @@ def compute_effective_maturity():
         return _MATURITY_CACHE.copy()
 
     try:
-        from src.services.learning_monitor import lm_count
         from src.services.learning_event import METRICS as _M
-        from src.services.canonical_state import get_canonical_state
 
         # PATCH 1: Check canonical state first (startup oracle with authoritative trade count)
         canonical = get_canonical_state()

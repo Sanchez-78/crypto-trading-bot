@@ -24,9 +24,13 @@ def get_git_commit() -> str:
     Returns 'UNKNOWN' only if truly unavailable.
     """
     # Try environment variables first (GitHub Actions, deployment)
-    commit = os.getenv("COMMIT_SHA") or os.getenv("GITHUB_SHA")
-    if commit:
-        return commit[:12] if len(commit) > 12 else commit
+    commit_sha = os.getenv("COMMIT_SHA")
+    if commit_sha:
+        return commit_sha[:7] if len(commit_sha) > 7 else commit_sha
+
+    github_sha = os.getenv("GITHUB_SHA")
+    if github_sha:
+        return github_sha[:12] if len(github_sha) > 12 else github_sha
 
     # Fallback to local git
     try:
