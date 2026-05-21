@@ -207,3 +207,108 @@ class TestP1_1AP_I_DnegIslands:
             record_training_closed(bucket="D_NEG_EV_CONTROL", outcome="LOSS")
         except Exception as e:
             pytest.fail(f"record_training_closed should handle D_NEG: {e}")
+
+
+class TestP1_1AP_I2_LegacyLogSuppression:
+    """P1.1AP-I2: Suppress legacy LEARNING_UPDATE log for D_NEG"""
+
+    def test_dneg_shadow_skip_has_real_trade_id(self, caplog):
+        """P1.1AP-I2-1: D_NEG shadow skip log includes real trade_id, not UNKNOWN"""
+        from src.services.paper_trade_executor import _safe_learning_update_for_paper_trade
+        import logging
+
+        caplog.set_level(logging.WARNING)
+
+        pos = {
+            "symbol": "BTCUSDT",
+            "regime": "BULL",
+            "side": "BUY",
+            "bucket": "D_NEG_EV_CONTROL",
+            "training_bucket": "D_NEG_EV_CONTROL",
+            "trade_id": "paper_test_dneg_123",  # Real trade_id
+        }
+        pnl_data = {
+            "outcome": "LOSS",
+            "exit_reason": "TIMEOUT",
+            "net_pnl_pct": -0.05,
+        }
+
+        with patch("src.services.learning_monitor.update_from_paper_trade"):
+            _safe_learning_update_for_paper_trade(pos, pnl_data)
+
+            # Should have real trade_id in log, not UNKNOWN
+            assert "paper_test_dneg_123" in caplog.text
+            assert "[PAPER_LEARNING_SHADOW_SKIP]" in caplog.text
+            # Should NOT have UNKNOWN trade_id
+            assert "trade_id=UNKNOWN" not in caplog.text
+
+    def test_dneg_legacy_learning_update_suppressed(self, caplog):
+        """P1.1AP-I2-2: D_NEG does not emit legacy [LEARNING_UPDATE] log"""
+        from src.services.trade_executor import _closed_trade_is_d_neg_shadow
+        import logging
+
+        caplog.set_level(logging.WARNING)
+
+        # D_NEG closed trade
+        closed_trade = {
+            "symbol": "SOLUSDT",
+            "bucket": "D_NEG_EV_CONTROL",
+            "training_bucket": "D_NEG_EV_CONTROL",
+            "outcome": "LOSS",
+            "net_pnl_pct": -0.08,
+            "trade_id": "paper_dneg_456",
+            "learning_shadow_only": True,
+        }
+
+        # Verify helper correctly identifies D_NEG
+        assert _closed_trade_is_d_neg_shadow(closed_trade) is True
+
+        # Simulate the save logic check
+        if not _closed_trade_is_d_neg_shadow(closed_trade):
+            # This code should NOT run for D_NEG
+            pytest.fail("D_NEG trade should be identified as shadow-only")
+
+    def test_non_dneg_legacy_learning_update_unchanged(self):
+        """P1.1AP-I2-3: Non-D_NEG trades still emit legacy LEARNING_UPDATE"""
+        from src.services.trade_executor import _closed_trade_is_d_neg_shadow
+
+        # Non-D_NEG closed trade
+        closed_trade = {
+            "symbol": "ADAUSDT",
+            "bucket": "C_WEAK_EV_TRAIN",
+            "training_bucket": "C_WEAK_EV_TRAIN",
+            "outcome": "WIN",
+            "net_pnl_pct": 0.10,
+        }
+
+        # Should NOT be identified as D_NEG shadow
+        assert _closed_trade_is_d_neg_shadow(closed_trade) is False
+
+    def test_dneg_fallback_chain_handles_all_id_fields(self, caplog):
+        """P1.1AP-I2: trade_id fallback chain handles multiple field names"""
+        from src.services.paper_trade_executor import _safe_learning_update_for_paper_trade
+        import logging
+
+        caplog.set_level(logging.WARNING)
+
+        # Use 'id' field instead of 'trade_id'
+        pos = {
+            "symbol": "ETHUSDT",
+            "regime": "RANGE",
+            "side": "SELL",
+            "bucket": "D_NEG_EV_CONTROL",
+            "training_bucket": "D_NEG_EV_CONTROL",
+            "id": "paper_id_789",  # 'id' field instead of 'trade_id'
+        }
+        pnl_data = {
+            "outcome": "FLAT",
+            "exit_reason": "MANUAL",
+            "net_pnl_pct": 0.0,
+        }
+
+        with patch("src.services.learning_monitor.update_from_paper_trade"):
+            _safe_learning_update_for_paper_trade(pos, pnl_data)
+
+            # Should find 'id' in fallback chain
+            assert "paper_id_789" in caplog.text
+            assert "[PAPER_LEARNING_SHADOW_SKIP]" in caplog.text

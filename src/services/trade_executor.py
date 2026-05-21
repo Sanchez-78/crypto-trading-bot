@@ -1508,6 +1508,23 @@ def _flush():
     _last_flush[0] = time.time()
 
 
+def _closed_trade_is_d_neg_shadow(closed_trade: dict) -> bool:
+    """P1.1AP-I2: Check if closed trade is D_NEG_EV_CONTROL (shadow learning only)."""
+    bucket = (
+        closed_trade.get("bucket")
+        or closed_trade.get("training_bucket")
+        or closed_trade.get("explore_bucket")
+        or "A_STRICT_TAKE"
+    )
+    return (
+        bucket == "D_NEG_EV_CONTROL"
+        or closed_trade.get("training_bucket") == "D_NEG_EV_CONTROL"
+        or closed_trade.get("explore_bucket") == "D_NEG_EV_CONTROL"
+        or closed_trade.get("learning_shadow_only") is True
+        or closed_trade.get("learning_skip_reason") == "d_neg_ev_control_shadow_only"
+    )
+
+
 def _save_paper_trade_closed(closed_trade: dict) -> None:
     """V10.13u+20: Save closed paper trade to Firebase for learning.
 
@@ -1551,11 +1568,22 @@ def _save_paper_trade_closed(closed_trade: dict) -> None:
             if db:
                 # Write to trades_paper collection (separate from live trades)
                 db.collection(col("trades_paper")).add(paper_record)
-                log.warning(
-                    f"[LEARNING_UPDATE] source=paper_closed_trade symbol={closed_trade.get('symbol')} "
-                    f"bucket={closed_trade.get('explore_bucket', 'A_STRICT_TAKE')} "
-                    f"outcome={closed_trade.get('outcome')} net_pnl_pct={closed_trade.get('net_pnl_pct', 0):.4f} ok=True"
-                )
+
+                # P1.1AP-I2: Skip legacy LEARNING_UPDATE log for D_NEG shadow trades
+                if not _closed_trade_is_d_neg_shadow(closed_trade):
+                    bucket = closed_trade.get("bucket") or closed_trade.get('explore_bucket', 'A_STRICT_TAKE')
+                    log.warning(
+                        f"[LEARNING_UPDATE] source=paper_closed_trade symbol={closed_trade.get('symbol')} "
+                        f"bucket={bucket} "
+                        f"outcome={closed_trade.get('outcome')} net_pnl_pct={closed_trade.get('net_pnl_pct', 0):.4f} ok=True"
+                    )
+                else:
+                    log.debug(
+                        "[PAPER_TRADE_SAVED_SHADOW] trade_id=%s symbol=%s bucket=%s reason=d_neg_ev_control_shadow_only",
+                        closed_trade.get("trade_id") or closed_trade.get("id") or "UNKNOWN",
+                        closed_trade.get("symbol"),
+                        closed_trade.get("bucket") or closed_trade.get('explore_bucket', 'A_STRICT_TAKE'),
+                    )
         except Exception as e:
             log.warning(f"[LEARNING_WRITE_FAILED] source=paper {e}")
 
