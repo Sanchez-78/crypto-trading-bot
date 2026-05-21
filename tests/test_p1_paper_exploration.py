@@ -1035,13 +1035,14 @@ class TestRobustStateLoader:
             os.remove("data/paper_open_positions.json")
 
         # Write list with position missing both trade_id and id
+        # Use recent entry_ts so position doesn't get closed as stale during reconciliation
         legacy_list = [
             {
                 # No trade_id or id field
                 "symbol": "XRPUSDT",
                 "side": "BUY",
                 "entry_price": 2.543,
-                "entry_ts": 1700000000.0,  # Fixed timestamp for stable fallback key
+                "entry_ts": time.time(),  # Recent timestamp, avoids stale reconciliation
                 "explore_bucket": "C_WEAK_EV",
             }
         ]

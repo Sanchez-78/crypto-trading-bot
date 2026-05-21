@@ -176,6 +176,34 @@ def _migrate_legacy_position(pos: dict) -> dict:
     return pos
 
 
+def _normalize_position_for_loading(pos: dict) -> dict:
+    """P1.1AP-G: Normalize legacy position to ensure all required fields exist.
+
+    Provides safe defaults for missing fields that would cause errors downstream.
+    """
+    # Ensure size_usd exists (needed for PnL calculation)
+    if "size_usd" not in pos:
+        pos["size_usd"] = pos.get("final_size_usd") or pos.get("size") or 10.0
+
+    # Ensure entry_ts exists (needed for stale detection)
+    if "entry_ts" not in pos:
+        pos["entry_ts"] = pos.get("created_at") or pos.get("opened_at_ts") or time.time()
+
+    # Ensure entry_price exists (needed for PnL calculation)
+    if "entry_price" not in pos:
+        pos["entry_price"] = pos.get("entry") or pos.get("price") or 0.0
+
+    # Ensure side exists (needed for PnL calculation)
+    if "side" not in pos:
+        pos["side"] = pos.get("action") or "BUY"
+
+    # Ensure symbol exists
+    if "symbol" not in pos:
+        pos["symbol"] = "UNKNOWN"
+
+    return pos
+
+
 def _convert_list_to_dict(positions_list: list) -> dict:
     """Convert legacy list format to canonical dict format.
 
@@ -187,6 +215,9 @@ def _convert_list_to_dict(positions_list: list) -> dict:
     """
     result = {}
     for idx, pos in enumerate(positions_list):
+        # P1.1AP-G: Normalize missing required fields before conversion
+        pos = _normalize_position_for_loading(pos)
+
         # Try to find existing trade_id/id field
         trade_id = pos.get("trade_id") or pos.get("id")
 
@@ -375,8 +406,10 @@ def _generate_trade_id() -> str:
 def _effective_paper_hold_s(pos: dict) -> float:
     """P1.1Z: Calculate effective hold time for training positions.
 
-    Training positions (C_WEAK_EV_TRAIN) must not stay open longer than max_hold_s (300s).
-    Non-training positions use their configured timeout.
+    P1.1AP-G: Respect max_hold_s for all paper positions, including C_WEAK_EV exploration.
+    - Training positions: capped at 300s
+    - Exploration positions: use explicit max_hold_s if provided
+    - Fallback: timeout_s or _MAX_AGE_S
 
     Args:
         pos: Position dict with training_bucket, max_hold_s, timeout_s, etc.
@@ -402,8 +435,13 @@ def _effective_paper_hold_s(pos: dict) -> float:
         # Training positions: effective hold is min of max_hold and timeout, capped at 300s
         return max(30.0, min(max_hold or 300.0, timeout or 300.0, 300.0))
 
-    # Non-training: use configured timeout or max_hold
-    return max(30.0, timeout or max_hold or 300.0)
+    # Non-training exploration (C_WEAK_EV, B_RECOVERY_READY, etc.):
+    # P1.1AP-G: Prefer explicit max_hold_s over generic timeout
+    if max_hold and max_hold > 30.0:
+        return float(max_hold)
+
+    # Fallback: use timeout if set, else default timeout
+    return max(30.0, timeout or _MAX_AGE_S)
 
 
 def _calculate_pnl(
@@ -1022,6 +1060,21 @@ def check_and_close_timeout_positions(now: Optional[float] = None) -> List[dict]
                 "learning_skipped": True,
             }
 
+            # P1.1AP-G: Emit [PAPER_EXIT] for observability (before quality exit log)
+            canonical_bucket = pos.get("bucket") or pos.get("training_bucket") or pos.get("explore_bucket") or "A_STRICT_TAKE"
+            log.warning(
+                "[PAPER_EXIT] trade_id=%s symbol=%s reason=TIMEOUT_NO_PRICE entry=%.8f exit=%.8f net_pnl_pct=%.4f outcome=%s hold_s=%d bucket=%s training_bucket=%s",
+                trade_id,
+                symbol,
+                pos.get("entry_price", 0.0),
+                0.0,  # exit_price
+                0.0,  # net_pnl_pct for TIMEOUT_NO_PRICE
+                "FLAT",
+                int(age_s),
+                canonical_bucket,
+                pos.get("training_bucket", ""),
+            )
+
             # P1.1AJ: Emit quality exit for TIMEOUT_NO_PRICE (idempotent, all training positions)
             _log_quality_exit_once(closed_trade, pos, path="timeout_no_price")
 
@@ -1362,12 +1415,18 @@ def close_paper_position(
         reason,
     )
 
+    # P1.1AP-G: Ensure all required fields for PnL calculation exist
+    # Normalize legacy positions that may be missing these fields
+    side = pos.get("side") or pos.get("action") or "BUY"
+    entry_price = _safe_float(pos.get("entry_price") or pos.get("entry"), 0.0)
+    size_usd = _safe_float(pos.get("size_usd") or pos.get("final_size_usd"), 10.0)
+
     # Calculate PnL
     pnl_data = _calculate_pnl(
-        side=pos["side"],
-        entry_price=pos["entry_price"],
+        side=side,
+        entry_price=entry_price,
         exit_price=price,
-        size_usd=pos["size_usd"],
+        size_usd=size_usd,
     )
 
     duration_s = ts - pos["entry_ts"]
@@ -1383,8 +1442,8 @@ def close_paper_position(
         "slippage_pct": pnl_data["slippage_pct"],
         "net_pnl_pct": pnl_data["net_pnl_pct"],
         "outcome": pnl_data["outcome"],
-        "unit_pnl": (pnl_data["net_pnl_pct"] / 100.0) * pos["size_usd"],
-        "weighted_pnl": (pnl_data["net_pnl_pct"] / 100.0) * pos["size_usd"],
+        "unit_pnl": (pnl_data["net_pnl_pct"] / 100.0) * size_usd,
+        "weighted_pnl": (pnl_data["net_pnl_pct"] / 100.0) * size_usd,
     }
 
     # P1.1AP-E: Stale position quarantine — check BEFORE all quality/econ/learning logs
