@@ -1381,6 +1381,23 @@ def close_paper_position(
         "weighted_pnl": (pnl_data["net_pnl_pct"] / 100.0) * pos["size_usd"],
     }
 
+    # P1.1AP-C: Stale position quarantine — check BEFORE all quality/econ/learning logs
+    is_stale, stale_reason = _is_stale_paper_position(pnl_data, pos["entry_price"], price, pos)
+    if is_stale:
+        log.warning(
+            "[PAPER_POSITION_QUARANTINED] trade_id=%s symbol=%s side=%s entry=%.8f exit=%.8f net_pnl_pct=%.4f reason=%s",
+            position_id,
+            pos["symbol"],
+            pos["side"],
+            pos["entry_price"],
+            price,
+            pnl_data["net_pnl_pct"],
+            stale_reason,
+        )
+        # Skip all quality/econ/learning logs and return early
+        _save_paper_state()
+        return closed_trade
+
     # P1.1AF: Log canonical bucket field (set from training_bucket or explore_bucket)
     canonical_bucket = pos.get("bucket") or pos.get("training_bucket") or pos.get("explore_bucket") or "A_STRICT_TAKE"
 
@@ -1401,23 +1418,6 @@ def close_paper_position(
 
     # P1.1AJ: Log exit quality before deduplication (idempotent, all training positions)
     _log_quality_exit_once(closed_trade, pos, path="close_paper_position")
-
-    # P1.1AB: Stale position quarantine — check before learning
-    is_stale, stale_reason = _is_stale_paper_position(pnl_data, pos["entry_price"], price, pos)
-    if is_stale:
-        log.warning(
-            "[PAPER_POSITION_QUARANTINED] trade_id=%s symbol=%s side=%s entry=%.8f exit=%.8f net_pnl_pct=%.4f reason=%s",
-            position_id,
-            pos["symbol"],
-            pos["side"],
-            pos["entry_price"],
-            price,
-            pnl_data["net_pnl_pct"],
-            stale_reason,
-        )
-        # Skip learning and metrics update for quarantined positions
-        _save_paper_state()
-        return closed_trade
 
     # P1.1Q Phase 5: Deduplication — ensure we only update learning/metrics once per trade_id
     with _CLOSED_TRADES_LOCK:

@@ -144,11 +144,20 @@ class TestQuarantineInClosePosition:
             reason="TIMEOUT",
         )
 
-        # Verify quarantine log
+        # Verify quarantine log emitted
         assert mock_log.warning.called
         warning_calls = [call for call in mock_log.warning.call_args_list
                         if "[PAPER_POSITION_QUARANTINED]" in str(call)]
         assert len(warning_calls) > 0, "Should log quarantine"
+
+        # Verify NO quality/econ logs emitted (only quarantine log should be there)
+        quality_calls = [call for call in mock_log.info.call_args_list
+                        if "[PAPER_TRAIN_QUALITY_EXIT]" in str(call)]
+        assert len(quality_calls) == 0, "Should NOT emit quality exit for stale position"
+
+        econ_calls = [call for call in mock_log.info.call_args_list
+                      if "[PAPER_TRAIN_ECON_ATTRIB]" in str(call)]
+        assert len(econ_calls) == 0, "Should NOT emit econ attribution for stale position"
 
         # Verify learning NOT called
         assert not mock_learning.called, "Quarantined position should NOT be sent to learning"
@@ -160,8 +169,9 @@ class TestQuarantineInClosePosition:
 
     @patch("src.services.paper_trade_executor._safe_learning_update_for_paper_trade")
     @patch("src.services.paper_trade_executor._safe_bucket_metrics_update_for_paper_trade")
-    def test_normal_position_learned(self, mock_metrics, mock_learning):
-        """Normal position is NOT quarantined and IS sent to learning."""
+    @patch("src.services.paper_trade_executor.log")
+    def test_normal_position_learned(self, mock_log, mock_metrics, mock_learning):
+        """Normal position is NOT quarantined and IS sent to learning with quality logs."""
         # Setup: open a position
         signal = {
             "symbol": "ETHUSDT",
@@ -184,13 +194,23 @@ class TestQuarantineInClosePosition:
         trade_id = pos["trade_id"]
         entry_ts = 1700000000.0
 
-        # Close with normal data (small loss)
+        # Close with normal data (small loss: -0.094%)
         closed_trade = close_paper_position(
             position_id=trade_id,
-            price=2126.0,  # 0.09% loss = normal
+            price=2126.0,  # 0.094% loss = normal
             ts=entry_ts + 60,
             reason="TP",
         )
+
+        # Verify quality logs ARE emitted
+        quality_calls = [call for call in mock_log.info.call_args_list
+                        if "[PAPER_TRAIN_QUALITY_EXIT]" in str(call)]
+        assert len(quality_calls) > 0, "Normal position should emit quality exit log"
+
+        # Verify econ logs ARE emitted
+        econ_calls = [call for call in mock_log.info.call_args_list
+                      if "[PAPER_TRAIN_ECON_ATTRIB]" in str(call)]
+        assert len(econ_calls) > 0, "Normal position should emit econ attribution log"
 
         # Verify learning IS called
         assert mock_learning.called, "Normal position should be sent to learning"
