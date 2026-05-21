@@ -913,6 +913,9 @@ def publish_dashboard_snapshot(force: bool = False) -> None:
     import logging as _log_pub_ds
     _log = _log_pub_ds.getLogger(__name__)
     try:
+        import time as _t_dbs
+        _ts_start = _t_dbs.time()
+
         recent_trades = load_history(limit=500)
         all_time_stats = load_stats_cached(ttl_s=300)
 
@@ -929,7 +932,17 @@ def publish_dashboard_snapshot(force: bool = False) -> None:
                 session_metrics=m,
                 all_time_stats=all_time_stats,
             )
-            save_dashboard_snapshot(snapshot, force=force)
+            _ts_built = _t_dbs.time()
+            ok = save_dashboard_snapshot(snapshot, force=force)
+            _ts_saved = _t_dbs.time()
+
+            # Diagnostic: log every publish with freshness info
+            _gen_at = snapshot.get("generated_at", 0)
+            _schema_v = snapshot.get("schema_version", "?")
+            _log.info(
+                "[DASHBOARD_SNAPSHOT_PUBLISH] ok=%s generated_at=%.1f schema=%s build_ms=%.0f save_ms=%.0f force=%s",
+                ok, _gen_at, _schema_v, (_ts_built - _ts_start) * 1000, (_ts_saved - _ts_built) * 1000, force
+            )
         except Exception as e:
             _log.warning("[DASHBOARD_SNAPSHOT_BUILD_ERROR] err=%s", str(e)[:200])
 
@@ -1005,6 +1018,9 @@ def publish_signal_summary(force: bool = False) -> None:
     import logging as _log_pub_ss
     _log = _log_pub_ss.getLogger(__name__)
     try:
+        import time as _t_ss
+        _ts_start = _t_ss.time()
+
         try:
             from src.services.learning_event import get_metrics as _get_metrics
             m = _get_metrics()
@@ -1014,7 +1030,19 @@ def publish_signal_summary(force: bool = False) -> None:
         try:
             from src.services.signal_summary_contract import build_signal_summary_snapshot
             snapshot = build_signal_summary_snapshot(session_metrics=m)
-            save_signal_summary(snapshot, force=force)
+            _ts_built = _t_ss.time()
+            ok = save_signal_summary(snapshot, force=force)
+            _ts_saved = _t_ss.time()
+
+            # Diagnostic: log every publish with freshness info
+            _gen_at = snapshot.get("generated_at", 0)
+            _schema_v = snapshot.get("schema_version", "?")
+            _sig_gen = snapshot.get("signal_counts", {}).get("generated", 0)
+            _sig_exec = snapshot.get("signal_counts", {}).get("executed", 0)
+            _log.info(
+                "[SIGNAL_SUMMARY_PUBLISH] ok=%s generated_at=%.1f schema=%s signals_generated=%d executed=%d build_ms=%.0f save_ms=%.0f force=%s",
+                ok, _gen_at, _schema_v, _sig_gen, _sig_exec, (_ts_built - _ts_start) * 1000, (_ts_saved - _ts_built) * 1000, force
+            )
         except Exception as e:
             _log.warning("[SIGNAL_SUMMARY_BUILD_ERROR] err=%s", str(e)[:200])
 
