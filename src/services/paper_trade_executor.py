@@ -58,6 +58,32 @@ def _is_training_position(pos: dict) -> bool:
     )
 
 
+# P1.1AB: Stale position quarantine thresholds
+_PAPER_MAX_PNL_PCT_TRAINING = 2.0  # Max abs(net_pnl_pct) for paper training
+_PAPER_MAX_PRICE_DEVIATION = 0.05  # Max abs(entry/exit - 1) = 5%
+
+
+def _is_stale_paper_position(pnl_data: dict, entry_price: float, exit_price: float, position: dict) -> tuple[bool, str]:
+    """Check if paper position is stale/outlier and should be quarantined.
+
+    Returns:
+        (is_stale, reason_string)
+    """
+    net_pnl_pct = pnl_data.get("net_pnl_pct", 0.0)
+
+    # Check for suspiciously large loss/gain (>2% for paper training)
+    if abs(net_pnl_pct) > _PAPER_MAX_PNL_PCT_TRAINING:
+        return True, f"excessive_pnl_pct={net_pnl_pct:.4f}"
+
+    # Check for impossible price movement (entry and exit too far apart = stale data)
+    if entry_price > 0 and exit_price > 0:
+        price_deviation = abs(entry_price / exit_price - 1.0)
+        if price_deviation > _PAPER_MAX_PRICE_DEVIATION:
+            return True, f"impossible_price_deviation={price_deviation:.4f}"
+
+    return False, ""
+
+
 def _log_quality_exit_once(closed_trade: dict, position: dict, path: str = "unknown") -> None:
     """Idempotent wrapper for quality exit logging.
 
@@ -1375,6 +1401,23 @@ def close_paper_position(
 
     # P1.1AJ: Log exit quality before deduplication (idempotent, all training positions)
     _log_quality_exit_once(closed_trade, pos, path="close_paper_position")
+
+    # P1.1AB: Stale position quarantine — check before learning
+    is_stale, stale_reason = _is_stale_paper_position(pnl_data, pos["entry_price"], price, pos)
+    if is_stale:
+        log.warning(
+            "[PAPER_POSITION_QUARANTINED] trade_id=%s symbol=%s side=%s entry=%.8f exit=%.8f net_pnl_pct=%.4f reason=%s",
+            position_id,
+            pos["symbol"],
+            pos["side"],
+            pos["entry_price"],
+            price,
+            pnl_data["net_pnl_pct"],
+            stale_reason,
+        )
+        # Skip learning and metrics update for quarantined positions
+        _save_paper_state()
+        return closed_trade
 
     # P1.1Q Phase 5: Deduplication — ensure we only update learning/metrics once per trade_id
     with _CLOSED_TRADES_LOCK:
