@@ -923,13 +923,75 @@ def lm_economic_health() -> dict:
             if METRICS and METRICS.get("trades", 0) >= 5:
                 # Use canonical_profit_factor to proceed (allows test mocking)
                 profit_factor = canonical_profit_factor(canonical_closed_trades or [])
-                # Return early with test-mocked values
+
+                # Extract data from METRICS for fallback calculation
+                trades = METRICS.get("trades", 0)
+                net_pnl = METRICS.get("net_pnl_total", 0.0)
+                wins = METRICS.get("wins", 0)
+                losses = METRICS.get("losses", 0)
+
+                # Calculate scratch rate from _close_reasons
+                scratch_exits = _close_reasons.get("SCRATCH_EXIT", 0)
+                scratch_rate = scratch_exits / trades if trades > 0 else 0.0
+
+                # Calculate recent trend from _recent_results
+                rr = list(_recent_results)
+                recent_wins = sum(1 for r in rr if r == "WIN")
+                recent_sample_size = len(rr)
+
+                if recent_sample_size < 8:
+                    recent_trend = "INSUFFICIENT_RECENT_DATA"
+                    trend_score = 0.5
+                else:
+                    decisive = wins + losses
+                    overall_wr = wins / decisive if decisive > 0 else 0.0
+                    recent_wr = recent_wins / recent_sample_size
+                    trend_delta = recent_wr - overall_wr
+                    if trend_delta > 0.05:
+                        recent_trend = "IMPROVING"
+                        trend_score = 0.8
+                    elif trend_delta < -0.05:
+                        recent_trend = "DECLINING"
+                        trend_score = 0.2
+                    else:
+                        recent_trend = "NEUTRAL"
+                        trend_score = 0.5
+
+                # Calculate overall score (same formula as production)
+                if profit_factor < 1.0:
+                    pf_score = max(0.0, min(0.35, profit_factor / 3.0))
+                elif profit_factor < 1.5:
+                    pf_score = 0.35 + (profit_factor - 1.0) * 0.5
+                else:
+                    pf_score = min(1.0, 0.60 + min(profit_factor, 3.0) / 7.5)
+
+                scratch_score = max(0.0, 1.0 - (scratch_rate / 0.80))
+                overall_score = pf_score * 0.4 + scratch_score * 0.35 + trend_score * 0.25
+
+                # Determine status using hard safety rule
+                if profit_factor < 1.0 and net_pnl <= 0:
+                    # Hard rule: PF < 1.0 + negative net => always BAD
+                    overall_score = min(overall_score, 0.34)
+                    status = "BAD"
+                elif profit_factor < 1.0:
+                    overall_score = min(overall_score, 0.49)
+                    status = "CAUTION"
+                elif overall_score >= 0.7:
+                    status = "GOOD"
+                elif overall_score >= 0.5:
+                    status = "CAUTION"
+                elif overall_score >= 0.3:
+                    status = "FRAGILE"
+                else:
+                    status = "DEGRADED"
+
+                # Return with test-mocked values
                 return {
                     "profit_factor": profit_factor,
-                    "scratch_rate": 0.0,
-                    "recent_trend": "CAUTION",
-                    "overall_score": max(0.0, profit_factor - 1.0) if profit_factor > 1.0 else min(0.35, profit_factor / 3.0),
-                    "status": "CAUTION" if 1.0 <= profit_factor < 1.5 else ("GOOD" if profit_factor >= 1.5 else "BAD"),
+                    "scratch_rate": scratch_rate,
+                    "recent_trend": recent_trend,
+                    "overall_score": overall_score,
+                    "status": status,
                     "warnings": ["Using fallback source (insufficient canonical history)"]
                 }
             # Insufficient data in all sources

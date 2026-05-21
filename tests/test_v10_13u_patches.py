@@ -248,25 +248,27 @@ def test_economic_health_pf_hard_rule():
     from src.services.learning_monitor import lm_economic_health
 
     # Mock canonical_profit_factor to return 0.75 (unprofitable)
-    with patch("src.services.canonical_metrics.canonical_profit_factor") as mock_pf:
+    with patch("src.services.learning_monitor.canonical_profit_factor") as mock_pf:
         mock_pf.return_value = 0.75
 
-        # Create mock METRICS with negative net_pnl in the source module
+        # Create mock METRICS with negative net_pnl
         mock_metrics = {
             "trades": 100,
             "net_pnl_total": -25.0,  # Losing money
             "wins": 40,
             "losses": 60,
         }
-        with patch("src.services.learning_event.METRICS", mock_metrics):
-            with patch("src.services.learning_event._close_reasons", {"SCRATCH_EXIT": 20}):
-                with patch("src.services.learning_event._recent_results", [0, 0, 1, 0]):
-                    result = lm_economic_health()
-                    status = result.get("status")
+        # Patch load_history to return empty list to trigger fallback
+        with patch("src.services.firebase_client.load_history", return_value=[]):
+            with patch("src.services.learning_monitor.METRICS", mock_metrics):
+                with patch("src.services.learning_event._close_reasons", {"SCRATCH_EXIT": 20}):
+                    with patch("src.services.learning_event._recent_results", [0, 0, 1, 0]):
+                        result = lm_economic_health()
+                        status = result.get("status")
 
-                    # Hard rule: PF < 1.0 + net_profit <= 0 => BAD
-                    assert status == "BAD", f"Expected BAD status for unprofitable PF, got {status}"
-                    assert result["profit_factor"] == 0.75
+                        # Hard rule: PF < 1.0 + net_profit <= 0 => BAD
+                        assert status == "BAD", f"Expected BAD status for unprofitable PF, got {status}"
+                        assert result["profit_factor"] == 0.75
 
 
 def test_economic_health_profitable_pf_good():
@@ -274,25 +276,27 @@ def test_economic_health_profitable_pf_good():
     from src.services.learning_monitor import lm_economic_health
 
     # Mock canonical_profit_factor to return 2.0 (profitable)
-    with patch("src.services.canonical_metrics.canonical_profit_factor") as mock_pf:
+    with patch("src.services.learning_monitor.canonical_profit_factor") as mock_pf:
         mock_pf.return_value = 2.0
 
-        # Create mock METRICS with positive net_pnl in the source module
+        # Create mock METRICS with positive net_pnl
         mock_metrics = {
             "trades": 100,
             "net_pnl_total": 100.0,  # Winning
             "wins": 70,
             "losses": 30,
         }
-        with patch("src.services.learning_event.METRICS", mock_metrics):
-            with patch("src.services.learning_event._close_reasons", {"SCRATCH_EXIT": 5}):
-                with patch("src.services.learning_event._recent_results", [1, 1, 1, 1]):
-                    result = lm_economic_health()
-                    status = result.get("status")
+        # Patch load_history to return empty list to trigger fallback
+        with patch("src.services.firebase_client.load_history", return_value=[]):
+            with patch("src.services.learning_monitor.METRICS", mock_metrics):
+                with patch("src.services.learning_event._close_reasons", {"SCRATCH_EXIT": 5}):
+                    with patch("src.services.learning_event._recent_results", [1, 1, 1, 1]):
+                        result = lm_economic_health()
+                        status = result.get("status")
 
-                    # High PF + low scratch rate + positive trend = GOOD
-                    assert status in ["GOOD", "CAUTION"], f"Expected GOOD/CAUTION for profitable PF, got {status}"
-                    assert result["profit_factor"] == 2.0
+                        # High PF + low scratch rate + positive trend = GOOD
+                        assert status in ["GOOD", "CAUTION"], f"Expected GOOD/CAUTION for profitable PF, got {status}"
+                        assert result["profit_factor"] == 2.0
 
 
 # ── V10.13u+4: Canonical Economic PF Real Source Fix ─────────────────
@@ -828,9 +832,11 @@ def test_exit_integrity_compares_net_not_gross():
 
 def test_scratch_guard_holds_negative_net_in_econ_bad():
     """V10.13u+8: SCRATCH_GUARD holds negative-net scratches in ECON BAD."""
-    from src.services.smart_exit_engine import SmartExitEngine, Position
+    from src.services.smart_exit_engine import SmartExitEngine, Position, _ECON_BAD_CACHE
 
     engine = SmartExitEngine()
+    # Clear cache to ensure fresh computation
+    _ECON_BAD_CACHE.update({"v": False, "ts": 0.0})
 
     # Create a near-flat position that would be scratched (150s old = within SCRATCH_NEGATIVE_GRACE_S=240)
     position = Position(
@@ -855,9 +861,11 @@ def test_scratch_guard_holds_negative_net_in_econ_bad():
 
 def test_scratch_guard_allows_exit_when_econ_good():
     """V10.13u+8: Scratch proceeds normally when ECON GOOD."""
-    from src.services.smart_exit_engine import SmartExitEngine, Position
+    from src.services.smart_exit_engine import SmartExitEngine, Position, _ECON_BAD_CACHE
 
     engine = SmartExitEngine()
+    # Clear cache to ensure fresh computation
+    _ECON_BAD_CACHE.update({"v": False, "ts": 0.0})
 
     # Create a near-flat position that would be scratched (150s old = within SCRATCH_NEGATIVE_GRACE_S=240)
     position = Position(
@@ -1394,10 +1402,11 @@ def test_close_lock_cleanup_runs_before_duplicate_skip():
     """V10.13u+12: Cleanup (with hard recovery) runs before duplicate check."""
     import time
     from src.services.trade_executor import (
-        _try_acquire_close_lock, _CLOSING_POSITIONS, CLOSE_LOCK_TTL_S
+        _try_acquire_close_lock, _CLOSING_POSITIONS, _STALE_CLOSE_COUNTS, CLOSE_LOCK_TTL_S
     )
 
     _CLOSING_POSITIONS.clear()
+    _STALE_CLOSE_COUNTS.clear()
 
     pos = {"action": "BUY", "entry": 100.0, "entry_time": 1234567.0, "size": 1.0}
 
