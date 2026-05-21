@@ -677,7 +677,7 @@ class TestEndToEnd:
                 "PRECHECK_SYMBOL_FILTER",
             ]
 
-            # Generate reports
+            # Generate reports (pass records to enable per-bucket attribution)
             md = generate_markdown_report(
                 summary,
                 bucket_stats,
@@ -688,6 +688,7 @@ class TestEndToEnd:
                 side_regime_matrix,
                 exclusion_scenarios,
                 recommendation,
+                records=c_weak_records,
             )
             assert len(md) > 0
             assert "# Paper Training Segment Quality Analysis" in md
@@ -707,6 +708,129 @@ class TestEndToEnd:
             with open(json_path, "w", encoding="utf-8") as f:
                 json.dump(json_summary, f, default=str)
             assert json_path.exists()
+
+
+class TestCLIRegression:
+    """Test for production CLI crash regression (Task 2.5A)."""
+
+    def test_cli_path_does_not_crash_on_real_dataset(self):
+        """Regression: CLI crashed with AttributeError in generate_markdown_report.
+
+        The issue was that generate_markdown_report() received attribution_stats
+        (a dict summary) and tried to iterate it as records, causing:
+        AttributeError: 'str' object has no attribute 'get'
+
+        This test reproduces the exact main() path on synthetic production data.
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create realistic production dataset
+            jsonl_path = Path(tmpdir) / "combined.jsonl"
+            records_data = []
+
+            # Mix of buckets and regimes like real production
+            for i in range(150):
+                records_data.append(
+                    {
+                        "trade_id": f"T{i:05d}",
+                        "exit": 100.0 + (i % 5) * 10,
+                        "outcome": "WIN" if i % 3 != 0 else "LOSS",
+                        "training_bucket": "C_WEAK_EV_TRAIN"
+                        if i < 120
+                        else "D_NEG_EV_CONTROL",
+                        "symbol": f"SYM{i % 6}",
+                        "side": "BUY" if i % 2 == 0 else "SELL",
+                        "entry_regime": ["BULL_TREND", "BEAR_TREND", "QUIET_RANGE", "RANGING"][
+                            i % 4
+                        ],
+                        "attribution": [
+                            "NORMAL_WIN",
+                            "WRONG_DIRECTION",
+                            "FEE_DOMINATED_MOVE",
+                        ][i % 3],
+                        "net_pnl_pct": 0.3 + (i % 10) * 0.05,
+                        "gross_move_pct": 1.0 + (i % 5) * 0.2,
+                        "mfe_pct": 1.5 + (i % 3) * 0.5,
+                        "mae_pct": 0.5 + (i % 4) * 0.3,
+                    }
+                )
+
+            # Write JSONL
+            with open(jsonl_path, "w") as f:
+                for r in records_data:
+                    f.write(json.dumps(r) + "\n")
+
+            # Reproduce main() path exactly
+            records = load_dataset(jsonl_path)
+            assert len(records) == 150
+
+            summary = compute_dataset_summary(records)
+            buckets_by_name = separate_by_bucket(records)
+            bucket_stats = {k: compute_bucket_stats(v) for k, v in buckets_by_name.items()}
+
+            c_weak_records = buckets_by_name.get("C_WEAK_EV_TRAIN", [])
+            assert len(c_weak_records) > 0
+
+            attribution_stats = compute_attribution_stats(c_weak_records)
+            economic_severity = compute_economic_severity(c_weak_records)
+            regime_stats = compute_regime_quality(c_weak_records)
+            symbol_stats = compute_symbol_quality(c_weak_records)
+            side_regime_matrix = compute_side_regime_matrix(c_weak_records)
+            exclusion_scenarios = compute_exclusion_scenarios(c_weak_records)
+
+            recommendation = recommend_patch(
+                c_weak_records,
+                economic_severity,
+                regime_stats,
+                symbol_stats,
+                exclusion_scenarios,
+            )
+
+            # This should NOT crash with AttributeError
+            md_report = generate_markdown_report(
+                summary,
+                bucket_stats,
+                attribution_stats,
+                economic_severity,
+                regime_stats,
+                symbol_stats,
+                side_regime_matrix,
+                exclusion_scenarios,
+                recommendation,
+                records=c_weak_records,
+            )
+
+            # Verify output is valid
+            assert len(md_report) > 0
+            assert "# Paper Training Segment Quality Analysis" in md_report
+            assert "## 2. Bucket Separation" in md_report
+            assert "## 3. Attribution by Bucket" in md_report
+            assert "## 4. Economic Severity" in md_report
+
+            json_summary = generate_json_summary(
+                summary,
+                bucket_stats,
+                economic_severity,
+                exclusion_scenarios,
+                recommendation,
+            )
+
+            # Write outputs
+            md_path = Path(tmpdir) / "report.md"
+            json_path = Path(tmpdir) / "summary.json"
+
+            with open(md_path, "w", encoding="utf-8") as f:
+                f.write(md_report)
+            with open(json_path, "w", encoding="utf-8") as f:
+                json.dump(json_summary, f, default=str)
+
+            assert md_path.exists()
+            assert json_path.exists()
+
+            # Verify content
+            with open(md_path, "r", encoding="utf-8") as f:
+                md_content = f.read()
+            assert len(md_content) > 0
+            assert md_content.count("###") >= 2  # At least section headers
 
 
 if __name__ == "__main__":

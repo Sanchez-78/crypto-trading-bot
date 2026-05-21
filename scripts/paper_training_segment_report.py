@@ -335,8 +335,14 @@ def generate_markdown_report(
     side_regime_matrix: dict,
     exclusion_scenarios: dict,
     recommendation: str,
+    records: Optional[list] = None,
 ) -> str:
-    """Generate markdown report."""
+    """Generate markdown report.
+
+    Args:
+        records: Optional list of records for per-bucket attribution analysis.
+                 If None, attribution by bucket section is skipped.
+    """
     md = []
 
     md.append("# Paper Training Segment Quality Analysis\n")
@@ -361,15 +367,26 @@ def generate_markdown_report(
             md.append(f"- **Avg PnL:** {stats['avg_pnl_pct']*100:.2f}%\n")
         md.append(f"- **Outcomes:** {stats['outcomes']}\n\n")
 
-    # Attribution by Bucket
-    md.append("## 3. Attribution by Bucket\n")
-    for bucket in sorted(bucket_stats.keys()):
-        recs = [r for r in (attribution_stats or []) if (r.get("training_bucket") or "UNKNOWN") == bucket]
-        if not recs and attribution_stats:
-            continue
-        md.append(f"### {bucket}\n")
-        # This would need refactoring to properly show per-bucket attribution
-        md.append("(See economic severity for main attribution analysis)\n\n")
+    # Attribution by Bucket (skip if records not provided)
+    if records:
+        md.append("## 3. Attribution by Bucket\n")
+        by_bucket = defaultdict(list)
+        for r in records:
+            bucket = r.get("training_bucket") or "UNKNOWN"
+            by_bucket[bucket].append(r)
+
+        for bucket in sorted(by_bucket.keys()):
+            bucket_recs = by_bucket[bucket]
+            by_attrib = defaultdict(int)
+            for r in bucket_recs:
+                attrib = r.get("attribution", "UNKNOWN")
+                by_attrib[attrib] += 1
+
+            md.append(f"### {bucket}\n")
+            for attrib, count in sorted(by_attrib.items()):
+                pct = 100 * count / len(bucket_recs) if bucket_recs else 0
+                md.append(f"- **{attrib}:** {count} ({pct:.1f}%)\n")
+            md.append("\n")
 
     # Economic Severity
     md.append("## 4. Economic Severity\n")
@@ -495,6 +512,7 @@ def main():
         side_regime_matrix,
         exclusion_scenarios,
         recommendation,
+        records=c_weak_records,
     )
 
     json_summary = generate_json_summary(
