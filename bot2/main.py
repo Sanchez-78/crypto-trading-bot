@@ -1715,7 +1715,7 @@ def main():
         except (ImportError, AttributeError):
             pass  # if import fails, continue normally (fail-open for monitoring)
 
-        global _last_audit, _last_metrics, _last_pre_audit, _last_health_check
+        global _last_audit, _last_metrics, _last_pre_audit, _last_health_check, _last_dashboard_snapshot, _last_signal_summary
         now = time.time()
 
         # V10.13u+18e: Periodic ECON BAD diagnostics heartbeat
@@ -1970,7 +1970,7 @@ def main():
                 from src.services.firebase_client import publish_dashboard_snapshot
                 publish_dashboard_snapshot()
             except Exception as _dbs_e:
-                logging.debug("[DASHBOARD_SNAPSHOT_PUBLISH_SKIP] %s", _dbs_e)
+                logging.warning("[DASHBOARD_SNAPSHOT_PUBLISH_ERROR] type=%s err=%s", type(_dbs_e).__name__, str(_dbs_e)[:100])
             _last_dashboard_snapshot = now
 
         # Publish signal_summary/latest every 60s for signal log
@@ -1979,7 +1979,7 @@ def main():
                 from src.services.firebase_client import publish_signal_summary
                 publish_signal_summary()
             except Exception as _ss_e:
-                logging.debug("[SIGNAL_SUMMARY_PUBLISH_SKIP] %s", _ss_e)
+                logging.warning("[SIGNAL_SUMMARY_PUBLISH_ERROR] type=%s err=%s", type(_ss_e).__name__, str(_ss_e)[:100])
             _last_signal_summary = now
 
         # EMERGENCY (2026-04-25): Gate pre_live_audit on env flag + quota status
