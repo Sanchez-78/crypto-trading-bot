@@ -1570,10 +1570,11 @@ def _save_paper_trade_closed(closed_trade: dict) -> None:
                 db.collection(col("trades_paper")).add(paper_record)
 
                 # P1.1AP-I2: Skip legacy LEARNING_UPDATE log for D_NEG shadow trades
+                # P1.1AP-J: Rename non-shadow log to [PAPER_TRADE_SAVED] to avoid confusion with canonical learning
                 if not _closed_trade_is_d_neg_shadow(closed_trade):
                     bucket = closed_trade.get("bucket") or closed_trade.get('explore_bucket', 'A_STRICT_TAKE')
                     log.warning(
-                        f"[LEARNING_UPDATE] source=paper_closed_trade symbol={closed_trade.get('symbol')} "
+                        f"[PAPER_TRADE_SAVED] source=paper_closed_trade symbol={closed_trade.get('symbol')} "
                         f"bucket={bucket} "
                         f"outcome={closed_trade.get('outcome')} net_pnl_pct={closed_trade.get('net_pnl_pct', 0):.4f} ok=True"
                     )

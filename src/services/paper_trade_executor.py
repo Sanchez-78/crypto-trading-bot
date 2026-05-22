@@ -2455,6 +2455,30 @@ def _log_paper_train_quality_exit(closed_trade: dict, position: dict) -> None:
                 touched_tp, touched_sl, near_tp, near_sl, hold_s, hold_limit_s, timeout, outcome, attribution,
             )
 
+        # P1.1AP-J: Add diagnostic attribution for B_RECOVERY_READY explore bucket exits
+        explore_bucket = position.get("bucket") or closed_trade.get("explore_bucket") or ""
+        if explore_bucket == "B_RECOVERY_READY":
+            tp_pct = abs(float(position.get("tp_pct_at_entry") or 0.0))
+            sl_pct = abs(float(position.get("sl_pct_at_entry") or 0.0))
+            gross_pnl_pct = float(closed_trade.get("gross_pnl_pct") or 0.0)
+            fee_drag_pct = (float(closed_trade.get("fee_pct") or 0.0) + float(closed_trade.get("slippage_pct") or 0.0))
+            timeout = "TIMEOUT" in reason
+            mfe_to_tp_ratio = mfe_pct / tp_pct if tp_pct > 0 else 0.0
+            mae_to_sl_ratio = abs(mae_pct) / sl_pct if sl_pct > 0 else 0.0
+
+            log.info(
+                "[PAPER_TRAIN_ECON_ATTRIB] trade_id=%s symbol=%s side=%s entry_regime=%s exit_regime=%s "
+                "source=%s explore_bucket=%s "
+                "entry=%.8f exit=%.8f net_pnl_pct=%.4f gross_move_pct=%.4f fee_drag_pct=%.4f "
+                "mfe_pct=%.4f mae_pct=%.4f tp_pct=%.4f sl_pct=%.4f mfe_to_tp_ratio=%.3f mae_to_sl_ratio=%.3f "
+                "touched_tp=%s touched_sl=%s hold_s=%d hold_limit_s=%d timeout=%s outcome=%s",
+                trade_id, symbol, side, entry_regime, exit_regime,
+                source, explore_bucket,
+                entry, exit_price, net_pnl_pct, gross_pnl_pct, fee_drag_pct,
+                mfe_pct, abs(mae_pct), tp_pct, sl_pct, mfe_to_tp_ratio, mae_to_sl_ratio,
+                touched_tp, touched_sl, hold_s, hold_limit_s, timeout, outcome,
+            )
+
         # P1.1AG: Log anomalies detected at exit
         if reason == "TIMEOUT" and mfe_pct >= 0.75 * (tp - entry) / entry * 100.0 if entry > 0 else False:
             log.warning(

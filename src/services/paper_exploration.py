@@ -358,6 +358,14 @@ def paper_exploration_override(signal: dict, ctx: Optional[dict] = None) -> dict
 
         # B_RECOVERY_READY: Weak EV but recovery/deadlock probe ready or near-ready
         if ev >= 0.038 or recovery_ready or probe_ready:
+            # P1.1AP-J: Compute deterministic route_trigger for telemetry clarity
+            if recovery_ready:
+                route_trigger = "recovery_ready"
+            elif probe_ready:
+                route_trigger = "probe_ready"
+            else:
+                route_trigger = "ev_threshold"
+
             if not _check_hourly_cap("B_RECOVERY_READY"):
                 return {
                     "allowed": False,
@@ -366,14 +374,16 @@ def paper_exploration_override(signal: dict, ctx: Optional[dict] = None) -> dict
                     "size_mult": 0.15,
                     "max_hold_s": 900,
                     "tags": [],
+                    "route_trigger": route_trigger,
                 }
             return {
                 "allowed": True,
                 "bucket": "B_RECOVERY_READY",
-                "reason": f"recovery_ready={recovery_ready} probe_ready={probe_ready} ev={ev:.4f}",
+                "reason": f"route_trigger={route_trigger} recovery_ready={recovery_ready} probe_ready={probe_ready} ev={ev:.4f}",
                 "size_mult": 0.15,
                 "max_hold_s": 900,
                 "tags": ["recovery_probe"],
+                "route_trigger": route_trigger,
             }
 
         # C_WEAK_EV: Positive EV but below ECON_BAD floor, and has quality
