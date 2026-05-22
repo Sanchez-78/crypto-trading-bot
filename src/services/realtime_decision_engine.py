@@ -3707,6 +3707,7 @@ def evaluate_signal(signal):
                     "side_inferred": sampler_result.get("side_inferred", False),
                     "cost_edge_ok": sampler_result.get("cost_edge_ok", False),
                     "expected_move_pct": sampler_result.get("expected_move_pct", 0.0),
+                    "expected_move_src": sampler_result.get("expected_move_src", ""),  # P1.1AP-N2C
                     "required_move_pct": sampler_result.get("required_move_pct", 0.0),
                     "size_mult": sampler_result.get("size_mult", 1.0),
                     "max_hold_s": sampler_result.get("max_hold_s", 300),
@@ -3714,6 +3715,13 @@ def evaluate_signal(signal):
                     "score_raw": round(_score_before_adj, 6),
                     "score_final": round(_score_adj, 6),
                     "decision_score": round(_score_adj, 6),
+                    # P1.1AP-N2C: Include recovery admission metadata if applicable
+                    "recovery_admission": sampler_result.get("recovery_admission", False),
+                    "learning_source": sampler_result.get("learning_source", "paper_training_sampler"),
+                    "admission_reason": sampler_result.get("admission_reason"),
+                    "historical_health": sampler_result.get("historical_health"),
+                    "cost_edge_bypassed": sampler_result.get("cost_edge_bypassed", False),
+                    "cost_edge_bypass_reason": sampler_result.get("cost_edge_bypass_reason", "none"),
                 }
 
                 open_paper_position(
@@ -3897,6 +3905,7 @@ def evaluate_signal(signal):
                         "side_inferred": sampler_result.get("side_inferred", False),
                         "cost_edge_ok": sampler_result.get("cost_edge_ok", False),
                         "expected_move_pct": sampler_result.get("expected_move_pct", 0.0),
+                        "expected_move_src": sampler_result.get("expected_move_src", ""),  # P1.1AP-N2C
                         "required_move_pct": sampler_result.get("required_move_pct", 0.0),
                         "size_mult": sampler_result.get("size_mult", 1.0),
                         "max_hold_s": sampler_result.get("max_hold_s", 300),
@@ -3904,6 +3913,13 @@ def evaluate_signal(signal):
                         "score_raw": round(_score_before_adj, 6),
                         "score_final": round(_score_adj, 6),
                         "decision_score": round(_score_adj, 6),
+                        # P1.1AP-N2C: Include recovery admission metadata if applicable
+                        "recovery_admission": sampler_result.get("recovery_admission", False),
+                        "learning_source": sampler_result.get("learning_source", "paper_training_sampler"),
+                        "admission_reason": sampler_result.get("admission_reason"),
+                        "historical_health": sampler_result.get("historical_health"),
+                        "cost_edge_bypassed": sampler_result.get("cost_edge_bypassed", False),
+                        "cost_edge_bypass_reason": sampler_result.get("cost_edge_bypass_reason", "none"),
                     }
 
                     open_paper_position(
@@ -3961,6 +3977,13 @@ def evaluate_signal(signal):
                     "side_inferred": sampler_result.get("side_inferred", False),
                     "cost_edge_ok": sampler_result.get("cost_edge_ok", False),
                     "expected_move_pct": sampler_result.get("expected_move_pct", 0.0),
+                    "expected_move_src": sampler_result.get("expected_move_src", ""),  # P1.1AP-N2C
+                    "recovery_admission": sampler_result.get("recovery_admission", False),  # P1.1AP-N2C
+                    "learning_source": sampler_result.get("learning_source", "paper_training_sampler"),  # P1.1AP-N2C
+                    "admission_reason": sampler_result.get("admission_reason"),  # P1.1AP-N2C
+                    "historical_health": sampler_result.get("historical_health"),  # P1.1AP-N2C
+                    "cost_edge_bypassed": sampler_result.get("cost_edge_bypassed", False),  # P1.1AP-N2C
+                    "cost_edge_bypass_reason": sampler_result.get("cost_edge_bypass_reason", "none"),  # P1.1AP-N2C
                     "required_move_pct": sampler_result.get("required_move_pct", 0.0),
                     "size_mult": sampler_result.get("size_mult", 1.0),
                     "max_hold_s": sampler_result.get("max_hold_s", 300),
