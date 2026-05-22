@@ -1265,15 +1265,16 @@ class TestCostEdgeUnitAudit:
         assert dec == 0.0 and pct == 0.0
 
     def test_estimate_expected_move_returns_tuple(self):
-        """_estimate_expected_move() returns (decimal, percent) tuple"""
+        """_estimate_expected_move() returns (decimal, percent, source) tuple"""
         from src.services.paper_exploration import _estimate_expected_move
 
         # Score-based: 0.16 * 1.5 = 0.24 % = 0.0024 decimal
         signal = {"score": 0.16}
-        dec, pct = _estimate_expected_move(signal)
-        assert isinstance(dec, float) and isinstance(pct, float)
+        dec, pct, src = _estimate_expected_move(signal)
+        assert isinstance(dec, float) and isinstance(pct, float) and isinstance(src, str)
         assert abs(pct - 0.24) < 1e-6
         assert abs(dec - 0.0024) < 1e-6
+        assert src == "score"
 
     def test_cost_edge_check_with_normalized_units(self):
         """Cost edge comparison uses decimal internally"""
@@ -1468,6 +1469,207 @@ class TestCostEdgeUnitAudit:
         assert result["allowed"] is True
         assert result["bucket"] == "B_RECOVERY_READY"
         assert result["size_mult"] == 0.15
+
+    def test_p11apk_ada_normalized_atr_passes(self):
+        """P1.1AP-K Test 1: ADA-like (price 0.25, atr 0.0006) passes after normalization"""
+        reset_exploration_caps()
+        signal = {
+            "symbol": "ADAUSDT",
+            "action": "BUY",
+            "price": 0.2500,
+            "atr": 0.0006,  # Absolute price move, not percent
+            "ev": 0.030,
+            "score": 0.20,
+            "p": 0.65,
+            "coherence": 0.85,
+            "ema_diff": 0.001,
+            "macd": 0.0001,
+            "mom5": 0.5,
+            "mom10": 0.3,
+            "rsi": 55,
+        }
+        ctx = {"reject_reason": "REJECT_ECON_BAD_ENTRY"}
+
+        result = paper_exploration_override(signal, ctx)
+
+        # Should pass cost edge with normalized ATR: 0.0006 / 0.25 * 100 = 0.24% >= 0.23% required
+        assert result["allowed"] is True
+        assert result["bucket"] == "C_WEAK_EV"
+        assert result["cost_edge_ok"] is True
+        assert abs(result["expected_move_pct"] - 0.2400) < 0.01, \
+            f"Expected move should be ~0.24%, got {result['expected_move_pct']:.4f}%"
+        assert result["expected_move_src"] == "atr_abs_price_normalized"
+
+    def test_p11apk_xrp_normalized_atr_still_fails(self):
+        """P1.1AP-K Test 2: XRP-like (price 1.37, atr 0.0007) still fails correctly"""
+        reset_exploration_caps()
+        signal = {
+            "symbol": "XRPUSDT",
+            "action": "BUY",
+            "price": 1.3700,
+            "atr": 0.0007,  # Absolute price move
+            "ev": 0.030,
+            "score": 0.20,
+            "p": 0.65,
+            "coherence": 0.85,
+            "ema_diff": 0.001,
+            "macd": 0.0001,
+            "mom5": 0.5,
+            "mom10": 0.3,
+            "rsi": 55,
+        }
+        ctx = {"reject_reason": "REJECT_ECON_BAD_ENTRY"}
+
+        result = paper_exploration_override(signal, ctx)
+
+        # Should fail cost edge: 0.0007 / 1.37 * 100 = 0.051% < 0.23% required
+        assert result["allowed"] is False
+        assert result["bucket"] == "C_WEAK_EV"
+        assert result["cost_edge_ok"] is False
+        assert "cost_edge_too_low" in result["reason"]
+        assert abs(result["expected_move_pct"] - 0.0511) < 0.01, \
+            f"Expected move should be ~0.051%, got {result['expected_move_pct']:.4f}%"
+        assert result["expected_move_src"] == "atr_abs_price_normalized"
+
+    def test_p11apk_boundary_semantics_223_percent(self):
+        """P1.1AP-K Test 3: Boundary semantics at 0.2300% threshold"""
+        reset_exploration_caps()
+
+        # Just below threshold: 0.2299% should fail
+        signal_below = {
+            "symbol": "BTCUSDT",
+            "action": "BUY",
+            "price": 67000.0,
+            "atr": 154.0,  # 154 / 67000 * 100 = 0.2298% < 0.2300%
+            "ev": 0.030,
+            "score": 0.20,
+            "p": 0.65,
+            "coherence": 0.85,
+            "ema_diff": 0.001,
+            "macd": 0.0001,
+            "mom5": 0.5,
+            "mom10": 0.3,
+            "rsi": 55,
+        }
+        ctx = {"reject_reason": "REJECT_ECON_BAD_ENTRY"}
+
+        result_below = paper_exploration_override(signal_below, ctx)
+        assert result_below["allowed"] is False, "0.2298% should fail cost edge"
+        assert "cost_edge_too_low" in result_below["reason"]
+
+        # At threshold: 0.2300% should pass (>= comparison)
+        reset_exploration_caps()
+        signal_at = {
+            "symbol": "BTCUSDT",
+            "action": "BUY",
+            "price": 67000.0,
+            "atr": 154.1,  # 154.1 / 67000 * 100 = 0.2301% >= 0.2300%
+            "ev": 0.030,
+            "score": 0.20,
+            "p": 0.65,
+            "coherence": 0.85,
+            "ema_diff": 0.001,
+            "macd": 0.0001,
+            "mom5": 0.5,
+            "mom10": 0.3,
+            "rsi": 55,
+        }
+
+        result_at = paper_exploration_override(signal_at, ctx)
+        assert result_at["allowed"] is True, "0.2301% should pass cost edge"
+        assert result_at["cost_edge_ok"] is True
+
+    def test_p11apk_missing_price_safe_fallback(self):
+        """P1.1AP-K Test 4: Missing/zero price uses fallback, doesn't false-positive"""
+        reset_exploration_caps()
+
+        # ATR but no price - should fall back to heuristic normalization
+        signal = {
+            "symbol": "ETHUSDT",
+            "action": "BUY",
+            "atr": 1.5,  # > 0.05 and < 100, will be treated as percent by heuristic
+            "ev": 0.030,
+            "score": 0.20,
+            "p": 0.65,
+            "coherence": 0.85,
+            "ema_diff": 0.001,
+            "macd": 0.0001,
+            "mom5": 0.5,
+            "mom10": 0.3,
+            "rsi": 55,
+        }
+        ctx = {"reject_reason": "REJECT_ECON_BAD_ENTRY"}
+
+        result = paper_exploration_override(signal, ctx)
+
+        # With heuristic: 1.5 is treated as percent (between 0.05 and 100)
+        # So expected_move_pct = 1.5% >> 0.23%, should pass
+        assert result["allowed"] is True
+        assert result["cost_edge_ok"] is True
+        assert result["expected_move_src"] == "atr_heuristic"
+
+    def test_p11apk_estimate_expected_move_returns_source(self):
+        """P1.1AP-K Test 5: _estimate_expected_move returns 3-tuple with source"""
+        from src.services.paper_exploration import _estimate_expected_move
+
+        # ATR with price - should return atr_abs_price_normalized source
+        signal = {"atr": 0.0006, "price": 0.25}
+        dec, pct, src = _estimate_expected_move(signal)
+        assert abs(pct - 0.2400) < 0.01
+        assert src == "atr_abs_price_normalized"
+
+        # ATR without price - should use heuristic
+        signal_no_price = {"atr": 1.5}
+        dec, pct, src = _estimate_expected_move(signal_no_price)
+        assert abs(pct - 1.5) < 0.01
+        assert src == "atr_heuristic"
+
+        # Score fallback
+        signal_score = {"score": 0.16}
+        dec, pct, src = _estimate_expected_move(signal_score)
+        assert abs(pct - 0.24) < 0.01
+        assert src == "score"
+
+        # No data
+        signal_empty = {}
+        dec, pct, src = _estimate_expected_move(signal_empty)
+        assert dec == 0.0 and pct == 0.0 and src == "none"
+
+    def test_p11apk_b_recovery_unaffected(self):
+        """P1.1AP-K Test 6: B_RECOVERY_READY behavior unchanged"""
+        reset_exploration_caps()
+        signal = {
+            "symbol": "ETHUSDT",
+            "action": "BUY",
+            "price": 3000.0,
+            "atr": 10.0,  # Will normalize to 0.33%, well above threshold
+            "ev": 0.045,  # ev >= 0.038 triggers B
+            "score": 0.2,
+        }
+
+        result = paper_exploration_override(signal)
+        assert result["allowed"] is True
+        assert result["bucket"] == "B_RECOVERY_READY"
+        # B routing should not be affected by P1.1AP-K ATR normalization
+        assert result["route_trigger"] in ["ev_threshold", "recovery_ready", "probe_ready"]
+
+    def test_p11apk_d_neg_control_unaffected(self):
+        """P1.1AP-K Test 7: D_NEG_EV_CONTROL isolation unchanged"""
+        reset_exploration_caps()
+        signal = {
+            "symbol": "XRPUSDT",
+            "action": "BUY",
+            "price": 1.37,
+            "atr": 0.001,  # Any ATR value, doesn't matter for D_NEG
+            "ev": -0.01,  # Negative EV
+            "score": 0.1,
+        }
+        ctx = {"reject_reason": "REJECT_NEGATIVE_EV"}
+
+        result = paper_exploration_override(signal, ctx)
+        assert result["allowed"] is True
+        assert result["bucket"] == "D_NEG_EV_CONTROL"
+        # D_NEG should not use cost-edge gate at all
 
 
 if __name__ == "__main__":

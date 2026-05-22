@@ -1823,9 +1823,11 @@ def _log_paper_train_quality_entry(position: dict, signal: dict) -> None:
         sl = float(position.get("sl") or 0.0)
 
         # P1.1AI: Handle expected_move_pct units — ATR absolute can be mislabeled as percent
+        # P1.1AP-K: Skip correction if already normalized from paper_exploration
         atr = float(signal.get("atr") or 0.0)
-        expected_move_src = "position"
-        if expected_move_pct > 2.0 and atr > 0 and abs(expected_move_pct - atr) < 0.1:
+        expected_move_src = position.get("expected_move_src", "position")
+
+        if expected_move_src != "atr_abs_price_normalized" and expected_move_pct > 2.0 and atr > 0 and abs(expected_move_pct - atr) < 0.1:
             # Heuristic: if expected_move_pct ≈ atr and both are > 2, likely mislabeled absolute ATR
             if entry > 0 and atr < entry * 0.02:  # If ATR < 2% of price, treat as absolute
                 expected_move_pct_corrected = (atr / entry) * 100.0

@@ -828,7 +828,7 @@ def maybe_open_training_sample(
 
         # Calculate cost edge
         from src.services.paper_exploration import _estimate_expected_move, _check_cost_edge
-        expected_move_dec, expected_move_pct = _estimate_expected_move(signal)
+        expected_move_dec, expected_move_pct, expected_move_src = _estimate_expected_move(signal)
         cost_edge_ok = _check_cost_edge(expected_move_dec)
 
         # Apply quality gates (P1.1N: anti-spam dedupe and rate caps)
@@ -927,6 +927,7 @@ def maybe_open_training_sample(
             "cost_edge_bypass_reason": gate_result.get("cost_edge_bypass_reason", "none"),
             "bootstrap_closed_trades": gate_result.get("bootstrap_closed_trades", 0),
             "expected_move_pct": expected_move_pct,
+            "expected_move_src": expected_move_src,
             "required_move_pct": 0.23,  # reference from P1.1j
             "max_hold_s": _MAX_HOLD_S,
             "tags": ["training_sampler", bucket.lower()],

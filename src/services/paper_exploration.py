@@ -87,23 +87,35 @@ def _normalize_pct_or_decimal(value: float) -> Tuple[float, float]:
         return (0.0, 0.0)
 
 
-def _estimate_expected_move(signal: dict) -> Tuple[float, float]:
+def _estimate_expected_move(signal: dict) -> Tuple[float, float, str]:
     """Estimate expected move from signal metrics.
 
     Returns:
-        (move_decimal, move_pct) — e.g., (0.0006, 0.06) if expected move is 0.06%
+        (move_decimal, move_pct, source) — e.g., (0.0024, 0.24, "atr_abs_price_normalized")
     """
     # Try ATR if available
     atr = signal.get("atr")
     if atr:
-        dec, pct = _normalize_pct_or_decimal(atr)
-        return (dec, pct)
+        atr_f = float(atr)
+        # P1.1AP-K: Normalize absolute-price ATR using price if available
+        price = signal.get("price") or signal.get("entry_price") or 0.0
+        price_f = float(price) if price else 0.0
+
+        if price_f > 0 and atr_f > 0 and atr_f < price_f * 0.1:
+            # ATR is likely absolute price move (< 10% of price)
+            move_dec = atr_f / price_f
+            move_pct = move_dec * 100.0
+            return (move_dec, move_pct, "atr_abs_price_normalized")
+        else:
+            # Fall back to heuristic normalization
+            dec, pct = _normalize_pct_or_decimal(atr_f)
+            return (dec, pct, "atr_heuristic")
 
     # Fallback: volatility
     volatility = signal.get("volatility", 0.0)
     if volatility > 0:
         dec, pct = _normalize_pct_or_decimal(volatility)
-        return (dec, pct)
+        return (dec, pct, "volatility")
 
     # Last resort: score as proxy (score * 1.5 ~= expected move %)
     # Score is 0-1, so score * 1.5 is 0-150%, which should be treated as percent
@@ -112,9 +124,9 @@ def _estimate_expected_move(signal: dict) -> Tuple[float, float]:
         move_pct = score * 1.5
         # Score-based move is already in percent, convert to decimal
         move_dec = move_pct / 100.0
-        return (move_dec, move_pct)
+        return (move_dec, move_pct, "score")
 
-    return (0.0, 0.0)
+    return (0.0, 0.0, "none")
 
 
 def _check_cost_edge(expected_move_dec: float) -> bool:
@@ -389,7 +401,7 @@ def paper_exploration_override(signal: dict, ctx: Optional[dict] = None) -> dict
         # C_WEAK_EV: Positive EV but below ECON_BAD floor, and has quality
         if ev > 0 and quality_any > 0:
             # P1.1j: Unit-normalized cost-edge check with detailed audit
-            expected_move_dec, expected_move_pct = _estimate_expected_move(signal)
+            expected_move_dec, expected_move_pct, expected_move_src = _estimate_expected_move(signal)
             has_edge = _check_cost_edge(expected_move_dec)
             direction_quality = _score_direction_quality(signal, ctx)
             sub_bucket = _classify_c_weak_ev_sub_bucket(signal, ctx, direction_quality)
@@ -397,13 +409,13 @@ def paper_exploration_override(signal: dict, ctx: Optional[dict] = None) -> dict
             # Audit log (before decision) with all units normalized
             log.debug(
                 "[PAPER_C_WEAK_EV_AUDIT] symbol=%s side=%s ev=%.4f "
-                "expected_move_dec=%.6f expected_move_pct=%.4f "
+                "expected_move_dec=%.6f expected_move_pct=%.4f expected_move_src=%s "
                 "cost_dec=%.6f cost_pct=%.4f "
                 "buffer_dec=%.6f buffer_pct=%.4f "
                 "required_move_dec=%.6f required_move_pct=%.4f "
                 "cost_edge_ok=%s direction_quality=%.3f sub_bucket=%s",
                 symbol, action, ev,
-                expected_move_dec, expected_move_pct,
+                expected_move_dec, expected_move_pct, expected_move_src,
                 _COST_TOTAL_DEC, _COST_TOTAL_PCT,
                 _MIN_EDGE_BUFFER_DEC, _MIN_EDGE_BUFFER_PCT,
                 _MIN_REQUIRED_MOVE_DEC, _MIN_REQUIRED_MOVE_PCT,
@@ -416,8 +428,8 @@ def paper_exploration_override(signal: dict, ctx: Optional[dict] = None) -> dict
                 _increment_skip_counter(skip_reason)
                 log.info(
                     "[PAPER_EXPLORE_SKIP] reason=%s bucket=C_WEAK_EV symbol=%s "
-                    "expected_move_pct=%.4f required_move_pct=%.4f",
-                    skip_reason, symbol, expected_move_pct, _MIN_REQUIRED_MOVE_PCT,
+                    "expected_move_pct=%.4f expected_move_src=%s required_move_pct=%.4f",
+                    skip_reason, symbol, expected_move_pct, expected_move_src, _MIN_REQUIRED_MOVE_PCT,
                 )
                 _maybe_log_skip_summary()
                 return {
@@ -429,6 +441,8 @@ def paper_exploration_override(signal: dict, ctx: Optional[dict] = None) -> dict
                     "tags": [],
                     "explore_sub_bucket": "C0_WEAK_EV_REJECTED",
                     "direction_quality_score": direction_quality,
+                    "expected_move_pct": expected_move_pct,
+                    "expected_move_src": expected_move_src,
                     "cost_edge_ok": False,
                 }
 
@@ -494,8 +508,8 @@ def paper_exploration_override(signal: dict, ctx: Optional[dict] = None) -> dict
             _increment_skip_counter("entries")
             log.info(
                 "[PAPER_EXPLORE_ENTRY] bucket=C_WEAK_EV symbol=%s sub_bucket=%s "
-                "ev=%.4f expected_move_pct=%.4f direction_quality=%.3f",
-                symbol, sub_bucket, ev, expected_move_pct, direction_quality,
+                "ev=%.4f expected_move_pct=%.4f expected_move_src=%s direction_quality=%.3f",
+                symbol, sub_bucket, ev, expected_move_pct, expected_move_src, direction_quality,
             )
             _maybe_log_skip_summary()
 
@@ -509,6 +523,8 @@ def paper_exploration_override(signal: dict, ctx: Optional[dict] = None) -> dict
                 "explore_sub_bucket": sub_bucket,
                 "direction_quality_score": direction_quality,
                 "cost_edge_ok": has_edge,
+                "expected_move_pct": expected_move_pct,
+                "expected_move_src": expected_move_src,
                 "tp_pct": tp_pct,
                 "sl_pct": sl_pct,
             }
