@@ -1687,36 +1687,63 @@ def _maybe_route_to_paper_training(signal: dict, current_price: float, reject_re
                 except Exception:
                     pass  # If dedup unavailable, continue anyway
 
+                # P1.1AP-N2: Build extra dict with recovery metadata if applicable
+                extra = {
+                    "paper_source": "training_sampler",
+                    "training_bucket": result.get("bucket", ""),
+                    "original_decision": reject_reason,
+                    "reject_reason": reject_reason,
+                    "side_inferred": result.get("side_inferred", False),
+                    "cost_edge_ok": result.get("cost_edge_ok", False),
+                    "cost_edge_bypassed": result.get("cost_edge_bypassed", False),
+                    "cost_edge_bypass_reason": result.get("cost_edge_bypass_reason", "none"),
+                    "bootstrap_closed_trades": result.get("bootstrap_closed_trades", 0),
+                    "expected_move_pct": result.get("expected_move_pct", 0.0),
+                    "required_move_pct": result.get("required_move_pct", 0.0),
+                    "size_mult": result.get("size_mult", 0.0),
+                    "max_hold_s": result.get("max_hold_s", 300),
+                    "features": signal.get("features", {}),
+                    "regime": signal.get("regime", "RANGING"),
+                    "score_at_entry": signal.get("score", 0.0),
+                    "score_raw": trade_signal.get("score_raw", trade_signal.get("score", None)),
+                    "score_final": trade_signal.get("score_final", trade_signal.get("score", None)),
+                }
+
+                # P1.1AP-N2: Add recovery admission metadata if applicable
+                if result.get("recovery_admission"):
+                    extra["learning_source"] = "paper_adaptive_recovery"
+                    extra["admission_reason"] = "paper_learning_must_continue"
+                    extra["historical_health"] = "BAD"
+
                 open_result = open_paper_position(
                     signal=trade_signal,
                     price=current_price,
                     ts=time.time(),
                     reason=f"TRAINING_SAMPLER:{reject_reason}",
-                    extra={
-                        "paper_source": "training_sampler",
-                        "training_bucket": result.get("bucket", ""),
-                        "original_decision": reject_reason,
-                        "reject_reason": reject_reason,
-                        "side_inferred": result.get("side_inferred", False),
-                        "cost_edge_ok": result.get("cost_edge_ok", False),
-                        "cost_edge_bypassed": result.get("cost_edge_bypassed", False),
-                        "cost_edge_bypass_reason": result.get("cost_edge_bypass_reason", "none"),
-                        "bootstrap_closed_trades": result.get("bootstrap_closed_trades", 0),
-                        "expected_move_pct": result.get("expected_move_pct", 0.0),
-                        "required_move_pct": result.get("required_move_pct", 0.0),
-                        "size_mult": result.get("size_mult", 0.0),
-                        "max_hold_s": result.get("max_hold_s", 300),
-                        "features": signal.get("features", {}),
-                        "regime": signal.get("regime", "RANGING"),
-                        "score_at_entry": signal.get("score", 0.0),
-                        "score_raw": trade_signal.get("score_raw", trade_signal.get("score", None)),
-                        "score_final": trade_signal.get("score_final", trade_signal.get("score", None)),
-                    },
+                    extra=extra,
                 )
                 if open_result.get("status") == "opened":
                     # P1.1AB: Record successful entry
                     trade_id = open_result.get("trade_id", "UNKNOWN")
                     _pipeline_record_paper_entry_success(sym, result.get("bucket", ""), trade_id)
+
+                    # P1.1AP-N2: Log recovery admission entry (in addition to normal PAPER_TRAIN_ENTRY)
+                    if result.get("recovery_admission"):
+                        log.info(
+                            "[PAPER_LEARNING_ENTRY] trade_id=%s symbol=%s side=%s "
+                            "learning_source=paper_adaptive_recovery admission_reason=paper_learning_must_continue "
+                            "historical_health=BAD original_decision=%s reject_reason=%s ev=%.4f "
+                            "expected_move_pct=%.4f expected_move_src=%s cost_edge_ok=False",
+                            trade_id,
+                            sym,
+                            result["side"],
+                            reject_reason,
+                            reject_reason,
+                            float(signal.get("ev", 0.0)),
+                            result.get("expected_move_pct", 0.0),
+                            result.get("expected_move_src", ""),
+                        )
+
                     log.info(
                         "[PAPER_TRAIN_ENTRY] bucket=%s symbol=%s side=%s price=%.8f "
                         "cost_edge_ok=%s cost_edge_bypassed=%s bypass_reason=%s bootstrap_closed=%d expected_move_pct=%.4f side_inferred=%s source=%s",
@@ -1754,52 +1781,7 @@ def _maybe_route_to_paper_training(signal: dict, current_price: float, reject_re
         else:
             # P1.1AP-N1 Fix 2: Recovery admission path for positive candidates rejected for health
             # If candidate has positive EV but was rejected for health reasons,
-            # admit through canonical paper learning stream with recovery metadata
-            ev = float(signal.get("ev", 0.0))
-            if ev > 0 and reject_reason in ["REJECT_ECON_BAD_ENTRY"]:
-                # Positive candidate rejected for economic health - eligible for recovery admission
-                try:
-                    # Check recovery admission caps
-                    recovery_open = len([p for p in _positions.values() if p.get("learning_source") == "paper_adaptive_recovery"])
-                    if recovery_open < 3:  # PAPER_LEARN_MAX_OPEN_GLOBAL = 3
-                        recovery_by_symbol = len([p for p in _positions.values() if p.get("learning_source") == "paper_adaptive_recovery" and p.get("symbol") == sym])
-                        if recovery_by_symbol < 1:  # PAPER_LEARN_MAX_OPEN_PER_SYMBOL = 1
-                            # Admit through recovery path
-                            trade_signal = dict(signal)
-                            recovery_extra = {
-                                "paper_source": "training_sampler",
-                                "learning_source": "paper_adaptive_recovery",
-                                "admission_reason": "paper_learning_must_continue",
-                                "historical_health": "BAD",
-                                "original_decision": reject_reason,
-                                "reject_reason": reject_reason,
-                            }
-                            open_result = open_paper_position(
-                                signal=trade_signal,
-                                price=current_price,
-                                ts=time.time(),
-                                reason=f"RECOVERY_ADMISSION:{reject_reason}",
-                                extra=recovery_extra,
-                            )
-                            if open_result.get("status") == "opened":
-                                trade_id = open_result.get("trade_id", "UNKNOWN")
-                                log.info(
-                                    "[PAPER_LEARNING_ENTRY] trade_id=%s symbol=%s side=%s "
-                                    "learning_source=paper_adaptive_recovery admission_reason=paper_learning_must_continue "
-                                    "historical_health=BAD original_decision=%s reject_reason=%s ev=%.4f",
-                                    trade_id, sym, signal.get("action", "UNKNOWN"),
-                                    reject_reason, reject_reason, ev,
-                                )
-                                return True
-                            else:
-                                log.info(
-                                    "[PAPER_LEARNING_ENTRY_BLOCKED] symbol=%s reason=admission_open_failed "
-                                    "original_decision=%s ev=%.4f",
-                                    sym, reject_reason, ev,
-                                )
-                except Exception as e:
-                    log.warning(f"[PAPER_RECOVERY_ADMISSION_ERROR] {sym}: {e}")
-
+            # P1.1AP-N2: Recovery admission is now handled in paper_training_sampler.py
             # Training sampler declined (sampler logs [PAPER_TRAIN_SKIP])
             return False
 

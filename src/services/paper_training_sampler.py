@@ -77,6 +77,16 @@ _BYPASS_FLOW_THROTTLE_S = 10.0  # throttle period for bypass flow logs
 _RATE_CAP_STATE_LAST_LOG = {}  # (symbol, bucket) -> timestamp
 _RATE_CAP_STATE_THROTTLE_S = 10.0  # throttle period for rate-cap state logs
 
+# P1.1AP-N2: Recovery admission state and caps
+_recovery_state: dict = {
+    "open_global": 0,        # current count of open recovery admissions
+    "open_by_symbol": {},    # symbol -> count of open recovery admissions
+}
+_RECOVERY_MAX_OPEN_GLOBAL = 3      # max open recovery positions globally
+_RECOVERY_MAX_OPEN_PER_SYMBOL = 1  # max open recovery positions per symbol
+_RECOVERY_BLOCKED_LAST_LOG = {}    # (symbol, reason) -> ts for throttling blocked logs
+_RECOVERY_BLOCKED_THROTTLE_S = 10.0
+
 
 def _now() -> float:
     """Get current timestamp."""
@@ -402,6 +412,36 @@ def _is_cold_start_starvation() -> bool:
         return False
 
 
+def _check_recovery_admission_caps(symbol: str, open_positions: Optional[List[dict]] = None) -> Tuple[bool, str]:
+    """P1.1AP-N2: Check if recovery admission is allowed by caps.
+
+    Returns: (allowed: bool, reason: str) where reason is cap name if blocked, empty if allowed.
+    """
+    try:
+        open_positions = open_positions or []
+
+        # Global cap: max 3 recovery positions
+        recovery_open_global = sum(
+            1 for p in open_positions
+            if p.get("learning_source") == "paper_adaptive_recovery"
+        )
+        if recovery_open_global >= _RECOVERY_MAX_OPEN_GLOBAL:
+            return (False, "recovery_cap_global")
+
+        # Per-symbol cap: max 1 recovery position
+        recovery_open_symbol = sum(
+            1 for p in open_positions
+            if p.get("learning_source") == "paper_adaptive_recovery" and p.get("symbol") == symbol
+        )
+        if recovery_open_symbol >= _RECOVERY_MAX_OPEN_PER_SYMBOL:
+            return (False, "recovery_cap_per_symbol")
+
+        return (True, "")
+    except Exception as e:
+        log.warning(f"[RECOVERY_CAP_CHECK_ERROR] {e}")
+        return (False, "check_error")
+
+
 def _training_quality_gate(
     symbol: str,
     side: str,
@@ -464,6 +504,39 @@ def _training_quality_gate(
             pass  # If check fails, use normal cost_edge rejection
 
         if not allow_bootstrap_bypass:
+            # P1.1AP-N2: Check for recovery admission eligibility before cost_edge_too_low reject
+            # Recovery allows positive EV candidates rejected by economic health to proceed as learning positions
+            if source_reject == "REJECT_ECON_BAD_ENTRY":
+                try:
+                    from src.core.runtime_mode import get_trading_mode
+                    mode = get_trading_mode()
+                    is_paper_train = mode and mode.value == "paper_train"
+
+                    if is_paper_train:
+                        # Check caps (pass empty open_positions, executor will validate actual positions)
+                        recovery_allowed, recovery_block_reason = _check_recovery_admission_caps(symbol, open_positions or [])
+                        if recovery_allowed:
+                            # Allow through as recovery admission
+                            return _allow(
+                                recovery_admission=True,
+                                recovery_bucket="RECOVERY_ADAPTIVE",
+                                cost_edge_ok=False,
+                            )
+                        else:
+                            # Recovery blocked by caps
+                            _key = (symbol, recovery_block_reason)
+                            if now - _RECOVERY_BLOCKED_LAST_LOG.get(_key, 0.0) >= _RECOVERY_BLOCKED_THROTTLE_S:
+                                _RECOVERY_BLOCKED_LAST_LOG[_key] = now
+                                log.info(
+                                    "[PAPER_LEARNING_ENTRY_BLOCKED] symbol=%s reason=%s "
+                                    "original_decision=REJECT_ECON_BAD_ENTRY cost_edge=False",
+                                    symbol, recovery_block_reason,
+                                )
+                            return _skip(recovery_block_reason, symbol=symbol, bucket=bucket, source_reject=source_reject)
+                except Exception as e:
+                    log.warning(f"[RECOVERY_ADMISSION_CHECK_ERROR] {symbol}: {e}")
+                    # Fall through to normal cost_edge_too_low rejection
+
             return _skip("cost_edge_too_low", symbol=symbol, bucket=bucket, source_reject=source_reject)
 
         # P1.1AE: Log the bypass candidate
@@ -910,12 +983,29 @@ def maybe_open_training_sample(
                 _probe_state["lifetime_closed"],
             )
 
+        # P1.1AP-N2: Log recovery admission acceptance
+        if gate_result.get("recovery_admission"):
+            log.info(
+                "[PAPER_LEARNING_ENTRY] symbol=%s side=%s learning_source=paper_adaptive_recovery "
+                "admission_reason=paper_learning_must_continue original_decision=%s "
+                "reject_reason=%s ev=%.4f expected_move_pct=%.4f expected_move_src=%s cost_edge_ok=False",
+                symbol,
+                side,
+                reason,
+                reason,
+                float(signal.get("ev", 0.0)) if signal else 0.0,
+                expected_move_pct,
+                expected_move_src,
+            )
+
         # P1.1AK: Include bypass metadata from gate result
         # P1.1AR: Include flow_id for correlation
         flow_id = ""
         if gate_result.get("cost_edge_bypassed"):
             flow_id = gate_result.get("flow_id", f"{symbol}:{side}:{bucket}:{int(time.time())}")
-        return {
+
+        # Build result dict
+        result = {
             "allowed": True,
             "bucket": bucket,
             "reason": f"training_sample bucket={bucket}",
@@ -933,6 +1023,15 @@ def maybe_open_training_sample(
             "tags": ["training_sampler", bucket.lower()],
             "flow_id": flow_id,
         }
+
+        # P1.1AP-N2: Add recovery metadata if this is a recovery admission
+        if gate_result.get("recovery_admission"):
+            result["recovery_admission"] = True
+            result["learning_source"] = "paper_adaptive_recovery"
+            result["admission_reason"] = "paper_learning_must_continue"
+            result["historical_health"] = "BAD"
+
+        return result
 
     except Exception as e:
         log.error(f"[PAPER_TRAIN_ERROR] {e}", exc_info=True)
