@@ -1280,6 +1280,13 @@ def _is_d_neg_control_trade(trade: dict) -> bool:
     return bucket == "D_NEG_EV_CONTROL" or training_bucket == "D_NEG_EV_CONTROL"
 
 
+def _is_econ_bad_near_miss_shadow_trade(trade: dict) -> bool:
+    """P1.1AP-L: Check if trade is E_ECON_BAD_NEAR_MISS_SHADOW (post-bootstrap diagnostic shadow, not canonical learning)."""
+    bucket = trade.get("bucket")
+    explore_bucket = trade.get("explore_bucket")
+    return bucket == "E_ECON_BAD_NEAR_MISS_SHADOW" or explore_bucket == "E_ECON_BAD_NEAR_MISS_SHADOW"
+
+
 def _safe_learning_update_for_paper_trade(pos: dict, pnl_data: dict) -> bool:
     """P1.1V: Convert closed paper trade to learning update. Decouple learning from telemetry. Never raises.
 
@@ -1304,9 +1311,11 @@ def _safe_learning_update_for_paper_trade(pos: dict, pnl_data: dict) -> bool:
         return False
 
     # P1.1AP-I: Skip canonical learning for D_NEG_EV_CONTROL (diagnostic control bucket)
+    # P1.1AP-L: Skip canonical learning for E_ECON_BAD_NEAR_MISS_SHADOW (post-bootstrap diagnostic shadow)
     # but log explicit skip and continue with bucket metrics
-    if _is_d_neg_control_trade(canon):
-        # P1.1AP-I2: Extract trade_id with fallback chain to avoid UNKNOWN in logs
+    is_shadow_trade = _is_d_neg_control_trade(canon) or _is_econ_bad_near_miss_shadow_trade(canon)
+    if is_shadow_trade:
+        # Extract trade_id with fallback chain to avoid UNKNOWN in logs
         trade_id = (
             canon.get("trade_id")
             or canon.get("id")
@@ -1318,28 +1327,44 @@ def _safe_learning_update_for_paper_trade(pos: dict, pnl_data: dict) -> bool:
             or "UNKNOWN"
         )
 
+        # Determine shadow reason
+        if _is_econ_bad_near_miss_shadow_trade(canon):
+            shadow_reason = "postbootstrap_econ_bad_near_miss_shadow_only"
+        else:
+            shadow_reason = "d_neg_ev_control_shadow_only"
+
         log.warning(
-            "[PAPER_LEARNING_SHADOW_SKIP] trade_id=%s symbol=%s bucket=%s training_bucket=%s outcome=%s net_pnl_pct=%.4f reason=%s",
+            "[PAPER_LEARNING_SHADOW_SKIP] trade_id=%s symbol=%s bucket=%s explore_bucket=%s training_bucket=%s outcome=%s net_pnl_pct=%.4f reason=%s",
             trade_id,
             canon["symbol"],
             canon["bucket"],
+            canon.get("explore_bucket", "UNKNOWN"),
             canon.get("training_bucket", "UNKNOWN"),
             canon["outcome"],
             canon["net_pnl_pct"],
-            "d_neg_ev_control_shadow_only",
+            shadow_reason,
         )
 
-        # P1.1AP-I2: Propagate shadow-only flags back to original dicts for downstream detection
+        # P1.1AP-L: Increment lifetime closed counter for ECON_BAD shadow trades
+        if _is_econ_bad_near_miss_shadow_trade(canon):
+            try:
+                from src.services.paper_exploration import _econ_bad_shadow_state
+                _econ_bad_shadow_state["lifetime_closed"] += 1
+            except Exception:
+                pass
+
+        # Propagate shadow-only flags back to original dicts for downstream detection
+        skip_reason_to_use = shadow_reason  # Use the determined shadow_reason
         for target in (pos, pnl_data):
             target["trade_id"] = trade_id
             target["learning_shadow_only"] = True
             target["learning_skipped"] = True
-            target["learning_skip_reason"] = "d_neg_ev_control_shadow_only"
+            target["learning_skip_reason"] = skip_reason_to_use
 
         canon["trade_id"] = trade_id
         canon["learning_shadow_only"] = True
         canon["learning_skipped"] = True
-        canon["learning_skip_reason"] = "d_neg_ev_control_shadow_only"
+        canon["learning_skip_reason"] = skip_reason_to_use
         return False
 
     # P1.1V: Separate learning update from telemetry (telemetry errors don't mask learning result)

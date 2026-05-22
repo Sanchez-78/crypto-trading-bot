@@ -2,7 +2,7 @@
 app_metrics_contract.py — Pure snapshot builder for Android dashboard.
 
 Builds a stable, JSON-safe Firestore document for app_metrics/latest.
-No Firebase imports. No runtime module imports. No learning-monitor imports.
+No Firebase imports. No runtime module imports. No stateful service imports.
 All runtime/health/quota/learning status is passed as plain dicts.
 
 Schema version: app_metrics_v1
@@ -18,6 +18,11 @@ APP_METRICS_SCHEMA_VERSION = "app_metrics_v1"
 APP_METRICS_WINDOW_LIMIT = 500
 APP_METRICS_MAX_OPEN_POSITIONS = 50
 APP_METRICS_STALE_SIGNAL_S = 300
+
+# APP METRICS (B): Rolling window constants (seconds)
+ROLLING_WINDOW_30M = 30 * 60  # 1800s
+ROLLING_WINDOW_24H = 24 * 3600  # 86400s
+ROLLING_WINDOW_7D = 7 * 24 * 3600  # 604800s
 
 
 # ── Safe helpers ──────────────────────────────────────────────────────────────
@@ -241,7 +246,14 @@ def _build_kpis(
 
 
 def _build_open_positions(open_positions, now: float) -> dict:
-    """Normalize open_positions (list or dict) into compact snapshot."""
+    """
+    Normalize open_positions (list or dict) into detailed snapshot.
+
+    APP METRICS (C): Extended position details for app UI.
+    Each position includes: position_id, symbol, side, mode, entry_price, current_price,
+    unrealized_pnl (abs/pct), tp_price, sl_price, opened_at, hold_seconds, hold_limit_seconds,
+    mfe_pct, mae_pct, regime, bucket.
+    """
     if isinstance(open_positions, dict):
         all_items = list(open_positions.values())
     elif isinstance(open_positions, (list, tuple)):
@@ -249,22 +261,52 @@ def _build_open_positions(open_positions, now: float) -> dict:
     else:
         all_items = []
 
-    # Cap and strip large fields
+    # Cap and include detailed fields
     compact = []
     for pos in all_items[:APP_METRICS_MAX_OPEN_POSITIONS]:
         if not isinstance(pos, dict):
             continue
-        entry_ts = _safe_float(pos.get("entry_ts") or pos.get("created_at") or 0.0)
+        entry_ts = _safe_float(pos.get("entry_ts") or pos.get("created_at") or pos.get("opened_at") or 0.0)
         age_s = round(_safe_float(now - entry_ts), 1) if entry_ts > 0 else None
+
+        # Calculate unrealized PnL
+        entry_price = _safe_float(pos.get("entry_price") or pos.get("entry") or 0.0)
+        current_price = _safe_float(pos.get("current_price") or pos.get("mark_price") or entry_price)
+        side = str(pos.get("side") or pos.get("action") or "").upper()
+
+        if side == "BUY":
+            unrealized_pnl_abs = (current_price - entry_price) * _safe_float(pos.get("quantity") or pos.get("size") or 1.0)
+            unrealized_pnl_pct = _safe_float((current_price - entry_price) / entry_price) if entry_price > 0 else 0.0
+        elif side == "SELL":
+            unrealized_pnl_abs = (entry_price - current_price) * _safe_float(pos.get("quantity") or pos.get("size") or 1.0)
+            unrealized_pnl_pct = _safe_float((entry_price - current_price) / entry_price) if entry_price > 0 else 0.0
+        else:
+            unrealized_pnl_abs = 0.0
+            unrealized_pnl_pct = 0.0
+
+        hold_limit_s = _safe_float(pos.get("hold_limit_seconds") or pos.get("timeout_seconds") or 3600.0)
+
         compact.append({
-            "trade_id": str(pos.get("trade_id") or pos.get("id") or ""),
+            "position_id": str(pos.get("trade_id") or pos.get("id") or pos.get("position_id") or ""),
             "symbol": str(pos.get("symbol") or ""),
-            "side": str(pos.get("side") or pos.get("action") or ""),
-            "entry_price": _safe_float(pos.get("entry_price") or pos.get("entry") or 0.0),
-            "size_usd": _safe_float(pos.get("size_usd") or pos.get("size") or 0.0),
-            "ev_at_entry": _safe_float(pos.get("ev_at_entry") or pos.get("ev") or 0.0),
-            "bucket": str(pos.get("training_bucket") or pos.get("explore_bucket") or ""),
-            "age_s": age_s,
+            "side": side,
+            "mode": str(pos.get("mode") or pos.get("trade_environment") or "PAPER"),
+            "entry_price": round(entry_price, 4),
+            "current_price": round(current_price, 4),
+            "unrealized_pnl_abs": round(unrealized_pnl_abs, 8),
+            "unrealized_pnl_pct": round(unrealized_pnl_pct, 4),
+            "tp_price": round(_safe_float(pos.get("take_profit") or pos.get("tp_price") or 0.0), 4),
+            "sl_price": round(_safe_float(pos.get("stop_loss") or pos.get("sl_price") or 0.0), 4),
+            "opened_at": entry_ts,
+            "age_s": age_s,  # Volatile field — excluded by semantic hash
+            "hold_seconds": age_s,
+            "hold_limit_seconds": round(hold_limit_s, 1),
+            "mfe_pct": round(_safe_float(pos.get("mfe_pct") or pos.get("mfe") or 0.0), 4),
+            "mae_pct": round(_safe_float(pos.get("mae_pct") or pos.get("mae") or 0.0), 4),
+            "regime": str(pos.get("regime") or "RANGING"),
+            "bucket": str(pos.get("training_bucket") or pos.get("explore_bucket") or pos.get("bucket") or ""),
+            "ev_at_entry": round(_safe_float(pos.get("ev_at_entry") or pos.get("ev") or 0.0), 4),
+            "size_usd": round(_safe_float(pos.get("size_usd") or pos.get("size") or 0.0), 2),
         })
 
     return {
@@ -311,8 +353,10 @@ def _build_last_signals(last_signals: dict, now: float, safe_mode: bool) -> dict
 
 
 def _build_learning_section(session_metrics: dict) -> dict:
-    """Build learning progress section from session metrics only.
+    """
+    Build learning progress section from session metrics.
 
+    APP METRICS (D): Extended learning breakdown with readiness components and calibration quality.
     Keep this module pure: no Firebase/runtime/learning-monitor imports here.
     """
     m = session_metrics or {}
@@ -333,16 +377,113 @@ def _build_learning_section(session_metrics: dict) -> dict:
         or "UNKNOWN"
     )
 
+    # APP METRICS (D): Readiness components for human-readable explanation
+    # Thresholds: min_trades=10, winrate>53%, profit_factor>1.2
+    min_trades_required = 10
+    min_trades_ok = decisive >= min_trades_required
+    winrate_ok = wr > 0.53
+    profit_factor = _safe_float(m.get("profit_factor") or 0.0)
+    pf_ok = profit_factor > 1.2
+    data_maturity_ok = maturity >= 0.7  # 105 trades / 150
+
+    readiness_reason = "UNKNOWN"
+    if all([min_trades_ok, winrate_ok, pf_ok, data_maturity_ok]):
+        readiness_reason = "READY"
+    elif not min_trades_ok:
+        readiness_reason = f"INSUFFICIENT_DATA ({decisive}/{min_trades_required} decisive)"
+    elif not data_maturity_ok:
+        readiness_reason = f"IMMATURE ({trades}/105 total)"
+    elif not winrate_ok:
+        readiness_reason = f"LOWWINRATE ({wr:.1%})"
+    elif not pf_ok:
+        readiness_reason = f"LOWPF ({profit_factor:.2f})"
+
     return {
         "progress_to_ready": round(progress, 3),
         "data_maturity": round(maturity, 3),
+        # APP METRICS (D): Readiness explanation
+        "readiness_reason": readiness_reason,
+        "readiness_components": {
+            "min_trades_ok": min_trades_ok,
+            "required_trades": min_trades_required,
+            "current_trades": decisive,
+            "winrate_ok": winrate_ok,
+            "winrate_current": round(wr, 4),
+            "winrate_target": 0.53,
+            "profit_factor_ok": pf_ok,
+            "profit_factor_current": round(profit_factor, 4),
+            "profit_factor_target": 1.2,
+            "data_maturity_ok": data_maturity_ok,
+            "maturity_current": round(maturity, 3),
+            "maturity_target": 0.7,
+        },
+        # APP METRICS (D): Quality calibration block
+        "calibration": {
+            "status": health,
+            "tp_sl_quality_pct": round(_safe_float(m.get("tp_sl_quality_pct") or 0.0), 2),
+            "ev_quality_score": round(_safe_float(m.get("ev_quality_score") or 0.0), 4),
+            "geometry_calibrated_pct": round(_safe_float(m.get("geometry_calibrated_pct") or 0.0), 2),
+            "available": bool(m.get("calibration_available", False)),
+        },
         "edge_detected": edge,
         "confidence_momentum": health,
-        "next_milestone": f"{max(0, 30 - decisive)} more decisive trades to basic calibration" if decisive < 30 else "",
+        "next_milestone": f"{max(0, min_trades_required - decisive)} more decisive trades to basic calibration" if decisive < min_trades_required else "",
         "hydration_source": str(m.get("hydration_source") or m.get("source") or "unknown"),
         "paper_train_entries_1h": _safe_int(m.get("paper_train_entries_1h")),
         "paper_train_closed_1h": _safe_int(m.get("paper_train_closed_1h")),
         "paper_train_learning_updates_1h": _safe_int(m.get("paper_train_learning_updates_1h")),
+        # APP METRICS (E): Learning activity windows (24h)
+        "paper_train_entries_24h": _safe_int(m.get("paper_train_entries_24h", 0)),
+        "paper_train_closed_24h": _safe_int(m.get("paper_train_closed_24h", 0)),
+        "paper_train_learning_updates_24h": _safe_int(m.get("paper_train_learning_updates_24h", 0)),
+    }
+
+
+# APP METRICS (B): Rolling window metrics calculator
+def _build_rolling_metrics(closed_trades: list, now: float) -> dict:
+    """
+    Calculate rolling trade metrics for 30m, 24h, 7d windows by mode (paper_live, live_real).
+    All windows use closed_at as boundary.
+    """
+    if not closed_trades:
+        return {
+            "paper_live_30m": {"count": 0, "wins": 0, "losses": 0, "flats": 0, "winrate": None, "net_pnl_abs": 0.0},
+            "live_real_30m": {"count": 0, "wins": 0, "losses": 0, "flats": 0, "winrate": None, "net_pnl_abs": 0.0},
+            "paper_24h": {"count": 0, "wins": 0, "losses": 0, "flats": 0, "winrate": None, "net_pnl_abs": 0.0},
+            "paper_7d": {"count": 0, "wins": 0, "losses": 0, "flats": 0, "winrate": None, "net_pnl_abs": 0.0},
+        }
+
+    def _metrics_for_trades(trades_list):
+        if not trades_list:
+            return {"count": 0, "wins": 0, "losses": 0, "flats": 0, "winrate": None, "net_pnl_abs": 0.0}
+        outcomes = [_classify_outcome(t, _extract_profit(t)) for t in trades_list]
+        wins = outcomes.count("WIN")
+        losses = outcomes.count("LOSS")
+        flats = outcomes.count("FLAT")
+        count = len(trades_list)
+        decisive = wins + losses
+        winrate = _safe_float(wins / decisive) if decisive > 0 else None
+        net_pnl = sum(_extract_profit(t) for t in trades_list)
+        return {
+            "count": count,
+            "wins": wins,
+            "losses": losses,
+            "flats": flats,
+            "winrate": winrate,
+            "net_pnl_abs": round(net_pnl, 8),
+        }
+
+    # Filter by time windows and mode
+    paper_live_30m = [t for t in closed_trades if (now - _safe_float(t.get("closed_at"), now)) <= ROLLING_WINDOW_30M and t.get("trade_environment") == "paper_live"]
+    live_real_30m = [t for t in closed_trades if (now - _safe_float(t.get("closed_at"), now)) <= ROLLING_WINDOW_30M and t.get("trade_environment") == "live_real"]
+    paper_24h = [t for t in closed_trades if (now - _safe_float(t.get("closed_at"), now)) <= ROLLING_WINDOW_24H and t.get("mode") == "PAPER"]
+    paper_7d = [t for t in closed_trades if (now - _safe_float(t.get("closed_at"), now)) <= ROLLING_WINDOW_7D and t.get("mode") == "PAPER"]
+
+    return {
+        "paper_live_30m": _metrics_for_trades(paper_live_30m),
+        "live_real_30m": _metrics_for_trades(live_real_30m),
+        "paper_24h": _metrics_for_trades(paper_24h),
+        "paper_7d": _metrics_for_trades(paper_7d),
     }
 
 
@@ -405,6 +546,9 @@ def build_app_metrics_snapshot(
     # Recommendations per symbol
     recommendations = _build_last_signals(last_signals, now, safe_mode)
 
+    # Rolling window metrics (Item B)
+    rolling_metrics = _build_rolling_metrics(closed_trades, now)
+
     # Recent window stats
     recent_window = min(len(closed_trades), 20)
     recent_trades = closed_trades[-recent_window:] if recent_window > 0 else []
@@ -428,6 +572,26 @@ def build_app_metrics_snapshot(
     reads_pct = f"{100 * quota_reads / max(quota_reads_limit, 1):.1f}%"
     writes_pct = f"{100 * quota_writes / max(quota_writes_limit, 1):.1f}%"
 
+    # APP METRICS (F): Component heartbeats for system health
+    component_heartbeats = {
+        "decision_engine_alive": bool(runtime.get("decision_engine_alive", True)),
+        "paper_sampler_alive": bool(runtime.get("paper_sampler_alive", True)),
+        "risk_engine_alive": bool(runtime.get("risk_engine_alive", True)),
+        "last_update_ts": _safe_float(runtime.get("last_heartbeat_ts") or now),
+    }
+
+    # APP METRICS (G): Economic attribution summary (counts of exit types)
+    exit_attribution = {
+        "wins_via_tp": _safe_int(session_metrics.get("wins_via_tp", 0)),
+        "wins_via_timeout": _safe_int(session_metrics.get("wins_via_timeout", 0)),
+        "wins_via_manual": _safe_int(session_metrics.get("wins_via_manual", 0)),
+        "losses_via_sl": _safe_int(session_metrics.get("losses_via_sl", 0)),
+        "losses_via_timeout": _safe_int(session_metrics.get("losses_via_timeout", 0)),
+        "losses_via_manual": _safe_int(session_metrics.get("losses_via_manual", 0)),
+        "flats_via_timeout": _safe_int(session_metrics.get("flats_via_timeout", 0)),
+        "flats_via_other": _safe_int(session_metrics.get("flats_via_other", 0)),
+    }
+
     health_section = {
         "firebase_available": bool(firebase_health.get("available", True)),
         "firebase_read_degraded": bool(firebase_health.get("read_degraded") or firebase_health.get("degraded")),
@@ -440,6 +604,8 @@ def build_app_metrics_snapshot(
         "quota_writes_pct": writes_pct,
         "reconciliation_verified": bool(firebase_health.get("reconciliation_verified", True)),
         "alerts": list(firebase_health.get("alerts") or []),
+        # APP METRICS (F): Component heartbeats
+        "component_heartbeats": component_heartbeats,
     }
 
     snapshot = {
@@ -474,6 +640,10 @@ def build_app_metrics_snapshot(
 
         "learning": _build_learning_section(session_metrics),
 
+        # APP METRICS (B): Rolling window metrics
+        "rolling_metrics": rolling_metrics,
+
+        # APP METRICS (C): Live open position snapshot
         "open_positions": open_pos,
 
         "symbols_scope": "window",
@@ -492,6 +662,32 @@ def build_app_metrics_snapshot(
             "recent_window": recent_window,
             "recent_winrate": recent_wr,
             "recent_avg_ev": recent_avg_ev,
+        },
+
+        # APP METRICS (G): Economic attribution summary
+        "attribution": exit_attribution,
+
+        # APP METRICS (H): Offline report index (read-only reference)
+        "offline_reports": {
+            "generated_at": now,
+            "reports": [
+                {
+                    "id": "paper_training_dataset",
+                    "title": "Paper Training Dataset",
+                    "kind": "dataset",
+                    "path": "offline_reports/paper_training_dataset.csv",
+                    "updated_at": _safe_float(runtime.get("paper_dataset_ts") or 0.0),
+                    "available": bool(runtime.get("paper_dataset_available", False)),
+                },
+                {
+                    "id": "quality_report",
+                    "title": "Quality Audit Report",
+                    "kind": "audit",
+                    "path": "offline_reports/quality_report.json",
+                    "updated_at": _safe_float(runtime.get("quality_report_ts") or 0.0),
+                    "available": bool(runtime.get("quality_report_available", False)),
+                },
+            ],
         },
 
         "app_context_cs": {
