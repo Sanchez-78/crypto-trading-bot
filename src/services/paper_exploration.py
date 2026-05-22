@@ -19,19 +19,7 @@ log = logging.getLogger(__name__)
 _exploration_hourly_caps = {
     "D_NEG_EV_CONTROL": {"max": 1, "count": 0, "window_start": 0},
     "E_NO_PATTERN": {"max": 1, "count": 0, "window_start": 0},
-    "E_ECON_BAD_NEAR_MISS_SHADOW": {"max": 2, "count": 0, "window_start": 0},  # P1.1AP-L: 2 per 30m (twice per hour cap)
 }
-
-# P1.1AP-L: ECON_BAD near-miss shadow state (diagnostic only, no canonical learning)
-_econ_bad_shadow_state = {
-    "lifetime_closed": 0,                    # Closed E_ECON_BAD_NEAR_MISS_SHADOW positions lifetime
-    "entry_times_10m": __import__("collections").deque(),  # Entry timestamps for 30-minute rate cap
-    "last_starvation_log_ts": 0.0,          # Throttle starvation diagnostics
-}
-_ECON_BAD_SHADOW_MAX_LIFETIME_CLOSED = 20   # Lifetime cap: stop after 20 closed samples
-_ECON_BAD_SHADOW_NEAR_MISS_FLOOR_EV = 0.030  # Diagnostic floor for weak-positive near-miss (named constant)
-_ECON_BAD_SHADOW_IDLE_S = 3600.0            # 60 minutes: no canonical/B/C entry since last entry
-_ECON_BAD_SHADOW_STARVATION_LOG_S = 120.0   # Emit starvation state log at most once per 2 minutes
 
 _ONE_HOUR_S = 3600
 
@@ -139,25 +127,6 @@ def _estimate_expected_move(signal: dict) -> Tuple[float, float, str]:
         return (move_dec, move_pct, "score")
 
     return (0.0, 0.0, "none")
-
-
-# P1.1AP-L: Helper to check if post-bootstrap ECON_BAD starvation exists
-def _is_post_bootstrap_econ_bad_starvation(now: float, entry_times_cache: list) -> bool:
-    """
-    True when:
-    - economic_status == BAD (inferred from entry rejection)
-    - canonical/global closed trade count >= 100 (checked by caller)
-    - no canonical/B/C evidence entry during last 60 minutes
-    """
-    # Filter entry times to last 60 minutes
-    recent_entries = [ts for ts in entry_times_cache if now - ts < _ECON_BAD_SHADOW_IDLE_S]
-    return len(recent_entries) == 0
-
-
-def _prune_econ_bad_shadow_state(now: float) -> None:
-    """Prune 10-minute window for rate cap check."""
-    while _econ_bad_shadow_state["entry_times_10m"] and now - _econ_bad_shadow_state["entry_times_10m"][0] > 600:
-        _econ_bad_shadow_state["entry_times_10m"].popleft()
 
 
 def _check_cost_edge(expected_move_dec: float) -> bool:
@@ -355,7 +324,7 @@ def paper_exploration_override(signal: dict, ctx: Optional[dict] = None) -> dict
 
     Args:
         signal: Signal dict with symbol, action, ev, score, features, regime, etc.
-        ctx: Optional context dict with rejection reason, quality metrics, original_decision, etc.
+        ctx: Optional context dict with rejection reason, quality metrics, etc.
 
     Returns:
         {
@@ -383,7 +352,6 @@ def paper_exploration_override(signal: dict, ctx: Optional[dict] = None) -> dict
 
         ctx = ctx or {}
         reject_reason = ctx.get("reject_reason", "UNKNOWN")
-        original_decision = ctx.get("original_decision", "")  # P1.1AP-L: For ECON_BAD detection
         recovery_ready = ctx.get("recovery_ready", False)
         probe_ready = ctx.get("probe_ready", False)
 
@@ -561,60 +529,6 @@ def paper_exploration_override(signal: dict, ctx: Optional[dict] = None) -> dict
                 "sl_pct": sl_pct,
             }
 
-        # P1.1AP-L: E_ECON_BAD_NEAR_MISS_SHADOW: Post-bootstrap starvation diagnostic
-        # Weak positive (0.030 < EV < 0.038) rejected under ECON_BAD, captured as shadow-only diagnostic
-        now = time.time()
-        _prune_econ_bad_shadow_state(now)
-
-        if (0 < ev < 0.038 and
-                ev >= _ECON_BAD_SHADOW_NEAR_MISS_FLOOR_EV and
-                "ECON_BAD" in original_decision and
-                _econ_bad_shadow_state["lifetime_closed"] < _ECON_BAD_SHADOW_MAX_LIFETIME_CLOSED):
-            # Rate cap: max 1 per 30 min
-            if len(_econ_bad_shadow_state["entry_times_10m"]) >= 1:
-                log.debug(
-                    "[PAPER_ECON_BAD_NEAR_MISS_SHADOW_BLOCKED] symbol=%s reason=rate_cap_10m "
-                    "entries_in_window=%d lifetime_closed=%d",
-                    symbol, len(_econ_bad_shadow_state["entry_times_10m"]), _econ_bad_shadow_state["lifetime_closed"],
-                )
-                return {
-                    "allowed": False,
-                    "bucket": "E_ECON_BAD_NEAR_MISS_SHADOW",
-                    "reason": "rate_cap_exceeded",
-                    "size_mult": 0.0,
-                    "max_hold_s": 0,
-                    "tags": [],
-                }
-
-            # Check if hourly cap is exceeded (shared with other exploration)
-            if not _check_hourly_cap("E_ECON_BAD_NEAR_MISS_SHADOW"):
-                return {
-                    "allowed": False,
-                    "bucket": "E_ECON_BAD_NEAR_MISS_SHADOW",
-                    "reason": "hourly_cap_exceeded",
-                    "size_mult": 0.05,
-                    "max_hold_s": 600,
-                    "tags": ["diagnostic"],
-                }
-
-            # Admit to shadow lane
-            _econ_bad_shadow_state["entry_times_10m"].append(now)
-            log.info(
-                "[PAPER_ECON_BAD_NEAR_MISS_SHADOW_ENTRY] symbol=%s side=%s ev=%.4f "
-                "economic_status=BAD post_bootstrap_starvation=True "
-                "lifetime_closed=%d near_miss_floor=%.4f",
-                symbol, action, ev, _econ_bad_shadow_state["lifetime_closed"], _ECON_BAD_SHADOW_NEAR_MISS_FLOOR_EV,
-            )
-            return {
-                "allowed": True,
-                "bucket": "E_ECON_BAD_NEAR_MISS_SHADOW",
-                "reason": f"postbootstrap_econ_bad_near_miss ev={ev:.4f}",
-                "size_mult": 0.05,
-                "max_hold_s": 600,
-                "tags": ["shadow", "diagnostic", "econ_bad"],
-                "route_trigger": "postbootstrap_econ_bad_shadow",
-            }
-
         # D_NEG_EV_CONTROL: Tiny capped sample of negative EV baseline
         if ev <= 0 and "NEGATIVE" in reject_reason:
             if not _check_hourly_cap("D_NEG_EV_CONTROL"):
@@ -694,7 +608,6 @@ def get_exploration_stats() -> dict:
     return {
         "D_NEG_EV_CONTROL": dict(_exploration_hourly_caps["D_NEG_EV_CONTROL"]),
         "E_NO_PATTERN": dict(_exploration_hourly_caps["E_NO_PATTERN"]),
-        "E_ECON_BAD_NEAR_MISS_SHADOW": dict(_exploration_hourly_caps.get("E_ECON_BAD_NEAR_MISS_SHADOW", {})),
     }
 
 
@@ -768,7 +681,6 @@ def maybe_open_paper_exploration_from_reject(
         # Check if this reject should be explored
         explore_ctx = {
             "reject_reason": reject_reason,
-            "original_decision": original_decision,  # P1.1AP-L: Pass original decision for ECON_BAD detection
             "recovery_ready": ctx.get("recovery_ready", False),
             "probe_ready": ctx.get("probe_ready", False),
         }

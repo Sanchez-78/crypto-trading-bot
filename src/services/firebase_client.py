@@ -1,4 +1,4 @@
-﻿"""
+"""
 Firebase client – centralized Firestore access layer.
 
 Free-tier quotas: 50 000 reads/day · 20 000 writes/day · 1 GB storage

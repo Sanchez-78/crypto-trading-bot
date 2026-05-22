@@ -1,4 +1,4 @@
-﻿"""
+"""
 app_metrics_contract.py — Pure snapshot builder for Android dashboard.
 
 Builds a stable, JSON-safe Firestore document for app_metrics/latest.
