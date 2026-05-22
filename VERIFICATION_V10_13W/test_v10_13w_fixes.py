@@ -20,12 +20,10 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-def test_fix_a_learning_integrity():
-    """Test Fix A: Learning Monitor hydration and data flow."""
-    log.info("\n" + "="*80)
-    log.info("TEST FIX A: Learning Integrity Audit")
-    log.info("="*80)
+# Internal helper functions returning bool (for __main__ runner compatibility)
 
+def _check_fix_a_learning_integrity() -> bool:
+    """Internal: Check Fix A and return bool result."""
     try:
         from src.services.learning_monitor import lm_count, lm_wr_hist, lm_pnl_hist, lm_health
         from src.services.learning_event import METRICS
@@ -47,25 +45,19 @@ def test_fix_a_learning_integrity():
         log.error(f"✗ Fix A failed: {e}")
         return False
 
-def test_fix_b_decision_score():
-    """Test Fix B: Canonical decision score wiring."""
-    log.info("\n" + "="*80)
-    log.info("TEST FIX B: Canonical Decision Score Wiring")
-    log.info("="*80)
-
+def _check_fix_b_decision_score() -> bool:
+    """Internal: Check Fix B and return bool result."""
     try:
         from src.services.realtime_decision_engine import (
             decision_score, build_decision_ctx, validate_decision_ctx, _log_canonical_decision
         )
 
-        # Create a mock decision context with real scores
         test_ev = 0.0425
         test_ws = 0.56
         test_score = decision_score(test_ev, test_ws)
 
         log.info(f"Test score calculation: ev={test_ev:.4f}, ws={test_ws:.3f} → score={test_score:.4f}")
 
-        # Build a decision context
         ctx = build_decision_ctx(
             sym="BTCUSDT",
             side="BUY",
@@ -94,7 +86,6 @@ def test_fix_b_decision_score():
             log.error(f"Decision context validation failed: {errors}")
             return False
 
-        # Log the decision using the new V10.13w function with explicit score wiring
         _log_canonical_decision(
             sym=ctx["symbol"],
             action=ctx["side"],
@@ -117,17 +108,12 @@ def test_fix_b_decision_score():
         log.error(f"✗ Fix B failed: {e}", exc_info=True)
         return False
 
-def test_fix_c_pnl_reconciliation():
-    """Test Fix C: PnL/Expectancy/WR reconciliation."""
-    log.info("\n" + "="*80)
-    log.info("TEST FIX C: PnL/WR/Expectancy Reconciliation")
-    log.info("="*80)
-
+def _check_fix_c_pnl_reconciliation() -> bool:
+    """Internal: Check Fix C and return bool result."""
     try:
         from src.services.learning_monitor import check_learning_integrity
         from src.services.learning_event import METRICS
 
-        # Run reconciliation check
         is_ok, status = check_learning_integrity(METRICS)
 
         log.info(f"Reconciliation result: {'OK' if is_ok else 'MISMATCH'}")
@@ -144,19 +130,14 @@ def test_fix_c_pnl_reconciliation():
         log.error(f"✗ Fix C failed: {e}", exc_info=True)
         return False
 
-def test_fix_d_safe_mode():
-    """Test Fix D: Adaptive safety freeze on integrity failure."""
-    log.info("\n" + "="*80)
-    log.info("TEST FIX D: Adaptive Safety Freeze")
-    log.info("="*80)
-
+def _check_fix_d_safe_mode() -> bool:
+    """Internal: Check Fix D and return bool result."""
     try:
         from src.services.learning_monitor import is_learning_frozen, check_learning_integrity
 
         frozen_before = is_learning_frozen()
         log.info(f"Learning frozen (before test): {frozen_before}")
 
-        # Check integrity (may freeze if data mismatch detected)
         is_ok, status = check_learning_integrity()
 
         frozen_after = is_learning_frozen()
@@ -173,19 +154,14 @@ def test_fix_d_safe_mode():
         log.error(f"✗ Fix D failed: {e}", exc_info=True)
         return False
 
-def test_fix_e_exit_attribution():
-    """Test Fix E: Exit attribution with net PnL contribution."""
-    log.info("\n" + "="*80)
-    log.info("TEST FIX E: Exit Attribution Net Contribution")
-    log.info("="*80)
-
+def _check_fix_e_exit_attribution() -> bool:
+    """Internal: Check Fix E and return bool result."""
     try:
         from src.services.exit_attribution import (
             build_exit_ctx, validate_exit_ctx, update_exit_attribution,
             render_exit_attribution_summary, _exit_stats
         )
 
-        # Create a test exit context with real PnL data
         test_ctx = build_exit_ctx(
             sym="BTCUSDT",
             regime="BULL_TREND",
@@ -195,8 +171,8 @@ def test_fix_e_exit_attribution():
             size=0.01,
             hold_seconds=480,
             gross_pnl=0.00000500,
-            fee_cost=-0.00000120,
-            slippage_cost=-0.00000030,
+            fee_cost=0.00000120,
+            slippage_cost=0.00000030,
             net_pnl=0.00000350,
             mfe=0.00000600,
             mae=-0.00000100,
@@ -213,7 +189,6 @@ def test_fix_e_exit_attribution():
 
         update_exit_attribution(test_ctx)
 
-        # Check if the exit stats include fee and slippage tracking
         if "PARTIAL_TP_25" in _exit_stats:
             stats = _exit_stats["PARTIAL_TP_25"]
             if "total_fee" in stats and "total_slippage" in stats:
@@ -225,7 +200,6 @@ def test_fix_e_exit_attribution():
                 log.error("Exit attribution missing fee/slippage tracking")
                 return False
 
-        # Render summary
         summary = render_exit_attribution_summary()
         log.info(f"Exit Attribution Summary:\n{summary}")
 
@@ -235,19 +209,11 @@ def test_fix_e_exit_attribution():
         log.error(f"✗ Fix E failed: {e}", exc_info=True)
         return False
 
-def test_fix_f_explainability():
-    """Test Fix F: Regime/direction explainability."""
-    log.info("\n" + "="*80)
-    log.info("TEST FIX F: Regime/Direction Explainability")
-    log.info("="*80)
-
+def _check_fix_f_explainability() -> bool:
+    """Internal: Check Fix F and return bool result."""
     try:
-        # Import the internal logging function
-        import sys
-        sys.path.insert(0, '.')
         from src.services.realtime_decision_engine import _log_canonical_decision
 
-        # Test logging a COUNTER_REGIME trade (SHORT in BULL)
         log.info("Logging test: SHORT in BULL_TREND (counter-regime)")
         _log_canonical_decision(
             sym="ETHUSDT",
@@ -272,6 +238,50 @@ def test_fix_f_explainability():
         log.error(f"✗ Fix F failed: {e}", exc_info=True)
         return False
 
+# Pytest test functions (use assertions instead of returning bool)
+
+def test_fix_a_learning_integrity():
+    """Test Fix A: Learning Monitor hydration and data flow."""
+    log.info("\n" + "="*80)
+    log.info("TEST FIX A: Learning Integrity Audit")
+    log.info("="*80)
+    assert _check_fix_a_learning_integrity(), "Learning integrity check failed"
+
+def test_fix_b_decision_score():
+    """Test Fix B: Canonical decision score wiring."""
+    log.info("\n" + "="*80)
+    log.info("TEST FIX B: Canonical Decision Score Wiring")
+    log.info("="*80)
+    assert _check_fix_b_decision_score(), "Decision score wiring check failed"
+
+def test_fix_c_pnl_reconciliation():
+    """Test Fix C: PnL/Expectancy/WR reconciliation."""
+    log.info("\n" + "="*80)
+    log.info("TEST FIX C: PnL/WR/Expectancy Reconciliation")
+    log.info("="*80)
+    assert _check_fix_c_pnl_reconciliation(), "PnL reconciliation check failed"
+
+def test_fix_d_safe_mode():
+    """Test Fix D: Adaptive safety freeze on integrity failure."""
+    log.info("\n" + "="*80)
+    log.info("TEST FIX D: Adaptive Safety Freeze")
+    log.info("="*80)
+    assert _check_fix_d_safe_mode(), "Safe mode freeze check failed"
+
+def test_fix_e_exit_attribution():
+    """Test Fix E: Exit attribution with net PnL contribution."""
+    log.info("\n" + "="*80)
+    log.info("TEST FIX E: Exit Attribution Net Contribution")
+    log.info("="*80)
+    assert _check_fix_e_exit_attribution(), "Exit attribution check failed"
+
+def test_fix_f_explainability():
+    """Test Fix F: Regime/direction explainability."""
+    log.info("\n" + "="*80)
+    log.info("TEST FIX F: Regime/Direction Explainability")
+    log.info("="*80)
+    assert _check_fix_f_explainability(), "Explainability check failed"
+
 def main():
     """Run all validation tests."""
     log.info("\n" + "="*80)
@@ -279,12 +289,12 @@ def main():
     log.info("="*80)
 
     results = {
-        "Fix A (Learning Integrity)": test_fix_a_learning_integrity(),
-        "Fix B (Decision Score Wiring)": test_fix_b_decision_score(),
-        "Fix C (PnL Reconciliation)": test_fix_c_pnl_reconciliation(),
-        "Fix D (Safe Mode Freeze)": test_fix_d_safe_mode(),
-        "Fix E (Exit Attribution)": test_fix_e_exit_attribution(),
-        "Fix F (Explainability)": test_fix_f_explainability(),
+        "Fix A (Learning Integrity)": _check_fix_a_learning_integrity(),
+        "Fix B (Decision Score Wiring)": _check_fix_b_decision_score(),
+        "Fix C (PnL Reconciliation)": _check_fix_c_pnl_reconciliation(),
+        "Fix D (Safe Mode Freeze)": _check_fix_d_safe_mode(),
+        "Fix E (Exit Attribution)": _check_fix_e_exit_attribution(),
+        "Fix F (Explainability)": _check_fix_f_explainability(),
     }
 
     log.info("\n" + "="*80)
