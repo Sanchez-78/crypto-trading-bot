@@ -1699,6 +1699,7 @@ def _maybe_route_to_paper_training(signal: dict, current_price: float, reject_re
                     "cost_edge_bypass_reason": result.get("cost_edge_bypass_reason", "none"),
                     "bootstrap_closed_trades": result.get("bootstrap_closed_trades", 0),
                     "expected_move_pct": result.get("expected_move_pct", 0.0),
+                    "expected_move_src": result.get("expected_move_src", ""),  # P1.1AP-N2B: Preserve source metadata
                     "required_move_pct": result.get("required_move_pct", 0.0),
                     "size_mult": result.get("size_mult", 0.0),
                     "max_hold_s": result.get("max_hold_s", 300),

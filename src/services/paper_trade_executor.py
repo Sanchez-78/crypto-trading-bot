@@ -1922,7 +1922,9 @@ def _log_paper_train_quality_entry(position: dict, signal: dict) -> None:
                 _QUALITY_ENTRY_LOGGED.add(trade_id)
         symbol = position.get("symbol", "na")
         side = position.get("side", "na")
-        source = position.get("paper_source", "na")
+        # P1.1AP-N2B: For recovery trades, use learning_source to identify origin
+        learning_source = position.get("learning_source", "paper_training_sampler")
+        source = "paper_adaptive_recovery" if learning_source == "paper_adaptive_recovery" else position.get("paper_source", "na")
         bucket = position.get("bucket") or position.get("training_bucket", "na")
         training_bucket = position.get("training_bucket", "na")
         regime = position.get("regime", "na")
@@ -2044,7 +2046,9 @@ def _log_paper_train_quality_entry(position: dict, signal: dict) -> None:
         )
 
         # P1.1AK: Anomaly detection — cost_edge_ok=False but not bypassed
-        if cost_edge_ok is False and cost_edge_bypassed is False:
+        # P1.1AP-N2B: Skip anomaly for intentional recovery samples (recovery admissions intentionally have cost_edge_ok=False)
+        is_recovery = learning_source == "paper_adaptive_recovery"
+        if cost_edge_ok is False and cost_edge_bypassed is False and not is_recovery:
             log.warning(
                 "[PAPER_TRAIN_ANOMALY] type=cost_edge_false_without_bypass trade_id=%s symbol=%s source=%s",
                 trade_id,
