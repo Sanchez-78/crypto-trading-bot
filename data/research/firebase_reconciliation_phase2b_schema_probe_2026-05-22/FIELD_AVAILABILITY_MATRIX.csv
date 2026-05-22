@@ -1,0 +1,30 @@
+field_name,data_type,code_evidence_file,code_evidence_line,confirmed_stored,required_for_diagnosis,probe_verifies,status,notes
+trade_id,string,exit_attribution.py,97,HIGH,YES,YES,LIKELY_PRESENT,Unique trade identifier; may be document key or field
+symbol,string,exit_attribution.py,99,HIGH,YES,YES,LIKELY_PRESENT,Asset pair: BTC ETH etc; used for filtering and reporting
+side,string,exit_attribution.py,100,HIGH,YES,YES,LIKELY_PRESENT,Direction: LONG or SHORT; essential for MFE/MAE calculation
+regime,string,exit_attribution.py,99,HIGH,MAYBE,MAYBE,LIKELY_PRESENT,Market regime classification; useful for analysis but not critical
+entry_price,float,exit_attribution.py,101,HIGH,YES,YES,LIKELY_PRESENT,Entry price in BTC; baseline for MFE/MAE calculation
+exit_price,float,exit_attribution.py,102,HIGH,YES,YES,LIKELY_PRESENT,Exit price in BTC; end point for analysis
+entry_ts,float,exit_attribution.py,102,HIGH,YES,YES,LIKELY_PRESENT,Entry timestamp (unix seconds); enables time-based filtering
+exit_ts,float,firebase_client.py,~270,HIGH,YES,YES,LIKELY_PRESENT,"Exit timestamp or close_time; critical for recent-trade filtering"
+size,float,exit_attribution.py,103,HIGH,MAYBE,MAYBE,UNCERTAIN,Trade size in BTC; optional for this analysis
+hold_seconds,int,exit_attribution.py,104,HIGH,MAYBE,MAYBE,UNCERTAIN,Duration of trade in seconds; optional
+gross_pnl,float,exit_attribution.py,105,HIGH,YES,YES,LIKELY_PRESENT,Gross profit before fees; essential for entry-edge validation
+fee_cost,float,exit_attribution.py,106,HIGH,YES,YES,LIKELY_PRESENT,Total fee cost in BTC; required for net-vs-gross comparison
+slippage_cost,float,exit_attribution.py,107,HIGH,YES,YES,LIKELY_PRESENT,Slippage cost in BTC; required for cost analysis
+net_pnl,float,exit_attribution.py,108,HIGH,YES,YES,LIKELY_PRESENT,Net profit after fees; reconciles with snapshot
+exit_reason,string,exit_attribution.py,111,HIGH,YES,YES,LIKELY_PRESENT,"Exit type: SCRATCH_EXIT STAGNATION_EXIT TP SL etc; filters diagnosis"
+outcome,string,app_metrics_contract.py,99,HIGH,YES,YES,LIKELY_PRESENT,Trade result: WIN LOSS or FLAT; classification for MFE analysis
+status,string,firebase_client.py,~270,HIGH,YES,YES,LIKELY_PRESENT,"Document status field: closed or open; filters to completed trades"
+max_seen,float,paper_trade_executor.py,1139,UNKNOWN,CRITICAL,YES,UNCERTAIN,"Highest price during hold; CRITICAL for MFE calculation. Probe determines if persisted."
+min_seen,float,paper_trade_executor.py,1140,UNKNOWN,CRITICAL,YES,UNCERTAIN,"Lowest price during hold; CRITICAL for MAE calculation. Probe determines if persisted."
+mfe_pct,float,paper_trade_executor.py,2036,UNKNOWN,CRITICAL,YES,UNCERTAIN,"Pre-calculated MFE percent; alternative to max_seen if provided"
+mae_pct,float,paper_trade_executor.py,2037,UNKNOWN,CRITICAL,YES,UNCERTAIN,"Pre-calculated MAE percent; alternative to min_seen if provided"
+training_bucket,string,app_metrics_contract.py,266,HIGH,MAYBE,MAYBE,UNCERTAIN,"Bucket classification: C_WEAK D_NEG_EV_CONTROL etc; enables filtering"
+source,string,exit_attribution.py,~120,UNKNOWN,MAYBE,YES,UNCERTAIN,"Data source indicator; may help isolate canonical trades"
+canonical_flag,boolean,UNKNOWN,UNKNOWN,UNKNOWN,MAYBE,YES,UNCERTAIN,"Explicit flag marking canonical trades vs shadow; may not exist"
+evaluation.profit,float,app_metrics_contract.py,78,MEDIUM,MAYBE,MAYBE,ALTERNATIVE,"Legacy field; fallback if net_pnl missing"
+tp_target,float,paper_trade_executor.py,~2100,MEDIUM,MAYBE,MAYBE,UNCERTAIN,"TP threshold; useful for exit-vs-entry diagnosis"
+sl_target,float,paper_trade_executor.py,~2100,MEDIUM,MAYBE,MAYBE,UNCERTAIN,"SL threshold; useful for exit-vs-entry diagnosis"
+actual_hold_s,int,paper_trade_executor.py,~920,LOW,MAYBE,MAYBE,UNCERTAIN,"Actual hold duration; alternative to hold_seconds"
+timeout_s,int,paper_trade_executor.py,~920,LOW,MAYBE,MAYBE,UNCERTAIN,"Timeout setting; context for stagnation exits"
