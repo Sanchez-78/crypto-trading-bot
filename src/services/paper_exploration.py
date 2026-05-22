@@ -570,8 +570,8 @@ def paper_exploration_override(signal: dict, ctx: Optional[dict] = None) -> dict
                 ev >= _ECON_BAD_SHADOW_NEAR_MISS_FLOOR_EV and
                 "ECON_BAD" in original_decision and
                 _econ_bad_shadow_state["lifetime_closed"] < _ECON_BAD_SHADOW_MAX_LIFETIME_CLOSED):
-            # Rate cap: max 2 per 30 min (2x per hourly window)
-            if len(_econ_bad_shadow_state["entry_times_10m"]) >= 2:
+            # Rate cap: max 1 per 30 min
+            if len(_econ_bad_shadow_state["entry_times_10m"]) >= 1:
                 log.debug(
                     "[PAPER_ECON_BAD_NEAR_MISS_SHADOW_BLOCKED] symbol=%s reason=rate_cap_10m "
                     "entries_in_window=%d lifetime_closed=%d",

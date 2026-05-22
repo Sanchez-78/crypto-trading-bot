@@ -195,8 +195,8 @@ class TestP11APL_EconBadShadowCaps:
         _econ_bad_shadow_state["lifetime_closed"] = 0
         _econ_bad_shadow_state["entry_times_10m"].clear()
 
-    def test_econ_bad_rate_cap_2_per_30m(self):
-        """Test: max 2 E-shadow entries per 30-minute window."""
+    def test_econ_bad_rate_cap_1_per_30m(self):
+        """Test: max 1 E-shadow entry per 30-minute window."""
         signal = {
             "symbol": "BTCUSDT",
             "action": "BUY",
@@ -218,16 +218,11 @@ class TestP11APL_EconBadShadowCaps:
         ov1 = paper_exploration_override(signal, ctx)
         assert ov1["allowed"] is True
 
-        # Second entry: allowed (up to 2 per 30m)
+        # Second entry: rate cap exceeded (max 1 per 30m)
         signal["symbol"] = "ETHUSDT"
         ov2 = paper_exploration_override(signal, ctx)
-        assert ov2["allowed"] is True
-
-        # Third entry: rate cap exceeded
-        signal["symbol"] = "XRPUSDT"
-        ov3 = paper_exploration_override(signal, ctx)
-        assert ov3["allowed"] is False
-        assert ov3["reason"] == "rate_cap_exceeded"
+        assert ov2["allowed"] is False
+        assert ov2["reason"] == "rate_cap_exceeded"
 
 
 class TestP11APL_ShadowTradeDetection:

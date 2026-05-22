@@ -1,4 +1,4 @@
-"""
+﻿"""
 Firebase client – centralized Firestore access layer.
 
 Free-tier quotas: 50 000 reads/day · 20 000 writes/day · 1 GB storage
@@ -392,35 +392,10 @@ def _slim_trade(trade):
     lm_update() and the calibrator with real values instead of 0.5 defaults.
     Boolean edge features (trend/pullback/bounce/etc.) are stored separately
     from continuous indicators so update_edge_stats() can filter them correctly.
-
-    APP METRICS (A): Trade mode/environment added for Android metrics.
-    Inferred from paper_source, training_bucket, or defaults to current trading_mode.
     """
     feat = trade.get("features") or {}
     # Boolean edge features used by update_edge_stats / lm_update
     bool_feats = {k: bool(v) for k, v in feat.items() if isinstance(v, bool)}
-
-    # APP METRICS (A): Determine trade mode for app metrics split
-    paper_source = trade.get("paper_source", "")
-    training_bucket = trade.get("training_bucket", "")
-
-    if paper_source or training_bucket:
-        # Paper trade (training or exploration)
-        mode = "PAPER"
-        if training_bucket:
-            trade_environment = "paper_train"
-        else:
-            trade_environment = "paper_live"
-    else:
-        # Real or replay trade
-        mode = trade.get("mode", "REAL").upper()
-        if mode == "REAL":
-            trade_environment = "live_real"
-        elif mode == "REPLAY":
-            trade_environment = "replay_train"
-        else:
-            trade_environment = mode.lower()
-
     return {
         "symbol":       trade.get("symbol"),
         "action":       trade.get("action"),
@@ -444,10 +419,6 @@ def _slim_trade(trade):
         "mfe":          round(float(trade.get("mfe", 0)), 6),
         "stop_loss":    round(float(trade.get("stop_loss")  or 0), 6),
         "take_profit":  round(float(trade.get("take_profit") or 0), 6),
-        # APP METRICS (A): Mode fields for app metrics split
-        "mode":         mode,
-        "trade_environment": trade_environment,
-        "trading_mode": trade_environment,
         "features": {
             **bool_feats,   # trend, pullback, bounce, breakout, vol, mom, wick
             "ema_diff":   round(float(feat.get("ema_diff",   0)), 6),
@@ -715,26 +686,14 @@ def _app_metrics_semantic_hash(snapshot: dict) -> str:
     kpis = s.get("kpis", {})
     kpis.pop("since_last_trade_s", None)
 
-    # Remove volatile age fields from open positions items
+    # Remove age_s from open positions items
     for pos in (s.get("open_positions") or {}).get("items") or []:
         pos.pop("age_s", None)
-        pos.pop("hold_seconds", None)  # APP METRICS (C): Also volatile
 
     # Remove age_s from recommendations
     for rec in (s.get("recommendations") or {}).values():
         if isinstance(rec, dict):
             rec.pop("age_s", None)
-
-    # APP METRICS (F, H): Remove timestamp-dependent fields from health/offline_reports
-    health = s.get("health", {})
-    if isinstance(health, dict):
-        heartbeats = health.get("component_heartbeats", {})
-        if isinstance(heartbeats, dict):
-            heartbeats.pop("last_update_ts", None)
-
-    offline = s.get("offline_reports", {})
-    if isinstance(offline, dict):
-        offline.pop("generated_at", None)
 
     raw = json.dumps(s, sort_keys=True, default=str)
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
