@@ -47,6 +47,24 @@ _QUALITY_EXIT_LOGGED = set()  # trade_ids with quality exit logged
 _QUALITY_EXIT_LOCK = __import__("threading").RLock()
 
 
+def _effective_paper_bucket(pos: dict, pnl_data: dict | None = None) -> str:
+    """P1.1AP-J2: Resolve effective diagnostic bucket from position fields.
+
+    Checks training_bucket first (training sampler), then explore_bucket (exploration),
+    then computed bucket field, with fallback to A_STRICT_TAKE.
+    """
+    pnl_data = pnl_data or {}
+    return (
+        pos.get("training_bucket")
+        or pos.get("explore_bucket")
+        or pos.get("bucket")
+        or pnl_data.get("training_bucket")
+        or pnl_data.get("explore_bucket")
+        or pnl_data.get("bucket")
+        or "A_STRICT_TAKE"
+    )
+
+
 def _is_training_position(pos: dict) -> bool:
     """Check if position is a paper training position using broader gate.
 
@@ -55,6 +73,7 @@ def _is_training_position(pos: dict) -> bool:
     return (
         pos.get("training_bucket") == "C_WEAK_EV_TRAIN"
         or pos.get("paper_source") == "training_sampler"
+        or _effective_paper_bucket(pos) == "B_RECOVERY_READY"
     )
 
 
@@ -2457,9 +2476,10 @@ def _log_paper_train_quality_exit(closed_trade: dict, position: dict) -> None:
                 touched_tp, touched_sl, near_tp, near_sl, hold_s, hold_limit_s, timeout, outcome, attribution,
             )
 
-        # P1.1AP-J: Add diagnostic attribution for B_RECOVERY_READY explore bucket exits
-        explore_bucket = position.get("bucket") or closed_trade.get("explore_bucket") or ""
-        if explore_bucket == "B_RECOVERY_READY":
+        # P1.1AP-J2: Add diagnostic attribution for B_RECOVERY_READY explore bucket exits
+        # Use effective bucket to handle both training_bucket and explore_bucket cases
+        effective_bucket = _effective_paper_bucket(position)
+        if effective_bucket == "B_RECOVERY_READY":
             tp_pct = abs(float(position.get("tp_pct_at_entry") or 0.0))
             sl_pct = abs(float(position.get("sl_pct_at_entry") or 0.0))
             gross_pnl_pct = float(closed_trade.get("gross_pnl_pct") or 0.0)
@@ -2470,12 +2490,12 @@ def _log_paper_train_quality_exit(closed_trade: dict, position: dict) -> None:
 
             log.info(
                 "[PAPER_TRAIN_ECON_ATTRIB] trade_id=%s symbol=%s side=%s entry_regime=%s exit_regime=%s "
-                "source=%s explore_bucket=%s "
+                "source=%s bucket=%s training_bucket=%s "
                 "entry=%.8f exit=%.8f net_pnl_pct=%.4f gross_move_pct=%.4f fee_drag_pct=%.4f "
                 "mfe_pct=%.4f mae_pct=%.4f tp_pct=%.4f sl_pct=%.4f mfe_to_tp_ratio=%.3f mae_to_sl_ratio=%.3f "
                 "touched_tp=%s touched_sl=%s hold_s=%d hold_limit_s=%d timeout=%s outcome=%s",
                 trade_id, symbol, side, entry_regime, exit_regime,
-                source, explore_bucket,
+                source, effective_bucket, training_bucket,
                 entry, exit_price, net_pnl_pct, gross_pnl_pct, fee_drag_pct,
                 mfe_pct, abs(mae_pct), tp_pct, sl_pct, mfe_to_tp_ratio, mae_to_sl_ratio,
                 touched_tp, touched_sl, hold_s, hold_limit_s, timeout, outcome,

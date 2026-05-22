@@ -1671,6 +1671,188 @@ class TestCostEdgeUnitAudit:
         assert result["bucket"] == "D_NEG_EV_CONTROL"
         # D_NEG should not use cost-edge gate at all
 
+    def test_p11apj2_b_recovery_exit_attribution_emitted(self, caplog):
+        """P1.1AP-J2 Test 1: B exploration close emits attribution with training_bucket=None"""
+        import logging
+        caplog.set_level(logging.INFO)
+
+        from src.services.paper_trade_executor import open_paper_position, close_paper_position
+
+        # Create B exploratory position matching production evidence
+        signal = {
+            "symbol": "XRPUSDT",
+            "action": "BUY",
+            "ev": 0.0399,
+            "score": 0.177,
+            "p": 0.5,
+            "coh": 1.0,
+            "af": 1.0,
+            "regime": "NEUTRAL",
+        }
+
+        result = open_paper_position(
+            signal=signal,
+            price=1.36445,
+            ts=1234567890.0,
+            reason="PAPER_EXPLORE",
+            extra={
+                "paper_source": "exploration_reject",
+                "explore_bucket": "B_RECOVERY_READY",
+                "original_decision": "REJECT_ECON_BAD_ENTRY",
+                "reject_reason": "weak_ev",
+                "final_size_usd": 15.0,
+                "max_hold_s": 900,
+            },
+        )
+
+        assert result["status"] == "opened"
+        trade_id = result["trade_id"]
+
+        # Close by timeout
+        closed = close_paper_position(trade_id, price=1.36375, ts=1234567890.0 + 900, reason="TIMEOUT")
+        assert closed is not None
+
+        # Verify PAPER_TRAIN_ECON_ATTRIB was emitted with B_RECOVERY_READY
+        attrib_logs = [r for r in caplog.records if "PAPER_TRAIN_ECON_ATTRIB" in r.message]
+        assert len(attrib_logs) > 0, "PAPER_TRAIN_ECON_ATTRIB not emitted for B_RECOVERY_READY close"
+
+        attrib_log = attrib_logs[0]
+        assert "B_RECOVERY_READY" in attrib_log.message
+        assert "bucket=" in attrib_log.message
+        assert "training_bucket=" in attrib_log.message
+
+    def test_p11apj2_b_no_canonical_learning(self, caplog):
+        """P1.1AP-J2 Test 2: B diagnostics do not add canonical learning"""
+        import logging
+        caplog.set_level(logging.INFO)
+
+        from src.services.paper_trade_executor import open_paper_position, close_paper_position
+
+        signal = {
+            "symbol": "ADAUSDT",
+            "action": "BUY",
+            "ev": 0.05,
+            "score": 0.2,
+            "p": 0.5,
+            "coh": 1.0,
+            "af": 1.0,
+            "regime": "NEUTRAL",
+        }
+
+        result = open_paper_position(
+            signal=signal,
+            price=0.25,
+            ts=1234567890.0,
+            reason="PAPER_EXPLORE",
+            extra={
+                "paper_source": "exploration_reject",
+                "explore_bucket": "B_RECOVERY_READY",
+                "original_decision": "REJECT_ECON_BAD_ENTRY",
+                "reject_reason": "weak_ev",
+                "final_size_usd": 15.0,
+                "max_hold_s": 900,
+            },
+        )
+
+        assert result["status"] == "opened"
+        trade_id = result["trade_id"]
+
+        closed = close_paper_position(trade_id, price=0.252, ts=1234567890.0 + 450, reason="TP")
+        assert closed is not None
+
+        # Verify NO canonical learning logs for B
+        canonical_logs = [r for r in caplog.records if "LM_STATE_AFTER_UPDATE" in r.message or "LEARNING_UPDATE" in r.message]
+        for log in canonical_logs:
+            assert "B_RECOVERY_READY" not in log.message, f"B_RECOVERY_READY should not trigger canonical learning: {log.message}"
+
+    def test_p11apj2_c_weak_unchanged(self, caplog):
+        """P1.1AP-J2 Test 3: C_WEAK training still emits attribution and learning"""
+        import logging
+        caplog.set_level(logging.INFO)
+
+        from src.services.paper_trade_executor import open_paper_position, close_paper_position
+
+        signal = {
+            "symbol": "XRPUSDT",
+            "action": "BUY",
+            "ev": 0.04,
+            "score": 0.15,
+            "p": 0.5,
+            "coh": 1.0,
+            "af": 1.0,
+            "regime": "NEUTRAL",
+        }
+
+        result = open_paper_position(
+            signal=signal,
+            price=1.37,
+            ts=1234567890.0,
+            reason="PAPER_EXPLORE",
+            extra={
+                "paper_source": "training_sampler",
+                "training_bucket": "C_WEAK_EV_TRAIN",
+                "original_decision": "REJECT_ECON_BAD_ENTRY",
+                "reject_reason": "weak_ev",
+                "final_size_usd": 15.0,
+                "max_hold_s": 900,
+            },
+        )
+
+        assert result["status"] == "opened"
+        trade_id = result["trade_id"]
+
+        closed = close_paper_position(trade_id, price=1.379, ts=1234567890.0 + 450, reason="TP")
+        assert closed is not None
+
+        # C_WEAK should still emit attribution
+        attrib_logs = [r for r in caplog.records if "PAPER_TRAIN_ECON_ATTRIB" in r.message]
+        c_weak_attribs = [r for r in attrib_logs if "C_WEAK_EV_TRAIN" in r.message]
+        assert len(c_weak_attribs) > 0, "C_WEAK should emit attribution"
+
+    def test_p11apj2_d_neg_unchanged(self, caplog):
+        """P1.1AP-J2 Test 4: D_NEG shadow isolation unchanged"""
+        import logging
+        caplog.set_level(logging.INFO)
+
+        from src.services.paper_trade_executor import open_paper_position, close_paper_position
+
+        signal = {
+            "symbol": "BTCUSDT",
+            "action": "BUY",
+            "ev": -0.01,
+            "score": 0.1,
+            "p": 0.5,
+            "coh": 1.0,
+            "af": 1.0,
+            "regime": "NEUTRAL",
+        }
+
+        result = open_paper_position(
+            signal=signal,
+            price=65000.0,
+            ts=1234567890.0,
+            reason="PAPER_EXPLORE",
+            extra={
+                "paper_source": "training_sampler",
+                "training_bucket": "D_NEG_EV_CONTROL",
+                "original_decision": "REJECT_NEGATIVE_EV",
+                "reject_reason": "negative_ev",
+                "final_size_usd": 10.0,
+                "max_hold_s": 900,
+            },
+        )
+
+        assert result["status"] == "opened"
+        trade_id = result["trade_id"]
+
+        closed = close_paper_position(trade_id, price=65100.0, ts=1234567890.0 + 450, reason="SL")
+        assert closed is not None
+
+        # D_NEG should not have canonical LEARNING_UPDATE with ok=True
+        learning_logs = [r for r in caplog.records if "LEARNING_UPDATE" in r.message]
+        for log in learning_logs:
+            assert "D_NEG_EV_CONTROL" not in log.message or "ok=False" in log.message
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
