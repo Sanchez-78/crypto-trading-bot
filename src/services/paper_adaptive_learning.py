@@ -1,0 +1,374 @@
+"""P1.1AP-N: Paper Adaptive Learning - Rolling Metrics & Policy Adaptation
+
+Tracks rolling metrics (20/50/100 closes) alongside lifetime metrics.
+Adapts policy weights based on rolling segment performance.
+Gates REAL_READY transition on strict rolling metrics criteria.
+
+State persisted as JSON; survives restarts.
+"""
+
+import json
+import os
+import logging
+import time
+from collections import deque
+from typing import Optional, Dict, List
+
+log = logging.getLogger(__name__)
+
+# Persistent state file
+_STATE_FILE = "server_local_backups/paper_adaptive_learning_state.json"
+
+# Rolling window sizes
+ROLLING_SIZES = {
+    "rolling20": 20,
+    "rolling50": 50,
+    "rolling100": 100,
+}
+
+# Segment key format: symbol:regime:side
+# Tracks metrics per segment for adaptive weighting
+
+class PaperAdaptiveLearning:
+    """Rolling metrics + policy adaptation engine."""
+
+    def __init__(self):
+        self.lifetime_n = 0
+        self.lifetime_pf = 1.0
+        self.lifetime_expectancy = 0.0
+        self.lifetime_net_pnl = 0.0
+
+        # Rolling windows: list of (net_pnl_pct, outcome, segment_key, ts)
+        self.rolling20 = deque(maxlen=20)
+        self.rolling50 = deque(maxlen=50)
+        self.rolling100 = deque(maxlen=100)
+
+        # Segment weights: {segment_key: weight}
+        # Weight affects priority in next paper entries
+        self.segment_weights = {}
+
+        # Readiness tracking
+        self.lifecycle = "PAPER_COLLECTING"  # COLLECTING -> ADAPTING -> VALIDATING -> REAL_READY
+        self.ready_ts = None
+        self.real_active = False
+
+        # Load persisted state if exists
+        self._load_state()
+
+    def _load_state(self) -> None:
+        """Load persistent state from JSON file."""
+        try:
+            if os.path.exists(_STATE_FILE):
+                with open(_STATE_FILE, 'r') as f:
+                    data = json.load(f)
+
+                self.lifetime_n = data.get("lifetime_n", 0)
+                self.lifetime_pf = data.get("lifetime_pf", 1.0)
+                self.lifetime_expectancy = data.get("lifetime_expectancy", 0.0)
+                self.lifecycle = data.get("lifecycle", "PAPER_COLLECTING")
+
+                # Restore rolling windows
+                self.rolling20 = deque(data.get("rolling20", []), maxlen=20)
+                self.rolling50 = deque(data.get("rolling50", []), maxlen=50)
+                self.rolling100 = deque(data.get("rolling100", []), maxlen=100)
+
+                self.segment_weights = data.get("segment_weights", {})
+
+                log.info(
+                    "[PAPER_LEARNING_STATE_RESTORE] state_ok=True "
+                    "lifetime_n=%d rolling20=%d rolling50=%d rolling100=%d "
+                    "lifecycle=%s",
+                    self.lifetime_n,
+                    len(self.rolling20),
+                    len(self.rolling50),
+                    len(self.rolling100),
+                    self.lifecycle
+                )
+        except Exception as e:
+            log.warning("[PAPER_LEARNING_STATE_RESTORE] failed: %s", e)
+
+    def _save_state(self) -> None:
+        """Persist state to JSON file."""
+        try:
+            os.makedirs(os.path.dirname(_STATE_FILE), exist_ok=True)
+            data = {
+                "lifetime_n": self.lifetime_n,
+                "lifetime_pf": self.lifetime_pf,
+                "lifetime_expectancy": self.lifetime_expectancy,
+                "lifecycle": self.lifecycle,
+                "rolling20": list(self.rolling20),
+                "rolling50": list(self.rolling50),
+                "rolling100": list(self.rolling100),
+                "segment_weights": self.segment_weights,
+            }
+            with open(_STATE_FILE, 'w') as f:
+                json.dump(data, f, indent=2)
+        except Exception as e:
+            log.warning("[PAPER_LEARNING_STATE_SAVE] failed: %s", e)
+
+    def record_close(self, trade: dict) -> None:
+        """Record a closed paper trade and update metrics.
+
+        Args:
+            trade: {
+                'net_pnl_pct': float,
+                'outcome': str (WIN/LOSS/FLAT),
+                'symbol': str,
+                'regime': str,
+                'side': str,
+                'learning_source': str,
+                'mfe_pct': float,
+                'mae_pct': float,
+                ...
+            }
+        """
+        try:
+            net_pnl_pct = float(trade.get("net_pnl_pct", 0.0))
+        except (TypeError, ValueError):
+            net_pnl_pct = 0.0
+        outcome = str(trade.get("outcome", "FLAT"))
+        symbol = str(trade.get("symbol", "UNKNOWN"))
+        regime = str(trade.get("regime", "UNKNOWN"))
+        side = str(trade.get("side", "UNKNOWN"))
+        segment_key = f"{symbol}:{regime}:{side}"
+
+        # Record to rolling windows
+        entry = (net_pnl_pct, outcome, segment_key, time.time())
+        self.rolling20.append(entry)
+        self.rolling50.append(entry)
+        self.rolling100.append(entry)
+
+        # Update lifetime metrics
+        self.lifetime_n += 1
+        self.lifetime_expectancy = self._compute_expectancy(
+            [e[0] for e in self._lifetime_entries()]
+        )
+        self.lifetime_pf = self._compute_pf(
+            [(e[0], e[1]) for e in self._lifetime_entries()]
+        )
+
+        # Update segment metrics and policy
+        self._update_segment_policy(segment_key)
+
+        # Emit log
+        rolling20_pf = self._compute_rolling_pf(self.rolling20)
+        rolling50_pf = self._compute_rolling_pf(self.rolling50)
+        rolling100_pf = self._compute_rolling_pf(self.rolling100)
+        rolling20_exp = self._compute_expectancy([e[0] for e in self.rolling20])
+        rolling50_exp = self._compute_expectancy([e[0] for e in self.rolling50])
+        rolling100_exp = self._compute_expectancy([e[0] for e in self.rolling100])
+
+        policy_action = self._compute_policy_action(segment_key, len(self.rolling100))
+
+        log.info(
+            "[PAPER_CANONICAL_LEARNING_UPDATE] "
+            "trade_id=%s symbol=%s side=%s regime=%s learning_source=%s "
+            "outcome=%s net_pnl_pct=%.4f mfe_pct=%s mae_pct=%s "
+            "lifetime_n=%d lifetime_pf=%.3f lifetime_expectancy=%.6f "
+            "rolling20_n=%d rolling20_pf=%.3f rolling20_expectancy=%.6f "
+            "rolling50_n=%d rolling50_pf=%.3f rolling50_expectancy=%.6f "
+            "rolling100_n=%d rolling100_pf=%.3f rolling100_expectancy=%.6f "
+            "segment=%s policy_action=%s",
+            trade.get("trade_id", ""),
+            symbol, side, regime,
+            trade.get("learning_source", ""),
+            outcome, net_pnl_pct,
+            trade.get("mfe_pct", ""),
+            trade.get("mae_pct", ""),
+            self.lifetime_n, self.lifetime_pf, self.lifetime_expectancy,
+            len(self.rolling20), rolling20_pf, rolling20_exp,
+            len(self.rolling50), rolling50_pf, rolling50_exp,
+            len(self.rolling100), rolling100_pf, rolling100_exp,
+            segment_key,
+            policy_action,
+        )
+
+        # Save state
+        self._save_state()
+
+    def _lifetime_entries(self) -> List:
+        """Get all lifetime entries (rolling20+50+100 combined)."""
+        # This is approximate; ideally we'd track all lifetime entries
+        # For now, combine rolling windows (will miss oldest after rotate)
+        return list(self.rolling100)
+
+    def _compute_expectancy(self, net_pnl_pcts: List[float]) -> float:
+        """Mean net PnL pct."""
+        if not net_pnl_pcts:
+            return 0.0
+        return sum(net_pnl_pcts) / len(net_pnl_pcts)
+
+    def _compute_pf(self, trades: List) -> float:
+        """Profit factor: gross_wins / abs(gross_losses)."""
+        gross_wins = sum(net for net, outcome in trades if outcome == "WIN")
+        gross_losses = abs(sum(net for net, outcome in trades if outcome == "LOSS"))
+        if gross_losses == 0:
+            return 1.0 if gross_wins >= 0 else 0.0
+        return gross_wins / gross_losses if gross_wins > 0 else 0.0
+
+    def _compute_rolling_pf(self, window: deque) -> float:
+        """PF for a rolling window."""
+        if not window:
+            return 1.0
+        return self._compute_pf([(e[0], e[1]) for e in window])
+
+    def _update_segment_policy(self, segment_key: str) -> None:
+        """Adapt policy weight for segment based on rolling performance."""
+        # Count closes in this segment in rolling100
+        segment_closes = sum(1 for e in self.rolling100 if e[2] == segment_key)
+        if segment_closes < 20:
+            return  # Not enough data yet
+
+        # Compute segment metrics
+        segment_entries = [e for e in self.rolling100 if e[2] == segment_key]
+        segment_pf = self._compute_pf([(e[0], e[1]) for e in segment_entries])
+        segment_exp = self._compute_expectancy([e[0] for e in segment_entries])
+
+        # Adaptive weighting
+        if segment_pf < 0.80 and segment_exp < 0:
+            # Losing segment: downweight
+            new_weight = max(0.25, (self.segment_weights.get(segment_key, 1.0) - 0.1))
+            self.segment_weights[segment_key] = new_weight
+            action = "downweight_losing_segment"
+        elif segment_pf > 1.10 and segment_exp > 0:
+            # Winning segment: upweight
+            new_weight = min(2.00, (self.segment_weights.get(segment_key, 1.0) + 0.1))
+            self.segment_weights[segment_key] = new_weight
+            action = "prefer_improving_segment"
+        else:
+            action = "continue_learning"
+
+        if action != "continue_learning":
+            log.info(
+                "[PAPER_POLICY_ADAPTATION] "
+                "segment=%s n=%d pf=%.3f expectancy=%.6f "
+                "old_weight=%.2f new_weight=%.2f action=%s reason=post_cost_rolling_learning",
+                segment_key,
+                segment_closes,
+                segment_pf,
+                segment_exp,
+                self.segment_weights.get(segment_key, 1.0),
+                self.segment_weights.get(segment_key, 1.0),  # Will be updated above
+                action
+            )
+
+    def _compute_policy_action(self, segment_key: str, total_closes: int) -> str:
+        """Determine current policy action based on data."""
+        if total_closes < 20:
+            return "collect_bootstrap"
+
+        segment_closes = sum(1 for e in self.rolling100 if e[2] == segment_key)
+        if segment_closes >= 20:
+            weight = self.segment_weights.get(segment_key, 1.0)
+            if weight < 0.50:
+                return "downweight_losing_segment"
+            elif weight > 1.50:
+                return "prefer_improving_segment"
+
+        return "continue_learning"
+
+    def check_real_readiness(self) -> Dict:
+        """Check if REAL_READY conditions are met.
+
+        Returns:
+            {
+                'eligible': bool,
+                'paper_closed': int,
+                'rolling100_pf': float,
+                'rolling100_expectancy': float,
+                'rolling100_net_pnl': float,
+                'rolling20_pf': float,
+                'rolling20_expectancy': float,
+                'drawdown': float,
+                'symbols': list,
+                'max_segment_profit_share': float,
+                'reason': str,
+            }
+        """
+        paper_closed = len(self.rolling100)
+        rolling100_pf = self._compute_rolling_pf(self.rolling100)
+        rolling100_exp = self._compute_expectancy([e[0] for e in self.rolling100])
+        rolling100_net = sum(e[0] for e in self.rolling100) / 100.0 if self.rolling100 else 0.0
+
+        rolling20_pf = self._compute_rolling_pf(self.rolling20)
+        rolling20_exp = self._compute_expectancy([e[0] for e in self.rolling20])
+
+        # Extract symbols
+        symbols = list(set(e[2].split(":")[0] for e in self.rolling100))
+
+        # Segment concentration
+        max_segment_share = 0.0
+        if self.rolling100:
+            for seg in set(e[2] for e in self.rolling100):
+                seg_profit = sum(e[0] for e in self.rolling100 if e[2] == seg and e[1] == "WIN")
+                total_profit = sum(e[0] for e in self.rolling100 if e[1] == "WIN")
+                if total_profit > 0:
+                    max_segment_share = max(max_segment_share, seg_profit / total_profit)
+
+        # Check all gates
+        reasons = []
+
+        if paper_closed < 100:
+            reasons.append(f"paper_closed={paper_closed}<100")
+        if rolling100_pf < 1.20:
+            reasons.append(f"rolling100_pf={rolling100_pf:.3f}<1.20")
+        if rolling100_exp <= 0:
+            reasons.append(f"rolling100_expectancy={rolling100_exp:.6f}<=0")
+        if rolling100_net <= 0:
+            reasons.append(f"rolling100_net_pnl={rolling100_net:.6f}<=0")
+        if rolling20_pf <= 1.00:
+            reasons.append(f"rolling20_pf={rolling20_pf:.3f}<=1.00")
+        if rolling20_exp <= 0:
+            reasons.append(f"rolling20_expectancy={rolling20_exp:.6f}<=0")
+        if len(symbols) < 3:
+            reasons.append(f"symbols={len(symbols)}<3")
+        if max_segment_share > 0.60:
+            reasons.append(f"max_segment_share={max_segment_share:.2f}>0.60")
+
+        eligible = len(reasons) == 0
+
+        log.info(
+            "[REAL_READINESS_CHECK] "
+            "eligible=%s paper_closed=%d rolling100_pf=%.3f "
+            "rolling100_expectancy=%.6f rolling100_net_pnl=%.6f "
+            "rolling20_pf=%.3f rolling20_expectancy=%.6f "
+            "symbols=%d max_segment_profit_share=%.2f %s",
+            eligible, paper_closed, rolling100_pf, rolling100_exp, rolling100_net,
+            rolling20_pf, rolling20_exp, len(symbols), max_segment_share,
+            " ".join(reasons) if reasons else "reason=all_gates_pass"
+        )
+
+        if eligible:
+            log.info(
+                "[REAL_READY] eligible=True current_mode=PAPER "
+                "operator_unlock_required=True rolling100_n=%d rolling100_pf=%.3f",
+                paper_closed, rolling100_pf
+            )
+            self.lifecycle = "REAL_READY"
+            self.ready_ts = time.time()
+
+        return {
+            "eligible": eligible,
+            "paper_closed": paper_closed,
+            "rolling100_pf": rolling100_pf,
+            "rolling100_expectancy": rolling100_exp,
+            "rolling100_net_pnl": rolling100_net,
+            "rolling20_pf": rolling20_pf,
+            "rolling20_expectancy": rolling20_exp,
+            "drawdown": 0.0,  # TODO: compute from trade data
+            "symbols": symbols,
+            "max_segment_profit_share": max_segment_share,
+            "reason": " ".join(reasons) if reasons else "all_gates_pass",
+        }
+
+
+# Module-level singleton
+_learner = None
+
+def get_learner() -> PaperAdaptiveLearning:
+    """Get or create the singleton learner instance."""
+    global _learner
+    if _learner is None:
+        _learner = PaperAdaptiveLearning()
+    return _learner
+

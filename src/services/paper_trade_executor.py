@@ -1448,6 +1448,60 @@ def _safe_float(v, default=0.0):
         return default
 
 
+def _record_adaptive_learning_close(closed_trade: dict, pos: dict, pnl_data: dict) -> None:
+    """P1.1AP-N: Record canonical paper trade close for adaptive learning.
+
+    Updates rolling metrics (20/50/100), adapts policy weights, and gates REAL_READY.
+    Never raises; logs errors and continues.
+
+    Args:
+        closed_trade: Complete closed trade dict from close_paper_position
+        pos: Original position dict
+        pnl_data: PnL breakdown dict
+    """
+    try:
+        from src.services.paper_adaptive_learning import get_learner
+
+        # Calculate MFE/MAE from tracked extremes
+        side = pos.get("side", "BUY")
+        entry_price = _safe_float(pos.get("entry_price"), 0.0)
+        max_seen = _safe_float(pos.get("max_seen"), entry_price)
+        min_seen = _safe_float(pos.get("min_seen"), entry_price)
+
+        if side == "BUY":
+            mfe_pct = ((max_seen - entry_price) / entry_price * 100.0) if entry_price > 0 else 0.0
+            mae_pct = ((min_seen - entry_price) / entry_price * 100.0) if entry_price > 0 else 0.0
+        else:  # SELL
+            mfe_pct = ((entry_price - min_seen) / entry_price * 100.0) if entry_price > 0 else 0.0
+            mae_pct = ((entry_price - max_seen) / entry_price * 100.0) if entry_price > 0 else 0.0
+
+        # Build trade dict for adaptive learning
+        trade_data = {
+            "trade_id": closed_trade.get("trade_id", ""),
+            "symbol": closed_trade.get("symbol", "UNKNOWN"),
+            "regime": closed_trade.get("regime", "UNKNOWN"),
+            "side": closed_trade.get("side", "BUY"),
+            "net_pnl_pct": _safe_float(closed_trade.get("net_pnl_pct"), 0.0),
+            "outcome": closed_trade.get("outcome", "FLAT"),
+            "learning_source": closed_trade.get("learning_source", "paper_training_sampler"),
+            "mfe_pct": mfe_pct,
+            "mae_pct": mae_pct,
+            "exit_reason": closed_trade.get("exit_reason", "UNKNOWN"),
+            "training_bucket": pos.get("training_bucket", ""),
+        }
+
+        learner = get_learner()
+        learner.record_close(trade_data)
+
+    except Exception as e:
+        log.warning(
+            "[PAPER_ADAPTIVE_LEARNING_RECORD_ERROR] trade_id=%s symbol=%s err=%s",
+            closed_trade.get("trade_id", "UNKNOWN"),
+            closed_trade.get("symbol", "UNKNOWN"),
+            str(e),
+        )
+
+
 def close_paper_position(
     position_id: str,
     price: float,
@@ -1563,6 +1617,11 @@ def close_paper_position(
     # P1.1Q: Use safe adapter with canonical normalization
     if pos.get("paper_source") == "training_sampler":
         _safe_learning_update_for_paper_trade(pos, pnl_data)
+
+    # P1.1AP-N: Record canonical close for adaptive learning (rolling metrics + policy adaptation)
+    # Track all training sampler closes that aren't quarantined
+    if pos.get("paper_source") == "training_sampler" and not closed_trade.get("quarantined"):
+        _record_adaptive_learning_close(closed_trade, pos, pnl_data)
 
     # P1.1Q: Update bucket metrics with safe adapter
     _safe_bucket_metrics_update_for_paper_trade(closed_trade)
