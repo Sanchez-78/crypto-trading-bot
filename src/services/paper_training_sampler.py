@@ -983,10 +983,10 @@ def maybe_open_training_sample(
                 _probe_state["lifetime_closed"],
             )
 
-        # P1.1AP-N2: Log recovery admission acceptance
+        # P1.1AP-N2A: Recovery admission approved (NOT opened yet - see trade_executor for actual entry log)
         if gate_result.get("recovery_admission"):
-            log.info(
-                "[PAPER_LEARNING_ENTRY] symbol=%s side=%s learning_source=paper_adaptive_recovery "
+            log.debug(
+                "[PAPER_LEARNING_ADMISSION_ALLOWED] symbol=%s side=%s learning_source=paper_adaptive_recovery "
                 "admission_reason=paper_learning_must_continue original_decision=%s "
                 "reject_reason=%s ev=%.4f expected_move_pct=%.4f expected_move_src=%s cost_edge_ok=False",
                 symbol,

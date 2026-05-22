@@ -924,6 +924,11 @@ def open_paper_position(
         # P1.1AG: Track MFE/MAE for diagnostics
         "max_seen": price,
         "min_seen": price,
+        # P1.1AP-N2A: Preserve recovery admission metadata through lifecycle
+        "learning_source": extra.get("learning_source", "paper_training_sampler") if extra else "paper_training_sampler",
+        "admission_reason": extra.get("admission_reason") if extra else None,
+        "historical_health": extra.get("historical_health") if extra else None,
+        "expected_move_src": extra.get("expected_move_src") if extra else None,
     }
 
     with _POSITION_LOCK:
