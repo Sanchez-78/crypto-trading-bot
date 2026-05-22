@@ -1752,6 +1752,54 @@ def _maybe_route_to_paper_training(signal: dict, current_price: float, reject_re
                 log.warning(f"[PAPER_TRAIN_OPEN_ERROR] {sym}: {e}")
                 return False
         else:
+            # P1.1AP-N1 Fix 2: Recovery admission path for positive candidates rejected for health
+            # If candidate has positive EV but was rejected for health reasons,
+            # admit through canonical paper learning stream with recovery metadata
+            ev = float(signal.get("ev", 0.0))
+            if ev > 0 and reject_reason in ["REJECT_ECON_BAD_ENTRY"]:
+                # Positive candidate rejected for economic health - eligible for recovery admission
+                try:
+                    # Check recovery admission caps
+                    recovery_open = len([p for p in _positions.values() if p.get("learning_source") == "paper_adaptive_recovery"])
+                    if recovery_open < 3:  # PAPER_LEARN_MAX_OPEN_GLOBAL = 3
+                        recovery_by_symbol = len([p for p in _positions.values() if p.get("learning_source") == "paper_adaptive_recovery" and p.get("symbol") == sym])
+                        if recovery_by_symbol < 1:  # PAPER_LEARN_MAX_OPEN_PER_SYMBOL = 1
+                            # Admit through recovery path
+                            trade_signal = dict(signal)
+                            recovery_extra = {
+                                "paper_source": "training_sampler",
+                                "learning_source": "paper_adaptive_recovery",
+                                "admission_reason": "paper_learning_must_continue",
+                                "historical_health": "BAD",
+                                "original_decision": reject_reason,
+                                "reject_reason": reject_reason,
+                            }
+                            open_result = open_paper_position(
+                                signal=trade_signal,
+                                price=current_price,
+                                ts=time.time(),
+                                reason=f"RECOVERY_ADMISSION:{reject_reason}",
+                                extra=recovery_extra,
+                            )
+                            if open_result.get("status") == "opened":
+                                trade_id = open_result.get("trade_id", "UNKNOWN")
+                                log.info(
+                                    "[PAPER_LEARNING_ENTRY] trade_id=%s symbol=%s side=%s "
+                                    "learning_source=paper_adaptive_recovery admission_reason=paper_learning_must_continue "
+                                    "historical_health=BAD original_decision=%s reject_reason=%s ev=%.4f",
+                                    trade_id, sym, signal.get("action", "UNKNOWN"),
+                                    reject_reason, reject_reason, ev,
+                                )
+                                return True
+                            else:
+                                log.info(
+                                    "[PAPER_LEARNING_ENTRY_BLOCKED] symbol=%s reason=admission_open_failed "
+                                    "original_decision=%s ev=%.4f",
+                                    sym, reject_reason, ev,
+                                )
+                except Exception as e:
+                    log.warning(f"[PAPER_RECOVERY_ADMISSION_ERROR] {sym}: {e}")
+
             # Training sampler declined (sampler logs [PAPER_TRAIN_SKIP])
             return False
 

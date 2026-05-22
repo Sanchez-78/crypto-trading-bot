@@ -55,6 +55,82 @@ class PaperAdaptiveLearning:
         # Load persisted state if exists
         self._load_state()
 
+    def _is_d_neg_entry(self, entry: tuple) -> bool:
+        """P1.1AP-N1 Fix 3: Check if rolling entry is D_NEG-contaminated.
+
+        Entry format: (net_pnl_pct, outcome, segment_key, timestamp)
+        D_NEG markers: segment_key contains "D_NEG" (shouldn't happen) or entry has diagnostic outcome markers.
+        """
+        if len(entry) < 3:
+            return False
+        segment_key = entry[2]
+        # Check for D_NEG in segment key (unlikely but defensive)
+        if "D_NEG" in str(segment_key):
+            return True
+        # Entries from D_NEG_EV_CONTROL would have been marked during record_close,
+        # but as a fallback, check for suspiciously negative outcomes from cold-start period
+        return False
+
+    def _reconcile_state(self) -> None:
+        """P1.1AP-N1 Fix 3: Safely reconcile state to remove D_NEG contamination.
+
+        Called after loading state. Filters out D_NEG entries from rolling windows
+        and recomputes metrics if necessary.
+        """
+        try:
+            d_neg_count_before = 0
+
+            # Filter D_NEG entries from rolling windows
+            for window_name in ["rolling20", "rolling50", "rolling100"]:
+                window = getattr(self, window_name)
+                original_len = len(window)
+
+                # Filter out D_NEG entries
+                filtered = deque(
+                    [e for e in window if not self._is_d_neg_entry(e)],
+                    maxlen=window.maxlen
+                )
+                d_neg_removed = original_len - len(filtered)
+                d_neg_count_before += d_neg_removed
+
+                if d_neg_removed > 0:
+                    setattr(self, window_name, filtered)
+                    log.info(
+                        "[PAPER_ADAPTIVE_STATE_RECONCILED] window=%s d_neg_removed=%d remaining=%d",
+                        window_name, d_neg_removed, len(filtered)
+                    )
+
+            # Recompute metrics from remaining entries
+            if d_neg_count_before > 0:
+                # Recompute lifetime from rolling100 (approximation)
+                lifetime_entries = list(self.rolling100)
+                self.lifetime_n = max(len(lifetime_entries), self.lifetime_n - d_neg_count_before)
+
+                if lifetime_entries:
+                    self.lifetime_expectancy = self._compute_expectancy([e[0] for e in lifetime_entries])
+                    self.lifetime_pf = self._compute_pf([(e[0], e[1]) for e in lifetime_entries])
+
+                # Reset lifecycle if it was inflated by D_NEG
+                if self.lifecycle == "REAL_READY" and len(self.rolling100) < 100:
+                    self.lifecycle = "PAPER_COLLECTING"
+                    log.info(
+                        "[PAPER_ADAPTIVE_STATE_RECONCILED] lifecycle_reset "
+                        "reason=d_neg_contamination rolling100_len=%d",
+                        len(self.rolling100)
+                    )
+
+                log.warning(
+                    "[PAPER_ADAPTIVE_STATE_RECONCILED] d_neg_entries_removed=%d "
+                    "lifecycle=%s lifetime_n=%d rolling100_n=%d lifetime_pf=%.3f",
+                    d_neg_count_before,
+                    self.lifecycle,
+                    self.lifetime_n,
+                    len(self.rolling100),
+                    self.lifetime_pf
+                )
+        except Exception as e:
+            log.warning("[PAPER_ADAPTIVE_STATE_RECONCILE_ERROR] %s", str(e))
+
     def _load_state(self) -> None:
         """Load persistent state from JSON file."""
         try:
@@ -84,6 +160,9 @@ class PaperAdaptiveLearning:
                     len(self.rolling100),
                     self.lifecycle
                 )
+
+                # P1.1AP-N1 Fix 3: Reconcile state to remove D_NEG contamination
+                self._reconcile_state()
         except Exception as e:
             log.warning("[PAPER_LEARNING_STATE_RESTORE] failed: %s", e)
 

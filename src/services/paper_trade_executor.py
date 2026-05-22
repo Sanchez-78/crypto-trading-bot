@@ -1280,6 +1280,32 @@ def _is_d_neg_control_trade(trade: dict) -> bool:
     return bucket == "D_NEG_EV_CONTROL" or training_bucket == "D_NEG_EV_CONTROL"
 
 
+def _is_eligible_canonical_paper_learning_trade(pos: dict, pnl_data: dict, closed_trade: dict) -> tuple[bool, str]:
+    """P1.1AP-N1: Authoritative predicate for canonical + adaptive learning eligibility.
+
+    Returns (eligible: bool, reason: str) where reason is empty string if eligible,
+    or diagnostic reason if ineligible.
+    """
+    # D_NEG must never mutate canonical/rolling/adaptive metrics
+    if _is_d_neg_control_trade(closed_trade):
+        return False, "d_neg_control_shadow_excluded"
+
+    # Quarantined trades excluded
+    if closed_trade.get("quarantined"):
+        return False, "position_quarantined"
+
+    # Invalid/stale/no-price outcomes excluded
+    if closed_trade.get("exit_reason") == "TIMEOUT_NO_PRICE":
+        return False, "timeout_no_price_invalid"
+
+    # Shadow-only trades excluded
+    if closed_trade.get("learning_shadow_skip") or closed_trade.get("shadow_only"):
+        return False, "shadow_only_excluded"
+
+    # All checks passed
+    return True, ""
+
+
 def _safe_learning_update_for_paper_trade(pos: dict, pnl_data: dict) -> bool:
     """P1.1V: Convert closed paper trade to learning update. Decouple learning from telemetry. Never raises.
 
@@ -1619,9 +1645,19 @@ def close_paper_position(
         _safe_learning_update_for_paper_trade(pos, pnl_data)
 
     # P1.1AP-N: Record canonical close for adaptive learning (rolling metrics + policy adaptation)
-    # Track all training sampler closes that aren't quarantined
-    if pos.get("paper_source") == "training_sampler" and not closed_trade.get("quarantined"):
-        _record_adaptive_learning_close(closed_trade, pos, pnl_data)
+    # P1.1AP-N1: Use authoritative eligibility predicate to exclude D_NEG and other ineligible rows
+    if pos.get("paper_source") == "training_sampler":
+        eligible, skip_reason = _is_eligible_canonical_paper_learning_trade(pos, pnl_data, closed_trade)
+        if eligible:
+            _record_adaptive_learning_close(closed_trade, pos, pnl_data)
+        elif skip_reason == "d_neg_control_shadow_excluded":
+            # Debug log only for D_NEG (non-spammy, control diagnostics allowed)
+            log.debug(
+                "[PAPER_ADAPTIVE_LEARNING_SKIP] trade_id=%s bucket=%s reason=%s",
+                closed_trade.get("trade_id", ""),
+                closed_trade.get("bucket", "UNKNOWN"),
+                skip_reason,
+            )
 
     # P1.1Q: Update bucket metrics with safe adapter
     _safe_bucket_metrics_update_for_paper_trade(closed_trade)
