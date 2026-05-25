@@ -77,6 +77,18 @@ _BYPASS_FLOW_THROTTLE_S = 10.0  # throttle period for bypass flow logs
 _RATE_CAP_STATE_LAST_LOG = {}  # (symbol, bucket) -> timestamp
 _RATE_CAP_STATE_THROTTLE_S = 10.0  # throttle period for rate-cap state logs
 
+# P1.1AP-O1A: Adaptive starvation telemetry (600s windows, rate-limited)
+_ADAPTIVE_STARVATION_STATE = {
+    "window_start_ts": 0.0,
+    "positive_candidates": 0,  # count of EV>0 PAPER candidates considered
+    "negative_ev_rejects": 0,  # count of EV<=0 reject events
+    "admitted_recovery": 0,    # count of admitted paper_adaptive_recovery
+    "canonical_closes": 0,     # count of eligible closes from learning
+    "policy_reads": 0,         # count of policy reads executed
+    "last_log_ts": 0.0,        # throttle starvation log emission
+}
+_ADAPTIVE_STARVATION_WINDOW_S = 600.0  # 10 minute rolling window for telemetry
+
 # P1.1AP-N2: Recovery admission state and caps
 _recovery_state: dict = {
     "open_global": 0,        # current count of open recovery admissions
@@ -903,6 +915,55 @@ def _apply_adaptive_policy_to_paper_candidate(
         }
 
 
+def _try_emit_adaptive_starvation_telemetry() -> None:
+    """P1.1AP-O1A: Emit rate-limited PAPER_ADAPTIVE_STARVATION diagnostics.
+
+    Tracks windows to diagnose whether adaptive policy integration is:
+    - receiving no positive EV supply (reason=no_positive_ev_candidates)
+    - actively learning (reason=learning_active)
+    - awaiting samples (reason=awaiting_samples)
+    """
+    ts_now = time.time()
+    state = _ADAPTIVE_STARVATION_STATE
+
+    # Rotate window if 600s elapsed
+    if ts_now - state["window_start_ts"] >= _ADAPTIVE_STARVATION_WINDOW_S:
+        state["window_start_ts"] = ts_now
+        state["positive_candidates"] = 0
+        state["negative_ev_rejects"] = 0
+        state["admitted_recovery"] = 0
+        state["canonical_closes"] = 0
+        state["policy_reads"] = 0
+
+    # Rate-limit emission to once per 600s window
+    if ts_now - state["last_log_ts"] < _ADAPTIVE_STARVATION_WINDOW_S:
+        return
+
+    # Determine reason based on window metrics
+    if state["positive_candidates"] == 0 and state["negative_ev_rejects"] > 0:
+        reason = "no_positive_ev_candidates"
+    elif state["admitted_recovery"] > 0:
+        reason = "learning_active"
+    else:
+        reason = "awaiting_samples"
+
+    state["last_log_ts"] = ts_now
+
+    log.info(
+        "[PAPER_ADAPTIVE_STARVATION] "
+        "window_s=%d positive_candidates=%d negative_ev_rejects=%d "
+        "admitted_recovery=%d canonical_closes=%d policy_reads=%d "
+        "reason=%s",
+        int(_ADAPTIVE_STARVATION_WINDOW_S),
+        state["positive_candidates"],
+        state["negative_ev_rejects"],
+        state["admitted_recovery"],
+        state["canonical_closes"],
+        state["policy_reads"],
+        reason,
+    )
+
+
 def maybe_open_training_sample(
     signal: dict,
     ctx: Optional[dict] = None,
@@ -948,6 +1009,10 @@ def maybe_open_training_sample(
 
         signal = signal or {}
         ctx = ctx or {}
+
+        # P1.1AP-O1A: Track negative EV rejects for starvation diagnostics
+        if "REJECT_NEGATIVE_EV" in reason:
+            _ADAPTIVE_STARVATION_STATE["negative_ev_rejects"] += 1
 
         # Require real price
         if not current_price:
@@ -1137,6 +1202,10 @@ def maybe_open_training_sample(
         signal_ev = float(signal.get("ev", 0.0)) if signal else 0.0
         regime = signal.get("regime", "UNKNOWN") if signal else "UNKNOWN"
 
+        # P1.1AP-O1A: Track adaptive starvation metrics
+        if signal_ev > 0:
+            _ADAPTIVE_STARVATION_STATE["positive_candidates"] += 1
+
         policy_result = _apply_adaptive_policy_to_paper_candidate(
             symbol=symbol,
             regime=regime,
@@ -1144,6 +1213,10 @@ def maybe_open_training_sample(
             ev=signal_ev,
             candidate_bucket=bucket,
         )
+
+        # Track policy reads for EV>0 candidates
+        if signal_ev > 0 and policy_result.get("action") != "no_policy_apply":
+            _ADAPTIVE_STARVATION_STATE["policy_reads"] += 1
 
         # Apply bounded weight adjustment if policy recommends it
         if policy_result.get("weight_mult", 1.0) != 1.0:
@@ -1175,6 +1248,10 @@ def maybe_open_training_sample(
             result["learning_source"] = "paper_adaptive_recovery"
             result["admission_reason"] = "paper_learning_must_continue"
             result["historical_health"] = "BAD"
+            _ADAPTIVE_STARVATION_STATE["admitted_recovery"] += 1
+
+        # P1.1AP-O1A: Emit starvation diagnostics if threshold reached
+        _try_emit_adaptive_starvation_telemetry()
 
         return result
 

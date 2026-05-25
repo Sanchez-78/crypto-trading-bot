@@ -216,7 +216,7 @@ class TestRealReadinessGating:
     """Tests 9-15: Real-readiness classification and gates."""
 
     def test_9_ineligible_when_insufficient_closes(self):
-        """Test that eligible=False when paper_closed < 100."""
+        """Test that eligible=False when qualification_n < 100 (P1.1AP-O1A)."""
         learner = PaperAdaptiveLearning()
         # Add 99 closes
         for i in range(99):
@@ -234,7 +234,7 @@ class TestRealReadinessGating:
             learner.record_close(trade)
         result = learner.check_real_readiness()
         assert result["eligible"] is False
-        assert "paper_closed" in result["reason"]
+        assert "insufficient_post_integration_samples" in result["reason"]
 
     def test_10_ineligible_when_rolling100_pf_too_low(self):
         """Test that eligible=False when rolling100_pf < 1.20."""
@@ -294,7 +294,8 @@ class TestRealReadinessGating:
         result2 = learner2.check_real_readiness()
         # PF = 30 / 70 = 0.43 (fails)
         assert result2["eligible"] is False
-        assert "rolling100_pf" in result2["reason"]
+        # P1.1AP-O1A: New logic checks qualification_pf instead of rolling100_pf
+        assert "qualification_pf" in result2["reason"]
 
     def test_11_ineligible_when_expectancy_negative(self):
         """Test that eligible=False when rolling100_exp <= 0."""
