@@ -588,26 +588,87 @@ class TestQualificationProvenanceAndReadiness:
         """Test that qualification_n >= 100 + passing metrics + operator_unlock=True returns REAL_READY."""
         learner, temp_path = self._create_isolated_learner()
         try:
-            # Add 100 qualifying closes with good metrics
-            # Distribution: 60 LOSS (early) + 40 WIN (recent)
-            # This ensures overall PF is good AND rolling20 sees good recent performance
+            # Add 100 qualifying closes with good metrics including recent PF > 1.00
+            # Distribution: 30 early WIN, 25 mid WIN, 25 mid LOSS, then last 20 with 15 WIN + 5 LOSS
+            # This ensures overall strong PF and recent rolling20_pf > 1.00 (passes gate)
             symbols = ["BTC", "ETH", "XRP"]
-            for i in range(100):
-                symbol = symbols[i % 3]
-                # First 60 are LOSS (40 expected), last 40 are WIN (profitable recent history)
-                outcome = "LOSS" if i < 60 else "WIN"
-                pnl = -0.5 if outcome == "LOSS" else 1.5
 
+            # Early 30: all WIN for strong start
+            for i in range(30):
+                symbol = symbols[i % 3]
                 trade = {
                     "trade_id": f"t{i}",
-                    "net_pnl_pct": pnl,
-                    "outcome": outcome,
+                    "net_pnl_pct": 2.0,
+                    "outcome": "WIN",
                     "symbol": symbol,
                     "regime": "TREND",
                     "side": "BUY",
                     "learning_source": "paper_adaptive_recovery",
-                    "mfe_pct": 1.0,
+                    "mfe_pct": 2.0,
                     "mae_pct": -0.1,
+                }
+                learner.record_close(trade)
+
+            # Mid 25: WIN for strength
+            for i in range(30, 55):
+                symbol = symbols[i % 3]
+                trade = {
+                    "trade_id": f"t{i}",
+                    "net_pnl_pct": 1.5,
+                    "outcome": "WIN",
+                    "symbol": symbol,
+                    "regime": "TREND",
+                    "side": "BUY",
+                    "learning_source": "paper_adaptive_recovery",
+                    "mfe_pct": 1.5,
+                    "mae_pct": -0.1,
+                }
+                learner.record_close(trade)
+
+            # Mid 25: LOSS for balance
+            for i in range(55, 80):
+                symbol = symbols[i % 3]
+                trade = {
+                    "trade_id": f"t{i}",
+                    "net_pnl_pct": -0.5,
+                    "outcome": "LOSS",
+                    "symbol": symbol,
+                    "regime": "TREND",
+                    "side": "BUY",
+                    "learning_source": "paper_adaptive_recovery",
+                    "mfe_pct": -0.2,
+                    "mae_pct": -2.0,
+                }
+                learner.record_close(trade)
+
+            # Last 20: 15 WIN + 5 LOSS (rolling20_pf = 15/5 = 3.0, well above gate threshold)
+            for i in range(80, 95):
+                symbol = symbols[i % 3]
+                trade = {
+                    "trade_id": f"t{i}",
+                    "net_pnl_pct": 2.0,
+                    "outcome": "WIN",
+                    "symbol": symbol,
+                    "regime": "TREND",
+                    "side": "BUY",
+                    "learning_source": "paper_adaptive_recovery",
+                    "mfe_pct": 2.0,
+                    "mae_pct": -0.1,
+                }
+                learner.record_close(trade)
+
+            for i in range(95, 100):
+                symbol = symbols[i % 3]
+                trade = {
+                    "trade_id": f"t{i}",
+                    "net_pnl_pct": -0.5,
+                    "outcome": "LOSS",
+                    "symbol": symbol,
+                    "regime": "TREND",
+                    "side": "BUY",
+                    "learning_source": "paper_adaptive_recovery",
+                    "mfe_pct": -0.2,
+                    "mae_pct": -2.0,
                 }
                 learner.record_close(trade)
 
@@ -618,7 +679,7 @@ class TestQualificationProvenanceAndReadiness:
 
             # Should be eligible because:
             # - qualification_n = 100
-            # - passing metrics (PF >= 1.20, exp > 0, 3+ symbols, concentration OK, rolling20 OK)
+            # - passing metrics (overall strong PF, 3+ symbols, rolling20_pf >> 1.00, concentration OK)
             # - operator_unlock = True
             assert result["eligible"] is True
             assert result["qualification_n"] == 100
@@ -661,3 +722,112 @@ class TestQualificationProvenanceAndReadiness:
             assert len(learner2.qualification_window) == qual_window_len_saved
             assert qual_n_saved == 50
             assert qual_window_len_saved == 50
+
+    def test_23_strict_boundary_recent_pf_exactly_1_00_remains_ineligible(self):
+        """Test strict REAL_READY boundary: recent PF=1.00 (breakeven) blocks eligibility.
+
+        Confirms O1A1B correction: rolling20_pf <= 1.00 remains strict (not relaxed to < 1.00).
+        Even with qualification_n=100, all other gates passing, and operator_unlock=True,
+        recent performance of exactly 1.00 (wins=losses) must remain ineligible.
+        """
+        learner, temp_path = self._create_isolated_learner()
+        try:
+            symbols = ["BTC", "ETH", "XRP"]
+
+            # Strategy: Build 100 closes where last 20 have PF = exactly 1.00
+            # Construct: 80 early trades (mixed for overall good PF),
+            #           then 10 WIN + 10 LOSS in last 20 for recent PF = 1.0
+
+            # First 30: all WIN (early strong performance)
+            for i in range(30):
+                symbol = symbols[i % 3]
+                trade = {
+                    "trade_id": f"t{i}",
+                    "net_pnl_pct": 2.0,
+                    "outcome": "WIN",
+                    "symbol": symbol,
+                    "regime": "TREND",
+                    "side": "BUY",
+                    "learning_source": "paper_adaptive_recovery",
+                    "mfe_pct": 2.0,
+                    "mae_pct": -0.1,
+                }
+                learner.record_close(trade)
+
+            # Next 50: alternating to maintain good overall PF
+            # 25 WIN + 25 LOSS gives acceptable overall history
+            for i in range(30, 55):
+                symbol = symbols[i % 3]
+                trade = {
+                    "trade_id": f"t{i}",
+                    "net_pnl_pct": 1.0,
+                    "outcome": "WIN",
+                    "symbol": symbol,
+                    "regime": "TREND",
+                    "side": "BUY",
+                    "learning_source": "paper_adaptive_recovery",
+                    "mfe_pct": 1.0,
+                    "mae_pct": -0.1,
+                }
+                learner.record_close(trade)
+
+            for i in range(55, 80):
+                symbol = symbols[i % 3]
+                trade = {
+                    "trade_id": f"t{i}",
+                    "net_pnl_pct": -0.5,
+                    "outcome": "LOSS",
+                    "symbol": symbol,
+                    "regime": "TREND",
+                    "side": "BUY",
+                    "learning_source": "paper_adaptive_recovery",
+                    "mfe_pct": -0.2,
+                    "mae_pct": -2.0,
+                }
+                learner.record_close(trade)
+
+            # Last 20: exactly 10 WIN + 10 LOSS (recent PF = 1.00)
+            for i in range(80, 90):
+                symbol = symbols[i % 3]
+                trade = {
+                    "trade_id": f"t{i}",
+                    "net_pnl_pct": 2.0,
+                    "outcome": "WIN",
+                    "symbol": symbol,
+                    "regime": "TREND",
+                    "side": "BUY",
+                    "learning_source": "paper_adaptive_recovery",
+                    "mfe_pct": 2.0,
+                    "mae_pct": -0.1,
+                }
+                learner.record_close(trade)
+
+            for i in range(90, 100):
+                symbol = symbols[i % 3]
+                trade = {
+                    "trade_id": f"t{i}",
+                    "net_pnl_pct": -2.0,
+                    "outcome": "LOSS",
+                    "symbol": symbol,
+                    "regime": "TREND",
+                    "side": "BUY",
+                    "learning_source": "paper_adaptive_recovery",
+                    "mfe_pct": -2.0,
+                    "mae_pct": -2.0,
+                }
+                learner.record_close(trade)
+
+            learner.operator_unlock = True
+            result = learner.check_real_readiness()
+
+            # Should be INELIGIBLE because recent rolling20_pf = 1.00 fails gate (<=1.00 blocks)
+            assert result["eligible"] is False, \
+                f"Expected ineligible with rolling20_pf at boundary, got {result}"
+            # Allow some tolerance for float precision
+            assert result["rolling20_pf"] <= 1.00, \
+                f"Expected rolling20_pf <= 1.00, got {result['rolling20_pf']:.3f}"
+            assert "rolling20_pf" in result["reason"] and "<=" in result["reason"], \
+                f"Expected rolling20_pf gate in reason, got: {result['reason']}"
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)

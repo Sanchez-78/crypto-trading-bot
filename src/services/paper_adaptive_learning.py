@@ -548,8 +548,8 @@ class PaperAdaptiveLearning:
         # Gate 4: Rolling20 must remain healthy (recent behavior)
         # P1.1AP-O1A1: Only check rolling20 gates if we have 20+ post-epoch closes (meaningful recent window)
         if len(qual_recent_20) >= 20:
-            if rolling20_pf < 1.00:
-                reasons.append(f"rolling20_pf={rolling20_pf:.3f}<1.00")
+            if rolling20_pf <= 1.00:
+                reasons.append(f"rolling20_pf={rolling20_pf:.3f}<=1.00")
             if rolling20_exp <= 0:
                 reasons.append(f"rolling20_expectancy={rolling20_exp:.6f}<=0")
 
