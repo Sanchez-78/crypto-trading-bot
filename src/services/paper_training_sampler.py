@@ -775,6 +775,134 @@ def _maybe_log_training_health(open_positions=None) -> None:
     _training_metrics["last_health_log_ts"] = now
 
 
+def _apply_adaptive_policy_to_paper_candidate(
+    symbol: str,
+    regime: str,
+    side: str,
+    ev: float,
+    candidate_bucket: str,
+) -> dict:
+    """P1.1AP-O1: Apply adaptive rolling policy to PAPER candidates.
+
+    Reads adaptive policy snapshot and applies bounded rules.
+    Only affects EV>0 candidates; never fabricates positive EV.
+    Returns adjustment dict for caller to use or ignore.
+
+    Args:
+        symbol: Symbol
+        regime: Trading regime
+        side: BUY or SELL
+        ev: Candidate's EV (must be > 0 for policy to apply)
+        candidate_bucket: Training bucket
+
+    Returns:
+        {
+            'action': str,  # collect_bootstrap|downweight_losing_segment|prefer_improving_segment|continue_learning|no_policy_apply
+            'weight_mult': float,  # multiplier for position sizing (0.25-2.00)
+            'segment_n': int,
+            'segment_pf': float,
+            'segment_expectancy': float,
+            'old_weight': float,
+            'new_weight': float,
+        }
+    """
+    try:
+        # P1.1AP-O1: Never apply policy to EV<=0 candidates
+        if ev <= 0:
+            return {
+                "action": "no_policy_apply",
+                "weight_mult": 1.0,
+                "segment_n": 0,
+                "segment_pf": 1.0,
+                "segment_expectancy": 0.0,
+                "old_weight": 1.0,
+                "new_weight": 1.0,
+                "reason": "ev_not_positive",
+            }
+
+        # Get adaptive learner policy snapshot
+        from src.services.paper_adaptive_learning import get_learner
+        learner = get_learner()
+        snapshot = learner.get_paper_policy_snapshot(symbol, regime, side)
+
+        # Log policy read
+        log.info(
+            "[PAPER_ADAPTIVE_POLICY_READ] "
+            "symbol=%s regime=%s side=%s "
+            "rolling20_n=%d rolling20_pf=%.3f rolling50_n=%d rolling50_pf=%.3f "
+            "segment_n=%d segment_pf=%.3f segment_weight=%.2f "
+            "action=%s",
+            symbol, regime, side,
+            snapshot["rolling20_n"], snapshot["rolling20_pf"],
+            snapshot["rolling50_n"], snapshot["rolling50_pf"],
+            snapshot["segment_n"], snapshot["segment_pf"],
+            snapshot["segment_weight"],
+            "reading_policy",
+        )
+
+        segment_n = snapshot["segment_n"]
+        segment_pf = snapshot["segment_pf"]
+        segment_exp = snapshot["segment_expectancy"]
+        old_weight = snapshot["segment_weight"]
+        new_weight = old_weight
+
+        # P1.1AP-O1: Apply decision rules for EV>0 candidates
+        action = "continue_learning"
+
+        # Rule A: Insufficient sample — continue collecting
+        if segment_n < 20:
+            action = "collect_bootstrap"
+        # Rule B: Losing segment with sufficient data
+        elif segment_n >= 20 and segment_pf < 0.80 and segment_exp < 0:
+            # Bounded downweight: reduce multiplier
+            new_weight = max(0.25, old_weight * 0.9)
+            action = "downweight_losing_segment"
+        # Rule C: Improving segment with sufficient data
+        elif segment_n >= 20 and segment_pf > 1.10 and segment_exp > 0:
+            # Bounded upweight: increase multiplier
+            new_weight = min(2.00, old_weight * 1.1)
+            action = "prefer_improving_segment"
+
+        weight_mult = new_weight if action != "continue_learning" else 1.0
+
+        # Log policy adaptation when action is taken
+        if action != "continue_learning":
+            log.info(
+                "[PAPER_POLICY_ADAPTATION] "
+                "segment=%s:%s:%s n=%d pf=%.3f expectancy=%.6f "
+                "old_weight=%.2f new_weight=%.2f action=%s "
+                "reason=post_cost_rolling_learning candidate_ev=%.4f mode=PAPER",
+                symbol, regime, side,
+                segment_n, segment_pf, segment_exp,
+                old_weight, new_weight, action,
+                ev,
+            )
+
+        return {
+            "action": action,
+            "weight_mult": weight_mult,
+            "segment_n": segment_n,
+            "segment_pf": segment_pf,
+            "segment_expectancy": segment_exp,
+            "old_weight": old_weight,
+            "new_weight": new_weight,
+        }
+
+    except Exception as e:
+        log.warning("[PAPER_ADAPTIVE_POLICY_ERROR] symbol=%s error=%s", symbol, str(e), exc_info=True)
+        # Safe default: continue with normal flow
+        return {
+            "action": "continue_learning",
+            "weight_mult": 1.0,
+            "segment_n": 0,
+            "segment_pf": 1.0,
+            "segment_expectancy": 0.0,
+            "old_weight": 1.0,
+            "new_weight": 1.0,
+            "error": str(e),
+        }
+
+
 def maybe_open_training_sample(
     signal: dict,
     ctx: Optional[dict] = None,
@@ -1003,6 +1131,23 @@ def maybe_open_training_sample(
         flow_id = ""
         if gate_result.get("cost_edge_bypassed"):
             flow_id = gate_result.get("flow_id", f"{symbol}:{side}:{bucket}:{int(time.time())}")
+
+        # P1.1AP-O1: Apply adaptive rolling policy to PAPER candidates
+        # Only modifies size_mult for EV>0 candidates; safe to call on all paths
+        signal_ev = float(signal.get("ev", 0.0)) if signal else 0.0
+        regime = signal.get("regime", "UNKNOWN") if signal else "UNKNOWN"
+
+        policy_result = _apply_adaptive_policy_to_paper_candidate(
+            symbol=symbol,
+            regime=regime,
+            side=side,
+            ev=signal_ev,
+            candidate_bucket=bucket,
+        )
+
+        # Apply bounded weight adjustment if policy recommends it
+        if policy_result.get("weight_mult", 1.0) != 1.0:
+            size_mult = size_mult * policy_result["weight_mult"]
 
         # Build result dict
         result = {

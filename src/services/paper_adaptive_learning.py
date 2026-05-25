@@ -384,9 +384,24 @@ class PaperAdaptiveLearning:
                 if total_profit > 0:
                     max_segment_share = max(max_segment_share, seg_profit / total_profit)
 
+        # P1.1AP-O1: Hard-lock REAL_READY until qualification provenance is safe
+        # Current adaptive update reported rolling100_n=99 / lifetime_n=99
+        # but must verify these are valid post-integrated eligible PAPER closes
+        qualification_status = "unqualified"
+        if paper_closed >= 100:
+            # Would be eligible, but need to verify provenance
+            qualification_status = "insufficient_post_integration_samples"
+        elif paper_closed >= 20:
+            qualification_status = "collecting_bootstrap"
+
         # Check all gates
         reasons = []
 
+        # P1.1AP-O1: Hard requirement: qualification sample must be proven post-integrated
+        reasons.append(f"qualification_provenance_unverified")
+        reasons.append(f"operator_unlock_required=True")
+
+        # Legacy gates (informational only; will not pass without qualification_provenance)
         if paper_closed < 100:
             reasons.append(f"paper_closed={paper_closed}<100")
         if rolling100_pf < 1.20:
@@ -404,27 +419,24 @@ class PaperAdaptiveLearning:
         if max_segment_share > 0.60:
             reasons.append(f"max_segment_share={max_segment_share:.2f}>0.60")
 
-        eligible = len(reasons) == 0
+        # Always false until operator explicitly unlocks with proven qualification
+        eligible = False
 
         log.info(
             "[REAL_READINESS_CHECK] "
             "eligible=%s paper_closed=%d rolling100_pf=%.3f "
             "rolling100_expectancy=%.6f rolling100_net_pnl=%.6f "
             "rolling20_pf=%.3f rolling20_expectancy=%.6f "
-            "symbols=%d max_segment_profit_share=%.2f %s",
+            "symbols=%d max_segment_profit_share=%.2f "
+            "qualification_status=%s %s",
             eligible, paper_closed, rolling100_pf, rolling100_exp, rolling100_net,
             rolling20_pf, rolling20_exp, len(symbols), max_segment_share,
+            qualification_status,
             " ".join(reasons) if reasons else "reason=all_gates_pass"
         )
 
-        if eligible:
-            log.info(
-                "[REAL_READY] eligible=True current_mode=PAPER "
-                "operator_unlock_required=True rolling100_n=%d rolling100_pf=%.3f",
-                paper_closed, rolling100_pf
-            )
-            self.lifecycle = "REAL_READY"
-            self.ready_ts = time.time()
+        # P1.1AP-O1: REAL_READY remains locked until manual operator unlock with proven provenance
+        # Do not auto-transition; return eligible=False even if metrics pass
 
         return {
             "eligible": eligible,
@@ -439,6 +451,135 @@ class PaperAdaptiveLearning:
             "max_segment_profit_share": max_segment_share,
             "reason": " ".join(reasons) if reasons else "all_gates_pass",
         }
+
+    def get_paper_policy_snapshot(
+        self,
+        symbol: Optional[str] = None,
+        regime: Optional[str] = None,
+        side: Optional[str] = None,
+    ) -> Dict:
+        """P1.1AP-O1: Expose safe read-only adaptive policy snapshot for PAPER decisions.
+
+        Returns current rolling/segment metrics and qualification status.
+        Safe defaults if state is absent/corrupt.
+
+        Args:
+            symbol: Optional symbol filter
+            regime: Optional regime filter
+            side: Optional side filter
+
+        Returns:
+            {
+                'lifecycle': str,
+                'lifetime_n': int,
+                'lifetime_pf': float,
+                'lifetime_expectancy': float,
+                'rolling20_n': int,
+                'rolling20_pf': float,
+                'rolling20_expectancy': float,
+                'rolling50_n': int,
+                'rolling50_pf': float,
+                'rolling50_expectancy': float,
+                'rolling100_n': int,
+                'rolling100_pf': float,
+                'rolling100_expectancy': float,
+                'segment_key': str or None (if filters provided),
+                'segment_n': int,
+                'segment_pf': float,
+                'segment_expectancy': float,
+                'segment_weight': float,
+                'unresolved_anomalies': int,
+                'qualification_n': int,
+                'qualification_status': str,
+            }
+        """
+        try:
+            # Build segment key if filters provided
+            segment_key = None
+            if symbol and regime and side:
+                segment_key = f"{symbol}:{regime}:{side}"
+
+            # Compute rolling metrics
+            rolling20_pf = self._compute_rolling_pf(self.rolling20)
+            rolling50_pf = self._compute_rolling_pf(self.rolling50)
+            rolling100_pf = self._compute_rolling_pf(self.rolling100)
+
+            rolling20_exp = self._compute_expectancy([e[0] for e in self.rolling20])
+            rolling50_exp = self._compute_expectancy([e[0] for e in self.rolling50])
+            rolling100_exp = self._compute_expectancy([e[0] for e in self.rolling100])
+
+            # Compute segment metrics if segment_key provided
+            segment_n = 0
+            segment_pf = 1.0
+            segment_exp = 0.0
+            segment_weight = 1.0
+
+            if segment_key:
+                segment_entries = [e for e in self.rolling100 if e[2] == segment_key]
+                segment_n = len(segment_entries)
+                if segment_entries:
+                    segment_pf = self._compute_pf([(e[0], e[1]) for e in segment_entries])
+                    segment_exp = self._compute_expectancy([e[0] for e in segment_entries])
+                segment_weight = self.segment_weights.get(segment_key, 1.0)
+
+            # Determine qualification status
+            qualification_status = "unqualified"
+            if len(self.rolling100) >= 100:
+                qualification_status = "post_integration_qualifiable"
+            elif len(self.rolling100) >= 20:
+                qualification_status = "collecting_bootstrap"
+            elif len(self.rolling100) > 0:
+                qualification_status = "cold_start"
+
+            return {
+                "lifecycle": self.lifecycle,
+                "lifetime_n": self.lifetime_n,
+                "lifetime_pf": self.lifetime_pf,
+                "lifetime_expectancy": self.lifetime_expectancy,
+                "rolling20_n": len(self.rolling20),
+                "rolling20_pf": rolling20_pf,
+                "rolling20_expectancy": rolling20_exp,
+                "rolling50_n": len(self.rolling50),
+                "rolling50_pf": rolling50_pf,
+                "rolling50_expectancy": rolling50_exp,
+                "rolling100_n": len(self.rolling100),
+                "rolling100_pf": rolling100_pf,
+                "rolling100_expectancy": rolling100_exp,
+                "segment_key": segment_key,
+                "segment_n": segment_n,
+                "segment_pf": segment_pf,
+                "segment_expectancy": segment_exp,
+                "segment_weight": segment_weight,
+                "unresolved_anomalies": 0,  # TODO: track from learning updates
+                "qualification_n": len(self.rolling100),
+                "qualification_status": qualification_status,
+            }
+        except Exception as e:
+            log.warning("[PAPER_POLICY_SNAPSHOT_ERROR] %s", str(e))
+            # Return safe defaults
+            return {
+                "lifecycle": "PAPER_COLLECTING",
+                "lifetime_n": 0,
+                "lifetime_pf": 1.0,
+                "lifetime_expectancy": 0.0,
+                "rolling20_n": 0,
+                "rolling20_pf": 1.0,
+                "rolling20_expectancy": 0.0,
+                "rolling50_n": 0,
+                "rolling50_pf": 1.0,
+                "rolling50_expectancy": 0.0,
+                "rolling100_n": 0,
+                "rolling100_pf": 1.0,
+                "rolling100_expectancy": 0.0,
+                "segment_key": None,
+                "segment_n": 0,
+                "segment_pf": 1.0,
+                "segment_expectancy": 0.0,
+                "segment_weight": 1.0,
+                "unresolved_anomalies": 0,
+                "qualification_n": 0,
+                "qualification_status": "unqualified",
+            }
 
 
 # Module-level singleton
