@@ -1,0 +1,9 @@
+symbol,trade_count,net_pnl_btc,pf_calculated,expectancy_per_trade,display_wr,actual_wr,anomaly_flag,segment_status
+BTC,unknown,-0.00004517,unknown,-0.00004517,100%,undefined,CRITICAL,"Display WR 100% but negative PnL"
+ETH,unknown,-0.00003778,unknown,-0.00003778,100%,undefined,CRITICAL,"Display WR 100% but negative PnL"
+ADA,unknown,-0.00004278,unknown,-0.00004278,undefined,undefined,NONE,"No display WR provided"
+BNB,unknown,-0.00004700,unknown,-0.00004700,100%,undefined,CRITICAL,"Display WR 100% but negative PnL"
+DOT,unknown,-0.00007885,unknown,-0.00007885,undefined,undefined,NONE,"Largest per-symbol loss"
+SOL,unknown,-0.00000038,unknown,-0.00000038,100%,undefined,CRITICAL,"Display WR 100% but negative PnL"
+XRP,unknown,0.00001241,unknown,0.00001241,undefined,undefined,NONE,"ONLY POSITIVE SYMBOL"
+TOTAL,100,-0.00023955,0.49,-0.00023955,varies,11%,CRITICAL,"Portfolio net negative despite symbol display anomalies"

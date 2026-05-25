@@ -1,0 +1,67 @@
+exit_type,count,net_pnl_btc,avg_pnl_per_trade,gross_move_est,fee_slippage_est,assessment,is_protective,is_destroying_winners,data_quality,confidence
+PARTIAL_TP_25,8,0.00005131,0.00000641,unknown,unknown,PROFITABLE - early partial exits working,false,false,SNAPSHOT_ONLY,MEDIUM
+MICRO_TP,4,0.00000556,0.00000139,unknown,unknown,PROFITABLE - but minimal contribution,false,false,SNAPSHOT_ONLY,MEDIUM
+TIMEOUT_FLAT,2,-0.00000788,-0.00000394,unknown,unknown,MARGINAL_LOSS - near breakeven exits with micro-drag,true,false,SNAPSHOT_ONLY,LOW
+TIMEOUT_LOSS,2,-0.00003975,-0.00001988,unknown,unknown,LOSS - timeout too long causing drift,false,false,SNAPSHOT_ONLY,LOW
+SCRATCH_EXIT,47,-0.00009236,-0.00000196,unknown,unknown,MICRO_LOSS_ACCUMULATION - 47 small losses compound,true,FALSE_HYPOTHESIS,"SNAPSHOT_ONLY, HIGHLY CONCERNING",HIGH
+STAGNATION_EXIT,34,-0.00012143,-0.00000357,unknown,unknown,MICRO_LOSS_ACCUMULATION - no progress exits 34x,true,FALSE_HYPOTHESIS,"SNAPSHOT_ONLY, HIGHLY CONCERNING",HIGH
+REPLACED,3,-0.00003500,-0.00001167,unknown,unknown,LOSS - position replaced by newer signal,false,true,SNAPSHOT_ONLY,LOW
+TOTAL_PROFITABLE,12,0.00005687,0.00000474,unknown,unknown,Only 12% of trades profitable,false,false,AGGREGATE,HIGH
+TOTAL_LOSS,88,-0.00029642,-0.00000337,unknown,unknown,88% of trades losing or flat,true,true,AGGREGATE,HIGH
+SCRATCH_STAGNATION_SUBSET,81,-0.00021379,-0.00000264,unknown,unknown,"DOMINANT_LOSS_DRIVER: 81/100 trades, 89% of total loss",true,UNCLEAR,"SNAPSHOT_ONLY",MEDIUM
+
+ANALYSIS NOTES:
+
+1. PROTECTIVE vs DESTRUCTIVE DISTINCTION:
+   - SCRATCH_EXIT and STAGNATION_EXIT are classified as "protective" exits
+   - BUT they are NOT protecting anything — they're crystallizing losses
+   - If a trade enters with EV 0.030-0.038 (weak entry), a scratch exit does not "protect" against larger loss; it accepts the weak entry's inevitable micro-loss
+   - Hypothesis: These exits are mislabeled protective when they should be seen as cost-of-weak-entry acceptance
+
+2. THE SCRATCH_EXIT PARADOX:
+   - 47 trades exited at scratch (micro loss ~-0.00000196 each)
+   - Each micro-loss seems negligible in isolation
+   - Accumulated effect: -0.00009236 BTC = 38.5% of total loss
+   - This is not "exit failing to hold winners" but rather "weak entries failing to produce moves"
+   - Exit itself may be correct; entry signal quality is the issue
+
+3. THE STAGNATION_EXIT PARADOX:
+   - 34 trades hit timeout with no directional movement
+   - Average loss: -0.00000357 per trade
+   - Total: -0.00012143 BTC = 50.7% of total loss
+   - Interpretation: Entries lack directional prediction; position stagnates then dies
+
+4. KEY INSIGHT: ENTRIES vs EXITS
+   - Profitable exits (PARTIAL_TP_25, MICRO_TP): 12 trades, +0.00005687 BTC
+   - These trades DID move (positively) and were exited profitably
+   - Losing exits (SCRATCH, STAGNATION, TIMEOUT): 81 trades, -0.00021379 BTC
+   - These trades DIDN'T move (or moved wrong) and had to be closed at loss
+
+   → The problem is NOT the exit logic but the ENTRY SIGNAL QUALITY
+
+5. MISSING DATA PREVENTING DEEPER ANALYSIS:
+   - No gross-move-before-fees for SCRATCH trades (did they fail to move at all, or moved against entry?)
+   - No MFE/MAE (Maximum Favorable Excursion / Maximum Adverse Excursion) to determine if exits killed winners
+   - No tick-by-tick replay to validate "stagnation" diagnosis
+   - No entry EV vs actual move correlation
+
+   Without this data, cannot definitively answer: "Are exits destroying an otherwise usable edge?"
+
+   Most likely answer based on aggregate evidence: NO, exits are functioning correctly
+   The edge never existed in the first place — entries are too weak.
+
+6. HYPOTHESIS RANKING (entry vs exit failure):
+
+   STRONG: Entry signal quality is the problem
+   - 81 of 100 trades result in scratch/stagnation (no profitable move)
+   - Only 12 of 100 trades reach TP profitably
+   - Weak entry EV (0.030–0.038) explains why 81% fail to move
+
+   WEAK: Exit logic is destroying winners
+   - Would require MFE data showing profitable exits triggered too early
+   - No evidence of this pattern
+   - TP/SL geometry seems reasonable (PARTIAL_TP_25 succeeds)
+
+   POSSIBLE: Cost edge filter is too strict
+   - 0.0023 BTC minimum cost edge might exclude legitimate trades
+   - But unlikely primary issue given 89% non-profitability rate

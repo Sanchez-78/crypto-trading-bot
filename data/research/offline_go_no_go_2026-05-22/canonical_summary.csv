@@ -1,0 +1,21 @@
+metric,value,unit,source,confidence_notes
+total_closed_trades,100,trades,snapshot,High - dashboard report
+decisive_trades,15,trades,calculated,11 wins + 4 losses (excluding 85 neutral/flat)
+neutral_trades,85,trades,snapshot,TIMEOUT + SCRATCH_EXIT + STAGNATION_EXIT outcomes
+wins,11,count,snapshot,Win trades (profit > threshold)
+losses,4,count,snapshot,Loss trades (profit < threshold)
+flat,85,count,calculated,All others (timeouts, scratches, stagnation)
+gross_wins,0.00005687,BTC,snapshot,Sum of winning trades PnL
+gross_losses,0.00029642,BTC,snapshot,Sum of losing trade PnL (abs value)
+net_pnl,-0.00023955,BTC,snapshot,"Sum of all closed trades, including fees/slippage"
+profit_factor,0.49,ratio,snapshot,"gross_wins / gross_losses = 0.00005687 / 0.00029642"
+win_rate_decisive,73.3,%,calculated,"11 wins / (11+4) decisive trades"
+win_rate_all_outcomes,11.0,%,calculated,"11 wins / 100 total trades (includes neutral)"
+expectancy_all_outcomes,-0.00023955,BTC/trade,calculated,"net_pnl / total_trades = -0.00023955 / 100"
+expectancy_decisive,-0.00159700,BTC/trade,calculated,"net_pnl / decisive_trades = -0.00023955 / 15"
+avg_hold_seconds,unknown,sec,not_available,Historical trade hold times not provided
+equity_peak,unknown,BTC,not_available,Peak equity value not provided
+drawdown,unknown,%,not_available,Max drawdown not calculated
+last_trade_ts,1713724560,unix_sec,snapshot,"616h 29m ago from 2026-05-22 13:01 UTC = 2026-04-19 15:32 UTC"
+learning_health_status,BAD,enum,snapshot,Health metric = 0.0000 (threshold < 0.25)
+lm_trade_count,200,trades,snapshot,Total paper trades in learning monitor

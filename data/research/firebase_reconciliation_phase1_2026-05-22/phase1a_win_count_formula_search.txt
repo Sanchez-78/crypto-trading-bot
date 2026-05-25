@@ -1,0 +1,638 @@
+src/core/feature_weights.py:100:                    "wins": 0,
+src/core/feature_weights.py:101:                    "losses": 0,
+src/core/feature_weights.py:108:                stats["wins"] += 1
+src/core/feature_weights.py:110:                stats["losses"] += 1
+src/core/feature_weights.py:227:        total = stats["wins"] + stats["losses"]
+src/core/feature_weights.py:233:        win_rate = stats["wins"] / total
+src/core/snapshot_v2.py:91:            state.trades_wins / max(state.trades_total, 1),
+src/core/state_v2.py:71:    trades_wins: int = 0
+src/core/state_v2.py:97:            "winrate": self.trades_wins / max(self.trades_total, 1),
+src/core/state_v2.py:169:                        self.state.trades_wins += 1
+src/core/strategy.py:27:    trades_wins: int = 0
+src/core/strategy.py:50:        # Track wins
+src/core/strategy.py:52:            self.trades_wins += 1
+src/core/strategy.py:87:        winrate = self.trades_wins / self.trades_total
+src/core/strategy.py:110:            'trades_wins': self.trades_wins,
+src/core/strategy.py:111:            'winrate': self.trades_wins / max(self.trades_total, 1),
+src/core/strategy.py:118:        wr = 100 * self.trades_wins / max(self.trades_total, 1)
+src/core/V4_INTEGRATION_GUIDE.md:53:   ├─ Metrics: trades_total, trades_wins, pnl_total, max_drawdown
+src/core/V4_INTEGRATION_GUIDE.md:321:   ✓ Verify fitness decreases with losses/drawdown
+Binary file src/core/__pycache__/feature_weights.cpython-314.pyc matches
+Binary file src/core/__pycache__/snapshot_v2.cpython-314.pyc matches
+Binary file src/core/__pycache__/state_v2.cpython-314.pyc matches
+Binary file src/core/__pycache__/strategy.cpython-314.pyc matches
+src/optimized/orchestrator.py:218:        wins    = [t for t in closed if t.result == TradeResult.WIN]
+src/optimized/orchestrator.py:219:        losses  = [t for t in closed if t.result == TradeResult.LOSS]
+src/optimized/orchestrator.py:224:            "wins":          len(wins),
+src/optimized/orchestrator.py:225:            "losses":        len(losses),
+src/optimized/orchestrator.py:226:            "winrate_pct":   round(len(wins) / len(closed) * 100, 1),
+src/optimized/orchestrator.py:228:            "avg_win_pct":   round(sum(t.net_pnl_pct for t in wins) / len(wins), 4) if wins else 0,
+src/optimized/orchestrator.py:229:            "avg_loss_pct":  round(sum(t.net_pnl_pct for t in losses) / len(losses), 4) if losses else 0,
+src/optimized/orchestrator.py:231:            "timeout_losses": len(to_loss),
+Binary file src/optimized/__pycache__/orchestrator.cpython-314.pyc matches
+src/services/app_metrics_contract.py:126:                bucket[key] = {"count": 0, "wins": 0, "losses": 0, "flats": 0, "net_pnl": 0.0}
+src/services/app_metrics_contract.py:130:                bucket[key]["wins"] += 1
+src/services/app_metrics_contract.py:132:                bucket[key]["losses"] += 1
+src/services/app_metrics_contract.py:150:    wins = outcomes.count("WIN")
+src/services/app_metrics_contract.py:151:    losses = outcomes.count("LOSS")
+src/services/app_metrics_contract.py:153:    decisive = wins + losses
+src/services/app_metrics_contract.py:154:    window_wr = _safe_float(wins / decisive) if decisive > 0 else 0.0
+src/services/app_metrics_contract.py:192:    wins_all_time = 0
+src/services/app_metrics_contract.py:193:    losses_all_time = 0
+src/services/app_metrics_contract.py:198:        wins_all_time = _safe_int(all_time_stats.get("wins") or all_time_stats.get("trades_won"))
+src/services/app_metrics_contract.py:199:        losses_all_time = _safe_int(all_time_stats.get("losses") or all_time_stats.get("trades_lost"))
+src/services/app_metrics_contract.py:204:        wins_all_time = _safe_int(session_metrics.get("wins"))
+src/services/app_metrics_contract.py:205:        losses_all_time = _safe_int(session_metrics.get("losses"))
+src/services/app_metrics_contract.py:209:    decisive_all = wins_all_time + losses_all_time
+src/services/app_metrics_contract.py:210:    wr_all_time = _safe_float(wins_all_time / decisive_all) if decisive_all > 0 else 0.0
+src/services/app_metrics_contract.py:217:        "wins_all_time": wins_all_time,
+src/services/app_metrics_contract.py:218:        "losses_all_time": losses_all_time,
+src/services/app_metrics_contract.py:224:        "window_wins": wins,
+src/services/app_metrics_contract.py:225:        "window_losses": losses,
+src/services/app_metrics_contract.py:320:    wins = _safe_int(m.get("wins"))
+src/services/app_metrics_contract.py:321:    losses = _safe_int(m.get("losses"))
+src/services/app_metrics_contract.py:322:    decisive = wins + losses
+src/services/app_metrics_contract.py:323:    wr = _safe_float(wins / decisive) if decisive > 0 else 0.0
+src/services/app_metrics_contract.py:413:    recent_wins = recent_outcomes.count("WIN")
+src/services/app_metrics_contract.py:414:    recent_decisive = recent_wins + recent_outcomes.count("LOSS")
+src/services/app_metrics_contract.py:415:    recent_wr = _safe_float(recent_wins / recent_decisive) if recent_decisive > 0 else None
+src/services/auto_filter.py:47:                "wins": 0,
+src/services/auto_filter.py:48:                "losses": 0,
+src/services/auto_filter.py:77:            data["wins"] += 1
+src/services/auto_filter.py:79:            data["losses"] += 1
+src/services/auto_filter.py:98:        winrate = data["wins"] / trades
+src/services/bucket_metrics.py:12:# Bucket metrics: {bucket_name -> {count, wins, losses, flats, ...}}
+src/services/bucket_metrics.py:23:            "wins": 0,
+src/services/bucket_metrics.py:24:            "losses": 0,
+src/services/bucket_metrics.py:113:            metrics["wins"] += 1
+src/services/bucket_metrics.py:115:                sub_metrics["wins"] += 1
+src/services/bucket_metrics.py:117:            metrics["losses"] += 1
+src/services/bucket_metrics.py:119:                sub_metrics["losses"] += 1
+src/services/bucket_metrics.py:127:            metrics["wr"] = (metrics["wins"] / metrics["count"]) * 100.0
+src/services/bucket_metrics.py:129:            sub_metrics["wr"] = (sub_metrics["wins"] / sub_metrics["count"]) * 100.0
+src/services/bucket_metrics.py:132:        if metrics["losses"] > 0:
+src/services/bucket_metrics.py:146:            metrics["profit_factor"] = 1.0 if metrics["wins"] > 0 else 0.0
+src/services/canonical_metrics.py:5:  - Profit Factor (PF) — gross_wins / gross_losses
+src/services/canonical_metrics.py:105:    Canonical profit factor: gross_wins / gross_losses.
+src/services/canonical_metrics.py:147:        dict with: pf, source, closed_trades (count), wins, losses, gross_win, gross_loss, net_pnl
+src/services/canonical_metrics.py:154:            "wins": 0,
+src/services/canonical_metrics.py:155:            "losses": 0,
+src/services/canonical_metrics.py:165:    wins = outcomes.count("WIN")
+src/services/canonical_metrics.py:166:    losses = outcomes.count("LOSS")
+src/services/canonical_metrics.py:181:    if len(closed_trades) >= 100 and wins == 0 and losses == 0:
+src/services/canonical_metrics.py:185:            "[ECON_CANONICAL_PARSE_FAIL] closed_trades=%s wins=0 losses=0 "
+src/services/canonical_metrics.py:192:        "source": "canonical_closed_trades",
+src/services/canonical_metrics.py:194:        "wins": wins,
+src/services/canonical_metrics.py:195:        "losses": losses,
+src/services/daily_dd_halt_fix.py:13:Recovery: 3 consecutive wins → step back up one tier
+src/services/daily_dd_halt_fix.py:38:        self._consec_wins = 0
+src/services/daily_dd_halt_fix.py:53:            # In HALT: count consecutive wins for recovery
+src/services/daily_dd_halt_fix.py:54:            self._consec_wins = (self._consec_wins + 1) if pnl_pct > 0 else 0
+src/services/daily_dd_halt_fix.py:55:            if self._consec_wins >= self.RECOVERY_TRADES:
+src/services/daily_dd_halt_fix.py:57:                self._consec_wins = 0
+src/services/daily_dd_halt_fix.py:59:                    f"DD_RECOVERY: {self.RECOVERY_TRADES} wins → WARNING tier"
+src/services/daily_dd_halt_fix.py:62:            self._consec_wins = 0
+src/services/daily_dd_halt_fix.py:106:            "recovery_wins": self._consec_wins,
+src/services/dashboard.py:6:        "wins": 0,
+src/services/dashboard.py:7:        "losses": 0,
+src/services/dashboard.py:13:    by_signal = defaultdict(lambda: {"wins": 0, "losses": 0})
+src/services/dashboard.py:27:            stats["wins"] += 1
+src/services/dashboard.py:28:            by_signal[sig]["wins"] += 1
+src/services/dashboard.py:30:            stats["losses"] += 1
+src/services/dashboard.py:31:            by_signal[sig]["losses"] += 1
+src/services/dashboard.py:33:    total = stats["wins"] + stats["losses"]
+src/services/dashboard.py:37:        "winrate": round((stats["wins"] / total) * 100, 2) if total else 0,
+src/services/dashboard_snapshot_contract.py:93:            "wins": 0,
+src/services/dashboard_snapshot_contract.py:94:            "losses": 0,
+src/services/dashboard_snapshot_contract.py:102:    wins = sum(1 for p in profits if p > 0)
+src/services/dashboard_snapshot_contract.py:103:    losses = sum(1 for p in profits if p < 0)
+src/services/dashboard_snapshot_contract.py:105:    decisive = wins + losses
+src/services/dashboard_snapshot_contract.py:118:        "wins": wins,
+src/services/dashboard_snapshot_contract.py:119:        "losses": losses,
+src/services/dashboard_snapshot_contract.py:121:        "winrate": round(wins / decisive, 4) if decisive > 0 else None,
+src/services/dashboard_snapshot_contract.py:192:    wins_all_time = _safe_int(all_time_stats.get("wins") or session_metrics.get("wins"))
+src/services/dashboard_snapshot_contract.py:193:    losses_all_time = _safe_int(all_time_stats.get("losses") or session_metrics.get("losses"))
+src/services/dashboard_snapshot_contract.py:196:    decisive_all_time = wins_all_time + losses_all_time
+src/services/dashboard_snapshot_contract.py:197:    winrate_all_time = round(wins_all_time / decisive_all_time, 4) if decisive_all_time > 0 else None
+src/services/dashboard_snapshot_contract.py:303:                "wins": wins_all_time,
+src/services/dashboard_snapshot_contract.py:304:                "losses": losses_all_time,
+src/services/decision_engine.py:65:    wins = sum(1 for t in similar if t.get("result") == "WIN")
+src/services/decision_engine.py:66:    losses = sum(1 for t in similar if t.get("result") == "LOSS")
+src/services/decision_engine.py:68:    total = wins + losses
+src/services/decision_engine.py:69:    winrate = wins / total if total > 0 else 0.5
+src/services/decision_engine.py:71:    print(f"🧠 Pattern winrate: {winrate:.2f} ({wins}/{total})")
+src/services/execution.py:40:bandit_stats:  dict = {}   # (sym, reg) -> [wins, plays]
+src/services/execution.py:221:    binary 0/1. wins/plays becomes avg clipped PnL — pairs with genuine edge
+src/services/execution.py:224:    wins, plays = bandit_stats.get((sym, reg), (0.0, 2))
+src/services/execution.py:225:    bandit_stats[(sym, reg)] = (wins + float(reward), plays + 1)
+src/services/execution.py:233:    wins, plays = bandit_stats.get((sym, reg), (1, 2))
+src/services/execution.py:235:    ucb   = wins / plays + float(np.sqrt(2.0 * np.log(total) / (plays + 5)))
+src/services/execution.py:265:    wins = [p for p in pnl if p > 0]
+src/services/execution.py:267:    if not wins or not loss:
+src/services/execution.py:269:    p = len(wins) / len(pnl)
+src/services/execution.py:270:    b = float(np.median(wins)) / (abs(float(np.median(loss))) + 1e-6)
+src/services/execution.py:281:    Large wins/losses shift the posterior more; tiny scratches barely move it.
+src/services/exit_attribution.py:22:    "PARTIAL_TP_25": "Partial TP 25% taken",
+src/services/exit_attribution.py:270:        wins = stats["win_count"]
+src/services/exit_attribution.py:271:        losses = stats["loss_count"]
+src/services/exit_attribution.py:273:        pct_wins = (wins / count * 100) if count > 0 else 0
+src/services/exit_attribution.py:282:            f"w/l/f={wins:2d}/{losses:2d}/{flats:1d}  wr={pct_wins:5.1f}%"
+src/services/exit_monetization.py:154:      - Weak signals (p < 0.60): 60s (cut losses quickly)
+src/services/feature_learner.py:7:- Features that correlate with losses get dropped
+src/services/feature_learner.py:8:- Features that predict wins get upweighted
+src/services/feature_learner.py:20:    """Learn which signal features are predictive of wins vs losses."""
+src/services/feature_pruning.py:112:    wins = sum(1 for s in relevant_signals if s["win"])
+src/services/feature_pruning.py:113:    return wins / len(relevant_signals), len(relevant_signals)
+src/services/feature_pruning.py:275:    Estimate relative feature importance based on contribution to wins.
+src/services/filter_learner.py:63:        """Is this filter protecting against losses?"""
+src/services/firebase_client.py:341:_local_stats: dict = {"trades": 0, "wins": 0, "losses": 0, "timeouts": 0}
+src/services/firebase_client.py:533:        # Count wins/losses/timeouts for atomic stats update
+src/services/firebase_client.py:538:        wins     = sum(1 for t in slimmed if t.get("result") == "WIN")
+src/services/firebase_client.py:539:        losses   = sum(1 for t in slimmed if t.get("result") == "LOSS")
+src/services/firebase_client.py:545:        increment_stats(len(batch), wins, losses, timeouts)
+src/services/firebase_client.py:586:def increment_stats(n: int = 1, wins: int = 0, losses: int = 0, timeouts: int = 0) -> None:
+src/services/firebase_client.py:595:    if wins > 0:     _local_stats["wins"]     += wins
+src/services/firebase_client.py:596:    if losses > 0:   _local_stats["losses"]   += losses
+src/services/firebase_client.py:599:    if db is None or (n <= 0 and wins <= 0 and losses <= 0 and timeouts <= 0):
+src/services/firebase_client.py:604:        if wins > 0:     upd["total_wins"]     = firestore.Increment(wins)
+src/services/firebase_client.py:605:        if losses > 0:   upd["total_losses"]   = firestore.Increment(losses)
+src/services/firebase_client.py:624:                "wins":     int(d.get("total_wins",     0)),
+src/services/firebase_client.py:625:                "losses":   int(d.get("total_losses",   0)),
+src/services/firebase_client.py:1443:        # NOTE: wins/losses/timeouts/wr come ONLY from get_metrics() (METRICS dict).
+src/services/firebase_client.py:1444:        # _update_metrics_locked() correctly excludes neutral timeouts from wins/losses.
+src/services/firebase_client.py:1445:        # save_batch() counts all result=="WIN" into _local_stats.wins including those
+src/services/firebase_client.py:1446:        # neutral timeouts — using max() here would inflate wins and DROP winrate.
+src/services/firebase_client.py:1449:        _wins        = metrics.get("wins",     0)
+src/services/firebase_client.py:1450:        _losses      = metrics.get("losses",   0)
+src/services/firebase_client.py:1452:        _decisive    = _wins + _losses      # neutral timeouts excluded from WR
+src/services/firebase_client.py:1473:                            f"(wins={canonical['wins']} losses={canonical['losses']} flats={canonical['flats']}) " \
+src/services/firebase_client.py:1531:                "wins_count":         _wins,
+src/services/firebase_client.py:1532:                "losses_count":       _losses,
+src/services/learning_engine.py:54:        self._s = {"n": 0, "wins": 0, "pnl": 0.0}
+src/services/learning_engine.py:65:            self._s["wins"] += 1
+src/services/learning_engine.py:78:        return self._s["wins"] / n if n > 0 else 0.0
+src/services/learning_event.py:29:    "trades": 0, "wins": 0, "losses": 0, "timeouts": 0, "profit": 0.0,
+src/services/learning_event.py:41:    "gross_wins":       0.0,
+src/services/learning_event.py:42:    "gross_losses":     0.0,
+src/services/learning_event.py:60:    "MICRO_TP": 0, "PARTIAL_TP_25": 0, "PARTIAL_TP_50": 0, "PARTIAL_TP_75": 0,
+src/services/learning_event.py:66:_regime_stats   = {}   # regime -> {"wins": int, "trades": int}
+src/services/learning_event.py:199:    s = _sym_stats.setdefault(symbol, {"trades": 0, "wins": 0, "profit": 0.0})
+src/services/learning_event.py:202:        s["wins"] += 1
+src/services/learning_event.py:273:    # Do NOT count as losses: they carry no directional signal and
+src/services/learning_event.py:287:        m["wins"]       += 1
+src/services/learning_event.py:290:        m["gross_wins"] += profit
+src/services/learning_event.py:291:        m["avg_win"]     = m["gross_wins"] / m["wins"]
+src/services/learning_event.py:295:        m["losses"]      += 1
+src/services/learning_event.py:298:        m["gross_losses"] += abs(profit)
+src/services/learning_event.py:299:        m["avg_loss"]      = m["gross_losses"] / max(m["losses"], 1)
+src/services/learning_event.py:362:    rs = _regime_stats.setdefault(regime, {"wins": 0, "trades": 0})
+src/services/learning_event.py:364:    if result == "WIN": rs["wins"] += 1
+src/services/learning_event.py:384:    _decisive = m["wins"] + m["losses"]
+src/services/learning_event.py:385:    wr = m["wins"] / _decisive if _decisive else 0.0
+src/services/learning_event.py:403:    gw = m["gross_wins"]
+src/services/learning_event.py:404:    gl = m["gross_losses"]
+src/services/learning_event.py:412:        sym: {**s, "winrate": s["wins"] / s["trades"] if s["trades"] else 0.0}
+src/services/learning_event.py:516:            m["wins"]             = stats.get("wins",     0)
+src/services/learning_event.py:517:            m["losses"]           = stats.get("losses",   0)
+src/services/learning_event.py:548:            if not _count_seeded: m["wins"] += 1
+src/services/learning_event.py:550:            m["gross_wins"] += profit
+src/services/learning_event.py:553:            if not _count_seeded: m["losses"] += 1
+src/services/learning_event.py:555:            m["gross_losses"] += abs(profit)
+src/services/learning_event.py:574:        rs = _regime_stats.setdefault(regime, {"wins": 0, "trades": 0})
+src/services/learning_event.py:578:                rs["wins"] += 1
+src/services/learning_event.py:606:    if m["wins"]   > 0: m["avg_win"]  = m["gross_wins"]   / m["wins"]
+src/services/learning_event.py:607:    if m["losses"] > 0: m["avg_loss"] = m["gross_losses"]  / m["losses"]
+src/services/learning_event.py:620:    # detect "3 losses in last 5 trades" — if we load historical results here,
+src/services/learning_event.py:621:    # a streak of losses at session-end would permanently block trading after
+src/services/learning_event.py:622:    # every restart until 2 in-session wins flip the ratio.
+src/services/learning_event.py:631:    # restart — the auditor always saw streak=0 and kept trading into losses.
+src/services/learning_event.py:673:    _decisive = m["wins"] + m["losses"]
+src/services/learning_event.py:674:    wr = m["wins"] / _decisive if _decisive else 0.0
+src/services/learning_event.py:719:            "winrate": round(rs["wins"] / t, 3) if t else 0.0,
+src/services/learning_event.py:732:    _decisive = m["wins"] + m["losses"]   # excludes neutral timeouts
+src/services/learning_event.py:733:    if _decisive == 0 or m["wins"] == 0 or m["losses"] == 0:
+src/services/learning_event.py:735:    wr = m["wins"] / _decisive
+src/services/learning_monitor.py:45:def _compute_econ_signature(pf: float, status: str, source: str, closed_trades: int, wins: int, losses: int) -> str:
+src/services/learning_monitor.py:47:    return f"{pf:.3f}|{status}|{source}|{closed_trades}|{wins}|{losses}"
+src/services/learning_monitor.py:57:lm_feature_stats: dict = {}  # feature_name → [wins, total]
+src/services/learning_monitor.py:162:    Normalizes field names, counts wins/losses/flats, computes decisive WR and EV.
+src/services/learning_monitor.py:181:        pair_stats = {}  # (sym, reg) → {n_total, wins, losses, flats, pnl_sum, ev_sum}
+src/services/learning_monitor.py:203:                    "n_total": 0, "wins": 0, "losses": 0, "flats": 0,
+src/services/learning_monitor.py:217:                pair_stats[key]["wins"] += 1
+src/services/learning_monitor.py:221:                pair_stats[key]["losses"] += 1
+src/services/learning_monitor.py:253:            decisive = stats["wins"] + stats["losses"]
+src/services/learning_monitor.py:254:            wr_decisive = stats["wins"] / decisive if decisive > 0 else 0.0
+src/services/learning_monitor.py:285:def check_state_mismatch(canonical_closed_trades: int) -> None:
+src/services/learning_monitor.py:293:        canonical_closed_trades: Number of closed trades in dashboard/canonical source
+src/services/learning_monitor.py:295:    if canonical_closed_trades < 100:
+src/services/learning_monitor.py:299:    if lm_total_trades < 20 and canonical_closed_trades >= 100:
+src/services/learning_monitor.py:302:            f"[STATE_MISMATCH] canonical_trades={canonical_closed_trades} "
+src/services/learning_monitor.py:316:    streaks (e.g. 5 identical small wins → std≈0 → raw ratio → ±∞).
+src/services/learning_monitor.py:479:    The floor of 0.5 prevents tiny wins/losses from being silenced entirely.
+src/services/learning_monitor.py:540:    wins  = sum(1 for x in pnl_snap if x > 0)
+src/services/learning_monitor.py:542:    wr    = wins / total
+src/services/learning_monitor.py:672:            "wins": 0,
+src/services/learning_monitor.py:673:            "losses": 0,
+src/services/learning_monitor.py:685:            row["wins"] = int(row.get("wins") or 0) + 1
+src/services/learning_monitor.py:687:            row["losses"] = int(row.get("losses") or 0) + 1
+src/services/learning_monitor.py:906:      - profit_factor: gross_wins / gross_losses ratio (from canonical source)
+src/services/learning_monitor.py:918:        canonical_closed_trades = load_history(limit=HISTORY_LIMIT)
+src/services/learning_monitor.py:921:        if not canonical_closed_trades or len(canonical_closed_trades) < 5:
+src/services/learning_monitor.py:925:                profit_factor = canonical_profit_factor(canonical_closed_trades or [])
+src/services/learning_monitor.py:930:                wins = METRICS.get("wins", 0)
+src/services/learning_monitor.py:931:                losses = METRICS.get("losses", 0)
+src/services/learning_monitor.py:939:                recent_wins = sum(1 for r in rr if r == "WIN")
+src/services/learning_monitor.py:946:                    decisive = wins + losses
+src/services/learning_monitor.py:947:                    overall_wr = wins / decisive if decisive > 0 else 0.0
+src/services/learning_monitor.py:948:                    recent_wr = recent_wins / recent_sample_size
+src/services/learning_monitor.py:1009:        profit_factor = canonical_profit_factor(canonical_closed_trades)
+src/services/learning_monitor.py:1010:        pf_meta = canonical_profit_factor_with_meta(canonical_closed_trades)
+src/services/learning_monitor.py:1017:        trades = len(canonical_closed_trades)
+src/services/learning_monitor.py:1018:        wins = pf_meta["wins"]
+src/services/learning_monitor.py:1019:        losses = pf_meta["losses"]
+src/services/learning_monitor.py:1025:        # Recent trend — use canonical wins/losses (already set from pf_meta above)
+src/services/learning_monitor.py:1026:        decisive = wins + losses
+src/services/learning_monitor.py:1027:        overall_wr = wins / decisive if decisive > 0 else 0.0
+src/services/learning_monitor.py:1030:        recent_wins = sum(1 for r in rr if r == "WIN")
+src/services/learning_monitor.py:1039:            recent_wr = recent_wins / recent_sample_size
+src/services/learning_monitor.py:1070:            recent_wr_pct = recent_wins / recent_sample_size
+src/services/learning_monitor.py:1073:        # V10.13u+5: Parser failure clamp — 100+ trades with zero wins/losses is fatal
+src/services/learning_monitor.py:1074:        if trades >= 100 and pf_meta["wins"] == 0 and pf_meta["losses"] == 0:
+src/services/learning_monitor.py:1098:            pf_meta['closed_trades'], pf_meta['wins'], pf_meta['losses']
+src/services/learning_monitor.py:1109:                f"closed_trades={pf_meta['closed_trades']} wins={pf_meta['wins']} losses={pf_meta['losses']} "
+src/services/learning_monitor.py:1214:    #   system got MORE signals → more losses → deeper crisis. Inverted logic.
+src/services/learning_monitor.py:1324:    lm_wins = 0
+src/services/learning_monitor.py:1335:            lm_wins += int(n * wr_list[-1])
+src/services/learning_monitor.py:1338:    lm_wr = (lm_wins / lm_total) if lm_total > 0 else 0.0
+src/services/LOGIC.md:26:  2. For each bucket, it tracks `[wins, total]`.
+src/services/meta_agent.py:20:        self.wins = 0
+src/services/meta_agent.py:74:            self.wins += 1
+src/services/metrics_engine.py:28:        wins = [p for p in profits if p > 0]
+src/services/metrics_engine.py:33:        winrate = len(wins)/len(profits)
+src/services/metrics_engine.py:36:        expectancy = (winrate * np.mean(wins or [0])) + ((1-winrate) * np.mean([p for p in profits if p<0] or [0]))
+src/services/metrics_engine.py:161:                'trades_total': 0, 'wins': 0, 'losses': 0, 'flats': 0,
+src/services/metrics_engine.py:177:        wins   = outcomes.count("WIN")
+src/services/metrics_engine.py:178:        losses = outcomes.count("LOSS")
+src/services/metrics_engine.py:188:        decisive = wins + losses
+src/services/metrics_engine.py:189:        winrate  = wins / decisive if decisive > 0 else 0.0
+src/services/metrics_engine.py:203:        _okey = {"WIN": "wins", "LOSS": "losses", "FLAT": "flats"}
+src/services/metrics_engine.py:212:                per_symbol[sym] = {"count": 0, "wins": 0, "losses": 0, "flats": 0, "net_pnl": 0.0}
+src/services/metrics_engine.py:219:                per_regime[reg] = {"count": 0, "wins": 0, "losses": 0, "flats": 0, "net_pnl": 0.0}
+src/services/metrics_engine.py:226:                per_exit_type[et] = {"count": 0, "wins": 0, "losses": 0, "flats": 0,
+src/services/metrics_engine.py:258:        if wins + losses + flats != trades_total:
+src/services/metrics_engine.py:259:            alerts.append(f"outcome_sum_mismatch:{wins+losses+flats} vs {trades_total}")
+src/services/metrics_engine.py:263:            "wins": wins, "losses": losses, "flats": flats,
+src/services/metrics_engine.py:289:        wins   = sum(1 for t in recent if t.get("result") == "WIN")
+src/services/metrics_engine.py:294:            "wr":     wins / len(recent),
+src/services/paper_trade_executor.py:2238:                by_source[source] = {"n": 0, "wins": 0, "pnls": []}
+src/services/paper_trade_executor.py:2241:                by_source[source]["wins"] += 1
+src/services/paper_trade_executor.py:2249:                by_regime[regime] = {"n": 0, "wins": 0, "pnls": []}
+src/services/paper_trade_executor.py:2252:                by_regime[regime]["wins"] += 1
+src/services/paper_trade_executor.py:2257:            f"{src}:n={v['n']} wr={v['wins']/v['n']:.2f}" for src, v in sorted(by_source.items())
+src/services/paper_trade_executor.py:2260:            f"{reg}:n={v['n']} wr={v['wins']/v['n']:.2f}" for reg, v in sorted(by_regime.items())
+src/services/performance_tracker.py:7:    "wins": 0,
+src/services/performance_tracker.py:8:    "losses": 0
+src/services/performance_tracker.py:14:        stats["wins"] += 1
+src/services/performance_tracker.py:16:        stats["losses"] += 1
+src/services/performance_tracker.py:18:    total = stats["wins"] + stats["losses"]
+src/services/performance_tracker.py:19:    winrate = (stats["wins"] / total) * 100 if total > 0 else 0
+src/services/portfolio_event.py:17:    "wins": 0,
+src/services/portfolio_event.py:18:    "losses": 0,
+src/services/portfolio_event.py:97:            portfolio["wins"] += 1
+src/services/portfolio_event.py:99:            portfolio["losses"] += 1
+src/services/portfolio_event.py:137:        "wins": portfolio["wins"],
+src/services/portfolio_event.py:138:        "losses": portfolio["losses"],
+src/services/portfolio_event.py:140:            portfolio["wins"] / portfolio["total_trades"]
+src/services/pre_live_audit.py:327:            wr_approx = _M.get("wins", 0) / t
+src/services/probability_calibration.py:55:    actual_wins: int
+src/services/probability_calibration.py:56:    actual_losses: int
+src/services/probability_calibration.py:98:            empirical_p=0.50, sample_count=0, actual_wins=0, actual_losses=0
+src/services/probability_calibration.py:102:            empirical_p=0.58, sample_count=0, actual_wins=0, actual_losses=0
+src/services/probability_calibration.py:106:            empirical_p=0.68, sample_count=0, actual_wins=0, actual_losses=0
+src/services/probability_calibration.py:110:            empirical_p=0.80, sample_count=0, actual_wins=0, actual_losses=0
+src/services/probability_calibration.py:114:            empirical_p=0.90, sample_count=0, actual_wins=0, actual_losses=0
+src/services/probability_calibration.py:139:    bucket_data = {i: {"wins": 0, "losses": 0} for i in range(1, 6)}
+src/services/probability_calibration.py:159:            bucket_data[bucket_id]["wins"] += 1
+src/services/probability_calibration.py:161:            bucket_data[bucket_id]["losses"] += 1
+src/services/probability_calibration.py:165:        total = counts["wins"] + counts["losses"]
+src/services/probability_calibration.py:173:            bucket.actual_wins = 0
+src/services/probability_calibration.py:174:            bucket.actual_losses = 0
+src/services/probability_calibration.py:177:        empirical_p = counts["wins"] / total if total > 0 else 0.5
+src/services/probability_calibration.py:181:        bucket.actual_wins = counts["wins"]
+src/services/probability_calibration.py:182:        bucket.actual_losses = counts["losses"]
+src/services/probability_calibration.py:187:            f"empirical_p={empirical_p:.3f} (wins={counts['wins']}, losses={counts['losses']})"
+src/services/probability_calibration.py:248:            "actual_wr": (bucket.actual_wins / max(bucket.sample_count, 1)),
+src/services/probability_calibration.py:249:            "accuracy": abs(bucket.empirical_p - (bucket.actual_wins / max(bucket.sample_count, 1)))
+src/services/probability_calibration.py:255:        total_wins = sum(1 for r in _calibration_history if r["win"])
+src/services/probability_calibration.py:256:        overall_wr = total_wins / total_signals
+src/services/probability_calibration.py:265:                error = abs(bucket.empirical_p - (bucket.actual_wins / bucket.sample_count))
+src/services/realtime_decision_engine.py:45:# V10.13u+7: Churn cooldown tracking to prevent rapid re-entry after stagnation losses
+src/services/realtime_decision_engine.py:1822:MAX_LOSS_STREAK = 15      # halt trading after N consecutive losses (raised: 5 was too tight)
+src/services/realtime_decision_engine.py:1829:        self.buckets = {}   # bin -> [wins, total]
+src/services/realtime_decision_engine.py:2066:edge_stats     = {}   # (feature_name, regime) -> [eff_wins, eff_total]  (decayed)
+src/services/realtime_decision_engine.py:2067:combo_stats    = {}   # (combo_tuple, regime)  -> [eff_wins, eff_total]  (decayed)
+src/services/realtime_decision_engine.py:2151:    """Laplace-smoothed regime-aware WR: (wins+5)/(total+10). Prior=0.5."""
+src/services/realtime_decision_engine.py:2329:        # Restore edge_stats: "feature_name|regime" → [eff_wins, eff_total]
+src/services/realtime_decision_engine.py:2334:        # Restore combo_stats: "('f1','f2',...)|regime" → [eff_wins, eff_total]
+src/services/realtime_decision_engine.py:2345:        # Restore lm_feature_stats: feature_name → [wins, total]
+src/services/realtime_decision_engine.py:2717:        _wr = _m.get("wins", 0) / max(_t, 1)
+src/services/realtime_decision_engine.py:2914:    # 5+ losses in last 8 trades → 0.70× size instead of full stop.
+src/services/realtime_decision_engine.py:2916:    recent_losses = sum(1 for r in list(_rr)[-8:] if r == "LOSS")
+src/services/realtime_decision_engine.py:2920:    if not _bootstrap and not _deadlocked and recent_losses >= 5:
+src/services/regime_predictor.py:58:    Prediction hierarchy (first match wins):
+src/services/reward_system.py:64:        reward *= 1.3  # Penalty for losses
+src/services/risk_engine.py:755:      sharpe_factor — trend quality (are wins covering losses?)
+src/services/risk_manager.py:22:        self.consecutive_losses = 0
+src/services/risk_manager.py:23:        self.max_consecutive_losses = 5
+src/services/risk_manager.py:70:            self.consecutive_losses += 1
+src/services/risk_manager.py:72:            self.consecutive_losses = 0
+src/services/risk_manager.py:77:        print(f"   losses in row: {self.consecutive_losses}")
+src/services/risk_manager.py:101:        if self.consecutive_losses >= self.max_consecutive_losses:
+src/services/risk_manager.py:133:            "consecutive_losses": self.consecutive_losses,
+src/services/rl_agent.py:52:        # 🔥 ANTI-HOLD BIAS CORRECTION: If HOLD wins but no_trade_cycles > 50, override
+src/services/self_healing.py:5:  - Loss streak detection (N consecutive losses)
+src/services/self_healing.py:31:            loss_streak_threshold: Trigger mutation after N losses (default 5)
+src/services/self_healing.py:99:            - "LOSS_STREAK": Consecutive losses
+src/services/self_healing.py:123:            logger.warning(f"🔄 LOSS STREAK DETECTED: {self.loss_streak} losses")
+src/services/signal_filter.py:8:  loss_cluster_check()   — regime-aware cooldown after consecutive losses
+src/services/signal_filter.py:68:    "BULL_TREND":  5,   # trend continuation valid → allow more losses
+src/services/signal_filter.py:123:    # Count consecutive losses from most recent backward
+src/services/signal_filter.py:164:            f"LOSS_CLUSTER:{consec}losses regime={regime} "
+src/services/signal_generator.py:88:    losses = [max(series[i-1] - series[i], 0) for i in range(1, len(series))]
+src/services/signal_generator.py:90:    al = _ema(losses[-n*3:], n) or 1e-9
+src/services/smart_exit_engine.py:5:- PARTIAL_TP_25_BASE: 0.15→0.13 (convert 27,804 near-miss events into real exits)
+src/services/smart_exit_engine.py:21:- MICRO_TP: 0.0010→0.0012 (widen to reduce near-miss threshold gap)
+src/services/smart_exit_engine.py:43:- Micro-TP: ultra-tight harvest for minimal 0.10% moves (captures scalp-style wins)
+src/services/smart_exit_engine.py:45:- Exit type enrichment: MICRO_TP, BREAKEVEN_STOP, PARTIAL_TP_25/50/75, TRAIL_PROFIT
+src/services/smart_exit_engine.py:68:#   - PARTIAL_TP_25: 0.15 → 0.13 (27,804 near-miss events in logs → activate more conversions)
+src/services/smart_exit_engine.py:71:#   - MICRO_TP: 0.0010 → 0.0012 (widen to reduce near-miss gap)
+src/services/smart_exit_engine.py:76:_MICRO_TP_BASE          = 0.0010  # V10.13s.3: 0.0012→0.0010 (5589 near-miss events) reduce gap
+src/services/smart_exit_engine.py:77:_PARTIAL_TP_25_BASE     = 0.10    # V10.13s.3: 0.13→0.10 (convert near-miss to real harvests)
+src/services/smart_exit_engine.py:158:            return _MICRO_TP_BASE
+src/services/smart_exit_engine.py:161:        return _MICRO_TP_BASE
+src/services/smart_exit_engine.py:164:    return thresholds.get(threshold_type, _MICRO_TP_BASE)
+src/services/smart_exit_engine.py:246:            "MICRO_TP:below_threshold": 0,
+src/services/smart_exit_engine.py:247:            "MICRO_TP:negative_pnl": 0,
+src/services/smart_exit_engine.py:250:            "PARTIAL_TP_25:below_threshold": 0,
+src/services/smart_exit_engine.py:275:            "MICRO_TP": 0,
+src/services/smart_exit_engine.py:277:            "PARTIAL_TP_25": 0,
+src/services/smart_exit_engine.py:364:                self._exit_audit_rejections["MICRO_TP:below_threshold"] += 1
+src/services/smart_exit_engine.py:368:                self._log_exit_eval(position.symbol, position.direction, "MICRO_TP", "FAIL",
+src/services/smart_exit_engine.py:373:                self._exit_audit_rejections["MICRO_TP:negative_pnl"] += 1
+src/services/smart_exit_engine.py:374:                self._log_exit_eval(position.symbol, position.direction, "MICRO_TP", "FAIL",
+src/services/smart_exit_engine.py:380:            "exit_type": "MICRO_TP",
+src/services/smart_exit_engine.py:435:        threshold = _PARTIAL_TP_25_BASE * tp_move
+src/services/smart_exit_engine.py:438:                "exit_type": "PARTIAL_TP_25",
+src/services/smart_exit_engine.py:445:        self._exit_audit_rejections["PARTIAL_TP_25:below_threshold"] += 1
+src/services/smart_exit_engine.py:624:        V10.13u+7: Fee-aware stagnation guard reduces churn losses.
+src/services/state_manager.py:22:    KEY  "rde:combo_stats"              Redis HASH  field=combo val=JSON[wins,total]
+src/services/state_manager.py:23:    KEY  "rde:calibrator"               Redis HASH  field=bucket val=JSON[wins,total]
+src/services/state_manager.py:24:    KEY  "rde:edge_stats"               Redis HASH  field=key val=JSON[wins,total]
+src/services/state_manager.py:29:    KEY  "le:regime_stats"              Redis HASH  field=regime val=JSON{wins,trades}
+src/services/timing_fix.py:84:        self._wins = 0
+src/services/timing_fix.py:145:            self._wins += 1
+src/services/timing_fix.py:149:            and self._wins / self._n >= self.TIGHTEN_WR
+src/services/timing_fix.py:153:            logger.info(f"TIMING auto-tightened: n={self._n} wr={self._wins/self._n:.0%}")
+src/services/trade_executor.py:196:    "TP", "SL", "MICRO_TP", "TRAIL_PROFIT", "SCRATCH_EXIT", "STAGNATION_EXIT",
+src/services/trade_executor.py:200:PARTIAL_CLOSE_TYPES = {"PARTIAL_TP_25", "PARTIAL_TP_50", "PARTIAL_TP_75"}
+src/services/trade_executor.py:524:def _winsorize(x, p=0.1):
+src/services/trade_executor.py:547:    Applies _winsorize(p=0.1) inside _std before computing variance, so
+src/services/trade_executor.py:557:        xw = _winsorize(x, p=0.1)
+src/services/trade_executor.py:883:    Smoother than the fixed 50% cut: shallow losses get a light trim that
+src/services/trade_executor.py:884:    preserves more upside if price reverses; deep losses get cut hard to
+src/services/trade_executor.py:1228:    Conditions evaluated top-to-bottom (first match wins):
+src/services/trade_executor.py:2269:    # so force-trading just produces timeout losses with no edge. The force guard
+src/services/trade_executor.py:3133:                # use uppercase keys (MICRO_TP, SCRATCH_EXIT…). .lower() was silently
+Binary file src/services/__pycache__/app_metrics_contract.cpython-314.pyc matches
+Binary file src/services/__pycache__/bucket_metrics.cpython-314.pyc matches
+Binary file src/services/__pycache__/canonical_metrics.cpython-314.pyc matches
+Binary file src/services/__pycache__/dashboard_snapshot_contract.cpython-314.pyc matches
+Binary file src/services/__pycache__/execution.cpython-314.pyc matches
+Binary file src/services/__pycache__/exit_attribution.cpython-314.pyc matches
+Binary file src/services/__pycache__/firebase_client.cpython-314.pyc matches
+Binary file src/services/__pycache__/learning_event.cpython-314.pyc matches
+Binary file src/services/__pycache__/learning_monitor.cpython-314.pyc matches
+Binary file src/services/__pycache__/metrics_engine.cpython-314.pyc matches
+Binary file src/services/__pycache__/paper_trade_executor.cpython-314.pyc matches
+Binary file src/services/__pycache__/realtime_decision_engine.cpython-314.pyc matches
+Binary file src/services/__pycache__/regime_predictor.cpython-314.pyc matches
+Binary file src/services/__pycache__/risk_engine.cpython-314.pyc matches
+Binary file src/services/__pycache__/self_healing.cpython-314.pyc matches
+Binary file src/services/__pycache__/signal_generator.cpython-314.pyc matches
+Binary file src/services/__pycache__/smart_exit_engine.cpython-314.pyc matches
+Binary file src/services/__pycache__/trade_executor.cpython-314.pyc matches
+scripts/paper_training_quality_report.py:132:    regimes = defaultdict(lambda: {"wins": 0, "total": 0})
+scripts/paper_training_quality_report.py:138:                regimes[regime]["wins"] += 1
+scripts/paper_training_quality_report.py:142:            "wins": stats["wins"],
+scripts/paper_training_quality_report.py:143:            "win_rate": round(safe_div(stats["wins"], stats["total"]), 4)
+scripts/paper_training_quality_report.py:152:    symbols = defaultdict(lambda: {"wins": 0, "total": 0, "pnls": []})
+scripts/paper_training_quality_report.py:158:                symbols[sym]["wins"] += 1
+scripts/paper_training_quality_report.py:164:            "wins": stats["wins"],
+scripts/paper_training_quality_report.py:165:            "win_rate": round(safe_div(stats["wins"], stats["total"]), 4),
+scripts/paper_training_quality_report.py:175:    sides = defaultdict(lambda: {"wins": 0, "total": 0, "pnls": []})
+scripts/paper_training_quality_report.py:181:                sides[side]["wins"] += 1
+scripts/paper_training_quality_report.py:187:            "wins": stats["wins"],
+scripts/paper_training_quality_report.py:188:            "win_rate": round(safe_div(stats["wins"], stats["total"]), 4),
+scripts/paper_training_quality_report.py:239:    cal_wins = sum(1 for r in calibrated if r.get("outcome") == "WIN")
+scripts/paper_training_quality_report.py:240:    uncal_wins = sum(1 for r in uncalibrated if r.get("outcome") == "WIN")
+scripts/paper_training_quality_report.py:244:        "calibrated_win_rate": round(safe_div(cal_wins, len(calibrated)), 4) if calibrated else None,
+scripts/paper_training_quality_report.py:245:        "uncalibrated_win_rate": round(safe_div(uncal_wins, len(uncalibrated)), 4) if uncalibrated else None,
+scripts/paper_training_quality_report.py:254:    ok_wins = sum(1 for r in edge_ok if r.get("outcome") == "WIN")
+scripts/paper_training_quality_report.py:255:    bypass_wins = sum(1 for r in edge_bypassed if r.get("outcome") == "WIN")
+scripts/paper_training_quality_report.py:259:        "cost_edge_ok_win_rate": round(safe_div(ok_wins, len(edge_ok)), 4) if edge_ok else None,
+scripts/paper_training_quality_report.py:260:        "cost_edge_bypassed_win_rate": round(safe_div(bypass_wins, len(edge_bypassed)), 4) if edge_bypassed else None,
+scripts/paper_training_quality_report.py:383:            md.append(f"- **{regime}:** {stats['wins']}/{stats['total']} ({stats['win_rate']*100:.1f}%)\n")
+scripts/paper_training_quality_report.py:394:            md.append(f"- **{sym}:** {stats['wins']}/{stats['total']} ({stats['win_rate']*100:.1f}%){pnl_str}\n")
+scripts/paper_training_quality_report.py:404:        md.append(f"- **{side}:** {stats['wins']}/{stats['total']} ({stats['win_rate']*100:.1f}%){pnl_str}\n")
+scripts/paper_training_segment_report.py:103:    wins = outcomes.get("WIN", 0)
+scripts/paper_training_segment_report.py:104:    win_rate = wins / total if total > 0 else 0
+Binary file scripts/__pycache__/paper_training_quality_report.cpython-314.pyc matches
+Binary file scripts/__pycache__/paper_training_segment_report.cpython-314.pyc matches
+tests/test_app_metrics_contract.py:86:    all_time = {"trades": 500, "wins": 300, "losses": 200}
+tests/test_app_metrics_contract.py:124:    assert s["kpis"]["window_losses"] == 0
+tests/test_app_metrics_contract.py:133:    assert s["kpis"]["window_wins"] == 0
+tests/test_metrics_consistency.py:27:    assert stats["wins"] == 1
+tests/test_metrics_consistency.py:28:    assert stats["losses"] == 1
+tests/test_metrics_consistency.py:31:    assert stats["per_symbol"]["BTCUSDT"]["wins"] == 1
+tests/test_metrics_consistency.py:32:    assert stats["per_exit_type"]["TP"]["wins"] == 1
+tests/test_metrics_consistency.py:46:    assert stats["losses"] == 1
+tests/test_metrics_consistency.py:68:            final_exit_type="PARTIAL_TP_25",
+tests/test_p11ap_android_snapshot_audit.py:180:            all_time_stats={"trades": 10, "wins": 5, "losses": 3, "flats": 2},
+tests/test_p11ap_android_snapshot_audit.py:254:                "wins": 6,
+tests/test_p11ap_android_snapshot_audit.py:255:                "losses": 3,
+tests/test_p1_paper_exploration.py:577:        assert metrics["wins"] == 1
+tests/test_p1_paper_exploration.py:578:        assert metrics["losses"] == 0
+tests/test_p1_paper_exploration.py:584:        """Bucket metrics track losses"""
+tests/test_p1_paper_exploration.py:601:        assert metrics["losses"] == 1
+tests/test_p1_paper_exploration.py:602:        assert metrics["wins"] == 0
+tests/test_paper_training_quality_report.py:248:        assert perf["BULL_TREND"]["wins"] == 1
+tests/test_paper_training_quality_report.py:251:        assert perf["BEAR_TREND"]["wins"] == 0
+tests/test_paper_training_quality_report.py:253:        assert perf["RANGING"]["wins"] == 0
+tests/test_paper_training_quality_report.py:269:        assert perf["BTC/USDT"]["wins"] == 1
+tests/test_paper_training_quality_report.py:272:        assert perf["ETH/USDT"]["wins"] == 0
+tests/test_paper_training_quality_report.py:289:        assert perf["BUY"]["wins"] == 1
+tests/test_paper_training_quality_report.py:291:        assert perf["SELL"]["wins"] == 0
+tests/test_paper_training_segment_report.py:310:    def test_recommend_patch_regime_filter_if_quiet_range_no_wins(self):
+tests/test_paper_training_segment_report.py:313:        # Create 20 QUIET_RANGE large losses, 80 other small wins
+tests/test_paper_training_segment_report.py:326:                    "net_pnl_pct": -3.0,  # Large losses
+tests/test_paper_training_segment_report.py:343:                    "net_pnl_pct": 0.2,  # Small wins
+tests/test_v10_13u_patches.py:128:    # WR should be [1.0, 1.0, 0.0] (2 wins, 1 loss)
+tests/test_v10_13u_patches.py:258:            "wins": 40,
+tests/test_v10_13u_patches.py:259:            "losses": 60,
+tests/test_v10_13u_patches.py:286:            "wins": 70,
+tests/test_v10_13u_patches.py:287:            "losses": 30,
+tests/test_v10_13u_patches.py:308:    # Create 10 trades: 7 wins, 3 losses
+tests/test_v10_13u_patches.py:326:    assert meta["wins"] == 7
+tests/test_v10_13u_patches.py:327:    assert meta["losses"] == 3
+tests/test_v10_13u_patches.py:328:    assert meta["source"] == "canonical_closed_trades"
+tests/test_v10_13u_patches.py:442:    # 2 wins, 2 losses
+tests/test_v10_13u_patches.py:443:    assert meta["wins"] == 2, f"Expected 2 wins, got {meta['wins']}"
+tests/test_v10_13u_patches.py:444:    assert meta["losses"] == 2, f"Expected 2 losses, got {meta['losses']}"
+tests/test_v10_13u_patches.py:452:    """V10.13u+5: 100+ trades with zero wins/losses should trigger failure clamp."""
+tests/test_v10_13u_patches.py:1741:    # Try to acquire lock for PARTIAL_TP_25 - should be guarded upstream
+tests/test_v10_13u_patches.py:1743:    assert "PARTIAL_TP_25" in PARTIAL_CLOSE_TYPES
+tests/test_v10_13u_patches.py:1774:    # Try to acquire lock with PARTIAL_TP_25 - should be rejected
+tests/test_v10_13u_patches.py:1775:    acquired, key, status = _try_acquire_close_lock("BTCUSDT", pos, "PARTIAL_TP_25")
+tests/test_v3_1_hotfix.py:201:    """If trade has result=WIN and close_reason is TP, stored result wins."""
+tests/test_v3_1_hotfix.py:207:    """If trade has result=LOSS and close_reason is SL, stored result wins."""
+tests/test_v5_core.py:268:        # No losses yet
+tests/test_v5_core.py:271:        # Add losses
+tests/test_v5_core.py:292:        assert healer.should_mutate() == True, "Should trigger after 2 losses"
+Binary file tests/__pycache__/test_app_metrics_contract.cpython-314-pytest-9.0.3.pyc matches
+Binary file tests/__pycache__/test_metrics_consistency.cpython-314-pytest-9.0.3.pyc matches
+Binary file tests/__pycache__/test_p11ap_android_snapshot_audit.cpython-314-pytest-9.0.3.pyc matches
+Binary file tests/__pycache__/test_p1_paper_exploration.cpython-314-pytest-9.0.3.pyc matches
+Binary file tests/__pycache__/test_paper_training_quality_report.cpython-314-pytest-9.0.3.pyc matches
+Binary file tests/__pycache__/test_paper_training_segment_report.cpython-314-pytest-9.0.3.pyc matches
+Binary file tests/__pycache__/test_v10_13u_patches.cpython-314-pytest-9.0.3.pyc matches
+Binary file tests/__pycache__/test_v3_1_hotfix.cpython-314-pytest-9.0.3.pyc matches
+Binary file tests/__pycache__/test_v5_core.cpython-314-pytest-9.0.3.pyc matches
+VERIFICATION_V10_13W/test_v10_13w_fixes.py:179:            final_exit_type="PARTIAL_TP_25",
+VERIFICATION_V10_13W/test_v10_13w_fixes.py:182:            partials_taken=["PARTIAL_TP_25"]
+VERIFICATION_V10_13W/test_v10_13w_fixes.py:192:        if "PARTIAL_TP_25" in _exit_stats:
+VERIFICATION_V10_13W/test_v10_13w_fixes.py:193:            stats = _exit_stats["PARTIAL_TP_25"]
+Binary file VERIFICATION_V10_13W/__pycache__/test_v10_13w_fixes.cpython-314-pytest-9.0.3.pyc matches
+Binary file VERIFICATION_V10_13W/__pycache__/test_v10_13w_fixes.cpython-314-pytest-9.0.3.pyc.22976 matches
+Binary file VERIFICATION_V10_13W/__pycache__/test_v10_13w_fixes.cpython-314.pyc matches
+data/research/firebase_reconciliation_phase1_2026-05-22/firebase_read_budget_plan.md:32:Collection: canonical_closed_trades
+data/research/firebase_reconciliation_phase1_2026-05-22/firebase_read_budget_plan.md:66:Collection: canonical_closed_trades
+data/research/firebase_reconciliation_phase1_2026-05-22/firebase_read_budget_plan.md:100:Collection: canonical_closed_trades
+data/research/firebase_reconciliation_phase1_2026-05-22/firebase_read_budget_plan.md:108:  - SUM(gross_pnl WHERE outcome=="WIN") [gross wins]
+data/research/firebase_reconciliation_phase1_2026-05-22/firebase_read_budget_plan.md:109:  - SUM(ABS(gross_pnl WHERE outcome=="LOSS")) [gross losses]
+data/research/firebase_reconciliation_phase1_2026-05-22/firebase_read_budget_plan.md:110:  - Calculate PF = gross_wins / gross_losses
+data/research/firebase_reconciliation_phase1_2026-05-22/firebase_read_budget_plan.md:186:**Purpose:** Verify that 11 wins and 4 losses (or 12 and 7) is accurate
+data/research/firebase_reconciliation_phase1_2026-05-22/firebase_read_budget_plan.md:190:Collection: canonical_closed_trades
+data/research/firebase_reconciliation_phase1_2026-05-22/firebase_read_budget_plan.md:216:Collection: canonical_closed_trades
+data/research/firebase_reconciliation_phase1_2026-05-22/firebase_read_budget_plan.md:262:Minute 0–5:    Query canonical_closed_trades (Read 1.1 + 1.2)
+data/research/firebase_reconciliation_phase1_2026-05-22/firebase_read_budget_plan.md:310:- [ ] Read-only access to canonical_closed_trades collection is available
+data/research/firebase_reconciliation_phase1_2026-05-22/firebase_read_budget_plan.md:322:- ✅ SCRATCH+STAGNATION dominate losses (89%) is PROVEN  
+data/research/firebase_reconciliation_phase1_2026-05-22/metric_scope_table.csv:2:canonical_count,100,"snapshot context","count of closed canonical trades","canonical_closed_trades collection, status=closed","100 (unverified in Firebase, but consistent with exit breakdown)","UNVERIFIED - Assumed","Need Firebase export to validate; exit breakdown sums to 100 so consistent"
+data/research/firebase_reconciliation_phase1_2026-05-22/metric_scope_table.csv:5:net_pnl,-0.00023955,"exit_reason_summary aggregated","sum(net_pnl for all closed trades)","canonical_closed_trades, sum across all exit types","−0.00023955 VERIFIED (from exit breakdown arithmetic)","MATCH - VERIFIED","Confirmed: 8+4-2-2-47-34-3 = 100 trades; sum of PnLs = −0.00023955"
+data/research/firebase_reconciliation_phase1_2026-05-22/metric_scope_table.csv:6:profit_factor,0.49,"dashboard snapshot; calculated in app_metrics_contract.py:158","gross_wins / abs(gross_losses)","canonical closed trades split WIN vs LOSS","0.192 calculated; 0.49 reported","MISMATCH - 2.5x discrepancy","Calculated from exit breakdown: 0.00005687 / 0.00029642 = 0.192. Reported 0.49. Source of discrepancy unknown."
+data/research/firebase_reconciliation_phase1_2026-05-22/metric_scope_table.csv:7:decisive_wins,11,"exit breakdown: PARTIAL_TP_25 (8) + MICRO_TP (4)","count of trades where net_pnl > 0","canonical closed trades with positive outcomes","11 or 12 (slight uncertainty on exact count)","NEAR-MATCH - 1 TRADE VARIANCE","Exit breakdown shows 8+4=12 profitable; canonical_summary shows 11 wins. Likely rounding or outcome classification difference."
+data/research/firebase_reconciliation_phase1_2026-05-22/metric_scope_table.csv:8:decisive_losses,4,"exit breakdown: REPLACED (3) + TIMEOUT_LOSS (2) + TIMEOUT_FLAT (2) = 7 or 4?","count of trades where net_pnl <= 0","canonical closed trades with negative outcomes","7 confirmed in exit breakdown (REPLACED 3 + TIMEOUT_LOSS 2 + TIMEOUT_FLAT 2)","MISMATCH - 3 TRADE DISCREPANCY","Exit breakdown shows 7 loss trades, but WR calculation uses 4. May be due to TIMEOUT_FLAT classification (is it LOSS or FLAT?)"
+data/research/firebase_reconciliation_phase1_2026-05-22/metric_scope_table.csv:9:wr_canonical_decisive,73.3%,"canonical_metrics.py:202, app_metrics_contract.py:150","wins / (wins + losses), excluding neutral/flat","canonical closed trades: WINS vs LOSSES","11 / (11+4) = 11/15 = 73.3% VERIFIED","MATCH - VERIFIED","Calculation correct; denominator deliberately excludes 85 neutral/flat trades. Non-economic headline metric."
+data/research/firebase_reconciliation_phase1_2026-05-22/metric_scope_table.csv:10:wr_all_outcomes,11.0%,"derived from snapshot","wins / total_trades (all outcomes included)","canonical closed trades: 100 total","11 / 100 = 11.0% VERIFIED","MATCH - VERIFIED","Economic win rate. Dashboard does not headline this, but it is the true profitability metric."
+data/research/firebase_reconciliation_phase1_2026-05-22/metric_scope_table.csv:17:scratch_stagnation_combined,81,"derived","sum(SCRATCH + STAGNATION)","canonical closed trades with these exit reasons","47 + 34 = 81 VERIFIED","MATCH - VERIFIED","Dominates losses: 81 trades = 81% of portfolio; −0.00021379 = 89.25% of total loss"
+/usr/bin/grep: input file 'data/research/firebase_reconciliation_phase1_2026-05-22/phase1a_win_count_formula_search.txt' is also the output
+data/research/firebase_reconciliation_phase1_2026-05-22/PHASE1_RECONCILIATION_REPORT.md:44:| profit_factor | canonical_metrics.py:103 | canonical_profit_factor() | gross_wins / abs(gross_losses) |
+data/research/firebase_reconciliation_phase1_2026-05-22/PHASE1_RECONCILIATION_REPORT.md:45:| win_rate | canonical_metrics.py:202 | canonical_win_rate() | wins / (wins + losses) |
+data/research/firebase_reconciliation_phase1_2026-05-22/PHASE1_RECONCILIATION_REPORT.md:84:wins        = count(trades where net_pnl > 0)
+data/research/firebase_reconciliation_phase1_2026-05-22/PHASE1_RECONCILIATION_REPORT.md:85:losses      = count(trades where net_pnl <= 0)
+data/research/firebase_reconciliation_phase1_2026-05-22/PHASE1_RECONCILIATION_REPORT.md:86:WR_decisive = wins / (wins + losses)
+data/research/firebase_reconciliation_phase1_2026-05-22/PHASE1_RECONCILIATION_REPORT.md:104:all_wins        = 11
+data/research/firebase_reconciliation_phase1_2026-05-22/PHASE1_RECONCILIATION_REPORT.md:113:- **Status: PROVEN - from exit breakdown: 8+4 profitable out of 100 = 12 wins = 11% if accounting for rounding**
+data/research/firebase_reconciliation_phase1_2026-05-22/PHASE1_RECONCILIATION_REPORT.md:115:**Note:** Audit report stated 11 wins; exit_reason_summary shows 8 PARTIAL_TP_25 + 4 MICRO_TP = 12 profitable, not 11. Potential 1-trade accounting difference to verify in Firebase.
+data/research/firebase_reconciliation_phase1_2026-05-22/PHASE1_RECONCILIATION_REPORT.md:133:- Sum of PARTIAL_TP_25 + MICRO_TP - (TIMEOUT_FLAT + REPLACED + TIMEOUT_LOSS + SCRATCH + STAGNATION)
+data/research/firebase_reconciliation_phase1_2026-05-22/PHASE1_RECONCILIATION_REPORT.md:168:PARTIAL_TP_25:   8 trades, -0.00009236 BTC net
+data/research/firebase_reconciliation_phase1_2026-05-22/PHASE1_RECONCILIATION_REPORT.md:169:MICRO_TP:        4 trades, +0.00000556 BTC net
+data/research/firebase_reconciliation_phase1_2026-05-22/PHASE1_RECONCILIATION_REPORT.md:195:| Scratch/stagnation dominate losses (89% of total) | **PROVEN FROM NET AGGREGATES** | 81 trades × exit breakdown verified | HIGH |
+data/research/firebase_reconciliation_phase1_2026-05-22/PHASE1_RECONCILIATION_REPORT.md:197:| Win rate (decisive only) = 73.3% | **PROVEN FROM NET AGGREGATES** | 11 wins / (11+4) = 73.3% confirmed | HIGH |
+data/research/firebase_reconciliation_phase1_2026-05-22/PHASE1_RECONCILIATION_REPORT.md:239:| Calculation | 11 / (11+4) | Decisive-only wins |
+data/research/firebase_reconciliation_phase1_2026-05-22/PHASE1_RECONCILIATION_REPORT.md:277:3. Calculation method differs (e.g., using gross pnl vs gross wins/losses)
+data/research/firebase_reconciliation_phase1_2026-05-22/PHASE1_RECONCILIATION_REPORT.md:280:**Remedy:** Firebase export of canonical_closed_trades required to validate source
+data/research/firebase_reconciliation_phase1_2026-05-22/PHASE1_RECONCILIATION_REPORT.md:322:Collection:  canonical_closed_trades
+data/research/firebase_reconciliation_phase1_2026-05-22/PHASE1_RECONCILIATION_REPORT.md:327:Purpose:     Validate snapshot numbers (100 trades, -0.00024 net PnL, 11 wins)
+data/research/firebase_reconciliation_phase1_2026-05-22/PHASE1_RECONCILIATION_REPORT.md:343:Collection:  canonical_closed_trades
+data/research/firebase_reconciliation_phase1_2026-05-22/PHASE1_RECONCILIATION_REPORT.md:348:Purpose:     Calculate MFE/MAE; determine if exits killed winners or cuts losses correctly
+data/research/firebase_reconciliation_phase1_2026-05-22/PHASE1_RECONCILIATION_REPORT.md:372:✅ **Scratch/stagnation dominate losses** (81/100 trades, 89% of loss confirmed)  
+data/research/firebase_reconciliation_phase1_2026-05-22/PHASE1_RECONCILIATION_REPORT.md:387:❌ **Whether exit policy destroys winners or correctly cuts losses** (requires price-path data)  
+data/research/firebase_reconciliation_phase1_2026-05-22/PHASE1_RECONCILIATION_REPORT.md:400:- SCRATCH+STAGNATION exits account for majority of losses
+data/research/firebase_reconciliation_phase1_2026-05-22/raw_data_gap_analysis.md:14:1. Exit breakdown provided: PARTIAL_TP_25 +5.13sat, MICRO_TP +0.56sat, etc.
+data/research/firebase_reconciliation_phase1_2026-05-22/raw_data_gap_analysis.md:15:2. Exit reason PnLs sum verified: (+5.13 +0.56) + (rest of losses) = -239.55 sat
+data/research/firebase_reconciliation_phase1_2026-05-22/raw_data_gap_analysis.md:23:### CLAIM 2: SCRATCH_EXIT and STAGNATION_EXIT dominate losses (89%)
+data/research/firebase_reconciliation_phase1_2026-05-22/raw_data_gap_analysis.md:60:- Collection: canonical_closed_trades
+data/research/firebase_reconciliation_phase1_2026-05-22/raw_data_gap_analysis.md:85:- Collection: canonical_closed_trades
+data/research/firebase_reconciliation_phase1_2026-05-22/raw_data_gap_analysis.md:97:1. Profitable exit types: PARTIAL_TP_25 (8 trades) + MICRO_TP (4 trades)
+data/research/firebase_reconciliation_phase1_2026-05-22/raw_data_gap_analysis.md:114:gross_wins  = 0.00005687 BTC
+data/research/firebase_reconciliation_phase1_2026-05-22/raw_data_gap_analysis.md:129:- Collection: canonical_closed_trades
+data/research/firebase_reconciliation_phase1_2026-05-22/raw_data_gap_analysis.md:243:FROM canonical_closed_trades
+data/research/offline_go_no_go_2026-05-22/canonical_summary.csv:3:decisive_trades,15,trades,calculated,11 wins + 4 losses (excluding 85 neutral/flat)
+data/research/offline_go_no_go_2026-05-22/canonical_summary.csv:5:wins,11,count,snapshot,Win trades (profit > threshold)
+data/research/offline_go_no_go_2026-05-22/canonical_summary.csv:6:losses,4,count,snapshot,Loss trades (profit < threshold)
+data/research/offline_go_no_go_2026-05-22/canonical_summary.csv:8:gross_wins,0.00005687,BTC,snapshot,Sum of winning trades PnL
+data/research/offline_go_no_go_2026-05-22/canonical_summary.csv:9:gross_losses,0.00029642,BTC,snapshot,Sum of losing trade PnL (abs value)
+data/research/offline_go_no_go_2026-05-22/canonical_summary.csv:11:profit_factor,0.49,ratio,snapshot,"gross_wins / gross_losses = 0.00005687 / 0.00029642"
+data/research/offline_go_no_go_2026-05-22/canonical_summary.csv:12:win_rate_decisive,73.3,%,calculated,"11 wins / (11+4) decisive trades"
+data/research/offline_go_no_go_2026-05-22/canonical_summary.csv:13:win_rate_all_outcomes,11.0,%,calculated,"11 wins / 100 total trades (includes neutral)"
+data/research/offline_go_no_go_2026-05-22/data_provenance.md:14:- Canonical trades: 100 (11 wins, 4 losses, 85 neutral/other)
+data/research/offline_go_no_go_2026-05-22/data_provenance.md:15:- Win Rate (wins only): 73.3% = 11/(11+4)
+data/research/offline_go_no_go_2026-05-22/data_provenance.md:26:| PARTIAL_TP_25 | 8 | +0.00005131 | -2.2% |
+data/research/offline_go_no_go_2026-05-22/data_provenance.md:27:| MICRO_TP | 4 | +0.00000556 | -2.4% |
+data/research/offline_go_no_go_2026-05-22/data_provenance.md:61:  - METRICS dict with trades, wins, losses, timeouts, profit tracking
+data/research/offline_go_no_go_2026-05-22/data_provenance.md:78:- `canonical_closed_trades` — historical closed trades with full fields
+data/research/offline_go_no_go_2026-05-22/data_provenance.md:104:5. **Loss Attribution** — Analyze why SCRATCH+STAGNATION account for 81/100 trades and 89% of losses
+data/research/offline_go_no_go_2026-05-22/data_provenance.md:111:1. **Export canonical_closed_trades from Firebase** (read-only)
+data/research/offline_go_no_go_2026-05-22/exit_reason_summary.csv:2:PARTIAL_TP_25,8,0.00005131,0.00000641,8.0%,-2.2%,positive_exit,PROFITABLE,protective
+data/research/offline_go_no_go_2026-05-22/exit_reason_summary.csv:3:MICRO_TP,4,0.00000556,0.00000139,4.0%,-2.4%,positive_exit,PROFITABLE,minimal
+data/research/offline_go_no_go_2026-05-22/exit_reason_summary.csv:12:SCRATCH_STAGNATION,81,-0.00021379,-0.00000264,81.0%,89.2%,subset,MAJOR_LOSS,"two exit types dominate losses"
+data/research/offline_go_no_go_2026-05-22/GO_NO_GO_REPORT.md:27:- **Win Rate (all outcomes):** 11% (11 wins / 100 trades)
+data/research/offline_go_no_go_2026-05-22/GO_NO_GO_REPORT.md:28:- **Win Rate (decisive only):** 73.3% (11 wins / 15 decisive trades, **misleading**)
+data/research/offline_go_no_go_2026-05-22/GO_NO_GO_REPORT.md:41:5. ✅ **Result dominated by excluded losses (scratch/stagnation)** — 89.2% of losses
+data/research/offline_go_no_go_2026-05-22/GO_NO_GO_REPORT.md:54:  gross_wins  = 0.00005687 BTC
+data/research/offline_go_no_go_2026-05-22/GO_NO_GO_REPORT.md:56:  PF = gross_wins / gross_loss = 0.00005687 / 0.00029642 = 0.192x
+data/research/offline_go_no_go_2026-05-22/GO_NO_GO_REPORT.md:68:73.3% = 11 wins / (11 wins + 4 losses)
+data/research/offline_go_no_go_2026-05-22/GO_NO_GO_REPORT.md:74:All outcomes:        11 / 100 = 11%      (11 wins out of 100 total)
+data/research/offline_go_no_go_2026-05-22/GO_NO_GO_REPORT.md:75:Decisive-only:       11 / 15  = 73.3%    (11 wins out of 15 decided outcomes)
+data/research/offline_go_no_go_2026-05-22/GO_NO_GO_REPORT.md:92:| **Other losses** | 7 | -0.00008263 | 10.8% | Replaced, Timeout Loss, Timeout Flat |
+data/research/offline_go_no_go_2026-05-22/GO_NO_GO_REPORT.md:94:**Key finding:** The strategy's core problem is not catastrophic loses but **systematic small losses masquerading as protective/neutral outcomes.**
+data/research/offline_go_no_go_2026-05-22/GO_NO_GO_REPORT.md:99:These exits do not **prevent** losses; they **crystallize** accumulating small losses.
+data/research/offline_go_no_go_2026-05-22/GO_NO_GO_REPORT.md:146:canonical_closed_trades: 100
+data/research/offline_go_no_go_2026-05-22/GO_NO_GO_REPORT.md:195:- Position management (TP/SL) is too tight, crystallizing small losses
+data/research/offline_go_no_go_2026-05-22/GO_NO_GO_REPORT.md:216:Full canonical_closed_trades with:
+data/research/offline_go_no_go_2026-05-22/GO_NO_GO_REPORT.md:242:   - Suggest: Verify "wins" counts independently, may exclude scratch/stagnation in WR but include in PnL
+data/research/offline_strategy_pivot_2026-05-22/exit_failure_analysis.csv:2:PARTIAL_TP_25,8,0.00005131,0.00000641,unknown,unknown,PROFITABLE - early partial exits working,false,false,SNAPSHOT_ONLY,MEDIUM
+data/research/offline_strategy_pivot_2026-05-22/exit_failure_analysis.csv:3:MICRO_TP,4,0.00000556,0.00000139,unknown,unknown,PROFITABLE - but minimal contribution,false,false,SNAPSHOT_ONLY,MEDIUM
+data/research/offline_strategy_pivot_2026-05-22/exit_failure_analysis.csv:6:SCRATCH_EXIT,47,-0.00009236,-0.00000196,unknown,unknown,MICRO_LOSS_ACCUMULATION - 47 small losses compound,true,FALSE_HYPOTHESIS,"SNAPSHOT_ONLY, HIGHLY CONCERNING",HIGH
+data/research/offline_strategy_pivot_2026-05-22/exit_failure_analysis.csv:17:   - BUT they are NOT protecting anything — they're crystallizing losses
+data/research/offline_strategy_pivot_2026-05-22/exit_failure_analysis.csv:35:   - Profitable exits (PARTIAL_TP_25, MICRO_TP): 12 trades, +0.00005687 BTC
+data/research/offline_strategy_pivot_2026-05-22/exit_failure_analysis.csv:63:   - TP/SL geometry seems reasonable (PARTIAL_TP_25 succeeds)
+data/research/offline_strategy_pivot_2026-05-22/hypothesis_ranking.md:40:1. **PARTIAL_TP_25 and MICRO_TP generate positive PnL**
+data/research/offline_strategy_pivot_2026-05-22/hypothesis_ranking.md:43:   - Counter: With 100-trade sample, 12 wins from 50/50 random is within ~3σ noise
+data/research/offline_strategy_pivot_2026-05-22/hypothesis_ranking.md:49:   - Counter: Even if subset had edge, portfolio-level 11% WR is terminal; subset edge would need to overcome other losses
+data/research/offline_strategy_pivot_2026-05-22/hypothesis_ranking.md:95:   - 12 wins is excess over coin-flip expectation
+data/research/offline_strategy_pivot_2026-05-22/hypothesis_ranking.md:97:   - But offset by 88 losses at -0.00000337 average
+data/research/offline_strategy_pivot_2026-05-22/hypothesis_ranking.md:179:1. **PARTIAL_TP_25 succeeds (8 trades, +0.00005131 BTC)**
+data/research/offline_strategy_pivot_2026-05-22/hypothesis_ranking.md:201:   - Scratch threshold prevents crystallizing small permanent losses
+data/research/offline_strategy_pivot_2026-05-22/hypothesis_ranking.md:211:- If no, exits correctly cut losses
+data/research/offline_strategy_pivot_2026-05-22/hypothesis_ranking.md:355:   - WR 73.3% is CORRECT as "wins / (wins + losses)"
+data/research/offline_strategy_pivot_2026-05-22/hypothesis_ranking.md:362:   - 11 wins + 4 losses + 85 neutral = 100 trades ✓
+data/research/offline_strategy_pivot_2026-05-22/hypothesis_ranking.md:376:- Extract canonical_closed_trades collection from Firebase (read-only)
+data/research/offline_strategy_pivot_2026-05-22/metric_reconciliation.md:39:Decisive-only: 11 wins / (11 wins + 4 losses) = 73.3%
+data/research/offline_strategy_pivot_2026-05-22/metric_reconciliation.md:40:All-outcomes:  11 wins / 100 total trades = 11%
+data/research/offline_strategy_pivot_2026-05-22/metric_reconciliation.md:73:Each individual SCRATCH or STAGNATION exit may seem inconsequential (-0.00000196 to -0.00000357 per trade), but when repeated 47–34 times respectively, they accumulate to dominate total losses.
+data/research/offline_strategy_pivot_2026-05-22/metric_reconciliation.md:87:- 11 wins × avg ~+0.000005 BTC per win = +0.000055 BTC gross
+data/research/offline_strategy_pivot_2026-05-22/metric_reconciliation.md:88:- 4 losses × avg ~-0.000007 BTC per loss = -0.000028 BTC gross
+data/research/offline_strategy_pivot_2026-05-22/missing_data_required.md:36:**What:** Direct export from Firestore `canonical_closed_trades` collection with full record integrity:
+data/research/offline_strategy_pivot_2026-05-22/missing_data_required.md:41:FROM canonical_closed_trades 
+data/research/offline_strategy_pivot_2026-05-22/missing_data_required.md:91:**Impact:** Answers "Are exits killing winners or cutting losses correctly?"
+data/research/offline_strategy_pivot_2026-05-22/missing_data_required.md:97:  → Exits correctly cut micro-losses before they worsened
+data/research/offline_strategy_pivot_2026-05-22/PIVOT_DECISION_REPORT.md:41:Win Rate (all outcomes):   11.0% (11 wins / 100 trades)
+data/research/offline_strategy_pivot_2026-05-22/PIVOT_DECISION_REPORT.md:42:Win Rate (decisive only):  73.3% (11 wins / 15 decided) [NON-ECONOMIC HEADLINE]
+data/research/offline_strategy_pivot_2026-05-22/PIVOT_DECISION_REPORT.md:52:Total loss-producing:   88 trades = -0.00029642 BTC (all losses)
+data/research/offline_strategy_pivot_2026-05-22/PIVOT_DECISION_REPORT.md:62:Calculation: 11 wins / (11 wins + 4 losses) = 73.3%
+data/research/offline_strategy_pivot_2026-05-22/PIVOT_DECISION_REPORT.md:104:   - 12 wins out of 100 is 12% profitability
+data/research/offline_strategy_pivot_2026-05-22/PIVOT_DECISION_REPORT.md:105:   - With 100-trade sample, 12 wins is indistinguishable from random coin-flip noise (~50% would win by chance ± 5)
+data/research/offline_strategy_pivot_2026-05-22/PIVOT_DECISION_REPORT.md:106:   - Probability of 12 wins if truly random: binomial(100, 0.5, 12) ≈ 10^-20 → extremely unlikely to be random
+data/research/offline_strategy_pivot_2026-05-22/PIVOT_DECISION_REPORT.md:108:   - Conclusion: 12 wins exist but are too infrequent to validate contrary hypothesis
+data/research/offline_strategy_pivot_2026-05-22/slice_viability_ranking.csv:40:   - Recommendation: REJECT — consistent losses across diversification

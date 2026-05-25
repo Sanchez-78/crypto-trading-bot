@@ -32,7 +32,10 @@ ROLLING_SIZES = {
 class PaperAdaptiveLearning:
     """Rolling metrics + policy adaptation engine."""
 
-    def __init__(self):
+    def __init__(self, state_file: Optional[str] = None):
+        # P1.1AP-O1A1: Allow test isolation via dependency injection
+        self._state_file = state_file or _STATE_FILE
+
         self.lifetime_n = 0
         self.lifetime_pf = 1.0
         self.lifetime_expectancy = 0.0
@@ -151,8 +154,8 @@ class PaperAdaptiveLearning:
     def _load_state(self) -> None:
         """Load persistent state from JSON file."""
         try:
-            if os.path.exists(_STATE_FILE):
-                with open(_STATE_FILE, 'r') as f:
+            if os.path.exists(self._state_file):
+                with open(self._state_file, 'r') as f:
                     data = json.load(f)
 
                 self.lifetime_n = data.get("lifetime_n", 0)
@@ -193,7 +196,7 @@ class PaperAdaptiveLearning:
     def _save_state(self) -> None:
         """Persist state to JSON file."""
         try:
-            os.makedirs(os.path.dirname(_STATE_FILE), exist_ok=True)
+            os.makedirs(os.path.dirname(self._state_file), exist_ok=True)
             data = {
                 "lifetime_n": self.lifetime_n,
                 "lifetime_pf": self.lifetime_pf,
@@ -209,7 +212,7 @@ class PaperAdaptiveLearning:
                 "qualification_window": list(self.qualification_window),
                 "operator_unlock": self.operator_unlock,
             }
-            with open(_STATE_FILE, 'w') as f:
+            with open(self._state_file, 'w') as f:
                 json.dump(data, f, indent=2)
         except Exception as e:
             log.warning("[PAPER_LEARNING_STATE_SAVE] failed: %s", e)
@@ -305,9 +308,9 @@ class PaperAdaptiveLearning:
         rolling100_pf: float,
         rolling100_exp: float,
     ) -> None:
-        """P1.1AP-O1A: Increment qualification evidence for post-integration eligible closes.
+        """P1.1AP-O1A1: Increment qualification evidence for post-epoch eligible closes only.
 
-        Only eligible canonical PAPER closes recorded after qualification_started_at
+        Only eligible canonical PAPER closes opened after qualification_started_at
         contribute to future REAL_READY qualification.
 
         Eligible criteria:
@@ -315,45 +318,78 @@ class PaperAdaptiveLearning:
         - Not quarantined
         - Not shadow-only
         - Not timeout_no_price
-        - Valid trade_id, symbol, outcome, net_pnl
-        - Recorded after qualification_started_at (first O1A init epoch)
+        - Valid trade_id, symbol, outcome (WIN/LOSS/FLAT accepted)
+        - Opened after qualification_started_at (provenance check)
+        - Not already counted (deduplication)
         """
         # Check eligibility criteria (mirroring paper_trade_executor._is_eligible_canonical_paper_learning_trade)
         trade_id = trade.get("trade_id", "")
         symbol = trade.get("symbol", "UNKNOWN")
         outcome = trade.get("outcome", "FLAT")
         training_bucket = trade.get("training_bucket", "")
+        entry_ts = trade.get("entry_ts") or trade.get("opened_at") or time.time()
 
         # D_NEG must not contribute
         if training_bucket == "D_NEG_EV_CONTROL":
+            log.debug(
+                "[PAPER_QUALIFICATION_SKIP] trade_id=%s reason=d_neg_ev_control symbol=%s",
+                trade_id, symbol
+            )
             return
 
         # Quarantined excluded
         if trade.get("quarantined"):
+            log.debug("[PAPER_QUALIFICATION_SKIP] trade_id=%s reason=quarantined", trade_id)
             return
 
         # Timeout_no_price excluded
         if trade.get("exit_reason") == "TIMEOUT_NO_PRICE":
+            log.debug("[PAPER_QUALIFICATION_SKIP] trade_id=%s reason=timeout_no_price", trade_id)
             return
 
         # Shadow-only excluded
         if trade.get("learning_shadow_skip") or trade.get("shadow_only"):
+            log.debug("[PAPER_QUALIFICATION_SKIP] trade_id=%s reason=shadow_only", trade_id)
             return
 
         # Valid fields required
-        if not trade_id or symbol == "UNKNOWN" or outcome == "FLAT":
+        if not trade_id or symbol == "UNKNOWN":
+            log.debug("[PAPER_QUALIFICATION_SKIP] trade_id=%s reason=invalid_fields", trade_id)
             return
 
-        # All checks passed: increment qualification
+        # Invalid outcome (only WIN/LOSS/FLAT are valid)
+        if outcome not in ("WIN", "LOSS", "FLAT"):
+            log.debug("[PAPER_QUALIFICATION_SKIP] trade_id=%s reason=invalid_outcome outcome=%s", trade_id, outcome)
+            return
+
+        # P1.1AP-O1A1: Require post-epoch opened trade provenance
+        if entry_ts < self.qualification_started_at:
+            log.debug(
+                "[PAPER_QUALIFICATION_SKIP] trade_id=%s reason=pre_epoch_or_unproven_open "
+                "entry_ts=%.1f qualification_started_at=%.1f",
+                trade_id, entry_ts, self.qualification_started_at
+            )
+            return
+
+        # P1.1AP-O1A1: Check for deduplication (prevent double-counting on replay/restart)
+        if any(e[4] == trade_id for e in self.qualification_window if len(e) > 4):
+            log.debug("[PAPER_QUALIFICATION_SKIP] trade_id=%s reason=already_counted", trade_id)
+            return
+
+        # P1.1AP-O1A1: All checks passed: increment qualification
+        # Store full segment_key for readiness metrics later
+        segment_key = f"{symbol}:{trade.get('regime', 'UNKNOWN')}:{trade.get('side', 'UNKNOWN')}"
         self.qualification_n += 1
-        entry = (net_pnl_pct, outcome, symbol, time.time())
+        entry = (net_pnl_pct, outcome, segment_key, time.time(), trade_id)
         self.qualification_window.append(entry)
 
         log.info(
             "[PAPER_QUALIFICATION_UPDATE] "
-            "trade_id=%s qualification_n=%d rolling100_pf=%.3f "
+            "trade_id=%s symbol=%s outcome=%s qualification_n=%d rolling100_pf=%.3f "
             "rolling100_expectancy=%.6f operator_unlock=False",
             trade_id,
+            symbol,
+            outcome,
             self.qualification_n,
             rolling100_pf,
             rolling100_exp,
@@ -466,18 +502,21 @@ class PaperAdaptiveLearning:
         rolling100_exp = self._compute_expectancy([e[0] for e in self.rolling100])
         rolling100_net = sum(e[0] for e in self.rolling100) / 100.0 if self.rolling100 else 0.0
 
-        rolling20_pf = self._compute_rolling_pf(self.rolling20)
-        rolling20_exp = self._compute_expectancy([e[0] for e in self.rolling20])
+        # P1.1AP-O1A1: Phase 3 - Compute recent behavior from qualification window only
+        # Recent-20: last 20 entries from qualification_window (not rolling20 which is legacy all-time)
+        qual_recent_20 = list(self.qualification_window)[-20:] if self.qualification_window else []
+        rolling20_pf = self._compute_rolling_pf(qual_recent_20) if qual_recent_20 else 1.0
+        rolling20_exp = self._compute_expectancy([e[0] for e in qual_recent_20]) if qual_recent_20 else 0.0
 
-        # Extract symbols from rolling100 (legacy)
-        symbols = list(set(e[2].split(":")[0] for e in self.rolling100))
+        # Extract symbols from qualification_window only (post-epoch eligible trades)
+        symbols = list(set(e[2].split(":")[0] for e in self.qualification_window))
 
-        # Segment concentration from rolling100 (legacy)
+        # Segment concentration from qualification_window only
         max_segment_share = 0.0
-        if self.rolling100:
-            for seg in set(e[2] for e in self.rolling100):
-                seg_profit = sum(e[0] for e in self.rolling100 if e[2] == seg and e[1] == "WIN")
-                total_profit = sum(e[0] for e in self.rolling100 if e[1] == "WIN")
+        if self.qualification_window:
+            for seg in set(e[2] for e in self.qualification_window):
+                seg_profit = sum(e[0] for e in self.qualification_window if e[2] == seg and e[1] == "WIN")
+                total_profit = sum(e[0] for e in self.qualification_window if e[1] == "WIN")
                 if total_profit > 0:
                     max_segment_share = max(max_segment_share, seg_profit / total_profit)
 
@@ -507,10 +546,12 @@ class PaperAdaptiveLearning:
                 reasons.append(f"qualification_net_pnl={qualification_net:.6f}<=0")
 
         # Gate 4: Rolling20 must remain healthy (recent behavior)
-        if rolling20_pf <= 1.00:
-            reasons.append(f"rolling20_pf={rolling20_pf:.3f}<=1.00")
-        if rolling20_exp <= 0:
-            reasons.append(f"rolling20_expectancy={rolling20_exp:.6f}<=0")
+        # P1.1AP-O1A1: Only check rolling20 gates if we have 20+ post-epoch closes (meaningful recent window)
+        if len(qual_recent_20) >= 20:
+            if rolling20_pf < 1.00:
+                reasons.append(f"rolling20_pf={rolling20_pf:.3f}<1.00")
+            if rolling20_exp <= 0:
+                reasons.append(f"rolling20_expectancy={rolling20_exp:.6f}<=0")
 
         # Gate 5: Diversification (symbols, segment concentration)
         if len(symbols) < 3:

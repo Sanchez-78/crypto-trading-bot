@@ -1,0 +1,54 @@
+slice_name,slice_type,sample_count_est,net_pnl_btc,avg_pnl_per_sample,viability_score_0_to_100,post_fee_positive,sample_size_adequate,confidence,recommendation
+XRP_ALL,symbol,~14,0.00001241,0.00000089,10,YES (barely),NO - too small,LOW,"REJECT - insufficient samples, result within slippage variance"
+BTC_ALL,symbol,~14,-0.00004517,-0.00000323,0,NO,NO,LOW,REJECT - negative result
+ETH_ALL,symbol,~14,-0.00003778,-0.00000270,0,NO,NO,LOW,REJECT - negative result
+BNB_ALL,symbol,~14,-0.00004700,-0.00000336,0,NO,NO,LOW,REJECT - negative result
+DOT_ALL,symbol,~14,-0.00007885,-0.00000563,0,NO,NO,LOW,REJECT - largest per-symbol loss
+SOL_ALL,symbol,~14,-0.00000038,-0.00000003,0,NO,NO,LOW,REJECT - near-zero loss but negative
+ADA_ALL,symbol,~14,-0.00004278,-0.00000305,0,NO,NO,LOW,REJECT - negative result
+POSITIVE_SLICES,virtual,12,0.00005687,0.00000474,5,YES (barely),NO - only 12 trades,LOW,"REJECT - profitable trades insufficient to validate strategy"
+BULL_TREND_EST,regime,~30,unknown,unknown,0,UNKNOWN,NO,VERY_LOW,"DATA_MISSING - no regime breakdown available"
+BEAR_TREND_EST,regime,~30,unknown,unknown,0,UNKNOWN,NO,VERY_LOW,"DATA_MISSING - no regime breakdown available"
+LONG_SIDE_EST,direction,~50,unknown,unknown,0,UNKNOWN,NO,VERY_LOW,"DATA_MISSING - no side breakdown available"
+SHORT_SIDE_EST,direction,~50,unknown,unknown,0,UNKNOWN,NO,VERY_LOW,"DATA_MISSING - no side breakdown available"
+POST_FIX_PAPER_SUBSET,temporal,~85,unknown,unknown,0,UNKNOWN,NO,VERY_LOW,"DATA_MISSING - no post-L baseline comparison available"
+PRE_FIX_CANONICAL_SUBSET,temporal,~15,unknown,unknown,0,UNKNOWN,NO,VERY_LOW,"DATA_MISSING - no time-split historical provided"
+
+FINDINGS:
+
+1. SYMBOL SLICES:
+   - All 7 major symbols show negative or near-zero PnL
+   - Only XRP barely positive: +0.0000012 BTC (approximately 1.2 satoshi per trade)
+   - Sample sizes per symbol: ~14 trades each (too small for statistical significance)
+   - Estimated standard error: ~√(variance/14) >> micro-PnL values → within noise
+
+2. VIABILITY ASSESSMENT:
+
+   XRP CASE:
+   - Positive result: +0.00001241 BTC across ~14 estimated trades
+   - Per-trade average: +0.00000089 BTC ≈ 89 satoshis
+   - Is this edge or luck?
+     * Expected fee drag: ~0.0001 to 0.0002 BTC per round trip (conservative)
+     * Slippage drag: ~0.00005 BTC (2-3 ticks on XRPUSDT)
+     * Net edge should be > 0.0003 BTC to pass slippage test
+     * XRP's +0.0000012 < slippage variance
+   - Recommendation: REJECT — indistinguishable from noise
+
+   ALL_OTHER_SYMBOLS:
+   - Negative PnL across all
+   - No sub-slice showing positive edge
+   - Recommendation: REJECT — consistent losses across diversification
+
+3. MISSING SLICES (DATA NOT AVAILABLE):
+   - Regime breakdown (BULL_TREND, BEAR_TREND, RANGING, etc.)
+   - Side breakdown (LONG only, SHORT only, or mixed)
+   - Time-split (early trades vs recent trades trend analysis)
+   - Post-fix paper data (C_WEAK_EV_TRAIN, B_RECOVERY_READY isolated performance)
+   - Per-EV-bucket (weak 0.030–0.038 vs stronger 0.038–0.050 if available)
+
+4. CONCLUSION:
+   No credible positive slice found.
+   - XRP is within slippage noise
+   - All others negative
+   - Even if regime/side breakdown were available, starting from portfolio -0.024% would require massive subslice edge to overcome
+   - Recommendation: ABANDON search for savable slice

@@ -25,92 +25,100 @@ from src.services.paper_training_sampler import (
 class TestO1PolicyIntegration:
     """Test O1 policy integration behavior (12 tests)."""
 
+    def _create_isolated_learner(self):
+        """Create a learner with temp state file for test isolation."""
+        temp_fd, temp_path = tempfile.mkstemp(suffix=".json", prefix="test_o1_")
+        os.close(temp_fd)
+        return PaperAdaptiveLearning(state_file=temp_path), temp_path
+
     def test_1_get_paper_policy_snapshot_returns_safe_defaults_when_empty(self):
         """Test that get_paper_policy_snapshot() safely returns defaults for empty state."""
-        # Use a fresh learner without loading persisted state
-        learner = PaperAdaptiveLearning()
-        # Clear any loaded state
-        learner.rolling20.clear()
-        learner.rolling50.clear()
-        learner.rolling100.clear()
+        # Use a fresh learner with isolated state
+        learner, temp_path = self._create_isolated_learner()
+        try:
+            snapshot = learner.get_paper_policy_snapshot("BTC", "TREND", "BUY")
 
-        snapshot = learner.get_paper_policy_snapshot("BTC", "TREND", "BUY")
-
-        assert snapshot is not None
-        assert "lifecycle" in snapshot
-        assert "rolling20_n" in snapshot
-        assert "rolling50_n" in snapshot
-        assert "rolling100_n" in snapshot
-        assert snapshot["rolling20_n"] == 0
-        assert snapshot["rolling50_n"] == 0
-        assert snapshot["rolling100_n"] == 0
+            assert snapshot is not None
+            assert "lifecycle" in snapshot
+            assert "rolling20_n" in snapshot
+            assert "rolling50_n" in snapshot
+            assert "rolling100_n" in snapshot
+            assert snapshot["rolling20_n"] == 0
+            assert snapshot["rolling50_n"] == 0
+            assert snapshot["rolling100_n"] == 0
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
 
     def test_2_snapshot_reflects_persisted_rolling_metrics_after_closes(self):
         """Test that snapshot reflects rolling metrics after eligible closes."""
-        learner = PaperAdaptiveLearning()
-        # Clear any loaded state
-        learner.rolling20.clear()
-        learner.rolling50.clear()
-        learner.rolling100.clear()
+        learner, temp_path = self._create_isolated_learner()
+        try:
+            # Add 25 closes across 3 symbols for rolling20/50 data
+            for i in range(25):
+                symbol = ["BTC", "ETH", "XRP"][i % 3]
+                trade = {
+                    "trade_id": f"t{i}",
+                    "net_pnl_pct": 1.0,
+                    "outcome": "WIN",
+                    "symbol": symbol,
+                    "regime": "TREND",
+                    "side": "BUY",
+                    "learning_source": "paper_adaptive_recovery",
+                    "mfe_pct": 1.0,
+                    "mae_pct": -0.1,
+                }
+                learner.record_close(trade)
 
-        # Add 25 closes across 3 symbols for rolling20/50 data
-        for i in range(25):
-            symbol = ["BTC", "ETH", "XRP"][i % 3]
-            trade = {
-                "trade_id": f"t{i}",
-                "net_pnl_pct": 1.0,
-                "outcome": "WIN",
-                "symbol": symbol,
-                "regime": "TREND",
-                "side": "BUY",
-                "learning_source": "paper_adaptive_recovery",
-                "mfe_pct": 1.0,
-                "mae_pct": -0.1,
-            }
-            learner.record_close(trade)
+            snapshot = learner.get_paper_policy_snapshot("BTC", "TREND", "BUY")
+            assert snapshot["rolling20_n"] == 20
+            assert snapshot["rolling50_n"] == 25
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
 
-        snapshot = learner.get_paper_policy_snapshot("BTC", "TREND", "BUY")
-        assert snapshot["rolling20_n"] == 20
-        assert snapshot["rolling50_n"] == 25
-
-    def test_3_ev_positive_recovery_candidate_invokes_policy_read_and_returns_metadata(self):
+    @patch("src.services.paper_training_sampler._is_training_enabled", return_value=True)
+    def test_3_ev_positive_recovery_candidate_invokes_policy_read_and_returns_metadata(self, mock_training):
         """Test that EV-positive PAPER recovery candidate invokes adaptive snapshot read."""
-        learner = PaperAdaptiveLearning()
+        learner, temp_path = self._create_isolated_learner()
+        try:
+            # Add some rolling history
+            for i in range(20):
+                trade = {
+                    "trade_id": f"t{i}",
+                    "net_pnl_pct": 1.0,
+                    "outcome": "WIN",
+                    "symbol": "XRPUSDT",
+                    "regime": "BEAR_TREND",
+                    "side": "SELL",
+                    "learning_source": "paper_adaptive_recovery",
+                    "mfe_pct": 1.0,
+                    "mae_pct": -0.1,
+                }
+                learner.record_close(trade)
 
-        # Add some rolling history
-        for i in range(20):
-            trade = {
-                "trade_id": f"t{i}",
-                "net_pnl_pct": 1.0,
-                "outcome": "WIN",
+            # Call maybe_open_training_sample with EV > 0
+            signal = {
                 "symbol": "XRPUSDT",
                 "regime": "BEAR_TREND",
                 "side": "SELL",
-                "learning_source": "paper_adaptive_recovery",
-                "mfe_pct": 1.0,
-                "mae_pct": -0.1,
+                "ev": 0.0338,
+                "action": "SELL",
             }
-            learner.record_close(trade)
 
-        # Mock maybe_open_training_sample with EV > 0
-        signal = {
-            "symbol": "XRPUSDT",
-            "regime": "BEAR_TREND",
-            "side": "SELL",
-            "ev": 0.0338,
-            "action": "SELL",
-        }
+            # Call the function - training is mocked to be enabled
+            result = maybe_open_training_sample(
+                signal,
+                reason="REJECT_ECON_BAD_ENTRY",
+                current_price=100.0,
+            )
 
-        # Call the function through the paper_training_sampler
-        result = maybe_open_training_sample(
-            signal,
-            reason="REJECT_ECON_BAD_ENTRY",
-            current_price=100.0,
-        )
-
-        # Should pass quality gates for training sample
-        assert result["allowed"] is True
-        assert "learning_source" not in result or result.get("learning_source") != "paper_adaptive_recovery"
+            # Should pass quality gates for training sample
+            assert result["allowed"] is True
+            assert "learning_source" not in result or result.get("learning_source") != "paper_adaptive_recovery"
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
 
     def test_4_collect_bootstrap_for_segment_n_less_than_20_remains_under_caps(self):
         """Test that collect_bootstrap for segment_n < 20 leaves weight at 1.0."""
@@ -416,178 +424,207 @@ class TestPaperAdaptiveStarvationTelemetry:
 class TestQualificationProvenanceAndReadiness:
     """Test REAL_READY qualification provenance and gating (7 tests)."""
 
+    def _create_isolated_learner(self):
+        """Create a learner with temp state file for test isolation."""
+        import tempfile
+        temp_fd, temp_path = tempfile.mkstemp(suffix=".json", prefix="test_qual_")
+        os.close(temp_fd)
+        return PaperAdaptiveLearning(state_file=temp_path), temp_path
+
     def test_16_existing_rolling100_history_not_credited_to_qualification_on_migration(self):
         """Test that pre-O1A rolling100 history is NOT credited to qualification_n."""
-        learner = PaperAdaptiveLearning()
+        learner, temp_path = self._create_isolated_learner()
+        try:
+            # Simulate pre-O1A state: add 100 closes before qualification starts
+            # In reality this would come from persisted state, but we test the logic
+            for i in range(100):
+                trade = {
+                    "trade_id": f"pre_o1a_{i}",
+                    "net_pnl_pct": 1.0,
+                    "outcome": "WIN",
+                    "symbol": "BTC",
+                    "regime": "TREND",
+                    "side": "BUY",
+                    "learning_source": "pre_o1a",  # Not paper_adaptive_recovery
+                    "mfe_pct": 1.0,
+                    "mae_pct": -0.1,
+                }
+                # Manually add to rolling windows without calling _try_increment_qualification
+                # (This simulates pre-O1A behavior)
+                learner.rolling100.append((trade["net_pnl_pct"], trade["outcome"], "BTC:TREND:BUY", time.time()))
 
-        # Simulate pre-O1A state: add 100 closes before qualification starts
-        # In reality this would come from persisted state, but we test the logic
-        for i in range(100):
+            # Reset qualification state to simulate O1A epoch start
+            learner.qualification_n = 0
+            learner.qualification_window.clear()
+            learner.qualification_started_at = time.time()
+
+            # Verify: rolling100 has 100 entries but qualification_n = 0
+            assert len(learner.rolling100) == 100
+            assert learner.qualification_n == 0
+            assert len(learner.qualification_window) == 0
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+
+    def test_17_new_eligible_adaptive_paper_close_increments_qualification_n_exactly_once(self):
+        """Test that new eligible adaptive PAPER close increments qualification_n exactly once."""
+        learner, temp_path = self._create_isolated_learner()
+        try:
+            initial_qual_n = learner.qualification_n
+
             trade = {
-                "trade_id": f"pre_o1a_{i}",
+                "trade_id": "eligible_test",
                 "net_pnl_pct": 1.0,
                 "outcome": "WIN",
                 "symbol": "BTC",
                 "regime": "TREND",
                 "side": "BUY",
-                "learning_source": "pre_o1a",  # Not paper_adaptive_recovery
+                "learning_source": "paper_adaptive_recovery",
                 "mfe_pct": 1.0,
                 "mae_pct": -0.1,
             }
-            # Manually add to rolling windows without calling _try_increment_qualification
-            # (This simulates pre-O1A behavior)
-            learner.rolling100.append((trade["net_pnl_pct"], trade["outcome"], "BTC:TREND:BUY", time.time()))
 
-        # Reset qualification state to simulate O1A epoch start
-        learner.qualification_n = 0
-        learner.qualification_window.clear()
-        learner.qualification_started_at = time.time()
+            learner.record_close(trade)
 
-        # Verify: rolling100 has 100 entries but qualification_n = 0
-        assert len(learner.rolling100) == 100
-        assert learner.qualification_n == 0
-        assert len(learner.qualification_window) == 0
-
-    def test_17_new_eligible_adaptive_paper_close_increments_qualification_n_exactly_once(self):
-        """Test that new eligible adaptive PAPER close increments qualification_n exactly once."""
-        learner = PaperAdaptiveLearning()
-        initial_qual_n = learner.qualification_n
-
-        trade = {
-            "trade_id": "eligible_test",
-            "net_pnl_pct": 1.0,
-            "outcome": "WIN",
-            "symbol": "BTC",
-            "regime": "TREND",
-            "side": "BUY",
-            "learning_source": "paper_adaptive_recovery",
-            "mfe_pct": 1.0,
-            "mae_pct": -0.1,
-        }
-
-        learner.record_close(trade)
-
-        assert learner.qualification_n == initial_qual_n + 1
-        assert len(learner.qualification_window) == initial_qual_n + 1
+            assert learner.qualification_n == initial_qual_n + 1
+            assert len(learner.qualification_window) == initial_qual_n + 1
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
 
     def test_18_d_neg_quarantine_shadow_closes_do_not_increment_qualification_n(self):
         """Test that D_NEG, quarantine, and shadow-only closes do NOT increment qualification."""
-        learner = PaperAdaptiveLearning()
-        initial_qual_n = learner.qualification_n
+        learner, temp_path = self._create_isolated_learner()
+        try:
+            initial_qual_n = learner.qualification_n
 
-        # D_NEG
-        learner._try_increment_qualification(
-            {"training_bucket": "D_NEG_EV_CONTROL", "trade_id": "d", "outcome": "WIN", "symbol": "BTC"},
-            1.0, 1.0, 0.1
-        )
-        assert learner.qualification_n == initial_qual_n
+            # D_NEG
+            learner._try_increment_qualification(
+                {"training_bucket": "D_NEG_EV_CONTROL", "trade_id": "d", "outcome": "WIN", "symbol": "BTC"},
+                1.0, 1.0, 0.1
+            )
+            assert learner.qualification_n == initial_qual_n
 
-        # Quarantined
-        learner._try_increment_qualification(
-            {"trade_id": "q", "outcome": "WIN", "symbol": "BTC", "quarantined": True},
-            1.0, 1.0, 0.1
-        )
-        assert learner.qualification_n == initial_qual_n
+            # Quarantined
+            learner._try_increment_qualification(
+                {"trade_id": "q", "outcome": "WIN", "symbol": "BTC", "quarantined": True},
+                1.0, 1.0, 0.1
+            )
+            assert learner.qualification_n == initial_qual_n
 
-        # Shadow-only
-        learner._try_increment_qualification(
-            {"trade_id": "s", "outcome": "WIN", "symbol": "BTC", "shadow_only": True},
-            1.0, 1.0, 0.1
-        )
-        assert learner.qualification_n == initial_qual_n
+            # Shadow-only
+            learner._try_increment_qualification(
+                {"trade_id": "s", "outcome": "WIN", "symbol": "BTC", "shadow_only": True},
+                1.0, 1.0, 0.1
+            )
+            assert learner.qualification_n == initial_qual_n
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
 
     def test_19_qualification_n_less_than_100_blocks_readiness_even_if_old_rolling_pf_high(self):
         """Test that qualification_n <100 blocks REAL_READY even if legacy rolling PF high."""
-        learner = PaperAdaptiveLearning()
+        learner, temp_path = self._create_isolated_learner()
+        try:
+            # Manually inflate rolling100 to look good (but qualification_n stays low)
+            for i in range(100):
+                learner.rolling100.append((1.0, "WIN", "BTC:TREND:BUY", time.time()))
 
-        # Manually inflate rolling100 to look good (but qualification_n stays low)
-        for i in range(100):
-            learner.rolling100.append((1.0, "WIN", "BTC:TREND:BUY", time.time()))
+            # Keep qualification_n low
+            learner.qualification_n = 50
+            learner.qualification_window.clear()
+            for i in range(50):
+                learner.qualification_window.append((1.0, "WIN", "BTC", time.time()))
 
-        # Keep qualification_n low
-        learner.qualification_n = 50
-        learner.qualification_window.clear()
-        for i in range(50):
-            learner.qualification_window.append((1.0, "WIN", "BTC", time.time()))
+            result = learner.check_real_readiness()
 
-        result = learner.check_real_readiness()
-
-        # Should be ineligible because qualification_n < 100
-        assert result["eligible"] is False
-        assert "insufficient_post_integration_samples" in result["reason"]
+            # Should be ineligible because qualification_n < 100
+            assert result["eligible"] is False
+            assert "insufficient_post_integration_samples" in result["reason"]
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
 
     def test_20_qualification_n_gte_100_with_passing_metrics_but_operator_unlock_false_remains_blocked(self):
         """Test that qualification_n >= 100 + passing metrics still blocked without operator_unlock."""
-        learner = PaperAdaptiveLearning()
+        learner, temp_path = self._create_isolated_learner()
+        try:
+            # Add 100 qualifying closes with good metrics
+            symbols = ["BTC", "ETH", "XRP"]
+            for i in range(100):
+                symbol = symbols[i % 3]
+                outcome = "WIN" if i < 80 else "LOSS"
+                pnl = 1.5 if outcome == "WIN" else -0.5
 
-        # Add 100 qualifying closes with good metrics
-        symbols = ["BTC", "ETH", "XRP"]
-        for i in range(100):
-            symbol = symbols[i % 3]
-            outcome = "WIN" if i < 80 else "LOSS"
-            pnl = 1.5 if outcome == "WIN" else -0.5
+                trade = {
+                    "trade_id": f"t{i}",
+                    "net_pnl_pct": pnl,
+                    "outcome": outcome,
+                    "symbol": symbol,
+                    "regime": "TREND",
+                    "side": "BUY",
+                    "learning_source": "paper_adaptive_recovery",
+                    "mfe_pct": 1.0,
+                    "mae_pct": -0.1,
+                }
+                learner.record_close(trade)
 
-            trade = {
-                "trade_id": f"t{i}",
-                "net_pnl_pct": pnl,
-                "outcome": outcome,
-                "symbol": symbol,
-                "regime": "TREND",
-                "side": "BUY",
-                "learning_source": "paper_adaptive_recovery",
-                "mfe_pct": 1.0,
-                "mae_pct": -0.1,
-            }
-            learner.record_close(trade)
+            # Verify qualification_n = 100
+            assert learner.qualification_n == 100
 
-        # Verify qualification_n = 100
-        assert learner.qualification_n == 100
+            # operator_unlock remains False (default)
+            assert learner.operator_unlock is False
 
-        # operator_unlock remains False (default)
-        assert learner.operator_unlock is False
+            result = learner.check_real_readiness()
 
-        result = learner.check_real_readiness()
-
-        # Should be ineligible because operator_unlock = False
-        assert result["eligible"] is False
-        assert "operator_unlock_required=True" in result["reason"]
+            # Should be ineligible because operator_unlock = False
+            assert result["eligible"] is False
+            assert "operator_unlock_required=True" in result["reason"]
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
 
     def test_21_qualification_n_gte_100_with_passing_metrics_and_operator_unlock_true_may_return_real_ready(self):
         """Test that qualification_n >= 100 + passing metrics + operator_unlock=True returns REAL_READY."""
-        learner = PaperAdaptiveLearning()
+        learner, temp_path = self._create_isolated_learner()
+        try:
+            # Add 100 qualifying closes with good metrics
+            # Distribution: 60 LOSS (early) + 40 WIN (recent)
+            # This ensures overall PF is good AND rolling20 sees good recent performance
+            symbols = ["BTC", "ETH", "XRP"]
+            for i in range(100):
+                symbol = symbols[i % 3]
+                # First 60 are LOSS (40 expected), last 40 are WIN (profitable recent history)
+                outcome = "LOSS" if i < 60 else "WIN"
+                pnl = -0.5 if outcome == "LOSS" else 1.5
 
-        # Add 100 qualifying closes with good metrics
-        symbols = ["BTC", "ETH", "XRP"]
-        for i in range(100):
-            symbol = symbols[i % 3]
-            outcome = "WIN" if i < 80 else "LOSS"
-            pnl = 1.5 if outcome == "WIN" else -0.5
+                trade = {
+                    "trade_id": f"t{i}",
+                    "net_pnl_pct": pnl,
+                    "outcome": outcome,
+                    "symbol": symbol,
+                    "regime": "TREND",
+                    "side": "BUY",
+                    "learning_source": "paper_adaptive_recovery",
+                    "mfe_pct": 1.0,
+                    "mae_pct": -0.1,
+                }
+                learner.record_close(trade)
 
-            trade = {
-                "trade_id": f"t{i}",
-                "net_pnl_pct": pnl,
-                "outcome": outcome,
-                "symbol": symbol,
-                "regime": "TREND",
-                "side": "BUY",
-                "learning_source": "paper_adaptive_recovery",
-                "mfe_pct": 1.0,
-                "mae_pct": -0.1,
-            }
-            learner.record_close(trade)
+            # Set operator_unlock = True
+            learner.operator_unlock = True
 
-        # Set operator_unlock = True
-        learner.operator_unlock = True
+            result = learner.check_real_readiness()
 
-        result = learner.check_real_readiness()
-
-        # Should be eligible because:
-        # - qualification_n = 100
-        # - passing metrics (PF >= 1.20, exp > 0, 3+ symbols, concentration OK, rolling20 OK)
-        # - operator_unlock = True
-        assert result["eligible"] is True
-        assert result["qualification_n"] == 100
-        assert result["operator_unlock"] is True or "operator_unlock" not in result
+            # Should be eligible because:
+            # - qualification_n = 100
+            # - passing metrics (PF >= 1.20, exp > 0, 3+ symbols, concentration OK, rolling20 OK)
+            # - operator_unlock = True
+            assert result["eligible"] is True
+            assert result["qualification_n"] == 100
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
 
     def test_22_state_persistence_and_reload_retain_qualification_evidence_safely(self):
         """Test that qualification evidence persists safely and reloads correctly."""
@@ -595,7 +632,7 @@ class TestQualificationProvenanceAndReadiness:
             # Create a learner with persisted state
             state_file = os.path.join(tmpdir, "paper_adaptive_learning_state.json")
 
-            learner1 = PaperAdaptiveLearning()
+            learner1 = PaperAdaptiveLearning(state_file=state_file)
 
             # Add some qualifying closes
             for i in range(50):
@@ -612,12 +649,15 @@ class TestQualificationProvenanceAndReadiness:
                 }
                 learner1.record_close(trade)
 
-            # Manually save state (normally done by _save_state in record_close)
+            # Verify state was saved
             qual_n_saved = learner1.qualification_n
             qual_window_len_saved = len(learner1.qualification_window)
 
             # Create a new learner instance and verify state loads
-            # Note: In real usage, _load_state is called in __init__
-            # For this test, we just verify qualification state is preserved
+            learner2 = PaperAdaptiveLearning(state_file=state_file)
+
+            # State should be loaded from the persisted file
+            assert learner2.qualification_n == qual_n_saved
+            assert len(learner2.qualification_window) == qual_window_len_saved
             assert qual_n_saved == 50
             assert qual_window_len_saved == 50

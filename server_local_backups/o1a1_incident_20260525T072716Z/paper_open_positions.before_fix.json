@@ -1,5 +1,5 @@
 {
-  "paper_b305f2fc2643": {
+  "paper_ce2bec392f1e": {
     "admission_reason": null,
     "af_at_entry": 1.0,
     "bootstrap_closed_trades": 0,
@@ -8,9 +8,9 @@
     "cost_edge_bypass_reason": "none",
     "cost_edge_bypassed": false,
     "cost_edge_ok": null,
-    "created_at": 1779695383.8205764,
+    "created_at": 1779692741.811645,
     "entry_price": 1.234,
-    "entry_ts": 1779695383.8205764,
+    "entry_ts": 1779692741.811645,
     "ev_at_entry": 0.05,
     "expected_move_pct": null,
     "expected_move_src": null,
@@ -50,7 +50,7 @@
     "tp": 1.248808,
     "tp_pct_at_entry": 1.1999999999999944,
     "tp_pct_before_calibration": 1.1999999999999944,
-    "trade_id": "paper_b305f2fc2643",
+    "trade_id": "paper_ce2bec392f1e",
     "training_bucket": "B_POSITIVE_EV"
   }
 }
