@@ -203,7 +203,8 @@
       "Bash(git -C C:\\\\Projects\\\\CryptoMaster_srv rev-parse HEAD)",
       "Bash(git rebase *)",
       "Bash(git restore *)",
-      "Bash(git rm *)"
+      "Bash(git rm *)",
+      "Bash(2>&1)"
     ]
   }
 }
