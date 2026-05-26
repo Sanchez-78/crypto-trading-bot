@@ -67,6 +67,12 @@ def main():
         required=True,
         help="Output directory for journal and report (must exist, no defaults)",
     )
+    parser.add_argument(
+        "--duration-seconds",
+        type=int,
+        default=None,
+        help="Session duration in seconds (required for live-public-paper mode)",
+    )
 
     args = parser.parse_args()
 
@@ -84,8 +90,24 @@ def main():
             logger.info("Starting simulated PAPER run")
             snapshot, trades = create_simulated_feed_data()
             feed = SimulatedFuturesFeed(snapshot, trades)
+            duration_seconds = None  # Simulated mode: deterministic finite replay
+        elif args.mode == "live-public-paper":
+            if args.duration_seconds is None:
+                print("ERROR: --duration-seconds is required for live-public-paper mode", file=sys.stderr)
+                sys.exit(1)
+            if args.duration_seconds <= 0:
+                print("ERROR: --duration-seconds must be positive", file=sys.stderr)
+                sys.exit(1)
+            logger.info(f"Starting live public USDⓈ-M Futures PAPER run ({args.duration_seconds}s)")
+            from .binance_usdm_public_feed import BinanceUsdmPublicFeed
+            feed = BinanceUsdmPublicFeed(
+                base_url="wss://fstream.binance.com",
+                timeout_seconds=30,
+                max_reconnect_attempts=5,
+            )
+            duration_seconds = args.duration_seconds
         else:
-            logger.error("Live-public-paper mode not yet implemented in MVP")
+            logger.error(f"Unknown mode: {args.mode}")
             sys.exit(1)
 
         # Run forward PAPER runner
@@ -93,6 +115,7 @@ def main():
             feed=feed,
             symbol=args.symbol,
             output_dir=args.output_dir,
+            duration_seconds=duration_seconds,
         )
         report = runner.run()
 
