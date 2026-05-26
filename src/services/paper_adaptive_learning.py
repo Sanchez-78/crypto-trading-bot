@@ -737,3 +737,56 @@ def get_learner() -> PaperAdaptiveLearning:
         _learner = PaperAdaptiveLearning()
     return _learner
 
+
+def get_segment_metrics(symbol: str, regime: str, side: str) -> Optional[Dict]:
+    """P1.1AP-O2 Fix D: Export segment metrics for admission safety checks.
+
+    Returns segment n, pf, and expectancy for loss-triggered segment cooldown decisions.
+    Safe to call from admission path with exception handling.
+
+    Args:
+        symbol, regime, side: Segment key components
+
+    Returns:
+        {
+            'n': int (number of closes in rolling100),
+            'pf': float (profit factor),
+            'expectancy': float,
+        }
+        or None if not available
+    """
+    try:
+        learner = get_learner()
+        if not learner:
+            return None
+
+        segment_key = f"{symbol}:{regime}:{side}"
+
+        # Compute metrics from rolling100 entries matching this segment
+        matching = [e for e in learner.rolling100 if len(e) > 2 and e[2] == segment_key]
+        if not matching:
+            return None
+
+        n = len(matching)
+        wins = sum(1 for _, outcome, _, _ in matching if outcome == "WIN")
+        losses = sum(1 for _, outcome, _, _ in matching if outcome == "LOSS")
+
+        # Profit factor
+        wins_pnl = sum(pnl for pnl, outcome, _, _ in matching if outcome == "WIN")
+        losses_pnl = abs(sum(pnl for pnl, outcome, _, _ in matching if outcome == "LOSS"))
+        pf = wins_pnl / losses_pnl if losses_pnl > 0 else (1.0 if wins_pnl > 0 else 0.0)
+
+        # Expectancy
+        expectancy = sum(pnl for pnl, _, _, _ in matching) / n if n > 0 else 0.0
+
+        return {
+            "n": n,
+            "pf": pf,
+            "expectancy": expectancy,
+        }
+
+    except Exception as e:
+        log.debug("[PAPER_SEGMENT_METRICS_ERROR] symbol=%s regime=%s side=%s error=%s",
+                  symbol, regime, side, str(e))
+        return None
+

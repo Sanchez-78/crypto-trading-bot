@@ -108,6 +108,7 @@ _starvation_discovery_state: dict = {
     "idle_s": 0.0,                  # seconds since last eligible entry
     "valid_negative_candidates": 0, # count of valid REJECT_NEGATIVE_EV signals during idle window
     "last_state_log_ts": 0.0,       # throttle state logs
+    "closed_trades": [],            # P1.1AP-O2 Fix B: list of (net_pnl_pct, outcome, ts) for rolling loss detection
 }
 _STARVATION_DISCOVERY_MAX_OPEN_GLOBAL = 2           # max open discovery positions globally
 _STARVATION_DISCOVERY_MAX_OPEN_PER_SYMBOL = 1      # max open discovery per symbol
@@ -115,6 +116,17 @@ _STARVATION_DISCOVERY_MAX_PER_15M = 4              # max new entries per 15 minu
 _STARVATION_DISCOVERY_IDLE_THRESHOLD_S = 600.0     # idle threshold: 600s (10 min) since last eligible entry
 _STARVATION_DISCOVERY_STATE_LOG_THROTTLE_S = 60.0  # emit starvation state log at most once per minute
 _STARVATION_DISCOVERY_ENTRY_LOG_THROTTLE = {}      # (symbol, side) -> ts for throttling entry logs
+
+# P1.1AP-O2 Fix B: Discovery bucket loss-triggered cooldown state
+_STARVATION_DISCOVERY_BUCKET_COOLDOWN = {
+    "active": False,                # true if cooldown is currently active
+    "activated_at": 0.0,            # timestamp when cooldown was activated
+    "cooldown_s": 3600,             # cooldown duration (1 hour)
+    "closed_n_trigger": 3,          # N closed trades required to trigger cooldown
+    "pf_trigger": 0.0,              # profit_factor threshold (must equal this to trigger)
+    "avg_pnl_trigger": -0.10,       # avg net_pnl_pct threshold (must be <= this to trigger)
+    "timeout_rate_trigger": 0.66,   # timeout_rate threshold (must be >= this to trigger)
+}
 
 
 def _now() -> float:
@@ -288,6 +300,80 @@ def _emit_skip_summary(now: float) -> None:
     # Reset counters
     _SKIP_COUNTERS.clear()
     _LAST_SKIP_SUMMARY_TS[0] = now
+
+
+def _is_discovery_bucket_in_cooldown() -> bool:
+    """P1.1AP-O2 Fix B: Check if discovery bucket is currently under loss-triggered cooldown."""
+    cooldown = _STARVATION_DISCOVERY_BUCKET_COOLDOWN
+    if not cooldown["active"]:
+        return False
+    now = time.time()
+    elapsed = now - cooldown["activated_at"]
+    if elapsed >= cooldown["cooldown_s"]:
+        # Cooldown expired
+        cooldown["active"] = False
+        log.info("[PAPER_BUCKET_COOLDOWN_EXPIRED] bucket=PAPER_STARVATION_DISCOVERY elapsed_s=%.1f", elapsed)
+        return False
+    return True
+
+
+def _maybe_activate_discovery_bucket_cooldown() -> None:
+    """P1.1AP-O2 Fix B: Check closed discovery trades for loss pattern and activate cooldown if triggered.
+
+    Triggers if:
+    - closed_n >= 3
+    - profit_factor == 0.0 (all losses)
+    - avg_net_pnl_pct <= -0.10
+    - timeout_rate >= 66%
+    """
+    cooldown = _STARVATION_DISCOVERY_BUCKET_COOLDOWN
+    if cooldown["active"]:
+        return  # Already active
+
+    closed = _starvation_discovery_state.get("closed_trades", [])
+    if len(closed) < cooldown["closed_n_trigger"]:
+        return  # Not enough closed trades yet
+
+    # Keep only recent closes (within last hour for rolling window)
+    now = time.time()
+    one_hour_ago = now - 3600
+    recent = [(pnl, outcome, ts) for pnl, outcome, ts in closed if ts > one_hour_ago]
+
+    if len(recent) < cooldown["closed_n_trigger"]:
+        return  # Not enough recent closes
+
+    # Calculate metrics
+    n_closes = len(recent)
+    wins = sum(1 for _, outcome, _ in recent if outcome == "WIN")
+    losses = sum(1 for _, outcome, _ in recent if outcome == "LOSS")
+    timeout_count = sum(1 for _, outcome, _ in recent if "TIMEOUT" in str(outcome))
+
+    # Profit factor: sum_wins / sum_losses (0 if no wins)
+    wins_pnl = sum(pnl for pnl, outcome, _ in recent if outcome == "WIN")
+    losses_pnl = abs(sum(pnl for pnl, outcome, _ in recent if outcome == "LOSS"))
+    pf = wins_pnl / losses_pnl if losses_pnl > 0 else (1.0 if wins_pnl > 0 else 0.0)
+
+    # Average PnL
+    avg_pnl = sum(pnl for pnl, _, _ in recent) / n_closes if n_closes > 0 else 0.0
+
+    # Timeout rate
+    timeout_rate = timeout_count / n_closes if n_closes > 0 else 0.0
+
+    # Check triggers
+    is_all_losses = pf == cooldown["pf_trigger"]  # 0.0
+    is_avg_negative = avg_pnl <= cooldown["avg_pnl_trigger"]  # -0.10
+    is_high_timeout = timeout_rate >= cooldown["timeout_rate_trigger"]  # 0.66
+
+    if is_all_losses and is_avg_negative and is_high_timeout:
+        # Activation triggered
+        cooldown["active"] = True
+        cooldown["activated_at"] = now
+        log.info(
+            "[PAPER_BUCKET_COOLDOWN_ACTIVATED] bucket=PAPER_STARVATION_DISCOVERY "
+            "closed_n=%d pf=%.3f avg_net_pnl_pct=%.4f timeout_rate=%.2f cooldown_s=%d "
+            "reason=persistent_timeout_loss",
+            n_closes, pf, avg_pnl, timeout_rate, cooldown["cooldown_s"]
+        )
 
 
 def _maybe_log_starvation_discovery_state() -> None:
@@ -764,6 +850,19 @@ def _training_quality_gate(
 
     # P1.1AP-O2: Starvation discovery specific caps (independent of general training caps)
     if bucket == "PAPER_STARVATION_DISCOVERY":
+        # P1.1AP-O2 Fix B: Check loss-triggered cooldown first
+        if _is_discovery_bucket_in_cooldown():
+            remaining_s = _STARVATION_DISCOVERY_BUCKET_COOLDOWN["cooldown_s"] - (
+                now - _STARVATION_DISCOVERY_BUCKET_COOLDOWN["activated_at"]
+            )
+            log.info(
+                "[PAPER_ENTRY_BLOCKED] reason=bucket_loss_cooldown bucket=PAPER_STARVATION_DISCOVERY "
+                "symbol=%s remaining_s=%.1f",
+                symbol, max(0, remaining_s)
+            )
+            return _skip("bucket_loss_cooldown", symbol=symbol, bucket=bucket, source_reject=source_reject)
+
+        # Normal caps check
         discovery_allowed, discovery_reason = _check_starvation_discovery_caps(symbol, open_positions)
         if not discovery_allowed:
             return _skip(discovery_reason, symbol=symbol, bucket=bucket, source_reject=source_reject)
@@ -1124,10 +1223,11 @@ def maybe_open_training_sample(
         ctx = ctx or {}
 
         # P1.1AP-O2: Initialize starvation discovery idle time on first call
+        # FIX: Initialize to 0 (epoch), not now, so idle_s starts large (>= 600s gate)
         now = time.time()
         if _starvation_discovery_state.get("last_eligible_entry_ts", 0.0) == 0.0:
-            _starvation_discovery_state["last_eligible_entry_ts"] = now
-            _starvation_discovery_state["idle_s"] = 0.0
+            _starvation_discovery_state["last_eligible_entry_ts"] = 0.0  # FIX: uninitialized epoch
+            _starvation_discovery_state["idle_s"] = now  # idle_s = now - 0 = now (huge, >>600s)
 
         # P1.1AP-O1A: Track negative EV rejects for starvation diagnostics
         if "REJECT_NEGATIVE_EV" in reason:
@@ -1397,6 +1497,29 @@ def maybe_open_training_sample(
             result["source_reject"] = "REJECT_NEGATIVE_EV"
             result["admission_reason"] = "starvation_recovery_discovery"
 
+        # P1.1AP-O2 Fix C: Emit admission truth telemetry for cost-edge / entry correlation
+        # Includes candidate_id (flow_id), cost_edge status, bypass reason, and expected move
+        candidate_id = flow_id if flow_id else f"{symbol}:{side}:{bucket}:{int(now)}"
+        admission_reason = result.get("admission_reason", "training_sample")
+
+        log.info(
+            "[PAPER_ENTRY_ADMISSION_TRUTH] candidate_id=%s symbol=%s side=%s bucket=%s "
+            "cost_edge_ok=%s cost_edge_bypassed=%s bypass_reason=%s "
+            "expected_move_pct=%.4f required_move_pct=%.4f "
+            "admission_reason=%s source_reject=%s",
+            candidate_id,
+            symbol,
+            side,
+            bucket,
+            cost_edge_ok,
+            gate_result.get("cost_edge_bypassed", False),
+            gate_result.get("cost_edge_bypass_reason", "none"),
+            expected_move_pct,
+            0.23,  # required_move_pct reference
+            admission_reason,
+            reason,  # original rejection reason
+        )
+
         # P1.1AP-O1A: Emit starvation diagnostics if threshold reached
         _try_emit_adaptive_starvation_telemetry()
 
@@ -1431,14 +1554,29 @@ def commit_training_sampler_rate_slot(now: float = None) -> None:
     _entry_times_hour.append(now)
 
 
-def record_training_closed(bucket: str, outcome: str) -> None:
-    """P1.1V: Record a closed training trade for health metrics. Never raises."""
+def record_training_closed(bucket: str, outcome: str, net_pnl_pct: float = 0.0) -> None:
+    """P1.1V: Record a closed training trade for health metrics. Never raises.
+
+    P1.1AP-O2 Fix B: Also record discovery closes for loss pattern detection.
+    """
     try:
         _metric_add_event("closed_1h")
         if bucket == "C_NEG_EV_PROBE":
             _probe_state["lifetime_closed"] += 1
-        log.info("[PAPER_TRAIN_CLOSED] bucket=%s outcome=%s probe_lifetime_closed=%d",
-                 bucket, outcome, _probe_state["lifetime_closed"])
+
+        # P1.1AP-O2 Fix B: Track discovery closes for cooldown activation
+        if bucket == "PAPER_STARVATION_DISCOVERY":
+            now = time.time()
+            _starvation_discovery_state.get("closed_trades", []).append((net_pnl_pct, outcome, now))
+            # Keep only last 10 closes in memory (rolling window for loss detection)
+            closed = _starvation_discovery_state.get("closed_trades", [])
+            if len(closed) > 10:
+                _starvation_discovery_state["closed_trades"] = closed[-10:]
+            # Check if cooldown should be activated
+            _maybe_activate_discovery_bucket_cooldown()
+
+        log.info("[PAPER_TRAIN_CLOSED] bucket=%s outcome=%s net_pnl_pct=%.4f probe_lifetime_closed=%d",
+                 bucket, outcome, net_pnl_pct, _probe_state["lifetime_closed"])
     except Exception as e:
         log.warning("[PAPER_TRAIN_METRICS_ERROR] record_training_closed failed: %s", e)
 

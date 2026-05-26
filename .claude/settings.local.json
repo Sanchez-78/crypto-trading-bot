@@ -205,7 +205,15 @@
       "Bash(git restore *)",
       "Bash(git rm *)",
       "Bash(2>&1)",
-      "Bash(grep -v '.md$')"
+      "Bash(grep -v '.md$')",
+      "Bash(xargs cat)",
+      "Bash(pkill -f \"duration-seconds 3600\")",
+      "Bash(rm -rf /tmp/clean_core_obs_session1_*)",
+      "Bash(tee /tmp/session2_execution.log)",
+      "Bash(tee /tmp/session3_execution.log)",
+      "Bash(dir \"C:\\\\Users\\\\JA30B~1\\\\AppData\\\\Local\\\\Temp\\\\clean_core_obs_s1_1779792215\\\\\"\n *)",
+      "Bash(git switch *)",
+      "Bash(git pull *)"
     ]
   }
 }
