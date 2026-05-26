@@ -99,6 +99,23 @@ _RECOVERY_MAX_OPEN_PER_SYMBOL = 1  # max open recovery positions per symbol
 _RECOVERY_BLOCKED_LAST_LOG = {}    # (symbol, reason) -> ts for throttling blocked logs
 _RECOVERY_BLOCKED_THROTTLE_S = 10.0
 
+# P1.1AP-O2: PAPER starvation discovery state and caps (LEGACY_SPOT_EXECUTION_UNVERIFIED)
+_starvation_discovery_state: dict = {
+    "open_global": 0,               # current count of open discovery positions globally
+    "open_by_symbol": {},           # symbol -> count of open discovery positions
+    "entry_times_15m": deque(),     # entry timestamps for 15-min rate cap
+    "last_eligible_entry_ts": 0.0,  # timestamp of last valid eligible PAPER entry
+    "idle_s": 0.0,                  # seconds since last eligible entry
+    "valid_negative_candidates": 0, # count of valid REJECT_NEGATIVE_EV signals during idle window
+    "last_state_log_ts": 0.0,       # throttle state logs
+}
+_STARVATION_DISCOVERY_MAX_OPEN_GLOBAL = 2           # max open discovery positions globally
+_STARVATION_DISCOVERY_MAX_OPEN_PER_SYMBOL = 1      # max open discovery per symbol
+_STARVATION_DISCOVERY_MAX_PER_15M = 4              # max new entries per 15 minutes
+_STARVATION_DISCOVERY_IDLE_THRESHOLD_S = 600.0     # idle threshold: 600s (10 min) since last eligible entry
+_STARVATION_DISCOVERY_STATE_LOG_THROTTLE_S = 60.0  # emit starvation state log at most once per minute
+_STARVATION_DISCOVERY_ENTRY_LOG_THROTTLE = {}      # (symbol, side) -> ts for throttling entry logs
+
 
 def _now() -> float:
     """Get current timestamp."""
@@ -273,6 +290,32 @@ def _emit_skip_summary(now: float) -> None:
     _LAST_SKIP_SUMMARY_TS[0] = now
 
 
+def _maybe_log_starvation_discovery_state() -> None:
+    """P1.1AP-O2: Log starvation discovery state with throttling (once per minute)."""
+    now = time.time()
+    last_log = _starvation_discovery_state.get("last_state_log_ts", 0.0)
+
+    if now - last_log < _STARVATION_DISCOVERY_STATE_LOG_THROTTLE_S:
+        return  # Still throttled
+
+    _starvation_discovery_state["last_state_log_ts"] = now
+
+    idle_s = _starvation_discovery_state.get("idle_s", 0.0)
+    open_global = sum(
+        1 for _ in _starvation_discovery_state.get("entry_times_15m", [])
+    )
+    valid_candidates = _starvation_discovery_state.get("valid_negative_candidates", 0)
+
+    log.info(
+        "[PAPER_STARVATION_DISCOVERY_STATE] idle_s=%.1f open_global=%d "
+        "valid_negative_candidates=%d cap_reason=%s",
+        idle_s,
+        open_global,
+        valid_candidates,
+        "no_cap_violation" if open_global < _STARVATION_DISCOVERY_MAX_OPEN_GLOBAL else "at_global_cap",
+    )
+
+
 def _is_training_enabled() -> bool:
     """Check if paper training mode is active (PAPER_TRAIN only, never paper_live/live_real)."""
     try:
@@ -360,8 +403,16 @@ def _get_training_bucket(signal: dict, ctx: dict, reject_reason: str) -> Tuple[s
     """
     ev = float(signal.get("ev", 0.0))
 
-    # D_NEG_EV_CONTROL: learn what bad looks like
-    if ev <= 0 and _ALLOW_NEG_EV:
+    # P1.1AP-O2: PAPER_STARVATION_DISCOVERY: allow REJECT_NEGATIVE_EV during sustained starvation
+    # Check this BEFORE D_NEG_EV_CONTROL. This is NOT the same as D_NEG (which is diagnostic/shadow-only).
+    # Discovery allows bounded trades to resume learning when no valid entries occur for 600+ seconds
+    # despite continuous valid signals.
+    if ev <= 0 and "REJECT_NEGATIVE_EV" in reject_reason and _is_starvation_discovery_idle():
+        return ("PAPER_STARVATION_DISCOVERY", 0.02)
+
+    # D_NEG_EV_CONTROL: learn what bad looks like (diagnostic/shadow-only, NOT for discovery)
+    # Only used for negative EV rejects that are NOT discovery candidates
+    if ev <= 0 and _ALLOW_NEG_EV and "REJECT_NEGATIVE_EV" not in reject_reason:
         if _check_hourly_cap("D_NEG_EV_CONTROL"):
             return ("D_NEG_EV_CONTROL", 0.02)
 
@@ -451,6 +502,62 @@ def _check_recovery_admission_caps(symbol: str, open_positions: Optional[List[di
         return (True, "")
     except Exception as e:
         log.warning(f"[RECOVERY_CAP_CHECK_ERROR] {e}")
+        return (False, "check_error")
+
+
+def _update_starvation_discovery_idle(last_eligible_entry_ts: float) -> None:
+    """P1.1AP-O2: Update idle seconds and tracked state for starvation discovery."""
+    now = time.time()
+    _starvation_discovery_state["last_eligible_entry_ts"] = last_eligible_entry_ts
+    _starvation_discovery_state["idle_s"] = now - last_eligible_entry_ts
+
+
+def _is_starvation_discovery_idle() -> bool:
+    """P1.1AP-O2: True when no valid PAPER entry for >= 600 seconds despite valid signals."""
+    try:
+        now = time.time()
+        idle_s = now - _starvation_discovery_state.get("last_eligible_entry_ts", 0.0)
+        return idle_s >= _STARVATION_DISCOVERY_IDLE_THRESHOLD_S
+    except Exception:
+        return False
+
+
+def _check_starvation_discovery_caps(symbol: str, open_positions: Optional[List[dict]] = None) -> Tuple[bool, str]:
+    """P1.1AP-O2: Check if starvation discovery admission is allowed by caps.
+
+    Returns: (allowed: bool, reason: str) where reason is cap name if blocked, empty if allowed.
+    """
+    try:
+        open_positions = open_positions or []
+        now = time.time()
+
+        # Prune 15-min window
+        while _starvation_discovery_state["entry_times_15m"] and now - _starvation_discovery_state["entry_times_15m"][0] > 900:
+            _starvation_discovery_state["entry_times_15m"].popleft()
+
+        # Global cap: max 2 discovery positions open
+        discovery_open_global = sum(
+            1 for p in open_positions
+            if p.get("learning_source") == "paper_starvation_discovery"
+        )
+        if discovery_open_global >= _STARVATION_DISCOVERY_MAX_OPEN_GLOBAL:
+            return (False, "discovery_cap_global")
+
+        # Per-symbol cap: max 1 discovery position per symbol
+        discovery_open_symbol = sum(
+            1 for p in open_positions
+            if p.get("learning_source") == "paper_starvation_discovery" and p.get("symbol") == symbol
+        )
+        if discovery_open_symbol >= _STARVATION_DISCOVERY_MAX_OPEN_PER_SYMBOL:
+            return (False, "discovery_cap_per_symbol")
+
+        # Rate cap: max 4 new entries per 15 minutes
+        if len(_starvation_discovery_state["entry_times_15m"]) >= _STARVATION_DISCOVERY_MAX_PER_15M:
+            return (False, "discovery_rate_cap_15m")
+
+        return (True, "")
+    except Exception as e:
+        log.warning(f"[STARVATION_DISCOVERY_CAP_CHECK_ERROR] {e}")
         return (False, "check_error")
 
 
@@ -654,6 +761,12 @@ def _training_quality_gate(
         )
         if probe_open >= _PROBE_MAX_OPEN_TOTAL:
             return _skip("probe_cap_total_open", symbol=symbol, bucket=bucket, source_reject=source_reject)
+
+    # P1.1AP-O2: Starvation discovery specific caps (independent of general training caps)
+    if bucket == "PAPER_STARVATION_DISCOVERY":
+        discovery_allowed, discovery_reason = _check_starvation_discovery_caps(symbol, open_positions)
+        if not discovery_allowed:
+            return _skip(discovery_reason, symbol=symbol, bucket=bucket, source_reject=source_reject)
 
     if open_symbol >= PAPER_TRAIN_MAX_OPEN_PER_SYMBOL:
         if cost_edge_bypassed:
@@ -1010,9 +1123,17 @@ def maybe_open_training_sample(
         signal = signal or {}
         ctx = ctx or {}
 
+        # P1.1AP-O2: Initialize starvation discovery idle time on first call
+        now = time.time()
+        if _starvation_discovery_state.get("last_eligible_entry_ts", 0.0) == 0.0:
+            _starvation_discovery_state["last_eligible_entry_ts"] = now
+            _starvation_discovery_state["idle_s"] = 0.0
+
         # P1.1AP-O1A: Track negative EV rejects for starvation diagnostics
         if "REJECT_NEGATIVE_EV" in reason:
             _ADAPTIVE_STARVATION_STATE["negative_ev_rejects"] += 1
+            # P1.1AP-O2: Track valid negative EV candidates during starvation discovery
+            _starvation_discovery_state["valid_negative_candidates"] += 1
 
         # Require real price
         if not current_price:
@@ -1176,6 +1297,23 @@ def maybe_open_training_sample(
                 _probe_state["lifetime_closed"],
             )
 
+        # P1.1AP-O2: Log starvation discovery acceptance
+        if bucket == "PAPER_STARVATION_DISCOVERY":
+            _ts_now = time.time()
+            _starvation_discovery_state["entry_times_15m"].append(_ts_now)
+            _starvation_discovery_state["valid_negative_candidates"] = 0  # Reset counter on successful entry
+            _update_starvation_discovery_idle(_ts_now)
+            _maybe_log_starvation_discovery_state()
+            log.info(
+                "[PAPER_STARVATION_DISCOVERY_ACCEPTED] symbol=%s side=%s bucket=PAPER_STARVATION_DISCOVERY "
+                "original_decision=REJECT_NEGATIVE_EV ev=%.4f idle_s=%.1f "
+                "execution_truth_class=LEGACY_SPOT_EXECUTION_UNVERIFIED readiness_eligible=false",
+                symbol,
+                side,
+                float(signal.get("ev", 0.0)) if signal else 0.0,
+                _starvation_discovery_state.get("idle_s", 0.0),
+            )
+
         # P1.1AP-N2A: Recovery admission approved (NOT opened yet - see trade_executor for actual entry log)
         if gate_result.get("recovery_admission"):
             log.debug(
@@ -1249,6 +1387,15 @@ def maybe_open_training_sample(
             result["admission_reason"] = "paper_learning_must_continue"
             result["historical_health"] = "BAD"
             _ADAPTIVE_STARVATION_STATE["admitted_recovery"] += 1
+
+        # P1.1AP-O2: Add starvation discovery metadata
+        if bucket == "PAPER_STARVATION_DISCOVERY":
+            result["learning_source"] = "paper_starvation_discovery"
+            result["evaluation_role"] = "DISCOVERY"
+            result["execution_truth_class"] = "LEGACY_SPOT_EXECUTION_UNVERIFIED"
+            result["readiness_eligible"] = False
+            result["source_reject"] = "REJECT_NEGATIVE_EV"
+            result["admission_reason"] = "starvation_recovery_discovery"
 
         # P1.1AP-O1A: Emit starvation diagnostics if threshold reached
         _try_emit_adaptive_starvation_telemetry()

@@ -187,7 +187,23 @@
       "Bash(awk -F: '$1 >= 1799')",
       "Bash(bash *)",
       "Bash(cat)",
-      "Bash(chmod +x /tmp/deploy_p11ao.sh)"
+      "Bash(chmod +x /tmp/deploy_p11ao.sh)",
+      "Bash(tee /tmp/o1a1b_hash_before_tests.txt)",
+      "Bash(tee /tmp/o1a1b_hash_after_all.txt)",
+      "Bash(tee /tmp/p11ap_o1a1c_fullsuite_repair_clone.txt)",
+      "Read(//opt/**)",
+      "Bash(sudo systemctl stop cryptomaster)",
+      "Bash(sudo rtk systemctl status cryptomaster --no-pager -l)",
+      "PowerShell(Set-Location *)",
+      "PowerShell(cd \"C:\\\\tmp\\\\CryptoMaster_o1a1g_fix_20260525T151725Z\"; \"=== Runtime file check ===\"; if \\(Test-Path \"server_local_backups/paper_adaptive_learning_state.json\"\\) { \"FAIL: adaptive state created\" } else { \"PASS: no adaptive state\" }; if \\(Test-Path \"data/paper_open_positions.json\"\\) { $hash = \\(Get-FileHash \"data/paper_open_positions.json\" -Algorithm SHA256\\).Hash; \"positions file exists, hash: $hash\" } else { \"FAIL: no positions file\" })",
+      "PowerShell(Remove-Item *)",
+      "PowerShell(cd \"C:\\\\tmp\\\\CryptoMaster_o1a1g_fix_20260525T151725Z\"; \"=== Runtime state check after full suite ===\"; if \\(Test-Path \"server_local_backups/paper_adaptive_learning_state.json\"\\) { \"FAIL: adaptive state created\" } else { \"PASS: no adaptive state file\" }; $after = \\(Get-FileHash \"data/paper_open_positions.json\" -Algorithm SHA256\\).Hash; \"After hash: $after\"; if \\(\"$before\" -eq \"$after\"\\) { \"PASS: positions hash unchanged\" } else { \"WARN: positions hash changed \\(before: $before, after: $after\\)\" })",
+      "Bash(set -euo pipefail)",
+      "Bash(ssh-keyscan -H localhost)",
+      "Bash(git -C C:\\\\Projects\\\\CryptoMaster_srv rev-parse HEAD)",
+      "Bash(git rebase *)",
+      "Bash(git restore *)",
+      "Bash(git rm *)"
     ]
   }
 }

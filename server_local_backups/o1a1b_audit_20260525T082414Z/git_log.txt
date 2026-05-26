@@ -1,0 +1,5 @@
+3283ba1 P1.1AP-O1A1: Emergency fix - Test isolation, qualification provenance, REAL_READY gating, and starvation telemetry
+f49e493 P1.1AP-O1A: Add paper policy evidence and readiness qualification provenance
+a6ab55f P1.1AP-O1: Apply adaptive rolling policy to PAPER decisions
+956a12e P1.1AP-N2C: Fix recovery metadata wiring in actual paper open path
+0dd81c1 P1.1AP-N2B: Preserve recovery metadata through actual paper trades
