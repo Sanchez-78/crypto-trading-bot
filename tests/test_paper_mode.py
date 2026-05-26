@@ -80,6 +80,21 @@ def _reset_paper_sampler_test_state():
             if hasattr(obj, "clear"):
                 obj.clear()
 
+    # P1.1AP-O2: Reset starvation discovery state for test isolation
+    if hasattr(pts, '_starvation_discovery_state') and isinstance(pts._starvation_discovery_state, dict):
+        import time
+        now = time.time()
+        pts._starvation_discovery_state = {
+            "open_global": 0,
+            "open_by_symbol": {},
+            "entry_times_15m": [],
+            "last_eligible_entry_ts": now,  # Recent entry so idle_s < 600
+            "idle_s": 0.0,
+            "valid_negative_candidates": 0,
+            "last_state_log_ts": 0.0,
+            "closed_trades": [],
+        }
+
 
 class TestPaperExecutorBasics:
     """Test paper executor core functionality."""

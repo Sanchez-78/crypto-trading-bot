@@ -489,6 +489,12 @@ def _get_training_bucket(signal: dict, ctx: dict, reject_reason: str) -> Tuple[s
     """
     ev = float(signal.get("ev", 0.0))
 
+    # P1.1AO: C_NEG_EV_PROBE: cold-start starvation recovery (paper_train only)
+    # Check this BEFORE PAPER_STARVATION_DISCOVERY since it's more specific (< 100 lifetime trades)
+    if ev <= 0 and "REJECT_NEGATIVE_EV" in reject_reason and _is_cold_start_starvation():
+        if _probe_state["lifetime_closed"] < _PROBE_MAX_LIFETIME_CLOSED:
+            return ("C_NEG_EV_PROBE", 0.01)
+
     # P1.1AP-O2: PAPER_STARVATION_DISCOVERY: allow REJECT_NEGATIVE_EV during sustained starvation
     # Check this BEFORE D_NEG_EV_CONTROL. This is NOT the same as D_NEG (which is diagnostic/shadow-only).
     # Discovery allows bounded trades to resume learning when no valid entries occur for 600+ seconds
@@ -518,11 +524,6 @@ def _get_training_bucket(signal: dict, ctx: dict, reject_reason: str) -> Tuple[s
             # Size scales with EV: higher EV = bigger position (but capped at 0.08)
             size_mult = min(0.08, max(0.03, ev * 0.5))
             return ("C_WEAK_EV_TRAIN", size_mult)
-
-    # P1.1AO: C_NEG_EV_PROBE: cold-start starvation recovery (paper_train only)
-    if ev <= 0 and _is_cold_start_starvation():
-        if _probe_state["lifetime_closed"] < _PROBE_MAX_LIFETIME_CLOSED:
-            return ("C_NEG_EV_PROBE", 0.01)
 
     return ("", 0.0)
 
