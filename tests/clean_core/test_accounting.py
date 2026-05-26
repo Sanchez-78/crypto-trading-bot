@@ -175,8 +175,9 @@ class TestExecutionAccounting:
             holding_minutes=60.0,
         )
 
-        # RPI-aware measurement should be readiness eligible
-        assert outcome.readiness_eligible is True
+        # RPI-aware measurement should be clean PAPER metrics eligible, but never REAL readiness
+        assert outcome.eligible_for_clean_paper_metrics is True
+        assert outcome.eligible_for_real_readiness is False
         assert (
             outcome.execution_truth_class
             == ExecutionTruthClass.FUTURES_RPI_AWARE_MEASURED

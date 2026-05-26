@@ -2,7 +2,7 @@
 
 import pytest
 from src.clean_core.market.binance_usdm_routes import BinanceUsdmRoutes
-from src.clean_core.domain import ExecutionTruthClass
+from src.clean_core.domain import ExecutionTruthClass, MarketObservationRole
 
 
 class TestBinanceUsdmRoutes:
@@ -32,16 +32,14 @@ class TestBinanceUsdmRoutes:
         assert identity.instrument == "ETHUSDT"
         assert identity.price_source == "public_book"
 
-    def test_3_mark_price_stream_futures_baseline(self, routes):
-        """Test 3: Generate markPrice stream (R1 baseline public book, not RPI)."""
+    def test_3_mark_price_stream_telemetry_only(self, routes):
+        """Test 3: Generate markPrice stream (telemetry only, not execution basis)."""
         url, identity = routes.mark_price_stream("BTCUSDT", update_speed_ms=1000)
 
         assert "btcusdt@markPrice@1000ms" in url
-        assert identity.price_source == "public_book"
-        assert (
-            identity.execution_truth_class
-            == ExecutionTruthClass.FUTURES_PUBLIC_BOOK_MEASURED
-        )
+        assert identity.price_source == "mark_telemetry"
+        assert identity.execution_truth_class is None  # Telemetry, not execution truth
+        assert identity.observation_role == MarketObservationRole.MARK_FUNDING_TELEMETRY
         assert identity.rpi_visibility is False
 
     def test_4_agg_trade_stream_route(self, routes):

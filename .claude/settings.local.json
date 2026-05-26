@@ -204,7 +204,8 @@
       "Bash(git rebase *)",
       "Bash(git restore *)",
       "Bash(git rm *)",
-      "Bash(2>&1)"
+      "Bash(2>&1)",
+      "Bash(grep -v '.md$')"
     ]
   }
 }
