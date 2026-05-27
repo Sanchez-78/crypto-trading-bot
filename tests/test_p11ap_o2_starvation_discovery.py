@@ -60,6 +60,7 @@ def clean_sampler_state():
     pts._starvation_discovery_state["idle_s"] = 0.0
     pts._starvation_discovery_state["valid_negative_candidates"] = 0
     pts._starvation_discovery_state["last_state_log_ts"] = 0.0
+    pts._starvation_discovery_state["closed_trades"] = []
 
     # Reset adaptive starvation state
     pts._ADAPTIVE_STARVATION_STATE["window_start_ts"] = 0.0
@@ -73,6 +74,20 @@ def clean_sampler_state():
     # Reset probe state
     if hasattr(pts, "_probe_state"):
         pts._probe_state["entry_times_10m"].clear()
+        pts._probe_state["lifetime_closed"] = 0
+
+    # Reset P1.1AP-O2 cooldown states
+    pts._STARVATION_DISCOVERY_BUCKET_COOLDOWN = {
+        "active": False,
+        "activated_at": 0.0,
+        "cooldown_s": 3600,
+        "cooldown_until": 0.0,
+        "closed_n_trigger": 3,
+        "pf_trigger": 0.0,
+        "avg_pnl_trigger": -0.10,
+        "timeout_rate_trigger": 0.66,
+    }
+    pts._SEGMENT_COOLDOWNS = {}
 
     yield
 
@@ -101,6 +116,7 @@ def clean_sampler_state():
     pts._starvation_discovery_state["idle_s"] = 0.0
     pts._starvation_discovery_state["valid_negative_candidates"] = 0
     pts._starvation_discovery_state["last_state_log_ts"] = 0.0
+    pts._starvation_discovery_state["closed_trades"] = []
 
     pts._ADAPTIVE_STARVATION_STATE["window_start_ts"] = 0.0
     pts._ADAPTIVE_STARVATION_STATE["positive_candidates"] = 0
@@ -112,6 +128,20 @@ def clean_sampler_state():
 
     if hasattr(pts, "_probe_state"):
         pts._probe_state["entry_times_10m"].clear()
+        pts._probe_state["lifetime_closed"] = 0
+
+    # Reset P1.1AP-O2 cooldown states (cleanup)
+    pts._STARVATION_DISCOVERY_BUCKET_COOLDOWN = {
+        "active": False,
+        "activated_at": 0.0,
+        "cooldown_s": 3600,
+        "cooldown_until": 0.0,
+        "closed_n_trigger": 3,
+        "pf_trigger": 0.0,
+        "avg_pnl_trigger": -0.10,
+        "timeout_rate_trigger": 0.66,
+    }
+    pts._SEGMENT_COOLDOWNS = {}
 
 
 class TestStarvationDiscoveryBucketRouting:
@@ -137,9 +167,10 @@ class TestStarvationDiscoveryBucketRouting:
         assert bucket == "", f"Expected empty bucket when not idle, got {bucket}"
         assert size_mult == 0.0
 
+    @patch("src.services.paper_training_sampler._is_cold_start_starvation", return_value=False)
     @patch("src.services.paper_training_sampler._is_training_enabled", return_value=True)
     @patch("src.services.paper_training_sampler._is_starvation_discovery_idle", return_value=True)
-    def test_reject_negative_ev_routes_to_discovery_during_starvation(self, mock_idle, mock_training, clean_sampler_state):
+    def test_reject_negative_ev_routes_to_discovery_during_starvation(self, mock_idle, mock_training, mock_cold_start, clean_sampler_state):
         """REJECT_NEGATIVE_EV routes to PAPER_STARVATION_DISCOVERY when idle >= 600s."""
         signal = {
             "symbol": "ETHUSDT",
@@ -210,10 +241,11 @@ class TestStarvationDiscoveryCaps:
 class TestStarvationDiscoveryMetadata:
     """Test that discovery outcomes have correct metadata labels."""
 
+    @patch("src.services.paper_training_sampler._is_cold_start_starvation", return_value=False)
     @patch("src.services.paper_training_sampler._is_training_enabled", return_value=True)
     @patch("src.services.paper_training_sampler._is_starvation_discovery_idle", return_value=True)
     @patch("src.services.paper_training_sampler._training_quality_gate")
-    def test_discovery_metadata_in_result(self, mock_gate, mock_idle, mock_training, clean_sampler_state):
+    def test_discovery_metadata_in_result(self, mock_gate, mock_idle, mock_training, mock_cold_start, clean_sampler_state):
         """Result includes discovery metadata: learning_source, execution_truth_class, readiness_eligible."""
         mock_gate.return_value = {"allowed": True, "reason": "ok"}
 
@@ -245,9 +277,10 @@ class TestStarvationDiscoveryMetadata:
 class TestDiscoveryDoesNotContaminateControl:
     """Test that discovery admission does NOT affect D_NEG_EV_CONTROL or readiness."""
 
+    @patch("src.services.paper_training_sampler._is_cold_start_starvation", return_value=False)
     @patch("src.services.paper_training_sampler._is_training_enabled", return_value=True)
     @patch("src.services.paper_training_sampler._is_starvation_discovery_idle", return_value=True)
-    def test_discovery_separate_from_d_neg_control(self, mock_idle, mock_training, clean_sampler_state):
+    def test_discovery_separate_from_d_neg_control(self, mock_idle, mock_training, mock_cold_start, clean_sampler_state):
         """D_NEG_EV_CONTROL and PAPER_STARVATION_DISCOVERY are distinct buckets."""
         signal = {
             "symbol": "BTCUSDT",

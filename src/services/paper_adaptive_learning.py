@@ -62,6 +62,32 @@ class PaperAdaptiveLearning:
         self.qualification_window = deque(maxlen=100)
         self.operator_unlock = False
 
+        # P1.1AP-O2: PAPER admission control policy state (cooldowns, etc.)
+        self.paper_admission_controls = {
+            "schema_version": 1,
+            "starvation_discovery_cooldown": {
+                "active": False,
+                "activated_at": 0.0,
+                "cooldown_until": 0.0,
+                "reevaluation_budget_remaining": 0,
+                "activation_evidence": {
+                    "closed_n": 0,
+                    "profit_factor": 0.0,
+                    "avg_net_pnl_pct": 0.0,
+                    "timeout_rate": 0.0
+                }
+            },
+            "c_weak_segment_cooldowns": {},
+            # P1.1AP-O2 Path C: One-time legacy discovery migration guard
+            # Applied once on first patched startup if pre-patch entries lack route identity
+            "legacy_pre_scoped_discovery_guard": {
+                "activated_once": False,
+                "reason": "operator_verified_pre_scoped_loss_evidence",
+                "cooldown_until": 0.0,
+                "applies_only_to": "PAPER_STARVATION_DISCOVERY"
+            }
+        }
+
         # Load persisted state if exists
         self._load_state()
 
@@ -94,30 +120,51 @@ class PaperAdaptiveLearning:
     def _reconcile_state(self) -> None:
         """P1.1AP-N1 Fix 3: Safely reconcile state to remove D_NEG contamination.
 
-        Called after loading state. Filters out D_NEG entries from rolling windows
-        and recomputes metrics if necessary.
+        P1.1AP-O2: Also normalize entry format to ensure learning_source and admission_bucket are present.
+        Legacy entries may have 4 or 5 elements; current format has 6.
+        Called after loading state.
         """
         try:
             d_neg_count_before = 0
 
-            # Filter D_NEG entries from rolling windows
+            # Filter D_NEG entries from rolling windows and normalize format
             for window_name in ["rolling20", "rolling50", "rolling100"]:
                 window = getattr(self, window_name)
                 original_len = len(window)
+                legacy_4_element_count = sum(1 for e in window if len(e) == 4)
+                legacy_5_element_count = sum(1 for e in window if len(e) == 5)
 
-                # Filter out D_NEG entries
-                filtered = deque(
-                    [e for e in window if not self._is_d_neg_entry(e)],
-                    maxlen=window.maxlen
-                )
-                d_neg_removed = original_len - len(filtered)
-                d_neg_count_before += d_neg_removed
+                # Filter out D_NEG entries AND normalize format
+                # Ensure all entries have learning_source (position 4) and admission_bucket (position 5)
+                normalized = []
+                for e in window:
+                    if self._is_d_neg_entry(e):
+                        d_neg_count_before += 1
+                        continue
+                    # Normalize: extend with defaults for missing fields
+                    if len(e) == 4:
+                        # 4-element legacy: (pnl, outcome, segment, ts) → add learning_source="unknown", admission_bucket="unknown"
+                        normalized.append((*e, "unknown", "unknown"))
+                    elif len(e) == 5:
+                        # 5-element: (pnl, outcome, segment, ts, learning_source) → add admission_bucket="unknown"
+                        normalized.append((*e, "unknown"))
+                    else:
+                        # 6-element or other: keep as-is
+                        normalized.append(e)
 
-                if d_neg_removed > 0:
+                filtered = deque(normalized, maxlen=window.maxlen)
+
+                # Update if either D_NEG removed or format normalized
+                if original_len > len(filtered) or legacy_4_element_count > 0 or legacy_5_element_count > 0:
                     setattr(self, window_name, filtered)
                     log.info(
-                        "[PAPER_ADAPTIVE_STATE_RECONCILED] window=%s d_neg_removed=%d remaining=%d",
-                        window_name, d_neg_removed, len(filtered)
+                        "[PAPER_ADAPTIVE_STATE_RECONCILED] window=%s "
+                        "d_neg_removed=%d legacy_4_elem_normalized=%d legacy_5_elem_normalized=%d remaining=%d",
+                        window_name,
+                        d_neg_count_before,
+                        legacy_4_element_count,
+                        legacy_5_element_count,
+                        len(filtered)
                     )
 
             # Recompute metrics from remaining entries
@@ -188,6 +235,9 @@ class PaperAdaptiveLearning:
                     self.lifecycle
                 )
 
+                # P1.1AP-O2: Restore admission control policy state
+                self.paper_admission_controls = data.get("paper_admission_controls", self.paper_admission_controls)
+
                 # P1.1AP-N1 Fix 3: Reconcile state to remove D_NEG contamination
                 self._reconcile_state()
         except Exception as e:
@@ -211,6 +261,7 @@ class PaperAdaptiveLearning:
                 "qualification_n": self.qualification_n,
                 "qualification_window": list(self.qualification_window),
                 "operator_unlock": self.operator_unlock,
+                "paper_admission_controls": self.paper_admission_controls,
             }
             with open(self._state_file, 'w') as f:
                 json.dump(data, f, indent=2)
@@ -228,6 +279,7 @@ class PaperAdaptiveLearning:
                 'regime': str,
                 'side': str,
                 'learning_source': str,
+                'training_bucket': str,  # admission route that opened the trade
                 'mfe_pct': float,
                 'mae_pct': float,
                 ...
@@ -241,10 +293,13 @@ class PaperAdaptiveLearning:
         symbol = str(trade.get("symbol", "UNKNOWN"))
         regime = str(trade.get("regime", "UNKNOWN"))
         side = str(trade.get("side", "UNKNOWN"))
+        learning_source = str(trade.get("learning_source", "unknown"))
+        admission_bucket = str(trade.get("training_bucket", "unknown"))
         segment_key = f"{symbol}:{regime}:{side}"
 
-        # Record to rolling windows
-        entry = (net_pnl_pct, outcome, segment_key, time.time())
+        # Record to rolling windows - P1.1AP-O2 Path C: Separate admission_bucket from learning_source
+        # Entry format: (net_pnl_pct, outcome, segment_key, timestamp, learning_source, admission_bucket)
+        entry = (net_pnl_pct, outcome, segment_key, time.time(), learning_source, admission_bucket)
         self.rolling20.append(entry)
         self.rolling50.append(entry)
         self.rolling100.append(entry)
@@ -725,6 +780,22 @@ class PaperAdaptiveLearning:
                 "qualification_n": 0,
                 "qualification_status": "unqualified",
             }
+
+    def get_admission_controls_state(self) -> dict:
+        """P1.1AP-O2: Get current admission control policy state (cooldowns)."""
+        return self.paper_admission_controls
+
+    def update_admission_controls_state(self, controls: dict) -> None:
+        """P1.1AP-O2: Update admission control policy state and persist."""
+        try:
+            self.paper_admission_controls = controls
+            self._save_state()
+        except Exception as e:
+            log.warning("[PAPER_ADMISSION_CONTROLS_SAVE] failed: %s", e)
+
+    def save_state_sync(self) -> None:
+        """P1.1AP-O2: Synchronously save state to disk (for cooldown updates)."""
+        self._save_state()
 
 
 # Module-level singleton
