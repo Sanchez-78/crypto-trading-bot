@@ -39,12 +39,13 @@ class TestIdleGateInitializationFixA(unittest.TestCase):
         }
 
     def test_idle_initialization_epoch_not_now(self):
-        """Idle initialization should set last_eligible_entry_ts=0, not now."""
+        """Idle initialization should set baseline to startup time, blocking discovery for 600s."""
         signal = {"symbol": "BTCUSDT", "ev": -0.01, "regime": "RANGING", "side": "BUY"}
         ctx = {}
 
         # First call to maybe_open_training_sample triggers initialization
         with patch('src.services.paper_training_sampler._is_training_enabled', return_value=True):
+            init_time = time.time()
             result = paper_training_sampler.maybe_open_training_sample(
                 signal=signal,
                 ctx=ctx,
@@ -54,9 +55,11 @@ class TestIdleGateInitializationFixA(unittest.TestCase):
 
         # Check state after init
         state = paper_training_sampler._starvation_discovery_state
-        assert state["last_eligible_entry_ts"] == 0.0, f"Expected 0.0, got {state['last_eligible_entry_ts']}"
-        # idle_s should be NOW - 0 = huge number, much > 600
-        assert state["idle_s"] > 1000, f"Expected idle_s > 1000s, got {state['idle_s']}"
+        # Baseline should be set to initialization time (within ~1 second)
+        assert abs(state["last_eligible_entry_ts"] - init_time) < 1.0, \
+            f"Expected last_eligible_entry_ts ≈ {init_time}, got {state['last_eligible_entry_ts']}"
+        # idle_s should be 0 or very small (< 600), blocking discovery
+        assert state["idle_s"] < 600, f"Expected idle_s < 600s, got {state['idle_s']}"
 
     def test_idle_gate_blocks_on_cold_start(self):
         """Discovery should be blocked on first call due to idle gate."""

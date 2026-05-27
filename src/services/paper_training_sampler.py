@@ -128,6 +128,10 @@ _STARVATION_DISCOVERY_BUCKET_COOLDOWN = {
     "timeout_rate_trigger": 0.66,   # timeout_rate threshold (must be >= this to trigger)
 }
 
+# P1.1AP-O2 Fix D: Segment-level cooldown state for C_WEAK_EV_TRAIN
+# Maps segment_key (symbol:regime:side) to cooldown activation data
+_SEGMENT_COOLDOWNS = {}  # {segment_key: {"active": bool, "activated_at": float, "cooldown_s": 3600}}
+
 
 def _now() -> float:
     """Get current timestamp."""
@@ -374,6 +378,82 @@ def _maybe_activate_discovery_bucket_cooldown() -> None:
             "reason=persistent_timeout_loss",
             n_closes, pf, avg_pnl, timeout_rate, cooldown["cooldown_s"]
         )
+
+
+def _is_segment_in_cooldown(segment_key: str) -> bool:
+    """P1.1AP-O2 Fix D: Check if C_WEAK_EV_TRAIN segment is in loss-triggered cooldown.
+
+    Segment key format: symbol:regime:side
+    """
+    if segment_key not in _SEGMENT_COOLDOWNS:
+        return False
+
+    cooldown = _SEGMENT_COOLDOWNS[segment_key]
+    if not cooldown.get("active", False):
+        return False
+
+    now = time.time()
+    elapsed = now - cooldown["activated_at"]
+    if elapsed >= cooldown.get("cooldown_s", 3600):
+        # Cooldown expired
+        cooldown["active"] = False
+        log.info("[PAPER_SEGMENT_COOLDOWN_EXPIRED] segment=%s elapsed_s=%.1f", segment_key, elapsed)
+        return False
+
+    return True
+
+
+def _maybe_activate_segment_cooldown(symbol: str, regime: str, side: str) -> None:
+    """P1.1AP-O2 Fix D: Check segment metrics for loss pattern and activate cooldown if triggered.
+
+    For C_WEAK_EV_TRAIN only.
+    Triggers if:
+    - segment_closed_n >= 2
+    - profit_factor == 0.0 (all losses)
+    - avg_net_pnl_pct <= -0.10
+    """
+    try:
+        from src.services.paper_adaptive_learning import get_segment_metrics
+
+        segment_key = f"{symbol}:{regime}:{side}"
+
+        # Check if already in cooldown or recently activated
+        if segment_key in _SEGMENT_COOLDOWNS and _SEGMENT_COOLDOWNS[segment_key].get("active", False):
+            return
+
+        # Get segment metrics
+        metrics = get_segment_metrics(symbol, regime, side)
+        if not metrics:
+            return  # Not enough data yet
+
+        n = metrics.get("n", 0)
+        pf = metrics.get("pf", 1.0)
+        expectancy = metrics.get("expectancy", 0.0)
+
+        # Convert expectancy (pct per trade) to check against -0.10 threshold
+        avg_pnl_pct = expectancy
+
+        # Check triggers: n >= 2, pf == 0, avg <= -0.10
+        is_enough_trades = n >= 2
+        is_all_losses = pf == 0.0
+        is_avg_negative = avg_pnl_pct <= -0.10
+
+        if is_enough_trades and is_all_losses and is_avg_negative:
+            # Activate cooldown
+            now = time.time()
+            _SEGMENT_COOLDOWNS[segment_key] = {
+                "active": True,
+                "activated_at": now,
+                "cooldown_s": 3600,
+            }
+            log.info(
+                "[PAPER_SEGMENT_COOLDOWN_ACTIVATED] segment=%s n=%d pf=%.3f avg_net_pnl_pct=%.4f "
+                "cooldown_s=3600 reason=persistent_loss",
+                segment_key, n, pf, avg_pnl_pct
+            )
+    except Exception as e:
+        log.debug("[PAPER_SEGMENT_COOLDOWN_CHECK_ERROR] symbol=%s regime=%s side=%s error=%s",
+                  symbol, regime, side, str(e))
 
 
 def _maybe_log_starvation_discovery_state() -> None:
@@ -849,6 +929,31 @@ def _training_quality_gate(
         if probe_open >= _PROBE_MAX_OPEN_TOTAL:
             return _skip("probe_cap_total_open", symbol=symbol, bucket=bucket, source_reject=source_reject)
 
+    # P1.1AP-O2 Fix D: C_WEAK_EV_TRAIN segment-level cooldown check
+    if bucket == "C_WEAK_EV_TRAIN":
+        try:
+            from src.services.paper_training_sampler import _get_signal_regime
+            regime = str(signal.get("regime", "UNKNOWN")).upper()
+            segment_key = f"{symbol}:{regime}:{side}"
+
+            # Check if segment is in loss-triggered cooldown
+            if _is_segment_in_cooldown(segment_key):
+                remaining_s = _SEGMENT_COOLDOWNS[segment_key].get("cooldown_s", 3600) - (
+                    now - _SEGMENT_COOLDOWNS[segment_key]["activated_at"]
+                )
+                log.info(
+                    "[PAPER_ENTRY_BLOCKED] reason=segment_loss_cooldown bucket=C_WEAK_EV_TRAIN "
+                    "segment=%s remaining_s=%.1f",
+                    segment_key, max(0, remaining_s)
+                )
+                return _skip("segment_loss_cooldown", symbol=symbol, bucket=bucket, source_reject=source_reject)
+
+            # Check and potentially activate segment cooldown based on current metrics
+            _maybe_activate_segment_cooldown(symbol, regime, side)
+
+        except Exception as e:
+            log.debug("[PAPER_SEGMENT_COOLDOWN_GATE_ERROR] symbol=%s bucket=%s error=%s", symbol, bucket, str(e))
+
     # P1.1AP-O2: Starvation discovery specific caps (independent of general training caps)
     if bucket == "PAPER_STARVATION_DISCOVERY":
         # P1.1AP-O2 Fix B: Check loss-triggered cooldown first
@@ -1224,11 +1329,12 @@ def maybe_open_training_sample(
         ctx = ctx or {}
 
         # P1.1AP-O2: Initialize starvation discovery idle time on first call
-        # FIX: Initialize to 0 (epoch), not now, so idle_s starts large (>= 600s gate)
+        # FIX: Set baseline to startup time so discovery is blocked for first 600 seconds
         now = time.time()
         if _starvation_discovery_state.get("last_eligible_entry_ts", 0.0) == 0.0:
-            _starvation_discovery_state["last_eligible_entry_ts"] = 0.0  # FIX: uninitialized epoch
-            _starvation_discovery_state["idle_s"] = now  # idle_s = now - 0 = now (huge, >>600s)
+            # Fresh startup: set baseline to now so idle_s = now - now = 0 (blocks discovery for 600s)
+            _starvation_discovery_state["last_eligible_entry_ts"] = now
+            _starvation_discovery_state["idle_s"] = 0.0
 
         # P1.1AP-O1A: Track negative EV rejects for starvation diagnostics
         if "REJECT_NEGATIVE_EV" in reason:
@@ -1555,10 +1661,18 @@ def commit_training_sampler_rate_slot(now: float = None) -> None:
     _entry_times_hour.append(now)
 
 
-def record_training_closed(bucket: str, outcome: str, net_pnl_pct: float = 0.0) -> None:
+def record_training_closed(
+    bucket: str,
+    outcome: str,
+    net_pnl_pct: float = 0.0,
+    symbol: str = "",
+    regime: str = "",
+    side: str = "",
+) -> None:
     """P1.1V: Record a closed training trade for health metrics. Never raises.
 
     P1.1AP-O2 Fix B: Also record discovery closes for loss pattern detection.
+    P1.1AP-O2 Fix D: Also check C_WEAK_EV_TRAIN segment for loss-triggered cooldown.
     """
     try:
         _metric_add_event("closed_1h")
@@ -1575,6 +1689,10 @@ def record_training_closed(bucket: str, outcome: str, net_pnl_pct: float = 0.0) 
                 _starvation_discovery_state["closed_trades"] = closed[-10:]
             # Check if cooldown should be activated
             _maybe_activate_discovery_bucket_cooldown()
+
+        # P1.1AP-O2 Fix D: Check C_WEAK_EV_TRAIN segment for loss-triggered cooldown
+        if bucket == "C_WEAK_EV_TRAIN" and symbol and regime and side:
+            _maybe_activate_segment_cooldown(symbol, regime, side)
 
         log.info("[PAPER_TRAIN_CLOSED] bucket=%s outcome=%s net_pnl_pct=%.4f probe_lifetime_closed=%d",
                  bucket, outcome, net_pnl_pct, _probe_state["lifetime_closed"])
