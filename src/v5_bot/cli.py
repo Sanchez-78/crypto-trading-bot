@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .paper import V5BotRunner
-from .firebase import QuotaAwareFirestoreRepository
+from .firebase.repository import QuotaAwareFirestoreRepository
 from .learning import ReadinessEvaluator, READINESS_MESSAGES_CS
 
 logging.basicConfig(level=logging.INFO)
@@ -27,8 +27,12 @@ class V5CLI:
     def _init_firebase(self):
         """Initialize Firebase (deferred until needed)."""
         if self.runner is None:
-            self.runner = V5BotRunner(self.firebase_creds_path)
-            self.firebase = self.runner.firebase
+            try:
+                self.runner = V5BotRunner(self.firebase_creds_path)
+                self.firebase = self.runner.firebase
+            except Exception as e:
+                logger.debug(f"Firebase initialization error: {e}")
+                raise
 
     def status(self) -> None:
         """Print current bot status."""
@@ -175,10 +179,11 @@ class V5CLI:
         print(f"REAL Orders: False")
 
         try:
-            self._init_firebase()
+            # Initialize Firebase repository directly (not full bot)
+            if self.firebase is None:
+                self.firebase = QuotaAwareFirestoreRepository()
 
-            # Initialize Firebase with validation epoch
-            print("\n[OK] Firebase initialization attempted")
+            print("\n[OK] Firebase initialized successfully")
 
             # Check Firebase quota before any operations
             quota_status = self.firebase.get_quota_status()
@@ -190,7 +195,7 @@ class V5CLI:
             print(f"\n[OK] Validation mode prepared with hard caps enforced")
             print(f"  - Quota caps: {max_reads} reads, {max_writes} writes")
             print(f"  - Namespace isolated: {namespace_prefix}")
-            print(f"  - Ready for deterministic test entry/close cycle")
+            print(f"  - Firebase connection established")
             print(f"\nFirebase connectivity verified. Lifecycle proof structure in place.")
             print(f"Full deterministic trade lifecycle implementation: READY FOR INTEGRATION")
 
@@ -202,7 +207,7 @@ class V5CLI:
             else:
                 print(f"[FAIL] Firebase proof failed: {e}")
         except Exception as e:
-            print(f"[FAIL] Firebase proof failed: {e}")
+            print(f"[FAIL] Firebase initialization failed: {type(e).__name__}: {e}")
 
     def validation_live_paper(self, epoch_id: str, namespace_prefix: str = "v5_validation",
                              max_writes: int = 150, max_reads: int = 100,
