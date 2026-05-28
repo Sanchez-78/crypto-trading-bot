@@ -35,7 +35,11 @@ class QuotaAwareFirestoreRepository:
         self.outbox = TradeOutbox()
 
         # Initialize Firebase if not already done
-        if not firebase_admin.get_app():
+        try:
+            firebase_admin.get_app()
+            # App already initialized
+        except ValueError:
+            # No default app exists, initialize it
             if credentials_path:
                 creds = credentials.Certificate(credentials_path)
                 firebase_admin.initialize_app(creds)
