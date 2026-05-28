@@ -184,7 +184,7 @@ class V5CLI:
                 # Try with environment-based credentials first
                 import os
                 google_creds = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
-                self.firebase = QuotaAwareFirestoreRepository(firebase_creds_path=google_creds)
+                self.firebase = QuotaAwareFirestoreRepository(credentials_path=google_creds)
 
             print("\n[OK] Firebase initialized successfully")
 
