@@ -12,12 +12,38 @@ from src.v5_bot.firebase.quota_guard import QuotaGuard, QuotaLedger
 @pytest.fixture
 def temp_db():
     """Use temporary SQLite database for tests."""
+    import sqlite3
+    import os
+    import time
+
     with tempfile.TemporaryDirectory() as tmpdir:
         # Override DB path for test
         original_path = QuotaLedger.DB_PATH
-        QuotaLedger.DB_PATH = Path(tmpdir) / "test_quota.sqlite"
-        yield
-        QuotaLedger.DB_PATH = original_path
+        db_path = Path(tmpdir) / "test_quota.sqlite"
+        QuotaLedger.DB_PATH = db_path
+        try:
+            yield
+        finally:
+            # Close any open connections
+            import gc
+            gc.collect()  # Force garbage collection to close dangling references
+            time.sleep(0.1)  # Brief delay to ensure file handles are released
+
+            # Close all SQLite connections
+            try:
+                sqlite3.connect(str(db_path)).close()
+            except:
+                pass
+
+            # Remove WAL files manually
+            for suffix in ['', '-wal', '-shm']:
+                try:
+                    (Path(tmpdir) / f"test_quota.sqlite{suffix}").unlink(missing_ok=True)
+                except:
+                    pass
+
+            QuotaLedger.DB_PATH = original_path
+            time.sleep(0.05)  # Allow Windows to release file locks
 
 
 class TestQuotaLedger:
@@ -187,14 +213,14 @@ class TestQuotaGuard:
         status = guard.get_status()
         assert status['state'] == 'warning'
 
-        # Reach DEGRADED
-        for _ in range(700):
+        # Reach DEGRADED (need 2500+ writes)
+        for _ in range(1000):
             guard.record_write(1)
         status = guard.get_status()
         assert status['state'] == 'degraded'
 
         # Reach CRITICAL
-        for _ in range(600):
+        for _ in range(300):
             guard.record_write(1)
         status = guard.get_status()
         assert status['state'] == 'critical'

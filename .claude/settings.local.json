@@ -213,7 +213,17 @@
       "Bash(tee /tmp/session3_execution.log)",
       "Bash(dir \"C:\\\\Users\\\\JA30B~1\\\\AppData\\\\Local\\\\Temp\\\\clean_core_obs_s1_1779792215\\\\\"\n *)",
       "Bash(git switch *)",
-      "Bash(git pull *)"
+      "Bash(git pull *)",
+      "Bash(tee /tmp/fullsuite_result.txt)",
+      "Bash(rtk pip *)",
+      "Bash(rtk proxy *)",
+      "Bash(tee test_output.log)",
+      "Bash(tee test_output_full.log)",
+      "Bash(tee test_metrics_coverage_output.log)",
+      "Bash(crontab -l)",
+      "Bash(tee test_run_output.txt)",
+      "Bash(tee /tmp/final_test_results.txt)",
+      "Bash(tee test_results.log)"
     ]
   }
 }

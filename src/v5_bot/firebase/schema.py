@@ -9,6 +9,7 @@ from typing import Optional, Dict, List, Any
 from enum import Enum
 from datetime import datetime
 import uuid
+from ..util.datetime_utils import utc_now, utc_timestamp_iso
 
 
 class QuotaState(Enum):
@@ -55,7 +56,7 @@ class V5Control:
 
     def __post_init__(self):
         if not self.updated_at:
-            self.updated_at = datetime.utcnow().isoformat()
+            self.updated_at = utc_timestamp_iso()
 
 
 @dataclass
@@ -73,11 +74,11 @@ class V5Epoch:
 
     def __post_init__(self):
         if not self.epoch_id:
-            self.epoch_id = f"v5_{datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')}"
+            self.epoch_id = f"v5_{utc_now().strftime('%Y%m%dT%H%M%SZ')}"
         if not self.started_at:
-            self.started_at = datetime.utcnow().isoformat()
+            self.started_at = utc_timestamp_iso()
         if not self.updated_at:
-            self.updated_at = datetime.utcnow().isoformat()
+            self.updated_at = utc_timestamp_iso()
 
 
 @dataclass
@@ -107,7 +108,7 @@ class V5OpenPositions:
 
     def __post_init__(self):
         if not self.updated_at:
-            self.updated_at = datetime.utcnow().isoformat()
+            self.updated_at = utc_timestamp_iso()
 
 
 @dataclass
@@ -180,9 +181,9 @@ class V5Trade:
         if not self.trade_id:
             self.trade_id = str(uuid.uuid4())[:12]
         if not self.signal_timestamp:
-            self.signal_timestamp = datetime.utcnow().isoformat()
+            self.signal_timestamp = utc_timestamp_iso()
         if not self.updated_at:
-            self.updated_at = datetime.utcnow().isoformat()
+            self.updated_at = utc_timestamp_iso()
 
 
 @dataclass
@@ -226,7 +227,7 @@ class V5LearningState:
 
     def __post_init__(self):
         if not self.updated_at:
-            self.updated_at = datetime.utcnow().isoformat()
+            self.updated_at = utc_timestamp_iso()
 
 
 @dataclass
@@ -248,7 +249,7 @@ class V5DailyMetrics:
 
     def __post_init__(self):
         if not self.updated_at:
-            self.updated_at = datetime.utcnow().isoformat()
+            self.updated_at = utc_timestamp_iso()
 
 
 @dataclass
@@ -302,9 +303,9 @@ class V5Readiness:
 
     def __post_init__(self):
         if not self.evaluated_at:
-            self.evaluated_at = datetime.utcnow().isoformat()
+            self.evaluated_at = utc_timestamp_iso()
         if not self.updated_at:
-            self.updated_at = datetime.utcnow().isoformat()
+            self.updated_at = utc_timestamp_iso()
 
 
 @dataclass
@@ -330,9 +331,9 @@ class V5Quota:
             tz = pytz.timezone('America/Los_Angeles')
             self.quota_day_pt = datetime.now(tz).strftime('%Y%m%d')
         if not self.last_flushed_at:
-            self.last_flushed_at = datetime.utcnow().isoformat()
+            self.last_flushed_at = utc_timestamp_iso()
         if not self.updated_at:
-            self.updated_at = datetime.utcnow().isoformat()
+            self.updated_at = utc_timestamp_iso()
 
 
 @dataclass
@@ -379,9 +380,9 @@ class V5Dashboard:
 
     def __post_init__(self):
         if not self.data_freshness:
-            self.data_freshness = datetime.utcnow().isoformat()
+            self.data_freshness = utc_timestamp_iso()
         if not self.updated_at:
-            self.updated_at = datetime.utcnow().isoformat()
+            self.updated_at = utc_timestamp_iso()
 
 
 @dataclass
@@ -415,9 +416,9 @@ class V5MetricsRegistry:
 
     def __post_init__(self):
         if not self.generated_at:
-            self.generated_at = datetime.utcnow().isoformat()
+            self.generated_at = utc_timestamp_iso()
         if not self.updated_at:
-            self.updated_at = datetime.utcnow().isoformat()
+            self.updated_at = utc_timestamp_iso()
 
 
 def to_firestore_dict(obj) -> Dict[str, Any]:

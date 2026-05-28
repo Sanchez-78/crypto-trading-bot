@@ -11,6 +11,8 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional
 import logging
 
+from src.v5_bot.util.datetime_utils import utc_now, utc_timestamp_iso
+
 logger = logging.getLogger(__name__)
 
 
@@ -73,7 +75,7 @@ class TradeOutbox:
                 (trade_id, epoch_id, outcome_json, created_at)
                 VALUES (?, ?, ?, ?)
                 """,
-                (trade_id, epoch_id, json.dumps(outcome), datetime.utcnow().isoformat()),
+                (trade_id, epoch_id, json.dumps(outcome), utc_timestamp_iso()),
             )
             conn.commit()
         logger.debug(f"Enqueued trade outcome: {trade_id}")
@@ -94,7 +96,7 @@ class TradeOutbox:
                 (epoch_id, segment_id, update_json, created_at)
                 VALUES (?, ?, ?, ?)
                 """,
-                (epoch_id, segment_id, json.dumps(update), datetime.utcnow().isoformat()),
+                (epoch_id, segment_id, json.dumps(update), utc_timestamp_iso()),
             )
             conn.commit()
         logger.debug(f"Enqueued learning update: {segment_id}")
@@ -169,7 +171,7 @@ class TradeOutbox:
         with sqlite3.connect(self.DB_PATH) as conn:
             conn.execute(
                 "UPDATE trade_outcomes SET firebase_synced = 1, last_sync_attempt_at = ? WHERE trade_id = ?",
-                (datetime.utcnow().isoformat(), trade_id),
+                (utc_timestamp_iso(), trade_id),
             )
             conn.commit()
         logger.debug(f"Marked trade synced: {trade_id}")
@@ -179,7 +181,7 @@ class TradeOutbox:
         with sqlite3.connect(self.DB_PATH) as conn:
             conn.execute(
                 "UPDATE learning_updates SET firebase_synced = 1, last_sync_attempt_at = ? WHERE id = ?",
-                (datetime.utcnow().isoformat(), update_id),
+                (utc_timestamp_iso(), update_id),
             )
             conn.commit()
         logger.debug(f"Marked learning update synced: {update_id}")
@@ -195,7 +197,7 @@ class TradeOutbox:
                     last_error = ?
                 WHERE trade_id = ?
                 """,
-                (datetime.utcnow().isoformat(), error, trade_id),
+                (utc_timestamp_iso(), error, trade_id),
             )
             conn.commit()
         logger.warning(f"Sync failure for trade {trade_id}: {error}")
@@ -210,7 +212,7 @@ class TradeOutbox:
                     last_sync_attempt_at = ?
                 WHERE id = ?
                 """,
-                (datetime.utcnow().isoformat(), update_id),
+                (utc_timestamp_iso(), update_id),
             )
             conn.commit()
         logger.warning(f"Sync failure for learning update {update_id}: {error}")
@@ -232,20 +234,20 @@ class TradeOutbox:
         oldest_age_s = None
         if oldest_trade:
             created = datetime.fromisoformat(oldest_trade[0])
-            oldest_age_s = (datetime.utcnow() - created).total_seconds()
+            oldest_age_s = (utc_now() - created).total_seconds()
 
         return {
             "pending_trade_outcomes": trade_pending,
             "pending_learning_updates": learning_pending,
             "oldest_pending_age_s": oldest_age_s,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utc_timestamp_iso(),
         }
 
     def clear_old_synced(self, days: int = 7) -> None:
         """Delete synced records older than N days."""
         from datetime import timedelta
 
-        cutoff = datetime.utcnow() - timedelta(days=days)
+        cutoff = utc_now() - timedelta(days=days)
         with sqlite3.connect(self.DB_PATH) as conn:
             conn.execute(
                 "DELETE FROM trade_outcomes WHERE firebase_synced = 1 AND created_at < ?",

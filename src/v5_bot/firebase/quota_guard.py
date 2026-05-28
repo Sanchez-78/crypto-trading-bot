@@ -13,6 +13,8 @@ from typing import Optional, Tuple
 import pytz
 import logging
 
+from src.v5_bot.util.datetime_utils import utc_now, utc_timestamp_iso
+
 logger = logging.getLogger(__name__)
 
 
@@ -63,7 +65,7 @@ class QuotaLedger:
             # Ensure row exists
             conn.execute(
                 "INSERT OR IGNORE INTO quota_daily (date, updated_at) VALUES (?, ?)",
-                (date, datetime.utcnow().isoformat()),
+                (date, utc_timestamp_iso()),
             )
 
             # Increment counter
@@ -76,7 +78,7 @@ class QuotaLedger:
             elif op_type == 'retry':
                 conn.execute("UPDATE quota_daily SET retries_attempted = retries_attempted + ? WHERE date = ?", (count, date))
 
-            conn.execute("UPDATE quota_daily SET updated_at = ? WHERE date = ?", (datetime.utcnow().isoformat(), date))
+            conn.execute("UPDATE quota_daily SET updated_at = ? WHERE date = ?", (utc_timestamp_iso(), date))
             conn.commit()
 
     def get_daily_usage(self) -> Tuple[int, int, int, int]:
@@ -100,8 +102,8 @@ class QuotaLedger:
         """Update quota state for current day."""
         date = self._pt_date()
         with sqlite3.connect(self.DB_PATH) as conn:
-            conn.execute("INSERT OR IGNORE INTO quota_daily (date, updated_at) VALUES (?, ?)", (date, datetime.utcnow().isoformat()))
-            conn.execute("UPDATE quota_daily SET state = ?, updated_at = ? WHERE date = ?", (state, datetime.utcnow().isoformat(), date))
+            conn.execute("INSERT OR IGNORE INTO quota_daily (date, updated_at) VALUES (?, ?)", (date, utc_timestamp_iso()))
+            conn.execute("UPDATE quota_daily SET state = ?, updated_at = ? WHERE date = ?", (state, utc_timestamp_iso(), date))
             conn.commit()
 
     def get_state(self) -> str:
@@ -127,7 +129,7 @@ class QuotaGuard:
     THRESHOLD_WARNING_READS = 4000
     THRESHOLD_WARNING_WRITES = 1500
     THRESHOLD_DEGRADED_READS = 6000
-    THRESHOLD_DEGRADED_WRITES = 2200
+    THRESHOLD_DEGRADED_WRITES = 2500
     THRESHOLD_CRITICAL_READS = 7500
     THRESHOLD_CRITICAL_WRITES = 2800
 
@@ -150,9 +152,9 @@ class QuotaGuard:
 
         if state == "hard_stop":
             return False, "HARD_STOP_FIRESTORE: read quota exhausted"
-        if state == "critical" and reads + count > self.HARD_CAP_READS:
+        if state == "critical" and reads + count >= self.HARD_CAP_READS:
             return False, "CRITICAL: would exceed hard read cap"
-        if reads + count > self.HARD_CAP_READS:
+        if reads + count >= self.HARD_CAP_READS:
             return False, "read quota hard limit"
 
         return True, ""
@@ -172,9 +174,9 @@ class QuotaGuard:
 
         if state == "hard_stop":
             return False, "HARD_STOP_FIRESTORE: write quota exhausted"
-        if state == "critical" and writes + count > self.HARD_CAP_WRITES:
+        if state == "critical" and writes + count >= self.HARD_CAP_WRITES:
             return False, "CRITICAL: would exceed hard write cap"
-        if writes + count > self.HARD_CAP_WRITES:
+        if writes + count >= self.HARD_CAP_WRITES:
             return False, "write quota hard limit"
 
         return True, ""
@@ -185,6 +187,7 @@ class QuotaGuard:
 
         Entry is only allowed if:
             remaining_writes >= (open_count * close_writes) + new_close_writes + emergency_reserve
+        Entry is blocked during CRITICAL and HARD_STOP states (if reserve is sufficient).
 
         Args:
             open_count: number of currently open positions
@@ -194,14 +197,22 @@ class QuotaGuard:
             (allowed: bool, reason: str)
         """
         reads, writes, deletes, retries = self.ledger.get_daily_usage()
+        state = self._compute_state(reads, writes)
+
         emergency_reserve = 20
         close_writes_per_trade = 3  # trade close + open_positions update + optional metrics
 
         total_needed = (open_count * close_writes_per_trade) + new_close_writes + emergency_reserve
         remaining = self.HARD_CAP_WRITES - writes
 
+        # Check reserve insufficiency first (more specific reason)
         if remaining < total_needed:
             return False, f"insufficient write reserve: {remaining} available, {total_needed} needed"
+
+        # Then check state blocking (only if reserve is sufficient)
+        if state in ("critical", "hard_stop"):
+            return False, f"entry blocked during {state} quota state"
+
         return True, ""
 
     def record_read(self, count: int = 1) -> None:
@@ -255,7 +266,7 @@ class QuotaGuard:
             "writes_remaining": max(0, self.HARD_CAP_WRITES - writes),
             "deletes_attempted": deletes,
             "retries_attempted": retries,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utc_timestamp_iso(),
         }
 
     def reset_daily_quota(self) -> None:

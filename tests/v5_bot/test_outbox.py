@@ -11,11 +11,37 @@ from src.v5_bot.firebase.outbox import TradeOutbox
 @pytest.fixture
 def temp_outbox():
     """Use temporary SQLite database for outbox tests."""
+    import sqlite3
+    import os
+    import time
+
     with tempfile.TemporaryDirectory() as tmpdir:
         original_path = TradeOutbox.DB_PATH
-        TradeOutbox.DB_PATH = Path(tmpdir) / "test_outbox.sqlite"
-        yield
-        TradeOutbox.DB_PATH = original_path
+        db_path = Path(tmpdir) / "test_outbox.sqlite"
+        TradeOutbox.DB_PATH = db_path
+        try:
+            yield
+        finally:
+            # Close any open connections
+            import gc
+            gc.collect()  # Force garbage collection to close dangling references
+            time.sleep(0.1)  # Brief delay to ensure file handles are released
+
+            # Close all SQLite connections
+            try:
+                sqlite3.connect(str(db_path)).close()
+            except:
+                pass
+
+            # Remove WAL files manually
+            for suffix in ['', '-wal', '-shm']:
+                try:
+                    (Path(tmpdir) / f"test_outbox.sqlite{suffix}").unlink(missing_ok=True)
+                except:
+                    pass
+
+            TradeOutbox.DB_PATH = original_path
+            time.sleep(0.05)  # Allow Windows to release file locks
 
 
 class TestTradeOutbox:
