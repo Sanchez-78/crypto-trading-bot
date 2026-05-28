@@ -223,7 +223,11 @@
       "Bash(crontab -l)",
       "Bash(tee test_run_output.txt)",
       "Bash(tee /tmp/final_test_results.txt)",
-      "Bash(tee test_results.log)"
+      "Bash(tee test_results.log)",
+      "Bash(tee test_output_final.txt)",
+      "Bash(break)",
+      "Bash(tee test_run_1_raw.txt)",
+      "Bash(env)"
     ]
   }
 }
