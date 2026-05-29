@@ -227,16 +227,20 @@ class V5BotRunner:
             while self.running:
                 # Process market data
                 await self.process_market_tick()
+                logger.debug(f"[Main loop] Market tick processed")
 
                 # Check entry signals
                 await self.evaluate_entry_signals()
+                logger.debug(f"[Main loop] Entry signals evaluated (attempted: {self.stats['entries_attempted']}, rejected: {self.stats['entries_rejected_by_gate']})")
 
                 # Check exit conditions
                 await self.evaluate_exit_conditions()
+                logger.debug(f"[Main loop] Exit conditions checked (closed: {self.stats['trades_closed']})")
 
                 # Publish metrics periodically
                 if int(utc_now().timestamp()) % 60 == 0:
                     await self.publish_metrics()
+                    logger.info(f"[Main loop] Metrics published: {self.stats}")
 
                 # Sleep before next tick
                 await asyncio.sleep(tick_interval_s)
