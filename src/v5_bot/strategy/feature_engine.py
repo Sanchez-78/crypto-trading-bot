@@ -145,35 +145,44 @@ class FeatureEngine:
         rsi = 100 - (100 / (1 + rs))
         return rsi
 
-    def classify_regime(self) -> Optional[str]:
-        """Classify current market regime."""
+    def classify_regime(self, spread_bps: Optional[float] = None) -> Optional[str]:
+        """Classify current market regime based on available data."""
         sma_5 = self.calc_sma(5)
         sma_20 = self.calc_sma(20)
 
-        if not sma_5 or not sma_20:
-            return None
+        if sma_5 and sma_20:
+            # Use SMA-based classification when history is available
+            volatility = self.calc_volatility(20)
+            current = self.closes[-1] if self.closes else None
 
-        volatility = self.calc_volatility(20)
-        current = self.closes[-1] if self.closes else None
+            if not current:
+                return None
 
-        if not current:
-            return None
+            # Trend classification
+            if sma_5 > sma_20:
+                trend = "trending_up"
+            elif sma_5 < sma_20:
+                trend = "trending_down"
+            else:
+                trend = "ranging"
 
-        # Trend classification
-        if sma_5 > sma_20:
-            trend = "trending_up"
-        elif sma_5 < sma_20:
-            trend = "trending_down"
-        else:
-            trend = "ranging"
+            # Volatility classification
+            if volatility and volatility > 3.0:
+                vol_class = "_high_vol"
+            else:
+                vol_class = "_normal_vol"
 
-        # Volatility classification
-        if volatility and volatility > 3.0:
-            vol_class = "_high_vol"
+            return trend + vol_class
+
+        # Fallback: When no candle history, use spread_bps as volatility proxy
+        # For PAPER bot startup, assume ranging market with volatility based on spread
+        if spread_bps is not None:
+            # Binance futures: tight spread (~0.1-0.5 bps) = normal, wide (>1 bps) = high vol
+            vol_class = "_high_vol" if spread_bps > 1.0 else "_normal_vol"
         else:
             vol_class = "_normal_vol"
 
-        return trend + vol_class
+        return "ranging" + vol_class
 
     def extract_features(self, current_price: float, bid: float, ask: float,
                          spread_bps: Optional[float] = None) -> MarketFeatures:
@@ -186,13 +195,13 @@ class FeatureEngine:
         if sma_5 and sma_20:
             trend_dir = "up" if sma_5 > sma_20 else "down"
 
-        regime = self.classify_regime()
-
         if spread_bps is None:
             if ask > 0:
                 spread_bps = (ask - bid) / ((bid + ask) / 2) * 10000
             else:
                 spread_bps = 0.0
+
+        regime = self.classify_regime(spread_bps=spread_bps)
 
         return MarketFeatures(
             symbol=self.symbol,

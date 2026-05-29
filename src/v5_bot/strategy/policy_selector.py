@@ -3,7 +3,8 @@
 from typing import Optional, Tuple, List
 from .candidate import StrategyCandidate, StrategyRegistry
 from .baseline_policies import (
-    MomentumPolicy, MeanReversionPolicy, VolatilityBreakPolicy
+    MomentumPolicy, MeanReversionPolicy, VolatilityBreakPolicy,
+    BootstrapSpreadPolicy
 )
 from .feature_engine import MarketFeatures
 
@@ -17,6 +18,7 @@ class PolicySelector:
             "baseline_momentum_01": MomentumPolicy(),
             "baseline_mean_reversion_01": MeanReversionPolicy(),
             "baseline_volatility_break_01": VolatilityBreakPolicy(),
+            "bootstrap_spread_01": BootstrapSpreadPolicy(),
         }
 
         # Register all baseline policies

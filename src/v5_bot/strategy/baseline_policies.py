@@ -198,3 +198,50 @@ class VolatilityBreakPolicy(BaselinePolicy):
 
     def get_stop_loss_pct(self) -> float:
         return self.candidate.get_param("stop_loss_pct", 1.5)
+
+
+class BootstrapSpreadPolicy(BaselinePolicy):
+    """
+    Bootstrap strategy for PAPER bot startup without candle history.
+    Generates entry signals based on spread tightness only.
+    Used when historical data is not yet available.
+    """
+
+    def __init__(self):
+        candidate = StrategyCandidate(
+            strategy_id="bootstrap_spread_01",
+            name="Bootstrap Spread-Based Entry",
+            strategy_type=StrategyType.VOLATILITY_BREAK,
+            params={
+                "max_spread_bps": 1.0,  # Only enter when spread is <1 bps
+                "target_pct": 0.5,
+                "stop_loss_pct": 0.8,
+            },
+            applicable_regimes=[
+                StrategyRegime.RANGING,
+                StrategyRegime.LOW_VOLATILITY,
+            ],
+        )
+        super().__init__(candidate)
+
+    def should_enter(self, features: MarketFeatures) -> Tuple[bool, Optional[str]]:
+        """Enter when spread is tight (liquid market)."""
+        if features.spread_bps is None:
+            return False, "no_spread_data"
+
+        max_spread = self.candidate.get_param("max_spread_bps", 1.0)
+
+        # Only enter when spread is tight - indicates liquid, stable market
+        if features.spread_bps <= max_spread:
+            return True, "tight_spread_entry"
+        else:
+            return False, "spread_too_wide"
+
+    def get_side(self) -> str:
+        return "BUY"
+
+    def get_target_pct(self) -> float:
+        return self.candidate.get_param("target_pct", 0.5)
+
+    def get_stop_loss_pct(self) -> float:
+        return self.candidate.get_param("stop_loss_pct", 0.8)

@@ -14,6 +14,7 @@ from ..strategy.cost_edge_gate import CostEdgeGate
 from ..firebase.repository import QuotaAwareFirestoreRepository
 from ..config import TRADING_SYMBOLS, QUOTA_BUDGET, LEARNING_CONFIG, REAL_READINESS_GATES
 from ..util.datetime_utils import utc_now, utc_timestamp_iso
+from ..util.czech_dashboard import CzechDashboard
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,9 @@ class V5BotRunner:
 
         # Firebase
         self.firebase = QuotaAwareFirestoreRepository(firebase_creds_path)
+
+        # Dashboard
+        self.dashboard = CzechDashboard(TRADING_SYMBOLS)
 
         # State
         self.running = False
@@ -103,11 +107,16 @@ class V5BotRunner:
         """Check all symbols for entry signals."""
         for symbol in TRADING_SYMBOLS:
             if len(self.broker.open_positions) >= 3:  # Max 3 open positions
+                logger.debug(f"[{symbol}] Skipped: max open positions reached")
                 continue
 
             # Get current book
             book = self.book_manager.get_book(symbol)
-            if not book or book.is_stale():
+            if not book:
+                logger.debug(f"[{symbol}] Skipped: no book data")
+                continue
+            if book.is_stale():
+                logger.debug(f"[{symbol}] Skipped: stale book")
                 continue
 
             # Extract features
@@ -123,7 +132,10 @@ class V5BotRunner:
             # Get policy signal
             strategy_id, signal_reason, should_enter = self.policy_selector.evaluate_signal(features)
             if not should_enter:
+                logger.debug(f"[Signal {symbol}] REJECTED: {signal_reason} (strategy_id={strategy_id})")
                 continue
+
+            logger.info(f"[Signal {symbol}] ACCEPTED: {signal_reason} (strategy_id={strategy_id})")
 
             # Get entry parameters
             entry_params = self.policy_selector.get_entry_params(strategy_id)
@@ -143,8 +155,8 @@ class V5BotRunner:
                 is_long=(entry_params["side"] == "BUY"),
             )
 
-            # For this baseline, assume positive expectancy of 20 bps
-            expected_move_bps = 20.0
+            # For PAPER bootstrap testing, assume moderate positive expectancy
+            expected_move_bps = 40.0
             allowed, gate_reason = self.cost_gate.check_entry_allowed(expected_move_bps, cost_breakdown)
 
             if not allowed:
@@ -219,24 +231,47 @@ class V5BotRunner:
             logger.error(f"Metrics publish failed: {e}")
             self.stats["firebase_failures"] += 1
 
+    async def print_dashboard(self) -> None:
+        """Print Czech dashboard to console."""
+        try:
+            self.dashboard.print_status(
+                closed_trades=self.broker.closed_trades,
+                entries_attempted=self.stats["entries_attempted"],
+                entries_successful=self.stats["entries_successful"],
+                entries_rejected=self.stats["entries_rejected_by_gate"],
+                trades_closed=self.stats["trades_closed"],
+                status_tag="AKTIVNI" if self.running else "OFFLINE"
+            )
+        except Exception as e:
+            logger.error(f"Dashboard print failed: {e}")
+
     async def run(self, tick_interval_s: float = 1.0) -> None:
         """Main bot loop."""
         await self.startup()
+        last_dashboard_print = 0
+        dashboard_interval = 30  # Print dashboard every 30 seconds
 
         try:
             while self.running:
                 # Process market data
                 await self.process_market_tick()
+                logger.debug(f"[Main loop] Market tick processed")
 
                 # Check entry signals
                 await self.evaluate_entry_signals()
+                logger.debug(f"[Main loop] Entry signals evaluated (attempted: {self.stats['entries_attempted']}, rejected: {self.stats['entries_rejected_by_gate']})")
 
                 # Check exit conditions
                 await self.evaluate_exit_conditions()
+                logger.debug(f"[Main loop] Exit conditions checked (closed: {self.stats['trades_closed']})")
 
-                # Publish metrics periodically
-                if int(utc_now().timestamp()) % 60 == 0:
+                # Publish metrics and print dashboard periodically
+                now = int(utc_now().timestamp())
+                if now - last_dashboard_print >= dashboard_interval:
                     await self.publish_metrics()
+                    await self.print_dashboard()
+                    last_dashboard_print = now
+                    logger.info(f"[Main loop] Metrics published: {self.stats}")
 
                 # Sleep before next tick
                 await asyncio.sleep(tick_interval_s)
