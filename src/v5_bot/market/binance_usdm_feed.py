@@ -107,7 +107,7 @@ class BinanceUSDMFeed:
     async def _book_stream(self, symbols: list[str]) -> None:
         """Book ticker WebSocket stream."""
         streams = [f"{s.lower()}@bookTicker" for s in symbols]
-        url = f"{self.BASE_WS_URL}/ws/{''.join(streams)}"
+        url = f"{self.BASE_WS_URL}/ws/{'/'.join(streams)}"
         logger.info(f"[FEED] Connecting bookTicker stream: {url}")
 
         while self.running:
@@ -130,7 +130,7 @@ class BinanceUSDMFeed:
     async def _trade_stream(self, symbols: list[str]) -> None:
         """Aggregate trade WebSocket stream."""
         streams = [f"{s.lower()}@aggTrade" for s in symbols]
-        url = f"{self.MARKET_WS_URL}/{''.join(streams)}"
+        url = f"{self.MARKET_WS_URL}/{'/'.join(streams)}"
 
         while self.running:
             try:
