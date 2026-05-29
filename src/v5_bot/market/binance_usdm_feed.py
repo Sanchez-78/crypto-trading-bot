@@ -221,5 +221,5 @@ class BinanceUSDMFeed:
             "symbols_with_data": len(self.book_tickers),
             "reconnect_count": self.reconnect_count,
             "stale_events_rejected": self.stale_events_rejected,
-            "timestamp": utc_timestamp_iso(),
+            "timestamp": utc_now().isoformat(),
         }

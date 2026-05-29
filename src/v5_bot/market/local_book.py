@@ -122,5 +122,5 @@ class LocalBookManager:
         return {
             "symbols_with_data": len(self.books),
             "stale_symbols": sum(1 for b in self.books.values() if b.is_stale()),
-            "timestamp": utc_timestamp_iso(),
+            "timestamp": utc_now().isoformat(),
         }
