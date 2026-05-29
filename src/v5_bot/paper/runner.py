@@ -103,11 +103,16 @@ class V5BotRunner:
         """Check all symbols for entry signals."""
         for symbol in TRADING_SYMBOLS:
             if len(self.broker.open_positions) >= 3:  # Max 3 open positions
+                logger.debug(f"[{symbol}] Skipped: max open positions reached")
                 continue
 
             # Get current book
             book = self.book_manager.get_book(symbol)
-            if not book or book.is_stale():
+            if not book:
+                logger.debug(f"[{symbol}] Skipped: no book data")
+                continue
+            if book.is_stale():
+                logger.debug(f"[{symbol}] Skipped: stale book")
                 continue
 
             # Extract features
