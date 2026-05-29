@@ -108,13 +108,18 @@ class BinanceUSDMFeed:
         """Book ticker WebSocket stream."""
         streams = [f"{s.lower()}@bookTicker" for s in symbols]
         url = f"{self.BASE_WS_URL}/ws/{''.join(streams)}"
+        logger.info(f"[FEED] Connecting bookTicker stream: {url}")
 
         while self.running:
             try:
                 async with websockets.connect(url) as ws:
                     logger.info("bookTicker stream connected")
+                    msg_count = 0
                     while self.running:
                         msg = await ws.recv()
+                        msg_count += 1
+                        if msg_count % 100 == 0:
+                            logger.debug(f"[FEED] Received {msg_count} bookTicker messages")
                         data = json.loads(msg)
                         self._process_book_ticker(data)
             except Exception as e:
@@ -159,8 +164,9 @@ class BinanceUSDMFeed:
                 return
 
             self.book_tickers[tick.symbol] = tick
+            logger.debug(f"[FEED] {tick.symbol} bookTicker: bid={tick.bid} ask={tick.ask} spread={tick.spread_bps():.2f}bps")
         except Exception as e:
-            logger.error(f"Error processing bookTicker: {e}")
+            logger.error(f"Error processing bookTicker: {e}", exc_info=True)
 
     def _process_agg_trade(self, data: Dict[str, Any]) -> None:
         """Process aggregate trade update."""
