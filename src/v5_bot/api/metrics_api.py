@@ -241,7 +241,7 @@ class MetricsCollector:
         return MetricsSnapshot(
             running=running,
             epoch_id=epoch_id,
-            timestamp=utc_timestamp_iso(),
+            timestamp=utc_now().isoformat(),
             feed_connected=feed_connected,
             symbols_with_data=symbols_with_data,
             open_positions=open_positions,
@@ -307,8 +307,8 @@ class MetricsCollector:
             hold_seconds = 0
 
             if trade.entry_fill and trade.exit_fill:
-                entry_timestamp = utc_timestamp_iso() if not trade.entry_fill.received_time else trade.entry_fill.received_time
-                exit_timestamp = utc_timestamp_iso() if not trade.exit_fill.received_time else trade.exit_fill.received_time
+                entry_timestamp = utc_now().isoformat() if not trade.entry_fill.received_time else trade.entry_fill.received_time
+                exit_timestamp = utc_now().isoformat() if not trade.exit_fill.received_time else trade.exit_fill.received_time
                 hold_seconds = int(trade.exit_fill.received_time - trade.entry_fill.received_time)
 
                 # Create ISO timestamp strings from epoch seconds
@@ -417,7 +417,7 @@ class MetricsCollector:
             avg_pnl_per_trade=total_pnl / total_trades if total_trades > 0 else None,
             per_symbol_summary=per_symbol_summary,
             closed_trades=all_trade_records,
-            timestamp=utc_timestamp_iso(),
+            timestamp=utc_now().isoformat(),
         )
 
     def _empty_learning_history(self) -> LearningHistory:
@@ -433,7 +433,7 @@ class MetricsCollector:
             avg_pnl_per_trade=None,
             per_symbol_summary={},
             closed_trades=[],
-            timestamp=utc_timestamp_iso(),
+            timestamp=utc_now().isoformat(),
         )
 
     def _empty_snapshot(self) -> MetricsSnapshot:
@@ -441,7 +441,7 @@ class MetricsCollector:
         return MetricsSnapshot(
             running=False,
             epoch_id=None,
-            timestamp=utc_timestamp_iso(),
+            timestamp=utc_now().isoformat(),
             feed_connected=False,
             symbols_with_data=0,
             open_positions=0,
