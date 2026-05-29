@@ -73,7 +73,13 @@ jobs:
             echo "[DEPLOY] V5 compilation validation passed"
             systemctl restart cryptomaster-v5-paper
             sleep 3
-            systemctl is-active cryptomaster-v5-paper || { echo "ERROR: cryptomaster-v5-paper service failed to start"; exit 1; }
+            status=$(systemctl is-active cryptomaster-v5-paper)
+            if [ "$status" != "active" ]; then
+              echo "[ERROR] V5 service status: $status"
+              echo "[ERROR] Recent logs:"
+              journalctl -u cryptomaster-v5-paper -n 50 --no-pager
+              exit 1
+            fi
             echo "[DEPLOY] V5 Paper bot deployed and active ✓"
 
             echo ""
