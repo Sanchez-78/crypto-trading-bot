@@ -6,7 +6,10 @@ import os
 import base64
 import json
 import tempfile
+import threading
 from .runner import V5BotRunner
+from ..api.metrics_api import MetricsCollector
+from ..api.http_server import MetricsHTTPServer
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -43,6 +46,24 @@ async def main():
 
     runner = V5BotRunner(firebase_creds_path=creds_path)
     logger.info("Starting V5 PAPER Bot...")
+
+    # Setup metrics API
+    collector = MetricsCollector(
+        runner=runner,
+        firebase_repo=runner.firebase,
+        feed=runner.feed,
+    )
+    http_server = MetricsHTTPServer(host="0.0.0.0", port=5000)
+    http_server.set_collector(collector)
+
+    # Start HTTP server in background thread
+    http_thread = threading.Thread(
+        target=http_server.run,
+        kwargs={"debug": False},
+        daemon=True,
+    )
+    http_thread.start()
+    logger.info("Metrics HTTP server started on port 5000")
 
     try:
         await runner.run(tick_interval_s=1.0)

@@ -14,6 +14,7 @@ from ..strategy.cost_edge_gate import CostEdgeGate
 from ..firebase.repository import QuotaAwareFirestoreRepository
 from ..config import TRADING_SYMBOLS, QUOTA_BUDGET, LEARNING_CONFIG, REAL_READINESS_GATES
 from ..util.datetime_utils import utc_now, utc_timestamp_iso
+from ..util.czech_dashboard import CzechDashboard
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,9 @@ class V5BotRunner:
 
         # Firebase
         self.firebase = QuotaAwareFirestoreRepository(firebase_creds_path)
+
+        # Dashboard
+        self.dashboard = CzechDashboard(TRADING_SYMBOLS)
 
         # State
         self.running = False
@@ -227,9 +231,25 @@ class V5BotRunner:
             logger.error(f"Metrics publish failed: {e}")
             self.stats["firebase_failures"] += 1
 
+    async def print_dashboard(self) -> None:
+        """Print Czech dashboard to console."""
+        try:
+            self.dashboard.print_status(
+                closed_trades=self.broker.closed_trades,
+                entries_attempted=self.stats["entries_attempted"],
+                entries_successful=self.stats["entries_successful"],
+                entries_rejected=self.stats["entries_rejected_by_gate"],
+                trades_closed=self.stats["trades_closed"],
+                status_tag="AKTIVNI" if self.running else "OFFLINE"
+            )
+        except Exception as e:
+            logger.error(f"Dashboard print failed: {e}")
+
     async def run(self, tick_interval_s: float = 1.0) -> None:
         """Main bot loop."""
         await self.startup()
+        last_dashboard_print = 0
+        dashboard_interval = 30  # Print dashboard every 30 seconds
 
         try:
             while self.running:
@@ -245,9 +265,12 @@ class V5BotRunner:
                 await self.evaluate_exit_conditions()
                 logger.debug(f"[Main loop] Exit conditions checked (closed: {self.stats['trades_closed']})")
 
-                # Publish metrics periodically
-                if int(utc_now().timestamp()) % 60 == 0:
+                # Publish metrics and print dashboard periodically
+                now = int(utc_now().timestamp())
+                if now - last_dashboard_print >= dashboard_interval:
                     await self.publish_metrics()
+                    await self.print_dashboard()
+                    last_dashboard_print = now
                     logger.info(f"[Main loop] Metrics published: {self.stats}")
 
                 # Sleep before next tick
