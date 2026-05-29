@@ -179,8 +179,12 @@ class TestQuotaGuard:
     def test_entry_write_reserve_insufficient(self, temp_db):
         """Test entry is blocked when insufficient write reserve."""
         guard = QuotaGuard()
-        guard.record_write(2990)  # Use 2990, ~10 remaining
+        # Now uses internal daily cap (10000), so need to get close to that
+        # Record 9990 writes, leaving only 10 for remaining writes
+        guard.record_write(9990)
 
+        # Entry with 10 open positions needs: 10*3 + 4 + 20 = 54 writes
+        # Only 10 remaining, so should be blocked with insufficient reason
         allowed, reason = guard.check_entry_write_reserve(open_count=10)
         assert not allowed
         assert 'insufficient' in reason.lower()
@@ -200,36 +204,32 @@ class TestQuotaGuard:
         assert 'timestamp' in status
 
     def test_state_transitions_sequence(self, temp_db):
-        """Test realistic state transition sequence."""
+        """Test realistic state transition sequence (session-level caps)."""
         guard = QuotaGuard()
 
         # Start NORMAL
         status = guard.get_status()
         assert status['state'] == 'normal'
 
-        # Reach WARNING
-        for _ in range(1500):
-            guard.record_write(1)
+        # Reach WARNING (threshold = 1500)
+        guard.record_write(1500)
         status = guard.get_status()
-        assert status['state'] == 'warning'
+        assert status['state'] == 'warning', f"Expected warning but got {status['state']} at 1500 writes"
 
-        # Reach DEGRADED (need 2500+ writes)
-        for _ in range(1000):
-            guard.record_write(1)
+        # Reach DEGRADED (threshold = 2500)
+        guard.record_write(1000)
         status = guard.get_status()
-        assert status['state'] == 'degraded'
+        assert status['state'] == 'degraded', f"Expected degraded but got {status['state']} at 2500 writes"
 
-        # Reach CRITICAL
-        for _ in range(300):
-            guard.record_write(1)
+        # Reach CRITICAL (threshold = 2800)
+        guard.record_write(300)
         status = guard.get_status()
-        assert status['state'] == 'critical'
+        assert status['state'] == 'critical', f"Expected critical but got {status['state']} at 2800 writes"
 
-        # Reach HARD_STOP
-        for _ in range(200):
-            guard.record_write(1)
+        # Reach HARD_STOP (hard_cap = 3000)
+        guard.record_write(200)
         status = guard.get_status()
-        assert status['state'] == 'hard_stop'
+        assert status['state'] == 'hard_stop', f"Expected hard_stop but got {status['state']} at 3000 writes"
 
         allowed, _ = guard.check_can_write(1)
         assert not allowed
