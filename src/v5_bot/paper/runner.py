@@ -232,16 +232,22 @@ class V5BotRunner:
             self.stats["firebase_failures"] += 1
 
     async def print_dashboard(self) -> None:
-        """Print Czech dashboard to console."""
+        """Print Czech dashboard to console and file."""
         try:
-            self.dashboard.print_status(
-                closed_trades=self.broker.closed_trades,
-                entries_attempted=self.stats["entries_attempted"],
-                entries_successful=self.stats["entries_successful"],
-                entries_rejected=self.stats["entries_rejected_by_gate"],
-                trades_closed=self.stats["trades_closed"],
-                status_tag="AKTIVNI" if self.running else "OFFLINE"
-            )
+            # Also write to dashboard.log file
+            with open("/tmp/v5_dashboard.log", "a") as f:
+                import sys
+                old_stdout = sys.stdout
+                sys.stdout = f
+                self.dashboard.print_status(
+                    closed_trades=self.broker.closed_trades,
+                    entries_attempted=self.stats["entries_attempted"],
+                    entries_successful=self.stats["entries_successful"],
+                    entries_rejected=self.stats["entries_rejected_by_gate"],
+                    trades_closed=self.stats["trades_closed"],
+                    status_tag="AKTIVNI" if self.running else "OFFLINE"
+                )
+                sys.stdout = old_stdout
         except Exception as e:
             logger.error(f"Dashboard print failed: {e}")
 
