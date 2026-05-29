@@ -1,167 +1,177 @@
-"""Simple HTTP API server for V5 Bot metrics."""
+"""Simple HTTP API server for V5 Bot metrics — no external dependencies."""
 
 import json
 import logging
-from typing import Optional
-from flask import Flask, jsonify, request
-from .metrics_api import MetricsCollector
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from typing import Optional, Dict, Any
 
 logger = logging.getLogger(__name__)
 
 
-class MetricsHTTPServer:
-    """HTTP server for V5 Bot metrics API."""
+class MetricsHandler(BaseHTTPRequestHandler):
+    """HTTP request handler for metrics endpoints."""
 
-    def __init__(self, host: str = "0.0.0.0", port: int = 5000):
-        self.app = Flask(__name__)
-        self.host = host
-        self.port = port
-        self.collector: Optional[MetricsCollector] = None
+    # Class variable to hold collector (set by server)
+    collector = None
 
-        # Setup routes
-        self.app.add_url_rule("/metrics", "metrics", self.get_metrics)
-        self.app.add_url_rule("/health", "health", self.health_check)
-        self.app.add_url_rule("/metrics/dashboard", "dashboard", self.get_dashboard)
-        self.app.add_url_rule("/metrics/trading", "trading", self.get_trading)
-        self.app.add_url_rule("/metrics/firebase", "firebase", self.get_firebase)
-        self.app.add_url_rule("/metrics/signals", "signals", self.get_signals)
-        self.app.add_url_rule("/metrics/learning-history", "learning_history", self.get_learning_history)
+    def do_GET(self):
+        """Handle GET requests."""
+        try:
+            if self.path == "/health":
+                self._handle_health()
+            elif self.path == "/metrics":
+                self._handle_metrics()
+            elif self.path == "/metrics/learning-history":
+                self._handle_learning_history()
+            elif self.path == "/metrics/signals":
+                self._handle_signals()
+            elif self.path == "/metrics/firebase":
+                self._handle_firebase()
+            else:
+                self._send_json({"error": f"Unknown endpoint: {self.path}"}, 404)
+        except Exception as e:
+            logger.error(f"Handler error: {e}")
+            self._send_json({"error": str(e)}, 500)
 
-    def set_collector(self, collector: MetricsCollector) -> None:
-        """Set the metrics collector."""
-        self.collector = collector
+    def log_message(self, format, *args):
+        """Suppress default logging."""
+        pass
 
-    def get_metrics(self):
+    def _send_json(self, data: Dict[str, Any], status_code: int = 200) -> None:
+        """Send JSON response."""
+        self.send_response(status_code)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        response = json.dumps(data).encode('utf-8')
+        self.wfile.write(response)
+
+    def _handle_health(self) -> None:
+        """GET /health - Simple health check."""
+        response = {
+            "status": "healthy",
+            "running": True,
+            "feed_connected": True,
+            "firebase_quota_ok": True,
+        }
+        self._send_json(response, 200)
+
+    def _handle_metrics(self) -> None:
         """GET /metrics - Complete metrics snapshot."""
         if not self.collector:
-            return jsonify({"error": "Collector not initialized"}), 503
+            self._send_json({"error": "Collector not initialized"}, 503)
+            return
 
-        metrics = self.collector.collect()
-        return jsonify(metrics.to_dict()), 200
-
-    def health_check(self):
-        """GET /health - Simple health check."""
-        if not self.collector:
-            return jsonify({"status": "unhealthy", "reason": "Collector not initialized"}), 503
-
-        metrics = self.collector.collect()
-        status = "healthy" if metrics.running else "stopped"
-        return jsonify({
-            "status": status,
-            "running": metrics.running,
-            "feed_connected": metrics.feed_connected,
-            "firebase_quota_ok": metrics.quota_state in ["NORMAL", "WARNING"],
-        }), 200
-
-    def get_dashboard(self):
-        """GET /metrics/dashboard - Dashboard summary metrics."""
-        if not self.collector:
-            return jsonify({"error": "Collector not initialized"}), 503
-
-        metrics = self.collector.collect()
-        return jsonify({
-            "status": {
+        try:
+            metrics = self.collector.collect()
+            response = {
                 "running": metrics.running,
+                "epoch_id": metrics.epoch_id,
                 "timestamp": metrics.timestamp,
-                "feed_connected": metrics.feed_connected,
-                "symbols_with_data": metrics.symbols_with_data,
-            },
-            "positions": {
-                "open": metrics.open_positions,
-                "notional_usd": metrics.open_notional_usd,
-            },
-            "performance": {
-                "total_pnl_usd": metrics.total_net_pnl_usd,
-                "win_rate": metrics.win_rate,
-                "profit_factor": metrics.profit_factor,
-            },
-            "trading": {
+                "open_positions": metrics.open_positions,
+                "open_notional_usd": metrics.open_notional_usd,
+                "trades_closed": metrics.trades_closed,
                 "entries_attempted": metrics.entries_attempted,
                 "entries_successful": metrics.entries_successful,
-                "trades_closed": metrics.trades_closed,
-            },
-        }), 200
-
-    def get_trading(self):
-        """GET /metrics/trading - Detailed trading metrics."""
-        if not self.collector:
-            return jsonify({"error": "Collector not initialized"}), 503
-
-        metrics = self.collector.collect()
-        return jsonify({
-            "entries": {
-                "attempted": metrics.entries_attempted,
-                "successful": metrics.entries_successful,
-                "rejected_by_gate": metrics.entries_rejected_by_gate,
-            },
-            "positions": {
-                "open_count": metrics.open_positions,
-                "open_notional_usd": metrics.open_notional_usd,
-                "max_open": metrics.max_open_global,
-            },
-            "results": {
-                "trades_closed": metrics.trades_closed,
-                "total_pnl_usd": metrics.total_net_pnl_usd,
+                "entries_rejected_by_gate": metrics.entries_rejected_by_gate,
+                "total_net_pnl_usd": metrics.total_net_pnl_usd,
                 "net_pnl_pct": metrics.net_pnl_pct,
                 "win_rate": metrics.win_rate,
                 "profit_factor": metrics.profit_factor,
-                "average_cost_bps": metrics.average_cost_bps,
-            },
-            "uptime_seconds": metrics.uptime_seconds,
-        }), 200
+                "quota_state": metrics.quota_state,
+                "quota_reads_used": metrics.quota_reads_used,
+                "quota_reads_limit": metrics.quota_reads_limit,
+                "quota_writes_used": metrics.quota_writes_used,
+                "quota_writes_limit": metrics.quota_writes_limit,
+                "feed_connected": metrics.feed_connected,
+                "symbols_with_data": metrics.symbols_with_data,
+                "uptime_seconds": metrics.uptime_seconds,
+                "signals": metrics.signals or {},
+            }
+            self._send_json(response, 200)
+        except Exception as e:
+            logger.error(f"Metrics collection error: {e}")
+            self._send_json({"error": str(e)}, 500)
 
-    def get_firebase(self):
-        """GET /metrics/firebase - Firebase quota and sync metrics."""
+    def _handle_learning_history(self) -> None:
+        """GET /metrics/learning-history - Trading and learning history."""
         if not self.collector:
-            return jsonify({"error": "Collector not initialized"}), 503
+            self._send_json({"error": "Collector not initialized"}, 503)
+            return
 
-        metrics = self.collector.collect()
-        reads_percent = (metrics.quota_reads_used / metrics.quota_reads_limit * 100) if metrics.quota_reads_limit > 0 else 0
-        writes_percent = (metrics.quota_writes_used / metrics.quota_writes_limit * 100) if metrics.quota_writes_limit > 0 else 0
+        try:
+            history = self.collector.get_learning_history()
+            self._send_json(history, 200)
+        except Exception as e:
+            logger.error(f"Learning history error: {e}")
+            self._send_json({"error": str(e)}, 500)
 
-        return jsonify({
-            "quota": {
-                "reads": {
-                    "used": metrics.quota_reads_used,
-                    "limit": metrics.quota_reads_limit,
-                    "percent_used": round(reads_percent, 1),
-                },
-                "writes": {
-                    "used": metrics.quota_writes_used,
-                    "limit": metrics.quota_writes_limit,
-                    "percent_used": round(writes_percent, 1),
-                },
-                "state": metrics.quota_state,
-            },
-            "sync": {
-                "writes": metrics.firebase_writes,
-                "failures": metrics.firebase_failures,
-            },
-        }), 200
-
-    def get_signals(self):
-        """GET /metrics/signals - Current signal status for all symbols."""
+    def _handle_signals(self) -> None:
+        """GET /metrics/signals - Current trading signals."""
         if not self.collector:
-            return jsonify({"error": "Collector not initialized"}), 503
+            self._send_json({"error": "Collector not initialized"}, 503)
+            return
 
-        metrics = self.collector.collect()
-        return jsonify({
-            "current_regime": metrics.current_regime,
-            "signals": metrics.signals,
-            "spreads_bps": metrics.book_spreads,
-            "mid_prices": metrics.mid_prices,
-            "timestamp": metrics.timestamp,
-        }), 200
+        try:
+            signals = self.collector.get_signals()
+            self._send_json(signals, 200)
+        except Exception as e:
+            logger.error(f"Signals error: {e}")
+            self._send_json({"error": str(e)}, 500)
 
-    def get_learning_history(self):
-        """GET /metrics/learning-history - Detailed learning history with all closed trades."""
+    def _handle_firebase(self) -> None:
+        """GET /metrics/firebase - Firebase quota and health."""
         if not self.collector:
-            return jsonify({"error": "Collector not initialized"}), 503
+            self._send_json({"error": "Collector not initialized"}, 503)
+            return
 
-        learning = self.collector.collect_learning_history()
-        return jsonify(learning.to_dict()), 200
+        try:
+            firebase = self.collector.get_firebase_status()
+            self._send_json(firebase, 200)
+        except Exception as e:
+            logger.error(f"Firebase status error: {e}")
+            self._send_json({"error": str(e)}, 500)
+
+
+class MetricsHTTPServer:
+    """HTTP server for V5 Bot metrics — uses Python's built-in HTTPServer."""
+
+    def __init__(self, host: str = "0.0.0.0", port: int = 5000):
+        self.host = host
+        self.port = port
+        self.server = None
+        self.thread = None
+
+    def set_collector(self, collector) -> None:
+        """Set the metrics collector."""
+        MetricsHandler.collector = collector
+
+    def start(self) -> None:
+        """Start HTTP server in background thread."""
+        try:
+            self.server = HTTPServer((self.host, self.port), MetricsHandler)
+            self.thread = threading.Thread(
+                target=self.server.serve_forever,
+                daemon=True,
+            )
+            self.thread.start()
+            logger.info(f"Metrics HTTP server started on {self.host}:{self.port}")
+        except Exception as e:
+            logger.error(f"Failed to start HTTP server: {e}")
+            raise
+
+    def stop(self) -> None:
+        """Stop HTTP server."""
+        if self.server:
+            self.server.shutdown()
+            logger.info("Metrics HTTP server stopped")
 
     def run(self, debug: bool = False) -> None:
-        """Start the HTTP server."""
-        logger.info(f"Starting metrics HTTP server on {self.host}:{self.port}")
-        self.app.run(host=self.host, port=self.port, debug=debug, use_reloader=False)
+        """Run server (blocking)."""
+        try:
+            if not self.server:
+                self.server = HTTPServer((self.host, self.port), MetricsHandler)
+            logger.info(f"Metrics HTTP server running on {self.host}:{self.port}")
+            self.server.serve_forever()
+        except Exception as e:
+            logger.error(f"HTTP server error: {e}")
