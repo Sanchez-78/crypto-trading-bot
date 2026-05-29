@@ -7,5 +7,6 @@ scikit-learn
 joblib
 python-dotenv
 aiohttp
-websocket-client
+websockets
+pytz
 paramiko
