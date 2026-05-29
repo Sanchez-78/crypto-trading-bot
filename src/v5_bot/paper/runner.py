@@ -13,7 +13,7 @@ from ..strategy.feature_engine import FeatureEngine
 from ..strategy.cost_edge_gate import CostEdgeGate
 from ..firebase.repository import QuotaAwareFirestoreRepository
 from ..config import TRADING_SYMBOLS, QUOTA_BUDGET, LEARNING_CONFIG, REAL_READINESS_GATES
-from ..util.datetime_utils import utc_now
+from ..util.datetime_utils import utc_now, utc_timestamp_iso
 
 logger = logging.getLogger(__name__)
 
