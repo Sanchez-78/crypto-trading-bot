@@ -1403,7 +1403,14 @@ def _safe_learning_update_for_paper_trade(pos: dict, pnl_data: dict) -> bool:
             record_training_closed,
             record_training_learning_update,
         )
-        record_training_closed(bucket=canon["bucket"], outcome=canon["outcome"])
+        record_training_closed(
+            bucket=canon["bucket"],
+            outcome=canon["outcome"],
+            net_pnl_pct=canon.get("net_pnl_pct", 0.0),
+            symbol=canon.get("symbol", ""),
+            regime=canon.get("regime", ""),
+            side=canon.get("side", "")
+        )
         if ok:
             record_training_learning_update()
     except Exception as e:

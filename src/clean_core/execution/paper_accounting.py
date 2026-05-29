@@ -64,7 +64,9 @@ class ClosedPaperOutcome:
     funding_cost_pct: float  # signed funding / entry_notional
     net_pnl_pct: float  # gross - fees - funding
     execution_truth_class: ExecutionTruthClass
-    readiness_eligible: bool  # True if valid Futures (PUBLIC_BOOK or RPI_AWARE), False if legacy
+    eligible_for_clean_paper_metrics: bool  # True if valid Futures (PUBLIC_BOOK or RPI_AWARE)
+    eligible_for_real_readiness: bool  # False in MVP (never true)
+    eligibility_reason: str  # Explanation of eligibility decision
     learning_source: str  # "canonical" or "discovery"
     notes: str = ""
 
@@ -101,26 +103,29 @@ class ClosedPaperOutcome:
         exit_px = exit_fill.fill_price
         gross_pnl_pct = ((exit_px - entry_px) / entry_px) * 100.0
 
-        # Fee cost (in %)
-        entry_fee_bps = fee_schedule.entry_cost_bps(is_maker=True)
-        exit_fee_bps = fee_schedule.exit_cost_bps(is_maker=True)
+        # Fee cost (in %) — MVP uses taker fees for touch fills
+        entry_fee_bps = fee_schedule.entry_cost_bps(is_maker=False)  # Taker for touch fill
+        exit_fee_bps = fee_schedule.exit_cost_bps(is_maker=False)  # Taker for touch fill
         fee_cost_pct = ((entry_fee_bps + exit_fee_bps) / 10000.0) * 100.0
 
-        # Funding cost (in %)
+        # Funding cost (in %) — telemetry only unless explicitly realized
         funding_cost_pct = (funding_realization.total_cashflow_bps / 10000.0) * 100.0
 
         # Net PnL
         net_pnl_pct = gross_pnl_pct - fee_cost_pct - funding_cost_pct
 
-        # Determine readiness eligibility: accept valid Futures measurements (public book or RPI)
+        # Determine clean PAPER metrics eligibility: accept valid Futures measurements (public book or RPI)
         futures_classes = (
             ExecutionTruthClass.FUTURES_PUBLIC_BOOK_MEASURED,
             ExecutionTruthClass.FUTURES_RPI_AWARE_MEASURED,
         )
-        readiness_eligible = (
+        eligible_for_clean_paper_metrics = (
             entry_fill.execution_truth_class in futures_classes
             and exit_fill.execution_truth_class in futures_classes
         )
+        # MVP never sets REAL readiness to True
+        eligible_for_real_readiness = False
+        reason = "Clean PAPER Futures public book" if eligible_for_clean_paper_metrics else "Ineligible execution truth class"
 
         return cls(
             position_id=position_id,
@@ -138,6 +143,8 @@ class ClosedPaperOutcome:
             funding_cost_pct=funding_cost_pct,
             net_pnl_pct=net_pnl_pct,
             execution_truth_class=entry_fill.execution_truth_class,
-            readiness_eligible=readiness_eligible,
+            eligible_for_clean_paper_metrics=eligible_for_clean_paper_metrics,
+            eligible_for_real_readiness=eligible_for_real_readiness,
+            eligibility_reason=reason,
             learning_source=learning_source,
         )

@@ -105,8 +105,9 @@ class TestMVPEndToEnd:
             == ExecutionTruthClass.FUTURES_PUBLIC_BOOK_MEASURED
         ), f"Wrong execution_truth_class: {outcome.execution_truth_class}"
 
-        # 9. Assert: Verify readiness eligible (R1 accepts PUBLIC_BOOK)
-        assert outcome.readiness_eligible is True, "FUTURES_PUBLIC_BOOK_MEASURED should be readiness eligible"
+        # 9. Assert: Verify clean PAPER eligibility and REAL readiness
+        assert outcome.eligible_for_clean_paper_metrics is True, "FUTURES_PUBLIC_BOOK_MEASURED should be clean PAPER eligible"
+        assert outcome.eligible_for_real_readiness is False, "MVP never sets REAL readiness to True"
 
         # 10. Assert: Entry/exit prices match expectations
         assert outcome.entry_fill.fill_price == pytest.approx(50050.0), "Wrong entry price"
@@ -116,15 +117,15 @@ class TestMVPEndToEnd:
         gross_pnl = outcome.gross_pnl_pct
         assert gross_pnl == pytest.approx(1.0, rel=0.01), f"Gross PnL should be ~1%, got {gross_pnl}%"
 
-        # 12. Assert: Fee cost is subtracted
-        # Entry fee (maker): 2 bps = 0.02%
-        # Exit fee (maker): 2 bps = 0.02%
-        # Total: 0.04%
-        expected_fee_cost = (fee_schedule.maker_fee_bps * 2) / 100.0
+        # 12. Assert: Fee cost is subtracted (MVP uses taker fees for touch fills)
+        # Entry fee (taker): 4 bps = 0.04%
+        # Exit fee (taker): 4 bps = 0.04%
+        # Total: 0.08%
+        expected_fee_cost = (fee_schedule.taker_fee_bps * 2) / 100.0
         assert outcome.fee_cost_pct == pytest.approx(expected_fee_cost, rel=0.01)
 
         # 13. Assert: Net PnL = Gross - Fees (no funding in MVP)
-        expected_net = gross_pnl - (fee_schedule.maker_fee_bps * 2 / 100.0)
+        expected_net = gross_pnl - (fee_schedule.taker_fee_bps * 2 / 100.0)
         assert outcome.net_pnl_pct == pytest.approx(expected_net, rel=0.01)
 
         # 14. Log to journal
@@ -145,9 +146,11 @@ class TestMVPEndToEnd:
         )
 
         # 15. Update epoch
+        # Note: readiness_eligible in epoch means REAL readiness, not clean PAPER metrics
+        # MVP never sets eligible_for_real_readiness, so pass False
         epoch.add_closed_trade(
             net_pnl_pct=outcome.net_pnl_pct,
-            readiness_eligible=outcome.readiness_eligible,
+            readiness_eligible=outcome.eligible_for_real_readiness,
             execution_truth_class=outcome.execution_truth_class.value,
         )
 
@@ -161,7 +164,8 @@ class TestMVPEndToEnd:
 
         # 17. Assert: Epoch tracking
         assert epoch.closed_trades_count == 1
-        assert epoch.readiness_eligible_count == 1
+        # MVP never sets eligible_for_real_readiness, so readiness_eligible_count stays 0
+        assert epoch.readiness_eligible_count == 0, "MVP trades are not REAL-ready"
         assert epoch.average_net_pnl_pct == pytest.approx(outcome.net_pnl_pct)
 
         # 18. Final validation: Verify no legacy services were touched
@@ -178,13 +182,14 @@ class TestMVPEndToEnd:
         print(f"Exit Price: ${outcome.exit_fill.fill_price:.2f}")
         print(f"Holding Time: {outcome.holding_minutes:.1f} minutes")
         print(f"Gross PnL: {outcome.gross_pnl_pct:+.4f}%")
-        print(f"Entry Maker Fee: {fee_schedule.maker_fee_bps:.1f} bps")
-        print(f"Exit Maker Fee: {fee_schedule.maker_fee_bps:.1f} bps")
+        print(f"Entry Taker Fee: {fee_schedule.taker_fee_bps:.1f} bps")
+        print(f"Exit Taker Fee: {fee_schedule.taker_fee_bps:.1f} bps")
         print(f"Total Fee Cost: {outcome.fee_cost_pct:+.4f}%")
         print(f"Funding Cost: {outcome.funding_cost_pct:+.4f}%")
         print(f"NET PnL: {outcome.net_pnl_pct:+.4f}%")
         print(f"Execution Truth: {outcome.execution_truth_class.value}")
-        print(f"Readiness Eligible: {outcome.readiness_eligible}")
+        print(f"Clean PAPER Metrics Eligible: {outcome.eligible_for_clean_paper_metrics}")
+        print(f"REAL Readiness Eligible: {outcome.eligible_for_real_readiness}")
         print(f"Journal Path: {journal_path}")
         print("=" * 60)
 

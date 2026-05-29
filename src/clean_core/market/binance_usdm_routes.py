@@ -1,7 +1,7 @@
 """Binance USDⓈ-M Futures market data routes for Clean Core RESET R1."""
 
 from typing import Optional
-from src.clean_core.domain import ExecutionTruthClass, MarketSourceIdentity
+from src.clean_core.domain import ExecutionTruthClass, MarketSourceIdentity, MarketObservationRole
 from src.clean_core.config import BINANCE_USDM_WS_BASE
 
 
@@ -94,10 +94,11 @@ class BinanceUsdmRoutes:
         identity = MarketSourceIdentity(
             venue="binance_usdm",
             instrument=symbol.upper(),
-            price_source="public_book",
-            execution_truth_class=ExecutionTruthClass.FUTURES_PUBLIC_BOOK_MEASURED,
+            price_source="mark_telemetry",
+            execution_truth_class=None,  # Telemetry only, not an execution truth
             rpi_visibility=False,
             route_version=self.route_version,
+            observation_role=MarketObservationRole.MARK_FUNDING_TELEMETRY,
         )
 
         return url_path, identity
