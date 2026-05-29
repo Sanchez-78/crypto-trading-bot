@@ -123,7 +123,10 @@ class V5BotRunner:
             # Get policy signal
             strategy_id, signal_reason, should_enter = self.policy_selector.evaluate_signal(features)
             if not should_enter:
+                logger.debug(f"[Signal {symbol}] REJECTED: {signal_reason} (strategy_id={strategy_id})")
                 continue
+
+            logger.info(f"[Signal {symbol}] ACCEPTED: {signal_reason} (strategy_id={strategy_id})")
 
             # Get entry parameters
             entry_params = self.policy_selector.get_entry_params(strategy_id)
