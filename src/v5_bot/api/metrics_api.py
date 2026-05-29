@@ -420,6 +420,39 @@ class MetricsCollector:
             timestamp=utc_now().isoformat(),
         )
 
+    def get_learning_history(self) -> Dict[str, Any]:
+        """Get learning history for HTTP API."""
+        history = self.collect_learning_history()
+        return history.to_dict()
+
+    def get_signals(self) -> Dict[str, Any]:
+        """Get current signals for HTTP API."""
+        if not self.runner:
+            return {"signals": {}}
+        return {
+            "signals": getattr(self.runner, "last_signals", {}),
+            "regime": getattr(self.runner, "last_regime", None),
+        }
+
+    def get_firebase_status(self) -> Dict[str, Any]:
+        """Get Firebase quota and health status for HTTP API."""
+        if not self.firebase_repo:
+            return {
+                "quota_reads_used": 0,
+                "quota_reads_limit": 20000,
+                "quota_writes_used": 0,
+                "quota_writes_limit": 10000,
+                "quota_state": "NORMAL",
+            }
+        quota_status = self.firebase_repo.get_quota_status()
+        return {
+            "quota_reads_used": quota_status.get("reads_used", 0),
+            "quota_reads_limit": quota_status.get("reads_limit", 20000),
+            "quota_writes_used": quota_status.get("writes_used", 0),
+            "quota_writes_limit": quota_status.get("writes_limit", 10000),
+            "quota_state": quota_status.get("state", "NORMAL"),
+        }
+
     def _empty_learning_history(self) -> LearningHistory:
         """Return empty learning history."""
         return LearningHistory(
