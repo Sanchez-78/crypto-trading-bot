@@ -151,8 +151,8 @@ class V5BotRunner:
                 is_long=(entry_params["side"] == "BUY"),
             )
 
-            # For this baseline, assume positive expectancy of 20 bps
-            expected_move_bps = 20.0
+            # For PAPER bootstrap testing, assume moderate positive expectancy
+            expected_move_bps = 40.0
             allowed, gate_reason = self.cost_gate.check_entry_allowed(expected_move_bps, cost_breakdown)
 
             if not allowed:
