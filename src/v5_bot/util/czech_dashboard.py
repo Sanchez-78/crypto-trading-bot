@@ -170,10 +170,10 @@ class CzechDashboard:
 
     def print_header(self, status_tag: str = "AKTIVNI") -> None:
         """Print dashboard header."""
-        print(f"\n{g('=' * self.W, C.CYN)}")
+        logger.info(f"\n{g('=' * self.W, C.CYN)}")
         tag_color = C.BLD + C.GRN if status_tag == "AKTIVNI" else C.BLD + C.YLW
-        print(g(f"  V5 PAPER BOT  |  {status_tag}", tag_color))
-        print(g("=" * self.W, C.CYN))
+        logger.info(g(f"  V5 PAPER BOT  |  {status_tag}", tag_color))
+        logger.info(g("=" * self.W, C.CYN))
 
     def print_trading_performance(self, closed_trades: Dict[str, Any],
                                  entries_attempted: int, entries_successful: int,
@@ -187,10 +187,10 @@ class CzechDashboard:
         flats = stats["flats"]
         profit = stats["net_pnl"]
 
-        print(section("", "VYSLEDKY OBCHODOVANI"))
+        logger.info(section("", "VYSLEDKY OBCHODOVANI"))
 
         if t == 0:
-            print(f"    {g('Žádné uzavřené obchody – robot se zahřívá...', C.GRY)}")
+            logger.info(f"    {g('Žádné uzavřené obchody – robot se zahřívá...', C.GRY)}")
         else:
             wr = wins / (wins + losses) if (wins + losses) > 0 else 0.0
             w_pct = wr * 100
@@ -198,24 +198,24 @@ class CzechDashboard:
             wr_col = C.GRN if wr >= 0.55 else (C.YLW if wr >= 0.45 else C.RED)
             pr_col = C.GRN if profit >= 0 else C.RED
 
-            print(f"    {g('Obchody', C.GRY)}    {g(str(t), C.WHT + C.BLD)}  "
+            logger.info(f"    {g('Obchody', C.GRY)}    {g(str(t), C.WHT + C.BLD)}  "
                   f"({g(f'OK {wins}', C.GRN)}  {g(f'X {losses}', C.RED)}  "
                   f"{g(f'~ {flats}', C.GRY)})")
 
-            print(f"    {g('WR', C.GRY)}          "
+            logger.info(f"    {g('WR', C.GRY)}          "
                   f"{g(f'{w_pct:.1f}%', wr_col + C.BLD)}  "
                   f"{cbar(wr, 1.0, lo=0.45, hi=0.55)}  "
                   f"{g('cíl 55%', C.GRY)}")
 
-            print(f"    {g('Zisk (PnL)', C.GRY)}    "
+            logger.info(f"    {g('Zisk (PnL)', C.GRY)}    "
                   f"{g(f'{profit:+.8f}', pr_col + C.BLD)}  "
                   f"{pnl_bar(profit)}")
 
-            print(f"    {g('-' * 40, C.GRY)}")
-            print(f"    {g('Entries Attempted', C.GRY)}  {g(str(entries_attempted), C.WHT)}")
-            print(f"    {g('Entries Successful', C.GRY)}  {g(str(entries_successful), C.WHT)}")
-            print(f"    {g('Entries Rejected', C.GRY)}    {g(str(entries_rejected), C.WHT)}")
-            print(f"    {g('Trades Closed', C.GRY)}       {g(str(trades_closed), C.WHT)}")
+            logger.info(f"    {g('-' * 40, C.GRY)}")
+            logger.info(f"    {g('Entries Attempted', C.GRY)}  {g(str(entries_attempted), C.WHT)}")
+            logger.info(f"    {g('Entries Successful', C.GRY)}  {g(str(entries_successful), C.WHT)}")
+            logger.info(f"    {g('Entries Rejected', C.GRY)}    {g(str(entries_rejected), C.WHT)}")
+            logger.info(f"    {g('Trades Closed', C.GRY)}       {g(str(trades_closed), C.WHT)}")
 
     def print_per_symbol(self, closed_trades: Dict[str, Any]) -> None:
         """Print results per symbol."""
@@ -225,20 +225,20 @@ class CzechDashboard:
         if t == 0:
             return
 
-        print(section("", "VYSLEDKY PO MENACH"))
-        print(f"    {g('Mena', C.GRY):<5}  "
+        logger.info(section("", "VYSLEDKY PO MENACH"))
+        logger.info(f"    {g('Mena', C.GRY):<5}  "
               f"{g('Obch', C.GRY):>4}  "
               f"{g('WR', C.GRY):>5}  "
               f"{g('Bar', C.GRY):<20}  "
               f"{g('Zisk', C.GRY):>12}")
-        print(f"    {g('-' * 50, C.GRY)}")
+        logger.info(f"    {g('-' * 50, C.GRY)}")
 
         for symbol in self.trading_symbols:
             short = symbol.replace("USDT", "")
             ts = per_sym.get(symbol)
 
             if not ts or ts.count == 0:
-                print(f"    {g(short, C.GRY):<5}  {g('-', C.GRY)}")
+                logger.info(f"    {g(short, C.GRY):<5}  {g('-', C.GRY)}")
                 continue
 
             swr = ts.win_rate
@@ -252,7 +252,7 @@ class CzechDashboard:
 
             pcol = C.GRN if ts.total_pnl >= 0 else C.RED
 
-            print(f"    {g(short, C.WHT + C.BLD):<5}  "
+            logger.info(f"    {g(short, C.WHT + C.BLD):<5}  "
                   f"{g(str(ts.count), C.WHT):>4}  "
                   f"{swr_s:>5}  "
                   f"{cbar(swr or 0.0, 1.0, lo=0.45, hi=0.55)}  "
@@ -266,7 +266,7 @@ class CzechDashboard:
         losses = stats["losses"]
         _decisive = wins + losses
 
-        print(section("", "UCENI – STAV A USPESNOST"))
+        logger.info(section("", "UCENI – STAV A USPESNOST"))
 
         # Calibration progress
         if _decisive >= 50:
@@ -276,7 +276,7 @@ class CzechDashboard:
             cal_label = g(f"{_decisive} / 50 rozhodujících", C.BLU + C.BLD)
             cal_note = g(f"({50 - _decisive} zbývá)", C.GRY)
 
-        print(f"    {g('Kalibrace', C.GRY)}      "
+        logger.info(f"    {g('Kalibrace', C.GRY)}      "
               f"{cal_label}  "
               f"{blue_bar(_decisive, 50)}  "
               f"{cal_note}")
@@ -286,9 +286,9 @@ class CzechDashboard:
             wr = wins / (wins + losses) if (wins + losses) > 0 else 0.0
             trend_s = "SBÍRÁ DATA..."
             tcol = C.GRY
-            print(f"    {g('Trend učení', C.GRY)}    {g(trend_s, tcol + C.BLD)}")
+            logger.info(f"    {g('Trend učení', C.GRY)}    {g(trend_s, tcol + C.BLD)}")
         else:
-            print(f"    {g('Trend učení', C.GRY)}    "
+            logger.info(f"    {g('Trend učení', C.GRY)}    "
                   f"{g(f'Čeká na {10-t} obchodů...', C.GRY)}")
 
     def print_status(self, closed_trades: Dict[str, Any],
@@ -301,4 +301,4 @@ class CzechDashboard:
                                        entries_successful, entries_rejected, trades_closed)
         self.print_per_symbol(closed_trades)
         self.print_learning_status(closed_trades)
-        print(f"\n{g('=' * self.W, C.CYN)}\n")
+        logger.info(f"\n{g('=' * self.W, C.CYN)}\n")
