@@ -75,9 +75,9 @@ class MetricsHandler(BaseHTTPRequestHandler):
                 "entries_successful": metrics.entries_successful,
                 "entries_rejected_by_gate": metrics.entries_rejected_by_gate,
                 "total_net_pnl_usd": metrics.total_net_pnl_usd,
-                "net_pnl_pct": metrics.net_pnl_pct,
-                "win_rate": metrics.win_rate,
-                "profit_factor": metrics.profit_factor,
+                "net_pnl_pct": getattr(metrics, "net_pnl_pct", None),
+                "win_rate": getattr(metrics, "win_rate", None),
+                "profit_factor": getattr(metrics, "profit_factor", None),
                 "quota_state": metrics.quota_state,
                 "quota_reads_used": metrics.quota_reads_used,
                 "quota_reads_limit": metrics.quota_reads_limit,
@@ -85,13 +85,15 @@ class MetricsHandler(BaseHTTPRequestHandler):
                 "quota_writes_limit": metrics.quota_writes_limit,
                 "feed_connected": metrics.feed_connected,
                 "symbols_with_data": metrics.symbols_with_data,
-                "uptime_seconds": metrics.uptime_seconds,
-                "signals": metrics.signals or {},
+                "uptime_seconds": getattr(metrics, "uptime_seconds", 0),
+                "signals": getattr(metrics, "signals", {}),
             }
             self._send_json(response, 200)
         except Exception as e:
+            import traceback
             logger.error(f"Metrics collection error: {e}")
-            self._send_json({"error": str(e)}, 500)
+            logger.error(traceback.format_exc())
+            self._send_json({"error": str(e), "type": type(e).__name__}, 500)
 
     def _handle_learning_history(self) -> None:
         """GET /metrics/learning-history - Trading and learning history."""
