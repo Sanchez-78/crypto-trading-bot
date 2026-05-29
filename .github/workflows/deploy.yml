@@ -51,8 +51,9 @@ jobs:
             echo "========== DEPLOYING V5 PAPER BOT =========="
             cd /opt/cryptomaster_v5_validation
             git config --global --add safe.directory /opt/cryptomaster_v5_validation
+            git config pull.ff only
             git fetch origin main
-            git pull origin main
+            git reset --hard origin/main
 
             # Ensure virtualenv exists
             if [ ! -f venv/bin/python ]; then
