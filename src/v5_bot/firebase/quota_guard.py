@@ -14,6 +14,7 @@ import pytz
 import logging
 
 from src.v5_bot.util.datetime_utils import utc_now, utc_timestamp_iso
+from src.v5_bot.config import QUOTA_BUDGET
 
 logger = logging.getLogger(__name__)
 
@@ -150,6 +151,11 @@ class QuotaGuard:
         reads, writes, deletes, retries = self.ledger.get_daily_usage()
         state = self._compute_state(reads, writes)
 
+        # Check internal V5 daily hard cap first (most restrictive)
+        v5_daily_read_cap = QUOTA_BUDGET.v5_active_hard_reads_cap_per_day
+        if reads + count >= v5_daily_read_cap:
+            return False, f"V5 daily read cap {v5_daily_read_cap} would be exceeded"
+
         if state == "hard_stop":
             return False, "HARD_STOP_FIRESTORE: read quota exhausted"
         if state == "critical" and reads + count >= self.HARD_CAP_READS:
@@ -171,6 +177,11 @@ class QuotaGuard:
         """
         reads, writes, deletes, retries = self.ledger.get_daily_usage()
         state = self._compute_state(reads, writes)
+
+        # Check internal V5 daily hard cap first (most restrictive)
+        v5_daily_write_cap = QUOTA_BUDGET.v5_active_hard_writes_cap_per_day
+        if writes + count >= v5_daily_write_cap:
+            return False, f"V5 daily write cap {v5_daily_write_cap} would be exceeded"
 
         if state == "hard_stop":
             return False, "HARD_STOP_FIRESTORE: write quota exhausted"
@@ -203,7 +214,9 @@ class QuotaGuard:
         close_writes_per_trade = 3  # trade close + open_positions update + optional metrics
 
         total_needed = (open_count * close_writes_per_trade) + new_close_writes + emergency_reserve
-        remaining = self.HARD_CAP_WRITES - writes
+        # Use internal daily cap (10000) for reserve calculation, not session-level cap
+        v5_daily_write_cap = QUOTA_BUDGET.v5_active_hard_writes_cap_per_day
+        remaining = v5_daily_write_cap - writes
 
         # Check reserve insufficiency first (more specific reason)
         if remaining < total_needed:

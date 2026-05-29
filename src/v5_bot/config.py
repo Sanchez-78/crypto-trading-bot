@@ -58,6 +58,10 @@ class FirestoreQuotaBudget:
     soft_cap_reads: int = 4000  # Warning state at this
     hard_cap_reads: int = 8000  # HARD_STOP at this
 
+    # Internal V5 active daily hard caps (enforced at runtime)
+    v5_active_hard_writes_cap_per_day: int = 10000  # V5 max writes per day
+    v5_active_hard_reads_cap_per_day: int = 20000   # V5 max reads per day
+
     # Official Firestore limits (do not change)
     official_max_writes_per_day: int = 20000
     official_max_reads_per_day: int = 50000
