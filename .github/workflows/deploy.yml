@@ -17,14 +17,15 @@ jobs:
           key: ${{ secrets.HETZNER_SSH_KEY }}
           script: |
             set -e
+
+            echo "========== DEPLOYING LEGACY BOT =========="
             cd /opt/cryptomaster
             git config --global --add safe.directory /opt/cryptomaster
             git fetch origin main
-            LOCAL=$(git rev-parse HEAD)
             REMOTE=$(git rev-parse origin/main)
             git pull origin main
 
-            # Ensure virtualenv exists (recreate if missing)
+            # Ensure virtualenv exists
             if [ ! -f venv/bin/python ]; then
               echo "[DEPLOY] Virtualenv missing, creating..."
               python3 -m venv venv
@@ -33,25 +34,46 @@ jobs:
               echo "[DEPLOY] Virtualenv created ✓"
             fi
 
-            # Validate entrypoint exists and compiles
+            # Validate entrypoint
             test -f start.py || { echo "ERROR: start.py not found"; exit 1; }
             ./venv/bin/python -m py_compile start.py || { echo "ERROR: start.py syntax error"; exit 1; }
-
-            # Validate critical runtime modules compile
             ./venv/bin/python -m py_compile bot2/main.py || { echo "ERROR: bot2/main.py syntax error"; exit 1; }
             ./venv/bin/python -m py_compile src/services/runtime_flags.py || { echo "ERROR: runtime_flags.py syntax error"; exit 1; }
             ./venv/bin/python -m py_compile src/services/firebase_client.py || { echo "ERROR: firebase_client.py syntax error"; exit 1; }
 
-            echo "[DEPLOY] Compilation validation passed"
-
-            # PATCH 5: Export commit/branch for runtime detection
-            export COMMIT_SHA="$REMOTE"
-            export GIT_BRANCH="main"
-            echo "[DEPLOY] Setting runtime env: COMMIT_SHA=$COMMIT_SHA GIT_BRANCH=$GIT_BRANCH"
-
-            # Restart service with environment (systemd will capture from process env)
+            echo "[DEPLOY] Legacy compilation validation passed"
             systemctl restart cryptomaster
             sleep 3
             systemctl is-active cryptomaster || { echo "ERROR: cryptomaster service failed to start"; exit 1; }
+            echo "[DEPLOY] Legacy bot deployed and active ✓"
 
-            echo "[DEPLOY] Successfully deployed and service is active"
+            echo ""
+            echo "========== DEPLOYING V5 PAPER BOT =========="
+            cd /opt/cryptomaster_v5_validation
+            git config --global --add safe.directory /opt/cryptomaster_v5_validation
+            git fetch origin main
+            git pull origin main
+
+            # Ensure virtualenv exists
+            if [ ! -f venv/bin/python ]; then
+              echo "[DEPLOY] V5 virtualenv missing, creating..."
+              python3 -m venv venv
+              venv/bin/pip install --upgrade pip setuptools wheel
+              [ -f requirements.txt ] && venv/bin/pip install -r requirements.txt
+              echo "[DEPLOY] V5 virtualenv created ✓"
+            fi
+
+            # Validate V5 entrypoint
+            test -f src/v5_bot/paper/__main__.py || { echo "ERROR: V5 __main__.py not found"; exit 1; }
+            ./venv/bin/python -m py_compile src/v5_bot/paper/__main__.py || { echo "ERROR: V5 __main__.py syntax error"; exit 1; }
+            ./venv/bin/python -m py_compile src/v5_bot/paper/runner.py || { echo "ERROR: V5 runner.py syntax error"; exit 1; }
+            ./venv/bin/python -m py_compile src/v5_bot/firebase/repository.py || { echo "ERROR: V5 repository.py syntax error"; exit 1; }
+
+            echo "[DEPLOY] V5 compilation validation passed"
+            systemctl restart cryptomaster-v5-paper
+            sleep 3
+            systemctl is-active cryptomaster-v5-paper || { echo "ERROR: cryptomaster-v5-paper service failed to start"; exit 1; }
+            echo "[DEPLOY] V5 Paper bot deployed and active ✓"
+
+            echo ""
+            echo "[DEPLOY] ✅ ALL DEPLOYMENTS SUCCESSFUL"
