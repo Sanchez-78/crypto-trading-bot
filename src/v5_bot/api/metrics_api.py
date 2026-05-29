@@ -3,7 +3,7 @@
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, asdict
 from datetime import datetime
-from ..util.datetime_utils import utc_now, utc_timestamp_iso
+from ..util.datetime_utils import utc_now
 
 
 @dataclass
