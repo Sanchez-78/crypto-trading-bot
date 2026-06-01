@@ -1291,7 +1291,10 @@ def _training_quality_gate(
                 symbol, bucket
             )
             return _skip("cost_edge_false_without_bypass", symbol=symbol, bucket=bucket, cost_edge_ok=False)
-        if cost_edge_bypass_reason not in ("bootstrap_training_sample", "paper_adaptive_recovery_with_quota"):
+        # P0 FIX #5A: Allow cost_edge_bypass_reason as prefix match
+        # bootstrap_trading_sample may have trades count appended: "bootstrap_training_sample trades=X"
+        allowed_bypass_prefixes = ("bootstrap_training_sample", "paper_adaptive_recovery_with_quota", "recovery_admission")
+        if not any(cost_edge_bypass_reason.startswith(prefix) for prefix in allowed_bypass_prefixes):
             log.warning(
                 "[PAPER_ENTRY_ADMISSION_REJECTED] reason=cost_edge_false_invalid_bypass_reason "
                 "symbol=%s bucket=%s cost_edge_ok=False bypass_reason=%s",
