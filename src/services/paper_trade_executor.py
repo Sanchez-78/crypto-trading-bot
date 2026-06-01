@@ -1609,10 +1609,20 @@ def close_paper_position(
         log.error("[PAPER_EXIT_BLOCKED] trade_id=%s reason=invalid_price", position_id)
         return None
 
+    # P0 FIX #2: Dedup check FIRST (before any processing)
+    # Must check BEFORE accessing position to fail fast on duplicate close attempts
+    with _CLOSED_TRADES_LOCK:
+        if position_id in _CLOSED_TRADES_THIS_SESSION:
+            log.debug(f"[PAPER_CLOSE_DEDUPE] trade_id={position_id} already processed, skipping")
+            return None
+        # Mark as being processed (added back to set after position read succeeds)
+
+    # P0 FIX #1: Do NOT pop position yet - read-only access first
+    # Position removal must happen AFTER all processing succeeds to prevent loss on exception
     with _POSITION_LOCK:
         if position_id not in _POSITIONS:
             return None
-        pos = _POSITIONS.pop(position_id)
+        pos = _POSITIONS[position_id]  # Read-only, do not pop yet
 
     log.info(
         "[PAPER_CLOSE_PATH] trade_id=%s symbol=%s reason=%s",
@@ -1716,16 +1726,33 @@ def close_paper_position(
             )
             v5_bridge.record_close(close_event)
     except Exception as e:
-        log.error(f"[V5_BRIDGE] Paper close hook failed: {e}")
+        # P0 FIX #3: On V5 bridge failure, enqueue for retry instead of silently continuing
+        log.error(f"[V5_BRIDGE_CLOSE_FAILED] trade_id={position_id} enqueuing to outbox: {e}")
+        try:
+            from src.services.v5_legacy_bridge.outbox import get_durable_outbox
+            outbox = get_durable_outbox()
+            if outbox:
+                outbox.enqueue(
+                    "paper_close",
+                    close_event.to_dict() if hasattr(close_event, 'to_dict') else {
+                        "trade_id": position_id,
+                        "symbol": pos.get("symbol", "N/A"),
+                        "exit_reason": reason,
+                        "exit_price": price,
+                        "exit_ts": ts,
+                        "net_pnl_pct": pnl_data.get("net_pnl_pct", 0.0),
+                    },
+                    idempotency_key=position_id,
+                )
+                log.info(f"[V5_BRIDGE_CLOSE_ENQUEUED] trade_id={position_id} for retry")
+        except Exception as outbox_e:
+            log.error(f"[V5_BRIDGE_OUTBOX_ENQUEUE_FAILED] trade_id={position_id} error={outbox_e}")
 
-    # P1.1AJ: Log exit quality before deduplication (idempotent, all training positions)
+    # P1.1AJ: Log exit quality (idempotent, all training positions)
     _log_quality_exit_once(closed_trade, pos, path="close_paper_position")
 
-    # P1.1Q Phase 5: Deduplication — ensure we only update learning/metrics once per trade_id
+    # P0 FIX #2: Mark position as processed (dedup set was checked at start, now mark as seen)
     with _CLOSED_TRADES_LOCK:
-        if position_id in _CLOSED_TRADES_THIS_SESSION:
-            log.debug(f"[PAPER_CLOSE_DEDUPE] trade_id={position_id} already processed, skipping learning/metrics updates")
-            return closed_trade
         _CLOSED_TRADES_THIS_SESSION.add(position_id)
 
     # P1.1L Phase 6: Call learning update for training trades
@@ -1769,6 +1796,11 @@ def close_paper_position(
             trade_id, pos.get("symbol", "na"), closed_trade.get("exit_reason", "unknown"),
         )
         _log_quality_exit_once(closed_trade, pos, path="fallback")
+
+    # P0 FIX #1: Remove position from active ONLY after all processing succeeds
+    # This ensures position survives any exception and can be retried
+    with _POSITION_LOCK:
+        _POSITIONS.pop(position_id, None)
 
     return closed_trade
 
