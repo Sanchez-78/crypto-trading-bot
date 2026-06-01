@@ -851,10 +851,11 @@ DASHBOARD_SNAPSHOT_MIN_WRITE_INTERVAL_S = int(os.getenv("DASHBOARD_SNAPSHOT_MIN_
 DASHBOARD_SNAPSHOT_HEARTBEAT_INTERVAL_S = int(os.getenv("DASHBOARD_SNAPSHOT_HEARTBEAT_INTERVAL_S", "300"))
 
 
-def save_dashboard_snapshot(snapshot: dict, *, force: bool = False) -> bool:
+def save_dashboard_snapshot(snapshot: dict, *, force: bool = False) -> tuple:
     """Write dashboard_snapshot/latest to Firestore. Non-critical write.
 
     Throttles, checks for unchanged data, respects Firebase health.
+    Returns: (ok: bool, reason: str)
     """
     global _LAST_DASHBOARD_SNAPSHOT_WRITE_TS, _LAST_DASHBOARD_SNAPSHOT_SEMANTIC_HASH, _LAST_DASHBOARD_SNAPSHOT_HEARTBEAT_TS
     import logging as _log_ds
@@ -863,18 +864,18 @@ def save_dashboard_snapshot(snapshot: dict, *, force: bool = False) -> bool:
 
     try:
         if db is None:
-            return False
+            return (False, "DB_UNAVAILABLE")
 
         now = time.time()
 
         # Throttle check
         if not force and (now - _LAST_DASHBOARD_SNAPSHOT_WRITE_TS) < DASHBOARD_SNAPSHOT_MIN_WRITE_INTERVAL_S:
-            return False
+            return (False, "THROTTLED")
 
         # Firebase degraded check
         skip, skip_reason = should_skip_noncritical_write()
         if skip and not force:
-            return False
+            return (False, f"FIREBASE_HEALTH_{skip_reason}")
 
         # Semantic hash check (skip unchanged unless heartbeat due)
         s = copy.deepcopy(snapshot)
@@ -886,7 +887,7 @@ def save_dashboard_snapshot(snapshot: dict, *, force: bool = False) -> bool:
         heartbeat_due = (now - _LAST_DASHBOARD_SNAPSHOT_HEARTBEAT_TS) >= DASHBOARD_SNAPSHOT_HEARTBEAT_INTERVAL_S
 
         if not force and new_hash == _LAST_DASHBOARD_SNAPSHOT_SEMANTIC_HASH and not heartbeat_due:
-            return False
+            return (False, "NO_CHANGE")
 
         db.document(_DASHBOARD_SNAPSHOT_DOC).set(snapshot)
 
@@ -896,12 +897,12 @@ def save_dashboard_snapshot(snapshot: dict, *, force: bool = False) -> bool:
             _LAST_DASHBOARD_SNAPSHOT_HEARTBEAT_TS = now
 
         _log.debug("[DASHBOARD_SNAPSHOT_SAVE] ok=True")
-        return True
+        return (True, "")
 
     except Exception as e:
         import logging as _log_err_ds
         _log_err_ds.getLogger(__name__).warning("[DASHBOARD_SNAPSHOT_ERROR] err=%s", str(e)[:200])
-        return False
+        return (False, f"EXCEPTION_{type(e).__name__}")
 
 
 def publish_dashboard_snapshot(force: bool = False) -> None:
@@ -933,16 +934,30 @@ def publish_dashboard_snapshot(force: bool = False) -> None:
                 all_time_stats=all_time_stats,
             )
             _ts_built = _t_dbs.time()
-            ok = save_dashboard_snapshot(snapshot, force=force)
+            ok, reason = save_dashboard_snapshot(snapshot, force=force)
             _ts_saved = _t_dbs.time()
 
-            # Diagnostic: log every publish with freshness info
+            # P0 FIX #6: Log reason when ok=False, or skip reason when expected (throttle/no-change)
             _gen_at = snapshot.get("generated_at", 0)
             _schema_v = snapshot.get("schema_version", "?")
-            _log.info(
-                "[DASHBOARD_SNAPSHOT_PUBLISH] ok=%s generated_at=%.1f schema=%s build_ms=%.0f save_ms=%.0f force=%s",
-                ok, _gen_at, _schema_v, (_ts_built - _ts_start) * 1000, (_ts_saved - _ts_built) * 1000, force
-            )
+
+            if ok:
+                _log.info(
+                    "[DASHBOARD_SNAPSHOT_PUBLISH] ok=True generated_at=%.1f schema=%s build_ms=%.0f save_ms=%.0f force=%s",
+                    _gen_at, _schema_v, (_ts_built - _ts_start) * 1000, (_ts_saved - _ts_built) * 1000, force
+                )
+            elif reason in ("THROTTLED", "NO_CHANGE"):
+                # Expected non-critical skips
+                _log.debug(
+                    "[DASHBOARD_SNAPSHOT_SKIPPED] reason=%s generated_at=%.1f schema=%s build_ms=%.0f save_ms=%.0f",
+                    reason, _gen_at, _schema_v, (_ts_built - _ts_start) * 1000, (_ts_saved - _ts_built) * 1000
+                )
+            else:
+                # Unexpected failures
+                _log.warning(
+                    "[DASHBOARD_SNAPSHOT_PUBLISH] ok=False reason=%s generated_at=%.1f schema=%s build_ms=%.0f save_ms=%.0f",
+                    reason, _gen_at, _schema_v, (_ts_built - _ts_start) * 1000, (_ts_saved - _ts_built) * 1000
+                )
         except Exception as e:
             _log.warning("[DASHBOARD_SNAPSHOT_BUILD_ERROR] err=%s", str(e)[:200])
 

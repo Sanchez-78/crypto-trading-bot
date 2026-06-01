@@ -848,8 +848,16 @@ def _get_training_bucket(signal: dict, ctx: dict, reject_reason: str) -> Tuple[s
     # Check this BEFORE D_NEG_EV_CONTROL. This is NOT the same as D_NEG (which is diagnostic/shadow-only).
     # Discovery allows bounded trades to resume learning when no valid entries occur for 600+ seconds
     # despite continuous valid signals.
-    if ev <= 0 and "REJECT_NEGATIVE_EV" in reject_reason and _is_starvation_discovery_idle():
-        return ("PAPER_STARVATION_DISCOVERY", 0.02)
+    if ev <= 0 and "REJECT_NEGATIVE_EV" in reject_reason:
+        if _is_starvation_discovery_idle():
+            return ("PAPER_STARVATION_DISCOVERY", 0.02)
+        else:
+            # P0 FIX #4: Log rejection when idle_s < 600
+            idle_s = time.time() - _starvation_discovery_state.get("last_eligible_entry_ts", 0.0)
+            log.debug(
+                "[PAPER_STARVATION_DISCOVERY_REJECTED] reason=idle_gate idle_s=%.1f required_idle_s=%.0f symbol=%s",
+                idle_s, _STARVATION_DISCOVERY_IDLE_THRESHOLD_S, signal.get("symbol", "N/A")
+            )
 
     # D_NEG_EV_CONTROL: learn what bad looks like (diagnostic/shadow-only, NOT for discovery)
     # Only used for negative EV rejects that are NOT discovery candidates
@@ -949,11 +957,28 @@ def _update_starvation_discovery_idle(last_eligible_entry_ts: float) -> None:
 
 
 def _is_starvation_discovery_idle() -> bool:
-    """P1.1AP-O2: True when no valid PAPER entry for >= 600 seconds despite valid signals."""
+    """P0 FIX #4: True when no valid PAPER entry for >= 600 seconds despite valid signals.
+
+    CRITICAL: idle_s must be >= 600 seconds. idle_s=0.0 must reject.
+    Override only via PAPER_STARVATION_DISCOVERY_IDLE_OVERRIDE=true env var.
+    """
     try:
         now = time.time()
         idle_s = now - _starvation_discovery_state.get("last_eligible_entry_ts", 0.0)
-        return idle_s >= _STARVATION_DISCOVERY_IDLE_THRESHOLD_S
+
+        # P0 FIX #4: Explicit guard - idle_s must be >= threshold
+        if idle_s < _STARVATION_DISCOVERY_IDLE_THRESHOLD_S:
+            # Allow override only for explicit test/operator intervention
+            override = os.getenv("PAPER_STARVATION_DISCOVERY_IDLE_OVERRIDE", "false").lower() == "true"
+            if not override:
+                return False
+            else:
+                log.warning(
+                    "[PAPER_STARVATION_DISCOVERY_IDLE_OVERRIDE] idle_s=%.1f threshold=%.0f reason=operator_override",
+                    idle_s, _STARVATION_DISCOVERY_IDLE_THRESHOLD_S
+                )
+
+        return True  # idle_s >= threshold, or override enabled
     except Exception:
         return False
 
@@ -1256,6 +1281,23 @@ def _training_quality_gate(
         if cost_edge_bypassed:
             _log_bypass_flow("drop", symbol, "sampler_max_open_per_bucket", source=source_reject, open_bucket=open_bucket, flow_id=flow_id)
         return _skip("max_open_per_bucket", symbol=symbol, bucket=bucket, open_bucket=open_bucket)
+
+    # P0 FIX #5: cost_edge_ok=False MUST require cost_edge_bypassed=True + valid bypass_reason
+    if cost_edge_ok is False:
+        if not cost_edge_bypassed:
+            log.warning(
+                "[PAPER_ENTRY_ADMISSION_REJECTED] reason=cost_edge_false_without_bypass "
+                "symbol=%s bucket=%s cost_edge_ok=False cost_edge_bypassed=False bypass_reason=none",
+                symbol, bucket
+            )
+            return _skip("cost_edge_false_without_bypass", symbol=symbol, bucket=bucket, cost_edge_ok=False)
+        if cost_edge_bypass_reason not in ("bootstrap_training_sample", "paper_adaptive_recovery_with_quota"):
+            log.warning(
+                "[PAPER_ENTRY_ADMISSION_REJECTED] reason=cost_edge_false_invalid_bypass_reason "
+                "symbol=%s bucket=%s cost_edge_ok=False bypass_reason=%s",
+                symbol, bucket, cost_edge_bypass_reason
+            )
+            return _skip("cost_edge_false_invalid_bypass_reason", symbol=symbol, bucket=bucket, cost_edge_ok=False)
 
     # P1.1AT: Do NOT commit rate-cap timestamps here. They will be committed in open_paper_position()
     # after the actual paper training entry is successfully created.
