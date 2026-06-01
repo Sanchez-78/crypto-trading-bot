@@ -254,45 +254,72 @@ class CzechDashboard:
                   f"{g(f'{position.stop_loss_price:.4f}', C.RED):>10}")
 
     def print_per_symbol(self, closed_trades: Dict[str, Any]) -> None:
-        """Print results per symbol."""
+        """Print per-symbol metrics (trades closed + win rate)."""
         stats, per_sym = self.compute_stats(closed_trades)
-        t = stats["trades_total"]
 
-        if t == 0:
-            return
-
-        print(section("", "VYSLEDKY PO MENACH"))
-        print(f"    {g('Mena', C.GRY):<5}  "
-              f"{g('Obch', C.GRY):>4}  "
-              f"{g('WR', C.GRY):>5}  "
-              f"{g('Bar', C.GRY):<20}  "
-              f"{g('Zisk', C.GRY):>12}")
-        print(f"    {g('-' * 50, C.GRY)}")
+        print(section("", "PER-SYMBOL METRICS (Closed Trades)"))
+        print(f"    {g('Symbol', C.GRY):<8}  "
+              f"{g('Trades', C.GRY):>6}  "
+              f"{g('Win Rate', C.GRY):>10}  "
+              f"{g('Progress', C.GRY):<20}  "
+              f"{g('Total PnL', C.GRY):>12}")
+        print(f"    {g('-' * 70, C.GRY)}")
 
         for symbol in self.trading_symbols:
             short = symbol.replace("USDT", "")
             ts = per_sym.get(symbol)
 
             if not ts or ts.count == 0:
-                print(f"    {g(short, C.GRY):<5}  {g('-', C.GRY)}")
+                print(f"    {g(short, C.WHT):<8}  {g('0', C.GRY):>6}  {g('—', C.GRY):>10}  {g('—', C.GRY):<20}  {g('—', C.GRY):>12}")
                 continue
 
             swr = ts.win_rate
             if swr is None:
                 swr_s = g("N/A", C.GRY + C.BLD)
-                icon = g("-", C.GRY)
+                icon = g("—", C.GRY)
             else:
                 wcol = C.GRN if swr >= 0.55 else (C.YLW if swr >= 0.45 else C.RED)
                 swr_s = g(f"{swr*100:.0f}%", wcol + C.BLD)
-                icon = g("OK", C.GRN) if swr >= 0.55 else (g("?", C.YLW) if swr >= 0.45 else g("X", C.RED))
+                icon = g("✓", C.GRN) if swr >= 0.55 else (g("~", C.YLW) if swr >= 0.45 else g("✗", C.RED))
 
             pcol = C.GRN if ts.total_pnl >= 0 else C.RED
 
-            print(f"    {g(short, C.WHT + C.BLD):<5}  "
-                  f"{g(str(ts.count), C.WHT):>4}  "
-                  f"{swr_s:>5}  "
-                  f"{cbar(swr or 0.0, 1.0, lo=0.45, hi=0.55)}  "
+            print(f"    {g(short, C.WHT + C.BLD):<8}  "
+                  f"{g(str(ts.count), C.WHT):>6}  "
+                  f"{swr_s:>10}  "
+                  f"{cbar(swr or 0.0, 1.0, lo=0.45, hi=0.55):<20}  "
                   f"{g(f'{ts.total_pnl:+.8f}', pcol):>12}  {icon}")
+
+    def print_entry_operations(self, entry_log: List[Dict[str, Any]]) -> None:
+        """Print entry attempt history (last 15 entries)."""
+        if not entry_log:
+            return
+
+        print(section("", "ENTRY OPERATIONS (Last 15)"))
+        print(f"    {g('Symbol', C.GRY):<8}  "
+              f"{g('Status', C.GRY):<15}  "
+              f"{g('Reason', C.GRY):<30}  "
+              f"{g('Price', C.GRY):>10}")
+        print(f"    {g('-' * 75, C.GRY)}")
+
+        # Show last 15 entries in reverse chronological order
+        for entry in entry_log[-15:][::-1]:
+            status = entry["status"]
+            status_color = (C.GRN if status == "SUCCESSFUL" else
+                           C.RED if status == "FAILED" else
+                           C.YLW if status in ("REJECTED_SIGNAL", "REJECTED_GATE") else
+                           C.GRY)
+            status_str = g(status, status_color)
+
+            symbol = entry["symbol"].replace("USDT", "")
+            reason = entry["reason"][:28]  # Truncate long reasons
+
+            price_str = f"{entry['entry_price']:.2f}" if entry.get("entry_price") else "-"
+
+            print(f"    {g(symbol, C.WHT):<8}  "
+                  f"{status_str:<15}  "
+                  f"{reason:<30}  "
+                  f"{g(price_str, C.CYN):>10}")
 
     def print_learning_status(self, closed_trades: Dict[str, Any]) -> None:
         """Print learning status and calibration."""
@@ -332,15 +359,19 @@ class CzechDashboard:
                     entries_rejected: int = 0, trades_closed: int = 0,
                     open_positions_count: int = 0, open_notional: float = 0.0,
                     open_positions_dict: Optional[Dict[str, Any]] = None,
+                    entry_log: Optional[List[Dict[str, Any]]] = None,
                     status_tag: str = "AKTIVNI") -> None:
         """Print complete dashboard status."""
         if open_positions_dict is None:
             open_positions_dict = {}
+        if entry_log is None:
+            entry_log = []
         self.print_header(status_tag)
         self.print_trading_performance(closed_trades, entries_attempted,
                                        entries_successful, entries_rejected, trades_closed,
                                        open_positions_count, open_notional)
         self.print_open_positions(open_positions_dict)
+        self.print_entry_operations(entry_log)
         self.print_per_symbol(closed_trades)
         self.print_learning_status(closed_trades)
         print(f"\n{g('=' * self.W, C.CYN)}\n")

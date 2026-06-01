@@ -55,6 +55,7 @@ class V5BotRunner:
             "firebase_writes": 0,
             "firebase_failures": 0,
         }
+        self.entry_log = []  # Entry attempt history (last 50 entries)
 
     async def startup(self) -> None:
         """Initialize bot components."""
@@ -103,25 +104,45 @@ class V5BotRunner:
                 received_time=book.received_time,
             )
 
+    def _log_entry_attempt(self, symbol: str, status: str, reason: str, entry_price: float = 0,
+                          side: str = "", trade_id: str = "", strategy_id: str = "") -> None:
+        """Log entry attempt details."""
+        log_entry = {
+            "timestamp": utc_now().isoformat(),
+            "symbol": symbol,
+            "status": status,  # SKIPPED, REJECTED_SIGNAL, REJECTED_GATE, SUCCESSFUL, FAILED
+            "reason": reason,
+            "entry_price": entry_price,
+            "side": side,
+            "trade_id": trade_id,
+            "strategy_id": strategy_id,
+        }
+        self.entry_log.append(log_entry)
+        # Keep only last 50 entries
+        if len(self.entry_log) > 50:
+            self.entry_log.pop(0)
+
     async def evaluate_entry_signals(self) -> None:
         """Check all symbols for entry signals."""
         for symbol in TRADING_SYMBOLS:
             if len(self.broker.open_positions) >= 3:  # Max 3 open positions
+                self._log_entry_attempt(symbol, "SKIPPED", "Max 3 open positions")
                 logger.debug(f"[{symbol}] Skipped: max open positions reached")
                 continue
 
             # Get current book
             book = self.book_manager.get_book(symbol)
             if not book:
+                self._log_entry_attempt(symbol, "SKIPPED", "No book data")
                 logger.debug(f"[{symbol}] Skipped: no book data")
                 continue
             if book.is_stale():
+                self._log_entry_attempt(symbol, "SKIPPED", "Stale book data")
                 logger.debug(f"[{symbol}] Skipped: stale book")
                 continue
 
             # Extract features
             engine = self.feature_engines[symbol]
-            # Note: In real implementation, would add candles from market data
             features = engine.extract_features(
                 current_price=book.midpoint() or book.best_ask() or 0,
                 bid=book.best_bid() or 0,
@@ -132,6 +153,7 @@ class V5BotRunner:
             # Get policy signal
             strategy_id, signal_reason, should_enter = self.policy_selector.evaluate_signal(features)
             if not should_enter:
+                self._log_entry_attempt(symbol, "REJECTED_SIGNAL", signal_reason, strategy_id=strategy_id)
                 logger.debug(f"[Signal {symbol}] REJECTED: {signal_reason} (strategy_id={strategy_id})")
                 continue
 
@@ -140,27 +162,30 @@ class V5BotRunner:
             # Get entry parameters
             entry_params = self.policy_selector.get_entry_params(strategy_id)
             if not entry_params:
+                self._log_entry_attempt(symbol, "REJECTED_SIGNAL", "No entry params", strategy_id=strategy_id)
                 continue
 
             # Check cost-edge gate
             entry_price = book.best_ask() if entry_params["side"] == "BUY" else book.best_bid()
             if entry_price is None:
+                self._log_entry_attempt(symbol, "SKIPPED", "No liquidity")
                 continue
 
             cost_breakdown = self.cost_gate.calc_cost_breakdown(
                 entry_price=entry_price,
                 bid=book.best_bid() or 0,
                 ask=book.best_ask() or 0,
-                entry_qty=0.1,  # Default qty
+                entry_qty=0.1,
                 is_long=(entry_params["side"] == "BUY"),
             )
 
-            # For PAPER bootstrap testing, assume moderate positive expectancy
             expected_move_bps = 40.0
             allowed, gate_reason = self.cost_gate.check_entry_allowed(expected_move_bps, cost_breakdown)
 
             if not allowed:
                 self.stats["entries_rejected_by_gate"] += 1
+                self._log_entry_attempt(symbol, "REJECTED_GATE", gate_reason, entry_price=entry_price,
+                                       side=entry_params["side"], strategy_id=strategy_id)
                 logger.debug(f"Entry {symbol} rejected: {gate_reason}")
                 continue
 
@@ -178,8 +203,12 @@ class V5BotRunner:
 
             if trade_id:
                 self.stats["entries_successful"] += 1
+                self._log_entry_attempt(symbol, "SUCCESSFUL", signal_reason, entry_price=entry_price,
+                                       side=entry_params["side"], trade_id=trade_id, strategy_id=strategy_id)
                 logger.info(f"Entry {trade_id}: {symbol} {entry_params['side']} @ {entry_price}")
             else:
+                self._log_entry_attempt(symbol, "FAILED", fail_reason or "Unknown", entry_price=entry_price,
+                                       side=entry_params["side"], strategy_id=strategy_id)
                 logger.warning(f"Entry failed for {symbol}: {fail_reason}")
 
     async def evaluate_exit_conditions(self) -> None:
@@ -248,6 +277,7 @@ class V5BotRunner:
                     open_positions_count=len(self.broker.open_positions),
                     open_notional=self.broker.get_position_notional(),
                     open_positions_dict=self.broker.open_positions,
+                    entry_log=self.entry_log,
                     status_tag="AKTIVNI" if self.running else "OFFLINE"
                 )
                 sys.stdout = old_stdout
