@@ -97,3 +97,42 @@ def reset_starvation_and_sampler_state():
     # Cleanup after test
     if hasattr(pts_mod, '_ADAPTIVE_STARVATION_STATE'):
         pts_mod._ADAPTIVE_STARVATION_STATE.clear()
+
+
+@pytest.fixture(autouse=True)
+def isolate_paper_executor_state():
+    """Isolate paper_trade_executor in-memory state for test isolation.
+
+    Ensures V5 bridge tests don't run against live PAPER positions.
+    Clears _POSITIONS and related state before each test to avoid:
+    - max_open_exceeded failures when live data exists
+    - interference from concurrent trading state
+    - false test failures due to runtime state
+
+    Does NOT modify the JSON state file, Firebase, or runtime behavior.
+    """
+    import src.services.paper_trade_executor as pte_mod
+
+    # Save original state
+    original_positions = pte_mod._POSITIONS.copy() if hasattr(pte_mod, '_POSITIONS') else {}
+    original_closed_trades = pte_mod._CLOSED_TRADES_THIS_SESSION.copy() if hasattr(pte_mod, '_CLOSED_TRADES_THIS_SESSION') else set()
+
+    # Clear in-memory state for test isolation
+    if hasattr(pte_mod, '_POSITIONS'):
+        pte_mod._POSITIONS.clear()
+    if hasattr(pte_mod, '_CLOSED_TRADES_THIS_SESSION'):
+        pte_mod._CLOSED_TRADES_THIS_SESSION.clear()
+
+    # Reset state initialization flag if present
+    if hasattr(pte_mod, '_PAPER_STATE_INITIALIZED'):
+        pte_mod._PAPER_STATE_INITIALIZED = False
+
+    yield
+
+    # Restore original state after test
+    if hasattr(pte_mod, '_POSITIONS'):
+        pte_mod._POSITIONS.clear()
+        pte_mod._POSITIONS.update(original_positions)
+    if hasattr(pte_mod, '_CLOSED_TRADES_THIS_SESSION'):
+        pte_mod._CLOSED_TRADES_THIS_SESSION.clear()
+        pte_mod._CLOSED_TRADES_THIS_SESSION.update(original_closed_trades)
