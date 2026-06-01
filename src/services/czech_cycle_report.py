@@ -5,8 +5,15 @@ Po každém cyklu robota: otevřené obchody, zavřené obchody, učení, metrik
 """
 
 import json
+import sys
 from typing import Any, Dict, Optional
 from datetime import datetime
+
+# Ensure UTF-8 output on Windows
+if sys.platform == "win32":
+    import io
+    if sys.stdout.encoding != "utf-8":
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
 
 class CzechCycleReporter:
