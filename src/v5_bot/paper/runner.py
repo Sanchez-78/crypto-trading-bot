@@ -245,6 +245,8 @@ class V5BotRunner:
                     entries_successful=self.stats["entries_successful"],
                     entries_rejected=self.stats["entries_rejected_by_gate"],
                     trades_closed=self.stats["trades_closed"],
+                    open_positions=len(self.broker.open_positions),
+                    open_notional=self.broker.get_position_notional(),
                     status_tag="AKTIVNI" if self.running else "OFFLINE"
                 )
                 sys.stdout = old_stdout

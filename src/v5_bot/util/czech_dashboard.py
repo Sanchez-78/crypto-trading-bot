@@ -177,7 +177,8 @@ class CzechDashboard:
 
     def print_trading_performance(self, closed_trades: Dict[str, Any],
                                  entries_attempted: int, entries_successful: int,
-                                 entries_rejected: int, trades_closed: int) -> None:
+                                 entries_rejected: int, trades_closed: int,
+                                 open_positions: int = 0, open_notional: float = 0.0) -> None:
         """Print trading performance metrics."""
         stats, per_sym = self.compute_stats(closed_trades)
 
@@ -189,8 +190,22 @@ class CzechDashboard:
 
         print(section("", "VYSLEDKY OBCHODOVANI"))
 
+        # Entry attempt statistics (always show)
+        print(f"    {g('Pokusy vstupu', C.GRY)}")
+        print(f"      Pokusů    {g(str(entries_attempted), C.WHT + C.BLD)}")
+        print(f"      Úspěšných {g(str(entries_successful), C.GRN + C.BLD)}")
+        print(f"      Odmítnuto  {g(str(entries_rejected), C.YLW)}")
+
+        # Open positions
+        open_col = C.BLU if open_positions > 0 else C.GRY
+        print(f"    {g('Otevřené pozice', C.GRY)}  {g(str(open_positions), open_col + C.BLD)}  "
+              f"(${open_notional:+.2f})")
+
+        print(f"    {g('-' * 40, C.GRY)}")
+
+        # Closed trades statistics
         if t == 0:
-            print(f"    {g('Žádné uzavřené obchody – robot se zahřívá...', C.GRY)}")
+            print(f"    {g('Uzavřené obchody', C.GRY)}     {g('0', C.GRY)} – robot se zahřívá")
         else:
             wr = wins / (wins + losses) if (wins + losses) > 0 else 0.0
             w_pct = wr * 100
@@ -211,11 +226,7 @@ class CzechDashboard:
                   f"{g(f'{profit:+.8f}', pr_col + C.BLD)}  "
                   f"{pnl_bar(profit)}")
 
-            print(f"    {g('-' * 40, C.GRY)}")
-            print(f"    {g('Entries Attempted', C.GRY)}  {g(str(entries_attempted), C.WHT)}")
-            print(f"    {g('Entries Successful', C.GRY)}  {g(str(entries_successful), C.WHT)}")
-            print(f"    {g('Entries Rejected', C.GRY)}    {g(str(entries_rejected), C.WHT)}")
-            print(f"    {g('Trades Closed', C.GRY)}       {g(str(trades_closed), C.WHT)}")
+        print(f"    {g('Uzavřeno dnes', C.GRY)}      {g(str(trades_closed), C.WHT)}")
 
     def print_per_symbol(self, closed_trades: Dict[str, Any]) -> None:
         """Print results per symbol."""
@@ -294,11 +305,13 @@ class CzechDashboard:
     def print_status(self, closed_trades: Dict[str, Any],
                     entries_attempted: int = 0, entries_successful: int = 0,
                     entries_rejected: int = 0, trades_closed: int = 0,
+                    open_positions: int = 0, open_notional: float = 0.0,
                     status_tag: str = "AKTIVNI") -> None:
         """Print complete dashboard status."""
         self.print_header(status_tag)
         self.print_trading_performance(closed_trades, entries_attempted,
-                                       entries_successful, entries_rejected, trades_closed)
+                                       entries_successful, entries_rejected, trades_closed,
+                                       open_positions, open_notional)
         self.print_per_symbol(closed_trades)
         self.print_learning_status(closed_trades)
         print(f"\n{g('=' * self.W, C.CYN)}\n")

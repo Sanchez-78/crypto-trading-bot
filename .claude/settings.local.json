@@ -227,7 +227,9 @@
       "Bash(tee test_output_final.txt)",
       "Bash(break)",
       "Bash(tee test_run_1_raw.txt)",
-      "Bash(env)"
+      "Bash(env)",
+      "Bash(git merge *)",
+      "Bash(rtk curl *)"
     ]
   }
 }
