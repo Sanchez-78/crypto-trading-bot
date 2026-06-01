@@ -228,6 +228,31 @@ class CzechDashboard:
 
         print(f"    {g('Uzavřeno dnes', C.GRY)}      {g(str(trades_closed), C.WHT)}")
 
+    def print_open_positions(self, open_positions: Dict[str, Any]) -> None:
+        """Print currently open positions."""
+        if not open_positions:
+            return
+
+        print(section("", "OTEVŘENE POZICE"))
+        print(f"    {g('Mena', C.GRY):<6}  "
+              f"{g('Strana', C.GRY):>5}  "
+              f"{g('Qty', C.GRY):>6}  "
+              f"{g('Vstup', C.GRY):>10}  "
+              f"{g('TP', C.GRY):>10}  "
+              f"{g('SL', C.GRY):>10}")
+        print(f"    {g('-' * 60, C.GRY)}")
+
+        for trade_id, position in open_positions.items():
+            short = position.symbol.replace("USDT", "")
+            side_str = g(position.side, C.GRN) if position.side == "BUY" else g(position.side, C.RED)
+
+            print(f"    {g(short, C.WHT + C.BLD):<6}  "
+                  f"{side_str:>5}  "
+                  f"{g(f'{position.qty:.3f}', C.WHT):>6}  "
+                  f"{g(f'{position.entry_price:.4f}', C.CYN):>10}  "
+                  f"{g(f'{position.target_price:.4f}', C.GRN):>10}  "
+                  f"{g(f'{position.stop_loss_price:.4f}', C.RED):>10}")
+
     def print_per_symbol(self, closed_trades: Dict[str, Any]) -> None:
         """Print results per symbol."""
         stats, per_sym = self.compute_stats(closed_trades)
@@ -305,13 +330,17 @@ class CzechDashboard:
     def print_status(self, closed_trades: Dict[str, Any],
                     entries_attempted: int = 0, entries_successful: int = 0,
                     entries_rejected: int = 0, trades_closed: int = 0,
-                    open_positions: int = 0, open_notional: float = 0.0,
+                    open_positions_count: int = 0, open_notional: float = 0.0,
+                    open_positions_dict: Optional[Dict[str, Any]] = None,
                     status_tag: str = "AKTIVNI") -> None:
         """Print complete dashboard status."""
+        if open_positions_dict is None:
+            open_positions_dict = {}
         self.print_header(status_tag)
         self.print_trading_performance(closed_trades, entries_attempted,
                                        entries_successful, entries_rejected, trades_closed,
-                                       open_positions, open_notional)
+                                       open_positions_count, open_notional)
+        self.print_open_positions(open_positions_dict)
         self.print_per_symbol(closed_trades)
         self.print_learning_status(closed_trades)
         print(f"\n{g('=' * self.W, C.CYN)}\n")
