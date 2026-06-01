@@ -1,4 +1,5 @@
 import sys as _sys
+import traceback as _traceback
 from collections import deque
 
 # Windows cp1250 consoles crash on emoji — force utf-8 stdout/stderr at import time.
@@ -54,7 +55,9 @@ def publish(event, data=None):
         try:
             h(data)
         except Exception as e:
-            print(f"❌ Event error [{event}]:", e)
+            print(f"❌ Event error [{event}]: {e}")
+            print(f"   Handler: {h.__module__}.{h.__name__}")
+            _traceback.print_exc()
 
 
 # Namespace object for backward compatibility with code that uses event_bus.method() syntax

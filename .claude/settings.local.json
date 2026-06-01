@@ -229,7 +229,19 @@
       "Bash(tee test_run_1_raw.txt)",
       "Bash(env)",
       "Bash(git merge *)",
-      "Bash(rtk curl *)"
+      "Bash(rtk curl *)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Projects\\\\CryptoMaster_srv\" -Recurse -File -Filter \"*.py\")",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Projects\\\\CryptoMaster_srv\" -Recurse -Include \"*.py\", \"*.js\", \"*.ts\")",
+      "Bash(Select-Object -First 100)",
+      "Bash(Format-Table FullName)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Projects\\\\CryptoMaster_srv\" -Recurse -Include \"*.py\")",
+      "Bash(sed -n '1,50p' src/services/v5_legacy_bridge/event_models.py)",
+      "Bash(sed -n '1,40p' src/services/v5_legacy_bridge/__init__.py)",
+      "PowerShell(Get-Item *)",
+      "Bash(scp -i __TRACKED_VAR__/.ssh/hetzner_root -o StrictHostKeyChecking=no 'C:\\\\Projects\\\\CryptoMaster_srv\\\\apply_patches.py' root@78.47.2.198:/tmp/apply_patches.py)",
+      "Bash(scp -i __TRACKED_VAR__/.ssh/hetzner_root -o StrictHostKeyChecking=no root@78.47.2.198:/opt/cryptomaster/src/services/paper_trade_executor.py /tmp/paper_trade_executor.py)",
+      "Bash(scp -i __TRACKED_VAR__/.ssh/hetzner_root -o StrictHostKeyChecking=no root@78.47.2.198:/opt/cryptomaster/bot2/main.py /tmp/bot2_main.py)"
     ]
   }
 }
