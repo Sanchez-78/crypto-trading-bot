@@ -132,6 +132,25 @@ _STARVATION_DISCOVERY_BUCKET_COOLDOWN = {
 # Maps segment_key (symbol:regime:side) to cooldown activation data
 _SEGMENT_COOLDOWNS = {}  # {segment_key: {"active": bool, "activated_at": float, "cooldown_s": 3600}}
 
+# Phase 3A: Cap diagnostics and sample flow tracking
+_PAPER_OPEN_CAP_DIAG_THROTTLE = {}  # (symbol, bucket) -> timestamp
+_SAMPLE_FLOW_WINDOW = {
+    "raw_signals": 0,
+    "rde_candidates": 0,
+    "training_candidates": 0,
+    "admission_truth_count": 0,
+    "accepted": 0,
+    "opened": 0,
+    "closed": 0,
+    "learning_updates": 0,
+    "blocked_by_max_open_per_symbol": 0,
+    "blocked_by_max_open_global": 0,
+    "blocked_by_cost_edge": 0,
+    "blocked_by_segment_cooldown": 0,
+    "blocked_by_negative_ev": 0,
+    "last_summary_ts": 0.0,
+}
+
 
 def _now() -> float:
     """Get current timestamp."""
@@ -174,6 +193,80 @@ def _allow(**kw) -> dict:
     """Record entry event and return allow result."""
     _health["entries"] += 1
     return {"allowed": True, **kw}
+
+
+def _log_open_cap_diag(symbol: str, bucket: str, open_global: int,
+                       open_symbol_actual: int, open_symbol_counter: int,
+                       reason: str):
+    """Phase 3A: Diagnostic for stale open cap accounting."""
+    now = time.time()
+    key = (symbol, bucket)
+    last_log = _PAPER_OPEN_CAP_DIAG_THROTTLE.get(key, 0.0)
+    if now - last_log < 30.0:  # Throttle per (symbol, bucket)
+        return
+
+    _PAPER_OPEN_CAP_DIAG_THROTTLE[key] = now
+    mismatch = (open_symbol_actual != open_symbol_counter)
+
+    log.info(
+        "[PAPER_OPEN_CAP_DIAG] "
+        "symbol=%s bucket=%s reason=%s "
+        "open_global=%d open_symbol_actual=%d open_symbol_counter=%d "
+        "mismatch=%s",
+        symbol, bucket, reason,
+        open_global, open_symbol_actual, open_symbol_counter,
+        mismatch
+    )
+
+
+def _emit_sample_flow_summary():
+    """Phase 3A: Emit 5-minute flow summary."""
+    now = time.time()
+    last_ts = _SAMPLE_FLOW_WINDOW.get("last_summary_ts", 0.0)
+
+    if now - last_ts < 300.0:  # Only every 5 minutes
+        return
+
+    _SAMPLE_FLOW_WINDOW["last_summary_ts"] = now
+
+    # Determine status
+    status = "STARVED"
+    if _SAMPLE_FLOW_WINDOW["opened"] > 0:
+        status = "OK"
+    elif _SAMPLE_FLOW_WINDOW["blocked_by_cost_edge"] > 5:
+        status = "BLOCKED_BY_RDE_COST_EDGE"
+    elif _SAMPLE_FLOW_WINDOW["blocked_by_max_open_per_symbol"] > 0:
+        status = "BLOCKED_BY_CAP"
+    elif _SAMPLE_FLOW_WINDOW["blocked_by_segment_cooldown"] > 0:
+        status = "BLOCKED_BY_NEGATIVE_SEGMENT"
+
+    log.info(
+        "[PAPER_SAMPLE_FLOW_SUMMARY] "
+        "window_s=300 raw_signals=%d rde_candidates=%d training_candidates=%d "
+        "admission_truth_count=%d accepted=%d opened=%d closed=%d learning_updates=%d "
+        "blocked_by_max_open_per_symbol=%d blocked_by_max_open_global=%d "
+        "blocked_by_cost_edge=%d blocked_by_segment_cooldown=%d blocked_by_negative_ev=%d "
+        "status=%s",
+        _SAMPLE_FLOW_WINDOW["raw_signals"],
+        _SAMPLE_FLOW_WINDOW["rde_candidates"],
+        _SAMPLE_FLOW_WINDOW["training_candidates"],
+        _SAMPLE_FLOW_WINDOW["admission_truth_count"],
+        _SAMPLE_FLOW_WINDOW["accepted"],
+        _SAMPLE_FLOW_WINDOW["opened"],
+        _SAMPLE_FLOW_WINDOW["closed"],
+        _SAMPLE_FLOW_WINDOW["learning_updates"],
+        _SAMPLE_FLOW_WINDOW["blocked_by_max_open_per_symbol"],
+        _SAMPLE_FLOW_WINDOW["blocked_by_max_open_global"],
+        _SAMPLE_FLOW_WINDOW["blocked_by_cost_edge"],
+        _SAMPLE_FLOW_WINDOW["blocked_by_segment_cooldown"],
+        _SAMPLE_FLOW_WINDOW["blocked_by_negative_ev"],
+        status
+    )
+
+    # Reset counters
+    for key in _SAMPLE_FLOW_WINDOW:
+        if key != "last_summary_ts":
+            _SAMPLE_FLOW_WINDOW[key] = 0
 
 
 def _restore_and_bootstrap_cooldowns() -> None:
@@ -1169,6 +1262,39 @@ def _training_quality_gate(
             if str(p.get("training_bucket", "")) == bucket:
                 open_bucket += 1
     open_total = len(open_positions)
+
+    # Phase 3A: Cap reconciliation - use actual _POSITIONS as source of truth
+    try:
+        from src.services.paper_trade_executor import _POSITIONS
+        open_symbol_actual = sum(
+            1 for pos in _POSITIONS.values()
+            if str(pos.get("symbol", "")).upper() == symbol and
+               str(pos.get("training_bucket", "")) == bucket
+        )
+        _log_open_cap_diag(symbol, bucket, open_total, open_symbol_actual, open_symbol,
+                          "max_open_per_symbol_check")
+        open_symbol = open_symbol_actual  # Use actual count for decision
+    except Exception:
+        pass  # Fallback to counter if _POSITIONS unavailable
+
+    # Phase 3A: Check segment cooldown before rate caps
+    try:
+        from src.services.paper_adaptive_learning import _SEGMENT_COOLDOWNS
+        segment_key = f"{symbol}:UNKNOWN:{side}"  # regime not available here; use UNKNOWN
+        cooldown = _SEGMENT_COOLDOWNS.get(segment_key)
+        if cooldown and cooldown.get("active"):
+            cooldown_until = cooldown.get("cooldown_until", now)
+            if now < cooldown_until:
+                remaining_s = cooldown_until - now
+                log.info(
+                    "[PAPER_ENTRY_BLOCKED] symbol=%s reason=segment_negative_cooldown "
+                    "segment=%s cooldown_remaining_s=%.1f",
+                    symbol, segment_key, remaining_s
+                )
+                _SAMPLE_FLOW_WINDOW["blocked_by_segment_cooldown"] += 1
+                return _skip("segment_negative_cooldown", symbol=symbol, segment=segment_key)
+    except Exception:
+        pass  # Graceful degrade if segment check unavailable
 
     # Global rate caps (per minute and per hour)
     from src.core.runtime_mode import (

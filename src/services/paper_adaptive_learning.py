@@ -517,9 +517,70 @@ class PaperAdaptiveLearning:
             )
 
     def _compute_policy_action(self, segment_key: str, total_closes: int) -> str:
-        """Determine current policy action based on data."""
+        """Determine current policy action based on data.
+
+        Phase 3A: Losing segment policy update.
+        rolling20_n>=10 + rolling20_pf<=0.01 + rolling20_expectancy<=-0.10 => reduce_quota, cooldown 1800s
+        rolling50_n>=30 + rolling50_pf<=0.10 + rolling50_expectancy<=-0.10 => cooldown, cooldown 3600s
+        """
         if total_closes < 20:
             return "collect_bootstrap"
+
+        # Phase 3A: Check for losing segments with rolling20/rolling50
+        segment_closes_20 = [e for e in self.rolling20 if e[2] == segment_key]
+        segment_closes_50 = [e for e in self.rolling50 if e[2] == segment_key]
+
+        if len(segment_closes_20) >= 10:
+            rolling20_pf = self._compute_rolling_pf(segment_closes_20)
+            rolling20_exp = self._compute_expectancy([e[0] for e in segment_closes_20])
+
+            if rolling20_pf <= 0.01 and rolling20_exp <= -0.10:
+                old_action = "continue_learning"
+                new_action = "reduce_quota"
+                cooldown_s = 1800
+                log.info(
+                    "[PAPER_SEGMENT_POLICY_UPDATE] "
+                    "segment=%s rolling20_n=%d rolling20_pf=%.4f rolling20_expectancy=%.6f "
+                    "old_action=%s new_action=%s cooldown_s=%d reason=persistent_negative_edge",
+                    segment_key, len(segment_closes_20), rolling20_pf, rolling20_exp,
+                    old_action, new_action, cooldown_s
+                )
+                # Activate cooldown
+                if not hasattr(self, '_segment_cooldowns'):
+                    self._segment_cooldowns = {}
+                self._segment_cooldowns[segment_key] = {
+                    "active": True,
+                    "activated_at": time.time(),
+                    "cooldown_s": cooldown_s,
+                    "cooldown_until": time.time() + cooldown_s
+                }
+                return new_action
+
+        if len(segment_closes_50) >= 30:
+            rolling50_pf = self._compute_rolling_pf(segment_closes_50)
+            rolling50_exp = self._compute_expectancy([e[0] for e in segment_closes_50])
+
+            if rolling50_pf <= 0.10 and rolling50_exp <= -0.10:
+                old_action = "continue_learning"
+                new_action = "cooldown"
+                cooldown_s = 3600
+                log.info(
+                    "[PAPER_SEGMENT_POLICY_UPDATE] "
+                    "segment=%s rolling50_n=%d rolling50_pf=%.4f rolling50_expectancy=%.6f "
+                    "old_action=%s new_action=%s cooldown_s=%d reason=persistent_negative_edge",
+                    segment_key, len(segment_closes_50), rolling50_pf, rolling50_exp,
+                    old_action, new_action, cooldown_s
+                )
+                # Activate cooldown
+                if not hasattr(self, '_segment_cooldowns'):
+                    self._segment_cooldowns = {}
+                self._segment_cooldowns[segment_key] = {
+                    "active": True,
+                    "activated_at": time.time(),
+                    "cooldown_s": cooldown_s,
+                    "cooldown_until": time.time() + cooldown_s
+                }
+                return new_action
 
         segment_closes = sum(1 for e in self.rolling100 if e[2] == segment_key)
         if segment_closes >= 20:

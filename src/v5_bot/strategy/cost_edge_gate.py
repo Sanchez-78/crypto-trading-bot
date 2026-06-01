@@ -112,10 +112,17 @@ class CostEdgeGate:
             return False, f"{reason_prefix}negative_expectancy ({expected_move_bps:.1f} bps)"
 
         if expected_move_bps < required_edge_bps:
-            return False, (
+            # Phase 4A: Add shadow margin diagnostic (what would pass with 2 bps margin?)
+            shadow_margin_bps = 2.0
+            shadow_required_edge_bps = cost_breakdown.total_cost_bps + shadow_margin_bps
+            shadow_pass = expected_move_bps >= shadow_required_edge_bps
+
+            reason = (
                 f"{reason_prefix}insufficient_edge: "
-                f"expected={expected_move_bps:.1f} bps < required={required_edge_bps:.1f} bps"
+                f"expected={expected_move_bps:.1f} bps < required={required_edge_bps:.1f} bps "
+                f"[shadow: required={shadow_required_edge_bps:.1f} pass={shadow_pass}]"
             )
+            return False, reason
 
         return True, f"{reason_prefix}edge_valid ({expected_move_bps:.1f} > {required_edge_bps:.1f} bps)"
 

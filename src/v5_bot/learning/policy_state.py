@@ -143,6 +143,33 @@ class PolicyStateTracker:
         """Get all segments for a strategy."""
         return [s for s in self.segments.values() if s.strategy_id == strategy_id]
 
+    def get_segment_learning_weight(self, segment_id: str, min_samples: int = 10) -> float:
+        """
+        Get learning weight for segment (soft ranking bias for PolicySelector).
+
+        Returns:
+            weight: 1.0 (neutral) if undertrained
+                   >1.0 if profitable (boost priority)
+                   <1.0 if losing (mild penalty/cooldown)
+        """
+        segment = self.segments.get(segment_id)
+        if not segment or segment.eligible_closes < min_samples:
+            return 1.0  # Neutral weight until minimum samples reached (no overfit)
+
+        # Use profit_factor: 1.0 = breakeven, >1.5 = strong, <0.5 = weak
+        # Map to weight: [0.5, 0.8, 1.0, 1.2, 1.5] → [0.7, 0.85, 1.0, 1.15, 1.3]
+        pf = segment.profit_factor
+        if pf >= 1.5:
+            return 1.3  # Strong winner: big priority boost
+        elif pf >= 1.2:
+            return 1.15  # Good winner: moderate boost
+        elif pf >= 1.0:
+            return 1.0  # Breakeven: neutral
+        elif pf >= 0.8:
+            return 0.85  # Slight loser: mild penalty
+        else:
+            return 0.7  # Strong loser: cooldown penalty
+
     def summary(self) -> Dict:
         """Summary of all segments."""
         return {

@@ -104,6 +104,40 @@ _ECON_BAD_PROBE_STATE = {
     "last_summary_ts": 0.0,
 }
 
+# Phase 3A: RDE cost-edge diagnostic logging (throttled, no decision change)
+_RDE_COST_EDGE_DIAG_THROTTLE = {}  # (symbol, side, reject_reason) -> timestamp
+
+def _log_rde_cost_edge_diag(symbol: str, side: str, reject_reason: str,
+                            expected_move_pct: float, required_move_pct: float,
+                            fee_drag_pct: float, spread_pct: float, funding_pct: float,
+                            price: float, atr: float, regime: str, score: float,
+                            ev: float, p: float, rr: float, cost_edge_ok: bool):
+    """Log cost-edge rejection diagnostics (throttled, no decision change)."""
+    now = _time.time()
+    key = (symbol, side, reject_reason)
+    last_log_ts = _RDE_COST_EDGE_DIAG_THROTTLE.get(key, 0.0)
+    if now - last_log_ts < 60.0:  # Throttle: once per 60s per key
+        return
+
+    _RDE_COST_EDGE_DIAG_THROTTLE[key] = now
+    atr_pct = (atr / price * 100.0) if price > 0 else 0.0
+    sample_eligible = (cost_edge_ok or ev > 0)
+    expected_move_src = "atr_tp_sl"  # Default source
+
+    log.info(
+        "[RDE_COST_EDGE_DIAG] "
+        "symbol=%s side=%s decision=%s reject_reason=%s "
+        "cost_edge_ok=%s expected_move_pct=%.6f required_move_pct=%.6f "
+        "expected_move_src=%s fee_drag_pct=%.6f spread_pct=%.6f funding_pct=%.6f "
+        "price=%.8f atr=%.8f atr_pct=%.4f regime=%s "
+        "score=%.4f ev=%.6f p=%.4f rr=%.4f sample_eligible=%s",
+        symbol, side, "ACCEPT" if cost_edge_ok else "REJECT", reject_reason,
+        cost_edge_ok, expected_move_pct, required_move_pct,
+        expected_move_src, fee_drag_pct, spread_pct, funding_pct,
+        price, atr, atr_pct, regime,
+        score, ev, p, rr, sample_eligible
+    )
+
 # V10.13u+18: ECON BAD near-miss diagnostics (no behavior change)
 _ECON_BAD_DIAGNOSTICS = {
     "total_econ_bad_blocks": 0,

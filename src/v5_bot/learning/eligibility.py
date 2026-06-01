@@ -43,9 +43,10 @@ class LearningEligibilityChecker:
         if trade.entry_fee_usd == 0 and trade.exit_fee_usd == 0:
             failures.append("fees_not_accounted")
 
-        # Gate 4: Cost-edge must be positive (net PnL > 0 or at least >= costs)
-        if trade.net_pnl_usd < 0:
-            failures.append("negative_pnl")
+        # Gate 4 (REMOVED): Cost-edge requirement removed to include losing trades
+        # All trades with valid accounting/venue/fees/hold contribute to learning.
+        # Segment stats track wins/losses separately (no survivorship bias).
+        # Learning system can learn from both winners and losers.
 
         # Gate 5: Must have minimum hold time (to avoid noise)
         if trade.entry_fill and trade.exit_fill:

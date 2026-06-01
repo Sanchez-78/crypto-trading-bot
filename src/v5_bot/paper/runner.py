@@ -221,18 +221,24 @@ class V5BotRunner:
             if current_price is None:
                 continue
 
+            # Track closed trades count BEFORE checking exit
+            closed_count_before = len(self.broker.closed_trades)
+
             # Check exit condition
             hold_seconds = int(current_time - position.entry_time)
             exit_info, exit_reason = self.broker.check_and_exit_position(
                 position.trade_id, current_price, current_time
             )
 
-            if exit_info:
-                self.stats["trades_closed"] += 1
-                logger.info(
-                    f"Exit {position.trade_id}: {exit_reason} @ {current_price}, "
-                    f"PnL: {exit_info['net_pnl_pct']:.2f}%"
-                )
+            # Count closed trades by delta (works for any exit reason)
+            closed_count_after = len(self.broker.closed_trades)
+            if closed_count_after > closed_count_before:
+                self.stats["trades_closed"] += (closed_count_after - closed_count_before)
+                if exit_info:
+                    logger.info(
+                        f"Exit {position.trade_id}: {exit_reason} @ {current_price}, "
+                        f"PnL: {exit_info['net_pnl_pct']:.2f}%"
+                    )
 
     async def publish_metrics(self) -> None:
         """Publish current metrics to Firebase."""
