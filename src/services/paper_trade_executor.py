@@ -297,7 +297,7 @@ def _safe_int(value, default=0) -> int:
 def _load_paper_state() -> None:
     """Load open paper positions from disk at startup.
 
-    Supports both canonical dict and legacy list formats.
+    Supports wrapper schema {"positions": {}}, canonical dict, and legacy list formats.
     Automatically converts and saves back in canonical format.
     """
     try:
@@ -307,12 +307,20 @@ def _load_paper_state() -> None:
             return
 
         with open(_STATE_FILE, "r") as f:
-            positions_data = json.load(f)
+            raw_data = json.load(f)
 
         # Handle empty state
-        if not positions_data:
+        if not raw_data:
             log.info("[PAPER_STATE_LOAD] open_positions=0 source=%s", _STATE_FILE)
             return
+
+        # HOTFIX: Support wrapper schema {"positions": {}}
+        positions_data = raw_data
+        if isinstance(raw_data, dict) and "positions" in raw_data and isinstance(raw_data.get("positions"), dict):
+            positions_data = raw_data["positions"]
+            if not positions_data:
+                log.info("[PAPER_STATE_LOAD] open_positions=0 source=%s wrapper_format=true", _STATE_FILE)
+                return
 
         # Convert list to dict if needed
         list_to_dict_count = 0
@@ -331,11 +339,27 @@ def _load_paper_state() -> None:
             )
 
         # Migrate legacy positions (ensure max_hold_s is set)
+        # HOTFIX: Validate and normalize records before migration (skip invalid/metadata)
         migrated_count = 0
+        validated_positions = {}
         for trade_id, pos in positions_data.items():
+            # Skip invalid records: metadata keys, non-dict values
+            if not isinstance(pos, dict):
+                log.debug("[PAPER_STATE_SKIP_INVALID] trade_id=%s reason=not_dict type=%s", trade_id, type(pos).__name__)
+                continue
+            if trade_id in ("positions", "metadata"):
+                log.debug("[PAPER_STATE_SKIP_INVALID] trade_id=%s reason=metadata_key", trade_id)
+                continue
+
+            # Valid position: normalize + migrate if needed
+            pos = _normalize_position_for_loading(pos)  # Ensure required fields exist
             if "max_hold_s" not in pos:
-                positions_data[trade_id] = _migrate_legacy_position(pos)
+                validated_positions[trade_id] = _migrate_legacy_position(pos)
                 migrated_count += 1
+            else:
+                validated_positions[trade_id] = pos
+
+        positions_data = validated_positions
 
         # P1.1Z: Normalize training positions to fix legacy timeout values
         normalized_count = 0
