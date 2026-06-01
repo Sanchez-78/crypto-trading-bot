@@ -1700,6 +1700,7 @@ def close_paper_position(
     )
 
     # V5 Legacy Bridge: Record paper close (Phase 3 hook) — BEFORE deduplication
+    close_event = None  # Initialize to prevent undefined variable in except block
     try:
         v5_bridge = _get_v5_bridge()
         if v5_bridge:
