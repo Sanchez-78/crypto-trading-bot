@@ -1,0 +1,304 @@
+"""
+V5 Legacy Bridge — Metrics Publisher
+
+Publishes bounded aggregate metrics to Firebase for Android dashboard.
+
+Includes: service status, quota state, trading stats, learning metrics, readiness.
+"""
+
+import logging
+from datetime import datetime
+from typing import Optional, Dict, List
+
+from . import config
+from .quota import V5LegacyQuotaGuard
+from .outbox import DurableOutbox
+
+logger = logging.getLogger(__name__)
+
+
+class V5MetricsPublisher:
+    """
+    Publishes bounded aggregate metrics for dashboard and Android visibility.
+    """
+
+    def __init__(self, quota_guard: Optional[V5LegacyQuotaGuard] = None, outbox: Optional[DurableOutbox] = None):
+        """
+        Initialize metrics publisher.
+
+        Args:
+            quota_guard: Quota guard instance
+            outbox: Outbox instance
+        """
+        self.quota_guard = quota_guard or V5LegacyQuotaGuard()
+        self.outbox = outbox
+
+    def build_dashboard_metrics(
+        self,
+        runtime_state: dict,
+        quota_snapshot: dict,
+        trading_stats: dict,
+        learning_stats: dict,
+    ) -> dict:
+        """
+        Build complete dashboard metrics for Firebase and Android.
+
+        Args:
+            runtime_state: Service/mode info
+            quota_snapshot: Quota guard snapshot
+            trading_stats: Entry/exit counts and stats
+            learning_stats: Learning eligibility and readiness
+
+        Returns:
+            Dashboard dict with all required fields
+        """
+        try:
+            # Service/Runtime info
+            dashboard = {
+                "timestamp": datetime.utcnow().isoformat(),
+                "service_name": "cryptomaster.service",
+                "mode": "paper_train",
+                "real_orders_allowed": False,
+                "legacy_runtime": True,
+                "v5_bridge_enabled": True,
+            }
+
+            # Quota metrics
+            if quota_snapshot:
+                dashboard.update({
+                    "internal_reads_cap": quota_snapshot.get("internal_reads_cap", 20000),
+                    "internal_writes_cap": quota_snapshot.get("internal_writes_cap", 10000),
+                    "reads_used": quota_snapshot.get("reads_used", 0),
+                    "writes_used": quota_snapshot.get("writes_used", 0),
+                    "reads_remaining": quota_snapshot.get("reads_remaining", 20000),
+                    "writes_remaining": quota_snapshot.get("writes_remaining", 10000),
+                    "quota_state": quota_snapshot.get("state", "normal"),
+                })
+
+            # Trading metrics
+            if trading_stats:
+                dashboard.update({
+                    "open_positions": trading_stats.get("open_positions", 0),
+                    "closed_today": trading_stats.get("closed_today", 0),
+                    "entries_attempted": trading_stats.get("entries_attempted", 0),
+                    "entries_accepted": trading_stats.get("entries_accepted", 0),
+                    "entries_rejected": trading_stats.get("entries_rejected", 0),
+                    "reject_reasons": trading_stats.get("reject_reasons", {}),
+                    "cost_edge_pass": trading_stats.get("cost_edge_pass", 0),
+                    "cost_edge_fail": trading_stats.get("cost_edge_fail", 0),
+                })
+
+            # Learning/readiness metrics
+            if learning_stats:
+                dashboard.update({
+                    "learning_updates": learning_stats.get("learning_updates", 0),
+                    "eligible_closes": learning_stats.get("eligible_closes", 0),
+                    "readiness_status": learning_stats.get("readiness_status", "NOT_READY"),
+                    "readiness_status_cs": learning_stats.get("readiness_status_cs", "NEBYLI PŘIPRAVENI"),
+                    "readiness_reason": learning_stats.get("readiness_reason", "insufficient_data"),
+                    "readiness_reason_cs": learning_stats.get("readiness_reason_cs", "nedostatek_dat"),
+                })
+
+            # Outbox pending (if available)
+            if self.outbox:
+                dashboard["outbox_pending"] = self.outbox.pending_count()
+
+            # Validate required fields for Android
+            for field in config.ANDROID_REQUIRED_FIELDS:
+                if field not in dashboard:
+                    logger.warning(f"[V5_BRIDGE] Missing required field for Android: {field}")
+
+            logger.info(
+                f"[V5_BRIDGE_DASHBOARD_PUBLISH] "
+                f"open={dashboard.get('open_positions', 0)} "
+                f"closed_today={dashboard.get('closed_today', 0)} "
+                f"quota_state={dashboard.get('quota_state', 'unknown')} "
+                f"readiness={dashboard.get('readiness_status', 'unknown')}"
+            )
+
+            return dashboard
+
+        except Exception as e:
+            logger.error(f"[V5_BRIDGE] build_dashboard_metrics failed: {e}")
+            return {
+                "timestamp": datetime.utcnow().isoformat(),
+                "service_name": "cryptomaster.service",
+                "mode": "paper_train",
+                "error": str(e),
+            }
+
+    def build_readiness_metrics(self, learning_stats: dict) -> dict:
+        """
+        Build readiness status snapshot.
+
+        Args:
+            learning_stats: Learning eligibility and outcomes
+
+        Returns:
+            Readiness dict
+        """
+        try:
+            readiness = {
+                "timestamp": datetime.utcnow().isoformat(),
+                "status": "NOT_READY",
+                "status_cs": "NEBYLI PŘIPRAVENI",
+                "reason": "insufficient_data",
+                "reason_cs": "nedostatek_dat",
+                "eligible_closes": 0,
+                "learning_updates": 0,
+                "min_trades_required": config.MIN_TRADES_FOR_READINESS,
+            }
+
+            if learning_stats:
+                eligible = learning_stats.get("eligible_closes", 0)
+                total_learning = learning_stats.get("learning_updates", 0)
+
+                readiness.update({
+                    "eligible_closes": eligible,
+                    "learning_updates": total_learning,
+                })
+
+                # Determine readiness
+                if total_learning >= config.MIN_TRADES_FOR_READINESS:
+                    win_rate = learning_stats.get("win_rate", 0.0)
+                    cost_edge = learning_stats.get("cost_edge_pct", 0.0)
+
+                    if win_rate >= config.READY_WIN_RATE_THRESHOLD and cost_edge >= config.READY_COST_EDGE_THRESHOLD:
+                        readiness.update({
+                            "status": "READY",
+                            "status_cs": "PŘIPRAVENI",
+                            "reason": "sufficient_performance",
+                            "reason_cs": "dostatečná_výkonnost",
+                        })
+                    else:
+                        readiness.update({
+                            "status": "TESTING",
+                            "status_cs": "TESTOVÁNÍ",
+                            "reason": f"win_rate={win_rate:.1%} cost_edge={cost_edge:.2f}%",
+                            "reason_cs": f"win_rate={win_rate:.1%} cost_edge={cost_edge:.2f}%",
+                        })
+                else:
+                    readiness.update({
+                        "reason": f"need_{config.MIN_TRADES_FOR_READINESS - total_learning}_more_trades",
+                        "reason_cs": f"potřeba_{config.MIN_TRADES_FOR_READINESS - total_learning}_více_obchodů",
+                    })
+
+            logger.info(
+                f"[V5_BRIDGE_READINESS_PUBLISH] "
+                f"status={readiness.get('status', 'unknown')} "
+                f"learning_updates={readiness.get('learning_updates', 0)} "
+                f"reason={readiness.get('reason', 'unknown')}"
+            )
+
+            return readiness
+
+        except Exception as e:
+            logger.error(f"[V5_BRIDGE] build_readiness_metrics failed: {e}")
+            return {
+                "timestamp": datetime.utcnow().isoformat(),
+                "status": "NOT_READY",
+                "error": str(e),
+            }
+
+    def build_quota_metrics(self) -> dict:
+        """
+        Build quota status snapshot.
+
+        Returns:
+            Quota dict
+        """
+        try:
+            quota_snap = self.quota_guard.snapshot()
+
+            quota = {
+                "timestamp": datetime.utcnow().isoformat(),
+                "date": quota_snap.get("date", "unknown"),
+                "internal_reads_cap": quota_snap.get("internal_reads_cap", 20000),
+                "internal_writes_cap": quota_snap.get("internal_writes_cap", 10000),
+                "reads_used": quota_snap.get("reads_used", 0),
+                "writes_used": quota_snap.get("writes_used", 0),
+                "reads_remaining": quota_snap.get("reads_remaining", 20000),
+                "writes_remaining": quota_snap.get("writes_remaining", 10000),
+                "state": quota_snap.get("state", "normal"),
+            }
+
+            # Add reserves info
+            quota.update({
+                "close_reserve": config.QUOTA_CLOSE_RESERVE,
+                "lifecycle_reserve": config.QUOTA_LIFECYCLE_RESERVE,
+                "emergency_reserve": config.QUOTA_EMERGENCY_RESERVE,
+            })
+
+            # Estimate utilization
+            reads_used = quota["reads_used"]
+            writes_used = quota["writes_used"]
+            quota["reads_utilization_pct"] = min(100, (reads_used / quota["internal_reads_cap"]) * 100)
+            quota["writes_utilization_pct"] = min(100, (writes_used / quota["internal_writes_cap"]) * 100)
+
+            logger.info(
+                f"[V5_BRIDGE_QUOTA_STATE] "
+                f"reads={reads_used}/{quota['internal_reads_cap']} "
+                f"writes={writes_used}/{quota['internal_writes_cap']} "
+                f"state={quota['state']}"
+            )
+
+            return quota
+
+        except Exception as e:
+            logger.error(f"[V5_BRIDGE] build_quota_metrics failed: {e}")
+            return {
+                "timestamp": datetime.utcnow().isoformat(),
+                "error": str(e),
+            }
+
+    def prepare_publish_payload(
+        self,
+        runtime_state: dict = None,
+        quota_snapshot: dict = None,
+        trading_stats: dict = None,
+        learning_stats: dict = None,
+    ) -> dict:
+        """
+        Prepare complete publish payload for Firebase.
+
+        Args:
+            runtime_state: Service/mode info
+            quota_snapshot: Quota snapshot (or None to fetch fresh)
+            trading_stats: Entry/exit counts
+            learning_stats: Learning metrics
+
+        Returns:
+            Complete payload dict
+        """
+        try:
+            # Fetch fresh quota if not provided
+            if quota_snapshot is None:
+                quota_snapshot = self.quota_guard.snapshot()
+
+            # Build all metrics
+            dashboard = self.build_dashboard_metrics(
+                runtime_state or {},
+                quota_snapshot,
+                trading_stats or {},
+                learning_stats or {},
+            )
+
+            readiness = self.build_readiness_metrics(learning_stats or {})
+            quota = self.build_quota_metrics()
+
+            # Combine into publish payload
+            payload = {
+                "timestamp": datetime.utcnow().isoformat(),
+                "dashboard": dashboard,
+                "readiness": readiness,
+                "quota": quota,
+            }
+
+            return payload
+
+        except Exception as e:
+            logger.error(f"[V5_BRIDGE] prepare_publish_payload failed: {e}")
+            return {
+                "timestamp": datetime.utcnow().isoformat(),
+                "error": str(e),
+            }

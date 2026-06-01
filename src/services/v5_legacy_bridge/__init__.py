@@ -7,9 +7,14 @@ Single service only: cryptomaster.service
 
 import logging
 from typing import Optional, Dict, Any
-from datetime import datetime
 
-from .event_models import LegacyPaperOpenEvent, LegacyPaperCloseEvent, V5QuotaSnapshot, V5DashboardSnapshot
+from .event_models import LegacyPaperOpenEvent, LegacyPaperCloseEvent
+from .quota import V5LegacyQuotaGuard
+from .outbox import DurableOutbox
+from .firebase_writer import V5LegacyFirebaseWriter
+from .learning_bridge import V5LearningBridge
+from .metrics_publisher import V5MetricsPublisher
+from . import config
 
 logger = logging.getLogger(__name__)
 
@@ -19,66 +24,62 @@ class V5LegacyBridge:
     Main bridge class for integrating V5 functions into legacy runtime.
 
     Lifecycle:
-    1. Legacy bot calls record_open(event) on PAPER entry
-    2. Quota guard approves/rejects new positions
+    1. Legacy bot checks can_open_new_position() before entry
+    2. Legacy bot calls record_open(event) on PAPER entry → Firebase + outbox
     3. Firebase writer persists with idempotency (trade_id key)
-    4. On PAPER exit: record_close(event)
-    5. Learning bridge updates and publishes metrics
-    6. Outbox retries on Firebase failure
+    4. On PAPER exit: record_close(event) → Firebase + learning + metrics
+    5. Learning bridge updates normalized learning snapshot
+    6. Metrics publisher publishes dashboard/readiness/quota
+    7. Outbox retries on Firebase failure (never loses closed trades)
     """
 
-    def __init__(self):
-        self.quota_guard = None  # Will be initialized
-        self.outbox = None
-        self.firebase_writer = None
-        self.learning_bridge = None
-        self.metrics_publisher = None
+    def __init__(self, firebase_client=None):
+        """
+        Initialize bridge with all components.
 
-        # State tracking
-        self._open_events: Dict[str, LegacyPaperOpenEvent] = {}
-        self._close_events: Dict[str, LegacyPaperCloseEvent] = {}
-        self._quota_snapshot = V5QuotaSnapshot()
-
-        logger.info("[V5_BRIDGE] Initialized (components pending)")
-
-    def initialize(self):
-        """Initialize all bridge components."""
+        Args:
+            firebase_client: Existing legacy Firebase client (or None if disabled)
+        """
         try:
-            # Import components
-            from .quota import QuotaGuard
-            from .outbox import DurableOutbox
-            from .firebase_writer import FirebaseWriter
-            from .learning_bridge import LearningBridge
-            from .metrics_publisher import MetricsPublisher
-
-            self.quota_guard = QuotaGuard()
+            self.quota_guard = V5LegacyQuotaGuard()
             self.outbox = DurableOutbox()
-            self.firebase_writer = FirebaseWriter()
-            self.learning_bridge = LearningBridge()
-            self.metrics_publisher = MetricsPublisher()
+            self.firebase_writer = V5LegacyFirebaseWriter(firebase_client, self.quota_guard, self.outbox)
+            self.learning_bridge = V5LearningBridge()
+            self.metrics_publisher = V5MetricsPublisher(self.quota_guard, self.outbox)
 
-            logger.info("[V5_BRIDGE] All components initialized successfully")
-            return True
+            logger.info(
+                f"[V5_BRIDGE_INIT] enabled=true "
+                f"real_orders_allowed={config.REAL_ORDERS_ALLOWED} "
+                f"service=cryptomaster.service"
+            )
         except Exception as e:
             logger.error(f"[V5_BRIDGE] Initialization failed: {e}")
-            return False
+            self.quota_guard = None
+            self.outbox = None
+            self.firebase_writer = None
+            self.learning_bridge = None
+            self.metrics_publisher = None
 
-    def can_open_new_position(self) -> bool:
-        """Check if quota allows new position opening."""
-        if not self.quota_guard:
-            return True  # Fallback if not initialized
+    def can_open_new_position(self, open_global: int = 0, open_for_symbol: int = 0) -> bool:
+        """
+        Check if quota allows new position opening.
 
-        # Reserve for closes, lifecycle, emergency
-        reserve = 500
-        can_open = self.quota_guard.writes_remaining() > reserve
+        Args:
+            open_global: Current global open positions
+            open_for_symbol: Current open positions for this symbol
 
-        if not can_open:
-            logger.warning(
-                f"[V5_BRIDGE_QUOTA_STATE] Cannot open: writes_remaining="
-                f"{self.quota_guard.writes_remaining()}, reserve={reserve}"
-            )
+        Returns:
+            True if new entry allowed, False if blocked by quota
+        """
+        try:
+            if not self.quota_guard:
+                return True  # Fallback: allow if bridge unavailable
 
-        return can_open
+            decision = self.quota_guard.check_entry_allowed(open_global, open_for_symbol, estimated_lifecycle_writes=5)
+            return decision.allowed
+        except Exception as e:
+            logger.error(f"[V5_BRIDGE] can_open_new_position check failed: {e}")
+            return True  # Safe default: allow if check fails
 
     def record_open(self, event: LegacyPaperOpenEvent) -> bool:
         """
@@ -93,21 +94,11 @@ class V5LegacyBridge:
             True if saved to outbox/Firebase, False otherwise
         """
         try:
-            trade_id = event.trade_id
+            if not self.firebase_writer:
+                logger.warning(f"[V5_BRIDGE] firebase_writer unavailable, skipping record_open")
+                return False
 
-            # Track locally
-            self._open_events[trade_id] = event
-
-            # Save via outbox (will retry if Firebase fails)
-            if self.outbox:
-                self.outbox.enqueue_open(event)
-
-            logger.info(
-                f"[V5_BRIDGE_OPEN_SAVED] trade_id={trade_id} symbol={event.symbol} "
-                f"side={event.side} price={event.entry_price}"
-            )
-
-            return True
+            return self.firebase_writer.write_open(event)
         except Exception as e:
             logger.error(f"[V5_BRIDGE] record_open failed: {e}")
             return False
@@ -125,53 +116,70 @@ class V5LegacyBridge:
             True if saved to outbox/Firebase, False otherwise
         """
         try:
-            trade_id = event.trade_id
+            if not self.firebase_writer:
+                logger.warning(f"[V5_BRIDGE] firebase_writer unavailable, skipping record_close")
+                return False
 
-            # Track locally
-            self._close_events[trade_id] = event
-
-            # Save via outbox
-            if self.outbox:
-                self.outbox.enqueue_close(event)
-
-            logger.info(
-                f"[V5_BRIDGE_CLOSE_SAVED] trade_id={trade_id} pnl={event.net_pnl:+.8f} "
-                f"reason={event.exit_reason} eligible={event.learning_eligible}"
-            )
+            # Always write close (critical for learning and metrics)
+            result = self.firebase_writer.write_close(event)
 
             # Apply learning if eligible
             if event.learning_eligible and self.learning_bridge:
-                self.learning_bridge.record_close(event)
+                try:
+                    learning_update = self.learning_bridge.apply_learning_from_close(event)
+                    if learning_update and "error" not in learning_update:
+                        self.firebase_writer.write_learning_update(event.trade_id, learning_update)
+                except Exception as e:
+                    logger.error(f"[V5_BRIDGE] Learning update failed: {e}")
 
-            return True
+            return result
         except Exception as e:
             logger.error(f"[V5_BRIDGE] record_close failed: {e}")
             return False
 
-    def publish_metrics(self) -> bool:
+    def publish_metrics(
+        self,
+        runtime_state: dict = None,
+        trading_stats: dict = None,
+        learning_stats: dict = None,
+    ) -> bool:
         """
         Publish dashboard, readiness, and quota metrics.
 
         Called periodically (e.g., every 30 seconds from legacy loop).
 
+        Args:
+            runtime_state: Service/mode info
+            trading_stats: Entry/exit counts and stats
+            learning_stats: Learning eligibility and readiness
+
         Returns:
             True if published, False if failed
         """
         try:
-            if not self.metrics_publisher:
+            if not self.metrics_publisher or not self.firebase_writer:
                 return False
 
-            snapshot = V5DashboardSnapshot(
-                open_positions=len(self._open_events),
-                closed_today=len(self._close_events),
+            # Build metrics
+            quota_snapshot = self.quota_guard.snapshot() if self.quota_guard else {}
+            payload = self.metrics_publisher.prepare_publish_payload(
+                runtime_state=runtime_state,
+                quota_snapshot=quota_snapshot,
+                trading_stats=trading_stats,
+                learning_stats=learning_stats,
             )
 
-            self.metrics_publisher.publish(snapshot)
+            # Publish dashboard
+            if "dashboard" in payload:
+                self.firebase_writer.write_dashboard(payload["dashboard"])
 
-            logger.info(
-                f"[V5_BRIDGE_DASHBOARD_PUBLISH] open_positions={snapshot.open_positions} "
-                f"closed_today={snapshot.closed_today}"
-            )
+            # Publish readiness
+            if "readiness" in payload:
+                self.firebase_writer.write_readiness(payload["readiness"])
+
+            # Publish quota
+            if "quota" in payload:
+                self.firebase_writer.write_quota(payload["quota"])
 
             return True
         except Exception as e:
@@ -180,24 +188,37 @@ class V5LegacyBridge:
 
     def get_quota_status(self) -> Dict[str, Any]:
         """Get current quota state."""
-        if not self.quota_guard:
-            return {"state": "uninitialized"}
+        try:
+            if not self.quota_guard:
+                return {"state": "uninitialized"}
 
-        return {
-            "reads_used": self.quota_guard.reads_used(),
-            "reads_remaining": self.quota_guard.reads_remaining(),
-            "writes_used": self.quota_guard.writes_used(),
-            "writes_remaining": self.quota_guard.writes_remaining(),
-            "outbox_pending": self.outbox.pending_count() if self.outbox else 0,
-            "state": self.quota_guard.get_state(),
-        }
+            snapshot = self.quota_guard.snapshot()
+            if self.outbox:
+                snapshot["outbox_pending"] = self.outbox.pending_count()
 
-    def flush_outbox(self, max_retries: int = 3) -> Dict[str, Any]:
-        """Manually flush pending outbox entries."""
-        if not self.outbox:
-            return {"status": "no_outbox"}
+            return snapshot
+        except Exception as e:
+            logger.error(f"[V5_BRIDGE] get_quota_status failed: {e}")
+            return {"state": "error", "error": str(e)}
 
-        return self.outbox.flush(max_retries=max_retries)
+    def flush_outbox(self, limit: int = 20) -> Dict[str, Any]:
+        """
+        Manually flush pending outbox entries to Firebase.
+
+        Args:
+            limit: Max entries to attempt
+
+        Returns:
+            Status dict with counts
+        """
+        try:
+            if not self.firebase_writer:
+                return {"status": "firebase_writer_unavailable"}
+
+            return self.firebase_writer.flush_outbox(limit)
+        except Exception as e:
+            logger.error(f"[V5_BRIDGE] flush_outbox failed: {e}")
+            return {"status": "error", "error": str(e)}
 
 
 # Global instance
