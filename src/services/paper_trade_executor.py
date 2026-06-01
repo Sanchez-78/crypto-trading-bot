@@ -46,6 +46,28 @@ _QUALITY_ENTRY_LOCK = __import__("threading").RLock()
 _QUALITY_EXIT_LOGGED = set()  # trade_ids with quality exit logged
 _QUALITY_EXIT_LOCK = __import__("threading").RLock()
 
+# V5 Legacy Bridge integration (Phase 3)
+_V5_BRIDGE = None
+_V5_BRIDGE_LOCK = __import__("threading").RLock()
+
+
+def _get_v5_bridge():
+    """Lazy initialize V5 bridge singleton."""
+    global _V5_BRIDGE
+    if _V5_BRIDGE is None:
+        with _V5_BRIDGE_LOCK:
+            if _V5_BRIDGE is None:
+                try:
+                    from src.services.v5_legacy_bridge import V5LegacyBridge
+                    _V5_BRIDGE = V5LegacyBridge()
+                    log.info(
+                        "[V5_BRIDGE_INIT] enabled=true real_orders_allowed=false service=cryptomaster.service"
+                    )
+                except Exception as e:
+                    log.error(f"[V5_BRIDGE_INIT_FAILED] {e}")
+                    _V5_BRIDGE = False  # Mark as failed to avoid retry loop
+    return _V5_BRIDGE if _V5_BRIDGE is not False else None
+
 
 def _effective_paper_bucket(pos: dict, pnl_data: dict | None = None) -> str:
     """P1.1AP-J2: Resolve effective diagnostic bucket from position fields.
@@ -946,6 +968,31 @@ def open_paper_position(
         reason,
     )
 
+    # V5 Legacy Bridge: Record paper entry (Phase 3 hook)
+    try:
+        v5_bridge = _get_v5_bridge()
+        if v5_bridge:
+            from src.services.v5_legacy_bridge.event_models import LegacyPaperOpenEvent
+            open_event = LegacyPaperOpenEvent(
+                trade_id=trade_id,
+                symbol=symbol,
+                side=side,
+                strategy_id=paper_source or "normal_rde_take",
+                regime=position.get("regime", "NEUTRAL"),
+                entry_ts=ts,
+                entry_price=price,
+                size=size_usd,
+                bucket=bucket or training_bucket or "UNKNOWN",
+                expected_move_bps=int((position.get("expected_move_pct", 0.0) or 0.0) * 10000),
+                required_move_bps=int((position.get("required_move_pct", 0.23) or 0.23) * 10000),
+                cost_edge_ok=position.get("cost_edge_ok", True),
+                real_orders_allowed=False,
+                metadata={"paper_source": paper_source or "normal_rde_take"},
+            )
+            v5_bridge.record_open(open_event)
+    except Exception as e:
+        log.error(f"[V5_BRIDGE] Paper entry hook failed: {e}")
+
     # P1.1AG: Add entry quality diagnostics for paper training
     if paper_source == "training_sampler":
         _log_paper_train_quality_entry(position, signal)
@@ -1641,6 +1688,35 @@ def close_paper_position(
         canonical_bucket,
         pos.get("training_bucket", ""),
     )
+
+    # V5 Legacy Bridge: Record paper close (Phase 3 hook) — BEFORE deduplication
+    try:
+        v5_bridge = _get_v5_bridge()
+        if v5_bridge:
+            from src.services.v5_legacy_bridge.event_models import LegacyPaperCloseEvent
+            size_usd = _safe_float(pos.get("size_usd") or pos.get("final_size_usd"), 10.0)
+            net_pnl = (pnl_data["net_pnl_pct"] / 100.0) * size_usd
+            close_event = LegacyPaperCloseEvent(
+                trade_id=position_id,
+                symbol=pos["symbol"],
+                side=pos.get("side", "BUY"),
+                exit_ts=ts,
+                exit_price=price,
+                exit_reason=reason,
+                gross_pnl=(pnl_data.get("gross_pnl_pct", 0.0) / 100.0) * size_usd,
+                fees=(pnl_data.get("fee_pct", 0.0) / 100.0) * size_usd,
+                spread=(pnl_data.get("slippage_pct", 0.0) / 100.0) * size_usd,
+                net_pnl=net_pnl,
+                net_pnl_pct=pnl_data.get("net_pnl_pct", 0.0),
+                duration_seconds=int(duration_s),
+                learning_eligible=not pos.get("quarantined", False),
+                readiness_eligible=False,  # Will be determined by learning bridge
+                real_orders_allowed=False,
+                metadata={"paper_source": pos.get("paper_source", "unknown")},
+            )
+            v5_bridge.record_close(close_event)
+    except Exception as e:
+        log.error(f"[V5_BRIDGE] Paper close hook failed: {e}")
 
     # P1.1AJ: Log exit quality before deduplication (idempotent, all training positions)
     _log_quality_exit_once(closed_trade, pos, path="close_paper_position")

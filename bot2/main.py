@@ -1971,6 +1971,28 @@ def main():
                 publish_dashboard_snapshot()
             except Exception as _dbs_e:
                 logging.warning("[DASHBOARD_SNAPSHOT_PUBLISH_ERROR] type=%s err=%s", type(_dbs_e).__name__, str(_dbs_e)[:100])
+
+            # V5 Legacy Bridge: Publish metrics and flush outbox (Phase 3 hook)
+            try:
+                from src.services.paper_trade_executor import _get_v5_bridge, get_paper_open_positions
+                v5_bridge = _get_v5_bridge()
+                if v5_bridge:
+                    open_positions = get_paper_open_positions()
+                    trading_stats = {
+                        "open_positions": len(open_positions),
+                        "closed_today": 0,  # Will be tracked by bridge
+                        "entries_attempted": 0,
+                        "entries_accepted": 0,
+                        "entries_rejected": 0,
+                        "reject_reasons": {},
+                        "cost_edge_pass": 0,
+                        "cost_edge_fail": 0,
+                    }
+                    v5_bridge.publish_metrics(trading_stats=trading_stats)
+                    v5_bridge.flush_outbox(limit=20)
+            except Exception as _v5_publish_e:
+                logging.debug(f"[V5_BRIDGE_METRICS_PUBLISH_ERROR] {_v5_publish_e}")
+
             _last_dashboard_snapshot = now
 
         # Publish signal_summary/latest every 60s for signal log
