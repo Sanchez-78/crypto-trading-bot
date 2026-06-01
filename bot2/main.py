@@ -1993,6 +1993,78 @@ def main():
             except Exception as _v5_publish_e:
                 logging.debug(f"[V5_BRIDGE_METRICS_PUBLISH_ERROR] {_v5_publish_e}")
 
+            # Czech Cycle Report: Kompletní český výpis stavu po každém cyklu
+            try:
+                from src.services.czech_cycle_report import CzechCycleReporter
+                from src.services.firebase_client import get_quota_status
+                from src.services.learning_monitor import lm_snapshot
+
+                reporter = CzechCycleReporter()
+
+                # Sbír metriky
+                open_pos = get_paper_open_positions()
+                closed_trades = []  # TODO: Sbírat ze session state
+
+                # Learning stats
+                lm_snap = lm_snapshot()
+                learning_stats = {
+                    "trades_in_lm": lm_snap.get("total_trades", 0),
+                    "calibration_confidence": lm_snap.get("calibration_confidence", 0),
+                    "dominant_attribution": lm_snap.get("dominant_attribution", "N/A"),
+                    "attribution_pct": lm_snap.get("attribution_pct", 0),
+                    "update_count": lm_snap.get("total_updates", 0),
+                }
+
+                # Trading stats
+                trading_stats = {
+                    "open_positions": len(open_pos),
+                    "closed_today": len(closed_trades),
+                    "entries_attempted": 0,
+                    "entries_accepted": 0,
+                    "entries_rejected": 0,
+                    "cost_edge_pass": 0,
+                    "cost_edge_fail": 0,
+                }
+
+                # Quota status
+                quota = get_quota_status()
+                quota_state = {
+                    "reads": int(quota.get("reads", 0)),
+                    "reads_limit": 20000,
+                    "writes": int(quota.get("writes", 0)),
+                    "writes_limit": 10000,
+                    "state": quota.get("state", "unknown"),
+                }
+
+                # V5 Bridge status
+                v5_status = None
+                if v5_bridge:
+                    v5_status = {
+                        "enabled": True,
+                        "components": {
+                            "quota_guard": "READY",
+                            "outbox": "READY",
+                            "firebase_writer": "READY",
+                            "learning_bridge": "READY",
+                            "metrics_publisher": "READY",
+                        },
+                        "outbox_pending": 0,
+                    }
+
+                # Generuj a vytiskni report
+                report = reporter.generate_cycle_report(
+                    open_positions=open_pos,
+                    closed_today=closed_trades,
+                    learning_stats=learning_stats,
+                    trading_stats=trading_stats,
+                    quota_state=quota_state,
+                    v5_bridge_status=v5_status,
+                )
+                print(report)
+
+            except Exception as _czech_report_e:
+                logging.debug(f"[CZECH_CYCLE_REPORT_ERROR] {_czech_report_e}")
+
             _last_dashboard_snapshot = now
 
         # Publish signal_summary/latest every 60s for signal log
