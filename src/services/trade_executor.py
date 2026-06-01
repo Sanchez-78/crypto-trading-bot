@@ -574,7 +574,9 @@ def is_unblock_mode_trade() -> bool:
     try:
         from src.services.realtime_decision_engine import is_unblock_mode
         return is_unblock_mode()
-    except:
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except Exception:
         return False
 
 
@@ -2947,48 +2949,50 @@ def on_price(data):
         if sym not in _positions:
             return
         pos = _positions[sym]
-    pos["ticks"] += 1
-    curr  = data["price"]
-    entry = pos["entry"]
 
-    move = (curr - entry) / entry
-    if pos["action"] == "SELL":
-        move *= -1
+        pos["ticks"] += 1
 
-    # V10.4b: keep live_pnl fresh so should_replace profit protection is accurate
-    pos["live_pnl"] = move
+        curr  = data["price"]
+        entry = pos["entry"]
 
-    # V10.10: live efficiency decay — exp(-t/tau) where tau = expected_hold ticks.
-    # As the trade ages past its expected duration its efficiency value drops,
-    # making it a natural candidate for replacement by fresher opportunities.
-    _t_alive = time.time() - pos.get("open_ts", time.time())
-    _tau10   = max(pos.get("expected_hold", 10.0), 1e-6)
-    pos["efficiency_live"] = pos.get("efficiency", 0.0) * math.exp(-_t_alive / _tau10)
+        move = (curr - entry) / entry
+        if pos["action"] == "SELL":
+            move *= -1
 
-    # V10.13: record portfolio PnL snapshot every 5 ticks (sampled, not every tick)
-    # to keep _pf_pnl_hist dense enough for OLS slope without excessive overhead.
-    _pf_tick_counter[0] += 1
-    if _pf_tick_counter[0] % 5 == 0 and _positions:
-        try:
-            from src.services.risk_engine import record_portfolio_pnl as _rpf
-            _rpf(_positions)
-        except Exception:
-            pass
+        # V10.4b: keep live_pnl fresh so should_replace profit protection is accurate
+        pos["live_pnl"] = move
 
-    # MAE / MFE tracking
-    if curr > pos["max_price"]: pos["max_price"] = curr
-    if curr < pos["min_price"]: pos["min_price"] = curr
+        # V10.10: live efficiency decay — exp(-t/tau) where tau = expected_hold ticks.
+        # As the trade ages past its expected duration its efficiency value drops,
+        # making it a natural candidate for replacement by fresher opportunities.
+        _t_alive = time.time() - pos.get("open_ts", time.time())
+        _tau10   = max(pos.get("expected_hold", 10.0), 1e-6)
+        pos["efficiency_live"] = pos.get("efficiency", 0.0) * math.exp(-_t_alive / _tau10)
 
-    # Trail price tracking
-    if pos["action"] == "BUY" and curr > pos["trail_price"]:
-        pos["trail_price"] = curr
-    elif pos["action"] == "SELL" and curr < pos["trail_price"]:
-        pos["trail_price"] = curr
+        # V10.13: record portfolio PnL snapshot every 5 ticks (sampled, not every tick)
+        # to keep _pf_pnl_hist dense enough for OLS slope without excessive overhead.
+        _pf_tick_counter[0] += 1
+        if _pf_tick_counter[0] % 5 == 0 and _positions:
+            try:
+                from src.services.risk_engine import record_portfolio_pnl as _rpf
+                _rpf(_positions)
+            except Exception:
+                pass
 
-    # Activate trailing stop at +0.60% profit
-    if not pos["is_trailing"] and move >= 0.006:
-        pos["is_trailing"] = True
-        log.info(f"    🚀 {sym} TRAILING STOP ACTIVOVÁN! Zisk: {move*100:.2f}%")
+        # MAE / MFE tracking
+        if curr > pos["max_price"]: pos["max_price"] = curr
+        if curr < pos["min_price"]: pos["min_price"] = curr
+
+        # Trail price tracking
+        if pos["action"] == "BUY" and curr > pos["trail_price"]:
+            pos["trail_price"] = curr
+        elif pos["action"] == "SELL" and curr < pos["trail_price"]:
+            pos["trail_price"] = curr
+
+        # Activate trailing stop at +0.60% profit
+        if not pos["is_trailing"] and move >= 0.006:
+            pos["is_trailing"] = True
+            log.info(f"    🚀 {sym} TRAILING STOP AKTIVOVÁN! Zisk: {move*100:.2f}%")
 
     # ── V10.8: Soft preemptive exit — de-risk on predicted regime transition ──
     # Fires once when the regime is predicted to change AND position gain is
@@ -3002,7 +3006,10 @@ def on_price(data):
         _pred_soft = _reg_op
         try:
             from src.services.regime_predictor import predicted_regime as _pf
-            _pred_soft = _pf(pos["signal"], _reg_op, _meta_state["mode"])
+            _mode = (_meta_state or {}).get("mode", "paper_train")
+            _pred_soft = _pf(pos["signal"], _reg_op, _mode)
+        except (KeyboardInterrupt, SystemExit):
+            raise
         except Exception:
             pass
         if _pred_soft != _reg_op:
@@ -3045,7 +3052,10 @@ def on_price(data):
     _prev = pos.get("prev_price", curr)   # price from previous tick (neutral on tick 1)
     if should_add_to_position(pos, curr, _prev):
         add_to_position(pos, curr)
-        entry = pos["entry"]   # refresh local var — exit math must use blended entry
+        with _positions_lock:
+            if sym in _positions:
+                entry = _positions[sym]["entry"]
+                pos = _positions[sym].copy()
         short_p = sym.replace("USDT", "")
         log.info(f"    📈 {short_p} PYRAMID add#{pos['adds']}  "
               f"size={pos['size']:.4f}  avg_entry={entry:.4f}  move={move*100:.2f}%")
@@ -3059,8 +3069,10 @@ def on_price(data):
     # Not applied during trailing (Chandelier owns the stop; pos["sl"] not read)
     if not pos["is_trailing"]:
         _atr_tighten = max(pos["signal"].get("atr", 0) or 0, entry * 0.003)
-        pos["sl"] = adaptive_sl_tightening(
-            entry, curr, pos["sl"], pos["action"], _atr_tighten)
+        with _positions_lock:
+            if sym in _positions:
+                _positions[sym]["sl"] = adaptive_sl_tightening(
+                    entry, curr, _positions[sym]["sl"], _positions[sym]["action"], _atr_tighten)
 
     # ── Exit conditions ────────────────────────────────────────────────────────
     reason = None
@@ -3132,6 +3144,8 @@ def on_price(data):
             from src.services.execution import risk_ev as _rev
             if _rev(sym, pos["signal"].get("regime", "RANGING")) < -0.1:
                 reason = "early_exit"
+        except (KeyboardInterrupt, SystemExit):
+            raise
         except Exception:
             pass
 
@@ -3198,7 +3212,9 @@ def on_price(data):
             reason = "TIMEOUT_LOSS"
 
     # V10.5b: store current price as prev for next tick's momentum check
-    pos["prev_price"] = curr
+    with _positions_lock:
+        if sym in _positions:
+            _positions[sym]["prev_price"] = curr
 
     if reason is None:
         return

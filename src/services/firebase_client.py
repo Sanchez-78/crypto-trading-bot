@@ -23,6 +23,8 @@ from firebase_admin import credentials, firestore
 import logging
 import os, json, base64, time, requests, threading
 
+_QUOTA_LOCK = threading.RLock()
+
 # V10.13u: Safe logging for exception messages (prevent secret leakage)
 try:
     from src.services.safe_logging import safe_log_exception
@@ -97,9 +99,10 @@ def _reset_quota_if_new_day():
 
     if now_utc >= midnight_utc and last_reset_utc < midnight_utc:
         # We've crossed midnight Pacific since last reset
-        _QUOTA_WINDOW_START = midnight_utc.timestamp()
-        _QUOTA_READS = 0
-        _QUOTA_WRITES = 0
+        with _QUOTA_LOCK:
+            _QUOTA_WINDOW_START = midnight_utc.timestamp()
+            _QUOTA_READS = 0
+            _QUOTA_WRITES = 0
         import logging
         logging.info("✅ Firebase quota RESET at midnight Pacific (09:00 GMT+2 / 07:00 UTC) — 50k reads, 20k writes available")
 
@@ -137,19 +140,21 @@ def _can_read(count=1):
     _reset_quota_if_new_day()
     # EMERGENCY (2026-04-25): Lowered brake from 80% to 65% due to quota exceeded incident
     # Prevents further overage while maintaining cache-backed fallback
-    if _QUOTA_READS >= _QUOTA_MAX_READS * 0.65:
-        return False, _QUOTA_READS, _QUOTA_MAX_READS
-    allowed = (_QUOTA_READS + count) <= _QUOTA_MAX_READS
-    return allowed, _QUOTA_READS, _QUOTA_MAX_READS
+    with _QUOTA_LOCK:
+        if _QUOTA_READS >= _QUOTA_MAX_READS * 0.65:
+            return False, _QUOTA_READS, _QUOTA_MAX_READS
+        allowed = (_QUOTA_READS + count) <= _QUOTA_MAX_READS
+        return allowed, _QUOTA_READS, _QUOTA_MAX_READS
 
 def _record_read(count=1):
     """Record read operation(s)."""
     global _QUOTA_READS
-    _QUOTA_READS += count
-    import logging
-    reads_pct = _QUOTA_READS/_QUOTA_MAX_READS*100
+    with _QUOTA_LOCK:
+        _QUOTA_READS += count
+        reads_pct = _QUOTA_READS/_QUOTA_MAX_READS*100
     writes_pct = _QUOTA_WRITES/_QUOTA_MAX_WRITES*100
     severity = _get_quota_severity(reads_pct, writes_pct)
+    import logging
 
     # Log at appropriate severity level
     if _QUOTA_READS % 100 == 0:  # Every 100 reads
@@ -172,28 +177,31 @@ def _record_read(count=1):
 def _can_write(count=1):
     """Check if write quota available. Returns (allowed, current_usage, limit)."""
     _reset_quota_if_new_day()
-    allowed = (_QUOTA_WRITES + count) <= _QUOTA_MAX_WRITES
-    return allowed, _QUOTA_WRITES, _QUOTA_MAX_WRITES
+    with _QUOTA_LOCK:
+        allowed = (_QUOTA_WRITES + count) <= _QUOTA_MAX_WRITES
+        return allowed, _QUOTA_WRITES, _QUOTA_MAX_WRITES
 
 def _record_write(count=1):
     """Record write operation(s)."""
     global _QUOTA_WRITES
-    _QUOTA_WRITES += count
-    if _QUOTA_WRITES > _QUOTA_MAX_WRITES * 0.9:  # Warn at 90%
-        import logging
-        logging.warning(f"⚠️  Firebase writes: {_QUOTA_WRITES:,}/{_QUOTA_MAX_WRITES:,} ({_QUOTA_WRITES/_QUOTA_MAX_WRITES*100:.1f}%)")
+    with _QUOTA_LOCK:
+        _QUOTA_WRITES += count
+        if _QUOTA_WRITES > _QUOTA_MAX_WRITES * 0.9:  # Warn at 90%
+            import logging
+            logging.warning(f"⚠️  Firebase writes: {_QUOTA_WRITES:,}/{_QUOTA_MAX_WRITES:,} ({_QUOTA_WRITES/_QUOTA_MAX_WRITES*100:.1f}%)")
 
 def get_quota_status():
     """Return current quota usage as dict for monitoring."""
     _reset_quota_if_new_day()
-    return {
-        "reads": _QUOTA_READS,
-        "reads_limit": _QUOTA_MAX_READS,
-        "reads_pct": f"{_QUOTA_READS/_QUOTA_MAX_READS*100:.1f}%",
-        "writes": _QUOTA_WRITES,
-        "writes_limit": _QUOTA_MAX_WRITES,
-        "writes_pct": f"{_QUOTA_WRITES/_QUOTA_MAX_WRITES*100:.1f}%",
-    }
+    with _QUOTA_LOCK:
+        return {
+            "reads": _QUOTA_READS,
+            "reads_limit": _QUOTA_MAX_READS,
+            "reads_pct": f"{_QUOTA_READS/_QUOTA_MAX_READS*100:.1f}%",
+            "writes": _QUOTA_WRITES,
+            "writes_limit": _QUOTA_MAX_WRITES,
+            "writes_pct": f"{_QUOTA_WRITES/_QUOTA_MAX_WRITES*100:.1f}%",
+        }
 
 def _check_quota_status():
     """Check if quota exhausted (legacy, kept for compatibility)."""
@@ -205,8 +213,9 @@ def _mark_quota_exhausted(error_msg: str):
     global _QUOTA_READS, _QUOTA_WRITES
     import logging
     # Set quotas to their limits to immediately prevent further operations
-    _QUOTA_READS = _QUOTA_MAX_READS
-    _QUOTA_WRITES = _QUOTA_MAX_WRITES
+    with _QUOTA_LOCK:
+        _QUOTA_READS = _QUOTA_MAX_READS
+        _QUOTA_WRITES = _QUOTA_MAX_WRITES
     logging.warning(f"⚠️  Firebase 429 error: {error_msg} — marked quota exhausted until midnight Pacific reset (09:00 GMT+2)")
     # Also set degradation flags
     _set_firebase_degraded(is_read=True, is_write=True, reason="quota_429")
