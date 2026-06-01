@@ -1,0 +1,185 @@
+================================================================================
+EXACT CODE SNIPPETS FOR /opt/cryptomaster PATCHING
+================================================================================
+
+Paste these EXACTLY as shown. No modifications.
+
+================================================================================
+EDIT 1A: _get_v5_bridge() HELPER (After line ~47)
+================================================================================
+
+# V5 Legacy Bridge integration (Phase 3)
+_V5_BRIDGE = None
+_V5_BRIDGE_LOCK = __import__("threading").RLock()
+
+
+def _get_v5_bridge():
+    """Lazy initialize V5 bridge singleton."""
+    global _V5_BRIDGE
+    if _V5_BRIDGE is None:
+        with _V5_BRIDGE_LOCK:
+            if _V5_BRIDGE is None:
+                try:
+                    from src.services.v5_legacy_bridge import V5LegacyBridge
+                    _V5_BRIDGE = V5LegacyBridge()
+                    log.info(
+                        "[V5_BRIDGE_INIT] enabled=true real_orders_allowed=false service=cryptomaster.service"
+                    )
+                except Exception as e:
+                    log.error(f"[V5_BRIDGE_INIT_FAILED] {e}")
+                    _V5_BRIDGE = False  # Mark as failed to avoid retry loop
+    return _V5_BRIDGE if _V5_BRIDGE is not False else None
+
+
+================================================================================
+EDIT 1B: DEDUP CHECK AT START OF close_paper_position()
+================================================================================
+
+def close_paper_position(position_id, price, ts, reason):
+    """Close a paper position."""
+    # P0 FIX #2: Dedup check FIRST (fail fast), before any position modifications
+    with _CLOSED_TRADES_LOCK:
+        if position_id in _CLOSED_TRADES_THIS_SESSION:
+            log.debug(f"[PAPER_CLOSE_DEDUPE] trade_id={position_id} already processed, skipping")
+            return None
+        # Mark as being processed (added to set after position read succeeds)
+
+    # P0 FIX #1: Do NOT pop position yet - read-only access first
+    # Position removal must happen AFTER all processing succeeds to prevent loss on exception
+    with _POSITION_LOCK:
+        if position_id not in _POSITIONS:
+            return None
+        pos = _POSITIONS[position_id]  # Read-only, do not pop yet
+
+
+================================================================================
+EDIT 1C: PAPER_ENTRY HOOK (After [PAPER_ENTRY] log in open_paper_position)
+================================================================================
+
+    # V5 Legacy Bridge: Record paper entry (Phase 3 hook)
+    try:
+        v5_bridge = _get_v5_bridge()
+        if v5_bridge:
+            from src.services.v5_legacy_bridge.event_models import LegacyPaperOpenEvent
+            open_event = LegacyPaperOpenEvent(
+                trade_id=trade_id,
+                symbol=symbol,
+                side=side,
+                strategy_id=paper_source or "normal_rde_take",
+                regime=position.get("regime", "NEUTRAL"),
+                entry_ts=ts,
+                entry_price=price,
+                size=size_usd,
+                bucket=bucket or training_bucket or "UNKNOWN",
+                expected_move_bps=int((position.get("expected_move_pct", 0.0) or 0.0) * 10000),
+                required_move_bps=int((position.get("required_move_pct", 0.23) or 0.23) * 10000),
+                cost_edge_ok=position.get("cost_edge_ok", True),
+                real_orders_allowed=False,
+                metadata={"paper_source": paper_source or "normal_rde_take"},
+            )
+            v5_bridge.record_open(open_event)
+    except Exception as e:
+        log.error(f"[V5_BRIDGE] Paper entry hook failed: {e}")
+
+
+================================================================================
+EDIT 1D: V5 CLOSE HOOK + OUTBOX FALLBACK (After [PAPER_EXIT] log)
+================================================================================
+
+    # V5 Legacy Bridge: Record paper close (Phase 3 hook)
+    close_event = None  # Initialize to prevent undefined variable in except
+    try:
+        v5_bridge = _get_v5_bridge()
+        if v5_bridge:
+            from src.services.v5_legacy_bridge.event_models import LegacyPaperCloseEvent
+            size_usd = _safe_float(pos.get("size_usd") or pos.get("final_size_usd"), 10.0)
+            net_pnl = (pnl_data["net_pnl_pct"] / 100.0) * size_usd
+            close_event = LegacyPaperCloseEvent(
+                trade_id=position_id,
+                symbol=pos["symbol"],
+                side=pos.get("side", "BUY"),
+                exit_ts=ts,
+                exit_price=price,
+                exit_reason=reason,
+                gross_pnl=(pnl_data.get("gross_pnl_pct", 0.0) / 100.0) * size_usd,
+                fees=(pnl_data.get("fee_pct", 0.0) / 100.0) * size_usd,
+                spread=(pnl_data.get("slippage_pct", 0.0) / 100.0) * size_usd,
+                net_pnl=net_pnl,
+                net_pnl_pct=pnl_data.get("net_pnl_pct", 0.0),
+                duration_seconds=int(duration_s),
+                learning_eligible=not pos.get("quarantined", False),
+                readiness_eligible=False,
+                real_orders_allowed=False,
+                metadata={"paper_source": pos.get("paper_source", "unknown")},
+            )
+            v5_bridge.record_close(close_event)
+    except Exception as e:
+        # P0 FIX #3: On V5 bridge failure, enqueue for retry instead of silently continuing
+        log.error(f"[V5_BRIDGE_CLOSE_FAILED] trade_id={position_id} enqueuing to outbox: {e}")
+        try:
+            from src.services.v5_legacy_bridge.outbox import get_durable_outbox
+            outbox = get_durable_outbox()
+            if outbox and close_event:
+                outbox.enqueue(
+                    "paper_close",
+                    close_event.to_dict() if hasattr(close_event, 'to_dict') else {
+                        "trade_id": position_id,
+                        "symbol": pos.get("symbol", "N/A"),
+                        "exit_reason": reason,
+                        "exit_price": price,
+                        "exit_ts": ts,
+                        "net_pnl_pct": pnl_data.get("net_pnl_pct", 0.0),
+                    },
+                    idempotency_key=position_id,
+                )
+                log.info(f"[V5_BRIDGE_CLOSE_ENQUEUED] trade_id={position_id} for retry")
+        except Exception as outbox_e:
+            log.error(f"[V5_BRIDGE_OUTBOX_ENQUEUE_FAILED] trade_id={position_id} error={outbox_e}")
+
+
+================================================================================
+EDIT 1E: POSITION REMOVAL AT END OF close_paper_position() (Before return)
+================================================================================
+
+    # P0 FIX #1 (continued): NOW remove position from active, AFTER all processing succeeds
+    with _POSITION_LOCK:
+        _POSITIONS.pop(position_id, None)
+
+
+================================================================================
+EDIT 2A: bot2/main.py IMPORT (Find existing import, modify it)
+================================================================================
+
+from src.services.paper_trade_executor import _get_v5_bridge, get_paper_open_positions
+
+
+================================================================================
+EDIT 2B: bot2/main.py PERIODIC METRICS (In main loop, before CzechCycleReporter)
+================================================================================
+
+            # V5 bridge metrics publishing (Phase 3)
+            try:
+                v5_bridge = _get_v5_bridge()
+                if v5_bridge:
+                    v5_bridge.publish_metrics(trading_stats=trading_stats)
+                    v5_bridge.flush_outbox(limit=20)
+            except Exception as _v5_publish_e:
+                log.debug(f"[V5_BRIDGE_METRICS_PUBLISH_ERROR] {_v5_publish_e}")
+
+
+================================================================================
+AFTER PATCHING: RUN TESTS
+================================================================================
+
+cd /opt/cryptomaster
+PY=/opt/cryptomaster/venv/bin/python
+
+$PY -m pytest tests/test_v5_legacy_bridge*.py -q
+$PY -m pytest tests/test_p11_admission_gates_part2.py tests/test_p11_dashboard_diagnostics.py -q
+$PY -m pytest tests/test_paper_mode.py::TestP1AE1BootstrapCostEdgeBypass::test_bootstrap_cost_edge_bypass_paper_train -q
+$PY -m pytest tests/test_paper_mode.py -q
+$PY -m pytest tests/test_p11ap_o2_*.py -q
+
+All tests should PASS before restart.
+
+================================================================================
