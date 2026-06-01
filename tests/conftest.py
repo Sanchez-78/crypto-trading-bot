@@ -100,39 +100,48 @@ def reset_starvation_and_sampler_state():
 
 
 @pytest.fixture(autouse=True)
-def isolate_paper_executor_state():
+def isolate_paper_executor_state(tmp_path, monkeypatch):
     """Isolate paper_trade_executor in-memory state for test isolation.
 
     Ensures V5 bridge tests don't run against live PAPER positions.
-    Clears _POSITIONS and related state before each test to avoid:
-    - max_open_exceeded failures when live data exists
-    - interference from concurrent trading state
-    - false test failures due to runtime state
+    Clears _POSITIONS and redirects JSON state file before each test.
 
-    Does NOT modify the JSON state file, Firebase, or runtime behavior.
+    This fixture:
+    - Redirects the state file to a temp location with empty content
+    - Clears all in-memory position tracking
+    - Resets the initialization flag to prevent caching
+    - Restores state after test for the next test
+
+    Does NOT modify the actual JSON file or runtime behavior.
     """
     import src.services.paper_trade_executor as pte_mod
 
-    # Save original state
+    # Create empty temp file (ensures no positions are loaded from disk)
+    temp_file = tmp_path / "paper_open_positions.json"
+    temp_file.write_text("{}\n")
+
+    # Redirect file path FIRST, before any state clearing
+    # This ensures if _load_paper_state() is called during fixture setup,
+    # it loads from the empty temp file, not the live file
+    original_file = pte_mod._STATE_FILE
+    monkeypatch.setattr(pte_mod, '_STATE_FILE', str(temp_file))
+
+    # Save original state (from previous test or module load)
     original_positions = pte_mod._POSITIONS.copy() if hasattr(pte_mod, '_POSITIONS') else {}
     original_closed_trades = pte_mod._CLOSED_TRADES_THIS_SESSION.copy() if hasattr(pte_mod, '_CLOSED_TRADES_THIS_SESSION') else set()
 
     # Clear in-memory state for test isolation
-    if hasattr(pte_mod, '_POSITIONS'):
-        pte_mod._POSITIONS.clear()
-    if hasattr(pte_mod, '_CLOSED_TRADES_THIS_SESSION'):
-        pte_mod._CLOSED_TRADES_THIS_SESSION.clear()
+    pte_mod._POSITIONS.clear()
+    pte_mod._CLOSED_TRADES_THIS_SESSION.clear()
 
-    # Reset state initialization flag if present
-    if hasattr(pte_mod, '_PAPER_STATE_INITIALIZED'):
-        pte_mod._PAPER_STATE_INITIALIZED = False
+    # Reset state initialization flag to force clean reload
+    # This prevents caching of old state from previous tests
+    pte_mod._PAPER_STATE_INITIALIZED = False
 
     yield
 
-    # Restore original state after test
-    if hasattr(pte_mod, '_POSITIONS'):
-        pte_mod._POSITIONS.clear()
-        pte_mod._POSITIONS.update(original_positions)
-    if hasattr(pte_mod, '_CLOSED_TRADES_THIS_SESSION'):
-        pte_mod._CLOSED_TRADES_THIS_SESSION.clear()
-        pte_mod._CLOSED_TRADES_THIS_SESSION.update(original_closed_trades)
+    # Restore original state (for next test isolation)
+    pte_mod._POSITIONS.clear()
+    pte_mod._POSITIONS.update(original_positions)
+    pte_mod._CLOSED_TRADES_THIS_SESSION.clear()
+    pte_mod._CLOSED_TRADES_THIS_SESSION.update(original_closed_trades)
