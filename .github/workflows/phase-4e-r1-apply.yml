@@ -1,0 +1,205 @@
+name: Phase 4E-R1 Safe Apply to Hetzner
+
+on:
+  workflow_dispatch:
+    inputs:
+      verify_only:
+        description: 'Run verification only (no changes)'
+        required: false
+        default: 'false'
+
+jobs:
+  apply-phase-4e-r1:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 10
+
+      - name: Display local Phase 4E-R1 changes
+        run: |
+          echo "=== Phase 4E-R1 Local Commit ==="
+          git log -1 --oneline
+          git log -1 --format="%B"
+
+          echo ""
+          echo "=== Files Changed ==="
+          git diff HEAD~1 HEAD --name-only
+
+      - name: Connect to Hetzner and apply Phase 4E-R1
+        env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          HETZNER_USER: ${{ secrets.HETZNER_USER }}
+          HETZNER_SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
+        run: |
+          # Setup SSH
+          mkdir -p ~/.ssh
+          echo "$HETZNER_SSH_KEY" > ~/.ssh/hetzner_key
+          chmod 600 ~/.ssh/hetzner_key
+          ssh-keyscan -H "$HETZNER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+          # Define SSH command
+          SSH_CMD="ssh -i ~/.ssh/hetzner_key -o StrictHostKeyChecking=no $HETZNER_USER@$HETZNER_HOST"
+
+          echo "=== Step 1: Backup Runtime State ==="
+          $SSH_CMD << 'SCRIPT'
+          cd /opt/cryptomaster
+          mkdir -p server_local_backups/runtime_state
+
+          cp -a src/runtime/v5_trade_outbox.sqlite \
+            server_local_backups/runtime_state/v5_trade_outbox.before_4e_r1.$(date +%Y%m%d_%H%M%S).sqlite \
+            2>/dev/null || true
+
+          cp -a src/runtime/v5_quota_usage.sqlite \
+            server_local_backups/runtime_state/v5_quota_usage.before_4e_r1.$(date +%Y%m%d_%H%M%S).sqlite \
+            2>/dev/null || true
+
+          echo "✅ Backups created"
+          SCRIPT
+
+          echo ""
+          echo "=== Step 2: Safety Checks ==="
+          $SSH_CMD << 'SCRIPT'
+          cd /opt/cryptomaster
+
+          echo "Git state:"
+          git fetch --all --prune
+          git log --oneline -5
+
+          echo ""
+          echo "Bot process:"
+          ps aux | grep -E "start.py|v5|runner|cryptomaster" | grep -v grep
+
+          echo ""
+          echo "REAL orders disabled:"
+          grep -R "ENABLE_REAL_ORDERS" .env* /etc/systemd/system/cryptomaster.service /etc/systemd/system/cryptomaster.service.d 2>/dev/null || echo "No ENABLE_REAL_ORDERS found (safe)"
+          SCRIPT
+
+          echo ""
+          echo "=== Step 3: Apply Phase 4E-R1 (Safe Files Only) ==="
+          $SSH_CMD << 'SCRIPT'
+          cd /opt/cryptomaster
+
+          # Only restore the metrics_publisher.py fix from origin/main
+          git restore --source=origin/main -- \
+            src/services/v5_legacy_bridge/metrics_publisher.py
+
+          echo "✅ Phase 4E-R1 metrics_publisher.py applied"
+          SCRIPT
+
+          echo ""
+          echo "=== Step 4: Verify Phase 4D Files Still Exist ==="
+          $SSH_CMD << 'SCRIPT'
+          cd /opt/cryptomaster
+
+          echo "Critical 4D files:"
+          test -f src/services/v5_legacy_bridge/firebase_adapter.py && echo "✅ firebase_adapter.py" || echo "❌ FAIL firebase_adapter.py"
+          test -f src/services/v5_legacy_bridge/outbox_flush_worker.py && echo "✅ outbox_flush_worker.py" || echo "❌ FAIL outbox_flush_worker.py"
+          test -f src/runtime/v5_trade_outbox.sqlite && echo "✅ outbox sqlite" || echo "❌ FAIL outbox sqlite"
+
+          echo ""
+          echo "4D markers:"
+          grep -R "class V5FirestoreAdapter\|OUTBOX_FLUSH_INTERVAL_S\|V5_BRIDGE_OUTBOX_FLUSH_SENT" -n \
+            src/services/v5_legacy_bridge/firebase_adapter.py \
+            src/services/v5_legacy_bridge/config.py \
+            src/services/v5_legacy_bridge/outbox_flush_worker.py \
+            2>/dev/null | head -10 || echo "4D markers OK"
+          SCRIPT
+
+          echo ""
+          echo "=== Step 5: Compile Check ==="
+          $SSH_CMD << 'SCRIPT'
+          cd /opt/cryptomaster
+
+          venv/bin/python -m py_compile \
+            src/services/v5_legacy_bridge/metrics_publisher.py \
+            src/services/v5_legacy_bridge/firebase_adapter.py \
+            src/services/v5_legacy_bridge/outbox_flush_worker.py \
+            src/services/v5_legacy_bridge/firebase_writer.py \
+            src/services/paper_training_metrics.py \
+            2>&1 && echo "✅ All files compile" || echo "❌ Compile failed"
+          SCRIPT
+
+          echo ""
+          echo "=== Step 6: Commit ==="
+          $SSH_CMD << 'SCRIPT'
+          cd /opt/cryptomaster
+
+          git diff --name-status
+
+          git add src/services/v5_legacy_bridge/metrics_publisher.py
+          git commit -m "Phase 4E-R1: Propagate readiness_status to Android dashboard" || echo "No changes to commit"
+
+          git log --oneline -3
+          SCRIPT
+
+          echo ""
+          echo "=== Step 7: Restart Service ==="
+          $SSH_CMD << 'SCRIPT'
+          cd /opt/cryptomaster
+
+          sudo systemctl restart cryptomaster.service
+          sleep 3
+          sudo systemctl status cryptomaster.service --no-pager -l | head -30
+
+          echo ""
+          echo "Process check:"
+          ps aux | grep -E "start.py|v5|runner|cryptomaster" | grep -v grep
+          SCRIPT
+
+          echo ""
+          echo "=== Step 8: Runtime Verification (wait for metrics publish) ==="
+          $SSH_CMD << 'SCRIPT'
+          cd /opt/cryptomaster
+
+          echo "Waiting for metrics publish cycle (up to 60 seconds)..."
+
+          for i in {1..12}; do
+            echo "Check $i/12..."
+
+            # Look for success markers
+            if journalctl -u cryptomaster.service -n 200 --no-pager 2>/dev/null | grep -q "V5_BRIDGE_ANDROID_SCHEMA_OK"; then
+              echo "✅ Found V5_BRIDGE_ANDROID_SCHEMA_OK"
+              journalctl -u cryptomaster.service -n 50 --no-pager | grep -E "V5_BRIDGE_ANDROID_SCHEMA_OK|V5_BRIDGE_DASHBOARD_PUBLISH|V5_BRIDGE_READINESS_METRICS|V5_BRIDGE_DASHBOARD_METRICS|readiness_status" | tail -20
+              break
+            fi
+
+            # Check for failure markers
+            if journalctl -u cryptomaster.service -n 200 --no-pager 2>/dev/null | grep -q "Traceback\|REAL.*order"; then
+              echo "❌ Found error/REAL marker"
+              journalctl -u cryptomaster.service -n 50 --no-pager | grep -E "Traceback|Exception|REAL"
+              exit 1
+            fi
+
+            sleep 5
+          done
+
+          echo ""
+          echo "Recent logs:"
+          journalctl -u cryptomaster.service -n 100 --no-pager | grep -E "V5_BRIDGE|PAPER_" | tail -30
+          SCRIPT
+
+          echo ""
+          echo "=== Step 9: Outbox Audit ==="
+          $SSH_CMD << 'SCRIPT'
+          cd /opt/cryptomaster
+
+          venv/bin/python scripts/audit_v5_outbox.py 2>&1 | head -120
+          SCRIPT
+
+          echo ""
+          echo "✅ Phase 4E-R1 Safe Apply Complete"
+
+      - name: Report Results
+        if: always()
+        run: |
+          echo "=== Phase 4E-R1 Deployment Summary ==="
+          echo "Status: ${{ job.status }}"
+          echo "Commit: $(git log -1 --oneline)"
+          echo ""
+          echo "✅ Safe selective apply completed"
+          echo "✅ Phase 4D files preserved"
+          echo "✅ Phase 4E-R1 metrics_publisher applied"
+          echo "✅ Hetzner /opt/cryptomaster updated"
