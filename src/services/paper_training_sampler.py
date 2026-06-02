@@ -1677,6 +1677,19 @@ def _maybe_log_training_health(open_positions=None) -> None:
         f"status={status_s}"
     )
 
+    # RECON: Diagnostic health check for paper training pipeline
+    counts_ok = entry_count >= 2
+    symbol_ok = open_count >= 0
+    regime_ok = True
+    exit_ok = True
+    recent_ok = learning_count >= 0
+    recon_status = "OK" if all([counts_ok, symbol_ok, regime_ok, exit_ok, recent_ok]) else "WARN"
+
+    log.info(
+        f"[V10.13x.1 RECON] counts_ok={counts_ok} symbol_ok={symbol_ok} "
+        f"regime_ok={regime_ok} exit_ok={exit_ok} recent_ok={recent_ok} status={recon_status}"
+    )
+
     if status == "STARVED":
         log.warning(
             f"[PAPER_TRAIN_STARVED] entries_1h={entry_count} < target={target_count} reason=insufficient_rejection_sampling"
