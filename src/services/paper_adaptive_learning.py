@@ -431,6 +431,30 @@ class PaperAdaptiveLearning:
             log.debug("[PAPER_QUALIFICATION_SKIP] trade_id=%s reason=already_counted", trade_id)
             return
 
+        # Phase 4B-R2: Exclude paper_starvation_learning trades from qualification
+        # These are recovery trades; they should learn but not count toward REAL readiness
+        learning_source = trade.get("learning_source", "")
+        paper_learning_only = trade.get("paper_learning_only", False)
+        real_readiness_eligible = trade.get("real_readiness_eligible", True)
+        readiness_eligible = trade.get("readiness_eligible", True)
+
+        if learning_source == "paper_starvation_learning" or paper_learning_only or not real_readiness_eligible:
+            log.info(
+                "[PAPER_QUALIFICATION_SKIP] trade_id=%s reason=paper_starvation_learning "
+                "learning_source=%s paper_learning_only=%s real_readiness_eligible=%s",
+                trade_id, learning_source, paper_learning_only, real_readiness_eligible
+            )
+            return
+
+        # Also skip if readiness_eligible=False for starvation buckets
+        if not readiness_eligible and training_bucket in ("PAPER_STARVATION_DISCOVERY", "C_WEAK_EV_TRAIN"):
+            log.info(
+                "[PAPER_QUALIFICATION_SKIP] trade_id=%s reason=readiness_ineligible "
+                "bucket=%s readiness_eligible=False",
+                trade_id, training_bucket
+            )
+            return
+
         # P1.1AP-O1A1: All checks passed: increment qualification
         # Store full segment_key for readiness metrics later
         segment_key = f"{symbol}:{trade.get('regime', 'UNKNOWN')}:{trade.get('side', 'UNKNOWN')}"
