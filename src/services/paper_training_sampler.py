@@ -1143,9 +1143,98 @@ def _training_quality_gate(
     bucket = str(bucket or "UNKNOWN")
     source_reject = str(source_reject or "UNKNOWN")
 
+    # PHASE 4B: Starvation admission bypass - allow PAPER-only learning trades during starvation
+    # Check this FIRST (before bucket-specific logic) when cost_edge_ok=False
+    # when no entries have been made for 600+ seconds, enabling the bot to collect learning data
+    allow_starvation_bypass = False
+    starvation_bypass_reason = ""
+    if cost_edge_ok is False:
+        try:
+            from src.core.runtime_mode import get_trading_mode
+            import os
+
+            mode = get_trading_mode()
+            is_paper_train = mode and mode.value == "paper_train"
+            real_orders_enabled = os.getenv("ENABLE_REAL_ORDERS", "false").lower() == "true"
+
+            # Starvation bypass conditions:
+            # 1. Running in PAPER mode
+            # 2. REAL orders disabled
+            # 3. Idle for >= 600 seconds (no PAPER entry despite valid signals)
+            # 4. From REJECT_NEGATIVE_EV or REJECT_ECON_BAD_ENTRY (cost-edge rejected)
+            # 5. Bucket is PAPER_STARVATION_DISCOVERY or C_WEAK_EV_TRAIN (learning buckets)
+            if (is_paper_train and
+                not real_orders_enabled and
+                _is_starvation_discovery_idle() and
+                source_reject in ("REJECT_NEGATIVE_EV", "REJECT_ECON_BAD_ENTRY") and
+                bucket in ("PAPER_STARVATION_DISCOVERY", "C_WEAK_EV_TRAIN")):
+
+                # Check starvation-specific position caps
+                # Max 1-2 global starvation positions, max 1 per symbol
+                open_positions_list = open_positions or []
+                starvation_open_global = sum(
+                    1 for p in open_positions_list
+                    if p.get("cost_edge_bypassed") and p.get("cost_edge_bypass_reason") == "paper_starvation_learning"
+                )
+                starvation_open_symbol = sum(
+                    1 for p in open_positions_list
+                    if p.get("cost_edge_bypassed") and p.get("cost_edge_bypass_reason") == "paper_starvation_learning"
+                    and p.get("symbol") == symbol
+                )
+
+                max_starvation_global = 2
+                max_starvation_per_symbol = 1
+
+                if starvation_open_global >= max_starvation_global:
+                    log.info(
+                        "[PAPER_STARVATION_BYPASS_BLOCKED] symbol=%s reason=global_cap "
+                        "open_global=%d max=%d",
+                        symbol, starvation_open_global, max_starvation_global
+                    )
+                elif starvation_open_symbol >= max_starvation_per_symbol:
+                    log.info(
+                        "[PAPER_STARVATION_BYPASS_BLOCKED] symbol=%s reason=per_symbol_cap "
+                        "open_symbol=%d max=%d",
+                        symbol, starvation_open_symbol, max_starvation_per_symbol
+                    )
+                else:
+                    # Check cooldown: 10 minutes per symbol/side/bucket
+                    cooldown_key = f"{symbol}:{side}:{bucket}:starvation"
+                    last_starvation_entry = _recent_dup_candidate.get(cooldown_key)
+                    cooldown_s = 600.0  # 10 min
+
+                    if last_starvation_entry is not None and now - last_starvation_entry < cooldown_s:
+                        remaining_s = cooldown_s - (now - last_starvation_entry)
+                        log.info(
+                            "[PAPER_STARVATION_BYPASS_COOLDOWN] symbol=%s side=%s bucket=%s "
+                            "remaining_s=%.1f",
+                            symbol, side, bucket, remaining_s
+                        )
+                    else:
+                        # All checks passed - allow bypass
+                        allow_starvation_bypass = True
+                        starvation_bypass_reason = "paper_starvation_learning"
+                        cost_edge_bypassed = True
+                        cost_edge_bypass_reason = starvation_bypass_reason
+                        _recent_dup_candidate[cooldown_key] = now
+
+                        idle_s = now - _starvation_discovery_state.get("last_eligible_entry_ts", 0.0)
+                        log.info(
+                            "[PAPER_STARVATION_BYPASS_ACCEPTED] symbol=%s side=%s bucket=%s "
+                            "idle_s=%.1f cost_edge_ok=False cost_edge_bypassed=True "
+                            "open_starvation_global=%d open_starvation_symbol=%d",
+                            symbol, side, bucket, idle_s,
+                            starvation_open_global, starvation_open_symbol
+                        )
+        except Exception as e:
+            log.warning(f"[STARVATION_BYPASS_CHECK_ERROR] {symbol}: {e}")
+
+    # If starvation bypass succeeded, continue (don't return yet)
+    if allow_starvation_bypass:
+        pass  # Continue to caps checks below
     # Cost-edge: do not open weak EV train if edge cannot cover costs
     # P1.1AE: Bootstrap training sample bypass - allow weak EV during cold-start in paper_train mode
-    if bucket == "C_WEAK_EV_TRAIN" and cost_edge_ok is False:
+    elif bucket == "C_WEAK_EV_TRAIN" and cost_edge_ok is False:
         # Check for bootstrap training bypass conditions
         allow_bootstrap_bypass = False
         bypass_reason = ""
@@ -1217,6 +1306,9 @@ def _training_quality_gate(
         # P1.1AR: Generate flow_id for correlation
         flow_id = _gen_flow_id(symbol, side, bucket, "STRICT_TAKE_ROUTED_TO_TRAINING", now)
         _log_bypass_flow("candidate", symbol, bypass_reason, bucket="C_WEAK_EV_TRAIN", source="STRICT_TAKE_ROUTED_TO_TRAINING", flow_id=flow_id)
+    elif cost_edge_ok is False and not allow_starvation_bypass:
+        # No bypass conditions met for cost_edge=False
+        return _skip("cost_edge_false_without_bypass", symbol=symbol, bucket=bucket, source_reject=source_reject)
 
     # Dedicated duplicate candidate cooldown
     from src.core.runtime_mode import PAPER_TRAIN_DUPLICATE_CANDIDATE_COOLDOWN_S
@@ -1419,7 +1511,8 @@ def _training_quality_gate(
             return _skip("cost_edge_false_without_bypass", symbol=symbol, bucket=bucket, cost_edge_ok=False)
         # P0 FIX #5A: Allow cost_edge_bypass_reason as prefix match
         # bootstrap_trading_sample may have trades count appended: "bootstrap_training_sample trades=X"
-        allowed_bypass_prefixes = ("bootstrap_training_sample", "paper_adaptive_recovery_with_quota", "recovery_admission")
+        # PHASE 4B: Added "paper_starvation_learning" for starvation recovery bypass
+        allowed_bypass_prefixes = ("bootstrap_training_sample", "paper_adaptive_recovery_with_quota", "recovery_admission", "paper_starvation_learning")
         if not any(cost_edge_bypass_reason.startswith(prefix) for prefix in allowed_bypass_prefixes):
             log.warning(
                 "[PAPER_ENTRY_ADMISSION_REJECTED] reason=cost_edge_false_invalid_bypass_reason "
@@ -2035,8 +2128,28 @@ def maybe_open_training_sample(
             result["historical_health"] = "BAD"
             _ADAPTIVE_STARVATION_STATE["admitted_recovery"] += 1
 
+        # PHASE 4B: Add starvation bypass metadata - marks trade as PAPER-only learning during starvation
+        if gate_result.get("cost_edge_bypass_reason") == "paper_starvation_learning":
+            result["cost_edge_ok"] = False
+            result["cost_edge_bypassed"] = True
+            result["cost_edge_bypass_reason"] = "paper_starvation_learning"
+            result["learning_source"] = "paper_starvation_learning"
+            result["admission_reason"] = "paper_starvation_learning_must_continue"
+            result["readiness_eligible"] = False
+            result["real_readiness_eligible"] = False
+            result["paper_learning_only"] = True
+            result["training_bucket"] = bucket
+            log.info(
+                "[PAPER_STARVATION_LEARNING_APPROVED] symbol=%s side=%s bucket=%s "
+                "cost_edge_bypassed=True cost_edge_ok=False "
+                "readiness_eligible=False real_readiness_eligible=False paper_learning_only=True "
+                "idle_s=%.1f",
+                symbol, side, bucket,
+                _starvation_discovery_state.get("idle_s", 0.0),
+            )
+
         # P1.1AP-O2: Add starvation discovery metadata
-        if bucket == "PAPER_STARVATION_DISCOVERY":
+        elif bucket == "PAPER_STARVATION_DISCOVERY":
             result["learning_source"] = "paper_starvation_discovery"
             result["evaluation_role"] = "DISCOVERY"
             result["execution_truth_class"] = "LEGACY_SPOT_EXECUTION_UNVERIFIED"
