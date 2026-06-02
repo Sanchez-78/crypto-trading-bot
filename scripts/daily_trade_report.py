@@ -22,9 +22,20 @@ def get_logs(hours=24):
         result = subprocess.run(
             ["journalctl", "-u", "cryptomaster.service",
              f"--since={hours} hours ago", "--no-pager"],
-            capture_output=True, text=True, timeout=10
+            capture_output=True, text=True, timeout=30
         )
         return result.stdout.split('\n') if result.returncode == 0 else []
+    except subprocess.TimeoutExpired:
+        print(f"Warning: journalctl timeout after 30s, using last 200 lines", file=sys.stderr)
+        try:
+            result = subprocess.run(
+                ["journalctl", "-u", "cryptomaster.service", "-n", "1000", "--no-pager"],
+                capture_output=True, text=True, timeout=15
+            )
+            return result.stdout.split('\n') if result.returncode == 0 else []
+        except Exception as e2:
+            print(f"Error fetching logs: {e2}", file=sys.stderr)
+            return []
     except Exception as e:
         print(f"Error fetching logs: {e}", file=sys.stderr)
         return []
@@ -393,7 +404,7 @@ def format_report(timestamp, trades, learning, blocking, cost_edge, quota, recs)
 
 def main():
     """Generate and output daily report."""
-    timestamp = datetime.utcnow()
+    timestamp = datetime.utcnow()  # Use now(timezone.utc) in Python 3.12+
 
     print(f"Generating daily report for {timestamp.strftime('%Y-%m-%d')}...", file=sys.stderr)
 
