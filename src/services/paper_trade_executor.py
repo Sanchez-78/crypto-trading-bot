@@ -65,9 +65,20 @@ def _get_v5_bridge():
             if _V5_BRIDGE is None:
                 try:
                     from src.services.v5_legacy_bridge import V5LegacyBridge
-                    _V5_BRIDGE = V5LegacyBridge()
+                    # Get legacy Firebase client if available
+                    firebase_client = None
+                    try:
+                        from src.services import firebase_client as fb_module
+                        if hasattr(fb_module, 'db') and fb_module.db:
+                            firebase_client = fb_module.db
+                            log.info("[V5_BRIDGE_FIREBASE] Using legacy Firebase client")
+                    except Exception as e:
+                        log.debug(f"[V5_BRIDGE_FIREBASE] Legacy Firebase unavailable: {e}")
+
+                    _V5_BRIDGE = V5LegacyBridge(firebase_client=firebase_client)
                     log.info(
-                        "[V5_BRIDGE_INIT] enabled=true real_orders_allowed=false service=cryptomaster.service"
+                        "[V5_BRIDGE_INIT] enabled=true real_orders_allowed=false "
+                        f"firebase_connected={firebase_client is not None} service=cryptomaster.service"
                     )
                 except Exception as e:
                     log.error(f"[V5_BRIDGE_INIT_FAILED] {e}")

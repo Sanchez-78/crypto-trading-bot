@@ -14,6 +14,7 @@ from .outbox import DurableOutbox
 from .firebase_writer import V5LegacyFirebaseWriter
 from .learning_bridge import V5LearningBridge
 from .metrics_publisher import V5MetricsPublisher
+from .outbox_flush_worker import OutboxFlushWorker
 from . import config
 
 logger = logging.getLogger(__name__)
@@ -47,9 +48,15 @@ class V5LegacyBridge:
             self.learning_bridge = V5LearningBridge()
             self.metrics_publisher = V5MetricsPublisher(self.quota_guard, self.outbox)
 
+            # Phase 4D: Start outbox flush worker
+            self.flush_worker = OutboxFlushWorker(self.outbox, self.firebase_writer)
+            self.flush_worker.start()
+
             logger.info(
                 f"[V5_BRIDGE_INIT] enabled=true "
                 f"real_orders_allowed={config.REAL_ORDERS_ALLOWED} "
+                f"firebase_client={'connected' if firebase_client else 'unavailable'} "
+                f"flush_worker={'started' if self.flush_worker else 'failed'} "
                 f"service=cryptomaster.service"
             )
         except Exception as e:
@@ -59,6 +66,7 @@ class V5LegacyBridge:
             self.firebase_writer = None
             self.learning_bridge = None
             self.metrics_publisher = None
+            self.flush_worker = None
 
     def can_open_new_position(self, open_global: int = 0, open_for_symbol: int = 0) -> bool:
         """

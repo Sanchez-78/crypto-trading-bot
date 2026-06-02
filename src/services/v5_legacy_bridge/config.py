@@ -51,7 +51,8 @@ MAX_OPEN_PER_SYMBOL = 1  # Max 1 position per symbol
 # ════════════════════════════════════════════════════════════════════════════
 
 DASHBOARD_SNAPSHOT_INTERVAL_S = 300  # Publish metrics every 5 minutes
-OUTBOX_RETRY_INTERVAL_S = 60  # Check outbox every 60 seconds
+OUTBOX_RETRY_INTERVAL_S = 60  # Check outbox every 60 seconds (legacy, use FLUSH_INTERVAL)
+OUTBOX_FLUSH_INTERVAL_S = 10  # Phase 4D: Flush worker polls outbox every 10 seconds
 OUTBOX_MAX_RETRIES = 3  # Max retry attempts per entry
 QUOTA_SNAPSHOT_INTERVAL_S = 300  # Publish quota every 5 minutes
 
