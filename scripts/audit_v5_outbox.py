@@ -197,7 +197,7 @@ def audit_outbox() -> None:
     print("7. STATUS SUMMARY")
     print("-" * 80)
     if total == 0:
-        print("✅ Outbox is EMPTY — all events flushed to Firebase")
+        print("✅ Runtime persistence: OK — outbox empty / all events flushed to Firebase")
     elif never_retried == total:
         print("⚠️  All events are FRESH (never retried) — check if flush worker is running")
     elif retried > 0 and retried == total:
@@ -205,13 +205,31 @@ def audit_outbox() -> None:
     else:
         print(f"📊 Mixed state: {never_retried} fresh, {retried} retried")
 
-    # Check Firebase client
+    # Check CLI Firebase client availability
+    cli_firebase_available = False
     try:
         from src.services import firebase_client as fb_module
         fb_available = hasattr(fb_module, 'db') and fb_module.db is not None
-        print(f"Firebase client: {'✅ Connected' if fb_available else '❌ Unavailable'}")
+        cli_firebase_available = fb_available
+        print(f"CLI Firebase client: {'✅ Connected' if fb_available else '❌ Unavailable (expected at CLI)'}")
     except Exception as e:
-        print(f"Firebase client: ❌ Error checking ({e})")
+        print(f"CLI Firebase client: ❌ Error checking ({e})")
+
+    # Check for recent flush activity
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["journalctl", "-u", "cryptomaster.service", "--since", "30 minutes ago", "-n", "100"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if "V5_BRIDGE_OUTBOX_FLUSH_SENT" in result.stdout:
+            print(f"Recent runtime flush: ✅ observed in logs (last 30 min)")
+        else:
+            print(f"Recent runtime flush: ⚠️  not observed in logs (last 30 min) — may need to wait or check worker")
+    except Exception as e:
+        print(f"Recent runtime flush: ⚠️  could not check logs ({type(e).__name__})")
 
     print()
     conn.close()

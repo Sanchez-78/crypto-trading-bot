@@ -1972,7 +1972,7 @@ def main():
             except Exception as _dbs_e:
                 logging.warning("[DASHBOARD_SNAPSHOT_PUBLISH_ERROR] type=%s err=%s", type(_dbs_e).__name__, str(_dbs_e)[:100])
 
-            # V5 Legacy Bridge: Publish metrics and flush outbox (Phase 3 hook)
+            # V5 Legacy Bridge: Publish metrics and flush outbox (Phase 4 hook)
             try:
                 from src.services.paper_trade_executor import _get_v5_bridge, get_paper_open_positions
                 v5_bridge = _get_v5_bridge()
@@ -1980,7 +1980,7 @@ def main():
                     open_positions = get_paper_open_positions()
                     trading_stats = {
                         "open_positions": len(open_positions),
-                        "closed_today": 0,  # Will be tracked by bridge
+                        "closed_today": 0,  # Will be filled from paper_metrics
                         "entries_attempted": 0,
                         "entries_accepted": 0,
                         "entries_rejected": 0,
@@ -1988,7 +1988,26 @@ def main():
                         "cost_edge_pass": 0,
                         "cost_edge_fail": 0,
                     }
-                    v5_bridge.publish_metrics(trading_stats=trading_stats)
+
+                    # Phase 4E: Get live PAPER training metrics
+                    paper_metrics = None
+                    try:
+                        from src.services.paper_training_metrics import get_paper_metrics
+                        metrics_instance = get_paper_metrics()
+                        if metrics_instance:
+                            paper_metrics = metrics_instance.get_metrics(
+                                open_positions_count=len(open_positions),
+                                v5_outbox_pending_open=0,
+                                v5_outbox_pending_close=0,
+                                v5_outbox_pending_learning=0,
+                            )
+                    except Exception as _paper_metrics_e:
+                        logging.debug(f"[V5_BRIDGE_PAPER_METRICS_GET] {_paper_metrics_e}")
+
+                    v5_bridge.publish_metrics(
+                        trading_stats=trading_stats,
+                        paper_metrics=paper_metrics,
+                    )
                     v5_bridge.flush_outbox(limit=20)
             except Exception as _v5_publish_e:
                 logging.debug(f"[V5_BRIDGE_METRICS_PUBLISH_ERROR] {_v5_publish_e}")

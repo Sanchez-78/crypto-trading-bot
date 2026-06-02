@@ -150,6 +150,7 @@ class V5LegacyBridge:
         runtime_state: dict = None,
         trading_stats: dict = None,
         learning_stats: dict = None,
+        paper_metrics: dict = None,
     ) -> bool:
         """
         Publish dashboard, readiness, and quota metrics.
@@ -160,6 +161,7 @@ class V5LegacyBridge:
             runtime_state: Service/mode info
             trading_stats: Entry/exit counts and stats
             learning_stats: Learning eligibility and readiness
+            paper_metrics: Live PAPER training metrics (1-hour rolling windows)
 
         Returns:
             True if published, False if failed
@@ -175,6 +177,7 @@ class V5LegacyBridge:
                 quota_snapshot=quota_snapshot,
                 trading_stats=trading_stats,
                 learning_stats=learning_stats,
+                paper_metrics=paper_metrics,
             )
 
             # Publish dashboard

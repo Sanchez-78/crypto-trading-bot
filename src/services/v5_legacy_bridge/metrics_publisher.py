@@ -39,6 +39,7 @@ class V5MetricsPublisher:
         quota_snapshot: dict,
         trading_stats: dict,
         learning_stats: dict,
+        paper_metrics: dict = None,
     ) -> dict:
         """
         Build complete dashboard metrics for Firebase and Android.
@@ -48,6 +49,7 @@ class V5MetricsPublisher:
             quota_snapshot: Quota guard snapshot
             trading_stats: Entry/exit counts and stats
             learning_stats: Learning eligibility and readiness
+            paper_metrics: Live PAPER training metrics (entries_1h, exits_1h, learning_updates_1h, etc)
 
         Returns:
             Dashboard dict with all required fields
@@ -88,6 +90,21 @@ class V5MetricsPublisher:
                     "cost_edge_fail": trading_stats.get("cost_edge_fail", 0),
                 })
 
+            # Live PAPER training metrics (1-hour rolling windows)
+            if paper_metrics:
+                dashboard.update({
+                    "paper_entries_1h": paper_metrics.get("paper_entries_1h", 0),
+                    "paper_exits_1h": paper_metrics.get("paper_exits_1h", 0),
+                    "paper_learning_updates_1h": paper_metrics.get("paper_learning_updates_1h", 0),
+                    "starvation_bypass_accepted_1h": paper_metrics.get("starvation_bypass_accepted_1h", 0),
+                    "last_paper_entry_age_s": paper_metrics.get("last_paper_entry_age_s"),
+                    "last_paper_exit_age_s": paper_metrics.get("last_paper_exit_age_s"),
+                    "last_learning_update_age_s": paper_metrics.get("last_learning_update_age_s"),
+                })
+                # Use live exits as closed_today if not provided
+                if dashboard.get("closed_today", 0) == 0 and paper_metrics.get("paper_exits_1h", 0) > 0:
+                    dashboard["closed_today"] = paper_metrics.get("paper_exits_1h", 0)
+
             # Learning/readiness metrics
             if learning_stats:
                 dashboard.update({
@@ -104,10 +121,28 @@ class V5MetricsPublisher:
                 dashboard["outbox_pending"] = self.outbox.pending_count()
 
             # Validate required fields for Android
+            missing_fields = []
             for field in config.ANDROID_REQUIRED_FIELDS:
                 if field not in dashboard:
-                    logger.warning(f"[V5_BRIDGE] Missing required field for Android: {field}")
+                    missing_fields.append(field)
 
+            if missing_fields:
+                logger.warning(f"[V5_BRIDGE] Missing required fields for Android: {','.join(missing_fields)}")
+            else:
+                logger.debug(f"[V5_BRIDGE_ANDROID_SCHEMA_OK] readiness_status={dashboard.get('readiness_status')} all_fields_present=true")
+
+            # Log with detailed metrics
+            logger.info(
+                f"[V5_BRIDGE_DASHBOARD_METRICS] "
+                f"closed_today={dashboard.get('closed_today', 0)} "
+                f"paper_exits_1h={dashboard.get('paper_exits_1h', 0)} "
+                f"learning_updates={dashboard.get('paper_learning_updates_1h', 0)} "
+                f"open={dashboard.get('open_positions', 0)} "
+                f"quota_state={dashboard.get('quota_state', 'unknown')} "
+                f"source={'paper_metrics' if paper_metrics else 'fallback'}"
+            )
+
+            # Also log the summary for monitoring
             logger.info(
                 f"[V5_BRIDGE_DASHBOARD_PUBLISH] "
                 f"open={dashboard.get('open_positions', 0)} "
@@ -127,12 +162,13 @@ class V5MetricsPublisher:
                 "error": str(e),
             }
 
-    def build_readiness_metrics(self, learning_stats: dict) -> dict:
+    def build_readiness_metrics(self, learning_stats: dict, paper_metrics: dict = None) -> dict:
         """
         Build readiness status snapshot.
 
         Args:
             learning_stats: Learning eligibility and outcomes
+            paper_metrics: Live PAPER training metrics (learning_updates_1h, etc)
 
         Returns:
             Readiness dict
@@ -147,46 +183,63 @@ class V5MetricsPublisher:
                 "eligible_closes": 0,
                 "learning_updates": 0,
                 "min_trades_required": config.MIN_TRADES_FOR_READINESS,
+                "readiness_status": "NOT_READY",
             }
 
-            if learning_stats:
-                eligible = learning_stats.get("eligible_closes", 0)
-                total_learning = learning_stats.get("learning_updates", 0)
+            if learning_stats or paper_metrics:
+                eligible = learning_stats.get("eligible_closes", 0) if learning_stats else 0
+
+                # Use live paper_metrics learning_updates if available, fallback to learning_stats
+                if paper_metrics and paper_metrics.get("paper_learning_updates_1h") is not None:
+                    total_learning = paper_metrics.get("paper_learning_updates_1h", 0)
+                    learning_source = "paper_metrics_1h"
+                else:
+                    total_learning = learning_stats.get("learning_updates", 0) if learning_stats else 0
+                    learning_source = "learning_stats"
 
                 readiness.update({
                     "eligible_closes": eligible,
                     "learning_updates": total_learning,
+                    "learning_source": learning_source,
                 })
 
                 # Determine readiness
                 if total_learning >= config.MIN_TRADES_FOR_READINESS:
-                    win_rate = learning_stats.get("win_rate", 0.0)
-                    cost_edge = learning_stats.get("cost_edge_pct", 0.0)
+                    win_rate = learning_stats.get("win_rate", 0.0) if learning_stats else 0.0
+                    cost_edge = learning_stats.get("cost_edge_pct", 0.0) if learning_stats else 0.0
 
                     if win_rate >= config.READY_WIN_RATE_THRESHOLD and cost_edge >= config.READY_COST_EDGE_THRESHOLD:
                         readiness.update({
                             "status": "READY",
                             "status_cs": "PŘIPRAVENI",
+                            "readiness_status": "READY",
                             "reason": "sufficient_performance",
                             "reason_cs": "dostatečná_výkonnost",
                         })
                     else:
                         readiness.update({
-                            "status": "TESTING",
-                            "status_cs": "TESTOVÁNÍ",
+                            "status": "EVALUATING",
+                            "status_cs": "VYHODNOCOVÁNÍ",
+                            "readiness_status": "EVALUATING",
                             "reason": f"win_rate={win_rate:.1%} cost_edge={cost_edge:.2f}%",
                             "reason_cs": f"win_rate={win_rate:.1%} cost_edge={cost_edge:.2f}%",
                         })
                 else:
+                    remaining = config.MIN_TRADES_FOR_READINESS - total_learning
                     readiness.update({
-                        "reason": f"need_{config.MIN_TRADES_FOR_READINESS - total_learning}_more_trades",
-                        "reason_cs": f"potřeba_{config.MIN_TRADES_FOR_READINESS - total_learning}_více_obchodů",
+                        "status": "LEARNING",
+                        "status_cs": "UČENÍ",
+                        "readiness_status": "LEARNING",
+                        "reason": f"need_{remaining}_more_trades",
+                        "reason_cs": f"potřeba_{remaining}_více_obchodů",
                     })
 
             logger.info(
-                f"[V5_BRIDGE_READINESS_PUBLISH] "
+                f"[V5_BRIDGE_READINESS_METRICS] "
                 f"status={readiness.get('status', 'unknown')} "
+                f"readiness_status={readiness.get('readiness_status', 'unknown')} "
                 f"learning_updates={readiness.get('learning_updates', 0)} "
+                f"learning_source={readiness.get('learning_source', 'unknown')} "
                 f"reason={readiness.get('reason', 'unknown')}"
             )
 
@@ -257,6 +310,7 @@ class V5MetricsPublisher:
         quota_snapshot: dict = None,
         trading_stats: dict = None,
         learning_stats: dict = None,
+        paper_metrics: dict = None,
     ) -> dict:
         """
         Prepare complete publish payload for Firebase.
@@ -266,6 +320,7 @@ class V5MetricsPublisher:
             quota_snapshot: Quota snapshot (or None to fetch fresh)
             trading_stats: Entry/exit counts
             learning_stats: Learning metrics
+            paper_metrics: Live PAPER training metrics (1-hour rolling windows)
 
         Returns:
             Complete payload dict
@@ -281,9 +336,10 @@ class V5MetricsPublisher:
                 quota_snapshot,
                 trading_stats or {},
                 learning_stats or {},
+                paper_metrics=paper_metrics,
             )
 
-            readiness = self.build_readiness_metrics(learning_stats or {})
+            readiness = self.build_readiness_metrics(learning_stats or {}, paper_metrics=paper_metrics)
             quota = self.build_quota_metrics()
 
             # Combine into publish payload
