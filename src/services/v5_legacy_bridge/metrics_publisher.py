@@ -120,16 +120,8 @@ class V5MetricsPublisher:
             if self.outbox:
                 dashboard["outbox_pending"] = self.outbox.pending_count()
 
-            # Validate required fields for Android
-            missing_fields = []
-            for field in config.ANDROID_REQUIRED_FIELDS:
-                if field not in dashboard:
-                    missing_fields.append(field)
-
-            if missing_fields:
-                logger.warning(f"[V5_BRIDGE] Missing required fields for Android: {','.join(missing_fields)}")
-            else:
-                logger.debug(f"[V5_BRIDGE_ANDROID_SCHEMA_OK] readiness_status={dashboard.get('readiness_status')} all_fields_present=true")
+            # Note: Android validation moved to prepare_publish_payload after readiness injection
+            # (so that readiness_status can be added before validation)
 
             # Log with detailed metrics
             logger.info(
@@ -341,6 +333,36 @@ class V5MetricsPublisher:
 
             readiness = self.build_readiness_metrics(learning_stats or {}, paper_metrics=paper_metrics)
             quota = self.build_quota_metrics()
+
+            # Phase 4E-R1: Propagate readiness_status into dashboard for Android validation
+            if readiness:
+                # Copy critical readiness fields into dashboard so Android validation passes
+                dashboard.update({
+                    "readiness_status": readiness.get("readiness_status", "NOT_READY"),
+                    "readiness_status_cs": readiness.get("status_cs", "NEBYLI PŘIPRAVENI"),
+                    "readiness_reason": readiness.get("reason", "insufficient_data"),
+                    "readiness_reason_cs": readiness.get("reason_cs", "nedostatek_dat"),
+                    "readiness": readiness.get("readiness_status", "NOT_READY"),  # Legacy alias
+                    "learning_updates": readiness.get("learning_updates", 0),
+                })
+            else:
+                # Fallback if readiness unavailable
+                dashboard.update({
+                    "readiness_status": "NOT_READY",
+                    "readiness": "NOT_READY",
+                    "readiness_reason": "insufficient_data",
+                })
+
+            # Validate Android schema (now that readiness fields are injected)
+            missing_fields = []
+            for field in config.ANDROID_REQUIRED_FIELDS:
+                if field not in dashboard:
+                    missing_fields.append(field)
+
+            if missing_fields:
+                logger.warning(f"[V5_BRIDGE] Missing required fields for Android: {','.join(missing_fields)}")
+            else:
+                logger.info(f"[V5_BRIDGE_ANDROID_SCHEMA_OK] readiness_status={dashboard.get('readiness_status')}")
 
             # Combine into publish payload
             payload = {
