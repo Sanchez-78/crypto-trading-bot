@@ -1148,6 +1148,7 @@ def _training_quality_gate(
     # when no entries have been made for 600+ seconds, enabling the bot to collect learning data
     allow_starvation_bypass = False
     starvation_bypass_reason = ""
+    starvation_bypass_rejected_reason = ""
     if cost_edge_ok is False:
         try:
             from src.core.runtime_mode import get_trading_mode
@@ -1163,11 +1164,29 @@ def _training_quality_gate(
             # 3. Idle for >= 600 seconds (no PAPER entry despite valid signals)
             # 4. From REJECT_NEGATIVE_EV or REJECT_ECON_BAD_ENTRY (cost-edge rejected)
             # 5. Bucket is PAPER_STARVATION_DISCOVERY or C_WEAK_EV_TRAIN (learning buckets)
+
+            # Check each condition with diagnostics
+            is_idle = _is_starvation_discovery_idle()
+            idle_s = now - _starvation_discovery_state.get("last_eligible_entry_ts", 0.0)
+            is_valid_source = source_reject in ("REJECT_NEGATIVE_EV", "REJECT_ECON_BAD_ENTRY")
+            is_valid_bucket = bucket in ("PAPER_STARVATION_DISCOVERY", "C_WEAK_EV_TRAIN")
+
+            if not is_paper_train:
+                starvation_bypass_rejected_reason = "not_paper_train"
+            elif real_orders_enabled:
+                starvation_bypass_rejected_reason = "real_orders_enabled"
+            elif not is_idle:
+                starvation_bypass_rejected_reason = f"idle_too_low idle_s={idle_s:.1f} threshold=600.0"
+            elif not is_valid_source:
+                starvation_bypass_rejected_reason = f"invalid_source source_reject={source_reject}"
+            elif not is_valid_bucket:
+                starvation_bypass_rejected_reason = f"unsupported_bucket bucket={bucket}"
+
             if (is_paper_train and
                 not real_orders_enabled and
-                _is_starvation_discovery_idle() and
-                source_reject in ("REJECT_NEGATIVE_EV", "REJECT_ECON_BAD_ENTRY") and
-                bucket in ("PAPER_STARVATION_DISCOVERY", "C_WEAK_EV_TRAIN")):
+                is_idle and
+                is_valid_source and
+                is_valid_bucket):
 
                 # Check starvation-specific position caps
                 # Max 1-2 global starvation positions, max 1 per symbol
@@ -1218,7 +1237,6 @@ def _training_quality_gate(
                         cost_edge_bypass_reason = starvation_bypass_reason
                         _recent_dup_candidate[cooldown_key] = now
 
-                        idle_s = now - _starvation_discovery_state.get("last_eligible_entry_ts", 0.0)
                         log.info(
                             "[PAPER_STARVATION_BYPASS_ACCEPTED] symbol=%s side=%s bucket=%s "
                             "idle_s=%.1f cost_edge_ok=False cost_edge_bypassed=True "
@@ -1226,6 +1244,14 @@ def _training_quality_gate(
                             symbol, side, bucket, idle_s,
                             starvation_open_global, starvation_open_symbol
                         )
+            else:
+                # Starvation bypass conditions not fully met - log why
+                if starvation_bypass_rejected_reason and bucket in ("PAPER_STARVATION_DISCOVERY", "C_WEAK_EV_TRAIN"):
+                    log.info(
+                        "[PAPER_STARVATION_BYPASS_REJECTED] symbol=%s side=%s bucket=%s "
+                        "reason=%s idle_s=%.1f cost_edge_ok=False",
+                        symbol, side, bucket, starvation_bypass_rejected_reason, idle_s
+                    )
         except Exception as e:
             log.warning(f"[STARVATION_BYPASS_CHECK_ERROR] {symbol}: {e}")
 
