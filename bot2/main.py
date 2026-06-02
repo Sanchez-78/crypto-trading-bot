@@ -1,4 +1,4 @@
-import os, threading, time
+import os, threading, time, logging
 
 # ────────────────────────────────────────────────────────────────────────────
 # V10.12i: Safe idle computation helper
@@ -1697,6 +1697,28 @@ def main():
     t_sig = threading.Thread(target=_run_signal_engine)
     t_sig.daemon = True
     t_sig.start()
+
+    # ────────────────────────────────────────────────────────────────────────
+    # EMERGENCY HEALTH MONITOR: Auto-detection & remediation
+    # ────────────────────────────────────────────────────────────────────────
+    def _get_recent_logs():
+        """Helper to retrieve recent logs for emergency monitor."""
+        import subprocess
+        try:
+            result = subprocess.run(
+                ["journalctl", "-u", "cryptomaster.service", "-n", "500", "--no-pager"],
+                capture_output=True, text=True, timeout=5
+            )
+            return result.stdout.split('\n') if result.returncode == 0 else []
+        except:
+            return []
+
+    try:
+        from src.services.emergency_health_monitor import start_monitoring_thread
+        _monitor_thread = start_monitoring_thread(get_logs_fn=_get_recent_logs, interval_s=60)
+        logging.info("[STARTUP] Emergency health monitor initialized")
+    except Exception as e:
+        logging.warning(f"[STARTUP] Emergency health monitor failed to start: {e}")
 
     while True:
         time.sleep(10)
