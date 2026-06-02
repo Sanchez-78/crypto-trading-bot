@@ -354,22 +354,98 @@ class CzechDashboard:
             print(f"    {g('Trend učení', C.GRY)}    "
                   f"{g(f'Čeká na {10-t} obchodů...', C.GRY)}")
 
+    def print_paper_training_live(self, paper_metrics: Dict[str, Any]) -> None:
+        """Print live PAPER TRAINING metrics (Phase 4C)."""
+        if not paper_metrics:
+            return
+
+        print(section("", "PAPER TRAINING – LIVE"))
+
+        # Open positions
+        open_pos = paper_metrics.get("open_positions", 0)
+        open_col = C.BLU if open_pos > 0 else C.GRY
+        print(f"    {g('Otevřené pozice', C.GRY)}  {g(str(open_pos), open_col + C.BLD)}")
+
+        # Entry/exit activity (last 1 hour)
+        entries_1h = paper_metrics.get("paper_entries_1h", 0)
+        exits_1h = paper_metrics.get("paper_exits_1h", 0)
+        learning_1h = paper_metrics.get("paper_learning_updates_1h", 0)
+
+        e_col = C.GRN if entries_1h > 0 else C.GRY
+        ex_col = C.GRN if exits_1h > 0 else C.GRY
+        l_col = C.GRN if learning_1h > 0 else C.GRY
+
+        print(f"    {g('Vstupy (1h)', C.GRY)}        {g(str(entries_1h), e_col + C.BLD)}")
+        print(f"    {g('Výstupy (1h)', C.GRY)}       {g(str(exits_1h), ex_col + C.BLD)}")
+        print(f"    {g('Aktualizace učení (1h)', C.GRY)}  {g(str(learning_1h), l_col + C.BLD)}")
+
+        # Last event ages
+        last_entry_age = paper_metrics.get("last_paper_entry_age_s")
+        last_exit_age = paper_metrics.get("last_paper_exit_age_s")
+        last_learning_age = paper_metrics.get("last_learning_update_age_s")
+
+        if last_entry_age is not None:
+            age_str = f"{int(last_entry_age)}s zpět" if last_entry_age < 3600 else "—"
+            print(f"    {g('Poslední vstup', C.GRY)}      {g(age_str, C.CYN)}")
+
+        if last_exit_age is not None:
+            age_str = f"{int(last_exit_age)}s zpět" if last_exit_age < 3600 else "—"
+            print(f"    {g('Poslední výstup', C.GRY)}     {g(age_str, C.CYN)}")
+
+        if last_learning_age is not None:
+            age_str = f"{int(last_learning_age)}s zpět" if last_learning_age < 3600 else "—"
+            print(f"    {g('Poslední učení', C.GRY)}      {g(age_str, C.CYN)}")
+
+        # Starvation bypass metrics
+        accepted = paper_metrics.get("starvation_bypass_accepted_1h", 0)
+        rejected = paper_metrics.get("starvation_bypass_rejected_1h", 0)
+        if accepted > 0 or rejected > 0:
+            print(f"    {g('-' * 40, C.GRY)}")
+            a_col = C.GRN if accepted > 0 else C.GRY
+            r_col = C.YLW if rejected > 0 else C.GRY
+            print(f"    {g('Starvation bypass (1h)', C.GRY)}")
+            print(f"      {g('Přijato', C.GRY)}    {g(str(accepted), a_col + C.BLD)}")
+            print(f"      {g('Odmítnuto', C.GRY)}  {g(str(rejected), r_col + C.BLD)}")
+
+        # V5 outbox pending
+        pending_open = paper_metrics.get("v5_outbox_pending_open", 0)
+        pending_close = paper_metrics.get("v5_outbox_pending_close", 0)
+        pending_learning = paper_metrics.get("v5_outbox_pending_learning", 0)
+        pending_total = pending_open + pending_close + pending_learning
+
+        if pending_total > 0:
+            print(f"    {g('-' * 40, C.GRY)}")
+            print(f"    {g('V5 Outbox čeká na zpracování', C.GRY)}")
+            o_col = C.YLW if pending_open > 0 else C.GRY
+            c_col = C.YLW if pending_close > 0 else C.GRY
+            l_col = C.YLW if pending_learning > 0 else C.GRY
+            print(f"      {g('paper_open', C.GRY)}      {g(str(pending_open), o_col)}")
+            print(f"      {g('paper_close', C.GRY)}     {g(str(pending_close), c_col)}")
+            print(f"      {g('learning_update', C.GRY)}  {g(str(pending_learning), l_col)}")
+
     def print_status(self, closed_trades: Dict[str, Any],
                     entries_attempted: int = 0, entries_successful: int = 0,
                     entries_rejected: int = 0, trades_closed: int = 0,
                     open_positions_count: int = 0, open_notional: float = 0.0,
                     open_positions_dict: Optional[Dict[str, Any]] = None,
                     entry_log: Optional[List[Dict[str, Any]]] = None,
+                    paper_metrics: Optional[Dict[str, Any]] = None,
                     status_tag: str = "AKTIVNI") -> None:
         """Print complete dashboard status."""
         if open_positions_dict is None:
             open_positions_dict = {}
         if entry_log is None:
             entry_log = []
+        if paper_metrics is None:
+            paper_metrics = {}
+
         self.print_header(status_tag)
         self.print_trading_performance(closed_trades, entries_attempted,
                                        entries_successful, entries_rejected, trades_closed,
                                        open_positions_count, open_notional)
+        # Phase 4C: Add live PAPER metrics section (before open positions for visibility)
+        if paper_metrics:
+            self.print_paper_training_live(paper_metrics)
         self.print_open_positions(open_positions_dict)
         self.print_entry_operations(entry_log)
         self.print_per_symbol(closed_trades)
