@@ -21,6 +21,10 @@ jobs:
             echo "========== DEPLOYING LEGACY BOT =========="
             cd /opt/cryptomaster
             git config --global --add safe.directory /opt/cryptomaster
+
+            # Stash any local changes (e.g., runtime SQLite files modified by live bot)
+            git stash -u || true
+
             git fetch origin main
             REMOTE=$(git rev-parse origin/main)
             git pull origin main
