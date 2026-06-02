@@ -44,7 +44,7 @@ _training_metrics = {
     "entries_1h": [],  # timestamps of entries in last hour
     "closed_1h": [],   # count of closed trades in last hour
     "learning_updates_1h": 0,
-    "last_health_log_ts": 0,
+    "last_health_log_ts": -600,  # Initialize to -600 so first health log happens immediately, then throttles to every 10m
 }
 
 # P1.1N: Anti-spam dedupe and rate caps
