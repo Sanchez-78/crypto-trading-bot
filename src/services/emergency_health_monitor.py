@@ -62,6 +62,14 @@ _AUTO_REMEDIATE = {
     "entry_stall": 3600,  # 60 minutes
 }
 
+# 7-DAY FREEZE PERIOD (2026-06-02 to 2026-06-09)
+# During freeze, only patch if CRITICAL conditions occur:
+# - RECON != OK, Outbox failed, Dashboard zero, Quota critical, Crash, Learning missing after PAPER_EXIT
+# Do NOT patch for: LEARNING_STALL, ENTRY_STALL (baseline metrics only)
+_FREEZE_PERIOD_ACTIVE = True
+_FREEZE_CRITICAL_ONLY = {"recon", "outbox", "quota", "crashes", "learning_missing"}  # Only these trigger patches
+_FREEZE_IGNORED = {"learning_stall", "entry_stall"}  # Suppress alerts on these
+
 
 def detect_recon_failure(last_logs: List[str]) -> Tuple[bool, str]:
     """Detect if RECON status is not OK.
@@ -314,7 +322,7 @@ def run_health_check(get_recent_logs_fn=None) -> Dict[str, any]:
     # 4. Check learning
     learning_stalled, learning_reason = detect_learning_stall(recent_logs, current_time)
     results["checks"]["learning"] = {"stalled": learning_stalled, "reason": learning_reason}
-    if learning_stalled:
+    if learning_stalled and not (_FREEZE_PERIOD_ACTIVE and "learning_stall" in _FREEZE_IGNORED):
         alert_key = "learning_stall"
         if _should_alert(alert_key):
             results["alerts"].append({
@@ -326,6 +334,8 @@ def run_health_check(get_recent_logs_fn=None) -> Dict[str, any]:
                 "action": "CHECK_ENTRY_RATE",
                 "details": "Entry starvation preventing learning updates; check cost-edge gates"
             })
+    elif learning_stalled and _FREEZE_PERIOD_ACTIVE:
+        log.info("[EMERGENCY_MONITOR] Learning stall detected but SUPPRESSED during 7-day freeze period")
 
     # 5. Check dashboard
     dashboard_zero, dashboard_reason = detect_dashboard_zero(recent_logs, current_time)
@@ -346,7 +356,7 @@ def run_health_check(get_recent_logs_fn=None) -> Dict[str, any]:
     # 6. Check entry rate
     entry_stalled, entry_reason = detect_entry_stall(recent_logs, current_time)
     results["checks"]["entries"] = {"stalled": entry_stalled, "reason": entry_reason}
-    if entry_stalled:
+    if entry_stalled and not (_FREEZE_PERIOD_ACTIVE and "entry_stall" in _FREEZE_IGNORED):
         alert_key = "entry_stall"
         if _should_alert(alert_key):
             results["alerts"].append({
@@ -358,6 +368,8 @@ def run_health_check(get_recent_logs_fn=None) -> Dict[str, any]:
                 "action": "INSPECT_COST_EDGE",
                 "details": "Check expected_move_pct vs required_move_pct logs; may need lower TP or wider entry"
             })
+    elif entry_stalled and _FREEZE_PERIOD_ACTIVE:
+        log.info("[EMERGENCY_MONITOR] Entry stall detected but SUPPRESSED during 7-day freeze period")
 
     # 7. Check crashes
     has_crash, crash_lines = detect_crashes(recent_logs)
