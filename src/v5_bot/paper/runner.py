@@ -16,6 +16,12 @@ from ..config import TRADING_SYMBOLS, QUOTA_BUDGET, LEARNING_CONFIG, REAL_READIN
 from ..util.datetime_utils import utc_now, utc_timestamp_iso
 from ..util.czech_dashboard import CzechDashboard
 
+# Phase 4C: Live PAPER metrics
+try:
+    from ...services.paper_training_metrics import get_paper_metrics
+except ImportError:
+    get_paper_metrics = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -269,6 +275,20 @@ class V5BotRunner:
     async def print_dashboard(self) -> None:
         """Print Czech dashboard to console and file."""
         try:
+            # Phase 4C: Collect live PAPER metrics
+            paper_metrics = None
+            if get_paper_metrics:
+                try:
+                    metrics_instance = get_paper_metrics()
+                    paper_metrics = metrics_instance.get_metrics(
+                        open_positions_count=len(self.broker.open_positions),
+                        v5_outbox_pending_open=0,  # TODO: wire to actual outbox count
+                        v5_outbox_pending_close=0,  # TODO: wire to actual outbox count
+                        v5_outbox_pending_learning=0  # TODO: wire to actual outbox count
+                    )
+                except Exception as e:
+                    logger.debug(f"[PAPER_METRICS_COLLECT_FAIL] {e}")
+
             # Also write to dashboard.log file
             with open("/tmp/v5_dashboard.log", "a") as f:
                 import sys
@@ -284,6 +304,7 @@ class V5BotRunner:
                     open_notional=self.broker.get_position_notional(),
                     open_positions_dict=self.broker.open_positions,
                     entry_log=self.entry_log,
+                    paper_metrics=paper_metrics,
                     status_tag="AKTIVNI" if self.running else "OFFLINE"
                 )
                 sys.stdout = old_stdout

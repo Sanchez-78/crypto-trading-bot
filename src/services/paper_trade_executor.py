@@ -7,6 +7,12 @@ from typing import Optional, Dict, List
 
 log = logging.getLogger(__name__)
 
+# Phase 4C: Live PAPER metrics
+try:
+    from src.services.paper_training_metrics import record_paper_entry
+except ImportError:
+    record_paper_entry = None
+
 # Configuration from environment
 _INITIAL_EQUITY = float(os.getenv("PAPER_INITIAL_EQUITY_USD", "10000"))
 _POSITION_SIZE = float(os.getenv("PAPER_POSITION_SIZE_USD", "100"))
@@ -991,6 +997,13 @@ def open_paper_position(
         position["score_at_entry"],
         reason,
     )
+
+    # Phase 4C: Record PAPER entry metric
+    if record_paper_entry:
+        try:
+            record_paper_entry(symbol, side, paper_source or reason)
+        except Exception as e:
+            log.debug("[PAPER_METRICS_RECORD_FAIL] entry symbol=%s err=%s", symbol, str(e))
 
     # V5 Legacy Bridge: Record paper entry (Phase 3 hook)
     try:

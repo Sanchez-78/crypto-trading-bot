@@ -16,6 +16,13 @@ from typing import Optional, Dict, List
 
 log = logging.getLogger(__name__)
 
+# Phase 4C: Live PAPER metrics
+try:
+    from src.services.paper_training_metrics import record_paper_exit, record_learning_update
+except ImportError:
+    record_paper_exit = None
+    record_learning_update = None
+
 # Persistent state file
 _STATE_FILE = "server_local_backups/paper_adaptive_learning_state.json"
 
@@ -326,6 +333,13 @@ class PaperAdaptiveLearning:
 
         policy_action = self._compute_policy_action(segment_key, len(self.rolling100))
 
+        # Phase 4C: Record PAPER exit metric
+        if record_paper_exit:
+            try:
+                record_paper_exit(symbol, side, outcome)
+            except Exception as e:
+                log.debug("[PAPER_METRICS_RECORD_FAIL] exit symbol=%s err=%s", symbol, str(e))
+
         log.info(
             "[PAPER_CANONICAL_LEARNING_UPDATE] "
             "trade_id=%s symbol=%s side=%s regime=%s learning_source=%s "
@@ -348,6 +362,13 @@ class PaperAdaptiveLearning:
             segment_key,
             policy_action,
         )
+
+        # Phase 4C: Record learning update metric
+        if record_learning_update:
+            try:
+                record_learning_update(symbol, trade.get("trade_id", ""))
+            except Exception as e:
+                log.debug("[PAPER_METRICS_RECORD_FAIL] learning symbol=%s err=%s", symbol, str(e))
 
         # P1.1AP-O1A: Track qualification evidence for future REAL_READY
         # Only count eligible canonical PAPER closes recorded after qualification epoch started

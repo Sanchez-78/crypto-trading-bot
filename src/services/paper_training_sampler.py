@@ -15,6 +15,13 @@ from collections import defaultdict, deque
 
 log = logging.getLogger(__name__)
 
+# Phase 4C: Live PAPER metrics - starvation bypass
+try:
+    from src.services.paper_training_metrics import record_starvation_bypass_accepted, record_starvation_bypass_rejected
+except ImportError:
+    record_starvation_bypass_accepted = None
+    record_starvation_bypass_rejected = None
+
 # Training mode settings
 _TRAINING_ENABLED = os.getenv("PAPER_TRAINING_ENABLED", "true").lower() == "true"
 _MIN_ENTRIES_PER_HOUR = int(os.getenv("PAPER_TRAINING_MIN_ENTRIES_PER_HOUR", "6"))
@@ -1237,6 +1244,13 @@ def _training_quality_gate(
                         cost_edge_bypass_reason = starvation_bypass_reason
                         _recent_dup_candidate[cooldown_key] = now
 
+                        # Phase 4C: Record starvation bypass accepted metric
+                        if record_starvation_bypass_accepted:
+                            try:
+                                record_starvation_bypass_accepted(symbol, bucket)
+                            except Exception as e:
+                                log.debug("[PAPER_METRICS_RECORD_FAIL] starvation_accepted symbol=%s err=%s", symbol, str(e))
+
                         log.info(
                             "[PAPER_STARVATION_BYPASS_ACCEPTED] symbol=%s side=%s bucket=%s "
                             "idle_s=%.1f cost_edge_ok=False cost_edge_bypassed=True "
@@ -1247,6 +1261,13 @@ def _training_quality_gate(
             else:
                 # Starvation bypass conditions not fully met - log why
                 if starvation_bypass_rejected_reason and bucket in ("PAPER_STARVATION_DISCOVERY", "C_WEAK_EV_TRAIN"):
+                    # Phase 4C: Record starvation bypass rejected metric
+                    if record_starvation_bypass_rejected:
+                        try:
+                            record_starvation_bypass_rejected(symbol, starvation_bypass_rejected_reason)
+                        except Exception as e:
+                            log.debug("[PAPER_METRICS_RECORD_FAIL] starvation_rejected symbol=%s err=%s", symbol, str(e))
+
                     log.info(
                         "[PAPER_STARVATION_BYPASS_REJECTED] symbol=%s side=%s bucket=%s "
                         "reason=%s idle_s=%.1f cost_edge_ok=False",
