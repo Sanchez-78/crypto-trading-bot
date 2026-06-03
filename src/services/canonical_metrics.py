@@ -474,3 +474,61 @@ def canonical_rr(tp_distance: float, sl_distance: float) -> float:
         return 0.0
 
     return tp / sl
+
+
+def classify_health_status(pf: float, net_pnl: float, expectancy: float) -> dict:
+    """
+    V10.13y: Classify bot health based on PF-first principle.
+
+    Uses Profit Factor as primary metric (not WR) for health determination.
+
+    Args:
+        pf: Profit Factor (gross_wins / gross_losses)
+        net_pnl: Net profit/loss in account currency
+        expectancy: Mean expected value per trade
+
+    Returns:
+        dict with {status, confidence, action}:
+        - POSITIVE_EDGE: PF >= 1.05, net_pnl > 0, expectancy > 0
+        - BREAK_EVEN_EDGE: 1.0 <= PF < 1.05, expectancy >= 0
+        - NEGATIVE_EDGE: 0.5 < PF < 1.0 (losing but measurable)
+        - CRITICAL_LOSS: PF <= 0.5 (severe losses)
+    """
+    eps = 1e-12
+
+    if pf >= 1.05 and net_pnl > eps and expectancy > eps:
+        return {
+            "status": "POSITIVE_EDGE",
+            "confidence": 0.9,
+            "action": "monitor",
+            "pf": pf,
+            "net_pnl": net_pnl,
+            "expectancy": expectancy,
+        }
+    elif pf >= 1.0 and expectancy >= -eps:
+        return {
+            "status": "BREAK_EVEN_EDGE",
+            "confidence": 0.7,
+            "action": "monitor",
+            "pf": pf,
+            "net_pnl": net_pnl,
+            "expectancy": expectancy,
+        }
+    elif pf > 0.5:
+        return {
+            "status": "NEGATIVE_EDGE",
+            "confidence": 0.8,
+            "action": "investigate",
+            "pf": pf,
+            "net_pnl": net_pnl,
+            "expectancy": expectancy,
+        }
+    else:
+        return {
+            "status": "CRITICAL_LOSS",
+            "confidence": 1.0,
+            "action": "review",
+            "pf": pf,
+            "net_pnl": net_pnl,
+            "expectancy": expectancy,
+        }

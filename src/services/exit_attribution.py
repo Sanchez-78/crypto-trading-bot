@@ -328,3 +328,70 @@ def reset_exit_stats() -> None:
     """Reset exit attribution stats."""
     global _exit_stats
     _exit_stats = {}
+
+
+def analyze_scratch_stagnation_exits(closed_trades: List[dict]) -> dict:
+    """
+    V10.13y: Analyze scratch and stagnation exits for repair opportunities.
+
+    Extracts: count, net PnL, MFE distribution, and repair recommendations.
+
+    Args:
+        closed_trades: List of closed trade dicts with close_reason and net_pnl
+
+    Returns:
+        dict with {scratch_n, scratch_net, scratch_mfe_median,
+                   stag_n, stag_net, stag_mfe_median, recommendation}
+    """
+    scratch_trades = [
+        t for t in closed_trades
+        if t.get("close_reason") == "SCRATCH_EXIT"
+    ]
+    stag_trades = [
+        t for t in closed_trades
+        if t.get("close_reason") == "STAGNATION_EXIT"
+    ]
+
+    scratch_net = sum(t.get("net_pnl", 0) for t in scratch_trades)
+    stag_net = sum(t.get("net_pnl", 0) for t in stag_trades)
+
+    # Collect MFE (max favorable excursion) if available
+    scratch_mfe = [
+        t.get("mfe", 0) for t in scratch_trades
+        if "mfe" in t and t.get("mfe") is not None
+    ]
+    stag_mfe = [
+        t.get("mfe", 0) for t in stag_trades
+        if "mfe" in t and t.get("mfe") is not None
+    ]
+
+    # Calculate medians
+    scratch_mfe_median = (
+        sorted(scratch_mfe)[len(scratch_mfe) // 2]
+        if scratch_mfe else 0.0
+    )
+    stag_mfe_median = (
+        sorted(stag_mfe)[len(stag_mfe) // 2]
+        if stag_mfe else 0.0
+    )
+
+    # Generate recommendation
+    recommendation = ""
+    if scratch_net < -0.0001:
+        avg_loss = abs(scratch_net) / len(scratch_trades) if scratch_trades else 0
+        recommendation = f"delay_scratch_until_fee_cover (avg_loss={avg_loss:.8f})"
+
+    if stag_net < -0.0001:
+        if recommendation:
+            recommendation += "; "
+        recommendation += "size_down_or_skip_stagnation_segments"
+
+    return {
+        "scratch_n": len(scratch_trades),
+        "scratch_net": scratch_net,
+        "scratch_mfe_median": scratch_mfe_median,
+        "stag_n": len(stag_trades),
+        "stag_net": stag_net,
+        "stag_mfe_median": stag_mfe_median,
+        "recommendation": recommendation,
+    }

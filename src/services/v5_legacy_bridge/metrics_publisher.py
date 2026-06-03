@@ -77,8 +77,21 @@ class V5MetricsPublisher:
                     "quota_state": quota_snapshot.get("state", "normal"),
                 })
 
-            # Trading metrics
+            # Trading metrics (PF-first)
             if trading_stats:
+                canonical_pf = trading_stats.get("profit_factor", 0.0)
+                canonical_net_pnl = trading_stats.get("net_pnl", 0.0)
+
+                # Determine health status based on PF, not WR alone
+                if canonical_pf >= 1.05:
+                    health_status = "POSITIVE_EDGE"
+                elif canonical_pf >= 1.0:
+                    health_status = "BREAK_EVEN_EDGE"
+                elif canonical_pf > 0.5:
+                    health_status = "NEGATIVE_EDGE"
+                else:
+                    health_status = "CRITICAL_LOSS"
+
                 dashboard.update({
                     "open_positions": trading_stats.get("open_positions", 0),
                     "closed_today": trading_stats.get("closed_today", 0),
@@ -88,6 +101,13 @@ class V5MetricsPublisher:
                     "reject_reasons": trading_stats.get("reject_reasons", {}),
                     "cost_edge_pass": trading_stats.get("cost_edge_pass", 0),
                     "cost_edge_fail": trading_stats.get("cost_edge_fail", 0),
+                    # V10.13y: PF-first metrics
+                    "profit_factor": canonical_pf,
+                    "net_pnl_closed": canonical_net_pnl,
+                    "decisive_win_rate": trading_stats.get("decisive_wr", 0.0),
+                    "all_outcome_win_rate": trading_stats.get("all_outcome_wr", 0.0),
+                    "expectancy_per_trade": trading_stats.get("expectancy", 0.0),
+                    "health_status": health_status,
                 })
 
             # Live PAPER training metrics (1-hour rolling windows)
@@ -134,13 +154,24 @@ class V5MetricsPublisher:
                 f"source={'paper_metrics' if paper_metrics else 'fallback'}"
             )
 
+            # V10.13y: PF-first metrics log
+            if trading_stats and trading_stats.get("profit_factor", 0) > 0:
+                logger.info(
+                    f"[PF_FIRST_METRICS] pf={trading_stats.get('profit_factor', 0.0):.2f}x "
+                    f"net_pnl={trading_stats.get('net_pnl', 0.0):.8f} "
+                    f"decisive_wr={trading_stats.get('decisive_wr', 0.0):.1%} "
+                    f"all_wr={trading_stats.get('all_outcome_wr', 0.0):.1%} "
+                    f"status={dashboard.get('health_status', 'UNKNOWN')}"
+                )
+
             # Also log the summary for monitoring
             logger.info(
                 f"[V5_BRIDGE_DASHBOARD_PUBLISH] "
                 f"open={dashboard.get('open_positions', 0)} "
                 f"closed_today={dashboard.get('closed_today', 0)} "
-                f"quota_state={dashboard.get('quota_state', 'unknown')} "
-                f"readiness={dashboard.get('readiness_status', 'unknown')}"
+                f"profit_factor={dashboard.get('profit_factor', 0.0):.2f}x "
+                f"net_pnl={dashboard.get('net_pnl_closed', 0.0):.8f} "
+                f"readiness={dashboard.get('readiness_status') or 'NOT_READY'}"
             )
 
             return dashboard
@@ -195,26 +226,29 @@ class V5MetricsPublisher:
                     "learning_source": learning_source,
                 })
 
-                # Determine readiness
+                # V10.13y: Determine readiness (PF-first)
                 if total_learning >= config.MIN_TRADES_FOR_READINESS:
+                    pf = learning_stats.get("profit_factor", 0.0) if learning_stats else 0.0
+                    net_pnl = learning_stats.get("net_pnl", 0.0) if learning_stats else 0.0
                     win_rate = learning_stats.get("win_rate", 0.0) if learning_stats else 0.0
                     cost_edge = learning_stats.get("cost_edge_pct", 0.0) if learning_stats else 0.0
 
-                    if win_rate >= config.READY_WIN_RATE_THRESHOLD and cost_edge >= config.READY_COST_EDGE_THRESHOLD:
+                    # Only READY if PF >= 1.0 AND net_pnl >= 0
+                    if pf >= 1.0 and net_pnl >= 0:
                         readiness.update({
                             "status": "READY",
                             "status_cs": "PŘIPRAVENI",
                             "readiness_status": "READY",
-                            "reason": "sufficient_performance",
-                            "reason_cs": "dostatečná_výkonnost",
+                            "reason": f"pf={pf:.2f}x net_pnl={net_pnl:.8f}",
+                            "reason_cs": f"pf={pf:.2f}x net_pnl={net_pnl:.8f}",
                         })
                     else:
                         readiness.update({
-                            "status": "EVALUATING",
-                            "status_cs": "VYHODNOCOVÁNÍ",
-                            "readiness_status": "EVALUATING",
-                            "reason": f"win_rate={win_rate:.1%} cost_edge={cost_edge:.2f}%",
-                            "reason_cs": f"win_rate={win_rate:.1%} cost_edge={cost_edge:.2f}%",
+                            "status": "LEARNING",
+                            "status_cs": "UČENÍ",
+                            "readiness_status": "LEARNING",
+                            "reason": f"negative_edge: pf={pf:.2f}x net_pnl={net_pnl:.8f}",
+                            "reason_cs": f"negative_edge: pf={pf:.2f}x net_pnl={net_pnl:.8f}",
                         })
                 else:
                     remaining = config.MIN_TRADES_FOR_READINESS - total_learning
