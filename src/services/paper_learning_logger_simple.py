@@ -22,7 +22,7 @@ class SimplePaperLearningLogger:
     def __init__(self, learning_state_file: Optional[str] = None):
         self.learning_state_file = learning_state_file or "server_local_backups/paper_adaptive_learning_state.json"
         self.last_log_time = 0.0
-        self.log_interval_s = 600  # Every 10 minutes
+        self.log_interval_s = 60  # Every minute (visible in online logs)
 
     def load_learning_state(self) -> Dict:
         """Load learning state."""
