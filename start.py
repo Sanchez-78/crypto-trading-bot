@@ -1,10 +1,14 @@
 import sys
 import os
 import traceback
+from pathlib import Path
 from dotenv import load_dotenv
 
 # Load environment variables from .env before importing anything else
-load_dotenv()
+# Use explicit path to avoid stack frame issues
+env_path = Path(__file__).parent / ".env"
+if env_path.exists():
+    load_dotenv(env_path)
 
 print("[START] START.PY BOOTING...")
 
