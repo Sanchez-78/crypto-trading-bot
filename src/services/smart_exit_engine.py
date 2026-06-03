@@ -57,6 +57,16 @@ import os
 from typing import Optional, Dict, Any
 from dataclasses import dataclass
 
+# V10.13y: Phase 3 Exit Repair Integration
+try:
+    from src.services.paper_scratch_exit_repair import (
+        should_exit_scratch, should_exit_stagnation, PAPER_EXIT_REPAIR_ENABLED
+    )
+    _phase3_available = True
+except ImportError:
+    _phase3_available = False
+    PAPER_EXIT_REPAIR_ENABLED = False
+
 log = logging.getLogger(__name__)
 
 # V10.13m: Debug toggles
@@ -605,6 +615,21 @@ class SmartExitEngine:
                     pass
                 return None
 
+            # V10.13y: Phase 3 Exit Repair — delay scratch until fee coverage sufficient
+            if PAPER_EXIT_REPAIR_ENABLED and _phase3_available:
+                should_exit, decision = should_exit_scratch(
+                    position={"symbol": position.symbol},
+                    hold_seconds=position.age_seconds,
+                    gross_pnl=position.pnl if hasattr(position, 'pnl') else position.pnl_pct * position.entry_price * position.size / 100,
+                    fee_cost=_estimated_close_cost_pct(position) * position.entry_price * position.size / 100,
+                    size=position.size if hasattr(position, 'size') else 1.0,
+                    mfe=position.max_favorable_pnl if hasattr(position, 'max_favorable_pnl') else 0.0,
+                )
+                if not should_exit:
+                    # Phase 3 says delay — don't exit yet
+                    return None
+                # Phase 3 says proceed — continue with normal exit
+
             return {
                 "exit_type": "SCRATCH_EXIT",
                 "reason": (f"Scratch: flat after {position.age_seconds}s  "
@@ -670,6 +695,20 @@ class SmartExitEngine:
                 except Exception:
                     pass
                 return None
+
+            # V10.13y: Phase 3 Exit Repair — check segment PF before stagnation exit
+            if PAPER_EXIT_REPAIR_ENABLED and _phase3_available:
+                # Estimate segment PF from recent trades (fallback: assume neutral)
+                segment_pf = 1.0  # Default neutral
+                should_exit, decision = should_exit_stagnation(
+                    position={"symbol": position.symbol},
+                    hold_seconds=position.age_seconds,
+                    segment_pf=segment_pf,
+                )
+                if not should_exit:
+                    # Phase 3 says hold — don't exit stagnation yet
+                    return None
+                # Phase 3 says proceed — continue with normal exit
 
             return {
                 "exit_type": "STAGNATION_EXIT",
