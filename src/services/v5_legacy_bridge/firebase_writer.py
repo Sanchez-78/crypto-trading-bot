@@ -167,8 +167,8 @@ class V5LegacyFirebaseWriter:
                 return self.outbox.enqueue("learning_update", trade_id, payload)
 
             try:
-                path = f"v5_trades/{trade_id}/learning"
-                self.firebase_client.set(path, payload)
+                path = f"v5_trades/{trade_id}"
+                self.firebase_client.set(path, payload, merge=True)
                 self.quota_guard.record_write(1, reason="learning_update")
                 logger.debug(f"[V5_BRIDGE_LEARNING_UPDATE] trade_id={trade_id}")
                 return True

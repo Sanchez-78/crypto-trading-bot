@@ -212,9 +212,8 @@ class OutboxFlushWorker:
 
         try:
             trade_id = payload.get("trade_id")
-            segment = payload.get("segment")
-            path = f"v5_learning/{segment}/{trade_id}"
-            self.firebase_writer.firebase_client.set(path, payload)
+            path = f"v5_trades/{trade_id}"
+            self.firebase_writer.firebase_client.set(path, payload, merge=True)
             self.firebase_writer.quota_guard.record_write(1, reason="learning_update_flush")
             return True
         except Exception as e:
