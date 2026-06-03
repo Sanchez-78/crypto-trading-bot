@@ -42,6 +42,12 @@ class V5LegacyBridge:
             firebase_client: Existing legacy Firebase client (or None if disabled)
         """
         try:
+            # NEW: Wrap raw Firestore client if needed (API compatibility)
+            if firebase_client and not hasattr(firebase_client, 'set'):
+                from .firebase_client_wrapper import FirestorePathClient
+                firebase_client = FirestorePathClient(firebase_client)
+                logger.info("[V5_BRIDGE_FIREBASE_WRAPPED] Using path-based adapter for Firestore client")
+
             self.quota_guard = V5LegacyQuotaGuard()
             self.outbox = DurableOutbox()
             self.firebase_writer = V5LegacyFirebaseWriter(firebase_client, self.quota_guard, self.outbox)
