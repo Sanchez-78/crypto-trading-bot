@@ -1981,7 +1981,7 @@ def main():
             try:
                 log_simple_paper_learning_status()
             except Exception as e:
-                logging.debug(f"[PAPER_LEARNING_LOG] Error: {e}")
+                logging.warning(f"[PAPER_LEARNING_LOG] Error: {e}", exc_info=True)
 
             # V10.13s.1: Invalidate canonical state cache after metrics flush
             invalidate_cache()
