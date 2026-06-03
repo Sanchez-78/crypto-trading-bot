@@ -128,77 +128,125 @@ def _get_learner_state():
         return None
 
 
-def _get_segment_pf(symbol: str, regime: str, side: str) -> float:
-    """Get profit factor for a specific segment (symbol:regime:side)."""
+def _get_segment_pf(symbol: str, regime: str, side: str) -> tuple[float, int, float]:
+    """Get profit factor, sample count, and expectancy for a specific segment.
+
+    Returns: (pf, n, expectancy)
+    """
     learner = _get_learner_state()
     if not learner:
-        return 1.0  # Default to trading if learner unavailable
+        return 1.0, 0, 0.0  # Default: no data
 
     segment_key = f"{symbol}:{regime}:{side}"
 
     # Compute PF for this segment from rolling100
     segment_trades = [(e[0], e[1]) for e in learner.rolling100 if e[2] == segment_key]
-    if not segment_trades:
-        return 1.0  # No data yet, default to trade
+    n = len(segment_trades)
 
-    return learner._compute_pf(segment_trades)
+    if n == 0:
+        return 1.0, 0, 0.0  # No data yet
+
+    pf = learner._compute_pf(segment_trades)
+    expectancy = learner._compute_expectancy([e[0] for e in segment_trades])
+
+    return pf, n, expectancy
 
 
-def _calculate_dynamic_position_size(signal: dict) -> float:
-    """Calculate position size based on signal confidence/EV.
+def _calculate_dynamic_position_size(signal: dict, segment_action: str = "ALLOW") -> float:
+    """Calculate position size based on signal EV and segment performance.
 
-    High-confidence (EV > 10%): $50-75 (2-3x base)
-    Medium (EV 5-10%): $25 (1x base)
-    Low (EV 3-5%): $10-15 (0.4-0.6x base)
+    EV multiplier:
+      missing/0: 1.0x
+      < 0.03: 0.5x
+      0.03-0.05: 0.75x
+      0.05-0.10: 1.0x
+      0.10-0.15: 1.5x
+      > 0.15: 2.0x
+
+    Segment multiplier (from segment_action):
+      SIZE_DOWN: 0.5x
+      ALLOW: 1.0x (default)
+      BLOCK: 0 (already filtered)
+
+    Final: clamp(base * ev_mult * segment_mult, 10, 75)
     """
+    MIN_SIZE = float(os.getenv("PAPER_MIN_SIZE_USD", "10"))
+    MAX_SIZE = float(os.getenv("PAPER_MAX_SIZE_USD", "75"))
+
     ev = float(signal.get("ev") or 0.0)
 
-    if ev >= 0.10:
-        return _POSITION_SIZE_BASE * 2.5  # High confidence: 2.5x
-    elif ev >= 0.07:
-        return _POSITION_SIZE_BASE * 2.0  # Good confidence: 2x
+    # EV multiplier
+    if ev >= 0.15:
+        ev_mult = 2.0
+    elif ev >= 0.10:
+        ev_mult = 1.5
     elif ev >= 0.05:
-        return _POSITION_SIZE_BASE * 1.0  # Medium: 1x (base)
+        ev_mult = 1.0
     elif ev >= 0.03:
-        return _POSITION_SIZE_BASE * 0.5  # Low: 0.5x
+        ev_mult = 0.75
     else:
-        return _POSITION_SIZE_BASE * 0.3  # Very low: 0.3x
+        ev_mult = 0.5 if ev > 0 else 1.0
+
+    # Segment multiplier
+    segment_mult = 0.5 if segment_action == "SIZE_DOWN" else 1.0
+
+    # Final size
+    size_usd = _POSITION_SIZE_BASE * ev_mult * segment_mult
+    size_usd = max(MIN_SIZE, min(MAX_SIZE, size_usd))
+
+    return size_usd
 
 
-def _should_skip_segment_by_profitability(symbol: str, regime: str, side: str) -> tuple[bool, str]:
-    """Check if segment should be skipped due to poor profitability.
+def _should_skip_segment_by_profitability(symbol: str, regime: str, side: str) -> tuple[bool, str, str]:
+    """Check if segment should be skipped/sized-down due to poor profitability.
 
-    Returns: (should_skip, reason)
+    Confidence-aware gating:
+    - n < 20: ALLOW (not enough data)
+    - 20 <= n < 50: SIZE_DOWN (developing, size-down only)
+    - n >= 50: BLOCK only if pf < 0.70 AND expectancy < 0 (hard block enabled)
+
+    Returns: (should_block, reason, action)  where action in [ALLOW, SIZE_DOWN, BLOCK]
     """
-    if not _MIN_SEGMENT_PF or _MIN_SEGMENT_PF <= 1.0:
-        return False, ""  # Gating disabled
+    HARD_BLOCK_MIN_N = int(os.getenv("PAPER_SEGMENT_HARD_BLOCK_MIN_N", "50"))
+    HARD_BLOCK_ENABLED = os.getenv("PAPER_SEGMENT_HARD_BLOCK_ENABLED", "false").lower() == "true"
 
-    segment_pf = _get_segment_pf(symbol, regime, side)
-    if segment_pf < _MIN_SEGMENT_PF:
-        return True, f"segment_pf_too_low={segment_pf:.2f}x"
+    segment_pf, n, expectancy = _get_segment_pf(symbol, regime, side)
 
-    return False, ""
+    # Confidence-based decision
+    if n < 20:
+        return False, "", "ALLOW"  # Not enough data, allow
+
+    if 20 <= n < HARD_BLOCK_MIN_N:
+        # Medium confidence: size down only
+        return False, f"n={n} developing", "SIZE_DOWN"
+
+    # High confidence (n >= HARD_BLOCK_MIN_N)
+    if HARD_BLOCK_ENABLED and segment_pf < 0.70 and expectancy < 0:
+        return True, f"n={n} pf={segment_pf:.2f} expectancy={expectancy:.4f}", "BLOCK"
+
+    return False, f"n={n} pf={segment_pf:.2f}", "ALLOW"
 
 
-def _should_skip_time_of_day() -> tuple[bool, str]:
+def _should_skip_time_of_day() -> tuple[bool, str, bool]:
     """Check if current time-of-day should be skipped (poor historical performance).
 
-    Returns: (should_skip, reason)
+    Shadow mode (default):
+      - Logs decision but does not block (live_effect=false)
+      - Collects data-driven recommendations
+
+    Acceptance criteria for blocking:
+      - hour_n >= 30 samples
+      - hour_pf < 0.70 AND hour_expectancy < 0
+
+    Returns: (should_block, reason, is_shadow)
     """
-    if not _TIME_BASED_FILTERING:
-        return False, ""
-
     import datetime
-    now = datetime.datetime.utcnow()
-    hour = now.hour
 
-    # Bad hours (0-2 UTC, 12-14 UTC typically see lower activity)
-    # Adjust based on actual data from rolling metrics
-    bad_hours = [0, 1, 2, 12, 13, 14]
-    if hour in bad_hours:
-        return True, f"bad_hour_of_day={hour}"
+    HARD_BLOCK_ENABLED = os.getenv("PAPER_TIME_BASED_FILTERING_HARD", "false").lower() == "true"
+    shadow_only = not HARD_BLOCK_ENABLED
 
-    return False, ""
+    # For now, always shadow (data collection phase)
+    return False, "time_filter_shadow_mode", shadow_only
 
 
 # P1.1AP-D: Stale position quarantine thresholds (refined to exclude normal TP/SL)
@@ -933,36 +981,45 @@ def open_paper_position(
             _PAPER_ENTRY_BLOCKED_THROTTLE[throttle_key] = now_ts
         return {"status": "blocked", "reason": f"weak_ev_below_{_MIN_EV_THRESHOLD}"}
 
-    # SEGMENT PROFITABILITY GATING: Skip unprofitable segments
+    # SEGMENT PROFITABILITY GATING: Confidence-aware (allow/size_down/block)
     regime = signal.get("regime", "NEUTRAL")
     side_raw = signal.get("action", signal.get("side", "BUY"))
     side_normalized, _ = _normalize_side(side_raw)
-    skip_segment, skip_reason = _should_skip_segment_by_profitability(symbol, regime, side_normalized)
-    if skip_segment:
-        throttle_key = (symbol, "segment_gate", skip_reason)
-        now_ts = time.time()
-        last_log = _PAPER_ENTRY_BLOCKED_THROTTLE.get(throttle_key, 0.0)
-        if now_ts - last_log >= _PAPER_ENTRY_BLOCKED_TTL:
-            log.warning(
-                "[PAPER_ENTRY_BLOCKED] symbol=%s reason=segment_unprofitable %s",
-                symbol, skip_reason
-            )
-            _PAPER_ENTRY_BLOCKED_THROTTLE[throttle_key] = now_ts
-        return {"status": "blocked", "reason": f"segment_gate:{skip_reason}"}
+    skip_segment, skip_reason, segment_action = _should_skip_segment_by_profitability(symbol, regime, side_normalized)
 
-    # TIME-OF-DAY FILTERING: Skip poor hours
-    skip_time, skip_time_reason = _should_skip_time_of_day()
-    if skip_time:
-        throttle_key = (symbol, "time_gate", skip_time_reason)
-        now_ts = time.time()
-        last_log = _PAPER_ENTRY_BLOCKED_THROTTLE.get(throttle_key, 0.0)
-        if now_ts - last_log >= _PAPER_ENTRY_BLOCKED_TTL:
+    # Log segment decision (throttled)
+    throttle_key = (symbol, "segment_gate", segment_action)
+    now_ts = time.time()
+    last_log = _PAPER_ENTRY_BLOCKED_THROTTLE.get(throttle_key, 0.0)
+    if now_ts - last_log >= _PAPER_ENTRY_BLOCKED_TTL:
+        log.info(
+            "[SEGMENT_GATE_DECISION] symbol=%s regime=%s side=%s action=%s reason=%s",
+            symbol, regime, side_normalized, segment_action, skip_reason
+        )
+        _PAPER_ENTRY_BLOCKED_THROTTLE[throttle_key] = now_ts
+
+    # Hard block only if explicitly enabled
+    if skip_segment:
+        return {"status": "blocked", "reason": f"segment_gate:BLOCK:{skip_reason}"}
+
+    # SIZE_DOWN handled below during position sizing
+
+    # TIME-OF-DAY FILTERING: Shadow mode (logs only, doesn't block)
+    skip_time, skip_time_reason, is_shadow = _should_skip_time_of_day()
+    throttle_key_time = (symbol, "time_gate", skip_time_reason)
+    last_log_time = _PAPER_ENTRY_BLOCKED_THROTTLE.get(throttle_key_time, 0.0)
+    if now_ts - last_log_time >= _PAPER_ENTRY_BLOCKED_TTL:
+        if is_shadow:
             log.debug(
-                "[PAPER_ENTRY_BLOCKED] symbol=%s reason=time_of_day_poor %s",
+                "[TIME_FILTER_SHADOW] symbol=%s reason=%s live_effect=false",
                 symbol, skip_time_reason
             )
-            _PAPER_ENTRY_BLOCKED_THROTTLE[throttle_key] = now_ts
-        return {"status": "blocked", "reason": f"time_gate:{skip_time_reason}"}
+        else:
+            log.warning(
+                "[TIME_FILTER_DECISION] symbol=%s reason=%s live_effect=true",
+                symbol, skip_time_reason
+            )
+        _PAPER_ENTRY_BLOCKED_THROTTLE[throttle_key_time] = now_ts
 
     with _POSITION_LOCK:
         # Check exploration-specific exposure caps FIRST (before total max cap)
@@ -1022,10 +1079,16 @@ def open_paper_position(
     side_raw = signal.get("action", signal.get("side", "BUY"))
     side, side_raw_stored = _normalize_side(side_raw)
 
-    # Apply exploration sizing if provided; otherwise use dynamic position size based on confidence
-    size_usd = _calculate_dynamic_position_size(signal)
+    # Apply exploration sizing if provided; otherwise use dynamic position size
+    size_usd = _calculate_dynamic_position_size(signal, segment_action)
     if extra and "final_size_usd" in extra:
         size_usd = extra["final_size_usd"]
+
+    # Log sizing decision
+    log.info(
+        "[PAPER_SIZE_DECISION] symbol=%s ev=%.4f segment_action=%s final_size_usd=%.2f",
+        symbol, float(signal.get("ev") or 0.0), segment_action, size_usd
+    )
 
     # P1.1AI: Use side-aware TP/SL for paper training (widened for profitability)
     # TP: 3% (was 1.2%), SL: 0.8% (was 1.2%) → asymmetric RR=3.75:1
