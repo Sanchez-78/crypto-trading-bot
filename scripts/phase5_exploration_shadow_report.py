@@ -40,6 +40,10 @@ def find_exploration_candidates(learning_state):
     # Missing: low-n, stale, or underrepresented segments
 
     for segment_key, segment_data in learning_state.items():
+        # Skip non-dict entries
+        if not isinstance(segment_data, dict):
+            continue
+
         n = segment_data.get("n", 0)
         last_update = segment_data.get("last_update_ts", 0)
 

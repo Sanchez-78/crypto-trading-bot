@@ -72,6 +72,10 @@ def analyze_segments():
     insufficient = []
 
     for segment_key, segment_data in learning_state.items():
+        # Skip non-dict entries (e.g., if metadata exists)
+        if not isinstance(segment_data, dict):
+            continue
+
         priority, confidence = calculate_segment_priority(segment_data)
 
         entry = {
