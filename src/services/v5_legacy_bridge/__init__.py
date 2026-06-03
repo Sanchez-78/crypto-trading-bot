@@ -42,6 +42,16 @@ class V5LegacyBridge:
             firebase_client: Existing legacy Firebase client (or None if disabled)
         """
         try:
+            # NEW: If firebase_client not provided, try to get it now (lazy init)
+            if firebase_client is None:
+                try:
+                    from src.services import firebase_client as fb_module
+                    if hasattr(fb_module, 'db') and fb_module.db:
+                        firebase_client = fb_module.db
+                        logger.debug("[V5_BRIDGE_FIREBASE_LAZY] Got firebase client from module")
+                except Exception as e:
+                    logger.debug(f"[V5_BRIDGE_FIREBASE_LAZY_FAILED] {e}")
+
             # NEW: Wrap raw Firestore client if needed (API compatibility)
             if firebase_client and not hasattr(firebase_client, 'set'):
                 from .firebase_client_wrapper import FirestorePathClient
