@@ -15,12 +15,14 @@ except ImportError:
 
 # Configuration from environment
 _INITIAL_EQUITY = float(os.getenv("PAPER_INITIAL_EQUITY_USD", "10000"))
-_POSITION_SIZE = float(os.getenv("PAPER_POSITION_SIZE_USD", "25"))  # Reduced from 100 for risk management
+_POSITION_SIZE_BASE = float(os.getenv("PAPER_POSITION_SIZE_USD", "25"))  # Base size for medium-confidence
 _FEE_PCT = float(os.getenv("PAPER_FEE_PCT", "0.0015"))  # 0.15% round-trip
 _SLIPPAGE_PCT = float(os.getenv("PAPER_SLIPPAGE_PCT", "0.0003"))  # 0.03%
 _MAX_OPEN = int(os.getenv("PAPER_MAX_OPEN_POSITIONS", "5"))  # Increased to allow more diversification
 _MAX_AGE_S = float(os.getenv("PAPER_MAX_POSITION_AGE_S", "900"))  # 15 min default
 _MIN_EV_THRESHOLD = float(os.getenv("PAPER_MIN_EV_THRESHOLD", "0.05"))  # Block weak signals below 5% edge
+_MIN_SEGMENT_PF = float(os.getenv("PAPER_MIN_SEGMENT_PF", "1.0"))  # Only trade segments with PF > 1.0
+_TIME_BASED_FILTERING = os.getenv("PAPER_TIME_BASED_FILTERING", "true").lower() == "true"
 
 # State
 _POSITIONS = {}  # position_id -> position_dict
@@ -115,6 +117,88 @@ def _is_training_position(pos: dict) -> bool:
         or pos.get("paper_source") == "training_sampler"
         or _effective_paper_bucket(pos) == "B_RECOVERY_READY"
     )
+
+
+def _get_learner_state():
+    """Get current learning state from paper_adaptive_learning singleton."""
+    try:
+        from src.services.paper_adaptive_learning import LEARNER
+        return LEARNER
+    except (ImportError, AttributeError, NameError):
+        return None
+
+
+def _get_segment_pf(symbol: str, regime: str, side: str) -> float:
+    """Get profit factor for a specific segment (symbol:regime:side)."""
+    learner = _get_learner_state()
+    if not learner:
+        return 1.0  # Default to trading if learner unavailable
+
+    segment_key = f"{symbol}:{regime}:{side}"
+
+    # Compute PF for this segment from rolling100
+    segment_trades = [(e[0], e[1]) for e in learner.rolling100 if e[2] == segment_key]
+    if not segment_trades:
+        return 1.0  # No data yet, default to trade
+
+    return learner._compute_pf(segment_trades)
+
+
+def _calculate_dynamic_position_size(signal: dict) -> float:
+    """Calculate position size based on signal confidence/EV.
+
+    High-confidence (EV > 10%): $50-75 (2-3x base)
+    Medium (EV 5-10%): $25 (1x base)
+    Low (EV 3-5%): $10-15 (0.4-0.6x base)
+    """
+    ev = float(signal.get("ev") or 0.0)
+
+    if ev >= 0.10:
+        return _POSITION_SIZE_BASE * 2.5  # High confidence: 2.5x
+    elif ev >= 0.07:
+        return _POSITION_SIZE_BASE * 2.0  # Good confidence: 2x
+    elif ev >= 0.05:
+        return _POSITION_SIZE_BASE * 1.0  # Medium: 1x (base)
+    elif ev >= 0.03:
+        return _POSITION_SIZE_BASE * 0.5  # Low: 0.5x
+    else:
+        return _POSITION_SIZE_BASE * 0.3  # Very low: 0.3x
+
+
+def _should_skip_segment_by_profitability(symbol: str, regime: str, side: str) -> tuple[bool, str]:
+    """Check if segment should be skipped due to poor profitability.
+
+    Returns: (should_skip, reason)
+    """
+    if not _MIN_SEGMENT_PF or _MIN_SEGMENT_PF <= 1.0:
+        return False, ""  # Gating disabled
+
+    segment_pf = _get_segment_pf(symbol, regime, side)
+    if segment_pf < _MIN_SEGMENT_PF:
+        return True, f"segment_pf_too_low={segment_pf:.2f}x"
+
+    return False, ""
+
+
+def _should_skip_time_of_day() -> tuple[bool, str]:
+    """Check if current time-of-day should be skipped (poor historical performance).
+
+    Returns: (should_skip, reason)
+    """
+    if not _TIME_BASED_FILTERING:
+        return False, ""
+
+    import datetime
+    now = datetime.datetime.utcnow()
+    hour = now.hour
+
+    # Bad hours (0-2 UTC, 12-14 UTC typically see lower activity)
+    # Adjust based on actual data from rolling metrics
+    bad_hours = [0, 1, 2, 12, 13, 14]
+    if hour in bad_hours:
+        return True, f"bad_hour_of_day={hour}"
+
+    return False, ""
 
 
 # P1.1AP-D: Stale position quarantine thresholds (refined to exclude normal TP/SL)
@@ -849,6 +933,37 @@ def open_paper_position(
             _PAPER_ENTRY_BLOCKED_THROTTLE[throttle_key] = now_ts
         return {"status": "blocked", "reason": f"weak_ev_below_{_MIN_EV_THRESHOLD}"}
 
+    # SEGMENT PROFITABILITY GATING: Skip unprofitable segments
+    regime = signal.get("regime", "NEUTRAL")
+    side_raw = signal.get("action", signal.get("side", "BUY"))
+    side_normalized, _ = _normalize_side(side_raw)
+    skip_segment, skip_reason = _should_skip_segment_by_profitability(symbol, regime, side_normalized)
+    if skip_segment:
+        throttle_key = (symbol, "segment_gate", skip_reason)
+        now_ts = time.time()
+        last_log = _PAPER_ENTRY_BLOCKED_THROTTLE.get(throttle_key, 0.0)
+        if now_ts - last_log >= _PAPER_ENTRY_BLOCKED_TTL:
+            log.warning(
+                "[PAPER_ENTRY_BLOCKED] symbol=%s reason=segment_unprofitable %s",
+                symbol, skip_reason
+            )
+            _PAPER_ENTRY_BLOCKED_THROTTLE[throttle_key] = now_ts
+        return {"status": "blocked", "reason": f"segment_gate:{skip_reason}"}
+
+    # TIME-OF-DAY FILTERING: Skip poor hours
+    skip_time, skip_time_reason = _should_skip_time_of_day()
+    if skip_time:
+        throttle_key = (symbol, "time_gate", skip_time_reason)
+        now_ts = time.time()
+        last_log = _PAPER_ENTRY_BLOCKED_THROTTLE.get(throttle_key, 0.0)
+        if now_ts - last_log >= _PAPER_ENTRY_BLOCKED_TTL:
+            log.debug(
+                "[PAPER_ENTRY_BLOCKED] symbol=%s reason=time_of_day_poor %s",
+                symbol, skip_time_reason
+            )
+            _PAPER_ENTRY_BLOCKED_THROTTLE[throttle_key] = now_ts
+        return {"status": "blocked", "reason": f"time_gate:{skip_time_reason}"}
+
     with _POSITION_LOCK:
         # Check exploration-specific exposure caps FIRST (before total max cap)
         cap_check = _check_exploration_exposure_caps(symbol, bucket)
@@ -907,8 +1022,8 @@ def open_paper_position(
     side_raw = signal.get("action", signal.get("side", "BUY"))
     side, side_raw_stored = _normalize_side(side_raw)
 
-    # Apply exploration sizing if provided; otherwise use default position size
-    size_usd = _POSITION_SIZE
+    # Apply exploration sizing if provided; otherwise use dynamic position size based on confidence
+    size_usd = _calculate_dynamic_position_size(signal)
     if extra and "final_size_usd" in extra:
         size_usd = extra["final_size_usd"]
 
