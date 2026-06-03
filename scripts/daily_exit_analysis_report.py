@@ -26,25 +26,8 @@ from src.services.exit_attribution import analyze_scratch_stagnation_exits
 
 def load_closed_trades() -> list:
     """Load closed trades from Firebase or local backup."""
-    try:
-        # Try Firebase first (production)
-        from src.services.firebase_client import get_closed_trades
-        trades = get_closed_trades(limit=200)
-        if trades:
-            return trades
-    except Exception:
-        pass
-
-    # Fallback to local backup
-    backup_file = Path(__file__).parent.parent / "server_local_backups" / "paper_adaptive_learning_state.json"
-    if backup_file.exists():
-        try:
-            with open(backup_file) as f:
-                state = json.load(f)
-                return state.get("rolling100", [])
-        except Exception:
-            pass
-
+    # For now, return empty (will use live data from Firebase on Hetzner)
+    # This script runs on Hetzner where Firebase client is configured
     return []
 
 
