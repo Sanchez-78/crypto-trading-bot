@@ -1,6 +1,10 @@
 import sys
 import os
 import traceback
+from dotenv import load_dotenv
+
+# Load environment variables from .env before importing anything else
+load_dotenv()
 
 print("[START] START.PY BOOTING...")
 

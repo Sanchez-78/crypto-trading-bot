@@ -250,7 +250,9 @@
       "PowerShell(head *)",
       "PowerShell($keyPath = \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\"; ssh -i $keyPath root@78.47.2.198 \"cd /opt/cryptomaster && cat server_local_backups/paper_adaptive_learning_state.json 2>/dev/null | head -50\")",
       "PowerShell($keyPath = \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\"; ssh -i $keyPath root@78.47.2.198 \"cat /opt/cryptomaster/server_local_backups/paper_adaptive_learning_state.json | grep -E 'lifetime_n|lifetime_pf|lifetime_expectancy' | head -5\")",
-      "PowerShell($keyPath = \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\"; ssh -i $keyPath root@78.47.2.198 'cd /opt/cryptomaster && python3 -c \"import json; data=json.load\\(open\\(\\\\\"server_local_backups/paper_adaptive_learning_state.json\\\\\"\\)\\); outcomes=[e[1] for e in data.get\\(\\\\\"rolling100\\\\\", []\\)]; print\\(\\\\\"Outcomes distribution:\\\\\"\\); from collections import Counter; print\\(Counter\\(outcomes\\)\\); wins=[e[0] for e in data.get\\(\\\\\"rolling100\\\\\", []\\) if e[1]==\\\\\"WIN\\\\\"]; losses=[e[0] for e in data.get\\(\\\\\"rolling100\\\\\", []\\) if e[1]==\\\\\"LOSS\\\\\"]; print\\(f\\\\\"Wins \\(count={len\\(wins\\)}\\): {wins}\\\\\"\\); print\\(f\\\\\"Losses \\(count={len\\(losses\\)}\\): sum={sum\\(losses\\):.4f}\\\\\"\\)\"')"
+      "PowerShell($keyPath = \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\"; ssh -i $keyPath root@78.47.2.198 'cd /opt/cryptomaster && python3 -c \"import json; data=json.load\\(open\\(\\\\\"server_local_backups/paper_adaptive_learning_state.json\\\\\"\\)\\); outcomes=[e[1] for e in data.get\\(\\\\\"rolling100\\\\\", []\\)]; print\\(\\\\\"Outcomes distribution:\\\\\"\\); from collections import Counter; print\\(Counter\\(outcomes\\)\\); wins=[e[0] for e in data.get\\(\\\\\"rolling100\\\\\", []\\) if e[1]==\\\\\"WIN\\\\\"]; losses=[e[0] for e in data.get\\(\\\\\"rolling100\\\\\", []\\) if e[1]==\\\\\"LOSS\\\\\"]; print\\(f\\\\\"Wins \\(count={len\\(wins\\)}\\): {wins}\\\\\"\\); print\\(f\\\\\"Losses \\(count={len\\(losses\\)}\\): sum={sum\\(losses\\):.4f}\\\\\"\\)\"')",
+      "Bash(git revert *)",
+      "Bash(grep -E \"\\\\.py$\")"
     ]
   }
 }
