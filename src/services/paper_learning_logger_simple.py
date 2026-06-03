@@ -1,10 +1,9 @@
-"""Paper Learning Logger — Extended Czech version with detailed metrics
+"""Paper Learning Logger — Clear trade pipeline visibility
 
-Shows:
-  - Kolik obchodů se naučilo + win rate
-  - Detaily pro jednotlivé měny
-  - Kdy bude bot READY pro REAL trading
-  - Jaké podmínky musí být splněny
+Shows user-friendly breakdown:
+1. Signály: kolik kandidátů → kolik vstoupilo → kolik uzavřeno
+2. Výsledky: z uzavřených - kolik zisků vs ztrát
+3. Zamítnuté: proč se signály nepoužily
 """
 import logging
 import time
@@ -16,12 +15,12 @@ from collections import defaultdict
 log = logging.getLogger(__name__)
 
 class SimplePaperLearningLogger:
-    """Simple, human-friendly paper learning logger with detailed metrics."""
+    """Clear, user-friendly paper learning logger."""
 
     def __init__(self, learning_state_file: Optional[str] = None):
         self.learning_state_file = learning_state_file or "server_local_backups/paper_adaptive_learning_state.json"
         self.last_log_time = 0.0
-        self.log_interval_s = 60  # Every minute (but called every 5 min with METRICS_INTERVAL)
+        self.log_interval_s = 60
 
     def load_learning_state(self) -> Dict:
         """Load learning state."""
@@ -42,51 +41,111 @@ class SimplePaperLearningLogger:
             return True
         return False
 
-    def get_progress_bar(self, current: int, target: int, width: int = 15) -> str:
-        """Create simple progress bar."""
-        if target == 0:
-            return "░" * width
-        filled = int(current / target * width)
-        filled = min(filled, width)
-        empty = width - filled
-        return "█" * filled + "░" * empty
-
     def calculate_stats_from_rolling(self, rolling_list: list) -> Dict:
-        """Calculate win rate and other stats from rolling list."""
+        """Calculate win/loss from rolling list."""
         if not rolling_list:
-            return {"wins": 0, "losses": 0, "flats": 0, "wr": 0, "pnl": 0}
+            return {"wins": 0, "losses": 0, "flats": 0, "total": 0}
 
         wins = sum(1 for r in rolling_list if len(r) > 1 and r[1] == "WIN")
         losses = sum(1 for r in rolling_list if len(r) > 1 and r[1] == "LOSS")
         flats = sum(1 for r in rolling_list if len(r) > 1 and r[1] == "FLAT")
-        total = len(rolling_list)
-        wr = (wins / total * 100) if total > 0 else 0
-        pnl = sum(float(r[0]) for r in rolling_list if len(r) > 0)
 
         return {
             "wins": wins,
             "losses": losses,
             "flats": flats,
-            "wr": wr,
-            "pnl": pnl,
-            "total": total
+            "total": len(rolling_list)
         }
 
-    def analyze_by_symbol(self, rolling_list: list) -> Dict:
-        """Analyze performance by currency symbol."""
-        by_symbol = defaultdict(lambda: {"wins": 0, "losses": 0, "flats": 0, "count": 0, "pnl": 0})
+    def log_simple_status(self) -> None:
+        """Log clear, understandable status."""
+        if not self.should_log_now():
+            return
+
+        state = self.load_learning_state()
+        if not state:
+            return
+
+        lifetime_n = state.get("lifetime_n", 0)
+        lifetime_pf = state.get("lifetime_pf", 0.0)
+        lifecycle = state.get("lifecycle", "unknown")
+
+        if lifetime_n == 0:
+            return
+
+        # Rolling stats
+        rolling50 = state.get("rolling50", [])
+        stats_r50 = self.calculate_stats_from_rolling(rolling50)
+        wr_recent = (stats_r50["wins"] / stats_r50["total"] * 100) if stats_r50["total"] > 0 else 0
+
+        # Ready check
+        ready_conditions = {
+            "trades_50": lifetime_n >= 50,
+            "wr_positive": wr_recent > 45,
+            "pf_positive": lifetime_pf > 1.0,
+        }
+        all_ready = all(ready_conditions.values())
+
+        # MAIN: Clear pipeline view
+        log.info("")
+        log.info("=" * 70)
+        log.info("📊 OBCHODNÍ PIPELINE - JASNÝ PŘEHLED")
+        log.info("=" * 70)
+
+        log.info("")
+        log.info("📈 ŽIVOTNÍ STATISTIKA (všechny časy)")
+        log.info(f"   Celkem obchodů:        {lifetime_n} (spouštěno, vstoupeno a uzavřeno)")
+        log.info(f"   Profit Factor:         {lifetime_pf:.2f}x (zisk/ztráta)")
+        log.info(f"   Status:                {lifecycle}")
+
+        log.info("")
+        log.info("🎯 POSLEDNÍ 50 OBCHODŮ - DETAILY")
+        log.info(f"   Uzavřeno:              {stats_r50['total']} obchodů")
+        log.info(f"   ✅ Zisky (WIN):        {stats_r50['wins']} obchodů")
+        log.info(f"   ❌ Ztráty (LOSS):      {stats_r50['losses']} obchodů")
+        log.info(f"   ⏸️  Neutrální (FLAT):   {stats_r50['flats']} obchodů")
+        log.info(f"   Win Rate:              {wr_recent:.0f}%")
+
+        # Per-currency
+        by_symbol = self._analyze_by_symbol(rolling50)
+        if by_symbol:
+            log.info("")
+            log.info("💰 VÝSLEDKY PER MĚNA (poslední 50)")
+            for symbol in sorted(by_symbol.keys()):
+                data = by_symbol[symbol]
+                wr = (data["wins"] / data["total"] * 100) if data["total"] > 0 else 0
+                log.info(f"   {symbol:10} {data['total']:2}x | ✅ {data['wins']:2} | ❌ {data['losses']:2} | ⏸️  {data['flats']:2} | WR: {wr:5.0f}%")
+
+        # Ready status
+        log.info("")
+        log.info("🚀 READY PRO REAL TRADING?")
+        log.info(f"   ✓ 50+ obchodů:  {'✅ ANO' if ready_conditions['trades_50'] else '❌ NE'} ({lifetime_n}/50)")
+        log.info(f"   ✓ WR > 45%:     {'✅ ANO' if ready_conditions['wr_positive'] else '❌ NE'} ({wr_recent:.0f}%)")
+        log.info(f"   ✓ PF > 1.0:     {'✅ ANO' if ready_conditions['pf_positive'] else '❌ NE'} ({lifetime_pf:.2f}x)")
+        log.info("")
+
+        if all_ready:
+            log.warning("✅ ✅ ✅ BOT JE READY PRO REAL TRADING! ✅ ✅ ✅")
+            log.warning("Lze zapnout: ENABLE_REAL_ORDERS=true")
+        else:
+            missing = [k.replace("_", " ").upper() for k, v in ready_conditions.items() if not v]
+            log.warning(f"❌ BOT NENÍ READY - Chybí: {', '.join(missing)}")
+
+        log.info("=" * 70)
+        log.info("")
+
+    def _analyze_by_symbol(self, rolling_list: list) -> Dict:
+        """Analyze by currency symbol."""
+        by_symbol = defaultdict(lambda: {"wins": 0, "losses": 0, "flats": 0, "total": 0})
 
         for trade in rolling_list:
             if len(trade) < 3:
                 continue
-            pnl = float(trade[0])
-            status = trade[1]  # WIN, LOSS, FLAT
-            segment_key = trade[2]  # BTCUSDT:BULL_TREND:BUY
-
+            status = trade[1]
+            segment_key = trade[2]
             symbol = segment_key.split(":")[0] if ":" in segment_key else segment_key
 
-            by_symbol[symbol]["pnl"] += pnl
-            by_symbol[symbol]["count"] += 1
+            by_symbol[symbol]["total"] += 1
             if status == "WIN":
                 by_symbol[symbol]["wins"] += 1
             elif status == "LOSS":
@@ -95,149 +154,6 @@ class SimplePaperLearningLogger:
                 by_symbol[symbol]["flats"] += 1
 
         return by_symbol
-
-    def log_simple_status(self) -> None:
-        """Log in simple, layman-friendly format."""
-        if not self.should_log_now():
-            return
-
-        state = self.load_learning_state()
-        if not state:
-            return
-
-        # Get lifetime metrics
-        lifetime_n = state.get("lifetime_n", 0)
-        lifetime_pf = state.get("lifetime_pf", 0.0)
-        lifecycle = state.get("lifecycle", "unknown")
-
-        if lifetime_n == 0:
-            return
-
-        # Get rolling metrics for win rate
-        rolling50 = state.get("rolling50", [])
-        stats_r50 = self.calculate_stats_from_rolling(rolling50)
-        wr_recent = stats_r50.get("wr", 0)
-
-        # Get segment weights
-        segment_weights = state.get("segment_weights", {})
-
-        # Calculate readiness
-        ready_conditions = {
-            "trades_50": lifetime_n >= 50,
-            "wr_positive": wr_recent > 45,
-            "pf_positive": lifetime_pf > 1.0,
-        }
-
-        all_ready = all(ready_conditions.values())
-
-        # Status
-        progress_bar = self.get_progress_bar(lifetime_n, 50)
-        if all_ready:
-            progress_text = "✅ HOTOVO - Bot je READY!"
-        elif lifetime_n >= 50:
-            progress_text = f"🟡 MÁLO DAT - WR je nízká ({wr_recent:.0f}%)"
-        elif lifetime_n >= 30:
-            progress_text = f"🟡 NA DOBRÉ CESTĚ - zbývá {50 - lifetime_n} obchodů"
-        else:
-            progress_text = f"🔄 SBÍRÁNÍ DAT - {lifetime_n} z 50 obchodů"
-
-        # Main status log
-        log.info(
-            f"[📚 UČENÍ] {progress_bar} {progress_text} | "
-            f"Obchodů: {lifetime_n} | WR: {wr_recent:.0f}% | PF: {lifetime_pf:.2f} | "
-            f"Status: {lifecycle}"
-        )
-
-        # **CRITICAL: Ready status announcement**
-        if all(ready_conditions.values()):
-            log.warning("🚀 ✅ BOT JE READY PRO REAL TRADING! Lze zapnout ENABLE_REAL_ORDERS=true")
-        else:
-            missing = [k.replace("_", " ").upper() for k, v in ready_conditions.items() if not v]
-            log.warning(f"⏳ ❌ BOT NENÍ READY - Chybí: {', '.join(missing)}")
-
-        # Per-currency breakdown
-        by_symbol = self.analyze_by_symbol(rolling50)
-        if by_symbol:
-            symbols_info = []
-            for symbol in sorted(by_symbol.keys()):
-                data = by_symbol[symbol]
-                count = data["count"]
-                wr = (data["wins"] / count * 100) if count > 0 else 0
-                pnl = data["pnl"]
-                symbols_info.append(f"{symbol}({count}x,WR={wr:.0f}%,PnL={pnl:+.5f})")
-
-            symbols_str = " | ".join(symbols_info)
-            log.info(f"[💰 PO MĚNÁCH] {symbols_str}")
-
-        # Last 5 trades details
-        if rolling50:
-            log.info("[📋 POSLEDNÍ OBCHODY]")
-            for i, trade in enumerate(reversed(rolling50[-5:])):
-                if len(trade) >= 3:
-                    pnl = float(trade[0])
-                    status = trade[1]
-                    segment = trade[2]
-                    emoji = "✅" if status == "WIN" else "❌" if status == "LOSS" else "⏸️"
-                    log.info(f"  {emoji} {segment:25} | PnL: {pnl:+.5f} | {status}")
-
-        # Detailed log (hourly)
-        if int(time.time()) % 3600 < 60:
-            self._log_detailed(lifetime_n, lifetime_pf, lifecycle, segment_weights,
-                             wr_recent, by_symbol, ready_conditions)
-
-    def _log_detailed(self, lifetime_n: int, lifetime_pf: float, lifecycle: str,
-                     segments: Dict, wr_recent: float, by_symbol: Dict,
-                     ready_conditions: Dict) -> None:
-        """Detailed human-friendly status every hour."""
-        log.info("╔═══════════════════════════════════════════════════════════════╗")
-        log.info("║               📊 DETAILNÍ STAV UČENÍ - PŘEHLED                 ║")
-        log.info("╚═══════════════════════════════════════════════════════════════╝")
-
-        log.info("")
-        log.info("📈 ZÁKLADNÍ METRIKY")
-        log.info(f"   Celkem obchodů:          {lifetime_n}")
-        log.info(f"   Profit Factor (lifetime): {lifetime_pf:.2f}x")
-        log.info(f"   Win Rate (poslédních 50): {wr_recent:.0f}%")
-        log.info(f"   Status:                  {lifecycle}")
-        log.info(f"   Potřeba k READY:         50 obchodů")
-        log.info("")
-
-        log.info("💹 DETAILY PER MĚNA")
-        for symbol in sorted(by_symbol.keys()):
-            data = by_symbol[symbol]
-            count = data["count"]
-            wr = (data["wins"] / count * 100) if count > 0 else 0
-            pnl = data["pnl"]
-            log.info(f"   {symbol:10} Obchodů: {count:3} | WR: {wr:5.1f}% | PnL: {pnl:+.6f}")
-        log.info("")
-
-        log.info("✅ PODMÍNKY PRO REAL TRADING")
-        log.info(f"   ✓ 50+ obchodů:  {'✅ ANO' if ready_conditions['trades_50'] else '❌ NE'} ({lifetime_n}/50)")
-        log.info(f"   ✓ WR > 45%:     {'✅ ANO' if ready_conditions['wr_positive'] else '❌ NE'} ({wr_recent:.0f}%)")
-        log.info(f"   ✓ PF > 1.0:     {'✅ ANO' if ready_conditions['pf_positive'] else '❌ NE'} ({lifetime_pf:.2f}x)")
-        log.info("")
-
-        if all(ready_conditions.values()):
-            log.info("   ✅ VŠECHNY PODMÍNKY SPLNĚNY - BOT JE READY PRO REAL TRADING!")
-            log.info("      Lze zapnout ENABLE_REAL_ORDERS=true a začít obchodovat")
-        else:
-            missing = [k for k, v in ready_conditions.items() if not v]
-            log.info(f"   ❌ CHYBÍ: {', '.join(missing)}")
-            log.info("      Pokračuj v sbírání dat, bot zatím není ready")
-        log.info("")
-
-        log.info("💡 PŘÍŠTÍ KROKY")
-        if all(ready_conditions.values()):
-            log.info("   1. Zapnout ENABLE_REAL_ORDERS=true")
-            log.info("   2. Monitorovat live obchodování")
-            log.info("   3. Měřit zlepšení výsledků v reálném obchodování")
-        else:
-            log.info("   1. Pokračovat v papírovém obchodování")
-            log.info(f"   2. Čekat na more data ({50-lifetime_n} obchodů zbývá)")
-            log.info("   3. Zlepšit win rate a profit factor")
-        log.info("")
-
-        log.info("╚═══════════════════════════════════════════════════════════════╝")
 
 # Global singleton
 _logger = None
