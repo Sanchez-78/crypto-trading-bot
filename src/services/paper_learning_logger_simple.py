@@ -148,6 +148,13 @@ class SimplePaperLearningLogger:
             f"Status: {lifecycle}"
         )
 
+        # **CRITICAL: Ready status announcement**
+        if all(ready_conditions.values()):
+            log.warning("🚀 ✅ BOT JE READY PRO REAL TRADING! Lze zapnout ENABLE_REAL_ORDERS=true")
+        else:
+            missing = [k.replace("_", " ").upper() for k, v in ready_conditions.items() if not v]
+            log.warning(f"⏳ ❌ BOT NENÍ READY - Chybí: {', '.join(missing)}")
+
         # Per-currency breakdown
         by_symbol = self.analyze_by_symbol(rolling50)
         if by_symbol:
