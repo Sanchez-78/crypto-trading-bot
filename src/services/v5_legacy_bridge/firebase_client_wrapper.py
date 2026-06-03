@@ -44,7 +44,8 @@ class FirestorePathClient:
             if not parts or len(parts) < 2:
                 raise ValueError(f"Invalid path (too short): {path}")
 
-            if len(parts) % 2 == 0:
+            # Path must be collection/doc or col1/doc1/col2/doc2 (even number of parts)
+            if len(parts) % 2 == 1:
                 raise ValueError(
                     f"Invalid path (must end on doc, not collection): {path}. "
                     f"Path parts: {parts}"
@@ -78,7 +79,7 @@ class FirestorePathClient:
             if not parts or len(parts) < 2:
                 raise ValueError(f"Invalid path (too short): {path}")
 
-            if len(parts) % 2 == 0:
+            if len(parts) % 2 == 1:
                 raise ValueError(
                     f"Invalid path (must end on doc, not collection): {path}"
                 )
