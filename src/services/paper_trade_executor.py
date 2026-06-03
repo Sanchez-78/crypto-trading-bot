@@ -15,11 +15,12 @@ except ImportError:
 
 # Configuration from environment
 _INITIAL_EQUITY = float(os.getenv("PAPER_INITIAL_EQUITY_USD", "10000"))
-_POSITION_SIZE = float(os.getenv("PAPER_POSITION_SIZE_USD", "100"))
+_POSITION_SIZE = float(os.getenv("PAPER_POSITION_SIZE_USD", "25"))  # Reduced from 100 for risk management
 _FEE_PCT = float(os.getenv("PAPER_FEE_PCT", "0.0015"))  # 0.15% round-trip
 _SLIPPAGE_PCT = float(os.getenv("PAPER_SLIPPAGE_PCT", "0.0003"))  # 0.03%
-_MAX_OPEN = int(os.getenv("PAPER_MAX_OPEN_POSITIONS", "3"))
+_MAX_OPEN = int(os.getenv("PAPER_MAX_OPEN_POSITIONS", "5"))  # Increased to allow more diversification
 _MAX_AGE_S = float(os.getenv("PAPER_MAX_POSITION_AGE_S", "900"))  # 15 min default
+_MIN_EV_THRESHOLD = float(os.getenv("PAPER_MIN_EV_THRESHOLD", "0.05"))  # Block weak signals below 5% edge
 
 # State
 _POSITIONS = {}  # position_id -> position_dict
@@ -834,6 +835,20 @@ def open_paper_position(
     bucket = training_bucket or explore_bucket  # Primary: training_bucket, fallback: explore_bucket
     paper_source = extra.get("paper_source") if extra else None
 
+    # PROFITABILITY FIX: Reject weak signals with low expected value
+    ev = float(signal.get("ev") or 0.0)
+    if ev < _MIN_EV_THRESHOLD and bucket == "C_WEAK_EV_TRAIN":
+        throttle_key = (symbol, bucket, "weak_ev_rejected")
+        now_ts = time.time()
+        last_log = _PAPER_ENTRY_BLOCKED_THROTTLE.get(throttle_key, 0.0)
+        if now_ts - last_log >= _PAPER_ENTRY_BLOCKED_TTL:
+            log.warning(
+                "[PAPER_ENTRY_BLOCKED] symbol=%s reason=weak_ev ev=%.4f threshold=%.4f bucket=%s",
+                symbol, ev, _MIN_EV_THRESHOLD, bucket
+            )
+            _PAPER_ENTRY_BLOCKED_THROTTLE[throttle_key] = now_ts
+        return {"status": "blocked", "reason": f"weak_ev_below_{_MIN_EV_THRESHOLD}"}
+
     with _POSITION_LOCK:
         # Check exploration-specific exposure caps FIRST (before total max cap)
         cap_check = _check_exploration_exposure_caps(symbol, bucket)
@@ -897,8 +912,11 @@ def open_paper_position(
     if extra and "final_size_usd" in extra:
         size_usd = extra["final_size_usd"]
 
-    # P1.1AI: Use side-aware TP/SL for paper training
-    tp_sl = normalize_paper_tp_sl(side, price, price * 1.012, price * 0.988)
+    # P1.1AI: Use side-aware TP/SL for paper training (widened for profitability)
+    # TP: 3% (was 1.2%), SL: 0.8% (was 1.2%) → asymmetric RR=3.75:1
+    tp_pct = 1.03 if side == "BUY" else 0.97
+    sl_pct = 0.992 if side == "BUY" else 1.008
+    tp_sl = normalize_paper_tp_sl(side, price, price * tp_pct, price * sl_pct)
     if tp_sl is None:
         log.error(
             "[PAPER_ENTRY_BLOCKED] symbol=%s reason=tp_sl_impossible side=%s entry=%.8f",
