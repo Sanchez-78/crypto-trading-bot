@@ -1,11 +1,10 @@
 """Paper Learning Logger — Simple Czech version for anyone to understand
 
 Shows clearly in logs:
-  - Kolik obchodů je otevřeno teď
-  - Kolik obchodů bylo uzavřeno dnes
-  - Jak se učí (kolik učíciích updatů)
-  - Jaký je progres do READY statusu
-  - Kterou měnu obchoduje nejlépe
+  - Kolik obchodů se naučilo (lifetime trades)
+  - Jaký je profit factor (lifetime PF)
+  - Jaký je status (PAPER_COLLECTING, etc.)
+  - Které měny se obchodují nejlépe (segment weights)
   - Jednoduše, srozumitelně, s grafikou
 """
 import logging
@@ -62,67 +61,47 @@ class SimplePaperLearningLogger:
         if not state:
             return
 
-        # Parse segments
-        segments = {}
-        for key, data in state.items():
-            if not isinstance(data, dict) or data.get("n", 0) == 0:
-                continue
-            segments[key] = data
+        # Get lifetime metrics
+        lifetime_n = state.get("lifetime_n", 0)
+        lifetime_pf = state.get("lifetime_pf", 0.0)
+        lifecycle = state.get("lifecycle", "unknown")
 
-        if not segments:
+        if lifetime_n == 0:
             return
 
-        # Calculate all metrics
-        total_trades = sum(s.get("n", 0) for s in segments.values())
-        ready_segments = sum(1 for s in segments.values() if s.get("n", 0) >= 20)
-        total_segments = len(segments)
-
-        # Top 3 symbols
-        by_symbol = defaultdict(lambda: {"trades": 0, "pf": 0, "count": 0})
-        for segment_key, data in segments.items():
-            parts = segment_key.split(":")
-            if len(parts) >= 1:
-                symbol = parts[0]
-                by_symbol[symbol]["trades"] += data.get("n", 0)
-                by_symbol[symbol]["pf"] += data.get("rolling50_pf", 1.0)
-                by_symbol[symbol]["count"] += 1
-
-        for symbol in by_symbol:
-            by_symbol[symbol]["pf"] /= by_symbol[symbol]["count"]
-
-        top_symbols = sorted(by_symbol.items(), key=lambda x: x[1]["trades"], reverse=True)[:3]
-
-        # Learning updates (approximation - each closed trade = 1 learning update)
-        learning_updates = total_trades
+        # Get segment weights (top performers)
+        segment_weights = state.get("segment_weights", {})
+        top_segments = sorted(segment_weights.items(), key=lambda x: x[1], reverse=True)[:3]
 
         # Status
-        progress_bar = self.get_progress_bar(total_trades, 50)
-        if total_trades >= 50:
+        progress_bar = self.get_progress_bar(lifetime_n, 50)
+        if lifetime_n >= 50:
             progress_text = "✅ HOTOVO - Systém se naučil!"
-        elif total_trades >= 30:
-            progress_text = f"🟡 NA DOBRÉ CESTĚ - zbývá {50 - total_trades} obchodů"
+        elif lifetime_n >= 30:
+            progress_text = f"🟡 NA DOBRÉ CESTĚ - zbývá {50 - lifetime_n} obchodů"
         else:
-            progress_text = f"🔄 SBÍRÁNÍ DAT - {total_trades} z 50 obchodů"
+            progress_text = f"🔄 SBÍRÁNÍ DAT - {lifetime_n} z 50 obchodů"
 
         # Log main status (every 10 min)
         log.info(
             f"[📚 UČENÍ] {progress_bar} {progress_text} | "
-            f"Obchodů: {total_trades} | Učících update: {learning_updates} | "
-            f"Segmentů s daty: {total_segments}"
+            f"Obchodů: {lifetime_n} | Profit factor: {lifetime_pf:.2f} | "
+            f"Status: {lifecycle}"
         )
 
-        # Top symbol breakdown
-        symbols_str = " | ".join(
-            f"{sym}({data['trades']} obchodů, PF={data['pf']:.2f})"
-            for sym, data in top_symbols
-        )
-        log.info(f"[💰 NEJLEPŠÍ MĚNY] {symbols_str}")
+        # Top segment breakdown
+        if top_segments:
+            symbols_str = " | ".join(
+                f"{seg[0].split(':')[0]}(váha={seg[1]:.1%})"
+                for seg in top_segments
+            )
+            log.info(f"[💰 NEJLEPŠÍ MĚNY] {symbols_str}")
 
         # Detailed log (every hour)
         if int(time.time()) % 3600 < self.log_interval_s:
-            self._log_detailed(segments, total_trades, ready_segments, total_symbols)
+            self._log_detailed(lifetime_n, lifetime_pf, lifecycle, segment_weights)
 
-    def _log_detailed(self, segments: Dict, total_trades: int, ready_segments: int, top_symbols: list) -> None:
+    def _log_detailed(self, lifetime_n: int, lifetime_pf: float, lifecycle: str, segments: Dict) -> None:
         """Detailed human-friendly status every hour."""
         log.info("╔═══════════════════════════════════════════════════════════════╗")
         log.info("║               📊 STAV UČENÍ - DETAILNÍ PŘEHLED                 ║")
@@ -130,21 +109,23 @@ class SimplePaperLearningLogger:
 
         log.info("")
         log.info("📈 SHRNUTÍ")
-        log.info(f"   Celkem obchodů učení:    {total_trades}")
+        log.info(f"   Celkem obchodů učení:    {lifetime_n}")
         log.info(f"   Potřeba k hotovosti:     50")
-        log.info(f"   Zbývá ještě:             {max(0, 50 - total_trades)}")
-        log.info(f"   Procento hotovosti:      {min(100, total_trades * 2)}%")
+        log.info(f"   Zbývá ještě:             {max(0, 50 - lifetime_n)}")
+        log.info(f"   Procento hotovosti:      {min(100, lifetime_n * 2)}%")
+        log.info(f"   Profit Factor:           {lifetime_pf:.2f}x")
+        log.info(f"   Status:                  {lifecycle}")
         log.info("")
 
         # Status in plain Czech
-        if total_trades >= 50:
+        if lifetime_n >= 50:
             log.info("   ✅ UČENÍ HOTOVO!")
             log.info("      Robot se naučil ze svých obchodů.")
             log.info("      Příští krok: zapnout učení (feedback na příští obchody)")
-        elif total_trades >= 30:
+        elif lifetime_n >= 30:
             log.info(f"   🟡 UČENÍ POKRAČUJE")
-            log.info(f"      Robot se učí z obchodů ({total_trades}/50)")
-            log.info(f"      Potřebuje ještě {50 - total_trades} obchodů")
+            log.info(f"      Robot se učí z obchodů ({lifetime_n}/50)")
+            log.info(f"      Potřebuje ještě {50 - lifetime_n} obchodů")
         else:
             log.info("   🔄 RANÁ FÁZE")
             log.info("      Robot teď sbírá údaje z obchodů")
@@ -152,33 +133,24 @@ class SimplePaperLearningLogger:
         log.info("")
 
         # Which pairs work best
-        log.info("🏆 NEJLEPŠÍ OBCHODNÍ PÁRY")
-        by_pf = sorted(segments.items(), key=lambda x: x[1].get("rolling50_pf", 0), reverse=True)
-        for i, (key, data) in enumerate(by_pf[:3], 1):
-            n = data.get("n", 0)
-            pf = data.get("rolling50_pf", 0)
-            wr = (data.get("wins", 0) / n * 100) if n > 0 else 0
-            emoji = "🥇" if i == 1 else "🥈" if i == 2 else "🥉"
-            log.info(f"   {emoji} {key}")
-            log.info(f"      Obchodů: {n}, Úspěšnost: {wr:.0f}%, Profit faktor: {pf:.2f}x")
-        log.info("")
-
-        # What robot learned
-        log.info("📚 CO SE ROBOT NAUČIL")
-        log.info(f"   Počet segmentů s daty:   {len(segments)}")
-        log.info(f"   Segmentů už hotových:    {ready_segments} (mají 20+ obchodů)")
-        if ready_segments > 0:
-            log.info("   ✅ Lze už zapnout inteligentní výběr obchodů!")
-        log.info("")
+        if segments:
+            log.info("🏆 NEJLEPŠÍ OBCHODNÍ PÁRY")
+            top_by_weight = sorted(segments.items(), key=lambda x: x[1], reverse=True)[:3]
+            for i, (key, weight) in enumerate(top_by_weight, 1):
+                emoji = "🥇" if i == 1 else "🥈" if i == 2 else "🥉"
+                symbol = key.split(":")[0] if ":" in key else key
+                log.info(f"   {emoji} {symbol}")
+                log.info(f"      Důvěra: {weight:.1%}")
+            log.info("")
 
         log.info("💡 PŘÍŠTÍ KROKY")
-        if total_trades >= 50:
+        if lifetime_n >= 50:
             log.info("   1. Zkontrolovat která měna je nejlepší")
             log.info("   2. Zapnout inteligentní výběr (robot bude upřednostňovat dobré páry)")
             log.info("   3. Měřit zlepšení výsledků")
-        elif total_trades >= 30:
+        elif lifetime_n >= 30:
             log.info("   1. Počkat na více obchodů")
-            log.info(f"   2. Zbylo {50 - total_trades} obchodů")
+            log.info(f"   2. Zbylo {50 - lifetime_n} obchodů")
             log.info("   3. Pak se bude moct automatika zapnout")
         else:
             log.info("   1. Nechej robot obchodovat")
