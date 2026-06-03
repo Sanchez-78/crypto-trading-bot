@@ -169,6 +169,17 @@ class SimplePaperLearningLogger:
             symbols_str = " | ".join(symbols_info)
             log.info(f"[💰 PO MĚNÁCH] {symbols_str}")
 
+        # Last 5 trades details
+        if rolling50:
+            log.info("[📋 POSLEDNÍ OBCHODY]")
+            for i, trade in enumerate(reversed(rolling50[-5:])):
+                if len(trade) >= 3:
+                    pnl = float(trade[0])
+                    status = trade[1]
+                    segment = trade[2]
+                    emoji = "✅" if status == "WIN" else "❌" if status == "LOSS" else "⏸️"
+                    log.info(f"  {emoji} {segment:25} | PnL: {pnl:+.5f} | {status}")
+
         # Detailed log (hourly)
         if int(time.time()) % 3600 < 60:
             self._log_detailed(lifetime_n, lifetime_pf, lifecycle, segment_weights,
