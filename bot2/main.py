@@ -89,6 +89,7 @@ from src.services.signal_generator import warmup
 from src.services.dashboard_live import dashboard_loop
 from src.services.metrics_engine import MetricsEngine
 from src.services.canonical_state import initialize_canonical_state, print_canonical_state
+from src.services.paper_learning_logger_simple import log_simple_paper_learning_status
 from bot2.auditor import run_audit
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -1975,6 +1976,12 @@ def main():
                               monitor=monitor_data,
                               fx_usd_czk=_fx_usd_czk or None)
             _last_metrics = now
+
+            # V10.13x: Log simple paper learning status in plain Czech
+            try:
+                log_simple_paper_learning_status()
+            except Exception as e:
+                logging.debug(f"[PAPER_LEARNING_LOG] Error: {e}")
 
             # V10.13s.1: Invalidate canonical state cache after metrics flush
             invalidate_cache()
