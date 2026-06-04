@@ -267,7 +267,12 @@
       "Bash(/tmp/monitor_phase3_12h_fixed.sh)",
       "Bash(chmod +x /tmp/monitor_phase3_3h_report.sh)",
       "Bash(/tmp/monitor_phase3_3h_report.sh)",
-      "Bash(tee /tmp/phase3_3h_results.txt)"
+      "Bash(tee /tmp/phase3_3h_results.txt)",
+      "Bash(chmod +x /tmp/monitor_phase3_3h_fixed.sh)",
+      "Bash(/tmp/monitor_phase3_3h_fixed.sh)",
+      "Bash(tee /tmp/phase3_3h_FIXED_results.txt)",
+      "Bash(scp -i ~/.ssh/hetzner_root /tmp/dashboard_v2.py root@78.47.2.198:/opt/cryptomaster/simple_dashboard.py)",
+      "PowerShell(ssh -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"journalctl -u cryptomaster.service -n 1000 -o cat 2>/dev/null | grep -E 'ECON_BAD|cost_edge|max_open|starvation|BLOCKED|ADVISORY|DECISION' | tail -50\")"
     ]
   }
 }
