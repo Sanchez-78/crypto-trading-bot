@@ -452,6 +452,9 @@ def load_history(limit=HISTORY_LIMIT):
     Cached for HISTORY_TTL seconds.
     Cache is kept warm after every save_batch, so real fetches are rare.
 
+    V10.15 FIX: Read from trades_paper in PAPER mode (was only reading from trades).
+    Paper trades were being written to trades_paper but learning was reading from trades (empty).
+
     V10.14: Proactive quota check — prevent reads if approaching 50k/day limit.
     """
     if db is None:
@@ -467,13 +470,17 @@ def load_history(limit=HISTORY_LIMIT):
     allowed, current, limit_quota = _can_read(estimated_reads)
     if not allowed:
         cache_items = len(_HISTORY_CACHE.get("data", []))
-        # EMERGENCY (2026-04-25): Log clearly when returning cache due to quota degradation, not true empty DB
         logging.warning(f"[FIREBASE_DEGRADED] load_history skipped: quota exhausted ({current}/{limit_quota}); returning cache ({cache_items} items)")
-        return list(_HISTORY_CACHE["data"][:limit])  # Return stale cache (may be empty on startup)
+        return list(_HISTORY_CACHE["data"][:limit])
 
     try:
+        # V10.15 FIX: Determine which collection to read from based on mode
+        import os as _os_check_mode
+        trading_mode = _os_check_mode.getenv("TRADING_MODE", "paper_live").lower()
+        trades_collection = "trades_paper" if "paper" in trading_mode else "trades"
+
         docs = list(
-            db.collection(col("trades"))
+            db.collection(col(trades_collection))
             .order_by("timestamp", direction=firestore.Query.DESCENDING)
             .limit(limit)
             .stream()
@@ -489,13 +496,20 @@ def load_history(limit=HISTORY_LIMIT):
 
 
 def _async_firebase_write(slimmed, batch_size):
-    """Background thread: commit batch to Firebase without blocking critical path."""
+    """Background thread: commit batch to Firebase without blocking critical path.
+
+    V10.15 FIX: Write to trades_paper in PAPER mode (was always writing to trades).
+    """
     try:
         if db is None:
             return
+        import os as _os_check_write_mode
+        trading_mode = _os_check_write_mode.getenv("TRADING_MODE", "paper_live").lower()
+        trades_collection = "trades_paper" if "paper" in trading_mode else "trades"
+
         fb_batch = db.batch()
         for item in slimmed:
-            fb_batch.set(db.collection(col("trades")).document(), item)
+            fb_batch.set(db.collection(col(trades_collection)).document(), item)
         fb_batch.commit()
         _record_write(batch_size)
     except Exception as e:
@@ -1108,12 +1122,18 @@ def load_old_trades(limit=200):
     """
     Load oldest trades for cleanup (auto_cleaner.py).
     Returns dicts with injected 'id' field (Firestore doc ID).
+
+    V10.15 FIX: Read from trades_paper in PAPER mode.
     """
     if db is None:
         return []
     try:
+        import os as _os_load_old
+        trading_mode = _os_load_old.getenv("TRADING_MODE", "paper_live").lower()
+        trades_collection = "trades_paper" if "paper" in trading_mode else "trades"
+
         docs = (
-            db.collection(col("trades"))
+            db.collection(col(trades_collection))
             .order_by("timestamp", direction=firestore.Query.ASCENDING)
             .limit(limit)
             .stream()
@@ -1125,11 +1145,18 @@ def load_old_trades(limit=200):
 
 
 def delete_trade(doc_id):
-    """Delete a single trade document by Firestore ID."""
+    """Delete a single trade document by Firestore ID.
+
+    V10.15 FIX: Delete from trades_paper in PAPER mode.
+    """
     if db is None:
         return
     try:
-        db.collection(col("trades")).document(doc_id).delete()
+        import os as _os_del_mode
+        trading_mode = _os_del_mode.getenv("TRADING_MODE", "paper_live").lower()
+        trades_collection = "trades_paper" if "paper" in trading_mode else "trades"
+
+        db.collection(col(trades_collection)).document(doc_id).delete()
     except Exception as e:
         print(f"❌ delete_trade: {e}")
 
