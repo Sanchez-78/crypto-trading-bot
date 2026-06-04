@@ -258,7 +258,11 @@
       "Bash(chmod +x /tmp/monitor_phase3_14h_clean.sh)",
       "Bash(/tmp/monitor_phase3_14h_clean.sh)",
       "Bash(chmod +x /tmp/phase3_code_audit.sh)",
-      "Bash(/tmp/phase3_code_audit.sh)"
+      "Bash(/tmp/phase3_code_audit.sh)",
+      "Bash(pkill -f 'monitor_phase3_14h')",
+      "Bash(chmod +x /tmp/monitor_phase3_14h_fixed.sh)",
+      "Bash(/tmp/monitor_phase3_14h_fixed.sh)",
+      "Bash(cd ~/Projects/CryptoMaster_srv)"
     ]
   }
 }
