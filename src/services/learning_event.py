@@ -4,6 +4,18 @@ import queue as _queue
 import logging as _logging
 from collections import deque as _deque
 
+# V10.15: LOCAL LEARNING STORAGE (Firebase-bypass)
+try:
+    from src.services.learning_storage_local import (
+        save_metrics as _save_metrics_local,
+        load_latest_metrics as _load_metrics_local,
+        async_backup_to_firebase
+    )
+    _local_storage_available = True
+except ImportError:
+    _local_storage_available = False
+    _logging.warning("[LEARNING_EVENT] Local storage unavailable, falling back to Firebase")
+
 _lock = _threading.Lock()
 
 # ── Redis hydration on boot ───────────────────────────────────────────────────
@@ -93,9 +105,29 @@ def _worker():
             with _lock:
                 # _trade_times already appended synchronously — skip it here
                 _update_metrics_locked(signal, trade)
+            # V10.15: Save to LOCAL storage first (no Firebase quota impact)
+            if _local_storage_available:
+                try:
+                    _save_metrics_local(METRICS)
+                except Exception as e:
+                    _logging.warning(f"[LEARNING_EVENT] Local storage save failed: {e}")
+
+            # Then flush to Redis/Firebase (async, deferred)
             try:
                 from src.services.state_manager import flush_metrics
                 flush_metrics(METRICS, dict(_close_reasons), dict(_regime_stats))
+
+                # V10.15: Trigger async Firebase backup (deferred, non-blocking)
+                if _local_storage_available:
+                    try:
+                        import threading
+                        threading.Thread(
+                            target=async_backup_to_firebase,
+                            daemon=True,
+                            name="firebase-backup"
+                        ).start()
+                    except Exception:
+                        pass
             except Exception:
                 pass
         except Exception:

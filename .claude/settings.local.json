@@ -262,7 +262,12 @@
       "Bash(pkill -f 'monitor_phase3_14h')",
       "Bash(chmod +x /tmp/monitor_phase3_14h_fixed.sh)",
       "Bash(/tmp/monitor_phase3_14h_fixed.sh)",
-      "Bash(cd ~/Projects/CryptoMaster_srv)"
+      "Bash(cd ~/Projects/CryptoMaster_srv)",
+      "Bash(chmod +x /tmp/monitor_phase3_12h_fixed.sh)",
+      "Bash(/tmp/monitor_phase3_12h_fixed.sh)",
+      "Bash(chmod +x /tmp/monitor_phase3_3h_report.sh)",
+      "Bash(/tmp/monitor_phase3_3h_report.sh)",
+      "Bash(tee /tmp/phase3_3h_results.txt)"
     ]
   }
 }
