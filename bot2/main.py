@@ -1927,52 +1927,31 @@ def main():
                 _log_heal.error(f"Self-heal cycle error: {_heal_ex}")
 
         # ════════════════════════════════════════════════════════════════════
-        # CRITICAL: POSITION EXIT CHECK — Every 100ms (must run frequently)
+        # CRITICAL: FORCE-CLOSE OLD POSITIONS (timeout-based exit)
         # ════════════════════════════════════════════════════════════════════
+        # Positions older than 300 seconds must close to prevent indefinite holds
         try:
-            from src.services.smart_exit_engine import evaluate_position_exit
-            from src.services.trade_executor import close_position_at_market
-            from src.core.market import get_market_price
+            from src.services.paper_trade_executor import close_paper_position
 
             _open_pos = get_open_positions()
+            _MAX_POSITION_AGE_S = 300  # 5 minutes - hard timeout
+
             if _open_pos:
                 for pos in _open_pos:
                     try:
                         sym = pos.get("symbol", "")
-                        current_price = get_market_price(sym)
-                        if current_price <= 0:
-                            continue
+                        age_s = int(now - pos.get("entry_ts", now))
 
-                        # Evaluate exit conditions
-                        exit_result = evaluate_position_exit(
-                            symbol=sym,
-                            entry_price=float(pos.get("entry_price", 0)),
-                            tp=float(pos.get("tp", 0)),
-                            sl=float(pos.get("sl", 0)),
-                            current_price=float(current_price),
-                            age_seconds=int(now - pos.get("entry_ts", now)),
-                            direction=pos.get("action", "BUY"),
-                            max_favorable_move=float(pos.get("max_favorable_pnl", 0.0)),
-                            regime=pos.get("regime"),
-                        )
-
-                        # If exit signal received, close position
-                        if exit_result:
-                            close_type = exit_result.get("exit_type", "SMART_EXIT")
-                            close_reason = exit_result.get("reason", "smart_exit_signal")
+                        # Force close if position is too old (prevents indefinite holds)
+                        if age_s >= _MAX_POSITION_AGE_S:
                             logging.info(
-                                f"[SMART_EXIT_EXEC] symbol={sym} type={close_type} "
-                                f"reason={close_reason} age_s={now - pos.get('entry_ts', now):.0f}"
+                                f"[EXIT_TIMEOUT] symbol={sym} age_s={age_s} closing due to max_age"
                             )
-                            close_position_at_market(
-                                symbol=sym,
-                                reason=close_reason,
-                                exit_type=close_type
-                            )
-                    except Exception as _pos_exit_err:
-                        logging.debug(f"Position exit evaluation error for {sym}: {_pos_exit_err}")
-        except Exception as _exit_loop_err:
-            logging.debug(f"Smart exit loop error: {_exit_loop_err}")
+                            close_paper_position(sym, "TIMEOUT")
+                    except Exception as _pos_timeout_err:
+                        logging.debug(f"Timeout close error {sym}: {_pos_timeout_err}")
+        except Exception as _timeout_loop_err:
+            logging.debug(f"Timeout close loop: {_timeout_loop_err}")
 
         if now - _last_audit >= AUDIT_INTERVAL:
             run_audit()
