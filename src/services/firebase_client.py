@@ -354,13 +354,13 @@ _local_stats: dict = {"trades": 0, "wins": 0, "losses": 0, "timeouts": 0}
 # False = conservative (default).  True = performance (flip when WR>45%, PF>1.5)
 PERF_MODE = False
 
-HISTORY_LIMIT  = 200 if PERF_MODE else 100   # docs per fetch
+HISTORY_LIMIT  = 200 if PERF_MODE else 20    # docs per fetch (quota fix: was 100, reduced to 20)
 SIGNALS_LIMIT  = 200
 
 # V10.15 QUOTA EMERGENCY: Increased TTL to 6 hours to prevent runaway reads (was 1h)
 # Runaway read rate detected: 6000 reads in 36 min = 240k/day vs 50k limit
 # EMERGENCY (2026-04-25): Further increased WEIGHTS_TTL, SIGNALS_TTL to 2h to reduce read storm
-HISTORY_TTL    = 600  if PERF_MODE else 43200  # 10 min vs 12 hours  → ≤14 400 vs ≤200 reads/day
+HISTORY_TTL    = 600  if PERF_MODE else 86400  # 10 min vs 24 hours  → ≤14,400 vs <100 reads/day
 WEIGHTS_TTL    = 300  if PERF_MODE else 14400  # 5 min vs 4 hours   → ≤288  vs ≤6   reads/day
 SIGNALS_TTL    = 1200 if PERF_MODE else 14400  # 20 min vs 4 hours  → ≤144  vs ≤6   reads/day
 
