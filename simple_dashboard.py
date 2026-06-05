@@ -66,8 +66,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             # Get success metrics
             cursor.execute('''
                 SELECT COUNT(*) as total,
-                       SUM(CASE WHEN pnl_pct > 0.001 THEN 1 ELSE 0 END) as wins,
-                       SUM(CASE WHEN pnl_pct < -0.001 THEN 1 ELSE 0 END) as losses,
+                       SUM(CASE WHEN pnl_pct > 0 THEN 1 ELSE 0 END) as wins,
+                       SUM(CASE WHEN pnl_pct < 0 THEN 1 ELSE 0 END) as losses,
                        AVG(pnl_pct) as expectancy,
                        SUM(pnl_usd) as net_pnl
                 FROM trades
