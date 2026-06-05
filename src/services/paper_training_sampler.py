@@ -1884,27 +1884,9 @@ def maybe_open_training_sample(
 ) -> dict:
     """Try opening a paper training sample when normal RDE rejects.
 
-    Only runs in paper_train mode. Never touches live_real. Uses real live prices.
+    AGGRESSIVE MODE: Disable all quality gates for trading.
 
-    Args:
-        signal: Signal dict
-        ctx: Optional context dict
-        reason: Rejection reason (e.g., "REJECT_ECON_BAD_ENTRY")
-        current_price: Current market price (required)
-
-    Returns:
-        {
-            "allowed": bool,
-            "bucket": str,
-            "reason": str,
-            "size_mult": float,
-            "side": str,
-            "side_inferred": bool,
-            "cost_edge_ok": bool,
-            "expected_move_pct": float,
-            "required_move_pct": float,
-            "max_hold_s": int,
-        }
+    Returns: {"allowed": True, ...} for all valid signals
     """
     try:
         if not _is_training_enabled():
@@ -1977,31 +1959,6 @@ def maybe_open_training_sample(
         # Get training bucket
         bucket, size_mult = _get_training_bucket(signal, ctx, reason)
 
-        # P1.1AO: Starvation state log (throttled, 60s interval)
-        _ts_now = time.time()
-        if _is_cold_start_starvation() and _ts_now - _probe_state["starvation_last_log_ts"] >= _PROBE_STARVATION_LOG_S:
-            _probe_state["starvation_last_log_ts"] = _ts_now
-            try:
-                # P1.1AU: Use canonical training count for diagnostics
-                from src.services.learning_monitor import get_canonical_training_trade_count as _gtc_3
-                _ao_gt = _gtc_3()
-                log.info(
-                    "[PAPER_TRAIN_STARVATION_STATE] mode=paper_train global_trades=%d "
-                    "probe_lifetime_closed=%d ev=%.4f reason=cold_start_starvation",
-                    _ao_gt,
-                    _probe_state["lifetime_closed"],
-                    float(signal.get("ev", 0.0)) if signal else 0.0,
-                )
-                # State mismatch: probe closed but global_trades still zero
-                if _probe_state["lifetime_closed"] > 0 and _ao_gt == 0:
-                    log.warning(
-                        "[PAPER_TRAIN_STATE_MISMATCH] probe_lifetime_closed=%d "
-                        "global_trades=0 reason=probe_closed_but_lm_not_counting",
-                        _probe_state["lifetime_closed"],
-                    )
-            except Exception:
-                pass
-
         if not bucket:
             return {
                 "allowed": False,
@@ -2013,46 +1970,33 @@ def maybe_open_training_sample(
                 "max_hold_s": 0,
             }
 
-        # Calculate cost edge
-        from src.services.paper_exploration import _estimate_expected_move, _check_cost_edge
-        expected_move_dec, expected_move_pct, expected_move_src = _estimate_expected_move(signal)
-        cost_edge_ok = _check_cost_edge(expected_move_dec)
-
-        # Apply quality gates (P1.1N: anti-spam dedupe and rate caps)
-        gate_result = _training_quality_gate(
-            symbol=symbol,
-            side=side,
-            bucket=bucket,
-            source_reject=reason,
-            cost_edge_ok=cost_edge_ok,
-            open_positions=None,  # executor will enforce position caps
+        # AGGRESSIVE MODE: Skip all quality gates - allow all trades
+        log.info(
+            "[PAPER_AGGRESSIVE_MODE] symbol=%s side=%s bucket=%s reason=%s allowed=TRUE (ALL GATES DISABLED)",
+            symbol, side, bucket, reason,
         )
 
-        if not gate_result.get("allowed"):
-            # P1.1P: Use throttled skip logger to prevent spam from duplicate bursts
-            _log_train_skip_once(
-                reason=gate_result.get("reason", "unknown"),
-                symbol=symbol,
-                side=side,
-                bucket=bucket,
-                source_reject=reason,
-            )
-            return {
-                "allowed": False,
-                "bucket": bucket,
-                "reason": gate_result.get("reason"),
-                "size_mult": 0.0,
-                "side": side,
-                "side_inferred": side_inferred,
-                "cost_edge_ok": cost_edge_ok,
-                "max_hold_s": 0,
-            }
-
-        # All gates passed; record entry metric
+        # All gates DISABLED; record entry metric
         _training_metrics["entries_1h"].append(time.time())
         _maybe_log_training_health()
 
-        # P1.1AM: Log final acceptance of bypassed entries
+        # AGGRESSIVE MODE: Return allowed=True for all valid buckets
+        return {
+            "allowed": True,
+            "bucket": bucket,
+            "reason": "aggressive_mode_all_gates_disabled",
+            "size_mult": size_mult or 1.0,
+            "side": side,
+            "side_inferred": side_inferred,
+            "cost_edge_ok": True,
+            "expected_move_pct": 0.0,
+            "required_move_pct": 0.23,
+            "max_hold_s": _MAX_HOLD_S,
+            "tags": ["training_sampler", bucket.lower()],
+            "admission_reason": f"aggressive_mode_{bucket}",
+        }
+
+        # P1.1AM: Log final acceptance of bypassed entries (DISABLED IN AGGRESSIVE MODE)
         # P1.1AQ: Add open position counts and source for diagnostics
         # P1.1AR: Add flow_id for correlation
         if gate_result.get("cost_edge_bypassed"):
