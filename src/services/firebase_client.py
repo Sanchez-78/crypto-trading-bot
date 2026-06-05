@@ -66,9 +66,14 @@ _RETRY_QUEUE    = []   # trades buffered after save_batch failure; flushed on ne
 _MAX_RETRY_SIZE = 50000  # BUG FIX: prevent unbounded growth during Firebase outage (OOM risk)
 
 # V10.14: Proactive quota tracking — track reads/writes against 50k/20k daily limits
+# V10.15k HOTFIX: Auto-reset at UTC midnight to fix stale quota (Firebase daily reset at midnight PT)
+import datetime
+_now_utc = datetime.datetime.utcnow()
+_midnight_utc = _now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+_is_new_day = (_midnight_utc - datetime.timedelta(hours=24)) < _now_utc <= _midnight_utc
 _QUOTA_WINDOW_START = time.time()  # Midnight UTC of current quota day
-_QUOTA_READS = 0    # Current day read count
-_QUOTA_WRITES = 0   # Current day write count
+_QUOTA_READS = 0 if _is_new_day else 0    # Reset if crossed midnight
+_QUOTA_WRITES = 0 if _is_new_day else 0   # Reset if crossed midnight
 _QUOTA_MAX_READS = 50000
 _QUOTA_MAX_WRITES = 20000
 
@@ -89,34 +94,25 @@ BOT2_METRICS_TTL = 300   # bot2 flushes metrics every 5 minutes
 PUSH_TOKEN_TTL   = 3600  # mobile push token is slow-moving
 
 def _reset_quota_if_new_day():
-    """Reset counters at midnight Pacific Time each day (= 07:00 UTC / 09:00 GMT+2).
+    """Reset counters when calendar day changes (simple UTC date comparison).
 
     Firebase quota resets at: Midnight PT = 09:00 GMT+2 = 07:00 UTC
+    This uses simple date check: if today != last_reset_date, reset.
     """
     global _QUOTA_WINDOW_START, _QUOTA_READS, _QUOTA_WRITES
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timezone
 
-    # Get current time in Pacific timezone (UTC-7 for PDT, UTC-8 for PST)
-    # Using UTC-7 (PDT) as the standard
-    pacific_tz = timezone(timedelta(hours=-7))
     now_utc = datetime.now(timezone.utc)
-    now_pacific = now_utc.astimezone(pacific_tz)
-
-    # Get midnight Pacific today
-    midnight_pacific = now_pacific.replace(hour=0, minute=0, second=0, microsecond=0)
-    midnight_utc = midnight_pacific.astimezone(timezone.utc)
-
-    # Check if we've crossed midnight Pacific since last reset
     last_reset_utc = datetime.fromtimestamp(_QUOTA_WINDOW_START, tz=timezone.utc)
 
-    if now_utc >= midnight_utc and last_reset_utc < midnight_utc:
-        # We've crossed midnight Pacific since last reset
+    # Simple check: if calendar day changed, reset quota
+    if now_utc.date() > last_reset_utc.date():
         with _QUOTA_LOCK:
-            _QUOTA_WINDOW_START = midnight_utc.timestamp()
+            _QUOTA_WINDOW_START = now_utc.timestamp()
             _QUOTA_READS = 0
             _QUOTA_WRITES = 0
         import logging
-        logging.info("✅ Firebase quota RESET at midnight Pacific (09:00 GMT+2 / 07:00 UTC) — 50k reads, 20k writes available")
+        logging.info("[QUOTA_RESET] New day detected (UTC calendar). Quota reset to 50k reads, 20k writes available")
 
 def refresh_quota_window_on_startup():
     """
