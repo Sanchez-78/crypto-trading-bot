@@ -37,6 +37,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         by_symbol = count_by_symbol(logs)
         closed_trades = extract_closed_trades(logs)
         open_positions = extract_open_positions(logs)
+        readiness = get_readiness_status()
+        success_rate = get_success_rate()
 
         # Build symbol rows
         symbol_rows = ''
@@ -88,6 +90,25 @@ class DashboardHandler(BaseHTTPRequestHandler):
             stag_pct = int((metrics['exits']['stagnation'] / exit_total) * 100)
         else:
             tp_pct = sl_pct = scratch_pct = stag_pct = 0
+
+        # Build readiness section
+        ready_real_html = ''
+        for sym in readiness['READY_REAL'][:5]:
+            ready_real_html += f"""
+                <div style="display: inline-block; background: #1a5f1a; padding: 10px 15px; margin: 5px; border-radius: 4px; font-size: 11px;">
+                    <strong>{sym['symbol']}</strong><br/>
+                    {sym['pct']:.0f}% Ready | WR {sym['wr']:.0f}% | PF {sym['pf']:.2f}x
+                </div>
+            """
+
+        ready_paper_html = ''
+        for sym in readiness['READY_PAPER'][:5]:
+            ready_paper_html += f"""
+                <div style="display: inline-block; background: #334d00; padding: 10px 15px; margin: 5px; border-radius: 4px; font-size: 11px;">
+                    <strong>{sym['symbol']}</strong><br/>
+                    {sym['pct']:.0f}% Ready | WR {sym['wr']:.0f}% | PF {sym['pf']:.2f}x
+                </div>
+            """
 
         html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -400,6 +421,44 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
         <!-- Recent Closed Trades -->
         <div class="section">
+            <div class="section-title">📊 Success Rate & Readiness</div>
+            <div style="background: #1a1f3a; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+                    <div style="text-align: center;">
+                        <div style="font-size: 36px; font-weight: bold; color: #00ff00;">{success_rate:.1f}%</div>
+                        <div style="color: #888; font-size: 12px;">WIN RATE (Success %)</div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 36px; font-weight: bold; color: #ffaa00;">{metrics['pf']:.2f}x</div>
+                        <div style="color: #888; font-size: 12px;">PROFIT FACTOR</div>
+                    </div>
+                </div>
+
+                <div style="margin-top: 20px;">
+                    <div style="color: #1e90ff; font-weight: bold; margin-bottom: 10px;">🚀 READY FOR REAL TRADING (4/4 criteria):</div>
+                    <div style="margin-bottom: 10px;">
+                        {ready_real_html if ready_real_html else '<span style="color: #666;">No symbols ready yet. Need: 50+ trades, WR≥65%, PF≥1.05x, Expectancy>0</span>'}
+                    </div>
+                </div>
+
+                <div style="margin-top: 20px;">
+                    <div style="color: #90ee90; font-weight: bold; margin-bottom: 10px;">📈 READY FOR PAPER (3/4 criteria):</div>
+                    <div style="margin-bottom: 10px;">
+                        {ready_paper_html if ready_paper_html else '<span style="color: #666;">No symbols ready yet.</span>'}
+                    </div>
+                </div>
+
+                <div style="margin-top: 15px; font-size: 11px; color: #666; border-top: 1px solid #333; padding-top: 10px;">
+                    <strong>Readiness Criteria:</strong><br/>
+                    • MIN TRADES: 50+ closed trades<br/>
+                    • WIN RATE: ≥65% success<br/>
+                    • PROFIT FACTOR: ≥1.05x (break-even is 1.0x)<br/>
+                    • EXPECTANCY: Positive (avg PnL per trade > 0)
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
             <div class="section-title">Recent Closed Trades (Last 20)</div>
             <table>
                 <thead>
@@ -583,6 +642,84 @@ def count_by_symbol(logs):
                 by_symbol[sym]['closed'] += 1
 
     return dict(by_symbol)
+
+def get_success_rate():
+    """Calculate overall success rate (win rate)"""
+    db_path = '/opt/cryptomaster/local_learning_storage/learning_database.sqlite'
+
+    if not os.path.exists(db_path):
+        return 0.0
+
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        # Count wins and losses
+        cursor.execute('''
+            SELECT
+                COUNT(*) as total,
+                SUM(CASE WHEN pnl_pct > 0.001 THEN 1 ELSE 0 END) as wins
+            FROM trades
+        ''')
+
+        row = cursor.fetchone()
+        total = row[0]
+        wins = row[1] or 0
+
+        conn.close()
+
+        if total > 0:
+            return (wins / total) * 100
+        else:
+            return 0.0
+    except Exception as e:
+        print(f"[DASHBOARD_ERROR] {e}")
+        return 0.0
+
+
+def get_readiness_status():
+    """Get readiness status for all symbols"""
+    db_path = '/opt/cryptomaster/local_learning_storage/learning_database.sqlite'
+    readiness = {
+        'READY_REAL': [],
+        'READY_PAPER': [],
+        'LEARNING': [],
+        'INSUFFICIENT': []
+    }
+
+    if not os.path.exists(db_path):
+        return readiness
+
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        # Get readiness status for all symbols
+        cursor.execute('''
+            SELECT symbol, readiness_status, readiness_pct,
+                   win_rate, profit_factor, expectancy, closed_trades
+            FROM readiness_status
+            ORDER BY readiness_pct DESC
+        ''')
+
+        for row in cursor.fetchall():
+            status = row['readiness_status']
+            readiness[status].append({
+                'symbol': row['symbol'],
+                'pct': row['readiness_pct'],
+                'wr': row['win_rate'] * 100,
+                'pf': row['profit_factor'],
+                'exp': row['expectancy'] * 100,
+                'trades': row['closed_trades']
+            })
+
+        conn.close()
+    except Exception as e:
+        print(f"[DASHBOARD_ERROR] {e}")
+
+    return readiness
+
 
 def run_server():
     """Run HTTP server on port 8080"""
