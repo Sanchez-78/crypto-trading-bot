@@ -20,9 +20,9 @@ _FEE_PCT = float(os.getenv("PAPER_FEE_PCT", "0.0015"))  # 0.15% round-trip
 _SLIPPAGE_PCT = float(os.getenv("PAPER_SLIPPAGE_PCT", "0.0003"))  # 0.03%
 _MAX_OPEN = int(os.getenv("PAPER_MAX_OPEN_POSITIONS", "5"))  # Increased to allow more diversification
 _MAX_AGE_S = float(os.getenv("PAPER_MAX_POSITION_AGE_S", "900"))  # 15 min default
-_MIN_EV_THRESHOLD = float(os.getenv("PAPER_MIN_EV_THRESHOLD", "0.05"))  # Block weak signals below 5% edge
-_MIN_SEGMENT_PF = float(os.getenv("PAPER_MIN_SEGMENT_PF", "1.0"))  # Only trade segments with PF > 1.0
-_TIME_BASED_FILTERING = os.getenv("PAPER_TIME_BASED_FILTERING", "true").lower() == "true"
+_MIN_EV_THRESHOLD = float(os.getenv("PAPER_MIN_EV_THRESHOLD", "0.0"))  # AGGRESSIVE: No EV blocking
+_MIN_SEGMENT_PF = float(os.getenv("PAPER_MIN_SEGMENT_PF", "0.0"))  # AGGRESSIVE: No segment PF gating
+_TIME_BASED_FILTERING = os.getenv("PAPER_TIME_BASED_FILTERING", "false").lower() == "true"  # AGGRESSIVE: No time gating
 
 # State
 _POSITIONS = {}  # position_id -> position_dict
