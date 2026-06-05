@@ -82,7 +82,37 @@ class LocalLearningStorage:
             for key, value in DB_PRAGMA.items():
                 conn.execute(f"PRAGMA {key} = {value}")
 
-            # Load schema from file
+            # Create trades table (V10.15l: Inline schema instead of schema.sql)
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS trades (
+                    trade_id TEXT PRIMARY KEY,
+                    symbol TEXT,
+                    side TEXT,
+                    entry_price REAL,
+                    exit_price REAL,
+                    entry_ts REAL,
+                    exit_ts REAL,
+                    pnl_pct REAL,
+                    pnl_usd REAL,
+                    mfe_pct REAL,
+                    mae_pct REAL,
+                    exit_reason TEXT,
+                    regime TEXT,
+                    size_usd REAL,
+                    cost_edge_ok INTEGER,
+                    learning_source TEXT,
+                    synced INTEGER DEFAULT 0,
+                    created_at REAL,
+                    mode TEXT DEFAULT 'PAPER',
+                    trade_environment TEXT DEFAULT 'paper_train'
+                )
+            ''')
+
+            # Create indices for common queries
+            conn.execute('CREATE INDEX IF NOT EXISTS idx_trades_symbol ON trades(symbol)')
+            conn.execute('CREATE INDEX IF NOT EXISTS idx_trades_exit_ts ON trades(exit_ts)')
+
+            # Load schema from file (if exists)
             schema_path = Path(__file__).parent.parent.parent / "schema.sql"
             if schema_path.exists():
                 with open(schema_path) as f:
@@ -90,7 +120,7 @@ class LocalLearningStorage:
 
             conn.commit()
             conn.close()
-            log.info("[LOCAL_STORAGE] Database initialized")
+            log.info("[LOCAL_STORAGE] Database initialized with trades table")
         except Exception as e:
             log.error(f"[LOCAL_STORAGE_ERROR] Failed to init DB: {e}")
             raise
