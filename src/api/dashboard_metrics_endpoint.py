@@ -114,31 +114,45 @@ def get_dashboard_metrics():
                 elif reason in ['timeout', 'stale_timeout']:
                     exits['timeout'] = row['cnt']
 
-        # Get readiness by symbol
-        readiness_result = _query_db('''
-            SELECT symbol, readiness_status, readiness_pct, closed_trades,
-                   win_rate, profit_factor, expectancy
-            FROM readiness_status
-            ORDER BY readiness_pct DESC
-        ''')
-
+        # Get readiness by symbol (skip if table doesn't exist)
         readiness_by_symbol = []
-        if readiness_result:
-            for row in readiness_result:
-                readiness_by_symbol.append({
-                    'symbol': row['symbol'],
-                    'closed_trades': row['closed_trades'],
-                    'win_rate': row['win_rate'],
-                    'profit_factor': row['profit_factor'],
-                    'expectancy': row['expectancy'],
-                    'min_trades_ok': row['closed_trades'] >= 50,
-                    'wr_ok': row['win_rate'] >= 0.65,
-                    'pf_ok': row['profit_factor'] >= 1.05,
-                    'exp_ok': row['expectancy'] > 0,
-                    'readiness_status': row['readiness_status'],
-                    'readiness_pct': row['readiness_pct'],
-                    'last_update': int(datetime.now().timestamp())
-                })
+        try:
+            readiness_result = _query_db('''
+                SELECT symbol, readiness_status, readiness_pct, closed_trades,
+                       win_rate, profit_factor, expectancy
+                FROM readiness_status
+                ORDER BY readiness_pct DESC
+            ''')
+
+            if readiness_result:
+                for row in readiness_result:
+                    readiness_by_symbol.append({
+                        'symbol': row['symbol'],
+                        'closed_trades': row['closed_trades'],
+                        'win_rate': row['win_rate'],
+                        'profit_factor': row['profit_factor'],
+                        'expectancy': row['expectancy'],
+                        'min_trades_ok': row['closed_trades'] >= 50,
+                        'wr_ok': row['win_rate'] >= 0.65,
+                        'pf_ok': row['profit_factor'] >= 1.05,
+                        'exp_ok': row['expectancy'] > 0,
+                        'readiness_status': row['readiness_status'],
+                        'readiness_pct': row['readiness_pct'],
+                        'last_update': int(datetime.now().timestamp())
+                    })
+        except Exception as e:
+            log.info(f"[DASHBOARD_METRICS] readiness_status table not available: {e}")
+
+        # Get open positions count
+        open_positions = 0
+        try:
+            pos_file = '/opt/cryptomaster/data/paper_open_positions.json'
+            if os.path.exists(pos_file):
+                with open(pos_file) as f:
+                    positions = json.load(f)
+                    open_positions = len(positions)
+        except Exception as e:
+            log.warning(f"[DASHBOARD_METRICS] Could not read positions: {e}")
 
         # Build response
         response = {
@@ -146,6 +160,7 @@ def get_dashboard_metrics():
             'profit_factor': round(profit_factor, 2),
             'net_pnl': round(net_pnl, 8),
             'closed_trades': total,
+            'open_positions': open_positions,
             'exit_distribution': exits,
             'readiness_by_symbol': readiness_by_symbol,
             'timestamp': int(datetime.now().timestamp()),

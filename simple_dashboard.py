@@ -100,29 +100,43 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 elif 'timeout' in reason:
                     exits['timeout'] = row['cnt']
 
-            # Get readiness by symbol
-            cursor.execute('''
-                SELECT symbol, readiness_status, readiness_pct, closed_trades,
-                       win_rate, profit_factor, expectancy
-                FROM readiness_status
-                ORDER BY readiness_pct DESC
-            ''')
+            # Get readiness by symbol (skip if table doesn't exist)
             readiness_by_symbol = []
-            for row in cursor.fetchall():
-                readiness_by_symbol.append({
-                    'symbol': row['symbol'],
-                    'closed_trades': row['closed_trades'],
-                    'win_rate': round(row['win_rate'], 4),
-                    'profit_factor': round(row['profit_factor'], 2),
-                    'expectancy': round(row['expectancy'], 6),
-                    'min_trades_ok': row['closed_trades'] >= 50,
-                    'wr_ok': row['win_rate'] >= 0.65,
-                    'pf_ok': row['profit_factor'] >= 1.05,
-                    'exp_ok': row['expectancy'] > 0,
-                    'readiness_status': row['readiness_status'],
-                    'readiness_pct': round(row['readiness_pct'], 1),
-                    'last_update': int(time.time())
-                })
+            try:
+                cursor.execute('''
+                    SELECT symbol, readiness_status, readiness_pct, closed_trades,
+                           win_rate, profit_factor, expectancy
+                    FROM readiness_status
+                    ORDER BY readiness_pct DESC
+                ''')
+                for row in cursor.fetchall():
+                    readiness_by_symbol.append({
+                        'symbol': row['symbol'],
+                        'closed_trades': row['closed_trades'],
+                        'win_rate': round(row['win_rate'], 4),
+                        'profit_factor': round(row['profit_factor'], 2),
+                        'expectancy': round(row['expectancy'], 6),
+                        'min_trades_ok': row['closed_trades'] >= 50,
+                        'wr_ok': row['win_rate'] >= 0.65,
+                        'pf_ok': row['profit_factor'] >= 1.05,
+                        'exp_ok': row['expectancy'] > 0,
+                        'readiness_status': row['readiness_status'],
+                        'readiness_pct': round(row['readiness_pct'], 1),
+                        'last_update': int(time.time())
+                    })
+            except:
+                pass
+
+            # Get open positions count
+            open_positions = 0
+            try:
+                pos_file = '/opt/cryptomaster/data/paper_open_positions.json'
+                if os.path.exists(pos_file):
+                    with open(pos_file) as f:
+                        positions = json.load(f)
+                        open_positions = len(positions)
+            except:
+                pass
 
             conn.close()
 
@@ -131,6 +145,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 'profit_factor': round(profit_factor, 2),
                 'net_pnl': round(net_pnl, 8),
                 'closed_trades': total,
+                'open_positions': open_positions,
                 'exit_distribution': exits,
                 'readiness_by_symbol': readiness_by_symbol,
                 'timestamp': int(time.time()),
