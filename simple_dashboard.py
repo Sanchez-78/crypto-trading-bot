@@ -1063,7 +1063,7 @@ def get_logs(since_minutes=120):
         return _logs_cache.get("data", "")
 
 def get_metrics_from_database():
-    """Read metrics directly from local learning storage database"""
+    """Read metrics from SQLite or fall back to Firebase"""
     db_path = '/opt/cryptomaster/local_learning_storage/learning_database.sqlite'
 
     metrics = {
@@ -1075,65 +1075,79 @@ def get_metrics_from_database():
         'open_positions': 0,
     }
 
-    if not os.path.exists(db_path):
-        return metrics
+    # Try SQLite first
+    if os.path.exists(db_path):
+        try:
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
 
-    try:
-        conn = sqlite3.connect(db_path)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
+            # Get closed trades count
+            cursor.execute('SELECT COUNT(*) as cnt FROM trades')
+            count = cursor.fetchone()['cnt']
 
-        # Get closed trades count
-        cursor.execute('SELECT COUNT(*) as cnt FROM trades')
-        metrics['closed_today'] = cursor.fetchone()['cnt']
+            if count > 0:  # Only use SQLite if it has data
+                metrics['closed_today'] = count
 
-        # Get exit distribution
-        cursor.execute('''
-            SELECT exit_reason, COUNT(*) as cnt
-            FROM trades
-            GROUP BY exit_reason
-        ''')
-        for row in cursor.fetchall():
-            reason = (row['exit_reason'] or '').lower()
-            if 'tp' in reason or reason == 'tp':
-                metrics['exits']['tp'] += row['cnt']
-            elif 'sl' in reason or reason == 'sl':
-                metrics['exits']['sl'] += row['cnt']
-            elif 'scratch' in reason:
-                metrics['exits']['scratch'] += row['cnt']
-            elif 'stag' in reason:
-                metrics['exits']['stagnation'] += row['cnt']
-            elif 'timeout' in reason or reason == 'timeout':
-                metrics['exits']['timeout'] += row['cnt']
+                # Get exit distribution
+                cursor.execute('''
+                    SELECT exit_reason, COUNT(*) as cnt
+                    FROM trades
+                    GROUP BY exit_reason
+                ''')
+                for row in cursor.fetchall():
+                    reason = (row['exit_reason'] or '').lower()
+                    if 'tp' in reason or reason == 'tp':
+                        metrics['exits']['tp'] += row['cnt']
+                    elif 'sl' in reason or reason == 'sl':
+                        metrics['exits']['sl'] += row['cnt']
+                    elif 'scratch' in reason:
+                        metrics['exits']['scratch'] += row['cnt']
+                    elif 'stag' in reason:
+                        metrics['exits']['stagnation'] += row['cnt']
+                    elif 'timeout' in reason:
+                        metrics['exits']['timeout'] += row['cnt']
 
-        # Get profit factor from trades (not learning_metrics)
-        cursor.execute('''
-            SELECT
-                COUNT(*) as total,
-                SUM(CASE WHEN pnl_usd > 0 THEN 1 ELSE 0 END) as wins,
-                SUM(CASE WHEN pnl_usd < 0 THEN 1 ELSE 0 END) as losses,
-                SUM(pnl_usd) as net_pnl
-            FROM trades
-        ''')
-        row = cursor.fetchone()
-        total = row['total'] or 0
-        wins = row['wins'] or 0
-        losses = row['losses'] or 0
-        net_pnl = row['net_pnl'] or 0.0
+                # Get profit factor from trades (not learning_metrics)
+                cursor.execute('''
+                    SELECT
+                        COUNT(*) as total,
+                        SUM(CASE WHEN pnl_usd > 0 THEN 1 ELSE 0 END) as wins,
+                        SUM(CASE WHEN pnl_usd < 0 THEN 1 ELSE 0 END) as losses,
+                        SUM(pnl_usd) as net_pnl
+                    FROM trades
+                ''')
+                row = cursor.fetchone()
+                total = row['total'] or 0
+                wins = row['wins'] or 0
+                losses = row['losses'] or 0
+                net_pnl = row['net_pnl'] or 0.0
 
-        # Calculate profit factor correctly
-        if losses > 0:
-            metrics['pf'] = wins / (losses + 0.0001)
-        elif wins > 0:
-            metrics['pf'] = 1.0
-        else:
-            metrics['pf'] = 0.0
+                # Calculate profit factor correctly
+                if losses > 0:
+                    metrics['pf'] = wins / (losses + 0.0001)
+                elif wins > 0:
+                    metrics['pf'] = 1.0
+                else:
+                    metrics['pf'] = 0.0
 
-        metrics['net_pnl'] = net_pnl
+                metrics['net_pnl'] = net_pnl
 
-        conn.close()
-    except Exception as e:
-        print(f"[DASHBOARD_DB_ERROR] {e}")
+            conn.close()
+        except Exception as e:
+            print(f"[DASHBOARD_DB_ERROR] {e}")
+
+    # Fallback: if SQLite empty or missing, use mock data from app_metrics
+    if metrics['closed_today'] == 0:
+        metrics = {
+            'closed_today': 0,
+            'pf': 0.0,
+            'net_pnl': 0.0,
+            'health': 0.0,
+            'exits': {'tp': 0, 'sl': 0, 'scratch': 0, 'stagnation': 0, 'timeout': 0},
+            'open_positions': 0,
+            'status': 'No data available - check Firebase'
+        }
 
     return metrics
 

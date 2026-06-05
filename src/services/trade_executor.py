@@ -37,6 +37,7 @@ import logging
 import random
 import time
 import threading
+import sqlite3
 from src.core.guard import guard, FailureLevel
 from src.services.exit_attribution import (
     build_exit_ctx, update_exit_attribution,
@@ -51,6 +52,46 @@ def _get_disabled_symbols():
     if not disabled_str:
         return set()
     return set(s.strip().upper() for s in disabled_str.split(",") if s.strip())
+
+# SQLite logging for dashboard
+def _log_trade_to_sqlite(trade_dict: dict):
+    """Log closed trade to local SQLite database for dashboard."""
+    try:
+        db_path = '/opt/cryptomaster/local_learning_storage/learning_database.sqlite'
+        conn = sqlite3.connect(db_path)
+        c = conn.cursor()
+
+        c.execute('''
+            INSERT OR REPLACE INTO trades
+            (trade_id, symbol, side, entry_price, exit_price, pnl_usd, pnl_pct,
+             exit_reason, regime, entry_ts, exit_ts, hold_s, mfe_pct, mae_pct,
+             size_usd, cost_edge_ok, learning_source, mode, trade_environment)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            trade_dict.get('trade_id'),
+            trade_dict.get('symbol'),
+            trade_dict.get('side'),
+            float(trade_dict.get('entry_price', 0)),
+            float(trade_dict.get('exit_price', 0)),
+            float(trade_dict.get('pnl_usd', 0)),
+            float(trade_dict.get('pnl_pct', 0)),
+            trade_dict.get('close_reason'),
+            trade_dict.get('regime'),
+            float(trade_dict.get('timestamp', 0)),
+            float(trade_dict.get('close_time', time.time())),
+            float(trade_dict.get('hold_seconds', 0)),
+            float(trade_dict.get('mfe', 0)),
+            float(trade_dict.get('mae', 0)),
+            float(trade_dict.get('size_usd', 0)),
+            int(trade_dict.get('cost_edge_ok', 0)),
+            trade_dict.get('learning_source'),
+            trade_dict.get('mode', 'PAPER'),
+            trade_dict.get('trade_environment', 'paper_train'),
+        ))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        log.warning(f"[SQLITE_LOG_ERROR] Failed to log trade: {e}")
 
 # V10.13u+20: Paper trading mode integration
 try:
