@@ -798,6 +798,86 @@ def _is_position_stale(pos: dict, now: Optional[float] = None) -> bool:
     return age_s >= effective_hold
 
 
+def evaluate_paper_tp_sl_exits(price_by_symbol: Optional[dict] = None, now: Optional[float] = None) -> dict:
+    """Evaluate and close PAPER positions that hit TP or SL targets.
+
+    This is the CRITICAL missing function that evaluates TP/SL exits before timeout.
+    Should be called every price tick or at least every 1-5 seconds.
+
+    Args:
+        price_by_symbol: Dict of current prices by symbol (uses last_price from positions if not provided)
+        now: Current timestamp (default: time.time())
+
+    Returns:
+        dict with counts: {"tp_exits": N, "sl_exits": N, "total_closed": N}
+    """
+    if price_by_symbol is None:
+        price_by_symbol = {}
+    if now is None:
+        now = time.time()
+
+    tp_exits = 0
+    sl_exits = 0
+    positions_to_close = []
+
+    with _POSITION_LOCK:
+        for trade_id, pos in list(_POSITIONS.items()):
+            symbol = pos.get("symbol", "UNKNOWN")
+            side = pos.get("side", "BUY")
+            entry_price = _safe_float(pos.get("entry_price"), 0.0)
+            tp_price = _safe_float(pos.get("tp"), 0.0)
+            sl_price = _safe_float(pos.get("sl"), 0.0)
+
+            # Use provided price or fall back to last_price from position
+            last_price = _safe_float(price_by_symbol.get(symbol), 0.0)
+            if last_price <= 0:
+                last_price = _safe_float(pos.get("last_price"), 0.0)
+
+            if entry_price <= 0 or last_price <= 0 or tp_price <= 0 or sl_price <= 0:
+                continue
+
+            # Check TP hit (before SL to prioritize profit)
+            if side == "BUY" and last_price >= tp_price:
+                positions_to_close.append((trade_id, pos, last_price, "TP"))
+                tp_exits += 1
+            elif side == "SELL" and last_price <= tp_price:
+                positions_to_close.append((trade_id, pos, last_price, "TP"))
+                tp_exits += 1
+
+            # Check SL hit (only if TP not already marked)
+            elif side == "BUY" and last_price <= sl_price:
+                positions_to_close.append((trade_id, pos, last_price, "SL"))
+                sl_exits += 1
+            elif side == "SELL" and last_price >= sl_price:
+                positions_to_close.append((trade_id, pos, last_price, "SL"))
+                sl_exits += 1
+
+    # Close positions outside lock
+    for trade_id, pos, exit_price, reason in positions_to_close:
+        try:
+            close_paper_position(
+                position_id=trade_id,
+                price=exit_price,
+                ts=now,
+                reason=reason,
+            )
+            log.info(
+                "[PAPER_TP_SL_EXIT] trade_id=%s symbol=%s reason=%s exit_price=%.2f",
+                trade_id,
+                pos.get("symbol", "UNKNOWN"),
+                reason,
+                exit_price,
+            )
+        except Exception as e:
+            log.warning(f"[PAPER_TP_SL_EXIT_ERROR] trade_id={trade_id} err={e}")
+
+    return {
+        "tp_exits": tp_exits,
+        "sl_exits": sl_exits,
+        "total_closed": tp_exits + sl_exits,
+    }
+
+
 def _check_exploration_exposure_caps(symbol: str, bucket: Optional[str]) -> Optional[dict]:
     """Check exploration-specific exposure caps.
 

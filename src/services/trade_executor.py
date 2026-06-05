@@ -2980,8 +2980,16 @@ def on_price(data):
         _is_paper_mode_local = os.getenv("TRADING_MODE", "").strip().lower() in ("paper_live", "paper_train", "replay_train")
 
     if _is_paper_mode_local:
-        _symbol_prices = {data["symbol"]: data["price"]}
-        _closed_papers = update_paper_positions(_symbol_prices, time.time())
+        # FIX: Maintain a price cache for all symbols so TP/SL exits work
+        # (update_paper_positions needs prices for ALL open positions, not just current symbol)
+        if not hasattr(update_paper_positions, '_price_cache'):
+            update_paper_positions._price_cache = {}
+
+        # Update cache with current price
+        update_paper_positions._price_cache[data["symbol"]] = data["price"]
+
+        # Call update with all cached prices
+        _closed_papers = update_paper_positions(update_paper_positions._price_cache, time.time())
         if _closed_papers:
             # Update watchdog idle timer so paper trade activity resets the exploration escalation
             try:
