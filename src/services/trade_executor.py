@@ -1937,20 +1937,25 @@ def handle_signal(signal):
         is_paper_mode_local = mode in ("paper_live", "paper_train", "replay_train")
 
     # EMERGENCY (2026-04-25): Entry gate — block new positions when Firebase degraded
-    # Prevents unsafe trading when authoritative state unavailable
+    # PATCH V10.15k: Allow paper_train mode to bypass safe mode (uses cache, not live Firebase)
+    # Prevents unsafe trading when authoritative state unavailable (LIVE mode only)
     try:
         from src.services.runtime_flags import (
             should_skip_entry,
             get_db_degraded_reason,
             log_suppressed_decision,
         )
-        should_skip, reason = should_skip_entry(sym)
-        if should_skip:
-            log.debug(f"[SAFE_MODE] ENTRY_BLOCKED: {sym} ({reason})")
-            # STEP 5: Log decision suppression (throttled to once per 60s)
-            # Note: Pass only decision code, not reason — log_suppressed_decision() adds reason prefix
-            log_suppressed_decision("TAKE_BLOCKED_SAFE_MODE")
-            return
+        # In paper mode, we can safely use cached data even if Firebase is degraded
+        skip_safe_mode_check = is_paper_mode_local
+
+        if not skip_safe_mode_check:
+            should_skip, reason = should_skip_entry(sym)
+            if should_skip:
+                log.debug(f"[SAFE_MODE] ENTRY_BLOCKED: {sym} ({reason})")
+                # STEP 5: Log decision suppression (throttled to once per 60s)
+                # Note: Pass only decision code, not reason — log_suppressed_decision() adds reason prefix
+                log_suppressed_decision("TAKE_BLOCKED_SAFE_MODE")
+                return
     except Exception:
         pass  # Graceful degrade if flags service unavailable
 
