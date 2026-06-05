@@ -13,6 +13,13 @@ try:
 except ImportError:
     record_paper_entry = None
 
+# Local Learning Storage (V10.15k): Replace Firebase for learning data
+try:
+    from src.services.learning_integration import on_paper_trade_closed
+except ImportError:
+    on_paper_trade_closed = None
+    log.warning("[LEARNING] Failed to import local learning storage")
+
 # Configuration from environment
 _INITIAL_EQUITY = float(os.getenv("PAPER_INITIAL_EQUITY_USD", "10000"))
 _POSITION_SIZE_BASE = float(os.getenv("PAPER_POSITION_SIZE_USD", "25"))  # Base size for medium-confidence
@@ -1963,6 +1970,30 @@ def close_paper_position(
     # P1.1AG: Add to closed trades buffer for summary aggregation
     with _PAPER_CLOSED_TRADES_LOCK:
         _PAPER_CLOSED_TRADES_BUFFER.append(closed_trade)
+
+    # V10.15k: Record to LOCAL LEARNING STORAGE (zero Firebase reads/writes!)
+    if on_paper_trade_closed:
+        try:
+            on_paper_trade_closed(
+                trade_id=position_id,
+                symbol=pos.get("symbol", "UNKNOWN"),
+                side=side,
+                entry_price=entry_price,
+                exit_price=price,
+                entry_ts=pos.get("entry_ts", int(ts)),
+                exit_ts=int(ts),
+                pnl_pct=pnl_data.get("net_pnl_pct", 0.0) / 100.0,
+                pnl_usd=closed_trade.get("unit_pnl", 0.0),
+                exit_reason=reason,
+                regime=pos.get("regime", "NEUTRAL"),
+                size_usd=size_usd,
+                mfe_pct=pos.get("max_seen", entry_price) / entry_price - 1 if entry_price > 0 else 0,
+                mae_pct=pos.get("min_seen", entry_price) / entry_price - 1 if entry_price > 0 else 0,
+                cost_edge_ok=pos.get("cost_edge_ok", False),
+                learning_source=pos.get("paper_source", "paper_training"),
+            )
+        except Exception as e:
+            log.error(f"[LEARNING_RECORD_ERROR] Failed to record learning: {e}")
 
     # Persist state after closing position
     _save_paper_state()
