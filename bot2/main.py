@@ -1842,6 +1842,15 @@ def main():
         # ────────────────────────────────────────────────────────────────────
         watchdog(now)
 
+        # V10.15k HOTFIX: Update paper positions (check exits, timeouts, TP/SL)
+        # Previously missing from main loop - caused trades to hold hours beyond max_hold_s
+        try:
+            from src.services.paper_trade_executor import update_paper_positions
+            update_paper_positions(now)
+        except Exception as e:
+            import logging
+            logging.debug(f"[PAPER_UPDATE_ERROR] {e}")
+
         # ════════════════════════════════════════════════════════════════════
         # V5.1 ADAPTIVE RECOVERY CYCLE — Stall detection + self-healing
         # ════════════════════════════════════════════════════════════════════
