@@ -3376,6 +3376,8 @@ def on_price(data):
         **pos["signal"],
         "profit":        profit,
         "pnl":           profit,  # Alias for metrics compatibility
+        "pnl_usd":       _pnl_result["net_pnl"],  # V10.15l: For SQLite logging
+        "pnl_pct":       (profit / pos["signal"].get("entry_price", 1e-6)) * 100,  # V10.15l: For SQLite
         "net_pnl":       _pnl_result["net_pnl"],
         "gross_pnl":     _pnl_result["gross_pnl"],
         "fee_pnl":       _pnl_result["fee_pnl"],
@@ -3386,6 +3388,7 @@ def on_price(data):
         "timestamp":     pos["signal"].get("timestamp", time.time()),  # entry time
         "close_time":    time.time(),                                   # actual close time
         "duration_seconds": int(time.time() - pos["open_ts"]),          # V10.13g: hold duration
+        "hold_seconds":  int(time.time() - pos["open_ts"]),  # V10.15l: Alias for SQLite
         "fill_slippage": pos.get("fill_slippage", 0.0),
         "mae":           mae,
         "mfe":           mfe,
@@ -3393,16 +3396,24 @@ def on_price(data):
         "mae_pct":       mae * 100,
         "stop_loss":     pos.get("stop_loss",   pos["signal"].get("stop_loss")),
         "take_profit":   pos.get("take_profit", pos["signal"].get("take_profit")),
-        
+
+        # V10.15l: SQLite logging fields
+        "trade_id":      pos.get("id", f"{sym}_{int(time.time() * 1000)}"),
+        "size_usd":      pos.get("size_usd", abs(pos.get("size", 0) * pos["signal"].get("entry_price", 0))),
+        "cost_edge_ok":  1,  # Assumed valid if trade exists
+        "learning_source": "trade_executor",
+        "mode":          "PAPER",  # V10.13u+20: Paper trading mode
+        "trade_environment": os.getenv("PAPER_TRADE_ENV", "paper_train"),
+
         # V11: Learning context at trade open
         "learning_at_open": learning_snapshot or {},
-        
+
         # V11: Decision engine context
         "decision_engine": decision_context or {},
-        
+
         # V11: Adaptive zones at open
         "adaptive_zones_at_open": adaptive_zones_snapshot or {},
-        
+
         # V11: Smart exit trigger analysis
         "smart_exit_trigger": {
             "exit_reason": reason,
@@ -3412,7 +3423,7 @@ def on_price(data):
             "risk_adjusted": pos.get("reduced", False),
             "reason": f"{reason} - MFE/MAE ratio: {mfe/max(mae, 1e-6):.2f}",
         },
-        
+
         # V11: Reward scoring
         "rewards": {
             "signal_quality": signal_quality_score,
@@ -3449,6 +3460,9 @@ def on_price(data):
 
     increment_trades_closed()  # V10.13s Phase 2: Track trade close event
     get_event_bus().emit("LOG_OUTPUT", {"message": f"[TRADE_CLOSE_DEBUG] increment_trades_closed called for {sym} (reason={reason})"}, time.time())
+
+    # V10.15l: Log to SQLite for dashboard
+    _log_trade_to_sqlite(trade)
 
     # BUG FIX: Define all learning vars before try block to prevent NameError if import fails
     bool_f = {}  # default empty if try block fails

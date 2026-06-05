@@ -303,7 +303,9 @@
       "PowerShell(ssh -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"systemctl restart cryptomaster-dashboard.service && sleep 2 && curl -s http://localhost:8080/api/dashboard/trades | head -80\")",
       "PowerShell(ssh -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"systemctl status cryptomaster-dashboard.service | head -10; sleep 2; curl -s 'http://localhost:8080/api/dashboard/trades?limit=2' 2>&1 | head -50\")",
       "PowerShell(scp -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" \"C:\\\\Projects\\\\CryptoMaster_srv\\\\simple_dashboard.py\" root@78.47.2.198:/opt/cryptomaster/)",
-      "PowerShell(ssh -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"systemctl restart cryptomaster-dashboard.service && sleep 3 && curl -s http://localhost:8080/ | grep -o 'Všechny Uzavřené' | head -1\")"
+      "PowerShell(ssh -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"systemctl restart cryptomaster-dashboard.service && sleep 3 && curl -s http://localhost:8080/ | grep -o 'Všechny Uzavřené' | head -1\")",
+      "PowerShell($ErrorActionPreference = \"Continue\"; scp -i \"C:\\\\Users\\\\$env:USERNAME\\\\.ssh\\\\hetzner_root\" \"C:\\\\Projects\\\\CryptoMaster_srv\\\\simple_dashboard_minimal.py\" \"root@78.47.2.198:/opt/cryptomaster/\" 2>&1 | Select-Object -First 5)",
+      "PowerShell(ssh -i \"C:\\\\Users\\\\$env:USERNAME\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"pkill -f simple_dashboard_minimal || true; nohup python3 /opt/cryptomaster/simple_dashboard_minimal.py > /tmp/minimal_dashboard.log 2>&1 &\" 2>&1)"
     ]
   }
 }
