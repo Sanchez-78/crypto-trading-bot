@@ -1878,6 +1878,7 @@ def close_paper_position(
 
     closed_trade = {
         **pos,
+        "trade_id": position_id,  # V10.15l: Explicit trade ID for logging
         "exit_price": price,
         "exit_ts": ts,
         "exit_reason": reason,
