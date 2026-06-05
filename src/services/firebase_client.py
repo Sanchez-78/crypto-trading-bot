@@ -94,25 +94,44 @@ BOT2_METRICS_TTL = 300   # bot2 flushes metrics every 5 minutes
 PUSH_TOKEN_TTL   = 3600  # mobile push token is slow-moving
 
 def _reset_quota_if_new_day():
-    """Reset counters when calendar day changes (simple UTC date comparison).
+    """Reset counters when we cross 07:00 UTC (Firebase daily reset time).
 
-    Firebase quota resets at: Midnight PT = 09:00 GMT+2 = 07:00 UTC
-    This uses simple date check: if today != last_reset_date, reset.
+    Firebase quota resets at: 07:00 UTC each day (Midnight PT = 09:00 GMT+2).
+    Reset logic: if (last_reset was yesterday) OR (we're past 07:00 UTC today AND last_reset was before 07:00 UTC today)
     """
     global _QUOTA_WINDOW_START, _QUOTA_READS, _QUOTA_WRITES
-    from datetime import datetime, timezone
+    from datetime import datetime, timezone, timedelta
 
     now_utc = datetime.now(timezone.utc)
     last_reset_utc = datetime.fromtimestamp(_QUOTA_WINDOW_START, tz=timezone.utc)
 
-    # Simple check: if calendar day changed, reset quota
-    if now_utc.date() > last_reset_utc.date():
+    # 07:00 UTC is the reset time
+    today_reset_time_utc = now_utc.replace(hour=7, minute=0, second=0, microsecond=0)
+
+    # Check if we need to reset:
+    # 1. Different calendar day → definitely reset
+    # 2. Same day BUT we're past 07:00 UTC AND last reset was before 07:00 UTC today → reset (happens after service restart)
+    should_reset = (
+        now_utc.date() > last_reset_utc.date() or
+        (now_utc.date() == last_reset_utc.date() and now_utc > today_reset_time_utc and last_reset_utc < today_reset_time_utc)
+    )
+
+    if should_reset:
         with _QUOTA_LOCK:
-            _QUOTA_WINDOW_START = now_utc.timestamp()
+            _QUOTA_WINDOW_START = today_reset_time_utc.timestamp()
             _QUOTA_READS = 0
             _QUOTA_WRITES = 0
         import logging
-        logging.info("[QUOTA_RESET] New day detected (UTC calendar). Quota reset to 50k reads, 20k writes available")
+        logging.warning("[QUOTA_RESET] Firebase quota reset to 50k reads, 20k writes (passed 07:00 UTC)")
+    else:
+        # Debug log to understand quota state
+        import logging
+        quota_reads_pct = (_QUOTA_READS / _QUOTA_MAX_READS * 100) if _QUOTA_MAX_READS > 0 else 0
+        if quota_reads_pct > 50:
+            logging.warning("[QUOTA_DEBUG] Quota high: %d/%d reads (%.1f%%). Not resetting (conditions: now.date=%s last.date=%s now>reset_time=%s last<reset_time=%s)",
+                          _QUOTA_READS, _QUOTA_MAX_READS, quota_reads_pct,
+                          now_utc.date(), last_reset_utc.date(),
+                          now_utc > today_reset_time_utc, last_reset_utc < today_reset_time_utc)
 
 def refresh_quota_window_on_startup():
     """
