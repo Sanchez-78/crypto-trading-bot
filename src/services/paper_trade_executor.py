@@ -2127,28 +2127,37 @@ def calibrate_paper_training_geometry(
     if tp_sl is None:
         return None
 
-    # Only calibrate paper training with C_WEAK_EV_TRAIN bucket
-    if mode != "paper_train" or source != "training_sampler" or training_bucket != "C_WEAK_EV_TRAIN":
+    # Apply calibration to both paper_train (original) and paper_live (new)
+    # For paper_train: C_WEAK_EV_TRAIN bucket only
+    # For paper_live: all signals (broader calibration)
+    is_training = (mode == "paper_train" and source == "training_sampler" and training_bucket == "C_WEAK_EV_TRAIN")
+    is_paper_live_all = (mode == "paper_live")  # Apply to all paper_live signals
+
+    if not (is_training or is_paper_live_all):
         return tp_sl
 
     original_tp_pct = tp_sl.get("tp_pct", 0.0)
     original_sl_pct = tp_sl.get("sl_pct", 0.0)
 
-    # P1.1AN: Calibrate TP
-    tp_floor_pct = fee_drag_pct + 0.03  # ~0.21%
-    tp_cap_pct = 0.45
+    # P1.1AN: Calibrate TP for paper trading
+    # For paper_live: use wider targets (more time to develop)
+    if mode == "paper_live":
+        tp_floor_pct = 0.50    # Minimum 0.5% (vs 0.21% for training)
+        tp_cap_pct = 1.50      # Maximum 1.5% (vs 0.45% for training)
+        sl_default_pct = 0.60  # SL 0.6% (vs 0.45% for training)
+    else:  # paper_train
+        tp_floor_pct = fee_drag_pct + 0.03  # ~0.21%
+        tp_cap_pct = 0.45
+        sl_default_pct = 0.45
 
     # Start with expected move if available, otherwise use fee-aware floor
-    if expected_move_pct > 0:
+    if expected_move_pct > 0.1:
         tp_target_pct = min(expected_move_pct * 0.8, tp_cap_pct)
     else:
         tp_target_pct = tp_floor_pct
 
     # Enforce bounds
     new_tp_pct = max(tp_floor_pct, min(tp_target_pct, tp_cap_pct))
-
-    # Calibrate SL: use mid-range of 0.35-0.60%, suggesting 0.45% as safe default
-    sl_default_pct = 0.45
 
     # Only recalibrate if TP actually needs to change
     if abs(new_tp_pct - original_tp_pct) < 0.001:
