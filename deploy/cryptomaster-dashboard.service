@@ -1,0 +1,22 @@
+[Unit]
+Description=CryptoMaster Paper Trading Dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/cryptomaster
+Environment="PYTHONUNBUFFERED=1"
+
+ExecStart=/usr/bin/python3 simple_dashboard.py
+Restart=always
+RestartSec=10
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cryptomaster-dashboard
+
+[Install]
+WantedBy=multi-user.target

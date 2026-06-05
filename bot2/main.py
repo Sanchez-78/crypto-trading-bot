@@ -1846,7 +1846,9 @@ def main():
         # Previously missing from main loop - caused trades to hold hours beyond max_hold_s
         try:
             from src.services.paper_trade_executor import update_paper_positions
-            update_paper_positions(now)
+            m = get_metrics()
+            lp = m.get("last_prices", {})
+            update_paper_positions(lp, now)
         except Exception as e:
             import logging
             logging.debug(f"[PAPER_UPDATE_ERROR] {e}")
