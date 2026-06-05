@@ -274,7 +274,9 @@
       "Bash(scp -i ~/.ssh/hetzner_root /tmp/dashboard_v2.py root@78.47.2.198:/opt/cryptomaster/simple_dashboard.py)",
       "PowerShell(ssh -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"journalctl -u cryptomaster.service -n 1000 -o cat 2>/dev/null | grep -E 'ECON_BAD|cost_edge|max_open|starvation|BLOCKED|ADVISORY|DECISION' | tail -50\")",
       "Bash(journalctl -u cryptomaster.service -n 50 --no-pager)",
-      "Bash(kill %1)"
+      "Bash(kill %1)",
+      "Bash(scp -i __TRACKED_VAR__/.ssh/hetzner_root simple_dashboard.py root@78.47.2.198:/opt/cryptomaster/simple_dashboard.py)",
+      "Bash(scp -i __TRACKED_VAR__/.ssh/hetzner_root deploy/cryptomaster-dashboard.service root@78.47.2.198:/etc/systemd/system/cryptomaster-dashboard.service)"
     ]
   }
 }
