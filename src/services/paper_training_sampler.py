@@ -32,6 +32,14 @@ _ALLOW_WEAK_EV = os.getenv("PAPER_TRAINING_ALLOW_WEAK_EV", "true").lower() == "t
 _ALLOW_NEG_EV = os.getenv("PAPER_TRAINING_ALLOW_NEG_EV_CONTROL", "true").lower() == "true"
 _ALLOW_NO_PATTERN = os.getenv("PAPER_TRAINING_ALLOW_NO_PATTERN", "true").lower() == "true"
 
+# Disabled symbols list (as function to avoid import-time race condition)
+def _get_disabled_symbols():
+    """Get disabled symbols from environment at runtime."""
+    disabled_str = os.getenv("PAPER_DISABLED_SYMBOLS", "").strip()
+    if not disabled_str:
+        return set()
+    return set(s.strip().upper() for s in disabled_str.split(",") if s.strip())
+
 # Hourly caps for control buckets
 _hourly_caps = {
     "D_NEG_EV_CONTROL": {"max": 2, "count": 0, "window_start": 0},
@@ -1964,6 +1972,23 @@ def maybe_open_training_sample(
                 "allowed": False,
                 "bucket": "",
                 "reason": "no_training_bucket",
+                "size_mult": 0.0,
+                "side": side,
+                "side_inferred": side_inferred,
+                "max_hold_s": 0,
+            }
+
+        # Check if symbol is disabled
+        disabled_syms = _get_disabled_symbols()
+        if symbol.upper() in disabled_syms:
+            log.info(
+                "[PAPER_DISABLED_SYMBOL] symbol=%s is in disabled list %s",
+                symbol, disabled_syms,
+            )
+            return {
+                "allowed": False,
+                "bucket": "",
+                "reason": "symbol_disabled",
                 "size_mult": 0.0,
                 "side": side,
                 "side_inferred": side_inferred,

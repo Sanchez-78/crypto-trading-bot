@@ -468,6 +468,9 @@ def _slim_trade(trade):
             "hour_utc":   int(feat.get("hour_utc", 12)),
             "is_weekend": bool(feat.get("is_weekend", False)),
         },
+        # V10.13z: Explicit mode and trade_environment for app classification
+        "mode":             trade.get("mode", "PAPER"),  # PAPER, LIVE, REPLAY
+        "trade_environment": trade.get("trade_environment", "paper_train"),  # paper_train, paper_live, live_real, replay_train
     }
 
 

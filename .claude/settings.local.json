@@ -278,7 +278,32 @@
       "Bash(scp -i __TRACKED_VAR__/.ssh/hetzner_root simple_dashboard.py root@78.47.2.198:/opt/cryptomaster/simple_dashboard.py)",
       "Bash(scp -i __TRACKED_VAR__/.ssh/hetzner_root deploy/cryptomaster-dashboard.service root@78.47.2.198:/etc/systemd/system/cryptomaster-dashboard.service)",
       "Bash(cp /root/ANALYTICS_REPORT_2026_06_05.md /root/CryptoMaster_srv/)",
-      "Bash(cp C:/Users/Já/.claude/projects/C--Projects-CryptoMaster-srv/ANALYTICS_REPORT_2026_06_05.md C:/Projects/CryptoMaster_srv/)"
+      "Bash(cp C:/Users/Já/.claude/projects/C--Projects-CryptoMaster-srv/ANALYTICS_REPORT_2026_06_05.md C:/Projects/CryptoMaster_srv/)",
+      "PowerShell(ls $env:USERPROFILE\\\\.ssh\\\\ | Select-Object -First 20)",
+      "PowerShell(ssh -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"cd /opt/cryptomaster && pwd && ls -la src/api/ 2>&1 | head -30\")",
+      "PowerShell(ssh -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"mkdir -p /opt/cryptomaster/src/api && ls -la /opt/cryptomaster/src/\")",
+      "PowerShell(scp -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" \"C:\\\\Projects\\\\CryptoMaster_srv\\\\src\\\\api\\\\dashboard_metrics_endpoint.py\" root@78.47.2.198:/opt/cryptomaster/src/api/)",
+      "PowerShell(ssh -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"ls -la /opt/cryptomaster/src/api/ && echo '---' && find /opt/cryptomaster -name 'main.py' -o -name 'app.py' -o -name 'flask_app.py' 2>/dev/null | head -10\")",
+      "PowerShell(ssh -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"head -100 /opt/cryptomaster/main.py\")",
+      "PowerShell(ssh -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"grep -n 'Flask\\\\|app\\\\|blueprint\\\\|register' /opt/cryptomaster/bot2/main.py | head -30\")",
+      "PowerShell(ssh -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"grep -n 'Flask\\\\|HTTPServer\\\\|app =' /opt/cryptomaster/simple_dashboard.py | head -20\")",
+      "PowerShell(ssh -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"wc -l /opt/cryptomaster/simple_dashboard.py && grep -n 'class\\\\|def do_GET\\\\|def do_POST' /opt/cryptomaster/simple_dashboard.py | head -20\")",
+      "PowerShell(scp -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" \"C:\\\\Projects\\\\CryptoMaster_srv\\\\simple_dashboard.py\" root@78.47.2.198:/opt/cryptomaster/simple_dashboard.py)",
+      "PowerShell(ssh -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"systemctl status cryptomaster-dashboard.service 2>&1 | head -20\")",
+      "PowerShell(ssh -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"systemctl restart cryptomaster-dashboard.service && sleep 2 && systemctl status cryptomaster-dashboard.service\")",
+      "PowerShell(ssh -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"curl -s http://localhost:8080/api/dashboard/metrics | head -50\")",
+      "PowerShell(ssh -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"echo '=== /api/dashboard/exits ===' && curl -s http://localhost:8080/api/dashboard/exits && echo && echo '=== /api/dashboard/readiness ===' && curl -s http://localhost:8080/api/dashboard/readiness | head -30\")",
+      "PowerShell(ssh -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"curl -s http://localhost:8080/api/dashboard/readiness/BTCUSDT | jq .\")",
+      "PowerShell(ssh -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"curl -s http://localhost:8080/api/dashboard/readiness/BTCUSDT\")",
+      "PowerShell(ssh -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"curl -s http://localhost:8080/ | head -50\")",
+      "PowerShell(ssh -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"cat /opt/cryptomaster/server_local_backups/paper_adaptive_learning_state.json 2>/dev/null | head -100\")",
+      "PowerShell(ssh -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"cat /opt/cryptomaster/server_local_backups/paper_adaptive_learning_state.json | grep -E '\\\\\"\\(by_symbol|by_currency|exit_dist|exit_breakdown|by_exit\\)\\\\\"' | head -20\")",
+      "Bash(scp *)",
+      "PowerShell(ssh -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"systemctl restart cryptomaster.service && sleep 3 && echo '=== Service status ===' && systemctl status cryptomaster.service | head -20\")",
+      "PowerShell(ssh -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"systemctl restart cryptomaster-dashboard.service && sleep 2 && curl -s http://localhost:8080/api/dashboard/trades | head -80\")",
+      "PowerShell(ssh -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"systemctl status cryptomaster-dashboard.service | head -10; sleep 2; curl -s 'http://localhost:8080/api/dashboard/trades?limit=2' 2>&1 | head -50\")",
+      "PowerShell(scp -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" \"C:\\\\Projects\\\\CryptoMaster_srv\\\\simple_dashboard.py\" root@78.47.2.198:/opt/cryptomaster/)",
+      "PowerShell(ssh -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"systemctl restart cryptomaster-dashboard.service && sleep 3 && curl -s http://localhost:8080/ | grep -o 'Všechny Uzavřené' | head -1\")"
     ]
   }
 }

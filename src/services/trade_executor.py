@@ -44,6 +44,14 @@ from src.services.exit_attribution import (
 )
 from src.services.exit_pnl import canonical_close_pnl
 
+# Load disabled symbols list (as function to avoid import-time race condition)
+def _get_disabled_symbols():
+    """Get disabled symbols from environment at runtime."""
+    disabled_str = os.getenv("PAPER_DISABLED_SYMBOLS", "").strip()
+    if not disabled_str:
+        return set()
+    return set(s.strip().upper() for s in disabled_str.split(",") if s.strip())
+
 # V10.13u+20: Paper trading mode integration
 try:
     from src.core.runtime_mode import live_trading_allowed as _rt_live_trading_allowed
@@ -1643,6 +1651,15 @@ def _maybe_route_to_paper_training(signal: dict, current_price: float, reject_re
 
         sym = signal.get("symbol", "UNKNOWN")
         side = signal.get("action", "UNKNOWN")
+
+        # Check if symbol is disabled
+        disabled_syms = _get_disabled_symbols()
+        if sym.upper() in disabled_syms:
+            log.warning(
+                "[PAPER_DISABLED_SYMBOL] symbol=%s is in disabled list %s, rejecting",
+                sym, disabled_syms,
+            )
+            return False
 
         # P1.1P: Router pre-throttle — skip if already routed for this symbol/side/source within TTL
         if not _paper_train_router_allowed(sym, side, reject_reason):

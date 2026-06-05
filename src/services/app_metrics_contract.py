@@ -265,6 +265,16 @@ def _build_open_positions(open_positions, now: float) -> dict:
             "ev_at_entry": _safe_float(pos.get("ev_at_entry") or pos.get("ev") or 0.0),
             "bucket": str(pos.get("training_bucket") or pos.get("explore_bucket") or ""),
             "age_s": age_s,
+            # Extended position details
+            "current_price": _safe_float(pos.get("current_price") or pos.get("price") or 0.0),
+            "unrealized_pnl_abs": _safe_float(pos.get("unrealized_pnl_abs") or pos.get("unrealized_pnl") or 0.0),
+            "unrealized_pnl_pct": _safe_float(pos.get("unrealized_pnl_pct") or 0.0),
+            "tp_price": _safe_float(pos.get("tp_price") or pos.get("take_profit") or 0.0),
+            "sl_price": _safe_float(pos.get("sl_price") or pos.get("stop_loss") or 0.0),
+            "mfe_pct": _safe_float(pos.get("mfe_pct") or pos.get("mfe") or 0.0),
+            "mae_pct": _safe_float(pos.get("mae_pct") or pos.get("mae") or 0.0),
+            "regime": str(pos.get("regime") or "RANGING"),
+            "mode": str(pos.get("mode") or "PAPER"),
         })
 
     return {
@@ -340,9 +350,19 @@ def _build_learning_section(session_metrics: dict) -> dict:
         "confidence_momentum": health,
         "next_milestone": f"{max(0, 30 - decisive)} more decisive trades to basic calibration" if decisive < 30 else "",
         "hydration_source": str(m.get("hydration_source") or m.get("source") or "unknown"),
+        # 1-hour window (live)
         "paper_train_entries_1h": _safe_int(m.get("paper_train_entries_1h")),
         "paper_train_closed_1h": _safe_int(m.get("paper_train_closed_1h")),
         "paper_train_learning_updates_1h": _safe_int(m.get("paper_train_learning_updates_1h")),
+        # 24-hour window (historical)
+        "paper_train_entries_24h": _safe_int(m.get("paper_train_entries_24h")),
+        "paper_train_closed_24h": _safe_int(m.get("paper_train_closed_24h")),
+        "paper_train_learning_updates_24h": _safe_int(m.get("paper_train_learning_updates_24h")),
+        # Readiness and components
+        "readiness_reason": str(m.get("readiness_reason") or ""),
+        "readiness_components": _json_safe(m.get("readiness_components") or {}),
+        # Calibration
+        "calibration": _json_safe(m.get("calibration") or {}),
     }
 
 
@@ -440,6 +460,8 @@ def build_app_metrics_snapshot(
         "quota_writes_pct": writes_pct,
         "reconciliation_verified": bool(firebase_health.get("reconciliation_verified", True)),
         "alerts": list(firebase_health.get("alerts") or []),
+        # Component health monitoring
+        "component_heartbeats": _json_safe(firebase_health.get("component_heartbeats") or {}),
     }
 
     snapshot = {
@@ -493,6 +515,15 @@ def build_app_metrics_snapshot(
             "recent_winrate": recent_wr,
             "recent_avg_ev": recent_avg_ev,
         },
+
+        # Rolling performance metrics (optional, populated by learning monitor)
+        "rolling_metrics": _json_safe(session_metrics.get("rolling_metrics") or {}),
+
+        # Trade attribution analysis (optional)
+        "attribution": _json_safe(session_metrics.get("attribution") or {}),
+
+        # Offline reports (optional, for post-session analysis)
+        "offline_reports": _json_safe(session_metrics.get("offline_reports") or {}),
 
         "app_context_cs": {
             "trades_total_all_time": "Celkový počet uzavřených obchodů z atomického počítadla. Není to jen posledních 500 obchodů.",
