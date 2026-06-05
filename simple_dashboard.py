@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
 """
-CryptoMaster Paper Trading Dashboard HTTP Server (Full Featured)
-Parses journalctl logs to extract metrics and show live trading dashboard
+CryptoMaster Paper Trading Dashboard HTTP Server (V10.15k with Local Learning Storage)
+Reads live metrics from local SQLite database instead of parsing logs
 """
 
 import subprocess
 import re
 import json
+import sqlite3
 from datetime import datetime
 from collections import defaultdict
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
 import time
+import os
 
 class DashboardHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -432,61 +434,100 @@ def get_logs(since_minutes=120):
     except Exception:
         return ""
 
-def extract_metrics(logs):
-    """Extract key metrics from logs"""
+def get_metrics_from_database():
+    """Read metrics directly from local learning storage database"""
+    db_path = '/opt/cryptomaster/local_learning_storage/learning_database.sqlite'
+
     metrics = {
         'closed_today': 0,
         'pf': 0.0,
         'net_pnl': 0.0,
         'health': 0.0,
-        'exits': {'tp': 0, 'sl': 0, 'scratch': 0, 'stagnation': 0}
+        'exits': {'tp': 0, 'sl': 0, 'scratch': 0, 'stagnation': 0},
+        'open_positions': 0,
     }
 
-    for line in logs.split('\n'):
-        # Parse V10.13g EXIT breakdown
-        if '[V10.13g EXIT]' in line:
-            m_tp = re.search(r'TP[=](\d+)', line)
-            m_sl = re.search(r'SL[=](\d+)', line)
-            m_scratch = re.search(r'scratch[=](\d+)', line)
-            m_stag = re.search(r'stag[=](\d+)', line)
+    if not os.path.exists(db_path):
+        return metrics
 
-            if m_tp and m_sl and m_scratch and m_stag:
-                metrics['exits'] = {
-                    'tp': int(m_tp.group(1)),
-                    'sl': int(m_sl.group(1)),
-                    'scratch': int(m_scratch.group(1)),
-                    'stagnation': int(m_stag.group(1))
-                }
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
 
-    # Count closed trades from [PAPER_EXIT] logs
-    closed_count = logs.count('[PAPER_EXIT]')
-    metrics['closed_today'] = closed_count
+        # Get closed trades count
+        cursor.execute('SELECT COUNT(*) as cnt FROM trades')
+        metrics['closed_today'] = cursor.fetchone()['cnt']
+
+        # Get exit distribution
+        cursor.execute('''
+            SELECT exit_reason, COUNT(*) as cnt
+            FROM trades
+            GROUP BY exit_reason
+        ''')
+        for row in cursor.fetchall():
+            reason = row['exit_reason'].lower()
+            if 'tp' in reason or reason == 'tp':
+                metrics['exits']['tp'] += row['cnt']
+            elif 'sl' in reason or reason == 'sl':
+                metrics['exits']['sl'] += row['cnt']
+            elif 'scratch' in reason:
+                metrics['exits']['scratch'] += row['cnt']
+            elif 'stag' in reason or 'timeout' in reason:
+                metrics['exits']['stagnation'] += row['cnt']
+
+        # Get profit factor (from learning_metrics)
+        cursor.execute('SELECT AVG(profit_factor) as avg_pf, SUM(pnl_total) as total_pnl FROM learning_metrics')
+        row = cursor.fetchone()
+        metrics['pf'] = row['avg_pf'] or 0.0
+        metrics['net_pnl'] = row['total_pnl'] or 0.0
+
+        conn.close()
+    except Exception as e:
+        print(f"[DASHBOARD_DB_ERROR] {e}")
 
     return metrics
 
+
+def extract_metrics(logs):
+    """Extract key metrics (DEPRECATED - use database instead)"""
+    # Keep for backwards compatibility but delegate to database
+    return get_metrics_from_database()
+
 def extract_closed_trades(logs):
-    """Extract closed trade details"""
+    """Extract closed trade details from local database"""
+    db_path = '/opt/cryptomaster/local_learning_storage/learning_database.sqlite'
     trades = []
-    for line in logs.split('\n'):
-        if '[PAPER_EXIT]' in line:
-            trade = {}
-            m = re.search(r'symbol=(\w+)', line)
-            if m: trade['symbol'] = m.group(1)
 
-            m = re.search(r'net_pnl_pct=([\d.\-]+)', line)
-            if m:
-                pnl_pct = float(m.group(1))
-                # Estimate PnL in USD assuming ~0.001 BTC per trade (~$30-60)
-                trade['pnl'] = pnl_pct / 100.0
+    if not os.path.exists(db_path):
+        return trades
 
-            m = re.search(r'reason=(\w+)', line)
-            if m: trade['reason'] = m.group(1)
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
 
-            m = re.search(r'hold_s=(\d+)', line)
-            if m: trade['hold_s'] = int(m.group(1))
+        # Get last 50 closed trades
+        cursor.execute('''
+            SELECT symbol, pnl_pct, pnl_usd, exit_reason,
+                   (exit_ts - entry_ts) as hold_s
+            FROM trades
+            ORDER BY exit_ts DESC
+            LIMIT 50
+        ''')
 
-            if trade:
-                trades.append(trade)
+        for row in cursor.fetchall():
+            trade = {
+                'symbol': row['symbol'],
+                'pnl': row['pnl_usd'] or (row['pnl_pct'] / 100.0 if row['pnl_pct'] else 0),
+                'reason': row['exit_reason'],
+                'hold_s': row['hold_s']
+            }
+            trades.append(trade)
+
+        conn.close()
+    except Exception as e:
+        print(f"[DASHBOARD_DB_ERROR] {e}")
 
     return trades
 
