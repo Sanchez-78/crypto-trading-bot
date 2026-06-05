@@ -3,6 +3,7 @@ import os
 import logging
 import time
 import uuid
+import sqlite3
 from typing import Optional, Dict, List
 
 log = logging.getLogger(__name__)
@@ -64,6 +65,46 @@ _QUALITY_EXIT_LOCK = __import__("threading").RLock()
 
 # V5 Legacy Bridge integration (Phase 3)
 _V5_BRIDGE = None
+
+# V10.15l: SQLite logging for dashboard
+def _log_trade_to_sqlite(closed_trade: dict) -> None:
+    """Log closed PAPER trade to local SQLite database for dashboard."""
+    try:
+        db_path = '/opt/cryptomaster/local_learning_storage/learning_database.sqlite'
+        conn = sqlite3.connect(db_path)
+        c = conn.cursor()
+
+        c.execute('''
+            INSERT OR REPLACE INTO trades
+            (trade_id, symbol, side, entry_price, exit_price, pnl_usd, pnl_pct,
+             exit_reason, regime, entry_ts, exit_ts, hold_s, mfe_pct, mae_pct,
+             size_usd, cost_edge_ok, learning_source, mode, trade_environment)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            closed_trade.get('trade_id'),
+            closed_trade.get('symbol'),
+            closed_trade.get('side'),
+            float(closed_trade.get('entry_price', 0)),
+            float(closed_trade.get('exit_price', 0)),
+            float(closed_trade.get('weighted_pnl', 0)),  # Use weighted_pnl which is USD amount
+            float(closed_trade.get('net_pnl_pct', 0)),
+            closed_trade.get('exit_reason'),
+            closed_trade.get('regime', 'UNKNOWN'),
+            float(closed_trade.get('entry_ts', 0)),
+            float(closed_trade.get('exit_ts', time.time())),
+            float(closed_trade.get('duration_s', 0)),
+            float(closed_trade.get('mfe', 0)),  # May not have MFE/MAE in PAPER trades
+            float(closed_trade.get('mae', 0)),
+            float(closed_trade.get('size_usd', 0)),
+            1,  # cost_edge_ok=True for paper trades
+            'paper_training_sampler',
+            'PAPER',
+            os.getenv("PAPER_TRADE_ENV", "paper_train"),
+        ))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        log.warning(f"[SQLITE_LOG_ERROR] Failed to log paper trade: {e}")
 _V5_BRIDGE_LOCK = __import__("threading").RLock()
 
 
@@ -1886,6 +1927,9 @@ def close_paper_position(
         canonical_bucket,
         pos.get("training_bucket", ""),
     )
+
+    # V10.15l: Log to SQLite for dashboard
+    _log_trade_to_sqlite(closed_trade)
 
     # V5 Legacy Bridge: Record paper close (Phase 3 hook) — BEFORE deduplication
     close_event = None  # Initialize to prevent undefined variable in except block
