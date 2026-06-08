@@ -1572,6 +1572,9 @@ def update_paper_positions(
             exit_reason = "SL"
         elif age_s >= effective_hold:
             exit_reason = "TIMEOUT"
+            # V10.18 DEBUG: Log timeout evaluation
+            if age_s >= effective_hold:
+                log.warning(f"[TIMEOUT_EVAL] {pos['symbol']} age={age_s:.0f}s >= hold={effective_hold:.0f}s, closing")
 
         if exit_reason:
             closed_trade = close_paper_position(position_id=trade_id, price=current_price, ts=ts, reason=exit_reason)
