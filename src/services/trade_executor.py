@@ -3000,12 +3000,19 @@ def on_price(data):
             for _closed_trade in _closed_papers:
                 _save_paper_trade_closed(_closed_trade)
 
-        # P1.1AA: Check and close timeout positions (independent of price updates)
+        # P1.1AA+V10.16: Check and close timeout positions every 10 seconds (independent of price updates)
         from src.services.paper_trade_executor import check_and_close_timeout_positions
-        _timeout_closes = check_and_close_timeout_positions(time.time())
-        if _timeout_closes:
-            for _closed_trade in _timeout_closes:
-                _save_paper_trade_closed(_closed_trade)
+        now = time.time()
+        if not hasattr(on_price, '_last_timeout_check'):
+            on_price._last_timeout_check = now
+
+        if now - on_price._last_timeout_check >= 10.0:  # Every 10 seconds
+            _timeout_closes = check_and_close_timeout_positions(now)
+            if _timeout_closes:
+                log.info(f"[TIMEOUT_CHECK_V10.16] Found {len(_timeout_closes)} positions to close by timeout")
+                for _closed_trade in _timeout_closes:
+                    _save_paper_trade_closed(_closed_trade)
+            on_price._last_timeout_check = now
 
     if time.time() - _last_flush[0] >= FLUSH_EVERY and BATCH:
         _flush()

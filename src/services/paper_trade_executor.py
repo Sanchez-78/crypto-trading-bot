@@ -1346,11 +1346,15 @@ def open_paper_position(
 _LAST_KNOWN_PRICE_MAX_AGE_S = float(os.getenv("PAPER_LAST_PRICE_MAX_AGE_S", "120"))
 
 
+_LAST_TIMEOUT_CHECK = 0.0  # V10.16: Track last timeout check for periodic evaluation
+
+
 def check_and_close_timeout_positions(now: Optional[float] = None) -> List[dict]:
-    """P1.1AA+V3.1: Scan all open positions and close those that exceed effective hold time.
+    """P1.1AA+V3.1+V10.16: Scan all open positions and close those that exceed effective hold time.
 
     Runs independently of price updates so timeout closes happen even when a symbol
-    stops receiving price ticks.
+    stops receiving price ticks. Called periodically (every 5-10s) to ensure timeouts
+    don't get stuck when prices stop flowing for a symbol.
 
     V3.1: Uses last known real market price (last_price/last_price_ts).
     If no recent price is available the position is quarantined with
