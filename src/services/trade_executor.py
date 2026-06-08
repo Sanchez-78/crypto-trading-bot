@@ -3005,9 +3005,12 @@ def on_price(data):
         now = time.time()
 
         # V10.17 FIX: Evaluate TP/SL exits ON EVERY TICK (critical for capturing profits)
-        tp_sl_result = evaluate_paper_tp_sl_exits(price_by_symbol=getattr(update_paper_positions, '_price_cache', {}), now=now)
-        if tp_sl_result.get("total_closed", 0) > 0:
-            log.info(f"[TP_SL_EXITS_V10.17] TP={tp_sl_result['tp_exits']} SL={tp_sl_result['sl_exits']}")
+        try:
+            tp_sl_result = evaluate_paper_tp_sl_exits(price_by_symbol=getattr(update_paper_positions, '_price_cache', {}), now=now)
+            if tp_sl_result.get("total_closed", 0) > 0:
+                log.warning(f"[TP_SL_EXITS_V10.17] TP={tp_sl_result['tp_exits']} SL={tp_sl_result['sl_exits']} closed={tp_sl_result['total_closed']}")
+        except Exception as e:
+            log.error(f"[TP_SL_EXITS_ERROR] {e}")
 
         # Check timeout every 10 seconds
         if not hasattr(on_price, '_last_timeout_check'):
