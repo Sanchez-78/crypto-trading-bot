@@ -28,6 +28,11 @@ _QUOTA_LOCK = threading.RLock()
 # V10.15: ACTIVATE 4-tier cache system (was implemented but unused)
 # Reduces Firebase reads 50-80% (50K → <5K per day)
 try:
+    # V10.20: Ensure cache directory exists
+    import os as _os
+    _cache_dir = "runtime"
+    _os.makedirs(_cache_dir, exist_ok=True)
+
     from src.services.firebase_cache import MemoryCache, PersistentCache
     _MEMORY_CACHE = MemoryCache(default_ttl_s=3600)  # 1 hour
     _PERSISTENT_CACHE = PersistentCache(db_path="runtime/firebase_cache.sqlite")
@@ -45,6 +50,24 @@ except ImportError:
         return f"{type(e).__name__}: {str(e)}"
 
 PREFIX = os.getenv("COLLECTION_PREFIX", "")
+
+# V10.20: Local database fallback when Firebase unavailable
+def get_local_metrics_fallback() -> dict:
+    """Query local SQLite database directly when Firebase unavailable."""
+    try:
+        import sqlite3
+        conn = sqlite3.connect("local_learning_storage/learning_database.sqlite", timeout=2)
+        cursor = conn.cursor()
+
+        # Get basic metrics from local DB
+        cursor.execute("SELECT COUNT(*) FROM trades WHERE close_ts > (strftime('%s', 'now') - 86400)")
+        closed_today = cursor.fetchone()[0] if cursor.fetchone() else 0
+
+        conn.close()
+        return {"closed_today": closed_today, "source": "local_fallback"}
+    except Exception as e:
+        logging.warning(f"[LOCAL_FALLBACK] Failed to query local DB: {e}")
+        return {}
 
 def col(name: str) -> str:
     """Returns prefixed collection name for Shadow Mode."""
