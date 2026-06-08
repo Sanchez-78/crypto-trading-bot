@@ -33,7 +33,7 @@ def get_logs(since_minutes=30):
                        SUM(CASE WHEN pnl_pct > 0 THEN 1 ELSE 0 END) as wins,
                        SUM(pnl_usd) as net_pnl
                 FROM trades
-                WHERE close_ts > strftime('%s', 'now', 'start of day')
+                WHERE exit_ts > strftime('%s', 'now', 'start of day')
             """)
             row = cursor.fetchone()
             total = row[0] if row[0] else 0

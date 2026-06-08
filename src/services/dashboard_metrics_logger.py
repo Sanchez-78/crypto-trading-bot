@@ -26,7 +26,7 @@ def log_dashboard_metrics():
                    SUM(CASE WHEN pnl_pct < 0 THEN 1 ELSE 0 END) as losses,
                    SUM(pnl_usd) as net_pnl
             FROM trades
-            WHERE close_ts > strftime('%s', 'now', 'start of day')
+            WHERE exit_ts > strftime('%s', 'now', 'start of day')
         """)
 
         row = cursor.fetchone()
@@ -40,13 +40,13 @@ def log_dashboard_metrics():
         if wins > 0 and losses > 0:
             cursor.execute("""
                 SELECT SUM(ABS(pnl_usd)) FROM trades
-                WHERE close_ts > strftime('%s', 'now', 'start of day') AND pnl_usd > 0
+                WHERE exit_ts > strftime('%s', 'now', 'start of day') AND pnl_usd > 0
             """)
             wins_pnl = cursor.fetchone()[0] or 0.0
 
             cursor.execute("""
                 SELECT SUM(ABS(pnl_usd)) FROM trades
-                WHERE close_ts > strftime('%s', 'now', 'start of day') AND pnl_usd < 0
+                WHERE exit_ts > strftime('%s', 'now', 'start of day') AND pnl_usd < 0
             """)
             losses_pnl = cursor.fetchone()[0] or 0.0
 
