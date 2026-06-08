@@ -2162,6 +2162,9 @@ def close_paper_position(
     with _POSITION_LOCK:
         _POSITIONS.pop(position_id, None)
 
+    # V10.17 FIX: Persist state after removal so JSON file reflects actual open positions
+    _save_paper_state()
+
     return closed_trade
 
 
