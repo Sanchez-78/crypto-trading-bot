@@ -2284,7 +2284,7 @@ def calibrate_paper_training_geometry(
     original_tp_pct = tp_sl.get("tp_pct", 0.0)
     original_sl_pct = tp_sl.get("sl_pct", 0.0)
 
-    # P1.1AN: Calibrate TP for paper trading
+    # V10.21: Calibrate TP for paper trading
     # For paper_live: keep original wider targets (proven profitable)
     if mode == "paper_live":
         tp_floor_pct = 0.50    # Minimum 0.5% (vs 0.21% for training)
@@ -2292,8 +2292,8 @@ def calibrate_paper_training_geometry(
         sl_default_pct = 0.80  # INCREASED SL 0.60% → 0.80% (was too tight)
     else:  # paper_train
         tp_floor_pct = fee_drag_pct + 0.03  # ~0.21%
-        tp_cap_pct = 0.45
-        sl_default_pct = 0.45
+        tp_cap_pct = 2.50      # V10.21: Increased from 0.45% to allow 2.5% TP targets
+        sl_default_pct = 2.00  # V10.21: Increased from 0.45% to match TP width
 
     # Start with expected move if available, otherwise use fee-aware floor
     if expected_move_pct > 0.1:
