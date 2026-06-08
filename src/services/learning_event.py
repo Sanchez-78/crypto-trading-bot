@@ -117,17 +117,20 @@ def _worker():
                 from src.services.state_manager import flush_metrics
                 flush_metrics(METRICS, dict(_close_reasons), dict(_regime_stats))
 
-                # V10.15: Trigger async Firebase backup (deferred, non-blocking)
-                if _local_storage_available:
-                    try:
-                        import threading
-                        threading.Thread(
-                            target=async_backup_to_firebase,
-                            daemon=True,
-                            name="firebase-backup"
-                        ).start()
-                    except Exception:
-                        pass
+                # V10.22: DISABLED async Firebase backup
+                # Reason: Spawned threads without throttling caused 1000 reads/min quota spike
+                # Re-enable after implementing proper rate-limiting and understanding
+                # what async_backup_to_firebase queries
+                # if _local_storage_available:
+                #     try:
+                #         import threading
+                #         threading.Thread(
+                #             target=async_backup_to_firebase,
+                #             daemon=True,
+                #             name="firebase-backup"
+                #         ).start()
+                #     except Exception:
+                #         pass
             except Exception:
                 pass
         except Exception:
