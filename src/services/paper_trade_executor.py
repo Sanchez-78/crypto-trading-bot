@@ -1,9 +1,11 @@
 """V10.13u+20: Paper trade executor using real live prices for learning."""
 import os
+import os.path
 import logging
 import time
 import uuid
 import sqlite3
+import json
 from typing import Optional, Dict, List
 
 log = logging.getLogger(__name__)
@@ -1503,6 +1505,18 @@ def update_paper_positions(
     closed_trades = []
 
     with _POSITION_LOCK:
+        # V10.18 FIX: Load orphaned positions from JSON if _POSITIONS is empty
+        # This handles bot restarts where positions persist in JSON but not in memory
+        if not _POSITIONS and _STATE_FILE and os_path.exists(_STATE_FILE):
+            try:
+                with open(_STATE_FILE, 'r') as f:
+                    orphaned = json.load(f)
+                    for pos_id, pos_data in orphaned.items():
+                        _POSITIONS[pos_id] = pos_data
+                    log.info(f"[V10.18_ORPHAN_LOAD] Loaded {len(orphaned)} positions from JSON")
+            except Exception as e:
+                log.warning(f"[V10.18_ORPHAN_LOAD_ERROR] {e}")
+
         positions_to_check = list(_POSITIONS.items())
 
     for trade_id, pos in positions_to_check:
