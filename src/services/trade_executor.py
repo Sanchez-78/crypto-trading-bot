@@ -3000,17 +3000,9 @@ def on_price(data):
             for _closed_trade in _closed_papers:
                 _save_paper_trade_closed(_closed_trade)
 
-        # P1.1AA+V10.16+V10.17: Check TP/SL exits FIRST, then timeout (every price tick)
-        from src.services.paper_trade_executor import evaluate_paper_tp_sl_exits, check_and_close_timeout_positions
+        # P1.1AA+V10.16: Check timeout only (TP/SL already handled by update_paper_positions above)
+        from src.services.paper_trade_executor import check_and_close_timeout_positions
         now = time.time()
-
-        # V10.17 FIX: Evaluate TP/SL exits ON EVERY TICK (critical for capturing profits)
-        try:
-            tp_sl_result = evaluate_paper_tp_sl_exits(price_by_symbol=getattr(update_paper_positions, '_price_cache', {}), now=now)
-            if tp_sl_result.get("total_closed", 0) > 0:
-                log.warning(f"[TP_SL_EXITS_V10.17] TP={tp_sl_result['tp_exits']} SL={tp_sl_result['sl_exits']} closed={tp_sl_result['total_closed']}")
-        except Exception as e:
-            log.error(f"[TP_SL_EXITS_ERROR] {e}")
 
         # Check timeout every 10 seconds
         if not hasattr(on_price, '_last_timeout_check'):
