@@ -1029,6 +1029,23 @@ def open_paper_position(
     Returns:
         dict: {"trade_id": ..., "status": "opened", "symbol": ..., ...}
     """
+    # V10.16: SELL ENFORCEMENT - balance BUY/SELL ratio for diversification
+    side_raw = signal.get("action", signal.get("side", "BUY"))
+    with _POSITION_LOCK:
+        buy_count = sum(1 for p in _POSITIONS.values() if p.get("side") == "BUY")
+        sell_count = sum(1 for p in _POSITIONS.values() if p.get("side") == "SELL")
+        total = buy_count + sell_count
+
+    if total >= 3:  # Enforce even with small samples
+        buy_ratio = buy_count / max(total, 1)
+        # Force 40/60 minimum for minority side
+        if buy_ratio > 0.65 and side_raw == "BUY":
+            # Too many BUY, REJECT to force SELL
+            return {"status": "blocked", "reason": "buy_enforcement", "detail": f"BUY={buy_ratio:.0%}"}
+        elif buy_ratio < 0.35 and side_raw == "SELL":
+            # Too many SELL, REJECT to force BUY
+            return {"status": "blocked", "reason": "sell_enforcement", "detail": f"SELL={1-buy_ratio:.0%}"}
+
     if not price or price <= 0:
         # P1.1Y: Throttle spam
         symbol = signal.get("symbol", "UNKNOWN")
