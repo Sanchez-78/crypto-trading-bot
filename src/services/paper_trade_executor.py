@@ -651,15 +651,29 @@ def _effective_paper_hold_s(pos: dict) -> float:
 
     if is_training:
         # Training positions: effective hold is min of max_hold and timeout, capped at 300s
-        return max(30.0, min(max_hold or 300.0, timeout or 300.0, 300.0))
+        result = max(30.0, min(max_hold or 300.0, timeout or 300.0, 300.0))
+        log.debug(
+            f"[EFFECTIVE_HOLD_TRAINING] bucket={bucket} source={source} "
+            f"max_hold={max_hold:.0f} timeout={timeout:.0f} result={result:.0f}"
+        )
+        return result
 
     # Non-training: P1.1AP-G - respect max_hold_s for exploration positions
     # (those with explicit explore_bucket like C_WEAK_EV)
     if explore_bucket and max_hold and max_hold > 30.0:
+        log.debug(
+            f"[EFFECTIVE_HOLD_EXPLORATION] bucket={bucket} explore_bucket={explore_bucket} "
+            f"max_hold={max_hold:.0f} returning={max_hold:.0f}"
+        )
         return float(max_hold)
 
     # Non-exploration: use configured timeout or default
-    return max(30.0, timeout or _MAX_AGE_S)
+    result = max(30.0, timeout or _MAX_AGE_S)
+    log.debug(
+        f"[EFFECTIVE_HOLD_NONTRAIN] bucket={bucket} explore_bucket={explore_bucket} "
+        f"timeout={timeout:.0f} _MAX_AGE_S={_MAX_AGE_S:.0f} result={result:.0f}"
+    )
+    return result
 
 
 def _calculate_pnl(
@@ -1556,6 +1570,16 @@ def update_paper_positions(
         effective_hold = _effective_paper_hold_s(pos)
         max_hold = pos.get("max_hold_s", pos.get("timeout_s", _MAX_AGE_S))
         timeout_s = pos.get("timeout_s", max_hold)
+
+        # V10.19 DEBUG: Log timeout calculation for every position check
+        training_bucket = pos.get("training_bucket") or pos.get("bucket") or ""
+        paper_source = pos.get("paper_source") or ""
+        if age_s < 10:  # Log early in lifecycle to see what values are set
+            log.debug(
+                f"[TIMEOUT_DEBUG] {symbol} training_bucket={training_bucket} paper_source={paper_source} "
+                f"max_hold_s={max_hold:.0f} timeout_s={timeout_s:.0f} effective_hold={effective_hold:.0f} "
+                f"age_s={age_s:.1f}"
+            )
 
         exit_reason = None
         # P1.1AI: Side-aware TP/SL check

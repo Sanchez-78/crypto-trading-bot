@@ -1,0 +1,8 @@
+﻿# VolitelnĂ©: spusĹĄ v interaktivnĂ­m Claude Code v koĹ™eni projektu.
+# PowerShell neumĂ­ spolehlivÄ› automatizovat slash pĹ™Ă­kazy v interaktivnĂ­m Claude Code,
+# proto je bezpeÄŤnÄ›jĹˇĂ­ je vloĹľit ruÄŤnÄ›:
+
+/plugin marketplace add revfactory/harness
+/plugin install harness@harness-marketplace
+
+# Potom vloĹľ obsah souboru HARNESS_CRYPTOMASTER_PROMPT.md
