@@ -665,7 +665,14 @@ def on_price(data):
         import random
         # 30% chance to force generate a signal to maintain data flow
         if random.random() < 0.3:
-            action = random.choice(["BUY", "SELL"])  # must match executor's BUY/SELL convention
+            # V10.22 FIX: Action must match regime, not random!
+            # BULL_TREND → BUY, BEAR_TREND → SELL, RANGING → random
+            if reg == "BULL_TREND":
+                action = "BUY"
+            elif reg == "BEAR_TREND":
+                action = "SELL"
+            else:  # RANGING, HIGH_VOL, QUIET_RANGE
+                action = random.choice(["BUY", "SELL"])
             # Synthesize confidence at mid-level for forced signals
             base_sc = 3  # 3/7
             w_sc = 0.5
@@ -675,7 +682,7 @@ def on_price(data):
             # V10.13d: Track forced candidate generation
             _cycle_candidates += 1
             track_generated()
-            logging.warning(f"on_price({s}): Generated FORCED signal {action}")
+            logging.warning(f"on_price({s}): Generated FORCED signal {action} (regime={reg})")
         else:
             if s not in _cycle_prefilter_drops:
                 _cycle_prefilter_drops[s] = "NO_CANDIDATE_PATTERN"
