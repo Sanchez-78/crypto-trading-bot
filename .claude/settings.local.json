@@ -305,7 +305,19 @@
       "PowerShell(scp -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" \"C:\\\\Projects\\\\CryptoMaster_srv\\\\simple_dashboard.py\" root@78.47.2.198:/opt/cryptomaster/)",
       "PowerShell(ssh -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"systemctl restart cryptomaster-dashboard.service && sleep 3 && curl -s http://localhost:8080/ | grep -o 'Všechny Uzavřené' | head -1\")",
       "PowerShell($ErrorActionPreference = \"Continue\"; scp -i \"C:\\\\Users\\\\$env:USERNAME\\\\.ssh\\\\hetzner_root\" \"C:\\\\Projects\\\\CryptoMaster_srv\\\\simple_dashboard_minimal.py\" \"root@78.47.2.198:/opt/cryptomaster/\" 2>&1 | Select-Object -First 5)",
-      "PowerShell(ssh -i \"C:\\\\Users\\\\$env:USERNAME\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"pkill -f simple_dashboard_minimal || true; nohup python3 /opt/cryptomaster/simple_dashboard_minimal.py > /tmp/minimal_dashboard.log 2>&1 &\" 2>&1)"
+      "PowerShell(ssh -i \"C:\\\\Users\\\\$env:USERNAME\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"pkill -f simple_dashboard_minimal || true; nohup python3 /opt/cryptomaster/simple_dashboard_minimal.py > /tmp/minimal_dashboard.log 2>&1 &\" 2>&1)",
+      "PowerShell(Test-Path *)",
+      "PowerShell(ssh -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"systemctl is-active cryptomaster.service 2>&1 && echo '---' && journalctl -u cryptomaster.service -n 100 2>&1 | tail -40\")",
+      "PowerShell(ssh -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"cd /opt/cryptomaster && grep 'PAPER_MAX_OPEN_POSITIONS\\\\|PAPER_MAX_POSITION_AGE_S\\\\|TRADING_MODE' .env && echo '---POSITION FILE---' && wc -l data/paper_open_positions.json && tail -5 data/paper_open_positions.json\")",
+      "PowerShell(ssh -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"cd /opt/cryptomaster && grep -n '_effective_paper_hold_s' src/services/paper_trade_executor.py -A15 | head -40\")",
+      "PowerShell(ssh -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"cd /opt/cryptomaster && grep -n '_effective_paper_hold_s' src/services/paper_trade_executor.py -A30 | head -50\")",
+      "PowerShell(ssh -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"cd /opt/cryptomaster && sed -n '621,700p' src/services/paper_trade_executor.py\")",
+      "PowerShell(ssh -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"cd /opt/cryptomaster && grep -n '_MAX_AGE_S' src/services/paper_trade_executor.py | head -5\")",
+      "PowerShell(ssh -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"cd /opt/cryptomaster && sed -n '730,760p' src/services/paper_trade_executor.py\")",
+      "PowerShell(ssh -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"systemctl restart cryptomaster.service && sleep 3 && systemctl is-active cryptomaster.service && echo '---' && journalctl -u cryptomaster.service -n 30 2>&1 | tail -20\")",
+      "PowerShell(ssh -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"systemctl restart cryptomaster.service && sleep 5 && echo '=== Bot Status ===' && systemctl is-active cryptomaster.service && echo '=== Position Count ===' && ssh -i ~/.ssh/hetzner_root root@78.47.2.198 'cd /opt/cryptomaster && python3 -c \\\\\"import json; p = json.load\\(open\\('data/paper_open_positions.json'\\)\\); print\\(f'Positions in file: {len\\(p\\)}'\\)\\\\\"' && echo '=== Recent Logs ===' && journalctl -u cryptomaster.service -n 50 2>&1 | grep -E 'PAPER_BLOCKED|TIMEOUT_SCAN|EXEC' | tail -15\")",
+      "Bash(journalctl -u cryptomaster.service -n 100)",
+      "Bash(systemctl restart *)"
     ]
   }
 }

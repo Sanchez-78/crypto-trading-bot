@@ -1486,7 +1486,8 @@ def update_paper_positions(
 
     for trade_id, pos in positions_to_check:
         symbol = pos["symbol"]
-        current_price = symbol_prices.get(symbol)
+        # Use current price if available, otherwise fall back to last known price
+        current_price = symbol_prices.get(symbol) or pos.get("last_price")
 
         if not current_price or current_price <= 0:
             continue  # No valid price, skip
@@ -2220,11 +2221,11 @@ def calibrate_paper_training_geometry(
     original_sl_pct = tp_sl.get("sl_pct", 0.0)
 
     # P1.1AN: Calibrate TP for paper trading
-    # For paper_live: adjusted targets based on market volatility and timeframe
+    # For paper_live: keep original wider targets (proven profitable)
     if mode == "paper_live":
-        tp_floor_pct = 0.30    # Minimum 0.3% (achievable in 30min window)
-        tp_cap_pct = 0.75      # Maximum 0.75% (vs 0.45% for training)
-        sl_default_pct = 0.60  # SL 0.6% (vs 0.45% for training)
+        tp_floor_pct = 0.50    # Minimum 0.5% (vs 0.21% for training)
+        tp_cap_pct = 1.50      # Maximum 1.5% (vs 0.45% for training)
+        sl_default_pct = 0.80  # INCREASED SL 0.60% → 0.80% (was too tight)
     else:  # paper_train
         tp_floor_pct = fee_drag_pct + 0.03  # ~0.21%
         tp_cap_pct = 0.45
