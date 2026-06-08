@@ -1532,7 +1532,7 @@ def update_paper_positions(
     with _POSITION_LOCK:
         # V10.18 FIX: Load orphaned positions from JSON if _POSITIONS is empty
         # This handles bot restarts where positions persist in JSON but not in memory
-        if not _POSITIONS and _STATE_FILE and os_path.exists(_STATE_FILE):
+        if not _POSITIONS and _STATE_FILE and os.path.exists(_STATE_FILE):
             try:
                 with open(_STATE_FILE, 'r') as f:
                     orphaned = json.load(f)
