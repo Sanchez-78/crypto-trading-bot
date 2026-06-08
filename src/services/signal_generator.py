@@ -360,10 +360,11 @@ def _get_scored_edge(hist, e50, e200, breakout_up, breakout_down, mom5, reg, reg
         allow_combo, epsilon as _eps)
 
     # Gate 2: minimum base score
+    # V10.16 FIX: Signals were INVERTED - flip BUY↔SELL
     if buy_sc >= sell_sc and buy_sc >= SCORE_MIN:
-        action, base_score, features = "BUY",  buy_sc,  buy_f
+        action, base_score, features = "SELL",  buy_sc,  buy_f  # was BUY, now SELL
     elif sell_sc > buy_sc and sell_sc >= SCORE_MIN:
-        action, base_score, features = "SELL", sell_sc, sell_f
+        action, base_score, features = "BUY", sell_sc, sell_f   # was SELL, now BUY
     else:
         return 0, 0.0, None, None, {}, False
 
