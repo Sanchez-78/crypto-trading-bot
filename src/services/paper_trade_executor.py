@@ -1188,10 +1188,11 @@ def open_paper_position(
     if extra and "final_size_usd" in extra:
         size_usd = extra["final_size_usd"]
 
-    # P1.1AI: Use side-aware TP/SL for paper training (widened for profitability)
-    # TP: 3% (was 1.2%), SL: 0.8% (was 1.2%) → asymmetric RR=3.75:1
-    tp_pct = 1.03 if side == "BUY" else 0.97
-    sl_pct = 0.992 if side == "BUY" else 1.008
+    # V10.21: Balance TP/SL for realistic market execution
+    # Previous: TP=3%, SL=0.8% (asymmetric, RR=3.75:1) resulted in 0% WR
+    # V10.21: TP=2.5%, SL=2% (balanced, RR=1.25:1) → higher TP hit rate in volatile market
+    tp_pct = 1.025 if side == "BUY" else 0.975
+    sl_pct = 0.98 if side == "BUY" else 1.02
     tp_sl = normalize_paper_tp_sl(side, price, price * tp_pct, price * sl_pct)
     if tp_sl is None:
         log.error(
