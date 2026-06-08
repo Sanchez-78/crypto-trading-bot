@@ -97,8 +97,8 @@ _is_new_day = (_midnight_utc - datetime.timedelta(hours=24)) < _now_utc <= _midn
 _QUOTA_WINDOW_START = time.time()  # Midnight UTC of current quota day
 _QUOTA_READS = 0 if _is_new_day else 0    # Reset if crossed midnight
 _QUOTA_WRITES = 0 if _is_new_day else 0   # Reset if crossed midnight
-_QUOTA_MAX_READS = 50000
-_QUOTA_MAX_WRITES = 20000
+_QUOTA_MAX_READS = 30000   # V10.22: Conservative limit (was 50k)
+_QUOTA_MAX_WRITES = 10000  # V10.22: Conservative limit (was 20k)
 
 # EMERGENCY (2026-04-25): Firebase degradation tracking — safe mode on 429/unavailable
 _FIREBASE_READ_DEGRADED = False

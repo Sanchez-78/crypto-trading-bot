@@ -15,12 +15,68 @@ from flask import Flask, render_string
 
 app = Flask(__name__)
 
+def write_exits_to_db(logs):
+    """Parse [PAPER_EXIT] logs and record trades to SQLite"""
+    try:
+        import sqlite3
+        import re
+        import time
+
+        db = sqlite3.connect("local_learning_storage/learning_database.sqlite", timeout=2)
+        cursor = db.cursor()
+
+        # Parse exit logs: [PAPER_EXIT] trade_id=... symbol=... reason=... net_pnl_pct=... outcome=...
+        for line in logs.split('\n'):
+            if '[PAPER_EXIT]' in line:
+                try:
+                    # Extract fields from log line
+                    trade_id = re.search(r'trade_id=(\S+)', line)
+                    symbol = re.search(r'symbol=(\S+)', line)
+                    reason = re.search(r'reason=(\S+)', line)
+                    pnl_pct = re.search(r'net_pnl_pct=([\-\d.eE+]+)', line)
+                    outcome = re.search(r'outcome=(\S+)', line)
+                    entry = re.search(r'entry=([\d.]+)', line)
+                    exit_p = re.search(r'exit=([\d.]+)', line)
+                    hold_s = re.search(r'hold_s=([\d.]+)', line)
+
+                    if all([trade_id, symbol, reason, pnl_pct, outcome, entry, exit_p]):
+                        # Calculate pnl_usd from pnl_pct (approximate: assume 1 unit traded)
+                        pnl_pct_val = float(pnl_pct.group(1))
+                        entry_val = float(entry.group(1))
+                        pnl_usd = entry_val * pnl_pct_val / 100.0
+
+                        cursor.execute('''
+                            INSERT OR IGNORE INTO trades
+                            (trade_id, symbol, exit_reason, pnl_pct, pnl_usd, entry_price, exit_price, exit_ts, hold_s)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ''', (
+                            trade_id.group(1),
+                            symbol.group(1),
+                            reason.group(1),
+                            pnl_pct_val,
+                            pnl_usd,
+                            entry_val,
+                            float(exit_p.group(1)),
+                            int(time.time()),
+                            float(hold_s.group(1)) if hold_s else 0
+                        ))
+                except Exception as e:
+                    pass  # Skip malformed lines
+
+        db.commit()
+        db.close()
+    except Exception as e:
+        pass  # Fail silently
+
 def get_logs(since_minutes=30):
     """Fetch recent logs from journalctl + generate dashboard metrics from local DB"""
     try:
         cmd = f"journalctl -u cryptomaster.service --since '{since_minutes} minutes ago' --no-pager -q 2>/dev/null || journalctl --since '{since_minutes} minutes ago' --no-pager -q"
         result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=10)
         logs = result.stdout
+
+        # V10.22: Write any new [PAPER_EXIT] logs to database
+        write_exits_to_db(logs)
 
         # V10.20: Inject metrics from local database (in case journalctl doesn't have them)
         try:
@@ -43,9 +99,9 @@ def get_logs(since_minutes=30):
             # Calculate PF
             pf = 1.0
             if total > 0:
-                cursor.execute("SELECT SUM(ABS(pnl_usd)) FROM trades WHERE close_ts > strftime('%s', 'now', 'start of day') AND pnl_usd > 0")
+                cursor.execute("SELECT SUM(ABS(pnl_usd)) FROM trades WHERE exit_ts > strftime('%s', 'now', 'start of day') AND pnl_usd > 0")
                 wins_pnl = cursor.fetchone()[0] or 0.0
-                cursor.execute("SELECT SUM(ABS(pnl_usd)) FROM trades WHERE close_ts > strftime('%s', 'now', 'start of day') AND pnl_usd < 0")
+                cursor.execute("SELECT SUM(ABS(pnl_usd)) FROM trades WHERE exit_ts > strftime('%s', 'now', 'start of day') AND pnl_usd < 0")
                 losses_pnl = cursor.fetchone()[0] or 0.0
                 if losses_pnl > 0:
                     pf = wins_pnl / losses_pnl
