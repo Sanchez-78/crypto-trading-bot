@@ -16,11 +16,49 @@ from flask import Flask, render_string
 app = Flask(__name__)
 
 def get_logs(since_minutes=30):
-    """Fetch recent logs from journalctl"""
+    """Fetch recent logs from journalctl + generate dashboard metrics from local DB"""
     try:
         cmd = f"journalctl -u cryptomaster.service --since '{since_minutes} minutes ago' --no-pager -q 2>/dev/null || journalctl --since '{since_minutes} minutes ago' --no-pager -q"
         result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=10)
-        return result.stdout
+        logs = result.stdout
+
+        # V10.20: Inject metrics from local database (in case journalctl doesn't have them)
+        try:
+            import sqlite3
+            conn = sqlite3.connect("local_learning_storage/learning_database.sqlite", timeout=2)
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT COUNT(*) as total,
+                       SUM(CASE WHEN pnl_pct > 0 THEN 1 ELSE 0 END) as wins,
+                       SUM(pnl_usd) as net_pnl
+                FROM trades
+                WHERE close_ts > strftime('%s', 'now', 'start of day')
+            """)
+            row = cursor.fetchone()
+            total = row[0] if row[0] else 0
+            wins = row[1] if row[1] else 0
+            net_pnl = row[2] if row[2] else 0.0
+
+            # Calculate PF
+            pf = 1.0
+            if total > 0:
+                cursor.execute("SELECT SUM(ABS(pnl_usd)) FROM trades WHERE close_ts > strftime('%s', 'now', 'start of day') AND pnl_usd > 0")
+                wins_pnl = cursor.fetchone()[0] or 0.0
+                cursor.execute("SELECT SUM(ABS(pnl_usd)) FROM trades WHERE close_ts > strftime('%s', 'now', 'start of day') AND pnl_usd < 0")
+                losses_pnl = cursor.fetchone()[0] or 0.0
+                if losses_pnl > 0:
+                    pf = wins_pnl / losses_pnl
+
+            conn.close()
+
+            # Inject synthetic metrics log line
+            metrics_line = f"[DASHBOARD_METRICS] closed_today={total} profit_factor={pf:.2f} net_pnl={net_pnl:.8f}\n"
+            logs = metrics_line + logs
+        except Exception as e:
+            pass  # If local DB fails, just use journalctl logs
+
+        return logs
     except Exception as e:
         return f"# Error fetching logs: {e}"
 
