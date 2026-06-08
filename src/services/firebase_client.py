@@ -85,6 +85,7 @@ _CONFIG_CACHE   = {"data": None, "ts": 0}
 _ADVICE_CACHE   = {"data": None, "ts": 0}
 _METRICS_CACHE  = {"data": None, "ts": 0}
 _PUSH_TOKEN_CACHE = {"data": None, "ts": 0}
+_AUDITOR_STATE_CACHE = {"data": None, "ts": 0}  # V10.22 FIX: Cache auditor state (was read 5500x/hour!)
 _RETRY_QUEUE    = []   # trades buffered after save_batch failure; flushed on next call
 _MAX_RETRY_SIZE = 50000  # BUG FIX: prevent unbounded growth during Firebase outage (OOM risk)
 
@@ -115,6 +116,7 @@ CONFIG_TTL       = 300   # runtime config changes rarely
 ADVICE_TTL       = 3600  # V10.22: 120s→3600s (advice polling too frequent, 720→24/day)
 BOT2_METRICS_TTL = 300   # bot2 flushes metrics every 5 minutes
 PUSH_TOKEN_TTL   = 3600  # mobile push token is slow-moving
+AUDITOR_STATE_TTL = 300  # V10.22 FIX: Cache auditor state for 5min (was reading 5500x/hour!)
 
 def _reset_quota_if_new_day():
     """Reset counters when we cross 07:00 UTC (Firebase daily reset time).
@@ -188,11 +190,27 @@ def _get_quota_severity(reads_pct: float, writes_pct: float) -> str:
 def _can_read(count=1):
     """Check if read quota available. Returns (allowed, current_usage, limit)."""
     _reset_quota_if_new_day()
-    # EMERGENCY (2026-04-25): Lowered brake from 80% to 65% due to quota exceeded incident
-    # Prevents further overage while maintaining cache-backed fallback
+    # V10.22 HARDENING: Strict quota gate at 50% (15k) to ensure safety margin
+    # This prevents hitting the hard limit of 30k
     with _QUOTA_LOCK:
-        if _QUOTA_READS >= _QUOTA_MAX_READS * 0.65:
+        current_pct = _QUOTA_READS / _QUOTA_MAX_READS * 100
+
+        # Hard gate at 90% (27k) - absolutely no more reads
+        if _QUOTA_READS >= _QUOTA_MAX_READS * 0.90:
+            logging.warning(
+                f"[QUOTA_HARD_GATE] Blocking read: {_QUOTA_READS:,}/{_QUOTA_MAX_READS:,} "
+                f"({current_pct:.1f}% - CRITICAL!)"
+            )
             return False, _QUOTA_READS, _QUOTA_MAX_READS
+
+        # Soft gate at 75% (22.5k) - block new reads, use cache only
+        if _QUOTA_READS >= _QUOTA_MAX_READS * 0.75:
+            logging.warning(
+                f"[QUOTA_SOFT_GATE] Blocking read: {_QUOTA_READS:,}/{_QUOTA_MAX_READS:,} "
+                f"({current_pct:.1f}% - falling back to cache)"
+            )
+            return False, _QUOTA_READS, _QUOTA_MAX_READS
+
         allowed = (_QUOTA_READS + count) <= _QUOTA_MAX_READS
         return allowed, _QUOTA_READS, _QUOTA_MAX_READS
 
@@ -252,6 +270,36 @@ def get_quota_status():
             "writes_limit": _QUOTA_MAX_WRITES,
             "writes_pct": f"{_QUOTA_WRITES/_QUOTA_MAX_WRITES*100:.1f}%",
         }
+
+def audit_quota_integrity():
+    """V10.22: Comprehensive quota audit - call every 5min to verify no leaks."""
+    status = get_quota_status()
+    reads_pct = float(status["reads_pct"].rstrip("%"))
+    writes_pct = float(status["writes_pct"].rstrip("%"))
+
+    # Log current state
+    logging.info(
+        f"[QUOTA_AUDIT_V10.22] reads={status['reads']:,}/{status['reads_limit']:,} "
+        f"({reads_pct:.1f}%) | writes={status['writes']:,}/{status['writes_limit']:,} "
+        f"({writes_pct:.1f}%)"
+    )
+
+    # Alert on thresholds
+    if reads_pct >= 90:
+        logging.error(f"[QUOTA_CRITICAL] Reads at {reads_pct:.1f}% - EMERGENCY!")
+    elif reads_pct >= 75:
+        logging.warning(f"[QUOTA_WARNING] Reads at {reads_pct:.1f}% - approaching limit")
+
+    if writes_pct >= 90:
+        logging.error(f"[QUOTA_CRITICAL] Writes at {writes_pct:.1f}% - EMERGENCY!")
+    elif writes_pct >= 75:
+        logging.warning(f"[QUOTA_WARNING] Writes at {writes_pct:.1f}% - approaching limit")
+
+    return {
+        "reads_pct": reads_pct,
+        "writes_pct": writes_pct,
+        "critical": reads_pct >= 90 or writes_pct >= 90,
+    }
 
 def _check_quota_status():
     """Check if quota exhausted (legacy, kept for compatibility)."""
@@ -1725,9 +1773,12 @@ def save_auditor_state(data):
 def load_auditor_state():
     if db is None:
         return {}
+    # V10.22 FIX: Cache auditor state (was being read 5500x/hour without cache!)
     return _read_doc_dict(
         db.collection(col("metrics")).document("auditor"),
         label="load_auditor_state",
+        cache=_AUDITOR_STATE_CACHE,
+        ttl=AUDITOR_STATE_TTL,
     )
 # ── Config ────────────────────────────────────────────────────────────────────
 
