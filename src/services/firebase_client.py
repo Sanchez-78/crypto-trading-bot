@@ -112,7 +112,7 @@ _LAST_RECON_TS = 0
 _RECON_INTERVAL = 300  # seconds between reconciliation checks (quota-safe: ~288 reads/day)
 
 CONFIG_TTL       = 300   # runtime config changes rarely
-ADVICE_TTL       = 120   # advice updates on the audit cadence
+ADVICE_TTL       = 3600  # V10.22: 120s→3600s (advice polling too frequent, 720→24/day)
 BOT2_METRICS_TTL = 300   # bot2 flushes metrics every 5 minutes
 PUSH_TOKEN_TTL   = 3600  # mobile push token is slow-moving
 
