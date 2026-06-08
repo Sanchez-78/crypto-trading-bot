@@ -22,6 +22,33 @@ For detailed context, logic, and architecture, refer to:
 - **Execution**: `trade_executor.py` (Position lifecycle) -> `risk_engine.py`.
 - **State**: Firestore (Trades/Metrics) + Redis (Hydration).
 
+## HARNESS: Evidence-Based Development
+
+**Goal:** Prevent patch treadmill by enforcing evidence-first workflow + multi-agent safety gates.
+
+**Trigger:** Report any bug, ask for code change, or request feature → Invoke `evidence-based-patch-orchestrator` skill
+
+**Workflow:**
+1. Runtime forensics (collect evidence)
+2. Parallel validation (safety, learning, quota, tests, contract)
+3. Minimal patch authoring (root cause only)
+4. Independent review (safety gates)
+5. Deployment readiness
+6. Deploy
+
+**Agents:** runtime-forensic, paper-learning, firebase-quota, trading-safety, test-regression, android-contract, patch-author, reviewer
+
+**Skills:** 8 domain-specific skills + 1 orchestrator
+
+**Critical rule:** No patch without forensic evidence. No deployment without all agent approvals.
+
+See `.claude/agents/` and `.claude/skills/` for full agent/skill definitions.
+
+**Change History:**
+| Date | Change | Scope | Reason |
+|------|--------|-------|--------|
+| 2026-06-08 | Initial harness + V10.19 timeout fix | Full system | Prevent patch treadmill, fix timeout bug |
+
 ## WORKFLOW
 - One module = one focused responsibility.
 - Use `logging` for critical state changes; avoid `print` spam in production.
