@@ -1566,20 +1566,10 @@ def update_paper_positions(
         age_s = ts - pos["entry_ts"]
         side = pos.get("side", "BUY")
 
-        # P1.1Z: Use effective hold time (respects training position max_hold_s)
-        effective_hold = _effective_paper_hold_s(pos)
-        max_hold = pos.get("max_hold_s", pos.get("timeout_s", _MAX_AGE_S))
-        timeout_s = pos.get("timeout_s", max_hold)
-
-        # V10.19 DEBUG: Log timeout calculation for every position check
-        training_bucket = pos.get("training_bucket") or pos.get("bucket") or ""
-        paper_source = pos.get("paper_source") or ""
-        if age_s < 10:  # Log early in lifecycle to see what values are set
-            log.debug(
-                f"[TIMEOUT_DEBUG] {symbol} training_bucket={training_bucket} paper_source={paper_source} "
-                f"max_hold_s={max_hold:.0f} timeout_s={timeout_s:.0f} effective_hold={effective_hold:.0f} "
-                f"age_s={age_s:.1f}"
-            )
+        # V10.19 FIX: Use timeout_s directly for timeout decisions
+        # timeout_s respects PAPER_MAX_POSITION_AGE_S env var (600s)
+        # max_hold_s is legacy training cap and should NOT control timeout
+        timeout_s = pos.get("timeout_s", _MAX_AGE_S)
 
         exit_reason = None
         # P1.1AI: Side-aware TP/SL check
@@ -1594,11 +1584,9 @@ def update_paper_positions(
             exit_reason = "TP"
         elif sl_hit:
             exit_reason = "SL"
-        elif age_s >= effective_hold:
+        elif age_s >= timeout_s:
             exit_reason = "TIMEOUT"
-            # V10.18 DEBUG: Log timeout evaluation
-            if age_s >= effective_hold:
-                log.warning(f"[TIMEOUT_EVAL] {pos['symbol']} age={age_s:.0f}s >= hold={effective_hold:.0f}s, closing")
+            log.warning(f"[TIMEOUT_EVAL] {symbol} age={age_s:.0f}s >= timeout={timeout_s:.0f}s, closing")
 
         if exit_reason:
             closed_trade = close_paper_position(position_id=trade_id, price=current_price, ts=ts, reason=exit_reason)
