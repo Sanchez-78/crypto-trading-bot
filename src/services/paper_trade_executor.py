@@ -1504,6 +1504,16 @@ def update_paper_positions(
     """
     closed_trades = []
 
+    # V10.18 DEBUG: Log call frequency
+    if not hasattr(update_paper_positions, '_call_count'):
+        update_paper_positions._call_count = 0
+        update_paper_positions._last_log = ts
+    update_paper_positions._call_count += 1
+    if ts - update_paper_positions._last_log >= 10:
+        log.info(f"[UPDATE_PAPER_DEBUG] Called {update_paper_positions._call_count}x in last 10s, prices={len(symbol_prices)}")
+        update_paper_positions._call_count = 0
+        update_paper_positions._last_log = ts
+
     with _POSITION_LOCK:
         # V10.18 FIX: Load orphaned positions from JSON if _POSITIONS is empty
         # This handles bot restarts where positions persist in JSON but not in memory
