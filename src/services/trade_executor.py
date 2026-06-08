@@ -1107,10 +1107,18 @@ def compute_tp_sl(entry, direction, atr=0.003, sym=None, reg=None):
     tp_dist = max(tp_k * atr, MIN_TP_PCT)
     sl_dist = max(sl_k * atr, MIN_SL_PCT)
 
-    if direction == "BUY":
+    # V10.22 FIX: Explicit direction handling (was: else clause treated all non-BUY as SELL)
+    # This prevented LONG/SHORT signals from being handled correctly, causing ~50% inverted TP/SL
+    if direction in ("BUY", "LONG"):
+        # BUY/LONG: TP above entry, SL below entry
         return entry * (1 + tp_dist), entry * (1 - sl_dist)
-    else:
+    elif direction in ("SELL", "SHORT"):
+        # SELL/SHORT: TP below entry, SL above entry
         return entry * (1 - tp_dist), entry * (1 + sl_dist)
+    else:
+        # Fallback: assume BUY if direction unknown
+        logging.warning(f"[COMPUTE_TP_SL] Unknown direction '{direction}', defaulting to BUY")
+        return entry * (1 + tp_dist), entry * (1 - sl_dist)
 
 _TP_MULT = {"BULL_TREND": 1.0, "BEAR_TREND": 1.0,
             "RANGING":    1.0, "QUIET_RANGE": 1.0}
