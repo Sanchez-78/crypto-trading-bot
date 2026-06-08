@@ -2295,11 +2295,15 @@ def calibrate_paper_training_geometry(
         tp_cap_pct = 2.50      # V10.21: Increased from 0.45% to allow 2.5% TP targets
         sl_default_pct = 2.00  # V10.21: Increased from 0.45% to match TP width
 
-    # Start with expected move if available, otherwise use fee-aware floor
+    # V10.21: Start with expected move if available, otherwise use fee-aware floor
+    # CRITICAL: Use MAX of configured TP (original) vs adaptive TP to allow wider targets
     if expected_move_pct > 0.1:
         tp_target_pct = min(expected_move_pct * 0.8, tp_cap_pct)
     else:
         tp_target_pct = tp_floor_pct
+
+    # V10.21: Prioritize configured TP over adaptive TP - don't let calibration narrow targets
+    tp_target_pct = max(original_tp_pct, tp_target_pct)
 
     # Enforce bounds
     new_tp_pct = max(tp_floor_pct, min(tp_target_pct, tp_cap_pct))
