@@ -646,6 +646,20 @@ def on_price(data):
     # PATCH 3: Force Signal Generation — Fallback when no signal detected
     # ────────────────────────────────────────────────────────────────────────
     if action is None:
+        # P0.5: Log BULL_TREND edge detection failure for diagnostic
+        if reg == "BULL_TREND":
+            try:
+                logging.warning(
+                    f"[BULL_EDGE_DIAG] symbol={s} regime={reg} candidate_type=failed "
+                    f"reason=edge_generation_failed adx={adx_v:.1f} "
+                    f"ema_fast={e10:.2f} ema_slow={e50:.2f} price={p:.2f} "
+                    f"rsi={rsi_v:.1f} macd={macd_l:.6f} obi={obi:.2f} "
+                    f"regime_conf={regime_conf:.2f} would_pass_relaxed_10pct=? "
+                    f"would_pass_relaxed_20pct=?"
+                )
+            except Exception:
+                pass
+
         # EMERGENCY (2026-04-25): Suppress forced explore when Firebase degraded
         # Do not attempt exploration when authoritative state unavailable
         try:
@@ -682,6 +696,18 @@ def on_price(data):
             # V10.13d: Track forced candidate generation
             _cycle_candidates += 1
             track_generated()
+            # P0.5: Log BULL_TREND forced signals for diagnostic
+            if reg == "BULL_TREND":
+                try:
+                    logging.warning(
+                        f"[BULL_EDGE_DIAG] symbol={s} regime={reg} candidate_type=forced "
+                        f"reason=fallback_30pct_chance adx={adx_v:.1f} "
+                        f"ema_fast={e10:.2f} ema_slow={e50:.2f} price={p:.2f} "
+                        f"rsi={rsi_v:.1f} macd={macd_l:.6f} obi={obi:.2f} "
+                        f"regime_conf={regime_conf:.2f}"
+                    )
+                except Exception:
+                    pass
             logging.warning(f"on_price({s}): Generated FORCED signal {action} (regime={reg})")
         else:
             if s not in _cycle_prefilter_drops:
