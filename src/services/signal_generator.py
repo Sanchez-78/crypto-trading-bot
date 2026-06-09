@@ -422,19 +422,22 @@ def _get_scored_edge(hist, e50, e200, breakout_up, breakout_down, mom5, reg, reg
 
     # Gate 5: adaptive threshold with decaying epsilon-greedy exploration
     thr     = _thr()
+    eps_val = _eps()
     explore = False
     if w_score < thr:
         import random
-        if random.random() < _eps():
+        rand_val = random.random()
+        if rand_val < eps_val:
             explore = True    # below threshold but exploring
         else:
-            # P0.5D: Log Gate 5 threshold failure
+            # P0.5E: Log Gate 5 exact failure reason
             if symbol and reg == "BULL_TREND":
                 try:
                     logging.warning(
-                        f"[P0_5D_GATE_5_THRESHOLD] symbol={symbol} "
+                        f"[P0_5E_GATE_5_THRESHOLD] symbol={symbol} "
                         f"w_score={w_score:.2f} threshold={thr:.2f} "
-                        f"epsilon={_eps():.3f} failed=True"
+                        f"epsilon={eps_val:.4f} rand={rand_val:.4f} "
+                        f"failed_reason=below_threshold_and_no_explore"
                     )
                 except Exception:
                     pass
