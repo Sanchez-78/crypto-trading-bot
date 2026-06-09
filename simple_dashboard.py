@@ -410,7 +410,30 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 pass
 
         closed_trades = trade_details[:20]  # Use trade_details for recent trades
-        open_positions = []  # Empty for now since we have no open position data
+
+        # V10.22: Read actual open positions from JSON file
+        open_positions = []
+        try:
+            pos_file = '/opt/cryptomaster/data/paper_open_positions.json'
+            if os.path.exists(pos_file):
+                with open(pos_file) as f:
+                    positions = json.load(f)
+                    # Convert positions dict to list of dicts with symbol, entry, tp, sl, age_s
+                    for pos_id, pos_data in positions.items():
+                        if pos_id.startswith('paper_'):
+                            entry_ts = pos_data.get('entry_ts', time.time())
+                            age_s = time.time() - entry_ts
+                            open_positions.append({
+                                'symbol': pos_data.get('symbol', 'N/A'),
+                                'entry': pos_data.get('entry_price', 0),
+                                'tp': pos_data.get('tp_price', 0),
+                                'sl': pos_data.get('sl_price', 0),
+                                'age_s': age_s,
+                                'side': pos_data.get('side', 'BUY'),
+                                'pnl': pos_data.get('profit', 0),
+                            })
+        except:
+            pass
 
         # Build symbol rows
         symbol_rows = ''
