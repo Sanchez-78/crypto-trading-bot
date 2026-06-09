@@ -343,6 +343,11 @@ def _get_scored_edge(hist, e50, e200, breakout_up, breakout_down, mom5, reg, reg
       ws < threshold → skip unless epsilon-explore (decaying 10%→2%)
     Returns (base_score, w_score, action, edge_type, features, explore).
     """
+    # P0.5E: Debug entry
+    if reg == "BULL_TREND" and symbol:
+        import sys
+        print(f"[P0_5E_ENTRY] {symbol} BULL_TREND enter _get_scored_edge", file=sys.stderr, flush=True)
+
     if len(hist) < 51:
         # P0.5D: Log hist buffer failure (likely root cause!)
         if symbol and reg == "BULL_TREND":
