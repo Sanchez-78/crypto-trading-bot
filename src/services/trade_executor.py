@@ -181,8 +181,8 @@ _meta_state = {                                                        # V10.6b:
 }
 
 # V10.12d: Unblock mode rate limiting
-_UNBLOCK_TRADES_MAX_HOUR = 6    # max 6 unblock trades per hour
-_UNBLOCK_POSITIONS_MAX   = 2    # max 2 concurrent unblock positions
+_UNBLOCK_TRADES_MAX_HOUR = 100  # V10.22: increased from 6 to 100 for paper trading testing
+_UNBLOCK_POSITIONS_MAX   = 50   # V10.22: increased from 2 to 50 for paper testing (was too restrictive)
 
 # P1.1W: Throttle LIVE_ORDER_DISABLED spam (max once per symbol per 60s)
 _LIVE_ORDER_DISABLED_THROTTLE = {}  # symbol -> last_log_ts
