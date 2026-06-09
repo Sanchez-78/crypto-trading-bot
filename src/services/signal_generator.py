@@ -344,6 +344,15 @@ def _get_scored_edge(hist, e50, e200, breakout_up, breakout_down, mom5, reg, reg
     Returns (base_score, w_score, action, edge_type, features, explore).
     """
     if len(hist) < 51:
+        # P0.5D: Log hist buffer failure (likely root cause!)
+        if symbol and reg == "BULL_TREND":
+            try:
+                logging.warning(
+                    f"[P0_5D_HIST_GATE_0] symbol={symbol} regime={reg} "
+                    f"hist_len={len(hist)} threshold=51 failed=True"
+                )
+            except Exception:
+                pass
         return 0, 0.0, None, None, {}, False
 
     # Gate 1: regime confidence (lowered 0.6→0.5: BULL_TREND at ADX=17 gives
