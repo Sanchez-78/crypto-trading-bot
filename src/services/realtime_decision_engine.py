@@ -2863,6 +2863,90 @@ def economic_gate(symbol: str, regime: str) -> tuple[bool, str, float]:
         return True, "", 1.00
 
 
+def _route_training_sample_through_p0_rde(signal, route_reason, score_before_adj, score_adj, closed_trades=None):
+    """P0.4: Route RDE training sampler through P0 gate BEFORE maybe_open_training_sample().
+
+    All RDE paths that call maybe_open_training_sample() must route through P0 first.
+    This ensures paper_training_sampler paths don't bypass P0 metadata requirements.
+
+    Args:
+        signal: RDE signal dict
+        route_reason: Why this signal is being routed (e.g., "REJECT_NEGATIVE_EV")
+        score_before_adj: Signal score before adjustments
+        score_adj: Signal score after adjustments
+        closed_trades: Optional closed trade history (loaded if not provided)
+
+    Returns:
+        Updated signal dict with P0 metadata, or None if blocked
+    """
+    try:
+        from src.services.p0_segment_ev_gate import P0SegmentEVGate
+
+        symbol = signal.get("symbol", "UNKNOWN")
+        side = signal.get("action", signal.get("side", "BUY"))
+        regime = signal.get("regime", "NEUTRAL")
+        source = "rde_training_sampler"
+        tp_sl_profile = "unknown"  # RDE doesn't have this
+
+        # Load closed trades if not provided
+        if closed_trades is None:
+            try:
+                closed_trades = _get_cached_history() or []
+            except:
+                closed_trades = []
+
+        # Call P0 gate
+        decision = P0SegmentEVGate.decide_segment_gate(
+            symbol=symbol,
+            side=side,
+            regime=regime,
+            source=source,
+            tp_sl_profile=tp_sl_profile,
+            closed_trades=closed_trades,
+        )
+
+        log.info(
+            "[P0_RDE_TRAINING_ROUTE] symbol=%s side=%s regime=%s route_reason=%s "
+            "strict_ev_allowed=%s reason=%s evidence_allowed_check=%s",
+            symbol, side, regime, route_reason,
+            decision.strict_ev_allowed, decision.reason,
+            symbol in {"ETHUSDT"} and regime in {"BULL_TREND", "BEAR_TREND"},
+        )
+
+        # Check if evidence collection is allowed for this symbol/regime
+        can_admit_evidence = (symbol in {"ETHUSDT"}) and (regime in {"BULL_TREND", "BEAR_TREND"})
+
+        if not can_admit_evidence:
+            # Not in evidence scope -> block
+            log.info(
+                "[P0_RDE_TRAINING_ROUTE_BLOCKED] symbol=%s regime=%s "
+                "reason=out_of_evidence_scope",
+                symbol, regime,
+            )
+            return None
+
+        # Admitted to evidence collection -> set metadata and return
+        signal["strict_ev"] = False
+        signal["readiness_eligible"] = False
+        signal["learning_source"] = "paper_evidence_collection"
+        signal["paper_source"] = "paper_evidence_collection"
+        signal["p0_gate_reason"] = decision.reason
+        signal["segment_key"] = f"{symbol}_{side}_{regime}_{source}_{tp_sl_profile}"
+
+        log.info(
+            "[P0_RDE_TRAINING_ROUTE_ADMIT] symbol=%s side=%s regime=%s "
+            "learning_source=paper_evidence_collection strict_ev=false readiness_eligible=false",
+            symbol, side, regime,
+        )
+
+        return signal
+
+    except Exception as e:
+        log.error(f"[P0_RDE_TRAINING_ROUTE_ERROR] Failed to route through P0: {e}")
+        # Fail-closed: if P0 unavailable, don't open sampler
+        return None
+
+
 def evaluate_signal(signal):
     # V10.15 QUOTA FIX: Use cached history instead of load_history() on every signal
     history = _get_cached_history()
@@ -3718,53 +3802,63 @@ def evaluate_signal(signal):
         except Exception:
             pass  # Graceful degrade if exploration unavailable
 
-        # P1.1L Phase 4: Try paper training sampler for negative EV reject
-        try:
-            from src.services.paper_training_sampler import maybe_open_training_sample
-            from src.services.paper_trade_executor import open_paper_position
+        # P0.4: Route RDE training sampler through P0 gate BEFORE maybe_open_training_sample()
+        routed_signal = _route_training_sample_through_p0_rde(
+            signal=signal,
+            route_reason="REJECT_NEGATIVE_EV",
+            score_before_adj=_score_before_adj,
+            score_adj=_score_adj,
+        )
 
-            sampler_result = maybe_open_training_sample(
-                signal=signal,
-                ctx={},
-                reason="REJECT_NEGATIVE_EV",
-                current_price=signal.get("price") if signal else None,
-            )
+        if routed_signal is not None:
+            # P0 approved: proceed to sampler with routed metadata
+            try:
+                from src.services.paper_training_sampler import maybe_open_training_sample
+                from src.services.paper_trade_executor import open_paper_position
 
-            if sampler_result.get("allowed"):
-                # Open paper training position with metadata
-                extra = {
-                    "paper_source": "training_sampler",
-                    "training_bucket": sampler_result.get("bucket"),
-                    "explore_bucket": sampler_result.get("bucket"),
-                    "original_decision": "REJECT_NEGATIVE_EV",
-                    "reject_reason": "negative_ev",
-                    "side_inferred": sampler_result.get("side_inferred", False),
-                    "cost_edge_ok": sampler_result.get("cost_edge_ok", False),
-                    "expected_move_pct": sampler_result.get("expected_move_pct", 0.0),
-                    "expected_move_src": sampler_result.get("expected_move_src", ""),  # P1.1AP-N2C
-                    "required_move_pct": sampler_result.get("required_move_pct", 0.0),
-                    "size_mult": sampler_result.get("size_mult", 1.0),
-                    "max_hold_s": sampler_result.get("max_hold_s", 300),
-                    "tags": sampler_result.get("tags", []),
-                    "score_raw": round(_score_before_adj, 6),
-                    "score_final": round(_score_adj, 6),
-                    "decision_score": round(_score_adj, 6),
-                    # P1.1AP-N2C: Include recovery admission metadata if applicable
-                    "recovery_admission": sampler_result.get("recovery_admission", False),
-                    "learning_source": sampler_result.get("learning_source", "paper_training_sampler"),
-                    "admission_reason": sampler_result.get("admission_reason"),
-                    "historical_health": sampler_result.get("historical_health"),
-                    "cost_edge_bypassed": sampler_result.get("cost_edge_bypassed", False),
-                    "cost_edge_bypass_reason": sampler_result.get("cost_edge_bypass_reason", "none"),
-                }
-
-                open_paper_position(
-                    signal=signal,
-                    price=signal.get("price", 0),
-                    ts=_time.time(),
-                    reason="PAPER_TRAINING",
-                    extra=extra,
+                sampler_result = maybe_open_training_sample(
+                    signal=routed_signal,
+                    ctx={},
+                    reason="REJECT_NEGATIVE_EV",
+                    current_price=routed_signal.get("price") if routed_signal else None,
                 )
+
+                if sampler_result.get("allowed"):
+                    # Open paper training position with P0-routed metadata
+                    extra = {
+                        "paper_source": routed_signal.get("paper_source", "paper_evidence_collection"),
+                        "training_bucket": sampler_result.get("bucket"),
+                        "explore_bucket": sampler_result.get("bucket"),
+                        "original_decision": "REJECT_NEGATIVE_EV",
+                        "reject_reason": "negative_ev",
+                        "side_inferred": sampler_result.get("side_inferred", False),
+                        "cost_edge_ok": sampler_result.get("cost_edge_ok", False),
+                        "expected_move_pct": sampler_result.get("expected_move_pct", 0.0),
+                        "expected_move_src": sampler_result.get("expected_move_src", ""),
+                        "required_move_pct": sampler_result.get("required_move_pct", 0.0),
+                        "size_mult": sampler_result.get("size_mult", 1.0),
+                        "max_hold_s": sampler_result.get("max_hold_s", 300),
+                        "tags": sampler_result.get("tags", []),
+                        "score_raw": round(_score_before_adj, 6),
+                        "score_final": round(_score_adj, 6),
+                        "decision_score": round(_score_adj, 6),
+                        "recovery_admission": sampler_result.get("recovery_admission", False),
+                        "learning_source": routed_signal.get("learning_source", "paper_evidence_collection"),  # P0.4: from routed signal
+                        "admission_reason": sampler_result.get("admission_reason"),
+                        "historical_health": sampler_result.get("historical_health"),
+                        "cost_edge_bypassed": sampler_result.get("cost_edge_bypassed", False),
+                        "cost_edge_bypass_reason": sampler_result.get("cost_edge_bypass_reason", "none"),
+                        "segment_key": routed_signal.get("segment_key"),  # P0.4: segment tracking
+                        "p0_gate_reason": routed_signal.get("p0_gate_reason"),  # P0.4: audit trail
+                    }
+
+                    open_paper_position(
+                        signal=routed_signal,
+                        price=routed_signal.get("price", 0),
+                        ts=_time.time(),
+                        reason="PAPER_TRAINING",
+                        extra=extra,
+                    )
         except Exception:
             pass  # Graceful degrade if training sampler unavailable
 
@@ -3916,55 +4010,65 @@ def evaluate_signal(signal):
             # V10.13u+18g: Emit from rejection path as production-safe fallback
             _maybe_emit_econ_bad_diag_from_reject(source="rde_reject")
 
-            # P1.1L Phase 4: Try paper training sampler for ECON_BAD_ENTRY reject
-            try:
-                from src.services.paper_training_sampler import maybe_open_training_sample
-                from src.services.paper_trade_executor import open_paper_position
+            # P0.4: Route RDE training sampler through P0 gate BEFORE maybe_open_training_sample()
+            routed_signal = _route_training_sample_through_p0_rde(
+                signal=signal,
+                route_reason="REJECT_ECON_BAD_ENTRY",
+                score_before_adj=_score_before_adj,
+                score_adj=_score_adj,
+            )
 
-                sampler_result = maybe_open_training_sample(
-                    signal=signal,
-                    ctx=_probe_ctx,
-                    reason="REJECT_ECON_BAD_ENTRY",
-                    current_price=signal.get("price") if signal else None,
-                )
+            if routed_signal is not None:
+                # P0 approved: proceed to sampler with routed metadata
+                try:
+                    from src.services.paper_training_sampler import maybe_open_training_sample
+                    from src.services.paper_trade_executor import open_paper_position
 
-                if sampler_result.get("allowed"):
-                    # Open paper training position with metadata
-                    extra = {
-                        "paper_source": "training_sampler",
-                        "training_bucket": sampler_result.get("bucket"),
-                        "explore_bucket": sampler_result.get("bucket"),
-                        "original_decision": "REJECT_ECON_BAD_ENTRY",
-                        "reject_reason": _econ_bad_reason,
-                        "side_inferred": sampler_result.get("side_inferred", False),
-                        "cost_edge_ok": sampler_result.get("cost_edge_ok", False),
-                        "expected_move_pct": sampler_result.get("expected_move_pct", 0.0),
-                        "expected_move_src": sampler_result.get("expected_move_src", ""),  # P1.1AP-N2C
-                        "required_move_pct": sampler_result.get("required_move_pct", 0.0),
-                        "size_mult": sampler_result.get("size_mult", 1.0),
-                        "max_hold_s": sampler_result.get("max_hold_s", 300),
-                        "tags": sampler_result.get("tags", []),
-                        "score_raw": round(_score_before_adj, 6),
-                        "score_final": round(_score_adj, 6),
-                        "decision_score": round(_score_adj, 6),
-                        # P1.1AP-N2C: Include recovery admission metadata if applicable
-                        "recovery_admission": sampler_result.get("recovery_admission", False),
-                        "learning_source": sampler_result.get("learning_source", "paper_training_sampler"),
-                        "admission_reason": sampler_result.get("admission_reason"),
-                        "historical_health": sampler_result.get("historical_health"),
-                        "cost_edge_bypassed": sampler_result.get("cost_edge_bypassed", False),
-                        "cost_edge_bypass_reason": sampler_result.get("cost_edge_bypass_reason", "none"),
-                    }
-
-                    open_paper_position(
-                        signal=signal,
-                        price=signal.get("price", 0),
-                        ts=_time.time(),
-                        reason="PAPER_TRAINING",
-                        extra=extra,
+                    sampler_result = maybe_open_training_sample(
+                        signal=routed_signal,
+                        ctx=_probe_ctx,
+                        reason="REJECT_ECON_BAD_ENTRY",
+                        current_price=routed_signal.get("price") if routed_signal else None,
                     )
-            except Exception:
-                pass  # Graceful degrade if training sampler unavailable
+
+                    if sampler_result.get("allowed"):
+                        # Open paper training position with P0-routed metadata
+                        extra = {
+                            "paper_source": routed_signal.get("paper_source", "paper_evidence_collection"),
+                            "training_bucket": sampler_result.get("bucket"),
+                            "explore_bucket": sampler_result.get("bucket"),
+                            "original_decision": "REJECT_ECON_BAD_ENTRY",
+                            "reject_reason": _econ_bad_reason,
+                            "side_inferred": sampler_result.get("side_inferred", False),
+                            "cost_edge_ok": sampler_result.get("cost_edge_ok", False),
+                            "expected_move_pct": sampler_result.get("expected_move_pct", 0.0),
+                            "expected_move_src": sampler_result.get("expected_move_src", ""),
+                            "required_move_pct": sampler_result.get("required_move_pct", 0.0),
+                            "size_mult": sampler_result.get("size_mult", 1.0),
+                            "max_hold_s": sampler_result.get("max_hold_s", 300),
+                            "tags": sampler_result.get("tags", []),
+                            "score_raw": round(_score_before_adj, 6),
+                            "score_final": round(_score_adj, 6),
+                            "decision_score": round(_score_adj, 6),
+                            "recovery_admission": sampler_result.get("recovery_admission", False),
+                            "learning_source": routed_signal.get("learning_source", "paper_evidence_collection"),  # P0.4: from routed signal
+                            "admission_reason": sampler_result.get("admission_reason"),
+                            "historical_health": sampler_result.get("historical_health"),
+                            "cost_edge_bypassed": sampler_result.get("cost_edge_bypassed", False),
+                            "cost_edge_bypass_reason": sampler_result.get("cost_edge_bypass_reason", "none"),
+                            "segment_key": routed_signal.get("segment_key"),  # P0.4: segment tracking
+                            "p0_gate_reason": routed_signal.get("p0_gate_reason"),  # P0.4: audit trail
+                        }
+
+                        open_paper_position(
+                            signal=routed_signal,
+                            price=routed_signal.get("price", 0),
+                            ts=_time.time(),
+                            reason="PAPER_TRAINING",
+                            extra=extra,
+                        )
+                except Exception:
+                    pass  # Graceful degrade if training sampler unavailable
 
             return None
 
@@ -3988,54 +4092,65 @@ def evaluate_signal(signal):
         # V10.13u+18g: Emit from rejection path as production-safe fallback
         _maybe_emit_econ_bad_diag_from_reject(source="rde_reject")
 
-        # P1.1L Phase 4: Try paper training sampler for ECON_BAD_FORCED reject
-        try:
-            from src.services.paper_training_sampler import maybe_open_training_sample
-            from src.services.paper_trade_executor import open_paper_position
+        # P0.4: Route RDE training sampler through P0 gate BEFORE maybe_open_training_sample()
+        routed_signal = _route_training_sample_through_p0_rde(
+            signal=signal,
+            route_reason="REJECT_ECON_BAD_FORCED",
+            score_before_adj=_score_before_adj,
+            score_adj=_score_adj,
+        )
 
-            sampler_result = maybe_open_training_sample(
-                signal=signal,
-                ctx={},
-                reason="REJECT_ECON_BAD_FORCED",
-                current_price=signal.get("price") if signal else None,
-            )
+        if routed_signal is not None:
+            # P0 approved: proceed to sampler with routed metadata
+            try:
+                from src.services.paper_training_sampler import maybe_open_training_sample
+                from src.services.paper_trade_executor import open_paper_position
 
-            if sampler_result.get("allowed"):
-                # Open paper training position with metadata
-                extra = {
-                    "paper_source": "training_sampler",
-                    "training_bucket": sampler_result.get("bucket"),
-                    "explore_bucket": sampler_result.get("bucket"),
-                    "original_decision": "REJECT_ECON_BAD_FORCED",
-                    "reject_reason": _forced_reason,
-                    "side_inferred": sampler_result.get("side_inferred", False),
-                    "cost_edge_ok": sampler_result.get("cost_edge_ok", False),
-                    "expected_move_pct": sampler_result.get("expected_move_pct", 0.0),
-                    "expected_move_src": sampler_result.get("expected_move_src", ""),  # P1.1AP-N2C
-                    "recovery_admission": sampler_result.get("recovery_admission", False),  # P1.1AP-N2C
-                    "learning_source": sampler_result.get("learning_source", "paper_training_sampler"),  # P1.1AP-N2C
-                    "admission_reason": sampler_result.get("admission_reason"),  # P1.1AP-N2C
-                    "historical_health": sampler_result.get("historical_health"),  # P1.1AP-N2C
-                    "cost_edge_bypassed": sampler_result.get("cost_edge_bypassed", False),  # P1.1AP-N2C
-                    "cost_edge_bypass_reason": sampler_result.get("cost_edge_bypass_reason", "none"),  # P1.1AP-N2C
-                    "required_move_pct": sampler_result.get("required_move_pct", 0.0),
-                    "size_mult": sampler_result.get("size_mult", 1.0),
-                    "max_hold_s": sampler_result.get("max_hold_s", 300),
-                    "tags": sampler_result.get("tags", []),
-                    "score_raw": round(_score_before_adj, 6),
-                    "score_final": round(_score_adj, 6),
-                    "decision_score": round(_score_adj, 6),
-                }
-
-                open_paper_position(
-                    signal=signal,
-                    price=signal.get("price", 0),
-                    ts=_time.time(),
-                    reason="PAPER_TRAINING",
-                    extra=extra,
+                sampler_result = maybe_open_training_sample(
+                    signal=routed_signal,
+                    ctx={},
+                    reason="REJECT_ECON_BAD_FORCED",
+                    current_price=routed_signal.get("price") if routed_signal else None,
                 )
-        except Exception:
-            pass  # Graceful degrade if training sampler unavailable
+
+                if sampler_result.get("allowed"):
+                    # Open paper training position with P0-routed metadata
+                    extra = {
+                        "paper_source": routed_signal.get("paper_source", "paper_evidence_collection"),
+                        "training_bucket": sampler_result.get("bucket"),
+                        "explore_bucket": sampler_result.get("bucket"),
+                        "original_decision": "REJECT_ECON_BAD_FORCED",
+                        "reject_reason": _forced_reason,
+                        "side_inferred": sampler_result.get("side_inferred", False),
+                        "cost_edge_ok": sampler_result.get("cost_edge_ok", False),
+                        "expected_move_pct": sampler_result.get("expected_move_pct", 0.0),
+                        "expected_move_src": sampler_result.get("expected_move_src", ""),
+                        "recovery_admission": sampler_result.get("recovery_admission", False),
+                        "learning_source": routed_signal.get("learning_source", "paper_evidence_collection"),  # P0.4: from routed signal
+                        "admission_reason": sampler_result.get("admission_reason"),
+                        "historical_health": sampler_result.get("historical_health"),
+                        "cost_edge_bypassed": sampler_result.get("cost_edge_bypassed", False),
+                        "cost_edge_bypass_reason": sampler_result.get("cost_edge_bypass_reason", "none"),
+                        "required_move_pct": sampler_result.get("required_move_pct", 0.0),
+                        "size_mult": sampler_result.get("size_mult", 1.0),
+                        "max_hold_s": sampler_result.get("max_hold_s", 300),
+                        "tags": sampler_result.get("tags", []),
+                        "score_raw": round(_score_before_adj, 6),
+                        "score_final": round(_score_adj, 6),
+                        "decision_score": round(_score_adj, 6),
+                        "segment_key": routed_signal.get("segment_key"),  # P0.4: segment tracking
+                        "p0_gate_reason": routed_signal.get("p0_gate_reason"),  # P0.4: audit trail
+                    }
+
+                    open_paper_position(
+                        signal=routed_signal,
+                        price=routed_signal.get("price", 0),
+                        ts=_time.time(),
+                        reason="PAPER_TRAINING",
+                        extra=extra,
+                    )
+            except Exception:
+                pass  # Graceful degrade if training sampler unavailable
 
         return None
 
