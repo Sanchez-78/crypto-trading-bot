@@ -2018,6 +2018,9 @@ def close_paper_position(
 
     duration_s = ts - pos["entry_ts"]
 
+    # V10.22: Calculate net PnL in USD for caching
+    net_pnl_usd = (pnl_data["net_pnl_pct"] / 100.0) * size_usd
+
     closed_trade = {
         **pos,
         "trade_id": position_id,  # V10.15l: Explicit trade ID for logging
@@ -2029,9 +2032,12 @@ def close_paper_position(
         "fee_pct": pnl_data["fee_pct"],
         "slippage_pct": pnl_data["slippage_pct"],
         "net_pnl_pct": pnl_data["net_pnl_pct"],
+        "net_pnl_usd": net_pnl_usd,  # V10.22: For cache/dashboard
+        "pnl_usd": net_pnl_usd,      # V10.22: Alias for compatibility
         "outcome": pnl_data["outcome"],
-        "unit_pnl": (pnl_data["net_pnl_pct"] / 100.0) * size_usd,
-        "weighted_pnl": (pnl_data["net_pnl_pct"] / 100.0) * size_usd,
+        "unit_pnl": net_pnl_usd,
+        "weighted_pnl": net_pnl_usd,
+        "win": 1 if net_pnl_usd > 0 else 0,  # V10.22: For cache
     }
 
     # P1.1AP-E: Stale position quarantine — check BEFORE all quality/econ/learning logs
