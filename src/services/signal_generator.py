@@ -700,6 +700,16 @@ def on_price(data):
     base_sc, w_sc, action, edge, edge_features, explore = _get_scored_edge(
         hist, e50, e200, breakout_up, breakout_down, mom5, reg, regime_conf)
 
+    # P0.5D: Log AFTER _get_scored_edge — what did it return?
+    if reg == "BULL_TREND":
+        try:
+            logging.warning(
+                f"[P0_5D_AFTER_CALL] symbol={s} regime={reg} "
+                f"action={action} base_sc={base_sc:.2f} w_sc={w_sc:.2f}"
+            )
+        except Exception:
+            pass
+
     # P0.5C: Log edge decision outcome for BULL_TREND
     if reg == "BULL_TREND" and action is None:
         try:
