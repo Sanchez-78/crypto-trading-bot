@@ -1621,12 +1621,27 @@ def _save_paper_trade_closed(closed_trade: dict) -> None:
             "mode": "paper_live",  # mark as paper for filtering
         }
 
+        # V10.22: Save to local cache FIRST (primary store)
+        try:
+            from src.services.local_persistent_cache import save_closed_trade
+            save_closed_trade(closed_trade)
+        except Exception as e:
+            log.warning(f"[LOCAL_CACHE_SAVE_FAILED] {e}")
+
         # Save to Firebase (paper trades in separate collection)
         try:
             from src.services.firebase_client import db, col
             if db:
                 # Write to trades_paper collection (separate from live trades)
                 db.collection(col("trades_paper")).add(paper_record)
+
+                # V10.22: Log [PAPER_EXIT] for dashboard to parse
+                log.info(
+                    f"[PAPER_EXIT] trade_id={closed_trade.get('trade_id')} symbol={closed_trade.get('symbol')} "
+                    f"entry={closed_trade.get('entry_price')} exit={closed_trade.get('exit_price')} "
+                    f"reason={closed_trade.get('exit_reason')} outcome={closed_trade.get('outcome')} "
+                    f"net_pnl_pct={closed_trade.get('net_pnl_pct', 0):.4f} net_pnl_usd={closed_trade.get('net_pnl_usd', 0):.8f}"
+                )
 
                 # P1.1AP-I2: Skip legacy LEARNING_UPDATE log for D_NEG shadow trades
                 # P1.1AP-J: Rename non-shadow log to [PAPER_TRADE_SAVED] to avoid confusion with canonical learning
