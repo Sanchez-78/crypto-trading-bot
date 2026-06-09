@@ -349,6 +349,15 @@ def _get_scored_edge(hist, e50, e200, breakout_up, breakout_down, mom5, reg, reg
     # Gate 1: regime confidence (lowered 0.6→0.5: BULL_TREND at ADX=17 gives
     # regime_conf=17/35=0.49 < 0.60 → was blocked; ADX 17-21 is valid weak trend)
     if regime_conf < 0.5:
+        # P0.5C: Log regime_conf failure
+        if symbol and reg == "BULL_TREND":
+            try:
+                logging.warning(
+                    f"[BULL_EDGE_GATE_1] symbol={symbol} regime={reg} "
+                    f"gate=regime_conf failed={regime_conf:.2f} threshold=0.5"
+                )
+            except Exception:
+                pass
         return 0, 0.0, None, None, {}, False
 
     buy_sc,  buy_f  = _score_direction(hist, e50, e200, breakout_up, breakout_down, mom5, "BUY")
@@ -383,6 +392,15 @@ def _get_scored_edge(hist, e50, e200, breakout_up, breakout_down, mom5, reg, reg
     # Gate 3: combo diversity (max 3 uses per session)
     combo = tuple(sorted(k for k, v in features.items() if isinstance(v, bool) and v))
     if not allow_combo(combo):
+        # P0.5C: Log combo failure
+        if symbol and reg == "BULL_TREND":
+            try:
+                logging.warning(
+                    f"[BULL_EDGE_GATE_3] symbol={symbol} regime={reg} "
+                    f"gate=combo_diversity failed combo={combo}"
+                )
+            except Exception:
+                pass
         return base_score, 0.0, None, None, {}, False
 
     # Weighted score (regime-aware)
@@ -402,6 +420,16 @@ def _get_scored_edge(hist, e50, e200, breakout_up, breakout_down, mom5, reg, reg
         if random.random() < _eps():
             explore = True    # below threshold but exploring
         else:
+            # P0.5C: Log threshold failure
+            if symbol and reg == "BULL_TREND":
+                try:
+                    logging.warning(
+                        f"[BULL_EDGE_GATE_5] symbol={symbol} regime={reg} "
+                        f"gate=threshold failed w_score={w_score:.2f} threshold={thr:.2f} "
+                        f"epsilon={_eps():.3f}"
+                    )
+                except Exception:
+                    pass
             return base_score, w_score, None, None, {}, False
 
     # Edge type for TP/SL selection
