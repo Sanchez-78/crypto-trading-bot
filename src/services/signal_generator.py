@@ -375,15 +375,14 @@ def _get_scored_edge(hist, e50, e200, breakout_up, breakout_down, mom5, reg, reg
     elif sell_sc > buy_sc and sell_sc >= SCORE_MIN:
         action, base_score, features = "BUY", sell_sc, sell_f   # was SELL, now BUY
     else:
-        # P0.5C: Log failed SCORE_MIN gate (Gate 2)
-        if symbol:
+        # P0.5D: Log SCORE_MIN gate failure
+        if symbol and reg == "BULL_TREND":
             try:
                 logging.warning(
-                    f"[BULL_EDGE_GATE_2] symbol={symbol} regime={reg} "
-                    f"gate=SCORE_MIN failed "
+                    f"[P0_5D_GATE_2_SCORE_MIN] symbol={symbol} "
                     f"buy_sc={buy_sc:.2f} sell_sc={sell_sc:.2f} "
-                    f"threshold={SCORE_MIN:.2f} "
-                    f"max_score={max(buy_sc, sell_sc):.2f}"
+                    f"max_score={max(buy_sc, sell_sc):.2f} threshold={SCORE_MIN:.2f} "
+                    f"failed=True"
                 )
             except Exception:
                 pass
@@ -392,12 +391,12 @@ def _get_scored_edge(hist, e50, e200, breakout_up, breakout_down, mom5, reg, reg
     # Gate 3: combo diversity (max 3 uses per session)
     combo = tuple(sorted(k for k, v in features.items() if isinstance(v, bool) and v))
     if not allow_combo(combo):
-        # P0.5C: Log combo failure
+        # P0.5D: Log Gate 3 combo failure
         if symbol and reg == "BULL_TREND":
             try:
                 logging.warning(
-                    f"[BULL_EDGE_GATE_3] symbol={symbol} regime={reg} "
-                    f"gate=combo_diversity failed combo={combo}"
+                    f"[P0_5D_GATE_3_COMBO] symbol={symbol} "
+                    f"combo={combo} failed=True"
                 )
             except Exception:
                 pass
@@ -420,13 +419,13 @@ def _get_scored_edge(hist, e50, e200, breakout_up, breakout_down, mom5, reg, reg
         if random.random() < _eps():
             explore = True    # below threshold but exploring
         else:
-            # P0.5C: Log threshold failure
+            # P0.5D: Log Gate 5 threshold failure
             if symbol and reg == "BULL_TREND":
                 try:
                     logging.warning(
-                        f"[BULL_EDGE_GATE_5] symbol={symbol} regime={reg} "
-                        f"gate=threshold failed w_score={w_score:.2f} threshold={thr:.2f} "
-                        f"epsilon={_eps():.3f}"
+                        f"[P0_5D_GATE_5_THRESHOLD] symbol={symbol} "
+                        f"w_score={w_score:.2f} threshold={thr:.2f} "
+                        f"epsilon={_eps():.3f} failed=True"
                     )
                 except Exception:
                     pass
