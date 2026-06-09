@@ -1206,11 +1206,13 @@ def open_paper_position(
 
     # Fallback: compute locally with responsive percentages
     if not tp_sl:
-        # V10.22 RESPONSIVE: Tighter TP, wider SL, faster feedback
-        # Previous: TP=2.5%, SL=2% (RR=1.25:1) resulted in 100% timeout
-        # V10.22: TP=1.5%, SL=3% (RR=0.5:1) - EASIER TP hits, WIDER SL for reversals
-        tp_pct = 1.015 if side == "BUY" else 0.985
-        sl_pct = 0.97 if side == "BUY" else 1.03
+        # V10.23 FIX: Calibrated for 300s timeout window
+        # Previous: TP=1.5%, SL=3% (100% timeout in 300s - market not moving enough)
+        # V10.23: TP=0.8%, SL=1.5% (RR=0.53:1) - market-realistic for 5min window
+        # Rationale: Market moves ~0.01-0.05% per 300s. 0.8% catches real swings.
+        # Needs ~60% WR to overcome 0.36% round-trip fees and be profitable
+        tp_pct = 1.008 if side == "BUY" else 0.992  # 0.8% take-profit
+        sl_pct = 0.985 if side == "BUY" else 1.015  # 1.5% stop-loss
         tp_sl = normalize_paper_tp_sl(side, price, price * tp_pct, price * sl_pct)
     if tp_sl is None:
         log.error(
