@@ -29,7 +29,7 @@ _POSITION_SIZE_BASE = float(os.getenv("PAPER_POSITION_SIZE_USD", "25"))  # Base 
 _FEE_PCT = float(os.getenv("PAPER_FEE_PCT", "0.0015"))  # 0.15% round-trip
 _SLIPPAGE_PCT = float(os.getenv("PAPER_SLIPPAGE_PCT", "0.0003"))  # 0.03%
 _MAX_OPEN = int(os.getenv("PAPER_MAX_OPEN_POSITIONS", "5"))  # Increased to allow more diversification
-_MAX_AGE_S = float(os.getenv("PAPER_MAX_POSITION_AGE_S", "900"))  # 15 min default
+_MAX_AGE_S = float(os.getenv("PAPER_MAX_POSITION_AGE_S", "300"))  # V10.22: 5 min default (was 900, too long for timeout-heavy market)
 _MIN_EV_THRESHOLD = float(os.getenv("PAPER_MIN_EV_THRESHOLD", "0.0"))  # AGGRESSIVE: No EV blocking
 _MIN_SEGMENT_PF = float(os.getenv("PAPER_MIN_SEGMENT_PF", "0.0"))  # AGGRESSIVE: No segment PF gating
 _TIME_BASED_FILTERING = os.getenv("PAPER_TIME_BASED_FILTERING", "false").lower() == "true"  # AGGRESSIVE: No time gating
@@ -1188,11 +1188,12 @@ def open_paper_position(
     if extra and "final_size_usd" in extra:
         size_usd = extra["final_size_usd"]
 
-    # V10.21: Balance TP/SL for realistic market execution
-    # Previous: TP=3%, SL=0.8% (asymmetric, RR=3.75:1) resulted in 0% WR
-    # V10.21: TP=2.5%, SL=2% (balanced, RR=1.25:1) → higher TP hit rate in volatile market
-    tp_pct = 1.025 if side == "BUY" else 0.975
-    sl_pct = 0.98 if side == "BUY" else 1.02
+    # V10.22 RESPONSIVE: Tighter TP, wider SL, faster feedback
+    # Previous: TP=2.5%, SL=2% (RR=1.25:1) resulted in 100% timeout
+    # V10.22: TP=1.5%, SL=3% (RR=0.5:1) - EASIER TP hits, WIDER SL for reversals
+    # Rationale: Most trades timeout before hitting targets. Easier targets = faster learning
+    tp_pct = 1.015 if side == "BUY" else 0.985
+    sl_pct = 0.97 if side == "BUY" else 1.03
     tp_sl = normalize_paper_tp_sl(side, price, price * tp_pct, price * sl_pct)
     if tp_sl is None:
         log.error(
