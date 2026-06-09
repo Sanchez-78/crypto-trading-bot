@@ -87,8 +87,8 @@ class P0SegmentEVGate:
     QUARANTINED_SYMBOLS = {"BTCUSDT", "SOLUSDT"}
     QUARANTINED_REGIMES = {"BEAR_TREND"}
 
-    # Allowed evidence collection scope
-    EVIDENCE_COLLECTION_SYMBOLS = {"ETHUSDT"}
+    # Allowed evidence collection scope (expanded for live learning)
+    EVIDENCE_COLLECTION_SYMBOLS = {"ETHUSDT", "ADAUSDT", "XRPUSDT", "DOTUSDT"}
     EVIDENCE_COLLECTION_REGIMES = {"BULL_TREND", "BEAR_TREND"}  # Can collect both, but analyze separately
 
     @staticmethod
