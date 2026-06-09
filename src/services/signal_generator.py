@@ -701,10 +701,11 @@ def on_price(data):
         hist, e50, e200, breakout_up, breakout_down, mom5, reg, regime_conf)
 
     # P0.5D: Log AFTER _get_scored_edge — what did it return?
+    call_ts = time.time()
     if reg == "BULL_TREND":
         try:
             logging.warning(
-                f"[P0_5D_AFTER_CALL] symbol={s} regime={reg} "
+                f"[P0_5D_AFTER_CALL] ts={call_ts:.1f} symbol={s} regime={reg} "
                 f"action={action} base_sc={base_sc:.2f} w_sc={w_sc:.2f}"
             )
         except Exception:
@@ -714,7 +715,7 @@ def on_price(data):
     if reg == "BULL_TREND" and action is None:
         try:
             logging.warning(
-                f"[BULL_EDGE_FAILED] symbol={s} regime={reg} "
+                f"[BULL_EDGE_FAILED] ts={call_ts:.1f} symbol={s} regime={reg} "
                 f"action=None base_sc={base_sc:.2f} w_sc={w_sc:.2f}"
             )
         except Exception:
