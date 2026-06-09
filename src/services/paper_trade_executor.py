@@ -1489,12 +1489,33 @@ def open_paper_position(
         "max_seen": price,
         "min_seen": price,
         # P1.1AP-N2A: Preserve recovery admission metadata through lifecycle
-        "learning_source": extra.get("learning_source", "paper_training_sampler") if extra else "paper_training_sampler",
+        # NOTE: learning_source ALREADY SET ABOVE at line 1452 from signal (P0.3D)
+        # DO NOT override here — P0 metadata must not be lost
         "recovery_admission": extra.get("recovery_admission", False) if extra else False,  # P1.1AP-N2C
         "admission_reason": extra.get("admission_reason") if extra else None,
         "historical_health": extra.get("historical_health") if extra else None,
         "expected_move_src": extra.get("expected_move_src") if extra else None,
     }
+
+    # P0.3F GUARD: Fail-closed check — all positions MUST have P0 metadata
+    if "learning_source" not in position or position["learning_source"] is None:
+        log.error(
+            "[P0_METADATA_BLOCK] trade_id=%s symbol=%s reason=missing_learning_source "
+            "strict_ev=%s readiness_eligible=%s — entry BLOCKED",
+            trade_id, symbol,
+            position.get("strict_ev", "UNKNOWN"),
+            position.get("readiness_eligible", "UNKNOWN"),
+        )
+        return {"status": "blocked", "reason": "p0_metadata_missing"}
+
+    if position.get("strict_ev") is None or position.get("readiness_eligible") is None:
+        log.error(
+            "[P0_METADATA_BLOCK] trade_id=%s symbol=%s reason=missing_strict_ev_or_readiness "
+            "learning_source=%s — entry BLOCKED",
+            trade_id, symbol,
+            position.get("learning_source", "UNKNOWN"),
+        )
+        return {"status": "blocked", "reason": "p0_metadata_incomplete"}
 
     with _POSITION_LOCK:
         _POSITIONS[trade_id] = position
