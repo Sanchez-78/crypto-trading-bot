@@ -430,16 +430,13 @@ def _get_scored_edge(hist, e50, e200, breakout_up, breakout_down, mom5, reg, reg
     eps_val = _eps()
     explore = False
 
-    # P0.5E: Log for BULL_TREND regardless of outcome
-    if symbol and reg == "BULL_TREND":
-        try:
-            logging.warning(
-                f"[P0_5E_GATE_5_DECISION] symbol={symbol} "
-                f"w_score={w_score:.2f} threshold={thr:.2f} "
-                f"epsilon={eps_val:.4f}"
-            )
-        except Exception:
-            pass
+    # P0.6: Check if this is a Gate 5 relaxation candidate (BULL_TREND, near threshold)
+    relaxed_ratio = 0.80  # 80% of threshold = "near threshold"
+    is_gate5_relax_candidate = (
+        symbol and reg == "BULL_TREND" and
+        base_score >= SCORE_MIN and
+        w_score >= (thr * relaxed_ratio)
+    )
 
     if w_score < thr:
         import random
@@ -448,15 +445,21 @@ def _get_scored_edge(hist, e50, e200, breakout_up, breakout_down, mom5, reg, reg
             explore = True    # below threshold but exploring
         else:
             # Below threshold and random failed
-            if symbol and reg == "BULL_TREND":
+            # P0.6: If this is a Gate 5 relax candidate, use controlled fallback
+            if is_gate5_relax_candidate:
                 try:
                     logging.warning(
-                        f"[P0_5E_GATE_5_FAILED] symbol={symbol} "
-                        f"reason=below_threshold_and_no_explore "
-                        f"rand={rand_val:.4f} eps={eps_val:.4f}"
+                        f"[P0_6_GATE5_RELAX_ADMIT] symbol={symbol} "
+                        f"base_sc={base_score:.2f} w_score={w_score:.2f} "
+                        f"threshold={thr:.2f} relaxed_ratio={relaxed_ratio:.2f} "
+                        f"action=BUY learning_source=paper_bull_gate5_relaxed"
                     )
                 except Exception:
                     pass
+                # Return BUY with metadata for P0.6 tracking
+                return base_score, w_score, "BUY", None, {}, False
+
+            # Normal Gate 5 failure (not relaxable)
             return base_score, w_score, None, None, {}, False
 
     # Edge type for TP/SL selection
