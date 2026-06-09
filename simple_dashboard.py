@@ -55,22 +55,33 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def handle_api_metrics(self):
         """GET /api/dashboard/metrics - All aggregated metrics"""
         try:
-            db_path = '/opt/cryptomaster/local_learning_storage/learning_database.sqlite'
-            if not os.path.exists(db_path):
+            # V10.22: Read from cache.sqlite (primary, has new trades)
+            # Fall back to learning_database.sqlite (old, has historical trades)
+            db_path = '/opt/cryptomaster/local_learning_storage/cache.sqlite'
+            backup_db_path = '/opt/cryptomaster/local_learning_storage/learning_database.sqlite'
+
+            if not os.path.exists(db_path) and not os.path.exists(backup_db_path):
                 return self.send_json({'error': 'No trades recorded yet'}, 404)
 
-            conn = sqlite3.connect(db_path)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
+            # Try cache.sqlite first (has new trades)
+            try:
+                conn = sqlite3.connect(db_path)
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+            except:
+                # Fall back to learning_database.sqlite (historical trades)
+                conn = sqlite3.connect(backup_db_path)
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
 
             # Get success metrics
             cursor.execute('''
                 SELECT COUNT(*) as total,
-                       SUM(CASE WHEN pnl_pct > 0 THEN 1 ELSE 0 END) as wins,
-                       SUM(CASE WHEN pnl_pct < 0 THEN 1 ELSE 0 END) as losses,
-                       AVG(pnl_pct) as expectancy,
+                       SUM(CASE WHEN pnl_usd > 0 OR win = 1 THEN 1 ELSE 0 END) as wins,
+                       SUM(CASE WHEN pnl_usd < 0 OR win = 0 THEN 1 ELSE 0 END) as losses,
+                       AVG(pnl_usd) as expectancy,
                        SUM(pnl_usd) as net_pnl
-                FROM trades
+                FROM closed_trades
             ''')
             metrics_row = cursor.fetchone()
             total = metrics_row['total']
@@ -82,9 +93,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
             profit_factor = (wins / (losses + 0.0001)) if losses > 0 else (1.0 if wins > 0 else 0.0)
             win_rate_pct = (wins / total * 100) if total > 0 else 0.0
 
-            # Get exit distribution
+            # Get exit distribution (V10.22: read from closed_trades table)
             cursor.execute('''
-                SELECT exit_reason, COUNT(*) as cnt FROM trades GROUP BY exit_reason
+                SELECT exit_reason, COUNT(*) as cnt FROM closed_trades GROUP BY exit_reason
             ''')
             exits = {'tp': 0, 'sl': 0, 'scratch': 0, 'stagnation': 0, 'timeout': 0}
             for row in cursor.fetchall():
