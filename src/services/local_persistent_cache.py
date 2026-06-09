@@ -99,6 +99,16 @@ def _init_db():
         )
     """)
 
+    # Calibration state (for trade calibration learning)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS calibration_state (
+            id INTEGER PRIMARY KEY,
+            data TEXT,
+            timestamp REAL,
+            version TEXT
+        )
+    """)
+
     conn.commit()
     conn.close()
     _log.info("[LOCAL_CACHE] SQLite initialized")
