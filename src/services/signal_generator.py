@@ -725,23 +725,37 @@ def on_price(data):
     # ────────────────────────────────────────────────────────────────────────
     # If action=None but close to Gate 5 threshold, use relaxed BUY for ETHUSDT BULL_TREND
     if action is None and s == "ETHUSDT" and reg == "BULL_TREND":
-        # Get threshold for relaxed check
         try:
-            from src.services.realtime_decision_engine import get_ws_threshold as _thr
+            from src.services.realtime_decision_engine import (
+                get_ws_threshold as _thr,
+                SCORE_MIN as _score_min
+            )
             thr = _thr()
             relaxed_ratio = 0.80
-            if w_sc >= (thr * relaxed_ratio) and base_sc >= 4.0:  # Near threshold + decent score
+
+            # P0.6 Admission: base_sc >= SCORE_MIN AND w_score >= 80% threshold
+            if base_sc >= _score_min and w_sc >= (thr * relaxed_ratio):
                 action = "BUY"
-                try:
-                    logging.warning(
-                        f"[P0_6_GATE5_RELAX_ADMIT] symbol={s} regime={reg} "
-                        f"base_sc={base_sc:.2f} w_sc={w_sc:.2f} threshold={thr:.2f} "
-                        f"action=BUY learning_source=paper_bull_gate5_relaxed"
-                    )
-                except Exception:
-                    pass
-        except Exception:
-            pass
+                # Metadata for P0.6 tracking
+                p0_6_metadata = {
+                    "learning_source": "paper_bull_gate5_relaxed",
+                    "strict_ev": False,
+                    "readiness_eligible": False,
+                    "p0_gate_reason": f"gate5_relaxed:{w_sc:.2f}vs{thr:.2f}"
+                }
+                logging.warning(
+                    f"[P0_6_GATE5_RELAX_ADMIT] symbol={s} regime={reg} "
+                    f"base_sc={base_sc:.2f} w_sc={w_sc:.2f} threshold={thr:.2f} "
+                    f"relaxed_ratio={relaxed_ratio} action=BUY "
+                    f"learning_source=paper_bull_gate5_relaxed strict_ev=false"
+                )
+        except Exception as e:
+            logging.exception(
+                f"[P0_6_ERROR] symbol={s} regime={reg} "
+                f"base_sc={base_sc:.2f} w_sc={w_sc:.2f} "
+                f"error={str(e)[:100]}"
+            )
+            # Fail closed: leave action=None if error
 
     # ────────────────────────────────────────────────────────────────────────
     # PATCH 3: Force Signal Generation — Fallback when no signal detected
