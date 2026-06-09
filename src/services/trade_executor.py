@@ -156,10 +156,10 @@ _pending_open     = []   # signals queued after replace_if_better triggers
 _PAPER_TRAIN_ROUTER_TS = {}
 _PAPER_TRAIN_ROUTER_TTL_S = 10.0
 
-MAX_POSITIONS     = 3    # max concurrent open positions (raised for bootstrap learning speed)
-MAX_SAME_DIR      = 2    # max positions in same direction — 1→2: in BULL_TREND all symbols
-                          # generate BUY, old limit=1 blocked 2/3 signals every tick, cutting
-                          # learning rate by 67%; raise to 2 for faster data accumulation
+MAX_POSITIONS     = 50   # V10.22: increased from 3 to 50 for active paper trading testing
+MAX_SAME_DIR      = 30   # V10.22: increased from 2 to 30 (was blocking ~80% of signals)
+                          # old limit=1 blocked 2/3 signals every tick, limit=2 still blocks 80%
+                          # raise to 30 for comprehensive learning data accumulation
 MAX_REGIME_PCT    = 0.70 # block if one regime holds > 70% of open positions
 _TOTAL_CAPITAL    = 1.0  # normalised capital (position sizes are fractions)
 _MAX_CAP_USED     = 0.70 # don't deploy more than 70% of capital
