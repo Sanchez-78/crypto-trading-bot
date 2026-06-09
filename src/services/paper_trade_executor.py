@@ -23,6 +23,14 @@ except ImportError:
     on_paper_trade_closed = None
     log.warning("[LEARNING] Failed to import local learning storage")
 
+# P0.3B: Segment EV Gate (Pure logic for strict EV vs evidence collection)
+try:
+    from src.services.p0_segment_ev_gate import P0SegmentEVGate, SegmentKey
+except ImportError:
+    P0SegmentEVGate = None
+    SegmentKey = None
+    log.warning("[P0.3B] Failed to import p0_segment_ev_gate (P0 baseline disabled)")
+
 # Configuration from environment
 _INITIAL_EQUITY = float(os.getenv("PAPER_INITIAL_EQUITY_USD", "10000"))
 _POSITION_SIZE_BASE = float(os.getenv("PAPER_POSITION_SIZE_USD", "25"))  # Base size for medium-confidence
@@ -213,6 +221,84 @@ def _calculate_dynamic_position_size(signal: dict) -> float:
         return _POSITION_SIZE_BASE * 0.5  # Low: 0.5x
     else:
         return _POSITION_SIZE_BASE * 0.3  # Very low: 0.3x
+
+
+def _should_skip_segment_p0_strict_ev(
+    symbol: str, side: str, regime: str, source: str, tp_sl_profile: str,
+    closed_trades: Optional[list] = None
+) -> tuple[bool, dict]:
+    """P0.3B: Segment EV Gate — Decide if strict EV is allowed.
+
+    Returns: (should_reject, decision_dict)
+    where decision_dict contains:
+        - strict_ev_allowed: bool
+        - reason: str
+        - readiness_eligible: bool
+    """
+    if P0SegmentEVGate is None:
+        # P0.3B not available — fall through (no strict gate)
+        return False, {
+            "strict_ev_allowed": False,
+            "reason": "p0_gate_unavailable",
+            "readiness_eligible": False,
+        }
+
+    # Use closed trades from global state if not provided
+    if closed_trades is None:
+        try:
+            import sqlite3
+            db_path = '/opt/cryptomaster/local_learning_storage/cache.sqlite'
+            conn = sqlite3.connect(db_path)
+            c = conn.cursor()
+            c.execute('SELECT * FROM closed_trades')
+            cols = [desc[0] for desc in c.description]
+            closed_trades = []
+            for row in c.fetchall():
+                closed_trades.append(dict(zip(cols, row)))
+            conn.close()
+        except Exception as e:
+            log.warning(f"[P0_SEGMENT_GATE] Failed to load closed trades: {e}")
+            closed_trades = []
+
+    # Call P0 gate
+    decision = P0SegmentEVGate.decide_segment_gate(
+        symbol=symbol,
+        side=side,
+        regime=regime,
+        source=source,
+        tp_sl_profile=tp_sl_profile,
+        closed_trades=closed_trades,
+    )
+
+    # Log decision
+    throttle_key = (symbol, regime, source, "p0_gate")
+    now_ts = time.time()
+    last_log = _PAPER_ENTRY_BLOCKED_THROTTLE.get(throttle_key, 0.0)
+    if now_ts - last_log >= _PAPER_ENTRY_BLOCKED_TTL:
+        log.info(
+            "[P0_SEGMENT_GATE] symbol=%s side=%s regime=%s source=%s "
+            "tp_sl_profile=%s segment_n=%s avg_pnl_usd=%s pf=%s timeout_rate=%s "
+            "strict_ev_allowed=%s reason=%s readiness_eligible=%s",
+            symbol, side, regime, source, tp_sl_profile,
+            decision.stats.n if decision.stats else 0,
+            f"{decision.stats.avg_pnl_usd:.8f}" if decision.stats else None,
+            f"{decision.stats.profit_factor:.2f}" if decision.stats else None,
+            f"{decision.stats.timeout_rate:.1%}" if decision.stats else None,
+            decision.strict_ev_allowed,
+            decision.reason,
+            decision.readiness_eligible,
+        )
+        _PAPER_ENTRY_BLOCKED_THROTTLE[throttle_key] = now_ts
+
+    # Return: (should_reject, decision)
+    # Only reject if quarantined or explicitly blocked by gate
+    should_reject = not decision.strict_ev_allowed
+    return should_reject, {
+        "strict_ev_allowed": decision.strict_ev_allowed,
+        "reason": decision.reason,
+        "readiness_eligible": decision.readiness_eligible,
+        "stats": decision.stats,
+    }
 
 
 def _should_skip_segment_by_profitability(symbol: str, regime: str, side: str) -> tuple[bool, str]:
@@ -1094,10 +1180,46 @@ def open_paper_position(
             _PAPER_ENTRY_BLOCKED_THROTTLE[throttle_key] = now_ts
         return {"status": "blocked", "reason": f"weak_ev_below_{_MIN_EV_THRESHOLD}"}
 
-    # SEGMENT PROFITABILITY GATING: Skip unprofitable segments
+    # P0.3B: SEGMENT EV GATE - Strict EV approval requires segment evidence
     regime = signal.get("regime", "NEUTRAL")
     side_raw = signal.get("action", signal.get("side", "BUY"))
     side_normalized, _ = _normalize_side(side_raw)
+
+    # Call P0.3B gate
+    tp_sl_profile = extra.get("tp_sl_profile", "unknown") if extra else "unknown"
+    source = paper_source or "rde_take"
+
+    reject_p0, p0_decision = _should_skip_segment_p0_strict_ev(
+        symbol=symbol,
+        side=side_normalized,
+        regime=regime,
+        source=source,
+        tp_sl_profile=tp_sl_profile,
+    )
+
+    if reject_p0:
+        # P0 gate blocked this signal
+        throttle_key = (symbol, "p0_strict_ev_gate", p0_decision.get("reason", "unknown"))
+        now_ts = time.time()
+        last_log = _PAPER_ENTRY_BLOCKED_THROTTLE.get(throttle_key, 0.0)
+        if now_ts - last_log >= _PAPER_ENTRY_BLOCKED_TTL:
+            log.info(
+                "[PAPER_ENTRY_P0_BLOCKED] symbol=%s reason=%s strict_ev_allowed=%s readiness_eligible=%s",
+                symbol,
+                p0_decision.get("reason", "unknown"),
+                p0_decision.get("strict_ev_allowed", False),
+                p0_decision.get("readiness_eligible", False),
+            )
+            _PAPER_ENTRY_BLOCKED_THROTTLE[throttle_key] = now_ts
+
+        # Mark signal metadata for logging
+        signal["strict_ev"] = False
+        signal["readiness_eligible"] = False
+        signal["strict_ev_block_reason"] = p0_decision.get("reason", "p0_gate_rejected")
+
+        return {"status": "blocked", "reason": f"p0_strict_ev_gate:{p0_decision.get('reason', 'rejected')}"}
+
+    # Optional: Old segment profitability gate (for backwards compatibility if needed)
     skip_segment, skip_reason = _should_skip_segment_by_profitability(symbol, regime, side_normalized)
     if skip_segment:
         throttle_key = (symbol, "segment_gate", skip_reason)
