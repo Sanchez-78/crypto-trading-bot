@@ -687,6 +687,16 @@ def on_price(data):
     else:
         regime_conf = 0.6  # HIGH_VOL: borderline confidence
 
+    # P0.5D: Log BEFORE calling _get_scored_edge
+    if reg == "BULL_TREND":
+        try:
+            logging.warning(
+                f"[P0_5D_BEFORE_CALL] symbol={s} regime={reg} "
+                f"hist_len={len(hist)} regime_conf={regime_conf:.2f}"
+            )
+        except Exception:
+            pass
+
     base_sc, w_sc, action, edge, edge_features, explore = _get_scored_edge(
         hist, e50, e200, breakout_up, breakout_down, mom5, reg, regime_conf)
 
