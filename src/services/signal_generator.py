@@ -430,14 +430,6 @@ def _get_scored_edge(hist, e50, e200, breakout_up, breakout_down, mom5, reg, reg
     eps_val = _eps()
     explore = False
 
-    # P0.6: Check if this is a Gate 5 relaxation candidate (BULL_TREND, near threshold)
-    relaxed_ratio = 0.80  # 80% of threshold = "near threshold"
-    is_gate5_relax_candidate = (
-        symbol and reg == "BULL_TREND" and
-        base_score >= SCORE_MIN and
-        w_score >= (thr * relaxed_ratio)
-    )
-
     if w_score < thr:
         import random
         rand_val = random.random()
@@ -445,21 +437,6 @@ def _get_scored_edge(hist, e50, e200, breakout_up, breakout_down, mom5, reg, reg
             explore = True    # below threshold but exploring
         else:
             # Below threshold and random failed
-            # P0.6: If this is a Gate 5 relax candidate, use controlled fallback
-            if is_gate5_relax_candidate:
-                try:
-                    logging.warning(
-                        f"[P0_6_GATE5_RELAX_ADMIT] symbol={symbol} "
-                        f"base_sc={base_score:.2f} w_score={w_score:.2f} "
-                        f"threshold={thr:.2f} relaxed_ratio={relaxed_ratio:.2f} "
-                        f"action=BUY learning_source=paper_bull_gate5_relaxed"
-                    )
-                except Exception:
-                    pass
-                # Return BUY with metadata for P0.6 tracking
-                return base_score, w_score, "BUY", None, {}, False
-
-            # Normal Gate 5 failure (not relaxable)
             return base_score, w_score, None, None, {}, False
 
     # Edge type for TP/SL selection
@@ -740,6 +717,29 @@ def on_price(data):
                 f"[BULL_EDGE_FAILED] ts={call_ts:.1f} symbol={s} regime={reg} "
                 f"action=None base_sc={base_sc:.2f} w_sc={w_sc:.2f}"
             )
+        except Exception:
+            pass
+
+    # ────────────────────────────────────────────────────────────────────────
+    # P0.6: Gate 5 Relaxed Evidence Experiment (before FORCED)
+    # ────────────────────────────────────────────────────────────────────────
+    # If action=None but close to Gate 5 threshold, use relaxed BUY for ETHUSDT BULL_TREND
+    if action is None and s == "ETHUSDT" and reg == "BULL_TREND":
+        # Get threshold for relaxed check
+        try:
+            from src.services.realtime_decision_engine import get_ws_threshold as _thr
+            thr = _thr()
+            relaxed_ratio = 0.80
+            if w_sc >= (thr * relaxed_ratio) and base_sc >= 4.0:  # Near threshold + decent score
+                action = "BUY"
+                try:
+                    logging.warning(
+                        f"[P0_6_GATE5_RELAX_ADMIT] symbol={s} regime={reg} "
+                        f"base_sc={base_sc:.2f} w_sc={w_sc:.2f} threshold={thr:.2f} "
+                        f"action=BUY learning_source=paper_bull_gate5_relaxed"
+                    )
+                except Exception:
+                    pass
         except Exception:
             pass
 
