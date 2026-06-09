@@ -3859,8 +3859,8 @@ def evaluate_signal(signal):
                         reason="PAPER_TRAINING",
                         extra=extra,
                     )
-        except Exception:
-            pass  # Graceful degrade if training sampler unavailable
+            except Exception:
+                pass  # Graceful degrade if training sampler unavailable
 
         return None
 
