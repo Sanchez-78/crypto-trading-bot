@@ -2876,6 +2876,8 @@ def handle_signal(signal):
             )
         else:
             # P1.1M: Include training metadata for strict TAKE in paper_train mode
+            # V10.22 CRITICAL FIX: Pass computed TP/SL from trade_executor to paper_trade_executor
+            # (Previously these were computed but discarded, causing paper positions to have 0 TP/SL)
             extra_meta = {
                 "paper_source": "strict_take",
                 "training_bucket": "A_STRICT_TAKE",
@@ -2892,6 +2894,8 @@ def handle_signal(signal):
                 "score_at_entry": signal.get("score", 0.0),
                 "score_raw": signal.get("score_raw", signal.get("score", None)),
                 "score_final": signal.get("score_final", signal.get("score", None)),
+                "tp_from_executor": tp,  # V10.22: Pass pre-computed TP from trade_executor
+                "sl_from_executor": sl,  # V10.22: Pass pre-computed SL from trade_executor
             }
             _paper_result = open_paper_position(signal, actual_entry, time.time(), "RDE_TAKE", extra=extra_meta)
             if _paper_result.get("status") == "opened":

@@ -1188,13 +1188,30 @@ def open_paper_position(
     if extra and "final_size_usd" in extra:
         size_usd = extra["final_size_usd"]
 
-    # V10.22 RESPONSIVE: Tighter TP, wider SL, faster feedback
-    # Previous: TP=2.5%, SL=2% (RR=1.25:1) resulted in 100% timeout
-    # V10.22: TP=1.5%, SL=3% (RR=0.5:1) - EASIER TP hits, WIDER SL for reversals
-    # Rationale: Most trades timeout before hitting targets. Easier targets = faster learning
-    tp_pct = 1.015 if side == "BUY" else 0.985
-    sl_pct = 0.97 if side == "BUY" else 1.03
-    tp_sl = normalize_paper_tp_sl(side, price, price * tp_pct, price * sl_pct)
+    # V10.22 CRITICAL: Use TP/SL from trade_executor if provided (computed with full context)
+    # Otherwise fall back to local computation with responsive percentages
+    tp_price = None
+    sl_price = None
+
+    # Try to use pre-computed TP/SL from trade_executor
+    if extra and "tp_from_executor" in extra and "sl_from_executor" in extra:
+        tp_price = extra["tp_from_executor"]
+        sl_price = extra["sl_from_executor"]
+        tp_sl = normalize_paper_tp_sl(side, price, tp_price, sl_price)
+        if tp_sl:
+            log.info(f"[PAPER_TP_SL_FROM_EXECUTOR] symbol={symbol} side={side} tp={tp_price:.8f} sl={sl_price:.8f}")
+        else:
+            log.warning(f"[PAPER_TP_SL_VALIDATION_FAILED] symbol={symbol} side={side} tp={tp_price:.8f} sl={sl_price:.8f} - fallback to local")
+            tp_sl = None  # Will fall back to local computation
+
+    # Fallback: compute locally with responsive percentages
+    if not tp_sl:
+        # V10.22 RESPONSIVE: Tighter TP, wider SL, faster feedback
+        # Previous: TP=2.5%, SL=2% (RR=1.25:1) resulted in 100% timeout
+        # V10.22: TP=1.5%, SL=3% (RR=0.5:1) - EASIER TP hits, WIDER SL for reversals
+        tp_pct = 1.015 if side == "BUY" else 0.985
+        sl_pct = 0.97 if side == "BUY" else 1.03
+        tp_sl = normalize_paper_tp_sl(side, price, price * tp_pct, price * sl_pct)
     if tp_sl is None:
         log.error(
             "[PAPER_ENTRY_BLOCKED] symbol=%s reason=tp_sl_impossible side=%s entry=%.8f",
