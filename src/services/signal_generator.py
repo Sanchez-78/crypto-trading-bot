@@ -917,6 +917,8 @@ def on_price(data):
         "edge":       edge,
         "ws":         round(w_sc, 4),
         "explore":    explore,
+        # P0.6: Add Gate 5 relaxed metadata if applicable
+        **(p0_6_metadata if 'p0_6_metadata' in locals() else {}),
         "features": {
             # 7 boolean edge features (used for self-learning update_edge_stats)
             **edge_features,
