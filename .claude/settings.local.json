@@ -318,7 +318,8 @@
       "PowerShell(ssh -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"systemctl restart cryptomaster.service && sleep 5 && echo '=== Bot Status ===' && systemctl is-active cryptomaster.service && echo '=== Position Count ===' && ssh -i ~/.ssh/hetzner_root root@78.47.2.198 'cd /opt/cryptomaster && python3 -c \\\\\"import json; p = json.load\\(open\\('data/paper_open_positions.json'\\)\\); print\\(f'Positions in file: {len\\(p\\)}'\\)\\\\\"' && echo '=== Recent Logs ===' && journalctl -u cryptomaster.service -n 50 2>&1 | grep -E 'PAPER_BLOCKED|TIMEOUT_SCAN|EXEC' | tail -15\")",
       "Bash(journalctl -u cryptomaster.service -n 100)",
       "Bash(systemctl restart *)",
-      "Bash(findstr /n \"\\\\\"PAPER_ENTRY\\\\\"\" src/services/trade_executor.py)"
+      "Bash(findstr /n \"\\\\\"PAPER_ENTRY\\\\\"\" src/services/trade_executor.py)",
+      "Bash(tee /tmp/p0_4_deploy_logs.txt)"
     ]
   }
 }

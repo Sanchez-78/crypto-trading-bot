@@ -375,12 +375,12 @@ def _get_scored_edge(hist, e50, e200, breakout_up, breakout_down, mom5, reg, reg
     elif sell_sc > buy_sc and sell_sc >= SCORE_MIN:
         action, base_score, features = "BUY", sell_sc, sell_f   # was SELL, now BUY
     else:
-        # P0.5B: Log failed SCORE_MIN gate
-        if symbol and reg == "BULL_TREND":
+        # P0.5C: Log failed SCORE_MIN gate (Gate 2)
+        if symbol:
             try:
                 logging.warning(
-                    f"[BULL_EDGE_DECISION_TRACE] symbol={symbol} regime={reg} "
-                    f"candidate_type=failed failed_gate=SCORE_MIN "
+                    f"[BULL_EDGE_GATE_2] symbol={symbol} regime={reg} "
+                    f"gate=SCORE_MIN failed "
                     f"buy_sc={buy_sc:.2f} sell_sc={sell_sc:.2f} "
                     f"threshold={SCORE_MIN:.2f} "
                     f"max_score={max(buy_sc, sell_sc):.2f}"
