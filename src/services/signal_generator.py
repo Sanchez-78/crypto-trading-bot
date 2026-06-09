@@ -717,7 +717,7 @@ def on_price(data):
             pass
 
     base_sc, w_sc, action, edge, edge_features, explore = _get_scored_edge(
-        hist, e50, e200, breakout_up, breakout_down, mom5, reg, regime_conf)
+        hist, e50, e200, breakout_up, breakout_down, mom5, reg, regime_conf, symbol=s)
 
     # P0.5D: Log AFTER _get_scored_edge — what did it return?
     call_ts = time.time()
