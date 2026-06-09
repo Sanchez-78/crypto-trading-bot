@@ -223,6 +223,30 @@ def _calculate_dynamic_position_size(signal: dict) -> float:
         return _POSITION_SIZE_BASE * 0.3  # Very low: 0.3x
 
 
+def _can_admit_paper_evidence_collection(symbol: str, regime: str) -> tuple[bool, str]:
+    """P0.3C: Check if signal is allowed in evidence collection scope.
+
+    Evidence collection scope (first restart):
+    - ETHUSDT only
+    - BULL_TREND only (optionally BEAR_TREND if safe)
+    - Controlled caps
+
+    Returns: (is_allowed, reason)
+    """
+    # Allowed symbols for evidence collection
+    EVIDENCE_SYMBOLS = {"ETHUSDT"}
+    # Allowed regimes for evidence collection
+    EVIDENCE_REGIMES = {"BULL_TREND"}  # Conservative: BULL_TREND only for first restart
+
+    if symbol not in EVIDENCE_SYMBOLS:
+        return False, f"symbol_not_in_evidence_scope:{symbol}"
+
+    if regime not in EVIDENCE_REGIMES:
+        return False, f"regime_not_in_evidence_scope:{regime}"
+
+    return True, "allowed_for_evidence_collection"
+
+
 def _should_skip_segment_p0_strict_ev(
     symbol: str, side: str, regime: str, source: str, tp_sl_profile: str,
     closed_trades: Optional[list] = None
@@ -1198,26 +1222,60 @@ def open_paper_position(
     )
 
     if reject_p0:
-        # P0 gate blocked this signal
-        throttle_key = (symbol, "p0_strict_ev_gate", p0_decision.get("reason", "unknown"))
-        now_ts = time.time()
-        last_log = _PAPER_ENTRY_BLOCKED_THROTTLE.get(throttle_key, 0.0)
-        if now_ts - last_log >= _PAPER_ENTRY_BLOCKED_TTL:
+        # P0.3C: Strict EV blocked → Route to evidence collection if allowed
+        can_admit_evidence, evidence_reason = _can_admit_paper_evidence_collection(symbol, regime)
+
+        if can_admit_evidence:
+            # P0.3C: Route to evidence collection with EXPLICIT metadata
             log.info(
-                "[PAPER_ENTRY_P0_BLOCKED] symbol=%s reason=%s strict_ev_allowed=%s readiness_eligible=%s",
-                symbol,
+                "[P0_EVIDENCE_COLLECTION_ADMIT] symbol=%s regime=%s "
+                "strict_ev_allowed=false reason=%s evidence_reason=%s",
+                symbol, regime,
                 p0_decision.get("reason", "unknown"),
-                p0_decision.get("strict_ev_allowed", False),
-                p0_decision.get("readiness_eligible", False),
+                evidence_reason,
             )
-            _PAPER_ENTRY_BLOCKED_THROTTLE[throttle_key] = now_ts
 
-        # Mark signal metadata for logging
-        signal["strict_ev"] = False
-        signal["readiness_eligible"] = False
-        signal["strict_ev_block_reason"] = p0_decision.get("reason", "p0_gate_rejected")
+            # Set metadata BEFORE opening position
+            signal["strict_ev"] = False
+            signal["readiness_eligible"] = False
+            signal["learning_source"] = "paper_evidence_collection"
+            signal["p0_gate_reason"] = p0_decision.get("reason", "p0_rejected")
+            signal["segment_key"] = f"{symbol}_{side_normalized}_{regime}_{source}_{tp_sl_profile}"
 
-        return {"status": "blocked", "reason": f"p0_strict_ev_gate:{p0_decision.get('reason', 'rejected')}"}
+            # Update paper_source for tracking
+            if extra is None:
+                signal["extra"] = {}
+            else:
+                signal["extra"] = extra
+
+            signal["extra"]["paper_source"] = "paper_evidence_collection"
+            signal["extra"]["p0_gate_reason"] = p0_decision.get("reason", "unknown")
+            signal["extra"]["segment_key"] = signal["segment_key"]
+
+            # Continue to position opening with evidence metadata set
+            log.debug(
+                "[P0_EVIDENCE_COLLECTION_METADATA] signal_id=%s source=paper_evidence_collection "
+                "strict_ev=false readiness_eligible=false segment_key=%s",
+                signal.get("trade_id", "unknown"),
+                signal["segment_key"],
+            )
+
+        else:
+            # Not allowed in evidence collection scope → Block
+            throttle_key = (symbol, "p0_gate", evidence_reason)
+            now_ts = time.time()
+            last_log = _PAPER_ENTRY_BLOCKED_THROTTLE.get(throttle_key, 0.0)
+            if now_ts - last_log >= _PAPER_ENTRY_BLOCKED_TTL:
+                log.info(
+                    "[PAPER_ENTRY_P0_REJECTED] symbol=%s regime=%s "
+                    "strict_ev_reason=%s evidence_reason=%s",
+                    symbol, regime,
+                    p0_decision.get("reason", "unknown"),
+                    evidence_reason,
+                )
+                _PAPER_ENTRY_BLOCKED_THROTTLE[throttle_key] = now_ts
+
+            return {"status": "blocked", "reason": f"p0_gate:{evidence_reason}"}
 
     # Optional: Old segment profitability gate (for backwards compatibility if needed)
     skip_segment, skip_reason = _should_skip_segment_by_profitability(symbol, regime, side_normalized)
@@ -1388,6 +1446,12 @@ def open_paper_position(
         "tp_pct_at_entry": tp_sl["tp_pct"],  # Store for diagnostics
         "sl_pct_at_entry": tp_sl["sl_pct"],
         "rr_at_entry": tp_sl["rr"],
+        # P0.3D: Metadata for audit trail
+        "strict_ev": signal.get("strict_ev", True),  # P0 gate decision
+        "readiness_eligible": signal.get("readiness_eligible", True),  # Readiness claim eligibility
+        "learning_source": signal.get("learning_source", "strict_ev"),  # paper_evidence_collection or strict_ev
+        "segment_key": signal.get("segment_key", f"{symbol}_unknown"),  # For segment analytics
+        "p0_gate_reason": signal.get("p0_gate_reason", None),  # Why P0 gate decided
         # P1.1AN: Calibration metadata
         "geometry_calibrated": tp_sl.get("calibrated", False),
         "tp_pct_before_calibration": tp_sl.get("tp_pct_before", tp_sl.get("tp_pct", 0.0)),
