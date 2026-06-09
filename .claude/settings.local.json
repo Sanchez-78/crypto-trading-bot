@@ -319,7 +319,8 @@
       "Bash(journalctl -u cryptomaster.service -n 100)",
       "Bash(systemctl restart *)",
       "Bash(findstr /n \"\\\\\"PAPER_ENTRY\\\\\"\" src/services/trade_executor.py)",
-      "Bash(tee /tmp/p0_4_deploy_logs.txt)"
+      "Bash(tee /tmp/p0_4_deploy_logs.txt)",
+      "Bash(wait)"
     ]
   }
 }

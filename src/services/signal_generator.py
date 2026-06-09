@@ -680,7 +680,17 @@ def on_price(data):
         regime_conf = 0.6  # HIGH_VOL: borderline confidence
 
     base_sc, w_sc, action, edge, edge_features, explore = _get_scored_edge(
-        hist, e50, e200, breakout_up, breakout_down, mom5, reg, regime_conf, symbol=s)
+        hist, e50, e200, breakout_up, breakout_down, mom5, reg, regime_conf)
+
+    # P0.5C: Log edge decision outcome for BULL_TREND
+    if reg == "BULL_TREND" and action is None:
+        try:
+            logging.warning(
+                f"[BULL_EDGE_FAILED] symbol={s} regime={reg} "
+                f"action=None base_sc={base_sc:.2f} w_sc={w_sc:.2f}"
+            )
+        except Exception:
+            pass
 
     # ────────────────────────────────────────────────────────────────────────
     # PATCH 3: Force Signal Generation — Fallback when no signal detected
