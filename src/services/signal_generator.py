@@ -424,20 +424,31 @@ def _get_scored_edge(hist, e50, e200, breakout_up, breakout_down, mom5, reg, reg
     thr     = _thr()
     eps_val = _eps()
     explore = False
+
+    # P0.5E: Log for BULL_TREND regardless of outcome
+    if symbol and reg == "BULL_TREND":
+        try:
+            logging.warning(
+                f"[P0_5E_GATE_5_DECISION] symbol={symbol} "
+                f"w_score={w_score:.2f} threshold={thr:.2f} "
+                f"epsilon={eps_val:.4f}"
+            )
+        except Exception:
+            pass
+
     if w_score < thr:
         import random
         rand_val = random.random()
         if rand_val < eps_val:
             explore = True    # below threshold but exploring
         else:
-            # P0.5E: Log Gate 5 exact failure reason
+            # Below threshold and random failed
             if symbol and reg == "BULL_TREND":
                 try:
                     logging.warning(
-                        f"[P0_5E_GATE_5_THRESHOLD] symbol={symbol} "
-                        f"w_score={w_score:.2f} threshold={thr:.2f} "
-                        f"epsilon={eps_val:.4f} rand={rand_val:.4f} "
-                        f"failed_reason=below_threshold_and_no_explore"
+                        f"[P0_5E_GATE_5_FAILED] symbol={symbol} "
+                        f"reason=below_threshold_and_no_explore "
+                        f"rand={rand_val:.4f} eps={eps_val:.4f}"
                     )
                 except Exception:
                     pass
