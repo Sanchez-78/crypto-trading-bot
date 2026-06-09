@@ -333,7 +333,7 @@ def _score_direction(hist, e50, e200, breakout_up, breakout_down, mom5, action):
     return sum(1 for v in features.values() if v), features
 
 
-def _get_scored_edge(hist, e50, e200, breakout_up, breakout_down, mom5, reg, regime_conf=1.0):
+def _get_scored_edge(hist, e50, e200, breakout_up, breakout_down, mom5, reg, regime_conf=1.0, symbol=None):
     """
     Score BUY/SELL setups through sequential gates:
       regime_conf < 0.6 → skip ambiguous regimes
@@ -366,6 +366,18 @@ def _get_scored_edge(hist, e50, e200, breakout_up, breakout_down, mom5, reg, reg
     elif sell_sc > buy_sc and sell_sc >= SCORE_MIN:
         action, base_score, features = "BUY", sell_sc, sell_f   # was SELL, now BUY
     else:
+        # P0.5B: Log failed SCORE_MIN gate
+        if symbol and reg == "BULL_TREND":
+            try:
+                logging.warning(
+                    f"[BULL_EDGE_DECISION_TRACE] symbol={symbol} regime={reg} "
+                    f"candidate_type=failed failed_gate=SCORE_MIN "
+                    f"buy_sc={buy_sc:.2f} sell_sc={sell_sc:.2f} "
+                    f"threshold={SCORE_MIN:.2f} "
+                    f"max_score={max(buy_sc, sell_sc):.2f}"
+                )
+            except Exception:
+                pass
         return 0, 0.0, None, None, {}, False
 
     # Gate 3: combo diversity (max 3 uses per session)
@@ -640,7 +652,7 @@ def on_price(data):
         regime_conf = 0.6  # HIGH_VOL: borderline confidence
 
     base_sc, w_sc, action, edge, edge_features, explore = _get_scored_edge(
-        hist, e50, e200, breakout_up, breakout_down, mom5, reg, regime_conf)
+        hist, e50, e200, breakout_up, breakout_down, mom5, reg, regime_conf, symbol=s)
 
     # ────────────────────────────────────────────────────────────────────────
     # PATCH 3: Force Signal Generation — Fallback when no signal detected
