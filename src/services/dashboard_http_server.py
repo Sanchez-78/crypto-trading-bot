@@ -21,9 +21,28 @@ def write_exits_to_db(logs):
         import sqlite3
         import re
         import time
+        import os
+
+        # Ensure directory exists
+        os.makedirs("local_learning_storage", exist_ok=True)
 
         db = sqlite3.connect("local_learning_storage/learning_database.sqlite", timeout=2)
         cursor = db.cursor()
+
+        # Create table if missing
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS trades (
+                id INTEGER PRIMARY KEY,
+                trade_id TEXT UNIQUE,
+                symbol TEXT,
+                exit_reason TEXT,
+                pnl_pct REAL,
+                pnl_usd REAL,
+                entry_price REAL,
+                exit_price REAL,
+                exit_ts REAL
+            )
+        ''')
 
         # Parse exit logs: [PAPER_EXIT] trade_id=... symbol=... reason=... net_pnl_pct=... outcome=...
         for line in logs.split('\n'):

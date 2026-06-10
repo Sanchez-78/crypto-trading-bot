@@ -320,7 +320,9 @@
       "Bash(systemctl restart *)",
       "Bash(findstr /n \"\\\\\"PAPER_ENTRY\\\\\"\" src/services/trade_executor.py)",
       "Bash(tee /tmp/p0_4_deploy_logs.txt)",
-      "Bash(wait)"
+      "Bash(wait)",
+      "Bash(curl -s http://78.47.2.198:5000/api/dashboard/metrics)",
+      "Bash(rtk ping *)"
     ]
   }
 }
