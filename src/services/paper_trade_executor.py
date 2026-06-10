@@ -1627,7 +1627,17 @@ def check_and_close_timeout_positions(now: Optional[float] = None) -> List[dict]
     alive_count = 0
 
     with _POSITION_LOCK:
-        for trade_id, pos in list(_POSITIONS.items()):
+        # Load positions from both memory and file (multi-process support)
+        all_positions = dict(_POSITIONS)
+        try:
+            import json
+            with open(_STATE_FILE) as f:
+                file_positions = json.load(f)
+                all_positions.update(file_positions)  # Merge, memory takes precedence
+        except:
+            pass
+
+        for trade_id, pos in list(all_positions.items()):
             entry_ts = _safe_float(pos.get("entry_ts") or pos.get("created_at"), 0.0)
             if entry_ts <= 0:
                 continue
@@ -1643,7 +1653,7 @@ def check_and_close_timeout_positions(now: Optional[float] = None) -> List[dict]
     if now - _PAPER_TIMEOUT_SCAN_THROTTLE >= _PAPER_TIMEOUT_SCAN_TTL:
         next_expiry_s = None
         with _POSITION_LOCK:
-            for pos in _POSITIONS.values():
+            for pos in all_positions.values():
                 entry_ts = _safe_float(pos.get("entry_ts") or pos.get("created_at"), 0.0)
                 if entry_ts > 0:
                     remaining_s = max(0.0, _effective_paper_hold_s(pos) - (now - entry_ts))
@@ -1651,7 +1661,7 @@ def check_and_close_timeout_positions(now: Optional[float] = None) -> List[dict]
                         next_expiry_s = remaining_s
         log.info(
             "[PAPER_TIMEOUT_SCAN] open=%d expired=%d alive=%d next_expiry_s=%.1f",
-            len(_POSITIONS),
+            len(all_positions),
             expired_count,
             alive_count,
             next_expiry_s or 0.0,
