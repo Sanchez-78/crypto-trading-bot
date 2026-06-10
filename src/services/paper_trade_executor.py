@@ -3431,11 +3431,12 @@ def _on_signal_created(signal: dict) -> None:
     if not signal or signal.get("action") == "HOLD":
         return
 
+    symbol = signal.get("symbol", "")
+    action = signal.get("action", "HOLD")
+
     try:
         from src.services.p0_segment_ev_gate import P0SegmentEVGate
 
-        symbol = signal.get("symbol", "")
-        action = signal.get("action", "HOLD")
         regime = signal.get("regime", "RANGING")
         price = signal.get("price", 0)
         ts = signal.get("ts", time.time())
@@ -3449,7 +3450,10 @@ def _on_signal_created(signal: dict) -> None:
             closed_trades=[]
         )
 
+        log.info("[SIGNAL_ROUTED] %s %s %s: %s", symbol, action, regime, decision.reason)
+
         if decision.strict_ev_allowed or ("quarantined" not in decision.reason.lower() and "blocked" not in decision.reason.lower()):
+            log.info("[SIGNAL_OPENING] %s %s price=%s ts=%s", symbol, action, price, ts)
             open_paper_position(
                 signal=signal,
                 price=price,
@@ -3457,8 +3461,9 @@ def _on_signal_created(signal: dict) -> None:
                 reason="P0_GATE",
                 extra={"p0_decision": decision.reason}
             )
+            log.info("[SIGNAL_OPENED] %s %s SUCCESS", symbol, action)
     except Exception as e:
-        log.exception("[P0_GATE_ERROR] %s/%s: %s", signal.get("symbol"), signal.get("action"), e)
+        log.exception("[SIGNAL_HANDLER_ERROR] %s %s: %s", symbol, action, e)
 
 
 # Subscribe to signal_created events
