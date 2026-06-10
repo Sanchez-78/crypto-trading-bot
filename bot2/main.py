@@ -87,7 +87,6 @@ from src.services.learning_event import get_metrics, bootstrap_from_history
 from src.services.trade_executor import get_open_positions
 from src.services.signal_generator import warmup
 from src.services.dashboard_live import dashboard_loop
-from src.services.dashboard_http import start_dashboard_server
 from src.services.metrics_engine import MetricsEngine
 from src.services.canonical_state import initialize_canonical_state, print_canonical_state
 from src.services.paper_learning_logger_simple import log_simple_paper_learning_status
@@ -1662,7 +1661,10 @@ def main():
 
     print("  [8.5/8] Starting dashboard HTTP server...", file=sys.stderr, flush=True)
     try:
-        start_dashboard_server(port=5000)
+        import threading
+        from simple_dashboard import run_server as run_dashboard
+        dashboard_thread = threading.Thread(target=lambda: run_dashboard(port=5000), daemon=True)
+        dashboard_thread.start()
         print("  [8.5/8] Dashboard HTTP server started ✓", file=sys.stderr, flush=True)
     except Exception as e:
         print(f"  [WARNING] Dashboard HTTP server failed: {e}", file=sys.stderr, flush=True)

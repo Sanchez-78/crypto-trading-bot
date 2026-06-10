@@ -1488,10 +1488,10 @@ def get_pnl_trend():
     return trend
 
 
-def run_server():
-    """Run HTTP server on port 8080"""
-    server = HTTPServer(('0.0.0.0', 8080), DashboardHandler)
-    print(f"[DASHBOARD] HTTP Server started on http://0.0.0.0:8080")
+def run_server(port: int = 5000):
+    """Run HTTP server on specified port (default 5000)"""
+    server = HTTPServer(('0.0.0.0', port), DashboardHandler)
+    print(f"[DASHBOARD] HTTP Server started on http://0.0.0.0:{port}")
     server.serve_forever()
 
 if __name__ == '__main__':
