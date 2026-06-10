@@ -14,12 +14,15 @@ import re
 def populate_trades_from_logs():
     """Parse [PAPER_EXIT] logs and save trades to database"""
     try:
-        # Get recent logs
-        result = subprocess.run(
-            "journalctl -u cryptomaster.service --since '1 hour ago' --no-pager -q 2>/dev/null || echo ''",
-            shell=True, capture_output=True, text=True, timeout=10
-        )
-        logs = result.stdout
+        # Get recent logs via os.system to file
+        import os
+        os.system("journalctl -u cryptomaster.service --since '2 hours ago' --no-pager -q > /tmp/trades_logs.txt 2>/dev/null")
+
+        try:
+            with open('/tmp/trades_logs.txt', 'r') as f:
+                logs = f.read()
+        except:
+            logs = ""
 
         conn = sqlite3.connect("local_learning_storage/learning_database.sqlite", timeout=2)
         cursor = conn.cursor()
