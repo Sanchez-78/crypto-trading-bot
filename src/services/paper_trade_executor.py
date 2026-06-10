@@ -1389,14 +1389,15 @@ def open_paper_position(
 
     # Fallback: compute locally with responsive percentages
     if not tp_sl:
-        # V10.24 PHASE 3: Further increase TP - market analysis shows 2% still gets timeout
-        # Evidence: Trades with 2% TP all timeout - market doesn't move enough in 600s
-        # New: TP=4%, SL=5% (RR=0.8:1) - realistic for current market regime
-        # Alternative: Reduce timeout from 600s → 300s to catch faster exits
-        # For now: Increase TP since market has room for moves in 10min windows
-        # Needs ~52% WR to overcome 0.3% round-trip fees (improved from 55%)
-        tp_pct = 1.04 if side == "BUY" else 0.96  # 4% take-profit
-        sl_pct = 0.95 if side == "BUY" else 1.05  # 5% stop-loss
+        # V10.24 FINAL: Increase TP to 6% - monitoring showed 4% TP times out at 300s
+        # Evidence: 13 consecutive trades all TIMEOUT with 4% TP (zero TP hits)
+        # Root cause: Market doesn't move 4% in 300s window (default MAX_AGE_S)
+        # New: TP=6%, SL=7% (RR=0.86:1) - realistic for 5-min volatile moves
+        # Monitoring: All 13 trades closed (100% timeout) with 4% TP
+        # Next check: Monitor if 6% TP hits are achievable; if not, reduce MAX_AGE_S to 180s
+        # Needs ~50% WR to overcome 0.3% round-trip fees
+        tp_pct = 1.06 if side == "BUY" else 0.94  # 6% take-profit
+        sl_pct = 0.93 if side == "BUY" else 1.07  # 7% stop-loss
         tp_sl = normalize_paper_tp_sl(side, price, price * tp_pct, price * sl_pct)
     if tp_sl is None:
         log.error(
