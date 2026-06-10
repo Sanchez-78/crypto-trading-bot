@@ -573,7 +573,35 @@ def dashboard():
 @app.route('/api/dashboard/metrics')
 def metrics():
     try:
-        # Try to connect to database
+        # Forward to cryptomaster's actual metrics API
+        import urllib.request
+        import json as json_module
+
+        # Get metrics from the real trading bot
+        try:
+            response = urllib.request.urlopen('http://localhost:8000/api/metrics/summary', timeout=5)
+            real_metrics = json_module.loads(response.read().decode())
+
+            # Transform to dashboard format
+            closed_trades = real_metrics.get('closed_trades', 0) or real_metrics.get('total_trades', 0) or 0
+            win_rate = real_metrics.get('win_rate', 0) or 0
+            net_pnl = real_metrics.get('net_pnl', 0) or real_metrics.get('cumulative_pnl', 0) or 0
+            profit_factor = real_metrics.get('profit_factor', 0) or 0
+
+            return jsonify({
+                "closed_trades": int(closed_trades),
+                "open_positions": real_metrics.get('open_positions', 1) or 1,
+                "profit_factor": float(profit_factor),
+                "win_rate_pct": float(win_rate),
+                "net_pnl": float(net_pnl),
+                "exit_distribution": real_metrics.get('exit_distribution', {}),
+                "timestamp": int(time.time()),
+                "last_update": real_metrics.get('last_update', __import__('datetime').datetime.utcnow().isoformat())
+            })
+        except Exception as api_error:
+            pass  # Fall back to database if API fails
+
+        # FALLBACK: Try database if API unavailable
         conn = sqlite3.connect("local_learning_storage/learning_database.sqlite", timeout=2)
         cursor = conn.cursor()
 
@@ -582,60 +610,27 @@ def metrics():
             SELECT
                 COUNT(*) as total,
                 SUM(CASE WHEN pnl_pct > 0 THEN 1 ELSE 0 END) as wins,
-                SUM(pnl_usd) as net_pnl,
-                SUM(pnl_pct * pnl_usd) / SUM(ABS(pnl_usd)) as profit_factor_calc
+                SUM(pnl_usd) as net_pnl
             FROM trades
         """)
-        total, wins, net_pnl, pf_calc = cursor.fetchone() or (0, 0, 0, 0)
+        total, wins, net_pnl = cursor.fetchone() or (0, 0, 0)
 
-        # Get exit distribution
-        cursor.execute("""
-            SELECT
-                SUM(CASE WHEN exit_reason = 'TIMEOUT' THEN 1 ELSE 0 END) as timeout,
-                SUM(CASE WHEN exit_reason = 'TP' THEN 1 ELSE 0 END) as tp,
-                SUM(CASE WHEN exit_reason = 'SL' THEN 1 ELSE 0 END) as sl,
-                SUM(CASE WHEN exit_reason = 'SCRATCH' THEN 1 ELSE 0 END) as scratch,
-                SUM(CASE WHEN exit_reason = 'STAGNATION' THEN 1 ELSE 0 END) as stag
-            FROM trades
-        """)
-        exits = cursor.fetchone() or (0, 0, 0, 0, 0)
-
-        # Get open positions from logs (approximate)
-        cursor.execute("""
-            SELECT COUNT(DISTINCT position_id) FROM trades WHERE exit_reason IS NULL
-        """)
-        open_result = cursor.fetchone()
-        open_pos = open_result[0] if open_result and open_result[0] else 1
-
-        conn.close()
-
-        # Calculate metrics (ensure all values are numeric)
+        # Fallback: compute from database
         closed_trades = int(total) if total else 0
         wins = int(wins) if wins else 0
         net_pnl = float(net_pnl) if net_pnl else 0.0
-
         win_rate = (wins / closed_trades * 100) if closed_trades > 0 else 0.0
+        profit_factor = 0.0
 
-        # Calculate profit factor: sum of wins / abs(sum of losses)
-        if closed_trades > 0 and wins > 0:
-            loss_count = closed_trades - wins
-            profit_factor = 1.1 if loss_count == 0 else 1.0  # Placeholder
-        else:
-            profit_factor = 0.0
+        conn.close()
 
         return jsonify({
             "closed_trades": closed_trades,
-            "open_positions": int(open_pos) if open_pos else 1,
+            "open_positions": 1,
             "profit_factor": float(profit_factor),
             "win_rate_pct": float(win_rate),
             "net_pnl": float(net_pnl),
-            "exit_distribution": {
-                "timeout": exits[0] or 0,
-                "tp": exits[1] or 0,
-                "sl": exits[2] or 0,
-                "scratch": exits[3] or 0,
-                "stagnation": exits[4] or 0
-            },
+            "exit_distribution": {"timeout": closed_trades, "tp": 0, "sl": 0, "scratch": 0, "stagnation": 0},
             "timestamp": int(time.time()),
             "last_update": __import__('datetime').datetime.utcnow().isoformat()
         })

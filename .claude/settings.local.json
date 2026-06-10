@@ -326,7 +326,8 @@
       "Bash(curl -s -o /dev/null -w \"HTTP Status: %{http_code}\\\\n\" http://78.47.2.198:5000/)",
       "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" http://78.47.2.198:5000/)",
       "Bash(curl -s http://78.47.2.198:5000/)",
-      "Bash(curl -s http://78.47.2.198:5000/api/trades/recent)"
+      "Bash(curl -s http://78.47.2.198:5000/api/trades/recent)",
+      "Bash(grep -E \"\\\\.\\(py|sql\\)$\")"
     ]
   }
 }
