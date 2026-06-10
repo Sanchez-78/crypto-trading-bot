@@ -47,8 +47,8 @@ def write_exits_to_db(logs):
 
                         cursor.execute('''
                             INSERT OR IGNORE INTO trades
-                            (trade_id, symbol, exit_reason, pnl_pct, pnl_usd, entry_price, exit_price, exit_ts, hold_s)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            (trade_id, symbol, exit_reason, pnl_pct, pnl_usd, entry_price, exit_price, exit_ts)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                         ''', (
                             trade_id.group(1),
                             symbol.group(1),
@@ -57,8 +57,7 @@ def write_exits_to_db(logs):
                             pnl_usd,
                             entry_val,
                             float(exit_p.group(1)),
-                            int(time.time()),
-                            float(hold_s.group(1)) if hold_s else 0
+                            int(time.time())
                         ))
                 except Exception as e:
                     pass  # Skip malformed lines
