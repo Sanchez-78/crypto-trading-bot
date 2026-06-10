@@ -3455,11 +3455,11 @@ def _on_signal_created(signal: dict) -> None:
         if decision.strict_ev_allowed:
             # Open position for strict EV
             open_paper_position(signal=signal, use_strict_ev=True)
-        elif decision.is_evidence_collection:
-            # Open position for evidence collection
+        elif "quarantined" not in decision.reason.lower() and "blocked" not in decision.reason.lower():
+            # Open position for evidence collection (approved symbol/regime, insufficient history)
             open_paper_position(signal=signal, use_strict_ev=False)
         else:
-            # Blocked by P0 gate
+            # Blocked by P0 gate (quarantined symbol, forbidden regime, etc)
             log.debug(
                 "[P0_GATE_BLOCK] symbol=%s regime=%s reason=%s",
                 symbol, regime, decision.reason
