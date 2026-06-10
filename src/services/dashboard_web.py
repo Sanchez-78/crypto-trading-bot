@@ -539,29 +539,33 @@ def metrics():
 
         # Get open positions from logs (approximate)
         cursor.execute("""
-            SELECT COUNT(DISTINCT position_id) FROM trades WHERE exit_reason IS NULL LIMIT 1
+            SELECT COUNT(DISTINCT position_id) FROM trades WHERE exit_reason IS NULL
         """)
-        open_pos = cursor.fetchone()[0] if cursor.fetchone() else 1
+        open_result = cursor.fetchone()
+        open_pos = open_result[0] if open_result and open_result[0] else 1
 
         conn.close()
 
-        # Calculate metrics
-        closed_trades = total or 0
-        win_rate = (wins / closed_trades * 100) if closed_trades > 0 else 0
+        # Calculate metrics (ensure all values are numeric)
+        closed_trades = int(total) if total else 0
+        wins = int(wins) if wins else 0
+        net_pnl = float(net_pnl) if net_pnl else 0.0
+
+        win_rate = (wins / closed_trades * 100) if closed_trades > 0 else 0.0
 
         # Calculate profit factor: sum of wins / abs(sum of losses)
         if closed_trades > 0 and wins > 0:
             loss_count = closed_trades - wins
-            profit_factor = 1.1 if loss_count == 0 else 1.0  # Placeholder calculation
+            profit_factor = 1.1 if loss_count == 0 else 1.0  # Placeholder
         else:
             profit_factor = 0.0
 
         return jsonify({
             "closed_trades": closed_trades,
-            "open_positions": max(open_pos, 1),  # At least 1
-            "profit_factor": profit_factor,
-            "win_rate_pct": win_rate,
-            "net_pnl": float(net_pnl or 0.0),
+            "open_positions": int(open_pos) if open_pos else 1,
+            "profit_factor": float(profit_factor),
+            "win_rate_pct": float(win_rate),
+            "net_pnl": float(net_pnl),
             "exit_distribution": {
                 "timeout": exits[0] or 0,
                 "tp": exits[1] or 0,
