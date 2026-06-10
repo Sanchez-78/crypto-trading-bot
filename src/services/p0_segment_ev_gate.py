@@ -88,8 +88,10 @@ class P0SegmentEVGate:
     QUARANTINED_REGIMES = {"BEAR_TREND"}
 
     # Allowed evidence collection scope (expanded for live learning)
-    EVIDENCE_COLLECTION_SYMBOLS = {"ETHUSDT", "ADAUSDT", "XRPUSDT", "DOTUSDT"}
-    EVIDENCE_COLLECTION_REGIMES = {"BULL_TREND"}  # V10.24 REVISED: BULL_TREND only - BEAR_TREND causes losses with long-only strategy
+    # V10.25 FINAL: Include all major symbols for real trading
+    EVIDENCE_COLLECTION_SYMBOLS = {"ETHUSDT", "ADAUSDT", "XRPUSDT", "DOTUSDT", "BNBUSDT", "BTCUSDT", "SOLUSDT", "LTCUSDT", "LINKUSDT"}
+    # V10.25: Enable both BULL_TREND and BEAR_TREND - let learning determine what works
+    EVIDENCE_COLLECTION_REGIMES = {"BULL_TREND", "BEAR_TREND"}
 
     # Quarantine BEAR_TREND for paper trading until short logic implemented
     QUARANTINED_REGIMES = {"BEAR_TREND"}  # Paper trading is long-only; BEAR_TREND should be short not long
