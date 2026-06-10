@@ -39,7 +39,7 @@ _POSITION_SIZE_BASE = float(os.getenv("PAPER_POSITION_SIZE_USD", "25"))  # Base 
 _FEE_PCT = float(os.getenv("PAPER_FEE_PCT", "0.0015"))  # 0.15% round-trip
 _SLIPPAGE_PCT = float(os.getenv("PAPER_SLIPPAGE_PCT", "0.0003"))  # 0.03%
 _MAX_OPEN = int(os.getenv("PAPER_MAX_OPEN_POSITIONS", "5"))  # Increased to allow more diversification
-_MAX_AGE_S = float(os.getenv("PAPER_MAX_POSITION_AGE_S", "300"))  # V10.22: 5 min default (was 900, too long for timeout-heavy market)
+_MAX_AGE_S = float(os.getenv("PAPER_MAX_POSITION_AGE_S", "180"))  # V10.24: 3 min (was 300, but monitoring showed market only moves 0.04% in 5min; reduce to 3min window)
 _MIN_EV_THRESHOLD = float(os.getenv("PAPER_MIN_EV_THRESHOLD", "0.0"))  # AGGRESSIVE: No EV blocking
 _MIN_SEGMENT_PF = float(os.getenv("PAPER_MIN_SEGMENT_PF", "0.0"))  # AGGRESSIVE: No segment PF gating
 _TIME_BASED_FILTERING = os.getenv("PAPER_TIME_BASED_FILTERING", "false").lower() == "true"  # AGGRESSIVE: No time gating
