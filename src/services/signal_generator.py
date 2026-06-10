@@ -954,16 +954,15 @@ def on_price(data):
     from src.services.realtime_decision_engine import evaluate_signal
     result = evaluate_signal(signal)
 
-    if result:
-        publish("signal_created", result)
-    else:
-        # V10.13a: Track RDE rejection for per-symbol block reason reporting
+    # Always publish signal for subscriber routing (P0 gate handler)
+    publish("signal_created", signal)
+
+    if not result:
         try:
             from bot2.main import track_symbol_block_reason
             track_symbol_block_reason(s, "RDE_REJECTED", "Rejected by realtime_decision_engine")
         except (ImportError, Exception):
-            pass  # Fail silently if main not yet loaded or circular import issue
-    # EV-rejected: track_blocked() already called inside evaluate_signal()
+            pass
 
 
 def warmup(symbols=None, candles=120):
