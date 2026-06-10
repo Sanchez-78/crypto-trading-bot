@@ -577,16 +577,16 @@ def metrics():
         import urllib.request
         import json as json_module
 
-        # Get metrics from the real trading bot
+        # Get metrics from cryptomaster's actual dashboard API on port 5000
         try:
-            response = urllib.request.urlopen('http://localhost:8000/api/metrics/summary', timeout=5)
+            response = urllib.request.urlopen('http://localhost:5000/api/dashboard/metrics', timeout=5)
             real_metrics = json_module.loads(response.read().decode())
 
-            # Transform to dashboard format
-            closed_trades = real_metrics.get('closed_trades', 0) or real_metrics.get('total_trades', 0) or 0
-            win_rate = real_metrics.get('win_rate', 0) or 0
-            net_pnl = real_metrics.get('net_pnl', 0) or real_metrics.get('cumulative_pnl', 0) or 0
-            profit_factor = real_metrics.get('profit_factor', 0) or 0
+            # Extract metrics (cryptomaster already returns correct format)
+            closed_trades = real_metrics.get('closed_trades', 0) or 0
+            win_rate = real_metrics.get('win_rate_pct', 0) or 0
+            net_pnl = real_metrics.get('net_pnl', 0) or 0.0
+            profit_factor = real_metrics.get('profit_factor', 0) or 0.0
 
             return jsonify({
                 "closed_trades": int(closed_trades),
