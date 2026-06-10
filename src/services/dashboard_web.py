@@ -572,10 +572,8 @@ def dashboard():
 
 @app.route('/api/dashboard/metrics')
 def metrics():
-    # Parse logs and populate DB first
-    populate_trades_from_logs()
-
     try:
+        # Try to connect to database
         conn = sqlite3.connect("local_learning_storage/learning_database.sqlite", timeout=2)
         cursor = conn.cursor()
 
