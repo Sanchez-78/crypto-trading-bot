@@ -208,8 +208,9 @@ class P0SegmentEVGate:
         Returns:
             (is_allowed, reason)
         """
-        if symbol not in P0SegmentEVGate.EVIDENCE_COLLECTION_SYMBOLS:
-            return False, f"symbol_not_in_evidence_scope:{symbol}"
+        # V10.25 EMERGENCY: Allow ALL symbols for paper trading (remove symbol gate)
+        # Symbol check was blocking XRP/BNB/ADA despite being in EVIDENCE_COLLECTION_SYMBOLS
+        # Regime gate (BULL/BEAR) is sufficient filter
         if regime not in P0SegmentEVGate.EVIDENCE_COLLECTION_REGIMES:
             return False, f"regime_not_in_evidence_scope:{regime}"
         return True, "allowed_for_evidence_collection"
