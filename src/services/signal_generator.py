@@ -911,6 +911,7 @@ def on_price(data):
         "symbol":     s,
         "action":     action,
         "price":      p,
+        "ts":         time.time(),  # Timestamp for position entry time
         "confidence": confidence,   # raw penalised conf; RDE calibrates to win_prob
         "atr":        atr_v,
         "regime":     reg,

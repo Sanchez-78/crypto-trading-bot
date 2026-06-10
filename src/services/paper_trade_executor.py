@@ -3441,6 +3441,8 @@ def _on_signal_created(signal: dict) -> None:
         symbol = signal.get("symbol", "")
         action = signal.get("action", "HOLD")
         regime = signal.get("regime", "RANGING")
+        price = signal.get("price", 0)
+        ts = signal.get("ts", time.time())
 
         # Get P0 decision
         decision = P0SegmentEVGate.decide_segment_gate(
@@ -3454,10 +3456,22 @@ def _on_signal_created(signal: dict) -> None:
 
         if decision.strict_ev_allowed:
             # Open position for strict EV
-            open_paper_position(signal=signal, use_strict_ev=True)
+            open_paper_position(
+                signal=signal,
+                price=price,
+                ts=ts,
+                reason="STRICT_EV_P0_GATE",
+                extra={"p0_gate_decision": "strict_ev_allowed"}
+            )
         elif "quarantined" not in decision.reason.lower() and "blocked" not in decision.reason.lower():
             # Open position for evidence collection (approved symbol/regime, insufficient history)
-            open_paper_position(signal=signal, use_strict_ev=False)
+            open_paper_position(
+                signal=signal,
+                price=price,
+                ts=ts,
+                reason="EVIDENCE_COLLECTION_P0_GATE",
+                extra={"p0_gate_decision": "evidence_collection"}
+            )
         else:
             # Blocked by P0 gate (quarantined symbol, forbidden regime, etc)
             log.debug(
