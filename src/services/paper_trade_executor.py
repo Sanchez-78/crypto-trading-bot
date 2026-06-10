@@ -3466,6 +3466,8 @@ def _on_signal_created(signal: dict) -> None:
                 reason="P0_GATE",
                 extra={"p0_decision": decision.reason}
             )
+            # Mark signal as handled by paper to prevent RDE double-processing
+            signal["__paper_handled"] = True
             log.info("[SIGNAL_OPENED] %s %s SUCCESS", symbol, action)
     except Exception as e:
         log.exception("[SIGNAL_HANDLER_ERROR] %s %s: %s", symbol, action, e)

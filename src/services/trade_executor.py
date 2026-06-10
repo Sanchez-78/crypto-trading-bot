@@ -1995,6 +1995,11 @@ def _pipeline_emit_summary() -> None:
 
 def handle_signal(signal):
     global _last_replace_ts   # V10.10: written directly in efficiency replacement path
+
+    # V10.24 FIX: Skip signals already handled by paper executor to prevent double-processing
+    if signal.get("__paper_handled"):
+        return  # Paper executor already processed this signal
+
     sym     = signal["symbol"]
     regime  = signal.get("regime", "RANGING")
 
