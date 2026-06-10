@@ -192,9 +192,38 @@ def count_by_symbol(logs):
 @app.route('/')
 def dashboard():
     """Render dashboard HTML"""
-    logs = get_logs(since_minutes=60)
-    metrics = extract_metrics(logs)
-    by_symbol = count_by_symbol(logs)
+    # V10.25: Read fresh metrics from database (not stale logs)
+    try:
+        import sqlite3
+        conn = sqlite3.connect("local_learning_storage/learning_database.sqlite", timeout=2)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT COUNT(*) as total,
+                   SUM(CASE WHEN pnl_pct > 0 THEN 1 ELSE 0 END) as wins,
+                   SUM(pnl_usd) as net_pnl
+            FROM trades
+        """)
+        row = cursor.fetchone()
+        total, wins, net_pnl = row if row else (0, 0, 0)
+
+        # Calculate metrics from database
+        metrics = {
+            'closed_trades': total or 0,
+            'open_positions': 1,  # Placeholder
+            'profit_factor': 0.0,  # Placeholder
+            'net_pnl': net_pnl or 0.0,
+            'win_rate': (wins / total * 100) if total > 0 else 0.0,
+            'health': 0.0,
+            'exits': {'tp': 0, 'sl': 0, 'scratch': 0, 'stagnation': 0}
+        }
+        conn.close()
+    except:
+        # Fallback if DB error
+        logs = get_logs(since_minutes=60)
+        metrics = extract_metrics(logs)
+
+    by_symbol = {}
 
     html_template = """<!DOCTYPE html>
 <html>
