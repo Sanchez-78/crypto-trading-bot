@@ -281,6 +281,29 @@ HTML_TEMPLATE = """
             </table>
         </div>
 
+        <!-- Recent Trades Table -->
+        <div class="stats-table">
+            <h3>📋 Last 30 Closed Trades</h3>
+            <table id="tradesTable">
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Symbol</th>
+                        <th>Side</th>
+                        <th>Entry Price</th>
+                        <th>Exit Price</th>
+                        <th>P&L %</th>
+                        <th>P&L $</th>
+                        <th>Exit Reason</th>
+                        <th>Hold Time</th>
+                    </tr>
+                </thead>
+                <tbody id="tradesBody">
+                    <tr><td colspan="9" style="text-align: center; color: #888;">Loading trades...</td></tr>
+                </tbody>
+            </table>
+        </div>
+
         <div class="footer">
             CryptoMaster V10.25 | Live Paper Trading Dashboard | Auto-refresh every 5 seconds
         </div>
@@ -300,6 +323,42 @@ HTML_TEMPLATE = """
                 console.error('Fetch error:', e);
                 return null;
             }
+        }
+
+        async function fetchTrades() {
+            try {
+                const response = await fetch('/api/trades/recent');
+                if (!response.ok) throw new Error('API error');
+                return await response.json();
+            } catch (e) {
+                console.error('Trades fetch error:', e);
+                return [];
+            }
+        }
+
+        function updateTradesTable(trades) {
+            const tbody = document.getElementById('tradesBody');
+            if (!trades || trades.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: #888;">No trades yet</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = trades.map(t => {
+                const pnlClass = t.pnl_pct >= 0 ? 'positive' : 'negative';
+                const pnlUsdClass = t.pnl_usd >= 0 ? 'positive' : 'negative';
+
+                return `<tr>
+                    <td>${new Date(t.exit_ts * 1000).toLocaleString()}</td>
+                    <td><strong>${t.symbol}</strong></td>
+                    <td>${t.side || '—'}</td>
+                    <td>$${parseFloat(t.entry_price).toFixed(4)}</td>
+                    <td>$${parseFloat(t.exit_price).toFixed(4)}</td>
+                    <td class="${pnlClass}">${(t.pnl_pct || 0).toFixed(4)}%</td>
+                    <td class="${pnlUsdClass}">${(t.pnl_usd >= 0 ? '+' : '')}\$${(t.pnl_usd || 0).toFixed(8)}</td>
+                    <td>${t.exit_reason || '—'}</td>
+                    <td>${t.hold_s ? Math.round(t.hold_s) + 's' : '—'}</td>
+                </tr>`;
+            }).join('');
         }
 
         function updateCharts(data) {
@@ -429,6 +488,10 @@ HTML_TEMPLATE = """
 
             // Update charts
             updateCharts(data);
+
+            // Update trades table
+            const trades = await fetchTrades();
+            updateTradesTable(trades);
         }
 
         // Initial load
@@ -511,6 +574,42 @@ def metrics():
         })
     except Exception as e:
         return jsonify({"error": str(e), "timestamp": int(time.time())}), 500
+
+@app.route('/api/trades/recent')
+def recent_trades():
+    """Return last 30 closed trades with details"""
+    try:
+        conn = sqlite3.connect("local_learning_storage/learning_database.sqlite", timeout=2)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT
+                trade_id,
+                symbol,
+                entry_price,
+                exit_price,
+                pnl_pct,
+                pnl_usd,
+                exit_reason,
+                exit_ts,
+                CAST((exit_ts - entry_ts) AS INTEGER) as hold_s
+            FROM trades
+            ORDER BY exit_ts DESC
+            LIMIT 30
+        """)
+
+        columns = ['trade_id', 'symbol', 'entry_price', 'exit_price', 'pnl_pct', 'pnl_usd', 'exit_reason', 'exit_ts', 'hold_s']
+        trades = []
+        for row in cursor.fetchall():
+            trade = dict(zip(columns, row))
+            trade['side'] = 'BUY' if trade.get('symbol') else 'SELL'  # Placeholder
+            trades.append(trade)
+
+        conn.close()
+
+        return jsonify(trades)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=False)
