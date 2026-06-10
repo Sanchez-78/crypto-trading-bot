@@ -4,7 +4,7 @@ CryptoMaster Modern Web Dashboard (V10.25)
 Complete responsive dashboard with live metrics and charts
 """
 
-from flask import Flask, render_string, jsonify
+from flask import Flask, render_template_string, jsonify
 import sqlite3
 import json
 import time
@@ -443,7 +443,7 @@ HTML_TEMPLATE = """
 
 @app.route('/')
 def dashboard():
-    return render_string(HTML_TEMPLATE)
+    return render_template_string(HTML_TEMPLATE)
 
 @app.route('/api/dashboard/metrics')
 def metrics():
