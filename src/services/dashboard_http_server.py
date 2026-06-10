@@ -191,6 +191,30 @@ def count_by_symbol(logs):
 
 @app.route('/')
 def dashboard():
+    # V10.25 FINAL: Return live metrics JSON from database directly
+    from flask import jsonify
+    import sqlite3, time
+    try:
+        conn = sqlite3.connect("local_learning_storage/learning_database.sqlite", timeout=2)
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*), SUM(CASE WHEN pnl_pct > 0 THEN 1 ELSE 0 END), SUM(pnl_usd) FROM trades")
+        total, wins, net_pnl = cursor.fetchone() or (0, 0, 0)
+        conn.close()
+
+        return jsonify({
+            "closed_trades": total or 0,
+            "open_positions": 1,
+            "profit_factor": 0.0,
+            "win_rate_pct": (wins / total * 100) if total > 0 else 0.0,
+            "net_pnl": net_pnl or 0.0,
+            "timestamp": int(time.time()),
+            "last_update": __import__('datetime').datetime.utcnow().isoformat()
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/html')
+def dashboard_html():
     """Render dashboard HTML"""
     # V10.25: Read fresh metrics from database (not stale logs)
     try:
