@@ -322,7 +322,8 @@
       "Bash(tee /tmp/p0_4_deploy_logs.txt)",
       "Bash(wait)",
       "Bash(curl -s http://78.47.2.198:5000/api/dashboard/metrics)",
-      "Bash(rtk ping *)"
+      "Bash(rtk ping *)",
+      "Bash(curl -s -o /dev/null -w \"HTTP Status: %{http_code}\\\\n\" http://78.47.2.198:5000/)"
     ]
   }
 }

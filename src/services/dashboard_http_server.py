@@ -395,6 +395,33 @@ def dashboard():
     <footer style="text-align: center; margin-top: 40px; color: #666; font-size: 12px;">
         <p>CryptoMaster Paper Trading Dashboard v4 | Live Metrics from systemd Logs</p>
     </footer>
+
+    <script>
+    // V10.25: Load live metrics from API and update HTML
+    function updateMetrics() {
+        fetch('/api/dashboard/metrics')
+            .then(r => r.json())
+            .then(data => {
+                // Update metric cards
+                const closedEl = document.querySelectorAll('.metric-value')[0];
+                if (closedEl) closedEl.textContent = data.closed_trades || 0;
+
+                const openEl = document.querySelectorAll('.metric-value')[1];
+                if (openEl) openEl.textContent = data.open_positions || 0;
+
+                const pfEl = document.querySelectorAll('.metric-value')[2];
+                if (pfEl) pfEl.textContent = ((data.profit_factor || 0).toFixed(2)) + 'x';
+
+                const pnlEl = document.querySelectorAll('.metric-value')[3];
+                if (pnlEl) pnlEl.textContent = '$' + (data.net_pnl || 0).toFixed(8);
+            })
+            .catch(e => console.log('API loading...'));
+    }
+
+    // Update on load and every 15 seconds
+    updateMetrics();
+    setInterval(updateMetrics, 15000);
+    </script>
 </body>
 </html>"""
 
