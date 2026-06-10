@@ -1374,6 +1374,7 @@ def open_paper_position(
     # Otherwise fall back to local computation with responsive percentages
     tp_price = None
     sl_price = None
+    tp_sl = None  # Initialize BEFORE conditional
 
     # Try to use pre-computed TP/SL from trade_executor
     if extra and "tp_from_executor" in extra and "sl_from_executor" in extra:
