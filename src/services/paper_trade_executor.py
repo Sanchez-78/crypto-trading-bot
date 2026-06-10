@@ -8,6 +8,8 @@ import sqlite3
 import json
 from typing import Optional, Dict, List
 
+from src.core.event_bus import subscribe_once
+
 log = logging.getLogger(__name__)
 
 # Phase 4C: Live PAPER metrics
@@ -3420,6 +3422,54 @@ def _init_paper_state_once() -> None:
     except Exception as e:
         log.exception("[PAPER_STATE_LOAD_ERROR] source=%s err=%s", _STATE_FILE, e)
 
+
+# P0.6 FIX: Wire signal_created event to P0 gate
+# Previously signals were published but no subscriber existed,
+# so P0 gate was NEVER invoked and trades never opened.
+def _on_signal_created(signal: dict) -> None:
+    """
+    Handle signal_created event from signal_generator.
+
+    Routes signal through P0 gate to decide: strict_ev, evidence_collection, or blocked.
+    """
+    if not signal:
+        return
+
+    try:
+        from src.services.p0_segment_ev_gate import P0SegmentEVGate
+
+        symbol = signal.get("symbol", "")
+        action = signal.get("action", "HOLD")
+        regime = signal.get("regime", "RANGING")
+
+        # Get P0 decision
+        decision = P0SegmentEVGate.decide_segment_gate(
+            symbol=symbol,
+            side=action,
+            regime=regime,
+            source=signal.get("learning_source", "signal_engine"),
+            tp_sl_profile=signal.get("edge", "unknown"),
+            closed_trades=[]
+        )
+
+        if decision.strict_ev_allowed:
+            # Open position for strict EV
+            open_paper_position(signal=signal, use_strict_ev=True)
+        elif decision.is_evidence_collection:
+            # Open position for evidence collection
+            open_paper_position(signal=signal, use_strict_ev=False)
+        else:
+            # Blocked by P0 gate
+            log.debug(
+                "[P0_GATE_BLOCK] symbol=%s regime=%s reason=%s",
+                symbol, regime, decision.reason
+            )
+    except Exception as e:
+        log.exception("[P0_GATE_ERROR] Failed to route signal through P0 gate: %s", e)
+
+
+# Subscribe to signal_created events
+subscribe_once("signal_created", _on_signal_created)
 
 # Call startup initializer after all functions are defined
 _init_paper_state_once()
