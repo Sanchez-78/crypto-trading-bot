@@ -3452,7 +3452,11 @@ def _on_signal_created(signal: dict) -> None:
 
         log.info("[SIGNAL_ROUTED] %s %s %s: %s", symbol, action, regime, decision.reason)
 
-        if decision.strict_ev_allowed or ("quarantined" not in decision.reason.lower() and "blocked" not in decision.reason.lower()):
+        # Open position if: strict_ev OR NOT blocked (insufficient history = evidence_collection)
+        # Blocked = quarantined, not_in_evidence_scope, or regime_quarantined
+        is_blocked = ("quarantined" in decision.reason.lower() or "not_in_evidence_scope" in decision.reason.lower())
+
+        if decision.strict_ev_allowed or not is_blocked:
             log.info("[SIGNAL_OPENING] %s %s price=%s ts=%s", symbol, action, price, ts)
             open_paper_position(
                 signal=signal,
