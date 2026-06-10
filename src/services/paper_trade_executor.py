@@ -3427,12 +3427,8 @@ def _init_paper_state_once() -> None:
 # Previously signals were published but no subscriber existed,
 # so P0 gate was NEVER invoked and trades never opened.
 def _on_signal_created(signal: dict) -> None:
-    """
-    Handle signal_created event from signal_generator.
-
-    Routes signal through P0 gate to decide: strict_ev, evidence_collection, or blocked.
-    """
-    if not signal:
+    """Handle signal_created event from signal_generator."""
+    if not signal or signal.get("action") == "HOLD":
         return
 
     try:
@@ -3444,7 +3440,6 @@ def _on_signal_created(signal: dict) -> None:
         price = signal.get("price", 0)
         ts = signal.get("ts", time.time())
 
-        # Get P0 decision
         decision = P0SegmentEVGate.decide_segment_gate(
             symbol=symbol,
             side=action,
@@ -3454,32 +3449,16 @@ def _on_signal_created(signal: dict) -> None:
             closed_trades=[]
         )
 
-        if decision.strict_ev_allowed:
-            # Open position for strict EV
+        if decision.strict_ev_allowed or ("quarantined" not in decision.reason.lower() and "blocked" not in decision.reason.lower()):
             open_paper_position(
                 signal=signal,
                 price=price,
                 ts=ts,
-                reason="STRICT_EV_P0_GATE",
-                extra={"p0_gate_decision": "strict_ev_allowed"}
-            )
-        elif "quarantined" not in decision.reason.lower() and "blocked" not in decision.reason.lower():
-            # Open position for evidence collection (approved symbol/regime, insufficient history)
-            open_paper_position(
-                signal=signal,
-                price=price,
-                ts=ts,
-                reason="EVIDENCE_COLLECTION_P0_GATE",
-                extra={"p0_gate_decision": "evidence_collection"}
-            )
-        else:
-            # Blocked by P0 gate (quarantined symbol, forbidden regime, etc)
-            log.debug(
-                "[P0_GATE_BLOCK] symbol=%s regime=%s reason=%s",
-                symbol, regime, decision.reason
+                reason="P0_GATE",
+                extra={"p0_decision": decision.reason}
             )
     except Exception as e:
-        log.exception("[P0_GATE_ERROR] Failed to route signal through P0 gate: %s", e)
+        log.exception("[P0_GATE_ERROR] %s/%s: %s", signal.get("symbol"), signal.get("action"), e)
 
 
 # Subscribe to signal_created events
