@@ -44,6 +44,18 @@ _MIN_EV_THRESHOLD = float(os.getenv("PAPER_MIN_EV_THRESHOLD", "0.0"))  # AGGRESS
 _MIN_SEGMENT_PF = float(os.getenv("PAPER_MIN_SEGMENT_PF", "0.0"))  # AGGRESSIVE: No segment PF gating
 _TIME_BASED_FILTERING = os.getenv("PAPER_TIME_BASED_FILTERING", "false").lower() == "true"  # AGGRESSIVE: No time gating
 
+# V10.25: Per-symbol position caps for diversity
+_SYMBOL_CAPS = {
+    "ETHUSDT": 1,      # Limit ETH to force diversity
+    "ADAUSDT": 5,      # Increase ADA
+    "XRPUSDT": 5,      # Increase XRP
+    "BTCUSDT": 4,      # Increase BTC
+    "BNBUSDT": 3,
+    "DOTUSDT": 3,
+    "LTCUSDT": 3,
+    "LINKUSDT": 3,
+}
+
 # State
 _POSITIONS = {}  # position_id -> position_dict
 _POSITION_LOCK = __import__("threading").RLock()
@@ -1346,7 +1358,7 @@ def open_paper_position(
         # Check per-symbol cap first (V10.25: enforce symbol diversity)
         now = time.time()
         alive_positions = [p for p in _POSITIONS.values() if not _is_position_stale(p, now)]
-        symbol_cap = int(os.getenv(f"PAPER_MAX_{symbol}_POSITIONS", "999"))
+        symbol_cap = _SYMBOL_CAPS.get(symbol, 999)  # Use hardcoded caps dict
         alive_for_symbol = [p for p in alive_positions if p.get("symbol") == symbol]
         if len(alive_for_symbol) >= symbol_cap:
             throttle_key = (symbol, "symbol_cap", "exceeded")
