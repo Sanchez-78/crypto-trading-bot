@@ -89,10 +89,10 @@ class P0SegmentEVGate:
 
     # Allowed evidence collection scope (expanded for live learning)
     EVIDENCE_COLLECTION_SYMBOLS = {"ETHUSDT", "ADAUSDT", "XRPUSDT", "DOTUSDT"}
-    EVIDENCE_COLLECTION_REGIMES = {"BULL_TREND", "BEAR_TREND"}  # V10.24: Both regimes now enabled for balanced trading
+    EVIDENCE_COLLECTION_REGIMES = {"BULL_TREND"}  # V10.24 REVISED: BULL_TREND only - BEAR_TREND causes losses with long-only strategy
 
-    # V10.24 FIX: Remove BEAR_TREND from quarantine to allow paper trading in down markets
-    QUARANTINED_REGIMES = {}  # Removed: {"BEAR_TREND"} - now allow both regimes
+    # Quarantine BEAR_TREND for paper trading until short logic implemented
+    QUARANTINED_REGIMES = {"BEAR_TREND"}  # Paper trading is long-only; BEAR_TREND should be short not long
 
     @staticmethod
     def build_segment_key(
