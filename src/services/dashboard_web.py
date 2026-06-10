@@ -8,6 +8,65 @@ from flask import Flask, render_template_string, jsonify
 import sqlite3
 import json
 import time
+import subprocess
+import re
+
+def populate_trades_from_logs():
+    """Parse [PAPER_EXIT] logs and save trades to database"""
+    try:
+        # Get recent logs
+        result = subprocess.run(
+            "journalctl -u cryptomaster.service --since '1 hour ago' --no-pager -q 2>/dev/null || echo ''",
+            shell=True, capture_output=True, text=True, timeout=10
+        )
+        logs = result.stdout
+
+        conn = sqlite3.connect("local_learning_storage/learning_database.sqlite", timeout=2)
+        cursor = conn.cursor()
+
+        # Parse [PAPER_EXIT] lines
+        for line in logs.split('\n'):
+            if '[PAPER_EXIT]' not in line:
+                continue
+
+            try:
+                trade_id = re.search(r'trade_id=(\S+)', line)
+                symbol = re.search(r'symbol=(\S+)', line)
+                entry = re.search(r'entry=([\d.]+)', line)
+                exit_p = re.search(r'exit=([\d.]+)', line)
+                pnl_pct = re.search(r'net_pnl_pct=([\d.\-eE+]+)', line)
+                reason = re.search(r'reason=(\S+)', line)
+                hold = re.search(r'hold_s=([\d.]+)', line)
+                outcome = re.search(r'outcome=(\S+)', line)
+
+                if all([trade_id, symbol, entry, exit_p, pnl_pct]):
+                    entry_val = float(entry.group(1))
+                    exit_val = float(exit_p.group(1))
+                    pnl_pct_val = float(pnl_pct.group(1))
+                    pnl_usd = entry_val * pnl_pct_val / 100.0
+
+                    cursor.execute("""
+                        INSERT OR IGNORE INTO trades
+                        (trade_id, symbol, entry_price, exit_price, pnl_pct, pnl_usd, exit_reason, entry_ts, exit_ts)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        trade_id.group(1),
+                        symbol.group(1),
+                        entry_val,
+                        exit_val,
+                        pnl_pct_val,
+                        pnl_usd,
+                        reason.group(1) if reason else 'UNKNOWN',
+                        int(time.time()) - 60,  # Approximate
+                        int(time.time())
+                    ))
+            except:
+                pass
+
+        conn.commit()
+        conn.close()
+    except:
+        pass
 
 app = Flask(__name__)
 
@@ -510,6 +569,9 @@ def dashboard():
 
 @app.route('/api/dashboard/metrics')
 def metrics():
+    # Parse logs and populate DB first
+    populate_trades_from_logs()
+
     try:
         conn = sqlite3.connect("local_learning_storage/learning_database.sqlite", timeout=2)
         cursor = conn.cursor()
