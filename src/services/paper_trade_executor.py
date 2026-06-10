@@ -1343,9 +1343,23 @@ def open_paper_position(
                     _PAPER_ENTRY_BLOCKED_THROTTLE[throttle_key] = now_ts
                 return training_cap_check
 
-        # Then check total paper position cap (P1.1Z: exclude stale positions)
+        # Check per-symbol cap first (V10.25: enforce symbol diversity)
         now = time.time()
         alive_positions = [p for p in _POSITIONS.values() if not _is_position_stale(p, now)]
+        symbol_cap = int(os.getenv(f"PAPER_MAX_{symbol}_POSITIONS", "999"))
+        alive_for_symbol = [p for p in alive_positions if p.get("symbol") == symbol]
+        if len(alive_for_symbol) >= symbol_cap:
+            throttle_key = (symbol, "symbol_cap", "exceeded")
+            last_log = _PAPER_ENTRY_BLOCKED_THROTTLE.get(throttle_key, 0.0)
+            if now - last_log >= _PAPER_ENTRY_BLOCKED_TTL:
+                log.info(
+                    "[PAPER_ENTRY_BLOCKED] symbol=%s reason=symbol_cap_exceeded cap=%d open=%d",
+                    symbol, symbol_cap, len(alive_for_symbol)
+                )
+                _PAPER_ENTRY_BLOCKED_THROTTLE[throttle_key] = now
+            return {"status": "blocked", "reason": f"symbol_cap_exceeded"}
+
+        # Then check total paper position cap (P1.1Z: exclude stale positions)
         if len(alive_positions) >= _MAX_OPEN:
             # P1.1Y: Throttle PAPER_ENTRY_BLOCKED spam (max once per symbol/bucket/reason per 60s)
             bucket_name = bucket or training_bucket or "N/A"
