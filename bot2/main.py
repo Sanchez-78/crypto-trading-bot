@@ -87,6 +87,7 @@ from src.services.learning_event import get_metrics, bootstrap_from_history
 from src.services.trade_executor import get_open_positions
 from src.services.signal_generator import warmup
 from src.services.dashboard_live import dashboard_loop
+from src.services.dashboard_http import start_dashboard_server
 from src.services.metrics_engine import MetricsEngine
 from src.services.canonical_state import initialize_canonical_state, print_canonical_state
 from src.services.paper_learning_logger_simple import log_simple_paper_learning_status
@@ -1658,6 +1659,13 @@ def main():
     print("  [8/8] Running warmup indicators...", file=sys.stderr, flush=True)
     warmup()
     print("  [8/8] Warmup complete ✓", file=sys.stderr, flush=True)
+
+    print("  [8.5/8] Starting dashboard HTTP server...", file=sys.stderr, flush=True)
+    try:
+        start_dashboard_server(port=5000)
+        print("  [8.5/8] Dashboard HTTP server started ✓", file=sys.stderr, flush=True)
+    except Exception as e:
+        print(f"  [WARNING] Dashboard HTTP server failed: {e}", file=sys.stderr, flush=True)
 
     # V10.13s: Detect and correct stale warm-start contamination after reset
     print("  [V10.13s] Validating runtime state consistency...", file=sys.stderr, flush=True)
