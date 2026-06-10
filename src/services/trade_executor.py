@@ -2374,7 +2374,9 @@ def handle_signal(signal):
     except Exception:
         pass
     from src.services.feature_weights import MIN_SCORE as _FW_MIN
-    if not bootstrap_open and _fw_score < _FW_MIN:
+    # V10.24 PAPER bypass: For paper trading, allow below fw_score to test more symbols
+    is_paper = signal.get("learning_source", "").startswith("paper_")
+    if not bootstrap_open and not is_paper and _fw_score < _FW_MIN:
         log.info(f"    portfolio gate: fw_score  sym={sym}  "
               f"score={_fw_score:.2f}<{_FW_MIN}  regime={reg}")
         _drop_and_route_to_training(signal, entry, "fw_score")
