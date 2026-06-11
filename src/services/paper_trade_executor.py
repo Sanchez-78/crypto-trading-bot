@@ -794,8 +794,8 @@ def _effective_paper_hold_s(pos: dict) -> float:
         )
         return float(max_hold)
 
-    # Non-exploration: use configured timeout or default
-    result = max(30.0, timeout or _MAX_AGE_S)
+    # Non-exploration: use configured timeout or default (V10.26 fix: was max(30.0,...) causing 30s closeout)
+    result = timeout or _MAX_AGE_S
     log.debug(
         f"[EFFECTIVE_HOLD_NONTRAIN] bucket={bucket} explore_bucket={explore_bucket} "
         f"timeout={timeout:.0f} _MAX_AGE_S={_MAX_AGE_S:.0f} result={result:.0f}"
