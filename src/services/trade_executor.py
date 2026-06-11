@@ -2743,6 +2743,24 @@ def handle_signal(signal):
     except Exception as _rb_exc:
         log.info(f"    risk_budget[v10.12b]: skipped ({_rb_exc})")
 
+    # V10.26 CONSOLIDATED VALIDATION: Peak price check BEFORE execution
+    # This is the ONLY place where all entry paths converge
+    # Validate BEFORE exec_order locks the price
+
+    # Check if entry price is at market peak (within 0.5% of recent high)
+    with _POSITION_LOCK:
+        symbol_positions = [p for p in _POSITIONS.values()
+                           if p.get("symbol") == sym and not _is_position_stale(p, time.time())]
+        if symbol_positions and signal.get("action") == "BUY":
+            recent_entries = [p.get("entry_price", 0) for p in symbol_positions[-3:]]
+            peak_entry = max(recent_entries) if recent_entries else entry
+            deviation_pct = abs(entry - peak_entry) / peak_entry * 100 if peak_entry > 0 else 0
+
+            if deviation_pct < 0.5:  # Within 0.5% of peak = at resistance
+                log.info(f"[CONSOLIDATED_VALIDATION] sym={sym} REJECTED: entry_at_peak "
+                        f"entry={entry:.2f} peak={peak_entry:.2f} deviation={deviation_pct:.2f}%")
+                return  # Block this trade
+
     # ── Execution ─────────────────────────────────────────────────────────────
     actual_entry, fill_slip, actual_fee_rt = exec_order(signal, size, ob, sym)
     actual_entry = actual_entry or entry
