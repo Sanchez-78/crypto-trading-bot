@@ -44,16 +44,16 @@ _MIN_EV_THRESHOLD = float(os.getenv("PAPER_MIN_EV_THRESHOLD", "0.0"))  # AGGRESS
 _MIN_SEGMENT_PF = float(os.getenv("PAPER_MIN_SEGMENT_PF", "0.0"))  # AGGRESSIVE: No segment PF gating
 _TIME_BASED_FILTERING = os.getenv("PAPER_TIME_BASED_FILTERING", "false").lower() == "true"  # AGGRESSIVE: No time gating
 
-# V10.25: Per-symbol position caps for diversity
+# V10.25: Per-symbol position caps for diversity (INCREASED for better portfolio)
 _SYMBOL_CAPS = {
-    "ETHUSDT": 1,      # Limit ETH to force diversity
-    "ADAUSDT": 5,      # Increase ADA
-    "XRPUSDT": 5,      # Increase XRP
-    "BTCUSDT": 4,      # Increase BTC
-    "BNBUSDT": 3,
-    "DOTUSDT": 3,
-    "LTCUSDT": 3,
-    "LINKUSDT": 3,
+    "ETHUSDT": 10,     # Increase ETH from 1 to 10 for better position accumulation
+    "ADAUSDT": 8,      # Increase ADA from 5 to 8
+    "XRPUSDT": 8,      # Increase XRP from 5 to 8
+    "BTCUSDT": 8,      # Increase BTC from 4 to 8
+    "BNBUSDT": 5,      # Increase BNB from 3 to 5
+    "DOTUSDT": 5,      # Increase DOT from 3 to 5
+    "LTCUSDT": 5,      # Increase LTC from 3 to 5
+    "LINKUSDT": 5,     # Increase LINK from 3 to 5
 }
 
 # State
