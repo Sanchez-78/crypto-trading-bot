@@ -56,6 +56,9 @@ _SYMBOL_CAPS = {
     "LINKUSDT": 5,     # Increase LINK from 3 to 5
 }
 
+# V10.26: Minimum confidence filter for entries (reject weak signals)
+_MIN_ENTRY_CONFIDENCE = float(os.getenv("PAPER_MIN_ENTRY_CONFIDENCE", "0.50"))  # Only open if w_sc >= 0.50
+
 # State
 _POSITIONS = {}  # position_id -> position_dict
 _POSITION_LOCK = __import__("threading").RLock()
