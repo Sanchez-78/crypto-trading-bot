@@ -175,7 +175,7 @@ def get_scratch_activation_age(
     elif "VOLATILE" in regime:
         base_age -= 20  # Shorter patience in volatile
 
-    return max(30, min(180, base_age))
+    return min(180, base_age)  # V10.26 fix: removed max(30,...) forcing minimum
 
 
 def get_scratch_max_pnl(regime: str = "RANGING") -> float:
