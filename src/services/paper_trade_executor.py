@@ -1441,11 +1441,11 @@ def open_paper_position(
         # Cycle 1 evidence: 6% TP all TIMEOUT at 180s; only 0.008-0.39% moves observed
         # Root cause: Market doesn't move 6% in 180s; positions reverse-to-loss
         # New strategy: Small TP + fast exits = catch the real moves before reversal
-        # TP=2.5%, SL=2% (RR=1.25:1) - Balanced targets for 3-min window (V10.26 fix: was 1% TP causing losses)
-        # Previous 1% TP was too tight (need 65% WR just to break even with fees)
-        # 2.5% TP with 2% SL needs ~45% WR for profitability (reasonable for trading strategy)
-        tp_pct = 1.025 if side == "BUY" else 0.975  # 2.5% take-profit (balanced)
-        sl_pct = 0.98 if side == "BUY" else 1.02  # 2% stop-loss
+        # V10.27: TP=0.4%, SL=0.3% — 2.5%/2% bands were unreachable in 180s (price
+        # moves only 0.00-0.12% in the window -> 100% TIMEOUT). 0.4% TP clears the
+        # ~0.15% round-trip cost; matches compute_tp_sl floors in trade_executor.
+        tp_pct = 1.004 if side == "BUY" else 0.996  # 0.4% take-profit
+        sl_pct = 0.997 if side == "BUY" else 1.003  # 0.3% stop-loss
         tp_sl = normalize_paper_tp_sl(side, price, price * tp_pct, price * sl_pct)
     if tp_sl is None:
         log.error(
