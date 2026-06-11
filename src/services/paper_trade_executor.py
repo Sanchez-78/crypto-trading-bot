@@ -40,7 +40,7 @@ _FEE_PCT = float(os.getenv("PAPER_FEE_PCT", "0.0015"))  # 0.15% round-trip
 _SLIPPAGE_PCT = float(os.getenv("PAPER_SLIPPAGE_PCT", "0.0003"))  # 0.03%
 _MAX_OPEN = int(os.getenv("PAPER_MAX_OPEN_POSITIONS", "5"))  # Increased to allow more diversification
 _MAX_AGE_S = float(os.getenv("PAPER_MAX_POSITION_AGE_S", "180"))  # V10.24: 3 min (was 300, but monitoring showed market only moves 0.04% in 5min; reduce to 3min window)
-_MIN_EV_THRESHOLD = float(os.getenv("PAPER_MIN_EV_THRESHOLD", "0.0"))  # AGGRESSIVE: No EV blocking
+_MIN_EV_THRESHOLD = float(os.getenv("PAPER_MIN_EV_THRESHOLD", "0.01"))  # V10.26 FIX: Block zero-EV trades (was 0.0, allowing random entries)
 _MIN_SEGMENT_PF = float(os.getenv("PAPER_MIN_SEGMENT_PF", "0.0"))  # AGGRESSIVE: No segment PF gating
 _TIME_BASED_FILTERING = os.getenv("PAPER_TIME_BASED_FILTERING", "false").lower() == "true"  # AGGRESSIVE: No time gating
 
@@ -1207,9 +1207,9 @@ def open_paper_position(
     bucket = training_bucket or explore_bucket  # Primary: training_bucket, fallback: explore_bucket
     paper_source = extra.get("paper_source") if extra else None
 
-    # PROFITABILITY FIX: Reject weak signals with low expected value
+    # PROFITABILITY FIX: Reject weak signals with low expected value (V10.26: apply to ALL entries)
     ev = float(signal.get("ev") or 0.0)
-    if ev < _MIN_EV_THRESHOLD and bucket == "C_WEAK_EV_TRAIN":
+    if ev < _MIN_EV_THRESHOLD:  # V10.26: Changed from "and bucket == C_WEAK_EV_TRAIN" to ALL trades
         throttle_key = (symbol, bucket, "weak_ev_rejected")
         now_ts = time.time()
         last_log = _PAPER_ENTRY_BLOCKED_THROTTLE.get(throttle_key, 0.0)
