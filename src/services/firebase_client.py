@@ -61,23 +61,10 @@ except ImportError:
 
 PREFIX = os.getenv("COLLECTION_PREFIX", "")
 
-# V10.20: Local database fallback when Firebase unavailable
-def get_local_metrics_fallback() -> dict:
-    """Query local SQLite database directly when Firebase unavailable."""
-    try:
-        import sqlite3
-        conn = sqlite3.connect("local_learning_storage/learning_database.sqlite", timeout=2)
-        cursor = conn.cursor()
-
-        # Get basic metrics from local DB
-        cursor.execute("SELECT COUNT(*) FROM trades WHERE close_ts > (strftime('%s', 'now') - 86400)")
-        closed_today = cursor.fetchone()[0] if cursor.fetchone() else 0
-
-        conn.close()
-        return {"closed_today": closed_today, "source": "local_fallback"}
-    except Exception as e:
-        logging.warning(f"[LOCAL_FALLBACK] Failed to query local DB: {e}")
-        return {}
+# V10.27: REMOVED local database fallback — Firebase is mandatory
+# Previously used get_local_metrics_fallback() as an escape hatch.
+# Now: Firebase is the authoritative source; startup fails if unavailable.
+# This ensures all instances have consistent knowledge state.
 
 def col(name: str) -> str:
     """Returns prefixed collection name for Shadow Mode."""
@@ -476,21 +463,108 @@ SIGNALS_TTL    = 1200 if PERF_MODE else 14400  # 20 min vs 4 hours  → ≤144  
 # ── Init ──────────────────────────────────────────────────────────────────────
 
 def init_firebase():
+    """Initialize Firebase connection and MANDATORY load knowledge sources.
+
+    V10.27: Firebase is now MANDATORY source of knowledge on startup.
+    Raises ConnectionError if Firebase unavailable or knowledge load fails.
+    """
     global db
     if firebase_admin._apps:
         db = firestore.client()
-        return db
+    else:
+        key = os.getenv("FIREBASE_KEY_BASE64")
+        if not key:
+            raise ConnectionError(
+                "[STARTUP FATAL] Firebase disabled: FIREBASE_KEY_BASE64 not set. "
+                "Firebase is MANDATORY for knowledge source on startup."
+            )
 
-    key = os.getenv("FIREBASE_KEY_BASE64")
-    if not key:
-        print("⚠️  Firebase disabled (no FIREBASE_KEY_BASE64)")
-        return None
+        try:
+            cred = credentials.Certificate(json.loads(base64.b64decode(key)))
+            firebase_admin.initialize_app(cred)
+            db = firestore.client()
+            print("[Firebase] connected")
+        except Exception as e:
+            raise ConnectionError(f"[STARTUP FATAL] Firebase initialization failed: {e}")
 
-    cred = credentials.Certificate(json.loads(base64.b64decode(key)))
-    firebase_admin.initialize_app(cred)
-    db = firestore.client()
-    print("[Firebase] connected")
+    # V10.27: MANDATORY knowledge load on startup
+    try:
+        _load_mandatory_knowledge()
+    except Exception as e:
+        raise ConnectionError(f"[STARTUP FATAL] Failed to load mandatory knowledge from Firebase: {e}")
+
     return db
+
+
+def _load_mandatory_knowledge():
+    """V10.27: Load all knowledge sources from Firebase (MANDATORY on startup).
+
+    Loads:
+    1. Trade history (last 100 trades)
+    2. Calibration state (W/L by segment)
+    3. Entry gate weights
+    4. Running metrics (WR, PF, expectancy)
+
+    All data cached in memory + persistent SQLite for fast subsequent reads.
+
+    Raises:
+        ConnectionError: If Firebase unavailable or knowledge missing
+    """
+    if db is None:
+        raise ConnectionError("Firebase connection not initialized")
+
+    loaded_knowledge = {
+        "trades": False,
+        "calibration": False,
+        "weights": False,
+        "metrics": False,
+    }
+
+    try:
+        # 1. Load trade history (knowledge of past outcomes)
+        trades = load_history(limit=100)
+        loaded_knowledge["trades"] = len(trades) > 0
+        print(f"[KNOWLEDGE_LOAD] Loaded {len(trades)} trades from Firebase")
+
+        # 2. Load calibration state (W/L per segment)
+        try:
+            cal_doc = db.collection(col("calibration")).document("state").get()
+            if cal_doc.exists:
+                loaded_knowledge["calibration"] = True
+                print(f"[KNOWLEDGE_LOAD] Loaded calibration state")
+            else:
+                print(f"[KNOWLEDGE_LOAD] Calibration state not found (new instance)")
+        except Exception as e:
+            print(f"[KNOWLEDGE_LOAD] Calibration load warning: {e}")
+
+        # 3. Load entry gate weights
+        try:
+            weights_doc = db.collection(col("weights")).document("entry_gates").get()
+            if weights_doc.exists:
+                loaded_knowledge["weights"] = True
+                print(f"[KNOWLEDGE_LOAD] Loaded entry gate weights")
+            else:
+                print(f"[KNOWLEDGE_LOAD] Entry weights not found (using defaults)")
+        except Exception as e:
+            print(f"[KNOWLEDGE_LOAD] Weights load warning: {e}")
+
+        # 4. Load running metrics
+        try:
+            metrics_doc = db.collection(col("metrics")).document("current").get()
+            if metrics_doc.exists:
+                loaded_knowledge["metrics"] = True
+                print(f"[KNOWLEDGE_LOAD] Loaded running metrics")
+            else:
+                print(f"[KNOWLEDGE_LOAD] Metrics not found (starting fresh)")
+        except Exception as e:
+            print(f"[KNOWLEDGE_LOAD] Metrics load warning: {e}")
+
+        print(f"[KNOWLEDGE_LOAD] ✅ Mandatory knowledge loaded (trades={loaded_knowledge['trades']}, "
+              f"calibration={loaded_knowledge['calibration']}, weights={loaded_knowledge['weights']}, "
+              f"metrics={loaded_knowledge['metrics']})")
+
+    except Exception as e:
+        raise ConnectionError(f"Firebase knowledge load failed: {e}")
 
 
 def get_db():

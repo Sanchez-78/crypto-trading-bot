@@ -4,7 +4,20 @@ import queue as _queue
 import logging as _logging
 from collections import deque as _deque
 
-# V10.15: LOCAL LEARNING STORAGE (Firebase-bypass)
+"""
+V10.27: Firebase-Mandatory Knowledge Architecture
+
+Learning metrics are sourced from Firebase on startup (mandatory).
+- Bootstrap calls firebase_client.init_firebase() which loads all knowledge
+- Fails hard if Firebase unavailable (ConnectionError → sys.exit(1))
+- Caches knowledge locally + Redis for fast subsequent reads
+- Learning updates (closed trades, metrics) continue to local SQLite (zero quota impact)
+- Optional 1x/hour batch sync to Firebase as backup
+
+This ensures all instances have the same authoritative knowledge source.
+"""
+
+# V10.15: LOCAL LEARNING STORAGE (Firebase-backup)
 try:
     from src.services.learning_storage_local import (
         save_metrics as _save_metrics_local,
@@ -14,7 +27,7 @@ try:
     _local_storage_available = True
 except ImportError:
     _local_storage_available = False
-    _logging.warning("[LEARNING_EVENT] Local storage unavailable, falling back to Firebase")
+    _logging.warning("[LEARNING_EVENT] Local storage unavailable, learning updates will not be persisted locally")
 
 _lock = _threading.Lock()
 

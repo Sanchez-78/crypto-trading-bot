@@ -1504,9 +1504,15 @@ def main():
         logging.warning(f"Learning flush worker init failed: {e}")
         print(f"  [3.5/7] Learning flush worker failed: {e}", file=sys.stderr, flush=True)
 
-    print("  [4/7] Initializing Firebase...", file=sys.stderr, flush=True)
-    init_firebase()
-    print("  [4/7] Firebase initialized ✓", file=sys.stderr, flush=True)
+    print("  [4/7] Initializing Firebase (MANDATORY)...", file=sys.stderr, flush=True)
+    try:
+        init_firebase()  # V10.27: Firebase is MANDATORY knowledge source
+        print("  [4/7] Firebase initialized ✓", file=sys.stderr, flush=True)
+    except ConnectionError as e:
+        print(f"\n✗ STARTUP FAILED: {e}", file=sys.stderr, flush=True)
+        print(f"\nFirebase is MANDATORY for knowledge source on startup.", file=sys.stderr, flush=True)
+        print(f"Check FIREBASE_KEY_BASE64 environment variable and Firebase connectivity.", file=sys.stderr, flush=True)
+        sys.exit(1)
 
     # HOTFIX (2026-04-25): Refresh quota window before first reads
     # Prevents stale quota counters from blocking hydration after reset
