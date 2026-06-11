@@ -3249,10 +3249,10 @@ def on_price(data):
             pass
 
     # V9 early exit: negative-EV pair that is losing → don't hold to full timeout.
-    # V11.0: switched from tick-count (pos["ticks"] >= 5) to time-based (>= 30s)
-    # to match V10.14 time-based timeout model. 30s ensures spread + fees are
-    # absorbed before early-exit fires — prevents noise exits in first seconds.
-    if reason is None and move < -0.002 and (time.time() - pos["open_ts"]) >= 30 \
+    # V11.0: switched from tick-count (pos["ticks"] >= 5) to time-based (>= 180s)
+    # V10.26 FIX: changed from 30s to 180s to allow smart exit logic time to work
+    # 30s was too aggressive, closing all losing trades before TP/SL could trigger
+    if reason is None and move < -0.002 and (time.time() - pos["open_ts"]) >= 180 \
             and not pos.get("partial_taken"):
         try:
             from src.services.execution import risk_ev as _rev
