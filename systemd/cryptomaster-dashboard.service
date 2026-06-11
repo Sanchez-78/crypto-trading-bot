@@ -1,0 +1,22 @@
+[Unit]
+Description=CryptoMaster Dashboard Web Server
+After=network-online.target cryptomaster.service
+Wants=network-online.target
+PartOf=cryptomaster.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/cryptomaster
+Environment="PYTHONUNBUFFERED=1"
+ExecStart=/opt/cryptomaster/venv/bin/python3 /opt/cryptomaster/src/services/dashboard_web.py
+Restart=always
+RestartSec=5
+StartLimitInterval=60
+StartLimitBurst=3
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=dashboard-web
+
+[Install]
+WantedBy=multi-user.target
