@@ -104,9 +104,18 @@ class LocalLearningStorage:
                     synced INTEGER DEFAULT 0,
                     created_at REAL,
                     mode TEXT DEFAULT 'PAPER',
-                    trade_environment TEXT DEFAULT 'paper_train'
+                    trade_environment TEXT DEFAULT 'paper_train',
+                    hold_s REAL
                 )
             ''')
+
+            # Idempotent migration: add hold_s to pre-existing tables.
+            # _log_trade_to_sqlite() INSERTs hold_s; older DBs created before this
+            # column existed fail every paper-trade close with
+            # "table trades has no column named hold_s".
+            existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(trades)")}
+            if "hold_s" not in existing_cols:
+                conn.execute("ALTER TABLE trades ADD COLUMN hold_s REAL")
 
             # Create indices for common queries
             conn.execute('CREATE INDEX IF NOT EXISTS idx_trades_symbol ON trades(symbol)')
