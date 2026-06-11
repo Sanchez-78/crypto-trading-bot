@@ -383,11 +383,15 @@ def _get_scored_edge(hist, e50, e200, breakout_up, breakout_down, mom5, reg, reg
         allow_combo, epsilon as _eps)
 
     # Gate 2: minimum base score
-    # V10.16 FIX: Signals were INVERTED - flip BUY↔SELL
+    # V10.27 FIX: Action follows the winning directional score. The prior
+    # "V10.16" blanket BUY<->SELL flip inverted correct signals, producing
+    # BUY in BEAR_TREND (TP above entry) and SELL in BULL_TREND -> 0% WR.
+    # _score_direction() already orients features per side, so the higher
+    # score is the correct action.
     if buy_sc >= sell_sc and buy_sc >= SCORE_MIN:
-        action, base_score, features = "SELL",  buy_sc,  buy_f  # was BUY, now SELL
+        action, base_score, features = "BUY",  buy_sc,  buy_f
     elif sell_sc > buy_sc and sell_sc >= SCORE_MIN:
-        action, base_score, features = "BUY", sell_sc, sell_f   # was SELL, now BUY
+        action, base_score, features = "SELL", sell_sc, sell_f
     else:
         # P0.5D: Log SCORE_MIN gate failure
         if symbol and reg == "BULL_TREND":
