@@ -783,11 +783,22 @@ def on_price(data):
                 log_suppressed_forced_explore,
             )
             if is_db_degraded_safe_mode():
-                log_suppressed_forced_explore()
-                if s not in _cycle_prefilter_drops:
-                    _cycle_prefilter_drops[s] = "FORCED_EXPLORE_SUPPRESSED_SAFE_MODE"
-                track_filtered()
-                return
+                # V10.22 FIX: Allow PAPER mode trading even if Firebase degraded
+                # Only suppress in LIVE_REAL mode to prevent accidental live execution
+                try:
+                    from src.core.runtime_mode import get_trading_mode, TradingMode
+                    mode = get_trading_mode()
+                    if mode == TradingMode.LIVE_REAL:
+                        # Only suppress in LIVE_REAL mode (safety first)
+                        log_suppressed_forced_explore()
+                        if s not in _cycle_prefilter_drops:
+                            _cycle_prefilter_drops[s] = "FORCED_EXPLORE_SUPPRESSED_SAFE_MODE_REAL_ONLY"
+                        track_filtered()
+                        return
+                    # PAPER modes continue (use local state instead of Firebase)
+                except Exception:
+                    # Graceful degrade: if mode check fails, allow trading to continue
+                    pass
         except Exception:
             pass  # Graceful degrade if flags unavailable
 
