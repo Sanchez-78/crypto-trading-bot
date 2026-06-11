@@ -22,6 +22,25 @@ For detailed context, logic, and architecture, refer to:
 - **Execution**: `trade_executor.py` (Position lifecycle) -> `risk_engine.py`.
 - **State**: Firestore (Trades/Metrics) + Redis (Hydration).
 
+## DASHBOARD PERMANENT FIX (2026-06-11)
+
+**Issue:** Dashboard Flask service kept crashing due to venv/import issues with Gunicorn wrapper.
+
+**Solution:** Run Flask app DIRECTLY via systemd (no Gunicorn wrapper).
+```ini
+ExecStart=/opt/cryptomaster/venv/bin/python3 -u src/services/dashboard_web.py
+Restart=always
+RestartSec=10
+StartLimitBurst=3
+```
+
+**NEVER CHANGE:** This solution works. Any change to add Gunicorn wrapper or complex WSGI setup will break it.
+- DO: Run Flask directly with `python3 -u src/services/dashboard_web.py`
+- DON'T: Add Gunicorn, supervisor, or complex wrappers
+- CHECK: `curl http://localhost:5001/api/dashboard/metrics` before deploying
+
+---
+
 ## HARNESS: Evidence-Based Development
 
 **Goal:** Prevent patch treadmill by enforcing evidence-first workflow + multi-agent safety gates.
