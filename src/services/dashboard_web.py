@@ -646,12 +646,13 @@ def recent_trades():
         import json as json_module
 
         try:
-            response = urllib.request.urlopen('http://localhost:8000/api/metrics/summary', timeout=5)
+            response = urllib.request.urlopen('http://localhost:5000/api/dashboard/metrics', timeout=5)
             metrics_data = json_module.loads(response.read().decode())
 
-            # Extract trades if available
-            if 'closed_trades' in metrics_data and isinstance(metrics_data.get('closed_trades'), list):
-                trades = metrics_data['closed_trades'][-30:]  # Last 30
+            # Check if trades list exists in response (cryptomaster may not have it directly)
+            # Fall through to log parsing instead
+            if 'trades' in metrics_data and isinstance(metrics_data.get('trades'), list):
+                trades = metrics_data['trades'][-30:]
                 return jsonify(trades)
         except:
             pass
