@@ -2266,6 +2266,11 @@ def close_paper_position(
             return None
         pos = _POSITIONS[position_id]  # Read-only, do not pop yet
 
+    # V10.26 FIX: Mark as closed IMMEDIATELY after position read to prevent race conditions
+    # This prevents concurrent close_paper_position calls from processing same position twice
+    with _CLOSED_TRADES_LOCK:
+        _CLOSED_TRADES_THIS_SESSION.add(position_id)
+
     log.info(
         "[PAPER_CLOSE_PATH] trade_id=%s symbol=%s reason=%s",
         position_id,
@@ -2404,9 +2409,8 @@ def close_paper_position(
     # P1.1AJ: Log exit quality (idempotent, all training positions)
     _log_quality_exit_once(closed_trade, pos, path="close_paper_position")
 
-    # P0 FIX #2: Mark position as processed (dedup set was checked at start, now mark as seen)
-    with _CLOSED_TRADES_LOCK:
-        _CLOSED_TRADES_THIS_SESSION.add(position_id)
+    # V10.26: Dedup marking moved to line 2268 (immediately after position read)
+    # REMOVED duplicate add from here to prevent race conditions
 
     # P1.1L Phase 6: Call learning update for training trades
     # P1.1Q: Use safe adapter with canonical normalization
