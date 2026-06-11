@@ -1174,6 +1174,7 @@ def open_paper_position(
     """
     # V10.16: SELL ENFORCEMENT - balance BUY/SELL ratio for diversification
     side_raw = signal.get("action", signal.get("side", "BUY"))
+    now_ts = time.time()  # V10.27: define before any early branch; peak-check (2d4aa48) reads it on the price-valid path
     with _POSITION_LOCK:
         buy_count = sum(1 for p in _POSITIONS.values() if p.get("side") == "BUY")
         sell_count = sum(1 for p in _POSITIONS.values() if p.get("side") == "SELL")
