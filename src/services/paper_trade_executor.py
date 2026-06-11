@@ -777,8 +777,8 @@ def _effective_paper_hold_s(pos: dict) -> float:
     timeout = _safe_float(pos.get("timeout_s"), max_hold)
 
     if is_training:
-        # Training positions: effective hold is min of max_hold and timeout, capped at 300s
-        result = max(30.0, min(max_hold or 300.0, timeout or 300.0, 300.0))
+        # Training positions: effective hold is min of max_hold and timeout, capped at 300s (V10.26 fix: removed max(30.0,...))
+        result = min(max_hold or 300.0, timeout or 300.0, 300.0)
         log.debug(
             f"[EFFECTIVE_HOLD_TRAINING] bucket={bucket} source={source} "
             f"max_hold={max_hold:.0f} timeout={timeout:.0f} result={result:.0f}"
