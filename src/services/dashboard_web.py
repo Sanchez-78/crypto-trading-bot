@@ -661,45 +661,46 @@ def recent_trades():
         trades = []
         try:
             import subprocess
+            # Use simpler command without piped tail
             result = subprocess.run(
-                "journalctl -u cryptomaster.service --since '2 hours ago' --no-pager -q 2>/dev/null | grep PAPER_EXIT | tail -30",
-                shell=True, capture_output=True, text=True, timeout=5
+                ["journalctl", "-u", "cryptomaster.service", "--since", "2 hours ago", "--no-pager", "-q"],
+                capture_output=True, text=True, timeout=5
             )
 
-            for line in reversed(result.stdout.split('\n')):
-                if '[PAPER_EXIT]' not in line:
-                    continue
+            # Filter PAPER_EXIT lines
+            paper_exits = [line for line in result.stdout.split('\n') if '[PAPER_EXIT]' in line]
+            paper_exits = paper_exits[-30:]  # Last 30
 
+            import re
+            for line in paper_exits:
                 try:
-                    import re
                     trade_id = re.search(r'trade_id=(\S+)', line)
                     symbol = re.search(r'symbol=(\S+)', line)
                     entry = re.search(r'entry=([\d.]+)', line)
-                    exit_p = re.search(r'exit=([\d.]+)', line)
-                    pnl_pct = re.search(r'net_pnl_pct=([\d.\-eE+]+)', line)
-                    pnl_usd = re.search(r'net_pnl_usd=([\d.\-eE+]+)', line)
+                    exit_p = re.search(r'exit=([\d.\-eE+]+)', line)
+                    pnl_pct = re.search(r'net_pnl_pct=([\d.\-eE+]*)', line)  # Allow empty
+                    pnl_usd = re.search(r'net_pnl_usd=([\d.\-eE+]*)', line)
                     reason = re.search(r'reason=(\S+)', line)
-                    ts = re.search(r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})', line)
 
-                    if all([trade_id, symbol, entry, exit_p, pnl_pct]):
+                    if trade_id and symbol and entry and exit_p:
                         trades.append({
                             'trade_id': trade_id.group(1),
                             'symbol': symbol.group(1),
-                            'side': 'BUY',  # Placeholder
+                            'side': 'BUY',
                             'entry_price': float(entry.group(1)),
                             'exit_price': float(exit_p.group(1)),
-                            'pnl_pct': float(pnl_pct.group(1)),
-                            'pnl_usd': float(pnl_usd.group(1)) if pnl_usd else 0.0,
+                            'pnl_pct': float(pnl_pct.group(1)) if pnl_pct and pnl_pct.group(1) else 0.0,
+                            'pnl_usd': float(pnl_usd.group(1)) if pnl_usd and pnl_usd.group(1) else 0.0,
                             'exit_reason': reason.group(1) if reason else 'UNKNOWN',
                             'exit_ts': int(time.time()),
-                            'hold_s': 60  # Approximate
+                            'hold_s': 60
                         })
-                except:
+                except Exception as parse_err:
                     pass
 
             if trades:
                 return jsonify(trades[:30])
-        except:
+        except Exception as log_err:
             pass
 
         # If all else fails, return empty
