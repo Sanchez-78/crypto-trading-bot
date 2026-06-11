@@ -250,10 +250,10 @@ def _can_admit_paper_evidence_collection(symbol: str, regime: str) -> tuple[bool
 
     Returns: (is_allowed, reason)
     """
-    # Allowed symbols for evidence collection
-    EVIDENCE_SYMBOLS = {"ETHUSDT"}
-    # Allowed regimes for evidence collection
-    EVIDENCE_REGIMES = {"BULL_TREND"}  # Conservative: BULL_TREND only for first restart
+    # Allowed symbols for evidence collection (V10.26: opened to all major pairs for trading diversity)
+    EVIDENCE_SYMBOLS = {"ETHUSDT", "BTCUSDT", "BNBUSDT", "ADAUSDT", "XRPUSDT", "SOLUSDT", "DOTUSDT", "LTCUSDT", "LINKUSDT"}
+    # Allowed regimes for evidence collection (V10.26: enabled both BULL and BEAR for full market coverage)
+    EVIDENCE_REGIMES = {"BULL_TREND", "BEAR_TREND"}  # Full regime coverage for hedge/short opportunities
 
     if symbol not in EVIDENCE_SYMBOLS:
         return False, f"symbol_not_in_evidence_scope:{symbol}"
