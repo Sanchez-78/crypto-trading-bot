@@ -1419,6 +1419,16 @@ def open_paper_position(
     if extra and "final_size_usd" in extra:
         size_usd = extra["final_size_usd"]
 
+    # V10.27 CYCLE 7 FIX: Wire PAPER_TP_ZONE_BPS/SL_ZONE_BPS as AUTHORITATIVE override
+    # Evidence: Cycles #5-6 revealed env-var wiring was in unreachable code; tp_from_executor
+    # ATR bands (~40bps) always override. Compute env-var bands FIRST, use them to override.
+    tp_zone_bps = int(os.getenv("PAPER_TP_ZONE_BPS", "40"))  # default 40bps (0.40%)
+    sl_zone_bps = int(os.getenv("PAPER_SL_ZONE_BPS", "30"))  # default 30bps (0.30%)
+    tp_pct_env = 1.0 + tp_zone_bps / 10000 if side == "BUY" else 1.0 - tp_zone_bps / 10000
+    sl_pct_env = 1.0 - sl_zone_bps / 10000 if side == "BUY" else 1.0 + sl_zone_bps / 10000
+    tp_price_env = price * tp_pct_env
+    sl_price_env = price * sl_pct_env
+
     # V10.22 CRITICAL: Use TP/SL from trade_executor if provided (computed with full context)
     # Otherwise fall back to local computation with responsive percentages
     tp_price = None
@@ -1436,16 +1446,17 @@ def open_paper_position(
             log.warning(f"[PAPER_TP_SL_VALIDATION_FAILED] symbol={symbol} side={side} tp={tp_price:.8f} sl={sl_price:.8f} - fallback to local")
             tp_sl = None  # Will fall back to local computation
 
-    # V10.27 CYCLE 5 FIX: Wire PAPER_TP_ZONE_BPS/SL_ZONE_BPS env vars into band computation
-    # Evidence: cycle #5 found tp_from_executor ATR bands (~300-340bps) are unreachable
-    # in 900s window (realized moves ~10bps); env vars set but never read by executor.
-    # If PAPER_TP_ZONE_BPS is configured, use it; otherwise fall back to hardcoded defaults.
-    tp_zone_bps = int(os.getenv("PAPER_TP_ZONE_BPS", "40"))  # default 40bps (0.40%)
-    sl_zone_bps = int(os.getenv("PAPER_SL_ZONE_BPS", "30"))  # default 30bps (0.30%)
-    tp_pct = 1.0 + tp_zone_bps / 10000 if side == "BUY" else 1.0 - tp_zone_bps / 10000
-    sl_pct = 1.0 - sl_zone_bps / 10000 if side == "BUY" else 1.0 + sl_zone_bps / 10000
+    # V10.27 CYCLE 7: If PAPER_TP_ZONE_BPS is explicitly set (not default), override with env bands
+    if os.getenv("PAPER_TP_ZONE_BPS"):  # If explicitly configured
+        tp_price = tp_price_env
+        sl_price = sl_price_env
+        tp_sl = normalize_paper_tp_sl(side, price, tp_price_env, sl_price_env)
+        if tp_sl:
+            log.info(f"[PAPER_TP_SL_ENV_OVERRIDE] symbol={symbol} tp_bps={tp_zone_bps} sl_bps={sl_zone_bps} tp={tp_price:.8f} sl={sl_price:.8f}")
 
-    # Fallback: compute locally with responsive percentages
+    # Fallback: compute locally with responsive percentages (if neither executor nor env override worked)
+    tp_pct = tp_pct_env if os.getenv("PAPER_TP_ZONE_BPS") else (1.004 if side == "BUY" else 0.996)
+    sl_pct = sl_pct_env if os.getenv("PAPER_SL_ZONE_BPS") else (0.997 if side == "BUY" else 1.003)
     if not tp_sl:
         # V10.24 CYCLE 2: AGGRESSIVE - Match market reality (small frequent moves)
         # Cycle 1 evidence: 6% TP all TIMEOUT at 180s; only 0.008-0.39% moves observed
