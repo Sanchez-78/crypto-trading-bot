@@ -1872,6 +1872,10 @@ def update_paper_positions(
             tp_hit = current_price <= pos["tp"]
             sl_hit = current_price >= pos["sl"]
 
+        # V10.27 FIX: Wire TP/SL evaluation — debug log to confirm execution
+        if tp_hit or sl_hit:
+            log.info(f"[TP_SL_HIT] {symbol} side={side} current={current_price:.8f} tp={pos['tp']:.8f} sl={pos['sl']:.8f} tp_hit={tp_hit} sl_hit={sl_hit}")
+
         if tp_hit:
             exit_reason = "TP"
         elif sl_hit:
