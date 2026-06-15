@@ -1436,6 +1436,15 @@ def open_paper_position(
             log.warning(f"[PAPER_TP_SL_VALIDATION_FAILED] symbol={symbol} side={side} tp={tp_price:.8f} sl={sl_price:.8f} - fallback to local")
             tp_sl = None  # Will fall back to local computation
 
+    # V10.27 CYCLE 5 FIX: Wire PAPER_TP_ZONE_BPS/SL_ZONE_BPS env vars into band computation
+    # Evidence: cycle #5 found tp_from_executor ATR bands (~300-340bps) are unreachable
+    # in 900s window (realized moves ~10bps); env vars set but never read by executor.
+    # If PAPER_TP_ZONE_BPS is configured, use it; otherwise fall back to hardcoded defaults.
+    tp_zone_bps = int(os.getenv("PAPER_TP_ZONE_BPS", "40"))  # default 40bps (0.40%)
+    sl_zone_bps = int(os.getenv("PAPER_SL_ZONE_BPS", "30"))  # default 30bps (0.30%)
+    tp_pct = 1.0 + tp_zone_bps / 10000 if side == "BUY" else 1.0 - tp_zone_bps / 10000
+    sl_pct = 1.0 - sl_zone_bps / 10000 if side == "BUY" else 1.0 + sl_zone_bps / 10000
+
     # Fallback: compute locally with responsive percentages
     if not tp_sl:
         # V10.24 CYCLE 2: AGGRESSIVE - Match market reality (small frequent moves)
@@ -1445,8 +1454,6 @@ def open_paper_position(
         # V10.27: TP=0.4%, SL=0.3% — 2.5%/2% bands were unreachable in 180s (price
         # moves only 0.00-0.12% in the window -> 100% TIMEOUT). 0.4% TP clears the
         # ~0.15% round-trip cost; matches compute_tp_sl floors in trade_executor.
-        tp_pct = 1.004 if side == "BUY" else 0.996  # 0.4% take-profit
-        sl_pct = 0.997 if side == "BUY" else 1.003  # 0.3% stop-loss
         tp_sl = normalize_paper_tp_sl(side, price, price * tp_pct, price * sl_pct)
     if tp_sl is None:
         log.error(
