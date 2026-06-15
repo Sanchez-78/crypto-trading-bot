@@ -66,7 +66,38 @@ See `.claude/agents/` and `.claude/skills/` for full agent/skill definitions.
 **Change History:**
 | Date | Change | Scope | Reason |
 |------|--------|-------|--------|
+| 2026-06-15 | Autonomous monitoring harness (3-layer) | Full system | Continuous bot optimization loop |
 | 2026-06-08 | Initial harness + V10.19 timeout fix | Full system | Prevent patch treadmill, fix timeout bug |
+
+---
+
+## HARNESS: Autonomous Monitoring Loop (2026-06-15)
+
+**Goal:** Autonomous 30-minute monitoring cycle — detect metrics problems, auto-diagnose, auto-patch, auto-deploy, verify, repeat until goal (WR > 50% + P&L > 0%).
+
+**Entry Point:** `autonomous-monitoring-loop` skill — Use when: "spusť autonomní monitoring", "start autonomous loop", "fix bot sám", "opravuj chyby automaticky"
+
+**Architecture (3 layers):**
+1. **Monitor Layer** (30-min cadence): Read journalctl → Calculate WR/PF/P&L/quota → Status: GOAL_REACHED | CAUTION | FAIL | QUOTA_WAIT
+2. **Diagnose & Fix Layer** (on FAIL): Run evidence-based-patch-orchestrator with all 8 agents (forensic, learning, quota, safety, tests, contract, patch, review)
+3. **Deploy & Verify Layer** (on APPROVED): Push → Wait GH Actions → Verify service health → Auto-revert on failure
+
+**Agents Involved:**
+- `master-goal-orchestrator` — supervisor (autonomous-monitoring-loop delegats to it)
+- `monitoring-remediation-agent` — live metric collection
+- `deploy-verify-agent` — atomic deploy + verify + revert
+- Plus 8 specialized agents (via evidence-based-patch-orchestrator)
+
+**Safeguards:**
+- Max 100 cycles
+- Regression spiral detection (3× consecutive WR drop → STOP)
+- Firebase quota guardian (< 10% → wait for reset at 07:00 UTC)
+- Progress persistence (`_workspace/monitoring_progress.json`)
+
+**Change History (Autonomous Loop):**
+| Date | Change | Scope | Reason |
+|------|--------|-------|--------|
+| 2026-06-15 | Autonomous monitoring harness v1 | Full system | Enable self-healing trading bot |
 
 ## WORKFLOW
 - One module = one focused responsibility.
