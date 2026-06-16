@@ -138,14 +138,56 @@ class DashboardHandler(BaseHTTPRequestHandler):
             except:
                 pass
 
-            # Get open positions count
+            # Get open positions count and list
             open_positions = 0
+            open_positions_list = []
             try:
                 pos_file = '/opt/cryptomaster/data/paper_open_positions.json'
                 if os.path.exists(pos_file):
                     with open(pos_file) as f:
                         positions = json.load(f)
                         open_positions = len(positions)
+                        open_positions_list = [
+                            {
+                                'trade_id': pos.get('id', ''),
+                                'symbol': pos.get('symbol', ''),
+                                'side': pos.get('side', ''),
+                                'entry_ts': pos.get('entry_ts', ''),
+                                'entry_price': float(pos.get('entry_price', 0)),
+                                'current_hold_s': int(time.time() - pos.get('entry_time', time.time())),
+                                'max_hold_s': pos.get('max_hold_s', 600),
+                                'tp': float(pos.get('tp', 0)),
+                                'sl': float(pos.get('sl', 0)),
+                                'regime': pos.get('regime', ''),
+                                'size_usd': float(pos.get('size_usd', 0))
+                            } for pos in positions
+                        ] if isinstance(positions, list) else []
+            except:
+                pass
+
+            # Get recent trades (last 10 closed)
+            recent_trades = []
+            try:
+                cursor.execute('''
+                    SELECT trade_id, symbol, side, entry_ts, exit_ts, entry_price, exit_price,
+                           pnl_pct, exit_reason, hold_s
+                    FROM closed_trades
+                    ORDER BY exit_ts DESC
+                    LIMIT 10
+                ''')
+                for row in cursor.fetchall():
+                    recent_trades.append({
+                        'trade_id': row['trade_id'],
+                        'symbol': row['symbol'],
+                        'side': row['side'],
+                        'entry_ts': row['entry_ts'],
+                        'exit_ts': row['exit_ts'],
+                        'entry_price': float(row['entry_price']),
+                        'exit_price': float(row['exit_price']),
+                        'pnl_pct': float(row['pnl_pct']),
+                        'exit_reason': row['exit_reason'],
+                        'hold_s': int(row['hold_s'])
+                    })
             except:
                 pass
 
@@ -157,6 +199,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 'net_pnl': round(net_pnl, 8),
                 'closed_trades': total,
                 'open_positions': open_positions,
+                'open_positions_list': open_positions_list,
+                'recent_trades': recent_trades,
                 'exit_distribution': exits,
                 'readiness_by_symbol': readiness_by_symbol,
                 'timestamp': int(time.time()),
