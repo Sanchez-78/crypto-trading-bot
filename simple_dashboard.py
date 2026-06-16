@@ -121,19 +121,25 @@ class DashboardHandler(BaseHTTPRequestHandler):
             # Limit to last 10 trades
             recent_trades = recent_trades[:10]
 
-            # Calculate metrics from parsed trades
+            # Calculate metrics from actual P&L, not exit reasons (V10.28 FIX)
+            # Exit reasons are informational; TIMEOUT can be profitable; PF/WR must use P&L
             total = exit_counts['tp'] + exit_counts['sl'] + exit_counts['scratch'] + exit_counts['stagnation'] + exit_counts['timeout']
-            wins = exit_counts['tp'] + exit_counts['sl']
-            losses = exit_counts['timeout'] + exit_counts['scratch'] + exit_counts['stagnation']
 
             if trade_pnls:
                 net_pnl = sum(trade_pnls)
                 expectancy = sum(trade_pnls) / len(trade_pnls)
+                # Win/Loss by P&L, not exit reason
+                wins = sum(1 for p in trade_pnls if p > 0)
+                losses = sum(1 for p in trade_pnls if p < 0)
+                gross_profit = sum(p for p in trade_pnls if p > 0)
+                gross_loss = abs(sum(p for p in trade_pnls if p < 0))
+                profit_factor = (gross_profit / gross_loss) if gross_loss > 0 else (1.0 if gross_profit > 0 else 0.0)
             else:
                 net_pnl = 0.0
                 expectancy = 0.0
+                wins = losses = 0
+                profit_factor = 0.0
 
-            profit_factor = (wins / (losses + 0.0001)) if losses > 0 else (1.0 if wins > 0 else 0.0)
             win_rate_pct = (wins / total * 100) if total > 0 else 0.0
 
             # Get open positions with comprehensive details
