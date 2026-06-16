@@ -147,21 +147,27 @@ class DashboardHandler(BaseHTTPRequestHandler):
                         else:
                             pos_items = [(pos.get('id', ''), pos) for pos in positions]
 
-                        open_positions_list = [
-                            {
-                                'trade_id': trade_id,
-                                'symbol': pos.get('symbol', ''),
-                                'side': pos.get('side', ''),
-                                'entry_ts': pos.get('entry_ts', ''),
-                                'entry_price': float(pos.get('entry_price', 0)),
-                                'current_hold_s': int(time.time() - pos.get('entry_time', time.time())),
-                                'max_hold_s': pos.get('max_hold_s', 600),
-                                'tp': float(pos.get('tp', 0)),
-                                'sl': float(pos.get('sl', 0)),
-                                'regime': pos.get('regime', ''),
-                                'size_usd': float(pos.get('size_usd', 0))
-                            } for trade_id, pos in pos_items
-                        ]
+                        open_positions_list = []
+                        for trade_id, pos in pos_items:
+                            try:
+                                entry_ts = pos.get('entry_ts', 0)
+                                created_at = pos.get('created_at', entry_ts)
+                                hold_s = int(time.time() - created_at) if created_at else 0
+                                open_positions_list.append({
+                                    'trade_id': trade_id,
+                                    'symbol': pos.get('symbol', ''),
+                                    'side': pos.get('side', ''),
+                                    'entry_ts': entry_ts,
+                                    'entry_price': float(pos.get('entry_price', 0)),
+                                    'current_hold_s': hold_s,
+                                    'max_hold_s': float(pos.get('max_hold_s', 600)),
+                                    'tp': float(pos.get('tp', 0)),
+                                    'sl': float(pos.get('sl', 0)),
+                                    'regime': pos.get('regime', ''),
+                                    'size_usd': float(pos.get('size_usd', 0))
+                                })
+                            except Exception as e:
+                                pass
             except:
                 pass
 
