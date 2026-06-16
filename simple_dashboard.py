@@ -170,7 +170,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 'open_positions': open_positions,
                 'open_positions_list': open_positions_list,
                 'recent_trades': recent_trades,
-                'exit_distribution': exits,
+                'exit_distribution': exit_counts,
                 'readiness_by_symbol': readiness_by_symbol,
                 'timestamp': int(time.time()),
                 'last_update': datetime.utcnow().isoformat()
