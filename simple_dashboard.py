@@ -91,10 +91,17 @@ class DashboardHandler(BaseHTTPRequestHandler):
                         elif 'stag' in reason: exit_counts['stagnation'] += 1
                         elif 'timeout' in reason: exit_counts['timeout'] += 1
 
-                    # Extract PnL
+                    # Extract PnL (try both formats)
+                    pnl_pct = 0.0
                     m = re.search(r'net_pnl_pct=([-\d.]+)', line)
                     if m:
                         pnl_pct = float(m.group(1))
+                    else:
+                        # New log format: "WIN +0.32%" or "LOSS -0.48%"
+                        m = re.search(r'(WIN|LOSS)\s+([-+][\d.]+)%', line)
+                        if m:
+                            pnl_pct = float(m.group(2))
+                    if pnl_pct != 0.0 or m:
                         trade['pnl_pct'] = pnl_pct
                         trade_pnls.append(pnl_pct)
 
