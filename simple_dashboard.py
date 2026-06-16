@@ -172,7 +172,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                                 hold_s = int(time.time() - entry_ts)
 
                                 entry_price = safe_float(pos.get('entry_price'))
-                                current_price = entry_price  # Would need live prices for accurate P&L
+                                current_price = safe_float(pos.get('last_price')) or entry_price
 
                                 # Calculate P&L for open position
                                 side = str(pos.get('side', 'BUY')).upper()
