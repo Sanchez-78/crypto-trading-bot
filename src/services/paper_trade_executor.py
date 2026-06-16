@@ -3616,3 +3616,6 @@ subscribe_once("signal_created", _on_signal_created)
 
 # Call startup initializer after all functions are defined
 _init_paper_state_once()
+
+# MARKER: Module loaded successfully
+log.info('[MODULE_LOAD_COMPLETE] paper_trade_executor module fully initialized')
