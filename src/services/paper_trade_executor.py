@@ -1716,15 +1716,9 @@ def check_and_close_timeout_positions(now: Optional[float] = None) -> List[dict]
     alive_count = 0
 
     with _POSITION_LOCK:
-        # Load positions from both memory and file (multi-process support)
+        # Check only in-memory positions to avoid race condition with disk stale state
+        # update_paper_positions() already handles TP/SL closes before this function is called
         all_positions = dict(_POSITIONS)
-        try:
-            import json
-            with open(_STATE_FILE) as f:
-                file_positions = json.load(f)
-                all_positions.update(file_positions)  # Merge, memory takes precedence
-        except:
-            pass
 
         for trade_id, pos in list(all_positions.items()):
             entry_ts = _safe_float(pos.get("entry_ts") or pos.get("created_at"), 0.0)
