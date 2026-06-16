@@ -3615,7 +3615,14 @@ def _on_signal_created(signal: dict) -> None:
 subscribe_once("signal_created", _on_signal_created)
 
 # Call startup initializer after all functions are defined
-_init_paper_state_once()
+try:
+    log.info('[BEFORE_INIT_CALL] About to call _init_paper_state_once()')
+    _init_paper_state_once()
+    log.info('[AFTER_INIT_CALL] Successfully initialized paper state')
+except Exception as e:
+    log.exception('[MODULE_INIT_ERROR] Failed during _init_paper_state_once: %s', e)
+
+log.info('[MODULE_LOAD_COMPLETE] paper_trade_executor module fully initialized')
 
 # MARKER: Module loaded successfully
 log.info('[MODULE_LOAD_COMPLETE] paper_trade_executor module fully initialized')
