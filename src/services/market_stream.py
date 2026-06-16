@@ -40,6 +40,8 @@ except ImportError:
 # ── Geo-block flag — set on HTTP 451; survives reconnect attempts ─────────────
 _geo_blocked: bool = False
 
+# ── Price cache for paper position evaluation ──────────────────────────────────
+_symbol_prices: dict[str, float] = {}
 
 # ── Shared tick dispatcher ────────────────────────────────────────────────────
 
@@ -56,7 +58,12 @@ def _dispatch(sym: str, bid: float, ask: float, bid_qty: float = 0.0, ask_qty: f
 
     # V10.13d: Log dispatch to track price flow
     import logging
+    import time
     logging.debug(f"_dispatch: {sym} bid={bid:.4f} ask={ask:.4f} p={p:.4f} obi={obi:.3f}")
+
+    _symbol_prices[sym] = p
+    from src.services.paper_trade_executor import update_paper_positions
+    update_paper_positions(_symbol_prices, time.time())
 
     track_price(sym, p)
     publish("price_tick", {"symbol": sym, "price": p, "obi": obi})
