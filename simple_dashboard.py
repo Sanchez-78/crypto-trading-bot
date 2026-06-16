@@ -197,8 +197,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                                     'regime': str(pos.get('regime', 'UNKNOWN')),
                                     'size_usd': safe_float(pos.get('size_usd'), 0.5),
                                     'pnl_pct': round(pnl_pct, 4),
-                                    'tp_distance_pct': safe_float(pos.get('tp')) - entry_price if entry_price > 0 else 0,
-                                    'sl_distance_pct': entry_price - safe_float(pos.get('sl')) if entry_price > 0 else 0,
+                                    'tp_distance_pct': (safe_float(pos.get('tp')) - entry_price) / entry_price * 100 if entry_price > 0 else 0,
+                                    'sl_distance_pct': (entry_price - safe_float(pos.get('sl'))) / entry_price * 100 if entry_price > 0 else 0,
                                     'status': 'OPEN'
                                 })
                             except Exception as e:

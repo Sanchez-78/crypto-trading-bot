@@ -2377,7 +2377,9 @@ def close_paper_position(
         size_usd=size_usd,
     )
 
-    duration_s = ts - pos["entry_ts"]
+    entry_ts = pos.get("entry_ts", ts)
+    entry_ts = float(entry_ts) if entry_ts is not None else ts
+    duration_s = ts - entry_ts
 
     # V10.22: Calculate net PnL in USD for caching
     net_pnl_usd = (pnl_data["net_pnl_pct"] / 100.0) * size_usd
