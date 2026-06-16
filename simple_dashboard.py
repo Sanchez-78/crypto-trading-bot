@@ -468,66 +468,60 @@ class DashboardHandler(BaseHTTPRequestHandler):
         pass
 
     def generate_dashboard(self):
-        # Load all data from database (not logs)
-        metrics = get_metrics_from_database()
-        readiness = get_readiness_status()
-        success_rate = get_success_rate()
-        trade_details = get_trade_details()
-        pnl_trend = get_pnl_trend()
+        # Load live data from API endpoint (v10.28+)
+        live_data = {}
+        error_msg = None
+        try:
+            import requests
+            response = requests.get('http://localhost:5001/api/dashboard/metrics', timeout=5)
+            live_data = response.json()
+        except Exception as e:
+            error_msg = str(e)
 
-        # Extract symbol data from trade_details instead of logs
+        # Map API response to template metrics
+        metrics = {
+            'closed_today': live_data.get('closed_trades', 0),
+            'open_positions_count': live_data.get('open_positions', 0),
+            'pf': live_data.get('profit_factor', 0.0),
+            'net_pnl': live_data.get('net_pnl', 0.0),
+            'win_rate': live_data.get('win_rate_pct', 0.0),
+            'health': 0.5,  # placeholder
+            'exits': live_data.get('exit_distribution', {'tp': 0, 'sl': 0, 'timeout': 0, 'scratch': 0, 'stagnation': 0})
+        }
+
+        # Extract open and closed positions from API
+        open_positions = live_data.get('open_positions_list', [])
+        recent_trades = live_data.get('recent_trades', [])
+
+        # Build by_symbol from recent trades
         by_symbol = {}
-        total_entries = 0
-        for trade in trade_details:
-            sym = trade['symbol']
+        for trade in recent_trades:
+            sym = trade.get('symbol', 'N/A')
             if sym not in by_symbol:
                 by_symbol[sym] = {'entries': 0, 'closed': 0, 'pnl': 0.0}
-            by_symbol[sym]['entries'] += 1
             by_symbol[sym]['closed'] += 1
-            total_entries += 1
-            # Parse PnL from string (e.g., "$-0.00005000")
-            pnl_str = trade['pnl_usd'].replace('$', '')
-            try:
-                by_symbol[sym]['pnl'] += float(pnl_str)
-            except:
-                pass
+            if 'pnl_pct' in trade:
+                try:
+                    by_symbol[sym]['pnl'] += float(trade.get('pnl_pct', 0))
+                except:
+                    pass
 
-        closed_trades = trade_details[:20]  # Use trade_details for recent trades
+        # Default readiness/success_rate for HTML display
+        readiness = {'READY_REAL': [], 'READY_PAPER': []}
+        success_rate = {'by_symbol': {}}
 
-        # V10.22: Read actual open positions from JSON file
-        open_positions = []
-        try:
-            pos_file = '/opt/cryptomaster/data/paper_open_positions.json'
-            if os.path.exists(pos_file):
-                with open(pos_file) as f:
-                    positions = json.load(f)
-                    # Convert positions dict to list of dicts with symbol, entry, tp, sl, age_s
-                    for pos_id, pos_data in positions.items():
-                        if pos_id.startswith('paper_'):
-                            entry_ts = pos_data.get('entry_ts', time.time())
-                            age_s = time.time() - entry_ts
-                            open_positions.append({
-                                'symbol': pos_data.get('symbol', 'N/A'),
-                                'entry': pos_data.get('entry_price', 0),
-                                'tp': pos_data.get('tp_price', 0),
-                                'sl': pos_data.get('sl_price', 0),
-                                'age_s': age_s,
-                                'side': pos_data.get('side', 'BUY'),
-                                'pnl': pos_data.get('profit', 0),
-                            })
-        except:
-            pass
-
-        # Build symbol rows
+        # Build symbol rows from closed trades
         symbol_rows = ''
         for symbol in sorted(by_symbol.keys())[:12]:
             data = by_symbol[symbol]
+            pnl_val = data.get('pnl', 0)
+            pnl_class = 'positive' if pnl_val >= 0 else 'negative'
             symbol_rows += f"""
                 <tr>
                     <td><strong>{symbol}</strong></td>
-                    <td>{data.get('entries', 0)}</td>
+                    <td>—</td>
                     <td>{data.get('closed', 0)}</td>
-                    <td>${data.get('pnl', 0):.8f}</td>
+                    <td class="{pnl_class}">${pnl_val:.8f}</td>
                 </tr>
         """
 
@@ -550,16 +544,33 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 </tr>
         """
 
-        # Build open positions rows
+        # Build open positions rows (all 25+, not just 15)
         pos_rows = ''
-        for pos in open_positions[:15]:  # First 15
+        for pos in open_positions:  # Show all open positions
+            trade_id = pos.get('trade_id', 'N/A')[:8]  # Short ID for display
+            symbol = pos.get('symbol', 'N/A')
+            side = pos.get('side', 'BUY')
+            side_color = '#10b981' if side == 'BUY' else '#ef4444'
+            entry = pos.get('entry_price', 0)
+            tp = pos.get('tp', 0)
+            sl = pos.get('sl', 0)
+            hold_s = int(pos.get('current_hold_s', 0))
+            pnl_pct = pos.get('pnl_pct', 0)
+            pnl_color = '#10b981' if pnl_pct >= 0 else '#ef4444'
+            regime = pos.get('regime', 'N/A')
+            size_usd = pos.get('size_usd', 0)
             pos_rows += f"""
                 <tr>
-                    <td><strong>{pos['symbol']}</strong></td>
-                    <td>${pos.get('entry', 0):.8f}</td>
-                    <td>${pos.get('tp', 0):.8f}</td>
-                    <td>${pos.get('sl', 0):.8f}</td>
-                    <td>{int(pos.get('age_s', 0))}s</td>
+                    <td style="font-size: 11px; font-family: monospace;">{trade_id}</td>
+                    <td><strong>{symbol}</strong></td>
+                    <td style="color: {side_color};">{side}</td>
+                    <td style="font-family: monospace;">${entry:.8f}</td>
+                    <td style="font-family: monospace;">${tp:.8f}</td>
+                    <td style="font-family: monospace;">${sl:.8f}</td>
+                    <td>{hold_s}s</td>
+                    <td>${size_usd:.4f}</td>
+                    <td style="color: {pnl_color};">{pnl_pct:.4f}%</td>
+                    <td style="font-size: 11px;">{regime}</td>
                 </tr>
         """
 
@@ -986,19 +997,24 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
             <!-- Open Positions -->
             <div class="section">
-                <div class="section-title">Open Positions ({len(open_positions)} active)</div>
+                <div class="section-title">Open Positions ({len(open_positions)} active) — {metrics['open_positions_count']} total</div>
                 <table>
                     <thead>
                         <tr>
+                            <th style="font-size: 10px;">ID</th>
                             <th>Symbol</th>
-                            <th>Entry</th>
-                            <th>TP</th>
-                            <th>SL</th>
-                            <th>Age</th>
+                            <th>Side</th>
+                            <th style="font-size: 11px;">Entry</th>
+                            <th style="font-size: 11px;">TP</th>
+                            <th style="font-size: 11px;">SL</th>
+                            <th>Hold</th>
+                            <th>Size</th>
+                            <th>P&L %</th>
+                            <th>Regime</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {pos_rows if pos_rows else '<tr><td colspan="5" style="text-align: center; color: #666;">No open positions</td></tr>'}
+                        {pos_rows if pos_rows else '<tr><td colspan="10" style="text-align: center; color: #666;">No open positions</td></tr>'}
                     </tbody>
                 </table>
             </div>
@@ -1010,7 +1026,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             <div style="background: #1a1f3a; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
                     <div style="text-align: center;">
-                        <div style="font-size: 36px; font-weight: bold; color: #00ff00;">{success_rate:.1f}%</div>
+                        <div style="font-size: 36px; font-weight: bold; color: {'#00ff00' if metrics.get('win_rate', 0) > 50 else '#ff6666'};">{metrics.get('win_rate', 0):.1f}%</div>
                         <div style="color: #888; font-size: 12px;">WIN RATE (Success %)</div>
                     </div>
                     <div style="text-align: center;">

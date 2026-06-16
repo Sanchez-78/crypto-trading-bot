@@ -330,7 +330,18 @@
       "Bash(grep -E \"\\\\.\\(py|sql\\)$\")",
       "Bash(netstat -tlnp)",
       "Bash(curl -s http://78.47.2.198:5001/api/dashboard/metrics)",
-      "Bash(curl -s http://78.47.2.198:5001/api/trades/recent)"
+      "Bash(curl -s http://78.47.2.198:5001/api/trades/recent)",
+      "Bash(echo \"=== EXIT: $? ===\")",
+      "Bash(echo \"=== EXIT rebase: $? ===\")",
+      "Bash(git rev-list *)",
+      "Skill(update-config)",
+      "PowerShell(ssh -o ConnectTimeout=15 -o StrictHostKeyChecking=accept-new -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"cd /opt/cryptomaster; git log --oneline -1; echo '---SERVICE---'; systemctl is-active cryptomaster.service; echo '---RESTART---'; systemctl show cryptomaster.service -p ActiveEnterTimestamp --value\")",
+      "PowerShell(ssh -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"journalctl -u cryptomaster.service --since '2026-06-11 11:15:00' --no-pager | grep -E 'PAPER_EXIT|TIMEOUT|exit_reason|TP=|SL=|EXEC|smart_exit|SMART_EXIT|CLOSE' | tail -60\")",
+      "PowerShell(ssh -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"journalctl -u cryptomaster.service --since '2026-06-11 11:15:00' --no-pager | grep -E 'PAPER_EXIT' | tail -15\")",
+      "PowerShell(ssh -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"journalctl -u cryptomaster.service --since '2026-06-11 11:15:00' --no-pager | grep -E 'PAPER_TRAIN_QUALITY_ENTRY|geometry_calibrated|PAPER_TP_SL_FROM_EXECUTOR' | tail -6\")",
+      "PowerShell(ssh -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"journalctl -u cryptomaster.service --since '2026-06-11 12:35:30' --no-pager | grep -E 'mfe_pct|mae_pct|PAPER_TRAIN_ANOMALY|near_tp|TP_HIT|SL_HIT|tp_pct=0' | tail -10\")",
+      "PowerShell(ssh -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"journalctl -u cryptomaster.service --since '2026-06-11 12:35:30' --no-pager | grep -E 'PAPER_TRAIN_QUALITY_ENTRY|geometry_calibrated=True|PAPER_TP_SL_FROM_EXECUTOR' | tail -4\")",
+      "PowerShell(ssh -i \"$env:USERPROFILE\\\\.ssh\\\\hetzner_root\" root@78.47.2.198 \"journalctl -u cryptomaster.service --since '2026-06-11 12:49:00' --no-pager | grep -E 'PAPER_TRAIN_ECON_SUMMARY' | tail -2\")"
     ]
   }
 }

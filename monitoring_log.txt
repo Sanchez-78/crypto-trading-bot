@@ -1,0 +1,8 @@
+
+[CYCLE #8] 2026-06-15 11:15 UTC
+RESULT: PASS - Cycle #7 ENV_OVERRIDE patch WORKS. First-ever [TP_SL_HIT] confirmed.
+  env_override_count=9, tp_sl_hit_count=1, exit_dist: TP=1 TIMEOUT=2 (90min, 3 closed)
+  WR=66.7%, PF=2.669, net=+0.6287% | sample thin (3 trades)
+  XRPUSDT TP exit +0.82% @ 11:14:38 (tp_hit=True)
+NEW BLOCKER: cryptomaster-dashboard.service FAILED (http_code=000, nothing on :5001). Trading core unaffected.
+NEXT: widen sample over next cycles; address dashboard unit separately.

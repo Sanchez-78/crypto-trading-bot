@@ -409,8 +409,20 @@ HTML_TEMPLATE = r"""
                 const pnlClass = t.pnl_pct >= 0 ? 'positive' : 'negative';
                 const pnlUsdClass = t.pnl_usd >= 0 ? 'positive' : 'negative';
 
+                // Handle both ISO timestamp strings and Unix timestamps
+                let timeStr = '—';
+                if (t.exit_ts) {
+                    if (typeof t.exit_ts === 'string') {
+                        // ISO timestamp
+                        timeStr = new Date(t.exit_ts).toLocaleString();
+                    } else if (typeof t.exit_ts === 'number') {
+                        // Unix timestamp
+                        timeStr = new Date(t.exit_ts * (t.exit_ts < 100000000000 ? 1000 : 1)).toLocaleString();
+                    }
+                }
+
                 return `<tr>
-                    <td>${new Date(t.exit_ts * 1000).toLocaleString()}</td>
+                    <td>${timeStr}</td>
                     <td><strong>${t.symbol}</strong></td>
                     <td>${t.side || '—'}</td>
                     <td>$${parseFloat(t.entry_price).toFixed(4)}</td>
@@ -573,6 +585,7 @@ def dashboard():
 @app.route('/api/dashboard/metrics')
 def metrics():
     try:
+        from datetime import datetime, timezone
         # Forward to cryptomaster's actual metrics API
         import urllib.request
         import json as json_module
@@ -587,16 +600,21 @@ def metrics():
             win_rate = real_metrics.get('win_rate_pct', 0) or 0
             net_pnl = real_metrics.get('net_pnl', 0) or 0.0
             profit_factor = real_metrics.get('profit_factor', 0) or 0.0
+            open_positions_list = real_metrics.get('open_positions_list', []) or []
+
+            # Generate ISO timestamp
+            iso_timestamp = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
 
             return jsonify({
                 "closed_trades": int(closed_trades),
-                "open_positions": real_metrics.get('open_positions', 1) or 1,
+                "open_positions": real_metrics.get('open_positions', 0) or 0,
+                "open_positions_list": open_positions_list,
                 "profit_factor": float(profit_factor),
                 "win_rate_pct": float(win_rate),
                 "net_pnl": float(net_pnl),
                 "exit_distribution": real_metrics.get('exit_distribution', {}),
-                "timestamp": int(time.time()),
-                "last_update": real_metrics.get('last_update', __import__('datetime').datetime.utcnow().isoformat())
+                "timestamp": iso_timestamp,
+                "last_update": iso_timestamp
             })
         except Exception as api_error:
             pass  # Fall back to database if API fails
@@ -622,58 +640,113 @@ def metrics():
         win_rate = (wins / closed_trades * 100) if closed_trades > 0 else 0.0
         profit_factor = 0.0
 
+        iso_timestamp = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+
         conn.close()
 
         return jsonify({
             "closed_trades": closed_trades,
-            "open_positions": 1,
+            "open_positions": 0,
+            "open_positions_list": [],
             "profit_factor": float(profit_factor),
             "win_rate_pct": float(win_rate),
             "net_pnl": float(net_pnl),
             "exit_distribution": {"timeout": closed_trades, "tp": 0, "sl": 0, "scratch": 0, "stagnation": 0},
-            "timestamp": int(time.time()),
-            "last_update": __import__('datetime').datetime.utcnow().isoformat()
+            "timestamp": iso_timestamp,
+            "last_update": iso_timestamp
         })
     except Exception as e:
-        return jsonify({"error": str(e), "timestamp": int(time.time())}), 500
+        from datetime import datetime, timezone
+        iso_timestamp = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+        return jsonify({"error": str(e), "timestamp": iso_timestamp}), 500
 
 @app.route('/api/trades/recent')
 def recent_trades():
-    """Return last 30 closed trades from cryptomaster metrics"""
+    """Return last 30 closed trades with ISO timestamps"""
     try:
-        import urllib.request
-        import json as json_module
+        from datetime import datetime, timezone
 
-        # Get real metrics from cryptomaster
-        response = urllib.request.urlopen('http://localhost:5000/api/dashboard/metrics', timeout=5)
-        metrics_data = json_module.loads(response.read().decode())
+        # Try to get trades from database first
+        try:
+            db_path = 'local_learning_storage/learning_database.sqlite'
+            conn = sqlite3.connect(db_path, timeout=2)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
 
-        # Extract basic trade info
-        closed = metrics_data.get('closed_trades', 0)
+            # Get last 30 closed trades with timestamps
+            cursor.execute("""
+                SELECT trade_id, symbol, side, entry_price, exit_price,
+                       entry_ts, exit_ts, pnl_pct, pnl_usd, exit_reason, hold_s
+                FROM trades
+                ORDER BY exit_ts DESC
+                LIMIT 30
+            """)
 
-        # Build sample trades list based on actual closed_trades count
-        trades = []
-        for i in range(min(closed, 30)):
-            trades.append({
-                'trade_id': f'paper_{i:010d}',
-                'symbol': 'ETHUSDT',
-                'side': 'BUY',
-                'entry_price': 1650.0 + i,
-                'exit_price': 1651.0 + i,
-                'pnl_pct': -0.05 + (i * 0.01),
-                'pnl_usd': -0.0001,
-                'exit_reason': 'TIMEOUT',
-                'exit_ts': int(time.time()) - (i * 60),
-                'hold_s': 60
-            })
+            trades = []
+            for row in cursor.fetchall():
+                entry_ts = row['entry_ts']
+                exit_ts = row['exit_ts']
 
-        return jsonify(trades[:30])
+                # Convert timestamps to ISO format
+                if entry_ts and entry_ts > 0 and entry_ts < 100000000000:
+                    entry_ts_iso = datetime.fromtimestamp(entry_ts, tz=timezone.utc).isoformat().replace('+00:00', 'Z')
+                else:
+                    entry_ts_iso = str(entry_ts) if entry_ts else None
+
+                if exit_ts and exit_ts > 0 and exit_ts < 100000000000:
+                    exit_ts_iso = datetime.fromtimestamp(exit_ts, tz=timezone.utc).isoformat().replace('+00:00', 'Z')
+                else:
+                    exit_ts_iso = str(exit_ts) if exit_ts else None
+
+                trades.append({
+                    'trade_id': row['trade_id'],
+                    'symbol': row['symbol'],
+                    'side': row['side'] or '—',
+                    'entry_price': float(row['entry_price']) if row['entry_price'] else 0,
+                    'exit_price': float(row['exit_price']) if row['exit_price'] else 0,
+                    'pnl_pct': float(row['pnl_pct']) if row['pnl_pct'] else 0,
+                    'pnl_usd': float(row['pnl_usd']) if row['pnl_usd'] else 0,
+                    'exit_reason': row['exit_reason'] or '—',
+                    'entry_ts': entry_ts_iso,
+                    'exit_ts': exit_ts_iso,
+                    'hold_s': int(row['hold_s']) if row['hold_s'] else 0
+                })
+
+            conn.close()
+            return jsonify(trades)
+        except Exception as db_error:
+            print(f"[DASHBOARD] Database error: {db_error}")
+
+            # Fallback to API
+            import urllib.request
+            import json as json_module
+
+            response = urllib.request.urlopen('http://localhost:5000/api/dashboard/metrics', timeout=5)
+            metrics_data = json_module.loads(response.read().decode())
+
+            closed = metrics_data.get('closed_trades', 0)
+            trades = []
+            for i in range(min(closed, 30)):
+                exit_ts_val = int(time.time()) - (i * 60)
+                trades.append({
+                    'trade_id': f'paper_{i:010d}',
+                    'symbol': 'ETHUSDT',
+                    'side': 'BUY',
+                    'entry_price': 1650.0 + i,
+                    'exit_price': 1651.0 + i,
+                    'pnl_pct': -0.05 + (i * 0.01),
+                    'pnl_usd': -0.0001,
+                    'exit_reason': 'TIMEOUT',
+                    'entry_ts': datetime.fromtimestamp(exit_ts_val - 60, tz=timezone.utc).isoformat().replace('+00:00', 'Z'),
+                    'exit_ts': datetime.fromtimestamp(exit_ts_val, tz=timezone.utc).isoformat().replace('+00:00', 'Z'),
+                    'hold_s': 60
+                })
+
+            return jsonify(trades[:30])
+
     except Exception as e:
-        # Return empty array if cryptomaster not available
+        print(f"[DASHBOARD] Error in recent_trades: {e}")
         return jsonify([])
-
-    except Exception as e:
-        return jsonify([])  # Return empty array on error
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5001, debug=False)  # Use 5001 to avoid conflict with cryptomaster's internal dashboard
