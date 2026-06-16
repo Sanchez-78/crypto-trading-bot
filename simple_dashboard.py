@@ -588,24 +588,29 @@ class DashboardHandler(BaseHTTPRequestHandler):
         else:
             tp_pct = sl_pct = scratch_pct = stag_pct = timeout_pct = 0
 
-        # Build trade details rows
+        # Build trade details rows (simplified for API data)
         trade_details_rows = ''
-        for trade in trade_details[:50]:  # Last 50
+        for trade in recent_trades[:50]:  # Last 50 recent trades from API
+            trade_id = trade.get('trade_id', 'N/A')[:8]
+            symbol = trade.get('symbol', 'N/A')
+            side = trade.get('side', 'BUY')
+            side_color = '#10b981' if side == 'BUY' else '#ef4444'
+            entry = trade.get('entry_price', 0)
+            exit_p = trade.get('exit_price', 0)
+            hold_s = trade.get('hold_s', 0)
+            pnl_pct = trade.get('pnl_pct', 0)
+            reason = trade.get('exit_reason', 'UNKNOWN')
+            reason_bg = '#10b98133' if 'tp' in reason.lower() else '#ef444433' if 'sl' in reason.lower() else '#fbbf2433'
             trade_details_rows += f"""
                 <tr>
-                    <td style="font-family: monospace; font-size: 11px;">{trade['trade_id']}</td>
-                    <td><strong>{trade['symbol']}</strong></td>
-                    <td style="color: {'#10b981' if trade['side'] == 'BUY' else '#ef4444'}">{trade['side']}</td>
-                    <td style="font-family: monospace; font-size: 11px;">{trade['entry_price']}</td>
-                    <td style="font-family: monospace; font-size: 11px;">{trade['exit_price']}</td>
-                    <td style="font-size: 11px;">{trade['entry_time']}</td>
-                    <td style="font-size: 11px;">{trade['exit_time']}</td>
-                    <td>{trade['hold_s']}</td>
-                    <td style="font-family: monospace;">{trade['pnl_pct']}</td>
-                    <td style="font-family: monospace; color: {'#10b981' if trade['pnl_color'] == 'positive' else '#ef4444' if trade['pnl_color'] == 'negative' else '#fbbf24'}; font-weight: bold;">{trade['pnl_usd']}</td>
-                    <td style="font-size: 11px;">{trade['mfe_mae']}</td>
-                    <td><span style="background: {'#10b98133' if 'TP' in trade['exit_reason'] else '#ef444433' if 'SL' in trade['exit_reason'] else '#fbbf2433'}; padding: 2px 6px; border-radius: 3px;">{trade['exit_reason']}</span></td>
-                    <td style="font-size: 11px;">{trade['regime']}</td>
+                    <td style="font-family: monospace; font-size: 11px;">{trade_id}</td>
+                    <td><strong>{symbol}</strong></td>
+                    <td style="color: {side_color};">{side}</td>
+                    <td style="font-family: monospace; font-size: 11px;">${entry:.8f}</td>
+                    <td style="font-family: monospace; font-size: 11px;">${exit_p:.8f}</td>
+                    <td>{hold_s}s</td>
+                    <td style="font-family: monospace; color: {'#10b981' if pnl_pct >= 0 else '#ef4444'};">{pnl_pct:.4f}%</td>
+                    <td><span style="background: {reason_bg}; padding: 2px 6px; border-radius: 3px; font-size: 11px;">{reason.upper()}</span></td>
                 </tr>
         """
 
@@ -1084,27 +1089,22 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
         <!-- Trade Details Section -->
         <div class="section">
-            <div class="section-title">📋 Všechny Uzavřené Obchody</div>
+            <div class="section-title">📋 Posledních 50 Uzavřených Obchodů (Live API)</div>
             <table>
                 <thead>
                     <tr>
-                        <th>Trade ID</th>
+                        <th style="font-size: 10px;">ID</th>
                         <th>Symbol</th>
                         <th>Side</th>
-                        <th>Entry Price</th>
-                        <th>Exit Price</th>
-                        <th>Entry Time</th>
-                        <th>Exit Time</th>
-                        <th>Hold (s)</th>
-                        <th>PnL %</th>
-                        <th>PnL USD</th>
-                        <th>MFE/MAE</th>
+                        <th style="font-size: 11px;">Entry</th>
+                        <th style="font-size: 11px;">Exit</th>
+                        <th>Hold</th>
+                        <th>P&L %</th>
                         <th>Exit Reason</th>
-                        <th>Regime</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {trade_details_rows if trade_details_rows else '<tr><td colspan="13" style="text-align: center; color: #666;">Žádné obchody k zobrazení</td></tr>'}
+                    {trade_details_rows if trade_details_rows else '<tr><td colspan="8" style="text-align: center; color: #666;">Žádné obchody k zobrazení</td></tr>'}
                 </tbody>
             </table>
         </div>
