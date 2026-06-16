@@ -1237,13 +1237,7 @@ def open_paper_position(
             peak_price = max(recent_prices) if recent_prices else price
             price_from_peak_pct = abs(price - peak_price) / peak_price * 100 if peak_price > 0 else 0
 
-            if price_from_peak_pct < 2.0 and side_raw == "BUY":  # Within 2.0% of peak for BUY = at resistance
-                throttle_key = (symbol, "price_validation", "entry_at_peak")
-                last_log = _PAPER_ENTRY_BLOCKED_THROTTLE.get(throttle_key, 0.0)
-                if now_ts - last_log >= _PAPER_ENTRY_BLOCKED_TTL:
-                    log.info(f"[PAPER_ENTRY_BLOCKED] symbol={symbol} reason=entry_at_peak price={price:.2f} peak={peak_price:.2f} deviation={price_from_peak_pct:.2f}%")
-                    _PAPER_ENTRY_BLOCKED_THROTTLE[throttle_key] = now_ts
-                return {"status": "blocked", "reason": "entry_at_peak"}
+            pass  # Removed entry_at_peak check for BUY — in uptrends all prices are near recent peak
 
     symbol = signal.get("symbol", "UNKNOWN")
     # P1.1AF: Ensure bucket field is set (primary is training_bucket, fallback to explore_bucket)
