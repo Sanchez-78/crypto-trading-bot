@@ -304,7 +304,7 @@ HTML_TEMPLATE = r"""
 
         <!-- Open Positions Table -->
         <div class="stats-table">
-            <h3>📈 Open Positions ({len(open_positions_list)} active)</h3>
+            <h3>📈 Open Positions (<span id="openPosCount">0</span> active)</h3>
             <table id="openPositionsTable">
                 <thead>
                     <tr>
@@ -461,6 +461,9 @@ HTML_TEMPLATE = r"""
 
         function updateOpenPositionsTable(positions) {
             const tbody = document.getElementById('openPositionsBody');
+            const countEl = document.getElementById('openPosCount');
+            if (countEl) countEl.textContent = (positions && positions.length) || 0;
+
             if (!positions || positions.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; color: #888;">No open positions</td></tr>';
                 return;
