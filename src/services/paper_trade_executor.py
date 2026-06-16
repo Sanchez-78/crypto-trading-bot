@@ -1441,8 +1441,8 @@ def open_paper_position(
     # V10.27 CYCLE 7 FIX: Wire PAPER_TP_ZONE_BPS/SL_ZONE_BPS as AUTHORITATIVE override
     # Evidence: Cycles #5-6 revealed env-var wiring was in unreachable code; tp_from_executor
     # ATR bands (~40bps) always override. Compute env-var bands FIRST, use them to override.
-    tp_zone_bps = int(os.getenv("PAPER_TP_ZONE_BPS", "40"))  # default 40bps (0.40%)
-    sl_zone_bps = int(os.getenv("PAPER_SL_ZONE_BPS", "30"))  # default 30bps (0.30%)
+    tp_zone_bps = int(os.getenv("PAPER_TP_ZONE_BPS", "80"))  # default 80bps (0.80%) — expanded from 40bps per Cycle 20
+    sl_zone_bps = int(os.getenv("PAPER_SL_ZONE_BPS", "50"))  # default 50bps (0.50%) — expanded from 30bps per Cycle 20
     tp_pct_env = 1.0 + tp_zone_bps / 10000 if side == "BUY" else 1.0 - tp_zone_bps / 10000
     sl_pct_env = 1.0 - sl_zone_bps / 10000 if side == "BUY" else 1.0 + sl_zone_bps / 10000
     tp_price_env = price * tp_pct_env
