@@ -35,14 +35,24 @@ NETWORK_PATHS = [
 
 # Determine active path
 STORAGE_PATH = None
-for path in NETWORK_PATHS:
-    if Path(path).exists():
-        STORAGE_PATH = Path(path)
-        log.info(f"[LOCAL_STORAGE] Found storage at: {STORAGE_PATH}")
-        break
+
+# V10.27 FIX: Try network first, but fallback to local immediately if in development
+import os
+if os.getenv("FORCE_LOCAL_STORAGE") or not any(Path(p).exists() for p in NETWORK_PATHS):
+    # Use local directory (development mode, or network unavailable)
+    STORAGE_PATH = Path("local_learning_storage")
+    STORAGE_PATH.mkdir(parents=True, exist_ok=True)
+    log.warning(f"[LOCAL_STORAGE] Using local storage (dev mode): {STORAGE_PATH}")
+else:
+    # Try network share first
+    for path in NETWORK_PATHS:
+        if Path(path).exists():
+            STORAGE_PATH = Path(path)
+            log.info(f"[LOCAL_STORAGE] Found storage at: {STORAGE_PATH}")
+            break
 
 if not STORAGE_PATH:
-    # Fallback: create local directory
+    # Fallback: create local directory on /opt/cryptomaster (Hetzner)
     STORAGE_PATH = Path("/opt/cryptomaster/local_learning_storage")
     STORAGE_PATH.mkdir(parents=True, exist_ok=True)
     log.warning(f"[LOCAL_STORAGE] Network share unavailable, using local fallback: {STORAGE_PATH}")
@@ -121,6 +131,51 @@ class LocalLearningStorage:
             conn.execute('CREATE INDEX IF NOT EXISTS idx_trades_symbol ON trades(symbol)')
             conn.execute('CREATE INDEX IF NOT EXISTS idx_trades_exit_ts ON trades(exit_ts)')
 
+            # V10.27 FIX: Create calibration_state table for learning calibration
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS calibration_state (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    symbol TEXT,
+                    regime TEXT,
+                    side TEXT,
+                    win_count INTEGER DEFAULT 0,
+                    loss_count INTEGER DEFAULT 0,
+                    sample_size INTEGER DEFAULT 0,
+                    model_confidence REAL DEFAULT 0.0,
+                    last_update REAL,
+                    UNIQUE(symbol, regime, side)
+                )
+            ''')
+
+            # V10.27 FIX: Create learning_metrics table for aggregated learning stats
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS learning_metrics (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    symbol TEXT UNIQUE,
+                    closed_trades INTEGER DEFAULT 0,
+                    profit_factor REAL DEFAULT 0.0,
+                    win_rate REAL DEFAULT 0.0,
+                    expectancy REAL DEFAULT 0.0,
+                    pnl_total REAL DEFAULT 0.0,
+                    updated_at REAL
+                )
+            ''')
+
+            # V10.27 FIX: Create health_status table for bot health monitoring
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS health_status (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp REAL,
+                    open_positions INTEGER DEFAULT 0,
+                    closed_today INTEGER DEFAULT 0,
+                    profit_factor REAL DEFAULT 0.0,
+                    net_pnl REAL DEFAULT 0.0,
+                    firebase_quota_used INTEGER DEFAULT 0,
+                    learning_updates INTEGER DEFAULT 0,
+                    status TEXT DEFAULT 'normal'
+                )
+            ''')
+
             # Load schema from file (if exists)
             schema_path = Path(__file__).parent.parent.parent / "schema.sql"
             if schema_path.exists():
@@ -129,7 +184,7 @@ class LocalLearningStorage:
 
             conn.commit()
             conn.close()
-            log.info("[LOCAL_STORAGE] Database initialized with trades table")
+            log.info("[LOCAL_STORAGE] Database initialized with all required tables")
         except Exception as e:
             log.error(f"[LOCAL_STORAGE_ERROR] Failed to init DB: {e}")
             raise

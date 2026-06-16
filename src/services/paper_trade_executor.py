@@ -8,6 +8,21 @@ import sqlite3
 import json
 from typing import Optional, Dict, List
 
+# V10.27: Load .env configuration (if python-dotenv available)
+try:
+    from dotenv import load_dotenv
+    load_dotenv(override=True)  # Load .env and override existing env vars
+except ImportError:
+    # Fallback: manual .env loading
+    _env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.env')
+    if os.path.exists(_env_path):
+        with open(_env_path) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#'):
+                    k, v = line.split('=', 1)
+                    os.environ[k] = v
+
 from src.core.event_bus import subscribe_once
 
 log = logging.getLogger(__name__)
@@ -97,7 +112,16 @@ _V5_BRIDGE = None
 def _log_trade_to_sqlite(closed_trade: dict) -> None:
     """Log closed PAPER trade to local SQLite database for dashboard."""
     try:
-        db_path = '/opt/cryptomaster/local_learning_storage/learning_database.sqlite'
+        # V10.27 FIX: Use relative path in dev mode, absolute on Hetzner
+        if os.path.exists('/opt/cryptomaster'):
+            db_path = '/opt/cryptomaster/local_learning_storage/learning_database.sqlite'
+        else:
+            db_path = 'local_learning_storage/learning_database.sqlite'
+
+        # Ensure directory exists
+        db_dir = os.path.dirname(db_path) or '.'
+        os.makedirs(db_dir, exist_ok=True)
+
         conn = sqlite3.connect(db_path)
         c = conn.cursor()
 
@@ -130,8 +154,9 @@ def _log_trade_to_sqlite(closed_trade: dict) -> None:
         ))
         conn.commit()
         conn.close()
+        log.info(f"[SQLITE_LOG_OK] trade_id={closed_trade.get('trade_id')} saved to {db_path}")
     except Exception as e:
-        log.warning(f"[SQLITE_LOG_ERROR] Failed to log paper trade: {e}")
+        log.error(f"[SQLITE_LOG_ERROR] Failed to log paper trade: {e}", exc_info=True)
 _V5_BRIDGE_LOCK = __import__("threading").RLock()
 
 
@@ -2402,8 +2427,8 @@ def close_paper_position(
         pos.get("training_bucket", ""),
     )
 
-    # V10.15l: Log to SQLite for dashboard
-    _log_trade_to_sqlite(closed_trade)
+    # V10.15l: SQLite logging delegated to learning_integration.on_paper_trade_closed()
+    # All trade data is persisted via LocalLearningStorage (uses network share if available)
 
     # V5 Legacy Bridge: Record paper close (Phase 3 hook) — BEFORE deduplication
     close_event = None  # Initialize to prevent undefined variable in except block
