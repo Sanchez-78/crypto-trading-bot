@@ -1,10 +1,10 @@
 {
-  "cycle": 18,
+  "cycle": 19,
   "start_time": "2026-06-16T08:45:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 3,
-  "current_wr": 100.0,
-  "current_pnl": -0.37,
+  "total_cycles_completed": 4,
+  "current_wr": 0.0,
+  "current_pnl": -0.094,
   "total_wr_gain": 100.0,
   "quota_max_used_pct": 0,
   "last_update": "2026-06-16T10:15:00Z",
@@ -48,6 +48,42 @@
         "win_rate": 0.0
       },
       "next_cycle_action": "Investigate startup initialization—ensure _init_paper_state_once() actually executes and orphaned positions load into _POSITIONS"
+    },
+    {
+      "cycle": 18,
+      "timestamp": "2026-06-16T10:57:49Z",
+      "phase": "DIAGNOSTIC_AND_BLOCKER_FIX",
+      "blocker_identified": "TP/SL distance calculation bug + NoneType int() crash",
+      "fixes_applied": [
+        "1. Fix TP/SL distance display (simple_dashboard.py:200-201): Return percentage (%) not dollar delta",
+        "2. Fix NoneType int() crash (paper_trade_executor.py:2380): Use _safe_float() helper for entry_ts guard",
+        "3. Verified: Dashboard API now shows correct tp_distance_pct (0.50%) instead of impossible 332.9%"
+      ],
+      "evidence": "Dashboard API returned tp_distance_pct=332.9 (should be 0.5%), all 8 exits were TIMEOUT (0 TP/SL). Local storage errors: int() argument must be ... not NoneType. Service restart during window (PID flip 1266855→1272512)",
+      "root_cause": [
+        "Dashboard was computing absolute price delta instead of percentage: tp - entry instead of (tp - entry) / entry * 100",
+        "Legacy positions had entry_ts=None, causing int(None) crash during trade persistence"
+      ],
+      "deployment": {
+        "status": "PASS",
+        "commit": "66f2bd3",
+        "deploy_time_secs": 320,
+        "service_health": "active",
+        "api_responding": true,
+        "errors_found": 0,
+        "trade_loop_active": true
+      },
+      "measurement_window": "30 min (awaiting data collection)",
+      "metrics_before": {
+        "wr_pct": 0.0,
+        "pf": 0.0,
+        "pnl_usd": -0.0938,
+        "closed_trades": 8,
+        "open_positions": 25,
+        "exit_distribution": {"tp": 0, "sl": 0, "timeout": 8}
+      },
+      "metrics_after": "PENDING (measurement in progress)",
+      "next_cycle_action": "Resume monitoring Cycle 19 after 30-min measurement window; expect TP exits to increase from 0 to >30% once distance display is fixed"
     }
   ],
   "notes": [
