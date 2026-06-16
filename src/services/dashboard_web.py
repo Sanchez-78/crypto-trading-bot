@@ -302,6 +302,30 @@ HTML_TEMPLATE = r"""
             </div>
         </div>
 
+        <!-- Open Positions Table -->
+        <div class="stats-table">
+            <h3>📈 Open Positions ({len(open_positions_list)} active)</h3>
+            <table id="openPositionsTable">
+                <thead>
+                    <tr>
+                        <th>Trade ID</th>
+                        <th>Symbol</th>
+                        <th>Side</th>
+                        <th>Entry Price</th>
+                        <th>TP</th>
+                        <th>SL</th>
+                        <th>Hold (s)</th>
+                        <th>Regime</th>
+                        <th>Size (USD)</th>
+                        <th>P&L %</th>
+                    </tr>
+                </thead>
+                <tbody id="openPositionsBody">
+                    <tr><td colspan="10" style="text-align: center; color: #888;">Loading open positions...</td></tr>
+                </tbody>
+            </table>
+        </div>
+
         <!-- Stats Table -->
         <div class="stats-table">
             <h3>📊 Trading Statistics</h3>
@@ -435,6 +459,30 @@ HTML_TEMPLATE = r"""
             }).join('');
         }
 
+        function updateOpenPositionsTable(positions) {
+            const tbody = document.getElementById('openPositionsBody');
+            if (!positions || positions.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; color: #888;">No open positions</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = positions.map(p => {
+                const pnlClass = p.pnl_pct >= 0 ? 'positive' : 'negative';
+                return `<tr>
+                    <td>${p.trade_id || '—'}</td>
+                    <td><strong>${p.symbol || '—'}</strong></td>
+                    <td>${p.side || '—'}</td>
+                    <td>$${(parseFloat(p.entry_price) || 0).toFixed(4)}</td>
+                    <td>$${(parseFloat(p.tp) || 0).toFixed(4)}</td>
+                    <td>$${(parseFloat(p.sl) || 0).toFixed(4)}</td>
+                    <td>${Math.round(p.current_hold_s || 0)}s</td>
+                    <td>${p.regime || '—'}</td>
+                    <td>$${(parseFloat(p.size_usd) || 0).toFixed(2)}</td>
+                    <td class="${pnlClass}">${(p.pnl_pct || 0).toFixed(4)}%</td>
+                </tr>`;
+            }).join('');
+        }
+
         function updateCharts(data) {
             if (!data) return;
 
@@ -559,6 +607,9 @@ HTML_TEMPLATE = r"""
             // Update timestamp
             document.getElementById('timestamp').textContent =
                 'Updated: ' + new Date(data.last_update).toLocaleString() + ' UTC';
+
+            // Update open positions table
+            updateOpenPositionsTable(data.open_positions_list || []);
 
             // Update charts
             updateCharts(data);
