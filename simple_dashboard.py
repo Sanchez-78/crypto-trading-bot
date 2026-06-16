@@ -55,90 +55,84 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def handle_api_metrics(self):
         """GET /api/dashboard/metrics - All aggregated metrics"""
         try:
-            # V10.22: Read from cache.sqlite (primary, has new trades)
-            # Fall back to learning_database.sqlite (old, has historical trades)
-            db_path = '/opt/cryptomaster/local_learning_storage/cache.sqlite'
-            backup_db_path = '/opt/cryptomaster/local_learning_storage/learning_database.sqlite'
+            # Fetch recent logs to extract trade data
+            logs = get_logs(since_minutes=180)
 
-            if not os.path.exists(db_path) and not os.path.exists(backup_db_path):
-                return self.send_json({'error': 'No trades recorded yet'}, 404)
+            # Parse PAPER_EXIT logs for recent trades and metrics
+            recent_trades = []
+            exit_counts = {'tp': 0, 'sl': 0, 'scratch': 0, 'stagnation': 0, 'timeout': 0}
+            trade_pnls = []
 
-            # Try cache.sqlite first (has new trades)
-            try:
-                conn = sqlite3.connect(db_path)
-                conn.row_factory = sqlite3.Row
-                cursor = conn.cursor()
-            except:
-                # Fall back to learning_database.sqlite (historical trades)
-                conn = sqlite3.connect(backup_db_path)
-                conn.row_factory = sqlite3.Row
-                cursor = conn.cursor()
+            for line in logs.split('\n'):
+                if '[PAPER_EXIT]' in line:
+                    # Extract trade details from log line
+                    trade = {}
 
-            # Get success metrics
-            cursor.execute('''
-                SELECT COUNT(*) as total,
-                       SUM(CASE WHEN pnl_usd > 0 OR win = 1 THEN 1 ELSE 0 END) as wins,
-                       SUM(CASE WHEN pnl_usd < 0 OR win = 0 THEN 1 ELSE 0 END) as losses,
-                       AVG(pnl_usd) as expectancy,
-                       SUM(pnl_usd) as net_pnl
-                FROM closed_trades
-            ''')
-            metrics_row = cursor.fetchone()
-            total = metrics_row['total']
-            wins = metrics_row['wins'] or 0
-            losses = metrics_row['losses'] or 0
-            net_pnl = metrics_row['net_pnl'] or 0.0
-            expectancy = metrics_row['expectancy'] or 0.0
+                    # Extract trade_id
+                    m = re.search(r'trade_id=(\w+)', line)
+                    if m: trade['trade_id'] = m.group(1)
+
+                    # Extract symbol
+                    m = re.search(r'symbol=(\w+)', line)
+                    if m: trade['symbol'] = m.group(1)
+
+                    # Extract exit reason
+                    m = re.search(r'reason=(\w+)', line)
+                    if m:
+                        reason = m.group(1).lower()
+                        trade['exit_reason'] = reason
+                        if reason == 'tp': exit_counts['tp'] += 1
+                        elif reason == 'sl': exit_counts['sl'] += 1
+                        elif 'scratch' in reason: exit_counts['scratch'] += 1
+                        elif 'stag' in reason: exit_counts['stagnation'] += 1
+                        elif 'timeout' in reason: exit_counts['timeout'] += 1
+
+                    # Extract PnL
+                    m = re.search(r'net_pnl_pct=([-\d.]+)', line)
+                    if m:
+                        pnl_pct = float(m.group(1))
+                        trade['pnl_pct'] = pnl_pct
+                        trade_pnls.append(pnl_pct)
+
+                    # Extract prices
+                    m = re.search(r'entry=([\d.]+)', line)
+                    if m: trade['entry_price'] = float(m.group(1))
+
+                    m = re.search(r'exit=([\d.]+)', line)
+                    if m: trade['exit_price'] = float(m.group(1))
+
+                    # Extract hold_s
+                    m = re.search(r'hold_s=(\d+)', line)
+                    if m: trade['hold_s'] = int(m.group(1))
+
+                    # Extract side (BUY/SELL)
+                    if 'SELL' in line:
+                        trade['side'] = 'SELL'
+                    elif 'BUY' in line or trade.get('side') is None:
+                        trade['side'] = 'BUY'
+
+                    if trade.get('trade_id'):
+                        recent_trades.append(trade)
+
+            # Limit to last 10 trades
+            recent_trades = recent_trades[:10]
+
+            # Calculate metrics from parsed trades
+            total = exit_counts['tp'] + exit_counts['sl'] + exit_counts['scratch'] + exit_counts['stagnation'] + exit_counts['timeout']
+            wins = exit_counts['tp'] + exit_counts['sl']
+            losses = exit_counts['timeout'] + exit_counts['scratch'] + exit_counts['stagnation']
+
+            if trade_pnls:
+                net_pnl = sum(trade_pnls)
+                expectancy = sum(trade_pnls) / len(trade_pnls)
+            else:
+                net_pnl = 0.0
+                expectancy = 0.0
 
             profit_factor = (wins / (losses + 0.0001)) if losses > 0 else (1.0 if wins > 0 else 0.0)
             win_rate_pct = (wins / total * 100) if total > 0 else 0.0
 
-            # Get exit distribution (V10.22: read from closed_trades table)
-            cursor.execute('''
-                SELECT exit_reason, COUNT(*) as cnt FROM closed_trades GROUP BY exit_reason
-            ''')
-            exits = {'tp': 0, 'sl': 0, 'scratch': 0, 'stagnation': 0, 'timeout': 0}
-            for row in cursor.fetchall():
-                reason = (row['exit_reason'] or 'unknown').lower()
-                if reason == 'tp':
-                    exits['tp'] = row['cnt']
-                elif reason == 'sl':
-                    exits['sl'] = row['cnt']
-                elif 'scratch' in reason:
-                    exits['scratch'] = row['cnt']
-                elif 'stag' in reason:
-                    exits['stagnation'] = row['cnt']
-                elif 'timeout' in reason:
-                    exits['timeout'] = row['cnt']
-
-            # Get readiness by symbol (skip if table doesn't exist)
-            readiness_by_symbol = []
-            try:
-                cursor.execute('''
-                    SELECT symbol, readiness_status, readiness_pct, closed_trades,
-                           win_rate, profit_factor, expectancy
-                    FROM readiness_status
-                    ORDER BY readiness_pct DESC
-                ''')
-                for row in cursor.fetchall():
-                    readiness_by_symbol.append({
-                        'symbol': row['symbol'],
-                        'closed_trades': row['closed_trades'],
-                        'win_rate': round(row['win_rate'], 4),
-                        'profit_factor': round(row['profit_factor'], 2),
-                        'expectancy': round(row['expectancy'], 6),
-                        'min_trades_ok': row['closed_trades'] >= 50,
-                        'wr_ok': row['win_rate'] >= 0.65,
-                        'pf_ok': row['profit_factor'] >= 1.05,
-                        'exp_ok': row['expectancy'] > 0,
-                        'readiness_status': row['readiness_status'],
-                        'readiness_pct': round(row['readiness_pct'], 1),
-                        'last_update': int(time.time())
-                    })
-            except:
-                pass
-
-            # Get open positions count and list
+            # Get open positions
             open_positions = 0
             open_positions_list = []
             try:
@@ -165,33 +159,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             except:
                 pass
 
-            # Get recent trades (last 10 closed)
-            recent_trades = []
-            try:
-                cursor.execute('''
-                    SELECT trade_id, symbol, side, entry_ts, exit_ts, entry_price, exit_price,
-                           pnl_pct, exit_reason, hold_s
-                    FROM closed_trades
-                    ORDER BY exit_ts DESC
-                    LIMIT 10
-                ''')
-                for row in cursor.fetchall():
-                    recent_trades.append({
-                        'trade_id': row['trade_id'],
-                        'symbol': row['symbol'],
-                        'side': row['side'],
-                        'entry_ts': row['entry_ts'],
-                        'exit_ts': row['exit_ts'],
-                        'entry_price': float(row['entry_price']),
-                        'exit_price': float(row['exit_price']),
-                        'pnl_pct': float(row['pnl_pct']),
-                        'exit_reason': row['exit_reason'],
-                        'hold_s': int(row['hold_s'])
-                    })
-            except:
-                pass
-
-            conn.close()
+            # Placeholder for readiness (would need more complex parsing)
+            readiness_by_symbol = []
 
             response = {
                 'win_rate_pct': round(win_rate_pct, 1),
