@@ -255,7 +255,7 @@ class LocalLearningStorage:
                         trade_dict.get('exit_reason', 'unknown'),
                         trade_dict.get('regime', 'NEUTRAL'),
                         trade_dict.get('size_usd', 0.0),
-                        int(trade_dict.get('cost_edge_ok', False)),
+                        int(bool(trade_dict.get('cost_edge_ok') or False)),
                         trade_dict.get('learning_source', 'paper'),
                         int(time.time()),
                     ))
