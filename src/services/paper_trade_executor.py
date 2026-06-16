@@ -1670,6 +1670,9 @@ def open_paper_position(
         except Exception as e:
             log.warning("[PAPER_TRAIN_RATE_SLOT_COMMIT_ERROR] trade_id=%s err=%s", trade_id, str(e))
 
+    # Persist state after opening new position
+    _save_paper_state()
+
     return {
         "status": "opened",
         "trade_id": trade_id,
