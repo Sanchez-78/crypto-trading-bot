@@ -1873,21 +1873,28 @@ def update_paper_positions(
                     for pos_id, pos_data in orphaned.items():
                         _POSITIONS[pos_id] = pos_data
                     log.info(f"[V10.18_ORPHAN_LOAD] Loaded {len(orphaned)} positions from JSON")
-
-                    # CYCLE#15 FIX: Recalculate TP/SL for orphaned positions with current env override
-                    # Orphaned positions have old bands (150bps). Recalc with env-override (15bps).
-                    tp_zone_bps = int(os.getenv("PAPER_TP_ZONE_BPS", "40"))
-                    sl_zone_bps = int(os.getenv("PAPER_SL_ZONE_BPS", "30"))
-                    for pos_id, pos_data in _POSITIONS.items():
-                        side = pos_data.get("side", "BUY")
-                        entry_price = pos_data.get("entry_price", 0)
-                        tp_pct = 1.0 + tp_zone_bps / 10000 if side == "BUY" else 1.0 - tp_zone_bps / 10000
-                        sl_pct = 1.0 - sl_zone_bps / 10000 if side == "BUY" else 1.0 + sl_zone_bps / 10000
-                        _POSITIONS[pos_id]["tp"] = entry_price * tp_pct
-                        _POSITIONS[pos_id]["sl"] = entry_price * sl_pct
-                    log.info(f"[CYCLE#15_RECALC] Recalculated TP/SL for {len(orphaned)} orphaned positions with tp_bps={tp_zone_bps} sl_bps={sl_zone_bps}")
             except Exception as e:
                 log.warning(f"[V10.18_ORPHAN_LOAD_ERROR] {e}")
+
+        # CYCLE#15 FIX: Sync TP/SL bands on every tick with current env override
+        # Ensures all positions (old AND new) use tight bands (15bps/10bps) not wide (150bps)
+        tp_zone_bps = int(os.getenv("PAPER_TP_ZONE_BPS", "40"))
+        sl_zone_bps = int(os.getenv("PAPER_SL_ZONE_BPS", "30"))
+        recalc_count = 0
+        for pos_id, pos_data in _POSITIONS.items():
+            old_tp = pos_data.get("tp", 0)
+            side = pos_data.get("side", "BUY")
+            entry_price = pos_data.get("entry_price", 0)
+            tp_pct = 1.0 + tp_zone_bps / 10000 if side == "BUY" else 1.0 - tp_zone_bps / 10000
+            sl_pct = 1.0 - sl_zone_bps / 10000 if side == "BUY" else 1.0 + sl_zone_bps / 10000
+            new_tp = entry_price * tp_pct
+            # Only update if significantly different (avoid noise from repeated calcs)
+            if abs(new_tp - old_tp) > 0.0001 * entry_price:
+                _POSITIONS[pos_id]["tp"] = new_tp
+                _POSITIONS[pos_id]["sl"] = entry_price * sl_pct
+                recalc_count += 1
+        if recalc_count > 0:
+            log.info(f"[CYCLE#15_SYNC] Synced TP/SL for {recalc_count} positions (tp_bps={tp_zone_bps} sl_bps={sl_zone_bps})")
 
         positions_to_check = list(_POSITIONS.items())
 
