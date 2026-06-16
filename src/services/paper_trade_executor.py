@@ -1856,7 +1856,14 @@ def update_paper_positions(
     for trade_id, pos in positions_to_check:
         symbol = pos["symbol"]
         # Use current price if available, otherwise fall back to last known price
-        current_price = symbol_prices.get(symbol) or pos.get("last_price")
+        # CYCLE#11 FIX: learning_event._last_prices stores (price, prev) TUPLES,
+        # so get_metrics()["last_prices"][sym] is a tuple, not a scalar. Unwrap
+        # element [0] before use — otherwise `current_price <= 0` raised TypeError,
+        # aborting update_paper_positions every tick → on-tick TP/SL never ran → 100% TIMEOUT.
+        _raw_price = symbol_prices.get(symbol)
+        if isinstance(_raw_price, (tuple, list)):
+            _raw_price = _raw_price[0] if _raw_price else None
+        current_price = _safe_float(_raw_price, 0.0) or _safe_float(pos.get("last_price"), 0.0)
 
         if not current_price or current_price <= 0:
             continue  # No valid price, skip
