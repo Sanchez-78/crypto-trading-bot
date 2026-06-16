@@ -143,9 +143,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
                         open_positions = len(positions)
                         # Handle both dict (keyed by trade_id) and list formats
                         if isinstance(positions, dict):
-                            pos_items = positions.items()
+                            pos_items = list(positions.items())
                         else:
-                            pos_items = [(pos.get('id', ''), pos) for pos in positions]
+                            pos_items = [(i, pos) for i, pos in enumerate(positions)]
 
                         open_positions_list = []
                         for trade_id, pos in pos_items:
@@ -157,22 +157,24 @@ class DashboardHandler(BaseHTTPRequestHandler):
                                 created_at = pos.get('created_at', entry_ts)
                                 hold_s = int(time.time() - created_at) if created_at else 0
                                 open_positions_list.append({
-                                    'trade_id': trade_id,
-                                    'symbol': pos.get('symbol', ''),
-                                    'side': pos.get('side', ''),
-                                    'entry_ts': entry_ts,
+                                    'trade_id': str(trade_id),
+                                    'symbol': str(pos.get('symbol', '')),
+                                    'side': str(pos.get('side', '')),
+                                    'entry_ts': float(entry_ts) if entry_ts else 0,
                                     'entry_price': safe_float(pos.get('entry_price')),
                                     'current_hold_s': hold_s,
                                     'max_hold_s': safe_float(pos.get('max_hold_s'), 600),
                                     'tp': safe_float(pos.get('tp')),
                                     'sl': safe_float(pos.get('sl')),
-                                    'regime': pos.get('regime', ''),
+                                    'regime': str(pos.get('regime', '')),
                                     'size_usd': safe_float(pos.get('size_usd'))
                                 })
                             except Exception as e:
-                                pass
-            except:
-                pass
+                                import sys
+                                print(f'[OPEN_POS_ERR] {trade_id}: {e}', file=sys.stderr)
+            except Exception as e:
+                import sys
+                print(f'[OPEN_POS_LOAD_ERR] {e}', file=sys.stderr)
 
             # Placeholder for readiness (would need more complex parsing)
             readiness_by_symbol = []
