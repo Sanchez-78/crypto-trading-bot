@@ -141,9 +141,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     with open(pos_file) as f:
                         positions = json.load(f)
                         open_positions = len(positions)
+                        # Handle both dict (keyed by trade_id) and list formats
+                        if isinstance(positions, dict):
+                            pos_items = positions.items()
+                        else:
+                            pos_items = [(pos.get('id', ''), pos) for pos in positions]
+
                         open_positions_list = [
                             {
-                                'trade_id': pos.get('id', ''),
+                                'trade_id': trade_id,
                                 'symbol': pos.get('symbol', ''),
                                 'side': pos.get('side', ''),
                                 'entry_ts': pos.get('entry_ts', ''),
@@ -154,8 +160,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                                 'sl': float(pos.get('sl', 0)),
                                 'regime': pos.get('regime', ''),
                                 'size_usd': float(pos.get('size_usd', 0))
-                            } for pos in positions
-                        ] if isinstance(positions, list) else []
+                            } for trade_id, pos in pos_items
+                        ]
             except:
                 pass
 
