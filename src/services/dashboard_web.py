@@ -668,7 +668,9 @@ def metrics():
                 "last_update": iso_timestamp
             })
         except Exception as api_error:
-            pass  # Fall back to database if API fails
+            import sys
+            print(f"[DASH] Port 5000 API failed: {api_error}", file=sys.stderr, flush=True)
+            # Fall back to database if API fails
 
         # FALLBACK: Try database if API unavailable
         conn = sqlite3.connect("local_learning_storage/learning_database.sqlite", timeout=2)
