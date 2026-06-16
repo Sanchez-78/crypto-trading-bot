@@ -3551,10 +3551,12 @@ def _init_paper_state_once() -> None:
     Prevents NameError for _reconcile_stale_paper_positions() and other helpers.
     """
     global _PAPER_STATE_INITIALIZED
+    log.info("[INIT_PAPER_STATE_CALLED] _PAPER_STATE_INITIALIZED=%s", _PAPER_STATE_INITIALIZED)
     if _PAPER_STATE_INITIALIZED:
         return
     _PAPER_STATE_INITIALIZED = True
     try:
+        log.info("[INIT_PAPER_STATE_LOADING] About to call _load_paper_state()")
         _load_paper_state()
     except Exception as e:
         log.exception("[PAPER_STATE_LOAD_ERROR] source=%s err=%s", _STATE_FILE, e)
