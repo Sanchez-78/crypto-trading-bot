@@ -54,9 +54,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def handle_api_metrics(self):
         """GET /api/dashboard/metrics - All aggregated metrics"""
+        import sys
+        print(f'[API_METRICS] Request received at {time.time()}', file=sys.stderr, flush=True)
         try:
             # Fetch recent logs to extract trade data
+            print(f'[API_METRICS] Fetching logs...', file=sys.stderr, flush=True)
             logs = get_logs(since_minutes=180)
+            print(f'[API_METRICS] Got {len(logs)} chars of logs', file=sys.stderr, flush=True)
 
             # Parse PAPER_EXIT logs for recent trades and metrics
             recent_trades = []
@@ -132,14 +136,19 @@ class DashboardHandler(BaseHTTPRequestHandler):
             profit_factor = (wins / (losses + 0.0001)) if losses > 0 else (1.0 if wins > 0 else 0.0)
             win_rate_pct = (wins / total * 100) if total > 0 else 0.0
 
-            # Get open positions
+            # Get open positions with comprehensive details
+            print(f'[API_METRICS] Loading open positions...', file=sys.stderr, flush=True)
             open_positions = 0
             open_positions_list = []
+            pos_load_error = None
             try:
                 pos_file = '/opt/cryptomaster/data/paper_open_positions.json'
+                print(f'[API_METRICS] Checking {pos_file}...', file=sys.stderr, flush=True)
                 if os.path.exists(pos_file):
+                    print(f'[API_METRICS] File exists, reading...', file=sys.stderr, flush=True)
                     with open(pos_file) as f:
                         positions = json.load(f)
+                        print(f'[API_METRICS] Loaded {len(positions)} positions', file=sys.stderr, flush=True)
                         open_positions = len(positions)
                         # Handle both dict (keyed by trade_id) and list formats
                         if isinstance(positions, dict):
@@ -151,30 +160,57 @@ class DashboardHandler(BaseHTTPRequestHandler):
                         for trade_id, pos in pos_items:
                             try:
                                 def safe_float(val, default=0.0):
-                                    return float(val) if val is not None else default
+                                    try:
+                                        return float(val) if val is not None else default
+                                    except:
+                                        return default
 
-                                entry_ts = pos.get('entry_ts', 0)
-                                created_at = pos.get('created_at', entry_ts)
-                                hold_s = int(time.time() - created_at) if created_at else 0
+                                entry_ts = pos.get('entry_ts') or pos.get('created_at', 0)
+                                if not entry_ts:
+                                    entry_ts = time.time()
+                                entry_ts = float(entry_ts) if entry_ts else time.time()
+                                hold_s = int(time.time() - entry_ts)
+
+                                entry_price = safe_float(pos.get('entry_price'))
+                                current_price = entry_price  # Would need live prices for accurate P&L
+
+                                # Calculate P&L for open position
+                                side = str(pos.get('side', 'BUY')).upper()
+                                if side == 'BUY' and entry_price > 0:
+                                    pnl_pct = (current_price - entry_price) / entry_price * 100
+                                elif side == 'SELL' and entry_price > 0:
+                                    pnl_pct = (entry_price - current_price) / entry_price * 100
+                                else:
+                                    pnl_pct = 0.0
+
                                 open_positions_list.append({
                                     'trade_id': str(trade_id),
-                                    'symbol': str(pos.get('symbol', '')),
-                                    'side': str(pos.get('side', '')),
-                                    'entry_ts': float(entry_ts) if entry_ts else 0,
-                                    'entry_price': safe_float(pos.get('entry_price')),
+                                    'symbol': str(pos.get('symbol', 'UNKNOWN')),
+                                    'side': side,
+                                    'entry_ts': entry_ts,
+                                    'entry_price': entry_price,
+                                    'current_price': current_price,
                                     'current_hold_s': hold_s,
                                     'max_hold_s': safe_float(pos.get('max_hold_s'), 600),
                                     'tp': safe_float(pos.get('tp')),
                                     'sl': safe_float(pos.get('sl')),
-                                    'regime': str(pos.get('regime', '')),
-                                    'size_usd': safe_float(pos.get('size_usd'))
+                                    'regime': str(pos.get('regime', 'UNKNOWN')),
+                                    'size_usd': safe_float(pos.get('size_usd'), 0.5),
+                                    'pnl_pct': round(pnl_pct, 4),
+                                    'tp_distance_pct': safe_float(pos.get('tp')) - entry_price if entry_price > 0 else 0,
+                                    'sl_distance_pct': entry_price - safe_float(pos.get('sl')) if entry_price > 0 else 0,
+                                    'status': 'OPEN'
                                 })
                             except Exception as e:
-                                import sys
-                                print(f'[OPEN_POS_ERR] {trade_id}: {e}', file=sys.stderr)
+                                print(f'[OPEN_POS_ERR] trade {trade_id}: {e}', file=sys.stderr, flush=True)
+                else:
+                    print(f'[API_METRICS] File not found: {pos_file}', file=sys.stderr, flush=True)
+                    pos_load_error = f'Positions file not found: {pos_file}'
             except Exception as e:
-                import sys
-                print(f'[OPEN_POS_LOAD_ERR] {e}', file=sys.stderr)
+                print(f'[OPEN_POS_LOAD_ERR] {e}', file=sys.stderr, flush=True)
+                import traceback
+                traceback.print_exc(file=sys.stderr)
+                pos_load_error = str(e)
 
             # Placeholder for readiness (would need more complex parsing)
             readiness_by_symbol = []
@@ -190,11 +226,28 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 'exit_distribution': exit_counts,
                 'readiness_by_symbol': readiness_by_symbol,
                 'timestamp': int(time.time()),
-                'last_update': datetime.utcnow().isoformat()
+                'last_update': datetime.utcnow().isoformat(),
+                '_debug': {
+                    'pos_load_error': pos_load_error,
+                    'logs_length': len(logs),
+                    'recent_trades_count': len(recent_trades),
+                    'status': 'OK' if not pos_load_error else 'PARTIAL'
+                }
             }
+            print(f'[API_METRICS] Returning {open_positions} open positions', file=sys.stderr, flush=True)
             self.send_json(response)
         except Exception as e:
-            self.send_json({'error': str(e)}, 500)
+            print(f'[API_METRICS_ERROR] {e}', file=sys.stderr, flush=True)
+            import traceback
+            traceback.print_exc(file=sys.stderr)
+            self.send_json({
+                'error': str(e),
+                'error_type': type(e).__name__,
+                'open_positions': 0,
+                'open_positions_list': [],
+                'closed_trades': 0,
+                '_debug': {'error_during_processing': True}
+            }, 500)
 
     def handle_api_readiness(self):
         """GET /api/dashboard/readiness - Readiness for all symbols"""
