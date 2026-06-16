@@ -3616,13 +3616,15 @@ subscribe_once("signal_created", _on_signal_created)
 
 # Call startup initializer after all functions are defined
 try:
-    log.info('[BEFORE_INIT_CALL] About to call _init_paper_state_once()')
+    print('[BEFORE_INIT_CALL] About to call _init_paper_state_once()', flush=True)
     _init_paper_state_once()
-    log.info('[AFTER_INIT_CALL] Successfully initialized paper state')
+    print('[AFTER_INIT_CALL] Successfully initialized paper state', flush=True)
 except Exception as e:
-    log.exception('[MODULE_INIT_ERROR] Failed during _init_paper_state_once: %s', e)
+    print(f'[MODULE_INIT_ERROR] Failed: {e}', flush=True)
+    import traceback
+    traceback.print_exc()
 
-log.info('[MODULE_LOAD_COMPLETE] paper_trade_executor module fully initialized')
+print('[MODULE_LOAD_COMPLETE] paper_trade_executor module fully initialized', flush=True)
 
 # MARKER: Module loaded successfully
 log.info('[MODULE_LOAD_COMPLETE] paper_trade_executor module fully initialized')
