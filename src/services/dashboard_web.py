@@ -644,10 +644,36 @@ def metrics():
 
         conn.close()
 
+        # Load open positions from JSON (fallback)
+        open_positions = 0
+        open_positions_list = []
+        try:
+            import json as json_module
+            with open('/opt/cryptomaster/data/paper_open_positions.json') as f:
+                positions = json_module.load(f)
+                open_positions = len(positions)
+                for pos_id, pos_data in (positions.items() if isinstance(positions, dict) else enumerate(positions)):
+                    open_positions_list.append({
+                        'trade_id': str(pos_id)[:8],
+                        'symbol': pos_data.get('symbol', 'N/A'),
+                        'side': pos_data.get('side', 'BUY'),
+                        'entry_price': float(pos_data.get('entry_price', 0)),
+                        'current_price': float(pos_data.get('last_price', pos_data.get('entry_price', 0))),
+                        'tp': float(pos_data.get('tp', 0)),
+                        'sl': float(pos_data.get('sl', 0)),
+                        'current_hold_s': int(time.time() - float(pos_data.get('entry_ts', time.time()))),
+                        'regime': pos_data.get('regime', 'N/A'),
+                        'size_usd': float(pos_data.get('size_usd', 0.5)),
+                        'pnl_pct': 0.0,
+                        'status': 'OPEN'
+                    })
+        except:
+            pass
+
         return jsonify({
             "closed_trades": closed_trades,
-            "open_positions": 0,
-            "open_positions_list": [],
+            "open_positions": open_positions,
+            "open_positions_list": open_positions_list,
             "profit_factor": float(profit_factor),
             "win_rate_pct": float(win_rate),
             "net_pnl": float(net_pnl),
