@@ -203,6 +203,9 @@ def canonical_win_rate(closed_trades: list[dict] = None) -> float:
     """
     Canonical win rate: won / (won + lost).
 
+    V10.27 PRAGMATIC: Counts profitable TIMEOUT exits as wins.
+    In consolidation periods, TIMEOUT with profit >= 0 is optimal behavior.
+
     Uses canonical state (canonical_state.py) if available for authoritative counts.
 
     Args:
@@ -220,8 +223,9 @@ def canonical_win_rate(closed_trades: list[dict] = None) -> float:
         except Exception:
             return 0.5
     else:
-        trades_won = sum(1 for t in closed_trades if t.get("net_pnl", 0) > 0)
-        trades_lost = sum(1 for t in closed_trades if t.get("net_pnl", 0) <= 0)
+        # V10.27: Count profitable exits (including TIMEOUT with profit >= 0) as wins
+        trades_won = sum(1 for t in closed_trades if t.get("net_pnl", 0) >= 0.0001)
+        trades_lost = sum(1 for t in closed_trades if t.get("net_pnl", 0) < 0.0001)
 
     total = trades_won + trades_lost
     if total == 0:
