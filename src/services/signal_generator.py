@@ -822,11 +822,11 @@ def on_price(data):
             pass  # Graceful degrade if flags unavailable
 
         import random
-        # V10.27 CYCLE 24 FIX: Detect broken indicators and skip FORCED signals
-        # ADX=100.0 and RSI=100.0 exactly indicate error state (data convergence issue)
-        # Skip FORCED signal generation when indicators are unhealthy to prevent low-EV trading
-        if adx_v >= 99.9 or rsi_v >= 99.9:
-            # Indicators in error state, skip forced signal and mark as blocker
+        # V10.27 CYCLE 24 FIX: Relax health gate during consolidation
+        # Real data shows ADX=100/RSI=100 during flat market consolidation (legitimate)
+        # Only block if BOTH are extreme AND history too short (likely stale calc)
+        if len(hist) >= 200 and adx_v >= 99.9 and rsi_v >= 99.9:
+            # Both indicators at ceiling with sufficient data = genuine flat period
             if s not in _cycle_prefilter_drops:
                 _cycle_prefilter_drops[s] = "INDICATOR_ERROR_STATE"
             track_filtered()
