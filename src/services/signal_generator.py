@@ -47,6 +47,7 @@ _rsi_hist      = {}   # symbol -> float (last rsi, for slope)
 _rsi_full_hist = {}   # symbol -> list[float], rolling RSI series for divergence
 _obi_hist      = {}   # symbol -> list[float], rolling OBI for z-score normalization
 _price_z_hist  = {}   # symbol -> list[float], rolling 20-price window for Z-score
+_first_run = True  # V10.27 CYCLE 24 FIX: Flag to clear stale history on service restart
 
 # ── V10.13d: Per-cycle signal generation tracking ──────────────────────────────
 _cycle_ticks          = 0          # fresh ticks received this cycle
@@ -559,7 +560,21 @@ def _relative_vol_ok(hist):
 # ── Main handler ──────────────────────────────────────────────────────────────
 
 def on_price(data):
-    global _cycle_ticks, _cycle_symbols, _cycle_candidates, _cycle_prefilter_drops
+    global _cycle_ticks, _cycle_symbols, _cycle_candidates, _cycle_prefilter_drops, _first_run
+
+    # V10.27 CYCLE 24 FIX: Clear all history on first run after service restart
+    # This prevents stale indicator data (ADX=100, RSI=100) from causing forced signals
+    if _first_run:
+        import logging
+        prices.clear()
+        _macd_vals.clear()
+        _adx_hist.clear()
+        _rsi_hist.clear()
+        _rsi_full_hist.clear()
+        _obi_hist.clear()
+        _price_z_hist.clear()
+        logging.info("[STARTUP_INIT] Cleared stale price history to force fresh indicator warmup")
+        _first_run = False
 
     s, p = data["symbol"], data["price"]
     obi  = data.get("obi", 0.0)
