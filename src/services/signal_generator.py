@@ -63,7 +63,7 @@ _SL_MULT = {"BULL_TREND": 0.8, "BEAR_TREND": 0.8,
 MIN_TP_PCT = 0.0025   # must match trade_executor.MIN_TP_PCT
 MIN_SL_PCT = 0.0015   # must match trade_executor.MIN_SL_PCT
 
-MIN_TICKS    = 50
+MIN_TICKS    = 100  # V10.27 CYCLE 24 FIX: Increased from 50 to 100 to ensure full indicator warmup post-restart. At 2s/tick = 200s minimum before trading. Prevents trading on invalid ADX/RSI error states.
 DEBOUNCE_S   = 15    # seconds between signals per symbol (was 30 — halved to
                       # double evaluation throughput; portfolio gate caps execution rate)
 SIDE_WINDOW  = 10    # signals to track for side balance
