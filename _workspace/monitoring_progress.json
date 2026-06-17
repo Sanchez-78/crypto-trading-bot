@@ -1,14 +1,14 @@
 {
-  "cycle": 3,
+  "cycle": 4,
   "start_time": "2026-06-17T06:26:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 2,
-  "current_wr": 0.25,
-  "current_pnl": -0.72,
-  "total_wr_gain": 0.25,
+  "total_cycles_completed": 3,
+  "current_wr": 0.0,
+  "current_pnl": -2.44,
+  "total_wr_gain": 0.0,
   "quota_max_used_pct": 0,
-  "last_update": "2026-06-17T12:15:00Z",
-  "status": "cycle3_running_healthgate_defense_t0_snapshot",
+  "last_update": "2026-06-17T12:45:00Z",
+  "status": "cycle3_complete_same_blocker_escalation",
   "cycle3_t0": {
     "timestamp": "2026-06-17T12:15:00Z",
     "deployment": "HEAD f7a03f70 (includes 16a680f health-gate relax)",
@@ -25,7 +25,26 @@
     },
     "firebase_quota": "healthy (0% used)",
     "service_uptime": "1h 8m, no crashes",
-    "measurement_window": "30 min (active, will measure T+30)"
+    "measurement_window": "30 min (complete)"
+  },
+  "cycle3_t30": {
+    "timestamp": "2026-06-17T12:45:00Z",
+    "decision_classification": "SAME_BLOCKER (market flatness, TP physically unreachable)",
+    "metrics": {
+      "closed_trades_30min": 16,
+      "wr_pct": 0.0,
+      "pf": 0.0,
+      "pnl_usd": -2.44,
+      "pnl_per_trade": -0.18,
+      "exit_breakdown": "TIMEOUT=16, TP=0, SL=0",
+      "mfe_avg_pct": 0.20,
+      "mfe_max_pct": 0.30,
+      "mfe_to_tp_ratio": 0.272
+    },
+    "finding": "MFE (avg 0.20%, max 0.30%) is 2.5x-5x smaller than TP (0.50-0.80%). TP is physically unreachable. Even tightest TP (0.30%) only catches the single best outlier. Binance feed healthy, no synthetic fallback.",
+    "direction_quality": "WRONG_DIRECTION=53% of trades (miscalibrated regime classifier / signal side in low-vol noise)",
+    "position_capacity": "saturated (25/25). Bot fully committed to losing flat trades; new signals blocked by cap not by gating.",
+    "escalation_recommended": "Do NOT patch exit parameters. Evidence shows no TP/SL band can profit in 0.20% volatility. Recommend volatility-gating entry (refuse LOW_VOL regimes, ADX<20) OR improve directional accuracy in consolidation. Next cycle: investigate minimum-volatility gate."
   },
   "cycle2_layer2": {
     "investigation_summary": "Three patch attempts; all REJECTED. Root cause misidentified. Escalating to real blocker: synthetic-flat warmup data.",
