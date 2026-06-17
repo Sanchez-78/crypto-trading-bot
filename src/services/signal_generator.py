@@ -89,12 +89,7 @@ def _rsi(series, n=14):
     losses = [max(series[i-1] - series[i], 0) for i in range(1, len(series))]
     ag = _ema(gains[-n*3:],  n) or 1e-9
     al = _ema(losses[-n*3:], n) or 1e-9
-    rsi = 100 - 100 / (1 + ag / al)
-    # V10.27 CYCLE 24: Log components if RSI suspect
-    if rsi >= 99.5 and len(series) > 500:
-        import logging
-        logging.warning(f"[RSI_CALC] len={len(series)} ag={ag:.6f} al={al:.6f} ag/al={ag/al:.2f} rsi={rsi:.2f} gains_nonzero={sum(1 for g in gains[-42:] if g>0)} losses_nonzero={sum(1 for l in losses[-42:] if l>0)}")
-    return rsi
+    return 100 - 100 / (1 + ag / al)
 
 
 def _rsi_divergence(sym, hist, rsi_now, window=30, price_th=0.003, rsi_th=3.0):
@@ -155,10 +150,6 @@ def _adx(series, n=14):
     di_p  = 100 * _ema(ups[-n*3:],   n) / tr_s
     di_m  = 100 * _ema(downs[-n*3:], n) / tr_s
     adx   = 100 * abs(di_p - di_m) / ((di_p + di_m) or 1e-9)
-    # V10.27 CYCLE 24: Log components if ADX suspect
-    if adx >= 99.5 and len(series) > 500:
-        import logging
-        logging.warning(f"[ADX_CALC] len={len(series)} tr_s={tr_s:.6f} di_p={di_p:.2f} di_m={di_m:.2f} adx={adx:.2f} ups_count={sum(1 for u in ups[-42:] if u>0)} downs_count={sum(1 for d in downs[-42:] if d>0)}")
     return adx, di_p, di_m
 
 
@@ -636,17 +627,9 @@ def on_price(data):
     _adx_hist[s] = adx_v
     adx_slope = adx_v - adx_prev
 
-    # V10.27 CYCLE 24: Debug stuck indicators
-    if adx_v >= 99.5:
-        logging.warning(f"[ADX_DEBUG] {s} adx={adx_v:.2f} di_p={di_p:.2f} di_m={di_m:.2f} hist[0:3]={hist[0:3][-3:]} hist[-3:]={hist[-3:]} hist_len={len(hist)}")
-
     rsi_prev  = _rsi_hist.get(s, rsi_v)
     _rsi_hist[s] = rsi_v
     rsi_slope = rsi_v - rsi_prev
-
-    # V10.27 CYCLE 24: Debug stuck indicators
-    if rsi_v >= 99.5:
-        logging.warning(f"[RSI_DEBUG] {s} rsi={rsi_v:.2f} hist_len={len(hist)} hist[-10:]={hist[-10:]}")
     div_bull, div_bear = _rsi_divergence(s, hist, rsi_v)
 
     reg = _regime(hist, adx_v, di_p, di_m, atr_v)
