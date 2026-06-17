@@ -825,8 +825,10 @@ def on_price(data):
         # V10.27 CYCLE 24 FIX: Detect broken indicators and skip FORCED signals
         # ADX=100.0 and RSI=100.0 exactly indicate error state (data convergence issue)
         # Skip FORCED signal generation when indicators are unhealthy to prevent low-EV trading
+        logging.warning(f"[HEALTH_GATE_CHECK] {s} adx_v={adx_v:.2f} rsi_v={rsi_v:.2f} threshold_99.9 check: {adx_v >= 99.9 or rsi_v >= 99.9}")
         if adx_v >= 99.9 or rsi_v >= 99.9:
             # Indicators in error state, skip forced signal and mark as blocker
+            logging.warning(f"[INDICATOR_ERROR_STATE_BLOCKED] {s} adx={adx_v:.1f} rsi={rsi_v:.1f}")
             if s not in _cycle_prefilter_drops:
                 _cycle_prefilter_drops[s] = "INDICATOR_ERROR_STATE"
             track_filtered()
