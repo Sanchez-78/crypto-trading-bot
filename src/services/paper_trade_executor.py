@@ -2900,7 +2900,7 @@ def _log_paper_train_quality_entry(position: dict, signal: dict) -> None:
                 score_final = None
 
         spread = float(signal.get("spread") or 0.0)
-        hold_limit_s = int(position.get("max_hold_s") or 300)
+        hold_limit_s = int(position.get("max_hold_s") or _MAX_AGE_S)
 
         # Format score fields for logging
         score_raw_str = f"{score_raw:.3f}" if score_raw is not None else "na"
@@ -3374,7 +3374,7 @@ def _log_paper_train_quality_exit(closed_trade: dict, position: dict) -> None:
 
         duration_s = closed_trade.get("duration_s")
         hold_s = int(duration_s) if duration_s is not None else 0
-        hold_limit_s = int(position.get("max_hold_s") or 300)
+        hold_limit_s = int(position.get("max_hold_s") or _MAX_AGE_S)
 
         # Track if TP/SL were touched
         tp = float(position.get("tp") or 0.0)
