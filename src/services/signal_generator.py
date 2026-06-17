@@ -88,7 +88,7 @@ def _rsi(series, n=14):
     gains  = [max(series[i] - series[i-1], 0) for i in range(1, len(series))]
     losses = [max(series[i-1] - series[i], 0) for i in range(1, len(series))]
     ag = _ema(gains[-n*3:],  n) or 1e-9
-    al = _ema(losses[-n*3:], n) or 1e-9
+    al = _ema(losses[-n*3:], n) or max(ag * 0.01, 1e-9)  # Min 1% of gains (prevents RSI saturation on monotone data)
     return 100 - 100 / (1 + ag / al)
 
 
