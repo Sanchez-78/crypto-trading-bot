@@ -1868,9 +1868,10 @@ def update_paper_positions(
                 log.warning(f"[V10.18_ORPHAN_LOAD_ERROR] {e}")
 
         # CYCLE#15 FIX: Sync TP/SL bands on every tick with current env override
-        # Ensures all positions (old AND new) use tight bands (15bps/10bps) not wide (150bps)
-        tp_zone_bps = int(os.getenv("PAPER_TP_ZONE_BPS", "40"))
-        sl_zone_bps = int(os.getenv("PAPER_SL_ZONE_BPS", "30"))
+        # Ensures all positions (old AND new) use configured bands (80/50 bps default) not stale tight bands
+        # V10.27 CYCLE 24 FIX: Updated defaults from 40/30 (too tight) to 80/50 (working) to match open_paper_position
+        tp_zone_bps = int(os.getenv("PAPER_TP_ZONE_BPS", "80"))
+        sl_zone_bps = int(os.getenv("PAPER_SL_ZONE_BPS", "50"))
         recalc_count = 0
         for pos_id, pos_data in _POSITIONS.items():
             old_tp = pos_data.get("tp", 0)
