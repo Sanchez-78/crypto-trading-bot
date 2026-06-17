@@ -2672,22 +2672,22 @@ def calibrate_paper_training_geometry(
         tp_cap_pct = 2.50      # V10.21: Increased from 0.45% to allow 2.5% TP targets
         sl_default_pct = 2.00  # V10.21: Increased from 0.45% to match TP width
 
-    # V10.21: Start with expected move if available, otherwise use fee-aware floor
-    # CRITICAL: Use MAX of configured TP (original) vs adaptive TP to allow wider targets
-    if expected_move_pct > 0.1:
-        tp_target_pct = min(expected_move_pct * 0.8, tp_cap_pct)
+    # V10.27 SENIOR FIX: Calibrate TP/SL to ACTUAL market volatility (expected_move_pct)
+    # Root cause: 80/50 bps targets unreachable in 600s flat market (price only moves 1-7 bps)
+    # Solution: Shrink targets proportional to observed volatility
+    if expected_move_pct > 0.15:
+        # Market has real volatility - can afford wider targets
+        tp_target_pct = min(expected_move_pct * 0.75, tp_cap_pct)  # 75% of observed move
     else:
-        tp_target_pct = tp_floor_pct
+        # FLAT MARKET (0-0.15% movement): Shrink TP to reachable level (40 bps for 600s window)
+        # Market volatility is below 0.15%, so 0.80% targets are impossible
+        # Use 0.40% which is reachable (and matches realistic 1-7 bps per position observation)
+        tp_target_pct = 0.40 if mode == "paper_live" else tp_floor_pct
 
-    # V10.21: Prioritize configured TP over adaptive TP - don't let calibration narrow targets
-    tp_target_pct = max(original_tp_pct, tp_target_pct)
-
-    # Enforce bounds
+    # V10.27: CRITICAL - always use calibrated TP, not max(original, calibrated)
+    # This allows shrinking in flat markets while keeping wide targets in volatile markets
+    # Enforce final bounds
     new_tp_pct = max(tp_floor_pct, min(tp_target_pct, tp_cap_pct))
-
-    # Only recalibrate if TP actually needs to change
-    if abs(new_tp_pct - original_tp_pct) < 0.001:
-        return tp_sl  # No change needed
 
     # Compute new price levels from percentages
     if side == "BUY":
