@@ -1441,8 +1441,8 @@ def open_paper_position(
     # V10.27 CYCLE 7 FIX: Wire PAPER_TP_ZONE_BPS/SL_ZONE_BPS as AUTHORITATIVE override
     # Evidence: Cycles #5-6 revealed env-var wiring was in unreachable code; tp_from_executor
     # ATR bands (~40bps) always override. Compute env-var bands FIRST, use them to override.
-    tp_zone_bps = int(os.getenv("PAPER_TP_ZONE_BPS", "80"))  # default 80bps (0.80%) — expanded from 40bps per Cycle 20
-    sl_zone_bps = int(os.getenv("PAPER_SL_ZONE_BPS", "50"))  # default 50bps (0.50%) — expanded from 30bps per Cycle 20
+    tp_zone_bps = int(os.getenv("PAPER_TP_ZONE_BPS", "40"))  # default 40bps (0.40%) — reachable in 600s hold window
+    sl_zone_bps = int(os.getenv("PAPER_SL_ZONE_BPS", "30"))  # default 30bps (0.30%) — per commit c4b03ba
     tp_pct_env = 1.0 + tp_zone_bps / 10000 if side == "BUY" else 1.0 - tp_zone_bps / 10000
     sl_pct_env = 1.0 - sl_zone_bps / 10000 if side == "BUY" else 1.0 + sl_zone_bps / 10000
     tp_price_env = price * tp_pct_env
@@ -1868,10 +1868,10 @@ def update_paper_positions(
                 log.warning(f"[V10.18_ORPHAN_LOAD_ERROR] {e}")
 
         # CYCLE#15 FIX: Sync TP/SL bands on every tick with current env override
-        # Ensures all positions (old AND new) use configured bands (80/50 bps default) not stale tight bands
-        # V10.27 CYCLE 24 FIX: Updated defaults from 40/30 (too tight) to 80/50 (working) to match open_paper_position
-        tp_zone_bps = int(os.getenv("PAPER_TP_ZONE_BPS", "80"))
-        sl_zone_bps = int(os.getenv("PAPER_SL_ZONE_BPS", "50"))
+        # V10.27 CYCLE 24 FIX: Shrink to 40/30 bps (0.4%/0.3%) — reachable in 600s hold window
+        # Commit c4b03ba: "Shrink TP/SL floors to fit 180s hold window (0.4%/0.3%)"
+        tp_zone_bps = int(os.getenv("PAPER_TP_ZONE_BPS", "40"))
+        sl_zone_bps = int(os.getenv("PAPER_SL_ZONE_BPS", "30"))
         recalc_count = 0
         for pos_id, pos_data in _POSITIONS.items():
             old_tp = pos_data.get("tp", 0)
