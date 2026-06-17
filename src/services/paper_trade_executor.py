@@ -2572,6 +2572,16 @@ def close_paper_position(
     # V10.17 FIX: Persist state after removal so JSON file reflects actual open positions
     _save_paper_state()
 
+    # V10.27: Update canonical_state with win/loss count for persistent WR calculation
+    try:
+        from src.services.canonical_state import increment_trades_won, increment_trades_lost
+        if net_pnl_usd >= 0.0001:
+            increment_trades_won()
+        else:
+            increment_trades_lost()
+    except Exception as e:
+        log.error(f"[CANONICAL_UPDATE_ERROR] Failed to update trade counts: {e}")
+
     return closed_trade
 
 

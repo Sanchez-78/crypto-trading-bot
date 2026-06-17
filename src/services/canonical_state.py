@@ -40,6 +40,24 @@ def get_authoritative_trade_count() -> int:
     return _canonical_state.get("trades_total", 0)
 
 
+def increment_trades_won() -> int:
+    """V10.27: Runtime update when trade closes as WIN. Returns new count."""
+    global _canonical_state
+    _canonical_state["trades_won"] += 1
+    _canonical_state["trades_total"] = _canonical_state.get("trades_total", 0) + 1
+    _canonical_state["timestamp"] = _time.time()
+    return _canonical_state["trades_won"]
+
+
+def increment_trades_lost() -> int:
+    """V10.27: Runtime update when trade closes as LOSS. Returns new count."""
+    global _canonical_state
+    _canonical_state["trades_lost"] += 1
+    _canonical_state["trades_total"] = _canonical_state.get("trades_total", 0) + 1
+    _canonical_state["timestamp"] = _time.time()
+    return _canonical_state["trades_lost"]
+
+
 def _load_from_firestore() -> dict:
     """Load metrics from Firestore metrics collection."""
     try:
