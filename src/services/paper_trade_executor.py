@@ -680,10 +680,10 @@ def _load_paper_state() -> None:
                 if not training_bucket:
                     pos["training_bucket"] = "C_WEAK_EV_TRAIN"
 
-                # Normalize timeout to effective hold time (max 300s for training)
-                max_hold = _safe_float(pos.get("max_hold_s"), 300.0)
+                # Normalize timeout to effective hold time (max 600s for training)
+                max_hold = _safe_float(pos.get("max_hold_s"), _MAX_AGE_S)
                 timeout = _safe_float(pos.get("timeout_s"), max_hold)
-                effective_timeout = min(max_hold or 300.0, timeout or 300.0, 300.0)
+                effective_timeout = min(max_hold or _MAX_AGE_S, timeout or _MAX_AGE_S, _MAX_AGE_S)
 
                 if timeout != effective_timeout:
                     pos["timeout_s"] = effective_timeout
@@ -798,7 +798,7 @@ def _effective_paper_hold_s(pos: dict) -> float:
         or source == "training_sampler"
     )
 
-    max_hold = _safe_float(pos.get("max_hold_s"), 300.0)
+    max_hold = _safe_float(pos.get("max_hold_s"), _MAX_AGE_S)
     timeout = _safe_float(pos.get("timeout_s"), max_hold)
 
     if is_training:
