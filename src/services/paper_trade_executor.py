@@ -54,7 +54,7 @@ _POSITION_SIZE_BASE = float(os.getenv("PAPER_POSITION_SIZE_USD", "25"))  # Base 
 _FEE_PCT = float(os.getenv("PAPER_FEE_PCT", "0.0015"))  # 0.15% round-trip
 _SLIPPAGE_PCT = float(os.getenv("PAPER_SLIPPAGE_PCT", "0.0003"))  # 0.03%
 _MAX_OPEN = int(os.getenv("PAPER_MAX_OPEN_POSITIONS", "5"))  # Increased to allow more diversification
-_MAX_AGE_S = float(os.getenv("PAPER_MAX_POSITION_AGE_S", "180"))  # V10.24: 3 min (was 300, but monitoring showed market only moves 0.04% in 5min; reduce to 3min window)
+_MAX_AGE_S = float(os.getenv("PAPER_MAX_POSITION_AGE_S", "600"))  # V10.27 CYCLE 24: Set to 600s for full hold window (systemd override: 600s)
 _MIN_EV_THRESHOLD = float(os.getenv("PAPER_MIN_EV_THRESHOLD", "0.01"))  # V10.26 FIX: Block zero-EV trades (was 0.0, allowing random entries)
 _MIN_SEGMENT_PF = float(os.getenv("PAPER_MIN_SEGMENT_PF", "0.0"))  # AGGRESSIVE: No segment PF gating
 _TIME_BASED_FILTERING = os.getenv("PAPER_TIME_BASED_FILTERING", "false").lower() == "true"  # AGGRESSIVE: No time gating
@@ -511,9 +511,9 @@ def _migrate_legacy_position(pos: dict) -> dict:
     elif bucket == "C_WEAK_EV":
         pos["max_hold_s"] = 600
     elif bucket == "D_NEG_EV_CONTROL":
-        pos["max_hold_s"] = 300
+        pos["max_hold_s"] = 600  # V10.27 CYCLE 24: Increased from 300 to 600 (need full window)
     elif bucket == "E_NO_PATTERN":
-        pos["max_hold_s"] = 300
+        pos["max_hold_s"] = 600  # V10.27 CYCLE 24: Increased from 300 to 600 (need full window)
     else:
         # Default safe value for unknown/A_STRICT_TAKE
         pos["max_hold_s"] = _MAX_AGE_S
