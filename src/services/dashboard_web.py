@@ -830,5 +830,38 @@ def recent_trades():
         print(f"[DASHBOARD] Error in recent_trades: {e}")
         return jsonify([])
 
+@app.route('/v2/', methods=['GET'])
+@app.route('/v2/<path:path>', methods=['GET'])
+def react_dashboard(path=''):
+    """Serve React SPA at /v2/"""
+    import os
+    dist_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'dashboard_modern', 'dist')
+    if path and not path.startswith('assets/'):
+        path = ''  # Client-side routing: serve index.html for all routes
+    index_file = os.path.join(dist_dir, path or 'index.html')
+    try:
+        with open(index_file, 'r') as f:
+            return f.read(), 200, {'Content-Type': 'text/html; charset=utf-8'}
+    except FileNotFoundError:
+        with open(os.path.join(dist_dir, 'index.html'), 'r') as f:
+            return f.read(), 200, {'Content-Type': 'text/html; charset=utf-8'}
+
+@app.route('/v2/assets/<path:filename>', methods=['GET'])
+def react_assets(filename):
+    """Serve React assets (JS/CSS/fonts)"""
+    import os
+    dist_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'dashboard_modern', 'dist', 'assets')
+    try:
+        with open(os.path.join(dist_dir, filename), 'rb') as f:
+            content = f.read()
+        if filename.endswith('.js'):
+            return content, 200, {'Content-Type': 'application/javascript; charset=utf-8'}
+        elif filename.endswith('.css'):
+            return content, 200, {'Content-Type': 'text/css; charset=utf-8'}
+        else:
+            return content, 200, {'Content-Type': 'application/octet-stream'}
+    except FileNotFoundError:
+        return '', 404
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5001, debug=False)  # Use 5001 to avoid conflict with cryptomaster's internal dashboard
