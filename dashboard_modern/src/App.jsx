@@ -32,10 +32,6 @@ export default function App() {
   if (error) return <div className="loading" style={{color: '#f87171'}}>Error: {error}</div>
   if (!metrics) return <div className="loading">No data available</div>
 
-  const wr = metrics.closed_trades > 0
-    ? Math.round((metrics.exit_distribution.tp + metrics.exit_distribution.scratch) / metrics.closed_trades * 100)
-    : 0
-
   return (
     <div className="container">
       <div className="header">
@@ -46,7 +42,7 @@ export default function App() {
       <div className="metrics">
         <div className="metric-card">
           <div className="metric-label">Win Rate</div>
-          <div className={`metric-value ${wr > 50 ? 'positive' : wr > 0 ? 'neutral' : 'negative'}`}>{wr}%</div>
+          <div className={`metric-value ${metrics.win_rate_pct > 50 ? 'positive' : metrics.win_rate_pct > 0 ? 'neutral' : 'negative'}`}>{Math.round(metrics.win_rate_pct || 0)}%</div>
           <div style={{fontSize: '11px', color: '#666', marginTop: '8px'}}>
             {metrics.exit_distribution.tp} TP / {metrics.exit_distribution.sl} SL / {metrics.exit_distribution.timeout} TO
           </div>
