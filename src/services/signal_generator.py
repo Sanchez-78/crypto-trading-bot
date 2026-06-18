@@ -149,6 +149,10 @@ def _adx(series, n=14):
     tr_s  = _ema(trs[-n*3:],   n) or 1e-9
     di_p  = 100 * _ema(ups[-n*3:],   n) / tr_s
     di_m  = 100 * _ema(downs[-n*3:], n) / tr_s
+    max_di = max(di_p, di_m)
+    min_di = min(di_p, di_m)
+    min_di = max(min_di, max_di * 0.01)  # CYCLE 25 FIX: Floor minority DI to prevent saturation on monotone trends
+    di_p, di_m = (di_p, min_di) if di_p > di_m else (min_di, di_m)
     adx   = 100 * abs(di_p - di_m) / ((di_p + di_m) or 1e-9)
     return adx, di_p, di_m
 
@@ -825,7 +829,8 @@ def on_price(data):
         # V10.27 CYCLE 24 FIX: Relax health gate during consolidation
         # Real data shows ADX=100/RSI=100 during flat market consolidation (legitimate)
         # Only block if BOTH are extreme AND history too short (likely stale calc)
-        if len(hist) >= 200 and adx_v >= 99.9 and rsi_v >= 99.9:
+        # CYCLE 25 FIX: Adjust threshold from 99.9 to 97.0 (symmetric DI floor bounds ceiling at ~98.02)
+        if len(hist) >= 200 and adx_v >= 97.0 and rsi_v >= 97.0:
             # Both indicators at ceiling with sufficient data = genuine flat period
             if s not in _cycle_prefilter_drops:
                 _cycle_prefilter_drops[s] = "INDICATOR_ERROR_STATE"
