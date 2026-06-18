@@ -1,14 +1,14 @@
 {
-  "cycle": 22,
-  "start_time": "2026-06-18T11:10:00Z",
+  "cycle": 23,
+  "start_time": "2026-06-18T11:40:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 1,
-  "current_wr": 12.2,
-  "current_pnl": -1.91,
-  "total_wr_gain": 12.2,
+  "total_cycles_completed": 2,
+  "current_wr": 18.2,
+  "current_pnl": -1.84,
+  "total_wr_gain": 18.2,
   "quota_max_used_pct": 0,
-  "last_update": "2026-06-18T11:10:00Z",
-  "status": "monitoring_post_deploy",
+  "last_update": "2026-06-18T11:40:00Z",
+  "status": "monitoring_post_band_tighten",
   "cycles": [
     {
       "cycle": 22,
@@ -20,11 +20,27 @@
       "pnl_before": -2.41,
       "pnl_after": -1.91,
       "blocker": "timeout_too_tight",
-      "fix_applied": "Extend training position hold from 300s to 600s (remove hardcoded cap in _effective_paper_hold_s)",
+      "fix_applied": "Extend hold_s from 300s to 600s (remove hardcoded cap)",
       "commit": "8a41edcd",
       "deploy_result": "PASS",
-      "elapsed_mins": 5,
-      "notes": "41 pre-patch trades all timeout (100% TIMEOUT, 0% TP/SL). Fix deployed; waiting 30min for new positions to close with extended hold window. Expected: TP/SL bands (0.4%/0.3%) will fire in 600s window."
+      "elapsed_mins": 30,
+      "notes": "Hold window fix deployed. 11 new closes in 30min, all TIMEOUT (0% TP/SL). Issue: bands still too wide."
+    },
+    {
+      "cycle": 23,
+      "timestamp": "2026-06-18T11:40:00Z",
+      "wr_before": 18.2,
+      "wr_after": null,
+      "pf_before": 0.31,
+      "pf_after": null,
+      "pnl_before": -1.84,
+      "pnl_after": null,
+      "blocker": "tp_sl_unreachable_bands",
+      "fix_applied": "Tighten bands: TP 80→35bps, SL 50→40bps (cost-validated by learning-agent)",
+      "commit": "9c3f89b",
+      "deploy_result": "PASS",
+      "elapsed_mins": 0,
+      "notes": "Band tighten deployed. MFE-to-TP ratio=0.36 → new 35bps TP reachable. Waiting 30min for effect."
     }
   ]
 }
