@@ -835,12 +835,15 @@ def recent_trades():
 def react_dashboard(path=''):
     """Serve React SPA at /v2/"""
     import os
+    print(f"[REACT_DASHBOARD] path='{path}'")
     # Try both relative (from project root when run locally) and absolute (Hetzner deployment)
     for dist_base in ['/opt/cryptomaster/dashboard_modern/dist', os.path.join(os.getcwd(), 'dashboard_modern', 'dist')]:
         if os.path.isdir(dist_base):
             dist_dir = dist_base
+            print(f"[REACT_DASHBOARD] Using dist_dir={dist_dir}")
             break
     else:
+        print(f"[REACT_DASHBOARD] Dashboard not found in any location")
         return 'Dashboard not found', 404
 
     if path and not path.startswith('assets/'):
