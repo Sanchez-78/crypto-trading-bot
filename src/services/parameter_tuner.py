@@ -41,10 +41,9 @@ class ParameterTuner:
 
         changes = {}
 
-        # 1. Check for critical issues
+        # 1. Check for critical issues (CYCLE 23: Skip auto TP/SL adjustment — manual override.conf controls bands)
         if overall.get('timeout_exits_pct', 0) > 80:
-            log.warning("[PARAMETER_TUNER] Too many TIMEOUT exits. Increasing TP/SL zones.")
-            changes['TP_SL_adjustment'] = self._increase_tp_sl_zones()
+            log.warning("[PARAMETER_TUNER] Too many TIMEOUT exits (but TP/SL bands controlled manually via override.conf, skipping auto-adjust).")
 
         # 2. Check win rate
         if overall.get('win_rate_pct', 0) == 0.0 and overall.get('total_trades', 0) >= self.MIN_TRADES_FOR_TUNING:
