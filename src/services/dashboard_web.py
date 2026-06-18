@@ -835,7 +835,14 @@ def recent_trades():
 def react_dashboard(path=''):
     """Serve React SPA at /v2/"""
     import os
-    dist_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'dashboard_modern', 'dist')
+    # Try both relative (from project root when run locally) and absolute (Hetzner deployment)
+    for dist_base in ['/opt/cryptomaster/dashboard_modern/dist', os.path.join(os.getcwd(), 'dashboard_modern', 'dist')]:
+        if os.path.isdir(dist_base):
+            dist_dir = dist_base
+            break
+    else:
+        return 'Dashboard not found', 404
+
     if path and not path.startswith('assets/'):
         path = ''  # Client-side routing: serve index.html for all routes
     index_file = os.path.join(dist_dir, path or 'index.html')
@@ -850,7 +857,14 @@ def react_dashboard(path=''):
 def react_assets(filename):
     """Serve React assets (JS/CSS/fonts)"""
     import os
-    dist_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'dashboard_modern', 'dist', 'assets')
+    # Try both relative (from project root when run locally) and absolute (Hetzner deployment)
+    for dist_base in ['/opt/cryptomaster/dashboard_modern/dist/assets', os.path.join(os.getcwd(), 'dashboard_modern', 'dist', 'assets')]:
+        if os.path.isdir(dist_base):
+            dist_dir = dist_base
+            break
+    else:
+        return '', 404
+
     try:
         with open(os.path.join(dist_dir, filename), 'rb') as f:
             content = f.read()
