@@ -1441,8 +1441,19 @@ def open_paper_position(
     # V10.27 CYCLE 7 FIX: Wire PAPER_TP_ZONE_BPS/SL_ZONE_BPS as AUTHORITATIVE override
     # Evidence: Cycles #5-6 revealed env-var wiring was in unreachable code; tp_from_executor
     # ATR bands (~40bps) always override. Compute env-var bands FIRST, use them to override.
-    tp_zone_bps = int(os.getenv("PAPER_TP_ZONE_BPS", "40"))  # default 40bps (0.40%) — reachable in 600s hold window
-    sl_zone_bps = int(os.getenv("PAPER_SL_ZONE_BPS", "30"))  # default 30bps (0.30%) — per commit c4b03ba
+    # CYCLE 28 FIX: ATR-based dynamic TP sizing (static TP unreachable vs realized vol)
+    # Floor raised 35->45bps so the formula has effect in observed sub-0.7% ATR regime
+    # (raises margin over 18bps cost floor from 22->27bps). Above 0.7% ATR it scales up
+    # to the 50bps cap. tp_zone_bps + atr stored on position so sync path doesn't clobber.
+    tp_zone_bps_static = int(os.getenv("PAPER_TP_ZONE_BPS", "40"))  # default 40bps (0.40%) — reachable in 600s hold window
+    atr_v = float(signal.get("atr") or 0.0)  # ATR is absolute price units (see line ~2862 convention)
+    if atr_v > 0 and price:
+        atr_pct = atr_v / price  # ATR as fraction of price
+        dynamic_tp_bps = max(45, int(atr_pct * 10000 * 0.5))  # bps=atr_pct*10000; floor 45bps, scale 0.5
+        tp_zone_bps = min(dynamic_tp_bps, 50)  # Cap at 50bps to avoid extreme widening
+    else:
+        tp_zone_bps = tp_zone_bps_static
+    sl_zone_bps = int(os.getenv("PAPER_SL_ZONE_BPS", "30"))  # default 30bps (0.30%) — per commit c4b03ba; SL stays static
     tp_pct_env = 1.0 + tp_zone_bps / 10000 if side == "BUY" else 1.0 - tp_zone_bps / 10000
     sl_pct_env = 1.0 - sl_zone_bps / 10000 if side == "BUY" else 1.0 + sl_zone_bps / 10000
     tp_price_env = price * tp_pct_env
@@ -1537,6 +1548,10 @@ def open_paper_position(
         "tp_pct_at_entry": tp_sl["tp_pct"],  # Store for diagnostics
         "sl_pct_at_entry": tp_sl["sl_pct"],
         "rr_at_entry": tp_sl["rr"],
+        # CYCLE 28: Persist ATR-scaled entry band so sync path reuses it (no clobber)
+        "tp_zone_bps_at_entry": tp_zone_bps,
+        "sl_zone_bps_at_entry": sl_zone_bps,
+        "atr_at_entry": atr_v,
         # P0.3D: Metadata for audit trail
         "strict_ev": signal.get("strict_ev", True),  # P0 gate decision
         "readiness_eligible": signal.get("readiness_eligible", True),  # Readiness claim eligibility
@@ -1870,13 +1885,20 @@ def update_paper_positions(
         # CYCLE#15 FIX: Sync TP/SL bands on every tick with current env override
         # V10.27 CYCLE 24 FIX: Shrink to 40/30 bps (0.4%/0.3%) — reachable in 600s hold window
         # Commit c4b03ba: "Shrink TP/SL floors to fit 180s hold window (0.4%/0.3%)"
-        tp_zone_bps = int(os.getenv("PAPER_TP_ZONE_BPS", "40"))
-        sl_zone_bps = int(os.getenv("PAPER_SL_ZONE_BPS", "30"))
+        # CYCLE 28 FIX (blocker #1): Reuse each position's ATR-scaled entry band instead
+        # of recomputing from the global env-var. Recomputing here clobbered the
+        # entry-time ATR scaling on every tick (reviewer blocker). Legacy positions
+        # without a stored band fall back to the env default so behavior is preserved.
+        env_tp_zone_bps = int(os.getenv("PAPER_TP_ZONE_BPS", "40"))
+        env_sl_zone_bps = int(os.getenv("PAPER_SL_ZONE_BPS", "30"))
         recalc_count = 0
         for pos_id, pos_data in _POSITIONS.items():
             old_tp = pos_data.get("tp", 0)
             side = pos_data.get("side", "BUY")
             entry_price = pos_data.get("entry_price", 0)
+            # Per-position ATR-scaled band from entry; fall back to env for legacy positions
+            tp_zone_bps = pos_data.get("tp_zone_bps_at_entry", env_tp_zone_bps)
+            sl_zone_bps = pos_data.get("sl_zone_bps_at_entry", env_sl_zone_bps)
             tp_pct = 1.0 + tp_zone_bps / 10000 if side == "BUY" else 1.0 - tp_zone_bps / 10000
             sl_pct = 1.0 - sl_zone_bps / 10000 if side == "BUY" else 1.0 + sl_zone_bps / 10000
             new_tp = entry_price * tp_pct
@@ -1886,7 +1908,7 @@ def update_paper_positions(
                 _POSITIONS[pos_id]["sl"] = entry_price * sl_pct
                 recalc_count += 1
         if recalc_count > 0:
-            log.info(f"[CYCLE#15_SYNC] Synced TP/SL for {recalc_count} positions (tp_bps={tp_zone_bps} sl_bps={sl_zone_bps})")
+            log.info(f"[CYCLE#15_SYNC] Synced TP/SL for {recalc_count} positions (env_tp_bps={env_tp_zone_bps} env_sl_bps={env_sl_zone_bps}, per-pos band preserved)")
 
         positions_to_check = list(_POSITIONS.items())
 
@@ -1937,6 +1959,10 @@ def update_paper_positions(
         # V10.27 FIX: Wire TP/SL evaluation — debug log to confirm execution
         if tp_hit or sl_hit:
             log.info(f"[TP_SL_HIT] {symbol} side={side} current={current_price:.8f} tp={pos['tp']:.8f} sl={pos['sl']:.8f} tp_hit={tp_hit} sl_hit={sl_hit}")
+        else:
+            # Debug: Log sample of prices to diagnose why TP/SL never hit
+            if hash(symbol) % 5 == 0:  # Sample 20% of checks to avoid log spam
+                log.debug(f"[TP_SL_CHECK_MISS] {symbol} side={side} current={current_price:.8f} tp={pos['tp']:.8f} sl={pos['sl']:.8f}")
 
         if tp_hit:
             exit_reason = "TP"
