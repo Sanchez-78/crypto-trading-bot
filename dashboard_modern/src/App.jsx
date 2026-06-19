@@ -2,18 +2,26 @@ import { useState, useEffect } from 'react'
 
 export default function App() {
   const [metrics, setMetrics] = useState(null)
+  const [enhanced, setEnhanced] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [positions, setPositions] = useState([])
-  const [trades, setTrades] = useState([])
 
   useEffect(() => {
     const fetchMetrics = async () => {
       try {
         const resp = await fetch('/api/dashboard/metrics')
+        const enhResp = await fetch('/api/dashboard/metrics/enhanced')
+
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
         const data = await resp.json()
         setMetrics(data)
+
+        if (enhResp.ok) {
+          const enhData = await enhResp.json()
+          setEnhanced(enhData)
+        }
+
         setError(null)
         if (data.open_positions_list) setPositions(data.open_positions_list)
       } catch (e) {
@@ -66,13 +74,15 @@ export default function App() {
           </div>
         </div>
 
-        <div className="metric-card">
-          <div className="metric-label">Bot Status</div>
-          <div className="metric-value positive">🟢 RUNNING</div>
-          <div style={{fontSize: '11px', color: '#666', marginTop: '8px'}}>
-            Paper trading active
+        {enhanced && (
+          <div className="metric-card" style={{borderLeft: enhanced.profitability.profitability_status === 'SAFE' ? '4px solid #4ade80' : enhanced.profitability.profitability_status === 'CAUTION' ? '4px solid #facc15' : '4px solid #ef4444'}}>
+            <div className="metric-label">Profitability Health</div>
+            <div className="metric-value" style={{fontSize: '16px'}}>{enhanced.profitability.health_check}</div>
+            <div style={{fontSize: '11px', color: '#666', marginTop: '8px'}}>
+              TP: {enhanced.profitability.tp_zone_bps}bps | Cost: {enhanced.profitability.cost_floor_bps}bps | Margin: {enhanced.profitability.tp_margin_bps}bps
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       <div className="tables">

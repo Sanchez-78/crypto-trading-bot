@@ -742,6 +742,106 @@ def metrics():
         iso_timestamp = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
         return jsonify({"error": str(e), "timestamp": iso_timestamp}), 500
 
+@app.route('/api/dashboard/metrics/enhanced')
+def enhanced_metrics():
+    """Enhanced metrics with cost-floor analysis and profitability checks"""
+    try:
+        import os
+        import json as json_module
+        from datetime import datetime, timezone
+
+        iso_timestamp = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+
+        # Cost floor constants (from override.conf)
+        COST_FLOOR_BPS = 18  # 15bps fee + 3bps slippage
+
+        # Get current TP/SL zones from environment
+        try:
+            tp_bps = int(os.getenv('PAPER_TP_ZONE_BPS', '35'))
+            sl_bps = int(os.getenv('PAPER_SL_ZONE_BPS', '40'))
+        except:
+            tp_bps = 35
+            sl_bps = 40
+
+        # Safety checks
+        tp_above_cost_floor = tp_bps > COST_FLOOR_BPS
+        tp_margin_bps = tp_bps - COST_FLOOR_BPS
+        profitability_status = "SAFE" if tp_margin_bps >= 10 else "CAUTION" if tp_margin_bps >= 0 else "CRITICAL"
+
+        # Try to get recent trades from DB
+        closed_trades = 0
+        win_rate = 0.0
+        profit_factor = 0.0
+        net_pnl = 0.0
+        tp_exits = 0
+        sl_exits = 0
+        timeout_exits = 0
+
+        try:
+            db_path = '/opt/cryptomaster/local_learning_storage/learning_database.sqlite'
+            if os.path.exists(db_path):
+                conn = sqlite3.connect(db_path, timeout=2)
+                cursor = conn.cursor()
+
+                # Get last 100 trades
+                cursor.execute("SELECT outcome, exit_reason, net_pnl_pct FROM trades ORDER BY closed_ts DESC LIMIT 100")
+                rows = cursor.fetchall()
+
+                closed_trades = len(rows)
+                wins = 0
+                losses = 0
+                total_pnl = 0.0
+
+                for outcome, reason, pnl_pct in rows:
+                    total_pnl += float(pnl_pct or 0)
+                    if outcome == 'WIN':
+                        wins += 1
+                    else:
+                        losses += 1
+
+                    if reason == 'TP':
+                        tp_exits += 1
+                    elif reason == 'SL':
+                        sl_exits += 1
+                    elif reason == 'TIMEOUT':
+                        timeout_exits += 1
+
+                win_rate = (wins / closed_trades * 100) if closed_trades > 0 else 0.0
+                profit_factor = abs(total_pnl / (total_pnl if total_pnl < 0 else 0.001)) if total_pnl < 0 else (1.0 if total_pnl >= 0 and total_pnl > 0 else 0.0)
+                net_pnl = total_pnl
+
+                conn.close()
+        except:
+            pass
+
+        return jsonify({
+            "metrics": {
+                "win_rate_pct": float(win_rate),
+                "profit_factor": float(profit_factor),
+                "net_pnl": float(net_pnl),
+                "closed_trades": int(closed_trades),
+                "exit_distribution": {
+                    "tp": int(tp_exits),
+                    "sl": int(sl_exits),
+                    "timeout": int(timeout_exits)
+                }
+            },
+            "profitability": {
+                "cost_floor_bps": int(COST_FLOOR_BPS),
+                "tp_zone_bps": int(tp_bps),
+                "sl_zone_bps": int(sl_bps),
+                "tp_above_cost_floor": bool(tp_above_cost_floor),
+                "tp_margin_bps": int(tp_margin_bps),
+                "profitability_status": str(profitability_status),
+                "health_check": "🟢 TP viable" if profitability_status == "SAFE" else "🟡 CAUTION" if profitability_status == "CAUTION" else "🔴 CRITICAL"
+            },
+            "timestamp": iso_timestamp
+        })
+    except Exception as e:
+        from datetime import datetime, timezone
+        iso_timestamp = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+        return jsonify({"error": str(e), "timestamp": iso_timestamp}), 500
+
 @app.route('/api/trades/recent')
 def recent_trades():
     """Return last 30 closed trades with ISO timestamps"""
