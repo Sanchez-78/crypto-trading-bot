@@ -1958,12 +1958,11 @@ def update_paper_positions(
             sl_hit = current_price >= pos["sl"]
 
         # V10.27 FIX: Wire TP/SL evaluation — debug log to confirm execution
+        # CRITICAL: Log ALL TP/SL comparisons to file to debug why they never hit
+        log.info(f"[TP_SL_EVAL] {symbol} side={side} curr={current_price:.8f} tp={pos['tp']:.8f} sl={pos['sl']:.8f} tp_hit={tp_hit} sl_hit={sl_hit}")
+
         if tp_hit or sl_hit:
             log.info(f"[TP_SL_HIT] {symbol} side={side} current={current_price:.8f} tp={pos['tp']:.8f} sl={pos['sl']:.8f} tp_hit={tp_hit} sl_hit={sl_hit}")
-        else:
-            # Debug: Log sample of prices to diagnose why TP/SL never hit
-            if hash(symbol) % 5 == 0:  # Sample 20% of checks to avoid log spam
-                log.debug(f"[TP_SL_CHECK_MISS] {symbol} side={side} current={current_price:.8f} tp={pos['tp']:.8f} sl={pos['sl']:.8f}")
 
         if tp_hit:
             exit_reason = "TP"
