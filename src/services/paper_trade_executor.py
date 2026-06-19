@@ -1925,6 +1925,7 @@ def update_paper_positions(
         current_price = _safe_float(_raw_price, 0.0) or _safe_float(pos.get("last_price"), 0.0)
 
         if not current_price or current_price <= 0:
+            log.debug(f"[PRICE_SKIP] {symbol} current_price={current_price} raw={_raw_price} symbol_prices.has={symbol in symbol_prices}")
             continue  # No valid price, skip
 
         # Store last known price so timeout scanner can use real market price
