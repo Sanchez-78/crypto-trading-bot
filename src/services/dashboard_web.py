@@ -10,6 +10,15 @@ import json
 import time
 import subprocess
 import re
+import logging
+
+log = logging.getLogger(__name__)
+
+# Start readiness monitoring (will auto-start background thread)
+try:
+    import src.services.readiness_monitor  # noqa: Starts background monitoring
+except Exception as e:
+    log.warning(f"Could not start readiness monitoring: {e}")
 
 def populate_trades_from_logs():
     """Parse [PAPER_EXIT] logs and save trades to database"""
@@ -979,6 +988,45 @@ def react_assets(filename):
             return content, 200, {'Content-Type': 'application/octet-stream'}
     except FileNotFoundError:
         return '', 404
+
+
+@app.route('/api/dashboard/readiness')
+def readiness_check():
+    """Get trading readiness status."""
+    try:
+        from src.services.trading_readiness_checker import check_readiness
+        from src.services.readiness_monitor import get_current_metrics
+
+        # Get current metrics
+        metrics = get_current_metrics()
+        if not metrics:
+            return jsonify({
+                "error": "No metrics available yet",
+                "readiness_score": 0,
+                "is_ready_for_trading": False,
+                "blocker_reasons": ["Insufficient trading history"]
+            }), 200
+
+        # Run readiness check
+        result = check_readiness(metrics)
+
+        return jsonify(result), 200
+    except Exception as e:
+        log.error(f"[READINESS_CHECK_ERROR] {e}", exc_info=True)
+        return jsonify({"error": str(e), "readiness_score": 0, "is_ready_for_trading": False}), 500
+
+
+@app.route('/api/dashboard/readiness/status')
+def readiness_status():
+    """Get cached readiness status (lightweight)."""
+    try:
+        from src.services.trading_readiness_checker import get_readiness_status
+        status = get_readiness_status()
+        return jsonify(status), 200
+    except Exception as e:
+        log.error(f"[READINESS_STATUS_ERROR] {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5001, debug=False)  # Use 5001 to avoid conflict with cryptomaster's internal dashboard
