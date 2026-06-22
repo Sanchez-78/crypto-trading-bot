@@ -996,6 +996,13 @@ def on_price(data):
           f"sc:{base_sc}/7  ws:{w_sc:.2f} | {reg} | conf:{confidence:.0%} "
           f"[{','.join(active_f)}]{expl}")
 
+    # DIAGNOSTIC: Temporary signal inversion test (SIGNAL_INVERT_TEST=1 enables)
+    if os.getenv("SIGNAL_INVERT_TEST") == "1":
+        original_action = signal["action"]
+        signal["action"] = "SELL" if original_action == "BUY" else "BUY"
+        icon = "🔴" if signal["action"] == "SELL" else "🟢"
+        print(f"  [TEST INVERT] {short}: {original_action} → {signal['action']}")
+
     from src.services.realtime_decision_engine import evaluate_signal
     result = evaluate_signal(signal)
 
