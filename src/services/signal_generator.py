@@ -311,6 +311,8 @@ def _score_direction(hist, e50, e200, breakout_up, breakout_down, mom5, action):
     """
     Score a directional setup across 7 binary features.
     All features are directionally symmetric (BUY/SELL mirrored).
+    CYCLE 28 FIX: Relaxed pullback to BELOW moving average (was 1% near MA).
+    Reason: strict pullback fires too late in trend (after 80%+ move realized).
     Returns (score, features_dict).
     """
     p      = hist[-1]
@@ -328,7 +330,7 @@ def _score_direction(hist, e50, e200, breakout_up, breakout_down, mom5, action):
 
     features = {
         "trend":    (e50 > e200)        if is_buy else (e50 < e200),
-        "pullback": (p < e50 * 1.01)    if is_buy else (p > e50 * 0.99),
+        "pullback": (p <= e50)          if is_buy else (p >= e50),
         "bounce":   (hist[-1] > hist[-2]) if is_buy else (hist[-1] < hist[-2]),
         "breakout": bool(breakout_up    if is_buy else breakout_down),
         "vol":      r20 > r50,
