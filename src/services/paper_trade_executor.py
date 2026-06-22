@@ -2706,10 +2706,8 @@ def calibrate_paper_training_geometry(
         # Market has real volatility - can afford wider targets
         tp_target_pct = min(expected_move_pct * 0.75, tp_cap_pct)  # 75% of observed move
     else:
-        # FLAT MARKET (0-0.15% movement): Shrink TP to reachable level (40 bps for 600s window)
-        # Market volatility is below 0.15%, so 0.80% targets are impossible
-        # Use 0.40% which is reachable (and matches realistic 1-7 bps per position observation)
-        tp_target_pct = 0.40 if mode == "paper_live" else tp_floor_pct
+        # FLAT MARKET (0-0.15% movement): Use configured floor (respect tp_floor_pct, don't hardcode)
+        tp_target_pct = tp_floor_pct
 
     # V10.27: CRITICAL - always use calibrated TP, not max(original, calibrated)
     # This allows shrinking in flat markets while keeping wide targets in volatile markets
