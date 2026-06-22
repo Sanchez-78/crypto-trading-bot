@@ -375,7 +375,9 @@
                     <h2>📈 Closed Trades (${metrics.closed_trades})</h2>
             `;
 
-            if (!metrics.closed_trades_list || metrics.closed_trades_list.length === 0) {
+            // Bot API returns recent_trades, use that for closed trades
+            const closed_list = metrics.closed_trades_list || metrics.recent_trades || [];
+            if (!closed_list || closed_list.length === 0) {
                 html += '<div class="no-data">No closed trades yet</div>';
             } else {
                 html += `
@@ -396,16 +398,23 @@
                             <tbody>
                 `;
 
-                metrics.closed_trades_list.slice(-50).reverse().forEach(trade => {
+                closed_list.slice(-50).reverse().forEach(trade => {
                     const pnl = trade.pnl_pct || 0;
                     const pnl_class = pnl > 0 ? 'positive' : pnl < 0 ? 'negative' : 'neutral';
                     const outcome_class = getOutcomeBadge(pnl);
-                    const exit_badge = getExitBadge(trade.reason);
+                    // Bot API returns exit_reason, fallback to reason
+                    const exit_reason = trade.exit_reason || trade.reason || 'N/A';
+                    const exit_badge = getExitBadge(exit_reason);
                     const hold_time = trade.hold_s || 0;
                     const hold_mins = Math.floor(hold_time / 60);
                     const hold_secs = hold_time % 60;
-                    // exit_time is Unix timestamp in seconds, convert to milliseconds for Date
-                    const exit_ts_ms = (trade.exit_time || 0) < 100000000000 ? (trade.exit_time || 0) * 1000 : (trade.exit_time || 0);
+                    // exit_time is Unix timestamp in seconds, or calculate from hold_time
+                    let exit_ts_ms = 0;
+                    if (trade.exit_time && trade.exit_time > 0) {
+                        exit_ts_ms = trade.exit_time < 100000000000 ? trade.exit_time * 1000 : trade.exit_time;
+                    } else if (trade.exit_ts && trade.exit_ts > 0) {
+                        exit_ts_ms = trade.exit_ts < 100000000000 ? trade.exit_ts * 1000 : trade.exit_ts;
+                    }
 
                     html += `
                         <tr>
@@ -414,9 +423,9 @@
                             <td>${(trade.entry_price || 0).toFixed(8)}</td>
                             <td>${(trade.exit_price || 0).toFixed(8)}</td>
                             <td class="${pnl_class}"><span class="badge ${outcome_class}">${pnl > 0 ? '+' : ''}${pnl.toFixed(4)}%</span></td>
-                            <td><span class="badge ${exit_badge}">${trade.reason || 'N/A'}</span></td>
+                            <td><span class="badge ${exit_badge}">${exit_reason}</span></td>
                             <td>${hold_mins}m ${hold_secs}s</td>
-                            <td class="timestamp">${formatTimestamp(exit_ts_ms)}</td>
+                            <td class="timestamp">${exit_ts_ms ? formatTimestamp(exit_ts_ms) : 'N/A'}</td>
                         </tr>
                     `;
                 });
