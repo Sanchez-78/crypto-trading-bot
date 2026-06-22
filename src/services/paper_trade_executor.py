@@ -1949,6 +1949,8 @@ def update_paper_positions(
             exit_reason = "TP"
         elif sl_hit:
             exit_reason = "SL"
+        elif (_POSITIONS[trade_id].get("max_seen", entry_price) >= pos["tp"]) if side == "BUY" else (_POSITIONS[trade_id].get("min_seen", entry_price) <= pos["tp"]):
+            exit_reason = "TP_MFE_FORCED"
         elif age_s >= timeout_s:
             exit_reason = "TIMEOUT"
             log.warning(f"[TIMEOUT_EVAL] {symbol} age={age_s:.0f}s >= timeout={timeout_s:.0f}s, closing")
