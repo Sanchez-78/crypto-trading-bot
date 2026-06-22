@@ -5026,10 +5026,18 @@ class TestP1_1AN_PaperTrainingGeometryCalibration:
         assert result["tp"] > entry_price
         assert result["sl"] < entry_price
 
-    def test_calibration_not_applied_live_mode(self, clean_positions):
-        """Test: Calibration does not apply to live_real mode."""
+    def test_calibration_paper_live_enforces_tp_floor_as_percent(self, clean_positions, monkeypatch):
+        """V10.29: paper_live calibration applies TP floor as a PERCENT (bps/100).
+
+        Regression guard for the unit bug where tp_floor_pct = bps/10000 collapsed
+        the floor to ~0.35 bps (double /100 downstream), making every TP exit
+        net-negative after round-trip cost. With PAPER_TP_ZONE_BPS=35 the floor
+        must be 0.35%, and in a flat market (low expected_move) tp_pct must equal
+        that floor, not effectively zero.
+        """
         from src.services.paper_trade_executor import calibrate_paper_training_geometry
 
+        monkeypatch.setenv("PAPER_TP_ZONE_BPS", "35")
         entry_price = 100.0
         normalized_tp_sl = {
             "tp": 101.2,
@@ -5041,19 +5049,25 @@ class TestP1_1AN_PaperTrainingGeometryCalibration:
             "repair_reason": None,
         }
 
+        # Flat market (expected_move <= 0.15) -> tp_target falls back to floor.
         result = calibrate_paper_training_geometry(
-            mode="paper_live",  # Not paper_train
-            source="training_sampler",
-            training_bucket="C_WEAK_EV_TRAIN",
+            mode="paper_live",
+            source="normal_rde_take",
+            training_bucket="",
             side="BUY",
             entry=entry_price,
             tp_sl=normalized_tp_sl,
-            expected_move_pct=0.3,
+            expected_move_pct=0.05,
         )
 
-        # Should return unchanged
-        assert result == normalized_tp_sl
-        assert result.get("calibrated") is None or result.get("calibrated") is False
+        # paper_live ALWAYS calibrates (is_paper_live_all branch).
+        assert result.get("calibrated") is True
+        # Floor must be the configured 35 bps expressed as a percent: 0.35%.
+        assert abs(result["tp_pct"] - 0.35) < 1e-6, f"tp_pct {result['tp_pct']}% should be 0.35%"
+        # TP price must clear the ~0.36% round-trip cost floor margin direction.
+        assert result["tp"] > entry_price, "BUY TP must be above entry"
+        # Sanity: a 0.35% TP on a 100.0 entry is 100.35, not ~100.0004 (the old bug).
+        assert result["tp"] > 100.1, f"TP {result['tp']} collapsed (unit bug regression)"
 
     def test_calibration_not_applied_non_training_source(self, clean_positions):
         """Test: Calibration does not apply to non-training_sampler sources."""
@@ -5228,8 +5242,9 @@ class TestP1_1AN_PaperTrainingGeometryCalibration:
         )
 
         if result.get("calibrated"):
-            # TP should be capped at 0.45%
-            assert result["tp_pct"] <= 0.45, f"TP {result['tp_pct']}% should be <= 0.45%"
+            # V10.21: paper_train TP cap widened to 2.5% (tp_cap_pct=2.50) to allow
+            # wider targets in volatile markets; expected_move=10% -> capped at 2.5%.
+            assert result["tp_pct"] <= 2.50, f"TP {result['tp_pct']}% should be <= 2.50%"
 
     def test_calibration_metadata_in_position(self, clean_positions):
         """Test: Calibration metadata is stored in position dict."""

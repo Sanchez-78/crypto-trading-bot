@@ -2677,7 +2677,13 @@ def calibrate_paper_training_geometry(
     # For paper_live: respect configured PAPER_TP_ZONE_BPS, don't override with hardcoded floor
     if mode == "paper_live":
         tp_zone_bps = int(os.getenv("PAPER_TP_ZONE_BPS", "35"))  # Use configured value, not hardcoded floor
-        tp_floor_pct = tp_zone_bps / 10000.0  # e.g. 35 bps → 0.35%
+        # V10.29 ROOT-CAUSE FIX: bps -> PERCENT (not fraction). Downstream computes
+        # new_tp = entry * (1 + new_tp_pct/100.0), so tp_floor_pct must be a percent
+        # to be consistent with the paper_train branch (floor = fee_drag+0.03 ≈ 0.21%).
+        # Prior /10000.0 made 35 bps -> 0.0035, then /100 again -> 0.35 bps effective TP
+        # (~0.008% in logs) => every TP exit net-negative after 36bps round-trip cost.
+        # Evidence: 38/38 TP exits losses, WR 0%, P&L -$6.45 (30-min window 2026-06-22).
+        tp_floor_pct = tp_zone_bps / 100.0  # e.g. 35 bps → 0.35%
         tp_cap_pct = 1.50      # Maximum 1.5% (vs 0.45% for training)
         sl_default_pct = 0.80  # INCREASED SL 0.60% → 0.80% (was too tight)
     else:  # paper_train
