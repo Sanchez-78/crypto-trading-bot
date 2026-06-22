@@ -389,25 +389,42 @@ def _get_scored_edge(hist, e50, e200, breakout_up, breakout_down, mom5, reg, reg
         get_ws_threshold as _thr, score_history as _sh,
         allow_combo, epsilon as _eps)
 
-    # Gate 2: minimum base score
-    # V10.27 FIX: Action follows the winning directional score. The prior
-    # "V10.16" blanket BUY<->SELL flip inverted correct signals, producing
-    # BUY in BEAR_TREND (TP above entry) and SELL in BULL_TREND -> 0% WR.
-    # _score_direction() already orients features per side, so the higher
-    # score is the correct action.
-    if buy_sc >= sell_sc and buy_sc >= SCORE_MIN:
-        action, base_score, features = "BUY",  buy_sc,  buy_f
-    elif sell_sc > buy_sc and sell_sc >= SCORE_MIN:
-        action, base_score, features = "SELL", sell_sc, sell_f
-    else:
-        # P0.5D: Log SCORE_MIN gate failure
+    # Gate 2: minimum base score + regime alignment
+    # CYCLE 28 FIX: Enforce regime/direction alignment. Higher score alone doesn't guarantee
+    # correct direction. In BULL_TREND, only allow BUY. In BEAR_TREND, only allow SELL.
+    # RANGING allows both (pick higher score).
+    candidate_buy  = buy_sc >= SCORE_MIN
+    candidate_sell = sell_sc >= SCORE_MIN
+
+    # Regime-aware filtering
+    if reg == "BULL_TREND":
+        action = "BUY" if candidate_buy else None
+        base_score = buy_sc if action == "BUY" else 0
+        features = buy_f if action == "BUY" else {}
+    elif reg == "BEAR_TREND":
+        action = "SELL" if candidate_sell else None
+        base_score = sell_sc if action == "SELL" else 0
+        features = sell_f if action == "SELL" else {}
+    else:  # RANGING, QUIET_RANGE, HIGH_VOL
+        if buy_sc >= sell_sc and candidate_buy:
+            action, base_score, features = "BUY",  buy_sc,  buy_f
+        elif sell_sc > buy_sc and candidate_sell:
+            action, base_score, features = "SELL", sell_sc, sell_f
+        elif candidate_buy:
+            action, base_score, features = "BUY",  buy_sc,  buy_f
+        elif candidate_sell:
+            action, base_score, features = "SELL", sell_sc, sell_f
+        else:
+            action = None
+
+    # Gate 2b: Reject if no action passed regime/score gates
+    if action is None:
         if symbol and reg == "BULL_TREND":
             try:
                 logging.warning(
-                    f"[P0_5D_GATE_2_SCORE_MIN] symbol={symbol} "
+                    f"[P0_5D_GATE_2_REGIME_BLOCK] symbol={symbol} "
                     f"buy_sc={buy_sc:.2f} sell_sc={sell_sc:.2f} "
-                    f"max_score={max(buy_sc, sell_sc):.2f} threshold={SCORE_MIN:.2f} "
-                    f"failed=True"
+                    f"regime={reg} failed=True"
                 )
             except Exception:
                 pass
