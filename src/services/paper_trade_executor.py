@@ -2688,9 +2688,10 @@ def calibrate_paper_training_geometry(
     original_sl_pct = tp_sl.get("sl_pct", 0.0)
 
     # V10.21: Calibrate TP for paper trading
-    # For paper_live: keep original wider targets (proven profitable)
+    # For paper_live: respect configured PAPER_TP_ZONE_BPS, don't override with hardcoded floor
     if mode == "paper_live":
-        tp_floor_pct = 0.50    # Minimum 0.5% (vs 0.21% for training)
+        tp_zone_bps = int(os.getenv("PAPER_TP_ZONE_BPS", "35"))  # Use configured value, not hardcoded floor
+        tp_floor_pct = tp_zone_bps / 10000.0  # e.g. 35 bps → 0.35%
         tp_cap_pct = 1.50      # Maximum 1.5% (vs 0.45% for training)
         sl_default_pct = 0.80  # INCREASED SL 0.60% → 0.80% (was too tight)
     else:  # paper_train
