@@ -1443,14 +1443,15 @@ def open_paper_position(
     # ATR bands (~40bps) always override. Compute env-var bands FIRST, use them to override.
     # CYCLE 28 FIX: ATR-based dynamic TP sizing (static TP unreachable vs realized vol)
     # V10.28: Prioritize explicit env var over dynamic calculation
-    # If PAPER_TP_ZONE_BPS is explicitly configured, use it (don't override with ATR-based dynamic)
+    # Get ATR for logging regardless of calculation path
+    atr_v = float(signal.get("atr") or 0.0)
+
     if os.getenv("PAPER_TP_ZONE_BPS"):
         # Env var explicitly set — use it for ALL positions (symmetric, reproducible)
         tp_zone_bps = int(os.getenv("PAPER_TP_ZONE_BPS"))
     else:
         # Env var not set — use dynamic calculation as fallback
         tp_zone_bps_static = int(os.getenv("PAPER_TP_ZONE_BPS", "40"))  # default 40bps
-        atr_v = float(signal.get("atr") or 0.0)
         if atr_v > 0 and price:
             atr_pct = atr_v / price
             dynamic_tp_bps = max(45, int(atr_pct * 10000 * 0.5))
