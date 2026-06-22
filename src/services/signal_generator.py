@@ -35,7 +35,7 @@ Relative volatility filter:
 
 from src.core.event_bus       import subscribe_once, publish
 from src.services.learning_event import track_generated, track_filtered
-import math, time
+import math, time, os
 
 prices     = {}   # symbol -> list[float], capped at 600
 _macd_vals = {}   # symbol -> list[float]
