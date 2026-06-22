@@ -1957,8 +1957,8 @@ def update_paper_positions(
                 log.warning(f"[MFE_FORCED] {symbol} side={side} max/min_seen={max_s:.8f} vs tp={tp_target:.8f}")
                 exit_reason = "TP_MFE_FORCED"
             elif age_s >= timeout_s:
-            exit_reason = "TIMEOUT"
-            log.warning(f"[TIMEOUT_EVAL] {symbol} age={age_s:.0f}s >= timeout={timeout_s:.0f}s, closing")
+                exit_reason = "TIMEOUT"
+                log.warning(f"[TIMEOUT_EVAL] {symbol} age={age_s:.0f}s >= timeout={timeout_s:.0f}s, closing")
 
         if exit_reason:
             closed_trade = close_paper_position(position_id=trade_id, price=current_price, ts=ts, reason=exit_reason)
