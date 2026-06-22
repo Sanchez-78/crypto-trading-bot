@@ -396,15 +396,24 @@ def _get_scored_edge(hist, e50, e200, breakout_up, breakout_down, mom5, reg, reg
     candidate_buy  = buy_sc >= SCORE_MIN
     candidate_sell = sell_sc >= SCORE_MIN
 
-    # Regime-aware filtering
+    # Regime-aware filtering with soft preference (not hard blocking)
+    # CYCLE 28B: Prefer regime-aligned direction but allow opposite if score spread < 1.0
+    score_spread = abs(buy_sc - sell_sc)
+
     if reg == "BULL_TREND":
-        action = "BUY" if candidate_buy else None
-        base_score = buy_sc if action == "BUY" else 0
-        features = buy_f if action == "BUY" else {}
+        if candidate_buy and (buy_sc >= sell_sc or score_spread < 1.0):
+            action, base_score, features = "BUY", buy_sc, buy_f
+        elif candidate_sell and score_spread < 1.0:  # Allow SELL if very close
+            action, base_score, features = "SELL", sell_sc, sell_f
+        else:
+            action = None
     elif reg == "BEAR_TREND":
-        action = "SELL" if candidate_sell else None
-        base_score = sell_sc if action == "SELL" else 0
-        features = sell_f if action == "SELL" else {}
+        if candidate_sell and (sell_sc >= buy_sc or score_spread < 1.0):
+            action, base_score, features = "SELL", sell_sc, sell_f
+        elif candidate_buy and score_spread < 1.0:  # Allow BUY if very close
+            action, base_score, features = "BUY", buy_sc, buy_f
+        else:
+            action = None
     else:  # RANGING, QUIET_RANGE, HIGH_VOL
         if buy_sc >= sell_sc and candidate_buy:
             action, base_score, features = "BUY",  buy_sc,  buy_f
