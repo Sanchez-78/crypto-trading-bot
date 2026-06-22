@@ -176,15 +176,10 @@ def _regime(series, adx, di_p, di_m, atr_val):
     bb_lo, bb_mid, bb_hi = _kc(series, atr_val)
     bb_w = (bb_hi - bb_lo) / bb_mid if bb_mid else 0
 
-    # Lag guard: confirm DI-derived trend against fast EMA slope so a stale
-    # BEAR_TREND (lingering DI/ADX from a prior downtrend) cannot be emitted
-    # while price is actually rising during a sharp reversal — and vice versa.
-    slope_up = _ema(series, 10) >= _ema(series, 30)
-
-    if atr_pct > 0.012:                          return "HIGH_VOL"
-    if adx > 25 and di_p > di_m and slope_up:     return "BULL_TREND"
-    if adx > 25 and di_m > di_p and not slope_up: return "BEAR_TREND"
-    if adx < 20 and bb_w < 0.015:                 return "QUIET_RANGE"
+    if atr_pct > 0.012:          return "HIGH_VOL"
+    if adx > 25 and di_p > di_m: return "BULL_TREND"
+    if adx > 25 and di_m > di_p: return "BEAR_TREND"
+    if adx < 20 and bb_w < 0.015: return "QUIET_RANGE"
     return "RANGING"
 
 
