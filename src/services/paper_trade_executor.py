@@ -1949,16 +1949,9 @@ def update_paper_positions(
             exit_reason = "TP"
         elif sl_hit:
             exit_reason = "SL"
-        else:
-            max_s = _POSITIONS.get(trade_id, {}).get("max_seen", entry_price) if side == "BUY" else _POSITIONS.get(trade_id, {}).get("min_seen", entry_price)
-            tp_target = pos["tp"]
-            mfe_hit = (max_s >= tp_target) if side == "BUY" else (max_s <= tp_target)
-            if mfe_hit:
-                log.warning(f"[MFE_FORCED] {symbol} side={side} max/min_seen={max_s:.8f} vs tp={tp_target:.8f}")
-                exit_reason = "TP_MFE_FORCED"
-            elif age_s >= timeout_s:
-                exit_reason = "TIMEOUT"
-                log.warning(f"[TIMEOUT_EVAL] {symbol} age={age_s:.0f}s >= timeout={timeout_s:.0f}s, closing")
+        elif age_s >= timeout_s:
+            exit_reason = "TIMEOUT"
+            log.warning(f"[TIMEOUT_EVAL] {symbol} age={age_s:.0f}s >= timeout={timeout_s:.0f}s, closing")
 
         if exit_reason:
             closed_trade = close_paper_position(position_id=trade_id, price=current_price, ts=ts, reason=exit_reason)
