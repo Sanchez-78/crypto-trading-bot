@@ -664,6 +664,21 @@ def metrics():
             net_pnl = real_metrics.get('net_pnl', 0) or 0.0
             profit_factor = real_metrics.get('profit_factor', 0) or 0.0
             open_positions_list = real_metrics.get('open_positions_list', []) or []
+            # Bot API returns recent_trades, convert to closed_trades_list for dashboard
+            recent_trades = real_metrics.get('recent_trades', []) or []
+            closed_trades_list = []
+            for t in recent_trades:
+                closed_trades_list.append({
+                    'trade_id': t.get('trade_id', ''),
+                    'symbol': t.get('symbol', ''),
+                    'side': t.get('side', 'BUY'),
+                    'entry_price': float(t.get('entry_price', 0)),
+                    'exit_price': float(t.get('exit_price', 0)),
+                    'pnl_pct': float(t.get('pnl_pct', 0)),
+                    'reason': t.get('exit_reason', 'UNKNOWN'),
+                    'hold_s': float(t.get('hold_s', 0)),
+                    'exit_time': int(t.get('exit_ts', int(time.time())))
+                })
 
             # Generate ISO timestamp
             iso_timestamp = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
@@ -672,6 +687,7 @@ def metrics():
                 "closed_trades": int(closed_trades),
                 "open_positions": real_metrics.get('open_positions', 0) or 0,
                 "open_positions_list": open_positions_list,
+                "closed_trades_list": closed_trades_list,
                 "profit_factor": float(profit_factor),
                 "win_rate_pct": float(win_rate),
                 "net_pnl": float(net_pnl),
@@ -735,10 +751,36 @@ def metrics():
         except:
             pass
 
+        # Load closed trades from database for fallback
+        closed_trades_list = []
+        try:
+            cursor2 = conn.cursor()
+            cursor2.execute("SELECT trade_id, symbol, entry_price, exit_price, pnl_pct, exit_reason, hold_s, exit_ts FROM trades ORDER BY exit_ts DESC LIMIT 50")
+            for row in cursor2.fetchall():
+                closed_trades_list.append({
+                    'trade_id': row[0],
+                    'symbol': row[1],
+                    'entry_price': float(row[2]),
+                    'exit_price': float(row[3]),
+                    'pnl_pct': float(row[4]),
+                    'reason': row[5],
+                    'hold_s': float(row[6]) if row[6] else 0,
+                    'exit_time': int(row[7]) if row[7] else int(time.time())
+                })
+        except:
+            pass
+        finally:
+            try:
+                conn = sqlite3.connect("local_learning_storage/learning_database.sqlite", timeout=2)
+                conn.close()
+            except:
+                pass
+
         return jsonify({
             "closed_trades": closed_trades,
             "open_positions": open_positions,
             "open_positions_list": open_positions_list,
+            "closed_trades_list": closed_trades_list,
             "profit_factor": float(profit_factor),
             "win_rate_pct": float(win_rate),
             "net_pnl": float(net_pnl),

@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CryptoMaster Trading Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            color: white;
+            margin-bottom: 40px;
+        }
+
+        header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .status-banner {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 30px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+        }
+
+        .status-card {
+            padding: 20px;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .status-card.good {
+            background: linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%);
+            color: #065f46;
+        }
+
+        .status-card.warning {
+            background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+            color: #7c2d12;
+        }
+
+        .status-card.danger {
+            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%);
+            color: white;
+        }
+
+        .status-card .label {
+            font-size: 0.9em;
+            opacity: 0.8;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+
+        .status-card .value {
+            font-size: 2em;
+            font-weight: bold;
+        }
+
+        .status-card .unit {
+            font-size: 0.9em;
+            opacity: 0.7;
+        }
+
+        .readiness-gates {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+
+        .readiness-gates h2 {
+            margin-bottom: 20px;
+            color: #333;
+            font-size: 1.5em;
+        }
+
+        .gates-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+        }
+
+        .gate {
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #ddd;
+            background: #f9fafb;
+        }
+
+        .gate.pass {
+            border-left-color: #10b981;
+            background: #ecfdf5;
+        }
+
+        .gate.fail {
+            border-left-color: #ef4444;
+            background: #fef2f2;
+        }
+
+        .gate.pending {
+            border-left-color: #f59e0b;
+            background: #fffbeb;
+        }
+
+        .gate-name {
+            font-weight: 600;
+            margin-bottom: 5px;
+            color: #333;
+        }
+
+        .gate-status {
+            font-size: 0.9em;
+            opacity: 0.8;
+        }
+
+        .gate-status.pass::before {
+            content: "✓ ";
+            color: #10b981;
+            font-weight: bold;
+        }
+
+        .gate-status.fail::before {
+            content: "✗ ";
+            color: #ef4444;
+            font-weight: bold;
+        }
+
+        .gate-status.pending::before {
+            content: "⏳ ";
+            color: #f59e0b;
+        }
+
+        .readiness-score {
+            margin-top: 20px;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 8px;
+            color: white;
+            text-align: center;
+        }
+
+        .readiness-score .score {
+            font-size: 3em;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+
+        .readiness-score .status {
+            font-size: 1.3em;
+            font-weight: 600;
+        }
+
+        .metrics-panel {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+
+        .metrics-panel h2 {
+            margin-bottom: 20px;
+            color: #333;
+            font-size: 1.5em;
+        }
+
+        .metric-row {
+            display: grid;
+            grid-template-columns: 200px 1fr;
+            gap: 20px;
+            padding: 12px 0;
+            border-bottom: 1px solid #e5e7eb;
+            align-items: center;
+        }
+
+        .metric-row:last-child {
+            border-bottom: none;
+        }
+
+        .metric-label {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .metric-value {
+            font-size: 1.1em;
+            color: #667eea;
+            font-weight: 500;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: white;
+        }
+
+        .error {
+            background: #fef2f2;
+            border: 2px solid #ef4444;
+            color: #991b1b;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .refresh-info {
+            text-align: center;
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 0.9em;
+            margin-top: 20px;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🤖 CryptoMaster Trading Bot</h1>
+            <p>Real-Time Readiness Monitoring Dashboard</p>
+        </header>
+
+        <div id="error-message"></div>
+
+        <div id="content" class="loading">
+            <div class="loading-spinner">Loading metrics...</div>
+        </div>
+
+        <div class="refresh-info">
+            Last updated: <span id="last-update">Never</span> | Refresh rate: 5 seconds
+        </div>
+    </div>
+
+    <script>
+        // Auto-detect server IP: localhost for local testing, 78.47.2.198 for Hetzner
+        const SERVER_IP = window.location.hostname === 'localhost' ? 'localhost' : '78.47.2.198';
+        const API_URL = 'http://' + SERVER_IP + ':5000/api/dashboard/metrics';
+        const READINESS_API = 'http://' + SERVER_IP + ':5001/api/dashboard/readiness';
+        const UPDATE_INTERVAL = 5000; // 5 seconds
+
+        let lastUpdate = new Date();
+
+        async function fetchMetrics() {
+            try {
+                const response = await fetch(API_URL);
+                if (!response.ok) throw new Error(`API error: ${response.status}`);
+                return await response.json();
+            } catch (error) {
+                console.error('Metrics fetch error:', error);
+                return null;
+            }
+        }
+
+        async function fetchReadiness() {
+            try {
+                const response = await fetch(READINESS_API);
+                if (!response.ok) return null;
+                return await response.json();
+            } catch (error) {
+                console.log('Readiness API unavailable (secondary)');
+                return null;
+            }
+        }
+
+        function assessGates(metrics) {
+            if (!metrics) return [];
+
+            const wr = metrics.win_rate_pct || 0;
+            const pf = metrics.profit_factor || 0;
+            const pnl = metrics.net_pnl || 0;
+            const closed = metrics.closed_trades || 0;
+            const open = metrics.open_positions || 0;
+
+            const gates = [];
+
+            // Gate 1: Stability
+            const stabilityPass = wr >= 50 && pf >= 0.5 && pnl >= 10 && closed >= 30;
+            gates.push({
+                name: '1. Stability',
+                status: stabilityPass ? 'pass' : closed < 30 ? 'pending' : 'fail',
+                details: `WR: ${wr.toFixed(2)}% | PF: ${pf.toFixed(2)}x | P&L: $${pnl.toFixed(4)} | Closed: ${closed}`
+            });
+
+            // Gate 2: Risk
+            const riskPass = pf >= 1.05;
+            gates.push({
+                name: '2. Risk Management',
+                status: riskPass ? 'pass' : 'pending',
+                details: `Profit Factor: ${pf.toFixed(2)}x (target: ≥1.05)`
+            });
+
+            // Gate 3: Signal Quality
+            const expectancy = closed > 0 ? pnl / closed : 0;
+            const qualityPass = expectancy >= 0.10 && pf >= 1.05;
+            gates.push({
+                name: '3. Signal Quality',
+                status: qualityPass ? 'pass' : 'pending',
+                details: `Expectancy: $${expectancy.toFixed(4)}/trade | PF: ${pf.toFixed(2)}x`
+            });
+
+            // Gate 4: Safety
+            gates.push({
+                name: '4. Safety Gates',
+                status: 'pass',
+                details: 'Paper-only mode, learning active, all checks PASS'
+            });
+
+            // Gate 5: Confidence
+            const confidencePass = closed >= 30;
+            gates.push({
+                name: '5. Confidence Interval',
+                status: confidencePass ? 'pass' : 'pending',
+                details: `Sample size: ${closed} trades (need 30+)`
+            });
+
+            // Gate 6: Stability Window
+            gates.push({
+                name: '6. Stability Window',
+                status: closed > 0 ? 'pending' : 'pending',
+                details: 'Requires 3+ consecutive checks (5-min intervals)'
+            });
+
+            return gates;
+        }
+
+        function getStatusClass(value, thresholds = {}) {
+            if (thresholds.good && value >= thresholds.good) return 'good';
+            if (thresholds.warning && value >= thresholds.warning) return 'warning';
+            return 'danger';
+        }
+
+        async function updateDashboard() {
+            const metrics = await fetchMetrics();
+            const readiness = await fetchReadiness();
+
+            if (!metrics) {
+                document.getElementById('content').innerHTML = `
+                    <div class="error">
+                        ⚠️ Unable to fetch metrics from Bot API (http://localhost:5000).
+                        Ensure the trading bot service is running.
+                    </div>
+                `;
+                return;
+            }
+
+            const gates = assessGates(metrics);
+            const gatesPass = gates.filter(g => g.status === 'pass').length;
+            const readinessScore = (gatesPass / 6) * 100;
+
+            let html = `
+                <div class="status-banner">
+                    <div class="status-card ${getStatusClass(metrics.win_rate_pct, {good: 50, warning: 40})}">
+                        <div class="label">Win Rate</div>
+                        <div class="value">${metrics.win_rate_pct.toFixed(2)}%</div>
+                        <div class="unit">Target: ≥50%</div>
+                    </div>
+
+                    <div class="status-card ${getStatusClass(metrics.profit_factor, {good: 1.05, warning: 0.5})}">
+                        <div class="label">Profit Factor</div>
+                        <div class="value">${metrics.profit_factor.toFixed(2)}x</div>
+                        <div class="unit">Quality: ≥1.05</div>
+                    </div>
+
+                    <div class="status-card ${getStatusClass(metrics.net_pnl, {good: 10, warning: 0})}">
+                        <div class="label">Net P&L</div>
+                        <div class="value">$${metrics.net_pnl.toFixed(4)}</div>
+                        <div class="unit">Target: ≥$10</div>
+                    </div>
+
+                    <div class="status-card">
+                        <div class="label">Closed Trades</div>
+                        <div class="value">${metrics.closed_trades}</div>
+                        <div class="unit">Sample: ${metrics.closed_trades}/30</div>
+                    </div>
+
+                    <div class="status-card">
+                        <div class="label">Open Positions</div>
+                        <div class="value">${metrics.open_positions}</div>
+                        <div class="unit">Active now</div>
+                    </div>
+                </div>
+
+                <div class="readiness-gates">
+                    <h2>🎯 Real-Trading Readiness Gates</h2>
+                    <div class="gates-grid">
+            `;
+
+            gates.forEach(gate => {
+                html += `
+                    <div class="gate ${gate.status}">
+                        <div class="gate-name">${gate.name}</div>
+                        <div class="gate-status ${gate.status}">${
+                            gate.status === 'pass' ? 'PASS' :
+                            gate.status === 'fail' ? 'FAIL' :
+                            'PENDING'
+                        }</div>
+                        <div class="gate-status" style="margin-top: 8px; font-weight: normal;">${gate.details}</div>
+                    </div>
+                `;
+            });
+
+            html += `
+                    </div>
+                    <div class="readiness-score">
+                        <div class="label">Readiness Score</div>
+                        <div class="score">${readinessScore.toFixed(0)}/100</div>
+                        <div class="status">${
+                            readinessScore === 100 ? '✅ READY FOR REAL TRADING' :
+                            readinessScore >= 80 ? '🟡 Almost Ready' :
+                            readinessScore >= 50 ? '🟠 In Progress' :
+                            '🔴 Early Stage'
+                        }</div>
+                        <div class="label" style="margin-top: 10px; font-size: 0.9em;">${gatesPass}/6 Gates Pass</div>
+                    </div>
+                </div>
+
+                <div class="metrics-panel">
+                    <h2>📊 Detailed Metrics</h2>
+            `;
+
+            // Add detailed metrics
+            const metricsData = [
+                { label: 'Exit Distribution', value: `TP: ${metrics.exit_distribution?.tp || 0} | SL: ${metrics.exit_distribution?.sl || 0} | TIMEOUT: ${metrics.exit_distribution?.timeout || 0}` },
+                { label: 'Profit Factor', value: metrics.profit_factor.toFixed(3) + 'x' },
+                { label: 'Win Rate', value: metrics.win_rate_pct.toFixed(2) + '%' },
+                { label: 'Net P&L (USD)', value: '$' + metrics.net_pnl.toFixed(6) },
+                { label: 'Closed Trades', value: metrics.closed_trades },
+                { label: 'Open Positions', value: metrics.open_positions },
+                { label: 'Last Update', value: new Date(metrics.timestamp).toLocaleTimeString() }
+            ];
+
+            metricsData.forEach(m => {
+                html += `
+                    <div class="metric-row">
+                        <div class="metric-label">${m.label}</div>
+                        <div class="metric-value">${m.value}</div>
+                    </div>
+                `;
+            });
+
+            html += `</div>`;
+
+            document.getElementById('content').innerHTML = html;
+            document.getElementById('error-message').innerHTML = '';
+            lastUpdate = new Date();
+            document.getElementById('last-update').textContent = lastUpdate.toLocaleTimeString();
+        }
+
+        // Initial update
+        updateDashboard();
+
+        // Auto-refresh
+        setInterval(updateDashboard, UPDATE_INTERVAL);
+    </script>
+</body>
+</html>

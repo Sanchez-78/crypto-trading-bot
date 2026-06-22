@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CryptoMaster Trading Bot - Enhanced Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        header h1 {
+            font-size: 2.2em;
+            margin-bottom: 8px;
+        }
+
+        header p {
+            font-size: 1em;
+            opacity: 0.9;
+        }
+
+        .status-banner {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 30px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+        }
+
+        .status-card {
+            padding: 15px;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .status-card.good {
+            background: linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%);
+            color: #065f46;
+        }
+
+        .status-card.danger {
+            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%);
+            color: white;
+        }
+
+        .status-card .label {
+            font-size: 0.85em;
+            opacity: 0.8;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+
+        .status-card .value {
+            font-size: 1.8em;
+            font-weight: bold;
+        }
+
+        .status-card .unit {
+            font-size: 0.8em;
+            opacity: 0.7;
+        }
+
+        .section {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 30px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+
+        .section h2 {
+            margin-bottom: 20px;
+            color: #333;
+            font-size: 1.4em;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+
+        .error {
+            background: #fef2f2;
+            border: 2px solid #ef4444;
+            color: #991b1b;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .table-container {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9em;
+        }
+
+        table thead {
+            background: #f3f4f6;
+            font-weight: 600;
+        }
+
+        table th {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 2px solid #e5e7eb;
+            color: #333;
+        }
+
+        table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        table tbody tr:hover {
+            background: #f9fafb;
+        }
+
+        .positive {
+            color: #10b981;
+            font-weight: 600;
+        }
+
+        .negative {
+            color: #ef4444;
+            font-weight: 600;
+        }
+
+        .neutral {
+            color: #666;
+        }
+
+        .timestamp {
+            font-size: 0.85em;
+            color: #999;
+            font-family: monospace;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: white;
+        }
+
+        .no-data {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+            background: #f9fafb;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+
+        .refresh-info {
+            text-align: center;
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 0.9em;
+            margin-top: 20px;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            font-weight: 600;
+        }
+
+        .badge.win {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .badge.loss {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .badge.tp { background: #dbeafe; color: #1e40af; }
+        .badge.sl { background: #fee2e2; color: #991b1b; }
+        .badge.timeout { background: #fef3c7; color: #92400e; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🤖 CryptoMaster Trading Bot</h1>
+            <p>Enhanced Dashboard with Trade History & Position Details</p>
+        </header>
+
+        <div id="error-message"></div>
+
+        <div id="content" class="loading">
+            <div class="loading-spinner">Loading metrics and positions...</div>
+        </div>
+
+        <div class="refresh-info">
+            Last updated: <span id="last-update">Never</span> | Refresh rate: 5 seconds
+        </div>
+    </div>
+
+    <script>
+        // Auto-detect server IP
+        const SERVER_IP = window.location.hostname === 'localhost' ? 'localhost' : '78.47.2.198';
+        const API_URL = 'http://' + SERVER_IP + ':5000/api/dashboard/metrics';
+        const UPDATE_INTERVAL = 5000;
+
+        async function fetchMetrics() {
+            try {
+                const response = await fetch(API_URL);
+                if (!response.ok) throw new Error(`API error: ${response.status}`);
+                return await response.json();
+            } catch (error) {
+                console.error('Metrics fetch error:', error);
+                return null;
+            }
+        }
+
+        function formatTimestamp(ts) {
+            if (!ts) return 'N/A';
+            if (typeof ts === 'string' && !ts.includes('T')) return ts;
+            const date = new Date(typeof ts === 'number' ? ts * 1000 : ts);
+            return date.toLocaleString('en-US', {
+                year: '2-digit',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false
+            });
+        }
+
+        function getExitBadge(reason) {
+            const badges = {
+                'TP': 'tp',
+                'SL': 'sl',
+                'TIMEOUT': 'timeout'
+            };
+            return badges[reason] || 'neutral';
+        }
+
+        function getOutcomeBadge(pnl) {
+            return pnl > 0 ? 'win' : 'loss';
+        }
+
+        async function updateDashboard() {
+            const metrics = await fetchMetrics();
+
+            if (!metrics) {
+                document.getElementById('content').innerHTML = `
+                    <div class="error">
+                        ⚠️ Unable to fetch metrics from Bot API (${API_URL}).
+                        Ensure the trading bot service is running.
+                    </div>
+                `;
+                return;
+            }
+
+            let html = `
+                <div class="status-banner">
+                    <div class="status-card ${metrics.win_rate_pct >= 50 ? 'good' : 'danger'}">
+                        <div class="label">Win Rate</div>
+                        <div class="value">${metrics.win_rate_pct.toFixed(1)}%</div>
+                    </div>
+                    <div class="status-card">
+                        <div class="label">Profit Factor</div>
+                        <div class="value">${metrics.profit_factor.toFixed(2)}x</div>
+                    </div>
+                    <div class="status-card ${metrics.net_pnl >= 0 ? 'good' : 'danger'}">
+                        <div class="label">Net P&L</div>
+                        <div class="value">$${metrics.net_pnl.toFixed(2)}</div>
+                    </div>
+                    <div class="status-card">
+                        <div class="label">Closed</div>
+                        <div class="value">${metrics.closed_trades}</div>
+                    </div>
+                    <div class="status-card">
+                        <div class="label">Open</div>
+                        <div class="value">${metrics.open_positions}</div>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <h2>📊 Open Positions (${metrics.open_positions})</h2>
+            `;
+
+            if (!metrics.open_positions_list || metrics.open_positions_list.length === 0) {
+                html += '<div class="no-data">No open positions</div>';
+            } else {
+                html += `
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Symbol</th>
+                                    <th>Side</th>
+                                    <th>Entry Price</th>
+                                    <th>Current</th>
+                                    <th>Unrealized P&L</th>
+                                    <th>Hold Time</th>
+                                    <th>Entry Time</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                `;
+
+                metrics.open_positions_list.forEach(pos => {
+                    const pnl_pct = pos.pnl_pct || 0;
+                    const pnl_class = pnl_pct > 0 ? 'positive' : pnl_pct < 0 ? 'negative' : 'neutral';
+                    // entry_ts is Unix timestamp in seconds, current_hold_s is how long it's been open
+                    const hold_time = pos.current_hold_s || Math.floor(Date.now() / 1000 - (pos.entry_ts || 0));
+                    const hold_mins = Math.floor(hold_time / 60);
+                    const hold_secs = hold_time % 60;
+
+                    html += `
+                        <tr>
+                            <td><strong>${pos.symbol || 'N/A'}</strong></td>
+                            <td>${pos.side || 'N/A'}</td>
+                            <td>${(pos.entry_price || 0).toFixed(8)}</td>
+                            <td>${(pos.current_price || 0).toFixed(8)}</td>
+                            <td class="${pnl_class}">${pnl_pct > 0 ? '+' : ''}${pnl_pct.toFixed(4)}%</td>
+                            <td>${hold_mins}m ${hold_secs}s</td>
+                            <td class="timestamp">${formatTimestamp(pos.entry_ts * 1000)}</td>
+                        </tr>
+                    `;
+                });
+
+                html += `
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            }
+
+            html += `
+                </div>
+
+                <div class="section">
+                    <h2>📈 Closed Trades (${metrics.closed_trades})</h2>
+            `;
+
+            if (!metrics.closed_trades_list || metrics.closed_trades_list.length === 0) {
+                html += '<div class="no-data">No closed trades yet</div>';
+            } else {
+                html += `
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Symbol</th>
+                                    <th>Side</th>
+                                    <th>Entry</th>
+                                    <th>Exit</th>
+                                    <th>P&L</th>
+                                    <th>Exit Reason</th>
+                                    <th>Hold Time</th>
+                                    <th>Exit Time</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                `;
+
+                metrics.closed_trades_list.slice(-50).reverse().forEach(trade => {
+                    const pnl = trade.pnl_pct || 0;
+                    const pnl_class = pnl > 0 ? 'positive' : pnl < 0 ? 'negative' : 'neutral';
+                    const outcome_class = getOutcomeBadge(pnl);
+                    const exit_badge = getExitBadge(trade.reason);
+                    const hold_time = trade.hold_s || 0;
+                    const hold_mins = Math.floor(hold_time / 60);
+                    const hold_secs = hold_time % 60;
+                    // exit_time is Unix timestamp in seconds, convert to milliseconds for Date
+                    const exit_ts_ms = (trade.exit_time || 0) < 100000000000 ? (trade.exit_time || 0) * 1000 : (trade.exit_time || 0);
+
+                    html += `
+                        <tr>
+                            <td><strong>${trade.symbol || 'N/A'}</strong></td>
+                            <td>${trade.side || 'N/A'}</td>
+                            <td>${(trade.entry_price || 0).toFixed(8)}</td>
+                            <td>${(trade.exit_price || 0).toFixed(8)}</td>
+                            <td class="${pnl_class}"><span class="badge ${outcome_class}">${pnl > 0 ? '+' : ''}${pnl.toFixed(4)}%</span></td>
+                            <td><span class="badge ${exit_badge}">${trade.reason || 'N/A'}</span></td>
+                            <td>${hold_mins}m ${hold_secs}s</td>
+                            <td class="timestamp">${formatTimestamp(exit_ts_ms)}</td>
+                        </tr>
+                    `;
+                });
+
+                html += `
+                            </tbody>
+                        </table>
+                    </div>
+                    <div style="text-align: center; margin-top: 15px; color: #999; font-size: 0.9em;">
+                        Showing last 50 trades
+                    </div>
+                `;
+            }
+
+            html += `</div>`;
+
+            document.getElementById('content').innerHTML = html;
+            document.getElementById('error-message').innerHTML = '';
+            document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
+        }
+
+        // Initial update
+        updateDashboard();
+
+        // Auto-refresh
+        setInterval(updateDashboard, UPDATE_INTERVAL);
+    </script>
+</body>
+</html>
