@@ -1953,16 +1953,14 @@ def update_paper_positions(
         if side == "BUY":
             tp_hit = current_price >= pos["tp"]
             sl_hit = current_price <= pos["sl"]
+            log.warning(f"[TP_SL_EVAL_BUY] {symbol} curr={current_price:.8f} >= tp={pos['tp']:.8f}? {tp_hit} | curr <= sl={pos['sl']:.8f}? {sl_hit}")
         else:  # SELL
             tp_hit = current_price <= pos["tp"]
             sl_hit = current_price >= pos["sl"]
-
-        # V10.27 FIX: Wire TP/SL evaluation — debug log to confirm execution
-        # CRITICAL: Log ALL TP/SL comparisons to file to debug why they never hit
-        log.info(f"[TP_SL_EVAL] {symbol} side={side} curr={current_price:.8f} tp={pos['tp']:.8f} sl={pos['sl']:.8f} tp_hit={tp_hit} sl_hit={sl_hit}")
+            log.warning(f"[TP_SL_EVAL_SELL] {symbol} curr={current_price:.8f} <= tp={pos['tp']:.8f}? {tp_hit} | curr >= sl={pos['sl']:.8f}? {sl_hit}")
 
         if tp_hit or sl_hit:
-            log.info(f"[TP_SL_HIT] {symbol} side={side} current={current_price:.8f} tp={pos['tp']:.8f} sl={pos['sl']:.8f} tp_hit={tp_hit} sl_hit={sl_hit}")
+            log.info(f"[TP_SL_HIT] {symbol} side={side} tp_hit={tp_hit} sl_hit={sl_hit}")
 
         if tp_hit:
             exit_reason = "TP"
