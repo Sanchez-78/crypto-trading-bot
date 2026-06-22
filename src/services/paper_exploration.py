@@ -539,7 +539,7 @@ def paper_exploration_override(signal: dict, ctx: Optional[dict] = None) -> dict
                     "bucket": "D_NEG_EV_CONTROL",
                     "reason": "hourly_cap_exceeded",
                     "size_mult": 0.03,
-                    "max_hold_s": 300,
+                    "max_hold_s": int(os.getenv("PAPER_MAX_POSITION_AGE_S", "600")),
                     "tags": ["control"],
                 }
             _increment_skip_counter("entries")
@@ -549,7 +549,7 @@ def paper_exploration_override(signal: dict, ctx: Optional[dict] = None) -> dict
                 "bucket": "D_NEG_EV_CONTROL",
                 "reason": f"control_baseline ev={ev:.4f}",
                 "size_mult": 0.03,
-                "max_hold_s": 300,
+                "max_hold_s": int(os.getenv("PAPER_MAX_POSITION_AGE_S", "600")),
                 "tags": ["control", "baseline"],
             }
 
@@ -563,7 +563,7 @@ def paper_exploration_override(signal: dict, ctx: Optional[dict] = None) -> dict
                     "bucket": "E_NO_PATTERN",
                     "reason": "hourly_cap_exceeded",
                     "size_mult": 0.02,
-                    "max_hold_s": 300,
+                    "max_hold_s": int(os.getenv("PAPER_MAX_POSITION_AGE_S", "600")),
                     "tags": ["control"],
                 }
             _increment_skip_counter("entries")
@@ -573,7 +573,7 @@ def paper_exploration_override(signal: dict, ctx: Optional[dict] = None) -> dict
                 "bucket": "E_NO_PATTERN",
                 "reason": f"no_pattern_baseline",
                 "size_mult": 0.02,
-                "max_hold_s": 300,
+                "max_hold_s": int(os.getenv("PAPER_MAX_POSITION_AGE_S", "600")),
                 "tags": ["control", "pattern_baseline"],
             }
 

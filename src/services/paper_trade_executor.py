@@ -1442,17 +1442,21 @@ def open_paper_position(
     # Evidence: Cycles #5-6 revealed env-var wiring was in unreachable code; tp_from_executor
     # ATR bands (~40bps) always override. Compute env-var bands FIRST, use them to override.
     # CYCLE 28 FIX: ATR-based dynamic TP sizing (static TP unreachable vs realized vol)
-    # Floor raised 35->45bps so the formula has effect in observed sub-0.7% ATR regime
-    # (raises margin over 18bps cost floor from 22->27bps). Above 0.7% ATR it scales up
-    # to the 50bps cap. tp_zone_bps + atr stored on position so sync path doesn't clobber.
-    tp_zone_bps_static = int(os.getenv("PAPER_TP_ZONE_BPS", "40"))  # default 40bps (0.40%) — reachable in 600s hold window
-    atr_v = float(signal.get("atr") or 0.0)  # ATR is absolute price units (see line ~2862 convention)
-    if atr_v > 0 and price:
-        atr_pct = atr_v / price  # ATR as fraction of price
-        dynamic_tp_bps = max(45, int(atr_pct * 10000 * 0.5))  # bps=atr_pct*10000; floor 45bps, scale 0.5
-        tp_zone_bps = min(dynamic_tp_bps, 50)  # Cap at 50bps to avoid extreme widening
+    # V10.28: Prioritize explicit env var over dynamic calculation
+    # If PAPER_TP_ZONE_BPS is explicitly configured, use it (don't override with ATR-based dynamic)
+    if os.getenv("PAPER_TP_ZONE_BPS"):
+        # Env var explicitly set — use it for ALL positions (symmetric, reproducible)
+        tp_zone_bps = int(os.getenv("PAPER_TP_ZONE_BPS"))
     else:
-        tp_zone_bps = tp_zone_bps_static
+        # Env var not set — use dynamic calculation as fallback
+        tp_zone_bps_static = int(os.getenv("PAPER_TP_ZONE_BPS", "40"))  # default 40bps
+        atr_v = float(signal.get("atr") or 0.0)
+        if atr_v > 0 and price:
+            atr_pct = atr_v / price
+            dynamic_tp_bps = max(45, int(atr_pct * 10000 * 0.5))
+            tp_zone_bps = min(dynamic_tp_bps, 50)
+        else:
+            tp_zone_bps = tp_zone_bps_static
     sl_zone_bps = int(os.getenv("PAPER_SL_ZONE_BPS", "30"))  # default 30bps (0.30%) — per commit c4b03ba; SL stays static
     tp_pct_env = 1.0 + tp_zone_bps / 10000 if side == "BUY" else 1.0 - tp_zone_bps / 10000
     sl_pct_env = 1.0 - sl_zone_bps / 10000 if side == "BUY" else 1.0 + sl_zone_bps / 10000

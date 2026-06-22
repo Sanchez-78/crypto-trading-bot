@@ -4133,7 +4133,7 @@ def evaluate_signal(signal):
                         "cost_edge_bypass_reason": sampler_result.get("cost_edge_bypass_reason", "none"),
                         "required_move_pct": sampler_result.get("required_move_pct", 0.0),
                         "size_mult": sampler_result.get("size_mult", 1.0),
-                        "max_hold_s": sampler_result.get("max_hold_s", 300),
+                        "max_hold_s": sampler_result.get("max_hold_s", int(os.getenv("PAPER_MAX_POSITION_AGE_S", "600"))),
                         "tags": sampler_result.get("tags", []),
                         "score_raw": round(_score_before_adj, 6),
                         "score_final": round(_score_adj, 6),
