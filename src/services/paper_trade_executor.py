@@ -1889,26 +1889,9 @@ def update_paper_positions(
         # of recomputing from the global env-var. Recomputing here clobbered the
         # entry-time ATR scaling on every tick (reviewer blocker). Legacy positions
         # without a stored band fall back to the env default so behavior is preserved.
-        env_tp_zone_bps = int(os.getenv("PAPER_TP_ZONE_BPS", "40"))
-        env_sl_zone_bps = int(os.getenv("PAPER_SL_ZONE_BPS", "30"))
-        recalc_count = 0
-        for pos_id, pos_data in _POSITIONS.items():
-            old_tp = pos_data.get("tp", 0)
-            side = pos_data.get("side", "BUY")
-            entry_price = pos_data.get("entry_price", 0)
-            # Per-position ATR-scaled band from entry; fall back to env for legacy positions
-            tp_zone_bps = pos_data.get("tp_zone_bps_at_entry", env_tp_zone_bps)
-            sl_zone_bps = pos_data.get("sl_zone_bps_at_entry", env_sl_zone_bps)
-            tp_pct = 1.0 + tp_zone_bps / 10000 if side == "BUY" else 1.0 - tp_zone_bps / 10000
-            sl_pct = 1.0 - sl_zone_bps / 10000 if side == "BUY" else 1.0 + sl_zone_bps / 10000
-            new_tp = entry_price * tp_pct
-            # Only update if significantly different (avoid noise from repeated calcs)
-            if abs(new_tp - old_tp) > 0.0001 * entry_price:
-                _POSITIONS[pos_id]["tp"] = new_tp
-                _POSITIONS[pos_id]["sl"] = entry_price * sl_pct
-                recalc_count += 1
-        if recalc_count > 0:
-            log.info(f"[CYCLE#15_SYNC] Synced TP/SL for {recalc_count} positions (env_tp_bps={env_tp_zone_bps} env_sl_bps={env_sl_zone_bps}, per-pos band preserved)")
+        # REMOVED: CYCLE#15_SYNC caused revert of calibrated TP/SL to uncalibrated env values every tick
+        # TP/SL are correctly set at entry by calibrate_paper_training_geometry() and should not be mutated
+        # This sync was overwriting calibrated values with raw env vars, making TP unreachable
 
         positions_to_check = list(_POSITIONS.items())
 
