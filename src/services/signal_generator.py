@@ -311,8 +311,15 @@ def _score_direction(hist, e50, e200, breakout_up, breakout_down, mom5, action):
     """
     Score a directional setup across 7 binary features.
     All features are directionally symmetric (BUY/SELL mirrored).
-    CYCLE 28 FIX: Relaxed pullback to BELOW moving average (was 1% near MA).
-    Reason: strict pullback fires too late in trend (after 80%+ move realized).
+    CYCLE 29 FIX: Pullback now means CONTINUATION-IN-TREND, not deep retrace.
+    Prior `p <= e50` (BUY) admitted entries when price had fallen BELOW the 50-EMA
+    — i.e. buying into weakness/reversal where the upward continuation move is already
+    spent (forensic: 784 TIMEOUTs, median fwd move 0.099% vs 0.30% TP, MFE>=TP in 4.6%).
+    A healthy continuation entry trades NEAR/ABOVE the moving average with live momentum,
+    leaving the forward move available. New gate: price within a shallow band around
+    e50 (not collapsed below, not over-extended above) AND short-term momentum aligned.
+    Band = +-0.25% of e50; this catches the shallow-pullback continuation, shifting the
+    MFE distribution right so TP (0.30%) becomes reachable.
     Returns (score, features_dict).
     """
     p      = hist[-1]
@@ -328,9 +335,18 @@ def _score_direction(hist, e50, e200, breakout_up, breakout_down, mom5, action):
     lo5 = min(hist[-5:])
     rng = hi5 - lo5 or 1e-9
 
+    # CYCLE 29: shallow-pullback continuation band around the 50-EMA.
+    # BUY  → price not collapsed below e50 (>= e50*0.9975) AND not over-extended
+    #        above (<= e50*1.0025) AND momentum up.
+    # SELL → mirrored: price near/below e50 within band AND momentum down.
+    band_lo = e50 * 0.9975
+    band_hi = e50 * 1.0025
+    in_band = band_lo <= p <= band_hi
+    pullback_cont = (in_band and mom5 > 0) if is_buy else (in_band and mom5 < 0)
+
     features = {
         "trend":    (e50 > e200)        if is_buy else (e50 < e200),
-        "pullback": (p <= e50)          if is_buy else (p >= e50),
+        "pullback": pullback_cont,
         "bounce":   (hist[-1] > hist[-2]) if is_buy else (hist[-1] < hist[-2]),
         "breakout": bool(breakout_up    if is_buy else breakout_down),
         "vol":      r20 > r50,
