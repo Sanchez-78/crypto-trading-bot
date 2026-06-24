@@ -1,14 +1,14 @@
 {
-  "cycle": 31,
+  "cycle": 32,
   "start_time": "2026-06-24T09:55:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 1,
-  "current_wr": 44.0,
-  "current_pnl": -0.262769,
-  "total_wr_gain": 44.0,
+  "total_cycles_completed": 2,
+  "current_wr": 42.0,
+  "current_pnl": -0.324064,
+  "total_wr_gain": 42.0,
   "quota_max_used_pct": 0.2,
-  "last_update": "2026-06-24T10:24:35Z",
-  "status": "monitoring_caution_improving",
+  "last_update": "2026-06-24T10:58:00Z",
+  "status": "monitoring_caution_declining_investigate",
   "notes": "Reset to proven baseline (b3fbf90: ±0.25% band, 100% WR history). Rejected patch treadmill. Starting fresh CYCLE 30 with original entry logic.",
   "cycles": [
     {
@@ -45,6 +45,21 @@
       "status": "CAUTION_IMPROVING",
       "elapsed_mins": 30,
       "notes": "Positive trend: WR +2pt (42%→44%), PF +0.05 (0.35→0.4), P&L -0.26 (improved from -0.33, loss reduced by $0.07). Exit distribution stable: 46% TP, 26% SL, 28% TIMEOUT. Learning continuing to calibrate. Service healthy (4h8min uptime). No blocker detected. Trend: Moving toward goal (WR>50%, P&L>0). Scheduled CYCLE 32 checkpoint +30 min."
+    },
+    {
+      "cycle": 32,
+      "timestamp": "2026-06-24T10:58:00Z",
+      "wr_before": 44.0,
+      "wr_after": 42.0,
+      "pf_before": 0.4,
+      "pf_after": 0.35,
+      "pnl_before": -0.262769,
+      "pnl_after": -0.324064,
+      "blocker": "data_quality_concern",
+      "fix_applied": "none",
+      "status": "CAUTION_DECLINING_INVESTIGATE",
+      "elapsed_mins": 30,
+      "notes": "🔴 REGRESSION DETECTED but DATA INTEGRITY CONCERN: WR -2pt (44%→42%), PF -0.05, P&L -0.06 (loss increased). HOWEVER: Metrics collection detected NameError ('closed_trades' undefined) + Firebase OAuth cert failures (CA bundle missing). Metrics may be corrupted. CONSERVATIVE DECISION: Do NOT patch yet. Continue CYCLE 33 to confirm if regression is real (market conditions) or noise (errors). If CYCLE 33 also declines, trigger evidence-based diagnostics. Recommendation: Fix NameError and Firebase cert issue for clean metrics before reacting to declining trend."
     }
   ]
 }
