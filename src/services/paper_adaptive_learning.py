@@ -57,6 +57,25 @@ class PaperAdaptiveLearning:
         # Weight affects priority in next paper entries
         self.segment_weights = {}
 
+        # V10.29: Regime-volatility TP mapping for learning-based TP selection
+        # Structure: {regime: {vol_band: {"tp_pct": float, "wr": float, "n": int}}}
+        self.regime_tp_strategy = {
+            "BULL_TREND": {"low_vol": {"tp_pct": 0.20, "wr": 0.50, "n": 0},
+                           "mid_vol": {"tp_pct": 0.23, "wr": 0.50, "n": 0},
+                           "high_vol": {"tp_pct": 0.26, "wr": 0.50, "n": 0}},
+            "BEAR_TREND": {"low_vol": {"tp_pct": 0.18, "wr": 0.50, "n": 0},
+                           "mid_vol": {"tp_pct": 0.21, "wr": 0.50, "n": 0},
+                           "high_vol": {"tp_pct": 0.24, "wr": 0.50, "n": 0}},
+            "RANGING": {"low_vol": {"tp_pct": 0.15, "wr": 0.50, "n": 0},
+                        "mid_vol": {"tp_pct": 0.18, "wr": 0.50, "n": 0},
+                        "high_vol": {"tp_pct": 0.21, "wr": 0.50, "n": 0}},
+            "QUIET_RANGE": {"low_vol": {"tp_pct": 0.12, "wr": 0.50, "n": 0},
+                            "mid_vol": {"tp_pct": 0.15, "wr": 0.50, "n": 0},
+                            "high_vol": {"tp_pct": 0.18, "wr": 0.50, "n": 0}},
+        }
+        self.regime_tp_learning_enabled = False  # Starts disabled, enabled after 100 closes warmup
+        self.regime_tp_learning_blend = 0.0  # Ramp-up: 0.0 (off) → 1.0 (full learning)
+
         # Readiness tracking
         self.lifecycle = "PAPER_COLLECTING"  # COLLECTING -> ADAPTING -> VALIDATING -> REAL_READY
         self.ready_ts = None
@@ -224,6 +243,11 @@ class PaperAdaptiveLearning:
 
                 self.segment_weights = data.get("segment_weights", {})
 
+                # V10.29: Restore regime-volatility TP learning state
+                self.regime_tp_strategy = data.get("regime_tp_strategy", self.regime_tp_strategy)
+                self.regime_tp_learning_enabled = data.get("regime_tp_learning_enabled", False)
+                self.regime_tp_learning_blend = data.get("regime_tp_learning_blend", 0.0)
+
                 # P1.1AP-O1A: Restore qualification metadata
                 self.qualification_schema_version = data.get("qualification_schema_version", 1)
                 self.qualification_started_at = data.get("qualification_started_at")
@@ -269,6 +293,9 @@ class PaperAdaptiveLearning:
                 "qualification_window": list(self.qualification_window),
                 "operator_unlock": self.operator_unlock,
                 "paper_admission_controls": self.paper_admission_controls,
+                "regime_tp_strategy": self.regime_tp_strategy,
+                "regime_tp_learning_enabled": self.regime_tp_learning_enabled,
+                "regime_tp_learning_blend": self.regime_tp_learning_blend,
             }
             with open(self._state_file, 'w') as f:
                 json.dump(data, f, indent=2)
@@ -322,6 +349,9 @@ class PaperAdaptiveLearning:
 
         # Update segment metrics and policy
         self._update_segment_policy(segment_key)
+
+        # V10.29: Update regime-volatility TP strategy (learning-based TP selection)
+        self._update_regime_tp_strategy(trade)
 
         # Emit log
         rolling20_pf = self._compute_rolling_pf(self.rolling20)
@@ -560,6 +590,121 @@ class PaperAdaptiveLearning:
                 self.segment_weights.get(segment_key, 1.0),  # Will be updated above
                 action
             )
+
+    def _update_regime_tp_strategy(self, trade: Dict) -> None:
+        """V10.29: Update regime-volatility TP learning after trade close.
+
+        Tracks WR per (regime, volatility_band) and adapts TP targets based on performance.
+        Enables gradual TP learning to replace static hardcoded targets.
+        """
+        try:
+            regime = str(trade.get("regime", "UNKNOWN"))
+            if regime not in self.regime_tp_strategy:
+                return
+
+            # Estimate volatility band from ATR (if available in trade data)
+            atr_pct = float(trade.get("atr_pct", 0.01))
+            if atr_pct < 0.005:
+                vol_band = "low_vol"
+            elif atr_pct < 0.010:
+                vol_band = "mid_vol"
+            else:
+                vol_band = "high_vol"
+
+            # Determine outcome (WIN if exit_reason == "TP", else LOSS/FLAT)
+            outcome = str(trade.get("outcome", "FLAT"))
+            exit_reason = str(trade.get("exit_reason", "UNKNOWN"))
+
+            # Only update if we have outcome data
+            if outcome not in ["WIN", "LOSS", "FLAT"]:
+                return
+
+            # Update TP strategy statistics for this regime+vol_band
+            strategy = self.regime_tp_strategy[regime][vol_band]
+            strategy["n"] += 1
+
+            # Update WR (rolling average): wr_new = (wr_old * n_old + outcome) / n_new
+            if strategy["n"] > 0:
+                wr_old = strategy["wr"]
+                n_old = strategy["n"] - 1
+                outcome_val = 1.0 if outcome == "WIN" else 0.0
+                strategy["wr"] = (wr_old * n_old + outcome_val) / strategy["n"]
+
+            # Learning adaptation: every 50 closes, check if we should adjust TP
+            if strategy["n"] % 50 == 0 and strategy["n"] >= 50:
+                current_wr = strategy["wr"]
+                current_tp = strategy["tp_pct"]
+
+                # Simple adaptive rule: if WR is too low, widen TP slightly (more time to reach exit)
+                # If WR is too high, slightly tighten TP (less time wasted in flat trades)
+                if current_wr < 0.45:  # Too many losses
+                    new_tp = min(current_tp + 0.01, 0.40)  # Widen, but cap at 0.40%
+                    if new_tp != current_tp:
+                        strategy["tp_pct"] = new_tp
+                        log.info(
+                            "[TP_LEARNING_ADAPT] regime=%s vol_band=%s wr=%.3f n=%d "
+                            "tp_adjusted %.4f → %.4f reason=low_wr",
+                            regime, vol_band, current_wr, strategy["n"],
+                            current_tp, new_tp
+                        )
+                elif current_wr > 0.55:  # Too many wins (TP too wide?)
+                    new_tp = max(current_tp - 0.01, 0.10)  # Tighten, but floor at 0.10%
+                    if new_tp != current_tp:
+                        strategy["tp_pct"] = new_tp
+                        log.info(
+                            "[TP_LEARNING_ADAPT] regime=%s vol_band=%s wr=%.3f n=%d "
+                            "tp_adjusted %.4f → %.4f reason=high_wr",
+                            regime, vol_band, current_wr, strategy["n"],
+                            current_tp, new_tp
+                        )
+
+            # Enable learning after 100 total closes across all regimes
+            if self.lifetime_n >= 100 and not self.regime_tp_learning_enabled:
+                self.regime_tp_learning_enabled = True
+                log.info("[TP_LEARNING_ENABLED] After %d closes, regime-tp learning activated", self.lifetime_n)
+
+            # Ramp up learning blend based on closes
+            if self.regime_tp_learning_enabled:
+                if self.lifetime_n < 150:
+                    self.regime_tp_learning_blend = 0.1
+                elif self.lifetime_n < 200:
+                    self.regime_tp_learning_blend = 0.3
+                elif self.lifetime_n < 250:
+                    self.regime_tp_learning_blend = 0.5
+                elif self.lifetime_n < 300:
+                    self.regime_tp_learning_blend = 0.8
+                else:
+                    self.regime_tp_learning_blend = 1.0
+
+        except Exception as e:
+            log.warning("[TP_LEARNING_UPDATE_ERROR] %s", str(e))
+
+    def get_regime_tp_target(self, regime: str, atr_pct: float) -> Optional[float]:
+        """V10.29: Get learned TP target for regime+volatility band.
+
+        Returns TP percentage (e.g., 0.18 for 0.18%) or None if learning not enabled.
+        """
+        if not self.regime_tp_learning_enabled or regime not in self.regime_tp_strategy:
+            return None
+
+        # Determine volatility band from ATR
+        if atr_pct < 0.005:
+            vol_band = "low_vol"
+        elif atr_pct < 0.010:
+            vol_band = "mid_vol"
+        else:
+            vol_band = "high_vol"
+
+        strategy = self.regime_tp_strategy[regime][vol_band]
+        tp_pct = strategy.get("tp_pct")
+
+        # Apply learning blend ramp-up
+        if self.regime_tp_learning_blend < 1.0:
+            # Blend with baseline (0.20 for most regimes)
+            baseline_tp = 0.20
+            tp_pct = (1.0 - self.regime_tp_learning_blend) * baseline_tp + self.regime_tp_learning_blend * tp_pct
+
+        return tp_pct
 
     def _compute_policy_action(self, segment_key: str, total_closes: int) -> str:
         """Determine current policy action based on data.
@@ -966,4 +1111,22 @@ def get_segment_metrics(symbol: str, regime: str, side: str) -> Optional[Dict]:
         log.debug("[PAPER_SEGMENT_METRICS_ERROR] symbol=%s regime=%s side=%s error=%s",
                   symbol, regime, side, str(e))
         return None
+
+
+# V10.29: Global learning instance for shared access (TP learning, segment weights, etc.)
+_global_learning_instance = None
+
+
+def get_learning_instance() -> Optional[PaperAdaptiveLearning]:
+    """Get or create global learning instance."""
+    global _global_learning_instance
+    if _global_learning_instance is None:
+        _global_learning_instance = PaperAdaptiveLearning()
+    return _global_learning_instance
+
+
+def set_learning_instance(instance: PaperAdaptiveLearning) -> None:
+    """Set global learning instance (for testing/dependency injection)."""
+    global _global_learning_instance
+    _global_learning_instance = instance
 

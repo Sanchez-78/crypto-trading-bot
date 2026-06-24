@@ -1081,30 +1081,65 @@ def compute_tp_sl(entry, direction, atr=0.003, sym=None, reg=None):
 
     V10.2: regime_tp_sl_adjust applied after EV/WR scaling — trend gets
     wider TP, high-vol gets wider SL, quiet gets tighter TP.
+
+    V10.29: Learned regime-volatility TP targets blended with adaptive baseline.
     """
-    if reg == "QUIET_RANGE":
-        tp_k, sl_k = 0.7, 0.5
+    # V10.29: Check for learned TP target from regime-volatility mapping
+    learned_tp_pct = None
+    try:
+        from src.services.paper_adaptive_learning import get_learning_instance
+        learning = get_learning_instance()
+        if learning:
+            atr_pct = (atr / entry) * 100 if entry else 0.01
+            learned_tp_pct = learning.get_regime_tp_target(reg or "RANGING", atr_pct)
+    except Exception:
+        pass
+
+    # Use learned TP if available, otherwise compute from adaptive baseline
+    if learned_tp_pct is not None:
+        tp_dist = max(learned_tp_pct, MIN_TP_PCT)
     else:
-        _ev = 0.0
-        if sym and reg:
+        if reg == "QUIET_RANGE":
+            tp_k, sl_k = 0.7, 0.5
+        else:
+            _ev = 0.0
+            if sym and reg:
+                try:
+                    from src.services.execution import risk_ev as _rev
+                    _ev = _rev(sym, reg)
+                except Exception:
+                    pass
             try:
-                from src.services.execution import risk_ev as _rev
-                _ev = _rev(sym, reg)
+                from src.services.learning_event import get_metrics as _lgm
+                _wr = _lgm().get("winrate", 0.5) or 0.5
             except Exception:
-                pass
+                _wr = 0.5
+            tp_k, sl_k = _adaptive_tp_sl(_ev, _wr)
+
+        tp_k, sl_k = regime_tp_sl_adjust(tp_k, sl_k, reg or "RANGING")
+
+        # Hard floor: TP must be ≥ MIN_TP_PCT from entry, SL ≥ MIN_SL_PCT.
+        # Prevents degenerate SL=TP=entry when atr collapses to near-zero
+        # (observed: ETH RANGING with ATR≈0 → SL=$2183.43 = entry exactly).
+        tp_dist = max(tp_k * atr, MIN_TP_PCT)
+
+    # SL distance computed from baseline always (learning only affects TP)
+    if reg == "QUIET_RANGE":
+        sl_k = 0.5
+    else:
+        try:
+            from src.services.execution import risk_ev as _rev
+            _ev = _rev(sym, reg) if sym and reg else 0.0
+        except Exception:
+            _ev = 0.0
         try:
             from src.services.learning_event import get_metrics as _lgm
             _wr = _lgm().get("winrate", 0.5) or 0.5
         except Exception:
             _wr = 0.5
-        tp_k, sl_k = _adaptive_tp_sl(_ev, _wr)
+        tp_k_dummy, sl_k = _adaptive_tp_sl(_ev, _wr)
 
-    tp_k, sl_k = regime_tp_sl_adjust(tp_k, sl_k, reg or "RANGING")
-
-    # Hard floor: TP must be ≥ MIN_TP_PCT from entry, SL ≥ MIN_SL_PCT.
-    # Prevents degenerate SL=TP=entry when atr collapses to near-zero
-    # (observed: ETH RANGING with ATR≈0 → SL=$2183.43 = entry exactly).
-    tp_dist = max(tp_k * atr, MIN_TP_PCT)
+    tp_k_dummy, sl_k = regime_tp_sl_adjust(1.0, sl_k, reg or "RANGING")  # tp_k ignored, only use sl_k
     sl_dist = max(sl_k * atr, MIN_SL_PCT)
 
     # V10.22 FIX: Explicit direction handling (was: else clause treated all non-BUY as SELL)

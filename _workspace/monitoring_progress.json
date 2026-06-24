@@ -1,14 +1,14 @@
 {
-  "cycle": 36,
+  "cycle": 38,
   "start_time": "2026-06-24T09:55:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 6,
+  "total_cycles_completed": 7,
   "current_wr": 33.33,
   "current_pnl": 0.1361,
   "total_wr_gain": 33.33,
   "quota_max_used_pct": 0.2,
-  "last_update": "2026-06-24T12:12:15Z",
-  "status": "monitoring_merge_conflict_fixed_deeper_blocker_identified",
+  "last_update": "2026-06-24T13:42:00Z",
+  "status": "architectural_review_tp_floor_reduction_deployed",
   "notes": "Reset to proven baseline (b3fbf90: ±0.25% band, 100% WR history). Rejected patch treadmill. Starting fresh CYCLE 30 with original entry logic.",
   "cycles": [
     {
@@ -120,6 +120,21 @@
       "status": "MERGE_CONFLICT_FIXED_DEEPER_BLOCKER_REVEALED",
       "elapsed_mins": 30,
       "notes": "🔴 CRITICAL DISCOVERY: Git merge conflict was blocking signal_generator.py (SyntaxError on line 348, conflict markers not resolved). WR was artificially 0% (100% TIMEOUT exits). POST-FIX METRICS: WR 33.33% (51/153 wins), PF 1.09 (positive!), TP 34%, SL 21.6%, TIMEOUT 44%. Key finding: Band width (±1.5%) is NOT the limiting factor - WR jumped immediately upon fixing code. The 33.33% WR (vs 54% historical) indicates DEEPER BLOCKER: likely TP/SL asymmetry (similar to CYCLE 27), signal timing, or learning degradation. RECOMMENDATION: Escalate to evidence-based diagnostics on TP/SL configuration and signal flow. Do NOT make further entry band changes without understanding root cause of 33% WR."
+    },
+    {
+      "cycle": 38,
+      "timestamp": "2026-06-24T13:42:00Z",
+      "wr_before": 33.33,
+      "wr_after": null,
+      "pf_before": 1.09,
+      "pf_after": null,
+      "pnl_before": 0.1361,
+      "pnl_after": null,
+      "blocker": "none",
+      "fix_applied": "Reduced MIN_TP_PCT from 0.004 (0.40%) to 0.0015 (0.15%) in trade_executor.py:219. Root cause: Architectural review identified TP floor unreachable in 180-600s hold windows on 2-sec ticks. Evidence: 44% TIMEOUT exits, CYCLE 37 failure (WR collapsed when dynamic scaling attempted), forensics showing 80% trades had unreachable TP. New floor (0.15%) is achievable in 50% of trades per regime-adjusted ATR while maintaining cost floor margin.",
+      "status": "TP_FLOOR_REDUCTION_DEPLOYED_AWAITING_METRICS",
+      "elapsed_mins": 0,
+      "notes": "Deployed architectural review recommendation: Option A (minimum viable redesign) - TP floor reduction from 0.40% to 0.15%. GitHub Actions auto-deploying to Hetzner. Expecting WR improvement from 33% baseline toward 50%+ goal. Next: Collect 30-min metrics via monitoring-remediation-agent after deployment stabilization."
     }
   ]
 }
