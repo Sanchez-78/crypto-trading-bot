@@ -1,14 +1,14 @@
 {
-  "cycle": 39,
+  "cycle": 40,
   "start_time": "2026-06-24T09:55:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 8,
-  "current_wr": 33.33,
-  "current_pnl": 0.1361,
-  "total_wr_gain": 33.33,
+  "total_cycles_completed": 9,
+  "current_wr": 54.4,
+  "current_pnl": 0.0,
+  "total_wr_gain": 54.4,
   "quota_max_used_pct": 0.2,
-  "last_update": "2026-06-24T13:48:00Z",
-  "status": "architectural_review_both_patches_deployed_awaiting_combined_effect",
+  "last_update": "2026-06-24T14:05:00Z",
+  "status": "exit_mechanism_broken_wr_artificial_from_timeout_exits",
   "notes": "Reset to proven baseline (b3fbf90: ±0.25% band, 100% WR history). Rejected patch treadmill. Starting fresh CYCLE 30 with original entry logic.",
   "cycles": [
     {
@@ -150,6 +150,21 @@
       "status": "LEARNING_SYSTEM_DEPLOYED_AWAITING_COMBINED_METRICS",
       "elapsed_mins": 0,
       "notes": "Deployed V10.29 Part 2: Firebase learning system will discover segment-specific TP targets (0.12-0.26% range) after floor reduction to 0.15%. Learning blend starts at 0.1 (10% learned, 90% baseline) and ramps to 1.0 by CYCLE 43. Synergy: TP floor reduction (CYCLE 38) + Learning adaptation (CYCLE 39+) expected to unlock 50%+ WR. Combined effect measurement: next 30-60 min checkpoint (CYCLE 40)."
+    },
+    {
+      "cycle": 40,
+      "timestamp": "2026-06-24T14:05:00Z",
+      "wr_before": 33.33,
+      "wr_after": 54.4,
+      "pf_before": 1.09,
+      "pf_after": 0.0,
+      "pnl_before": 0.1361,
+      "pnl_after": 0.0,
+      "blocker": "exit_mechanism_broken",
+      "fix_applied": "None yet - diagnostics in progress",
+      "status": "FAIL_EXIT_GATE_OFFLINE",
+      "elapsed_mins": 60,
+      "notes": "🔴 CRITICAL DISCOVERY: WR jumped to 54.4% but all 125 closed trades exited via TIMEOUT (0 TP, 0 SL exits). PF=0.0 (no actual profit despite high WR). P&L flat (+0.00%). Firebase learning system offline (no quota messages in logs). Root cause: CYCLE 38 TP floor reduction (0.40%→0.15%) may have broken TP/SL evaluation gates OR learning integration failed silently. Evidence: (1) Exit distribution 100% TIMEOUT, (2) Economic gate CAUTION (0.615), (3) Zero profitability, (4) Firebase queries absent. REQUIRED: Revert CYCLE 38 TP change, investigate gate logic in trade_executor.py, verify Firebase learning initialization."
     }
   ]
 }
