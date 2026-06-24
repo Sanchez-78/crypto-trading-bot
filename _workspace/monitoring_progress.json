@@ -1,5 +1,5 @@
 {
-  "cycle": 37,
+  "cycle": 36,
   "start_time": "2026-06-24T09:55:00Z",
   "goal_reached": false,
   "total_cycles_completed": 6,
@@ -7,8 +7,8 @@
   "current_pnl": 0.1361,
   "total_wr_gain": 33.33,
   "quota_max_used_pct": 0.2,
-  "last_update": "2026-06-24T12:18:00Z",
-  "status": "monitoring_dynamic_tp_scaling_deployed",
+  "last_update": "2026-06-24T12:12:15Z",
+  "status": "monitoring_merge_conflict_fixed_deeper_blocker_identified",
   "notes": "Reset to proven baseline (b3fbf90: ±0.25% band, 100% WR history). Rejected patch treadmill. Starting fresh CYCLE 30 with original entry logic.",
   "cycles": [
     {
@@ -120,21 +120,6 @@
       "status": "MERGE_CONFLICT_FIXED_DEEPER_BLOCKER_REVEALED",
       "elapsed_mins": 30,
       "notes": "🔴 CRITICAL DISCOVERY: Git merge conflict was blocking signal_generator.py (SyntaxError on line 348, conflict markers not resolved). WR was artificially 0% (100% TIMEOUT exits). POST-FIX METRICS: WR 33.33% (51/153 wins), PF 1.09 (positive!), TP 34%, SL 21.6%, TIMEOUT 44%. Key finding: Band width (±1.5%) is NOT the limiting factor - WR jumped immediately upon fixing code. The 33.33% WR (vs 54% historical) indicates DEEPER BLOCKER: likely TP/SL asymmetry (similar to CYCLE 27), signal timing, or learning degradation. RECOMMENDATION: Escalate to evidence-based diagnostics on TP/SL configuration and signal flow. Do NOT make further entry band changes without understanding root cause of 33% WR."
-    },
-    {
-      "cycle": 37,
-      "timestamp": "2026-06-24T12:18:00Z",
-      "wr_before": 33.33,
-      "wr_after": null,
-      "pf_before": 1.09,
-      "pf_after": null,
-      "pnl_before": 0.1361,
-      "pnl_after": null,
-      "blocker": "none",
-      "fix_applied": "Dynamic TP/SL scaling deployed. TP now adapts 0.25-0.5% (scaled 1.5×ATR) instead of static 0.40%. SL scales 0.20-0.40% (scaled 1.2×ATR) instead of static 0.30%. Fixes flat-market TP unreachability.",
-      "status": "DYNAMIC_TP_SCALING_DEPLOYED_AWAITING_METRICS",
-      "elapsed_mins": null,
-      "notes": "CYCLE 37 DEPLOYED (awaiting 30-min metrics collection). Evidence-based fix: CYCLE 36 forensics showed 80% of trades had unreachable static 0.40% TP due to low ATR (median 0.0276%). Fix: TP now scales with market volatility (0.25% floor in flat markets, 0.50% ceiling in volatile markets). Expected improvement: WR 33% → 50%+ by making TP reachable again. Monitoring in progress, results pending."
     }
   ]
 }
