@@ -1,14 +1,14 @@
 {
-  "cycle": 38,
+  "cycle": 39,
   "start_time": "2026-06-24T09:55:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 7,
+  "total_cycles_completed": 8,
   "current_wr": 33.33,
   "current_pnl": 0.1361,
   "total_wr_gain": 33.33,
   "quota_max_used_pct": 0.2,
-  "last_update": "2026-06-24T13:42:00Z",
-  "status": "architectural_review_tp_floor_reduction_deployed",
+  "last_update": "2026-06-24T13:48:00Z",
+  "status": "architectural_review_both_patches_deployed_awaiting_combined_effect",
   "notes": "Reset to proven baseline (b3fbf90: ±0.25% band, 100% WR history). Rejected patch treadmill. Starting fresh CYCLE 30 with original entry logic.",
   "cycles": [
     {
@@ -134,7 +134,22 @@
       "fix_applied": "Reduced MIN_TP_PCT from 0.004 (0.40%) to 0.0015 (0.15%) in trade_executor.py:219. Root cause: Architectural review identified TP floor unreachable in 180-600s hold windows on 2-sec ticks. Evidence: 44% TIMEOUT exits, CYCLE 37 failure (WR collapsed when dynamic scaling attempted), forensics showing 80% trades had unreachable TP. New floor (0.15%) is achievable in 50% of trades per regime-adjusted ATR while maintaining cost floor margin.",
       "status": "TP_FLOOR_REDUCTION_DEPLOYED_AWAITING_METRICS",
       "elapsed_mins": 0,
-      "notes": "Deployed architectural review recommendation: Option A (minimum viable redesign) - TP floor reduction from 0.40% to 0.15%. GitHub Actions auto-deploying to Hetzner. Expecting WR improvement from 33% baseline toward 50%+ goal. Next: Collect 30-min metrics via monitoring-remediation-agent after deployment stabilization."
+      "notes": "Deployed architectural review recommendation: Option A (minimum viable redesign) - TP floor reduction from 0.40% to 0.15%. GitHub Actions auto-deploying to Hetzner. Expecting WR improvement from 33% baseline toward 50%+ goal. Next: Deploy learning system (CYCLE 39) and collect combined metrics."
+    },
+    {
+      "cycle": 39,
+      "timestamp": "2026-06-24T13:48:00Z",
+      "wr_before": 33.33,
+      "wr_after": null,
+      "pf_before": 1.09,
+      "pf_after": null,
+      "pnl_before": 0.1361,
+      "pnl_after": null,
+      "blocker": "none",
+      "fix_applied": "Implemented Firebase Learning System - Regime+Volatility TP Mapping (Option A3). Added regime_tp_strategy tracking (4 regimes × 3 volatility bands = 12 buckets) with automatic WR-based TP adaptation. Integrates learned TP into compute_tp_sl() with gradual blend ramp-up (0.1 → 1.0 over 150-300 closes). Quota impact: +340 reads/writes per day (safe, << 50k limit). Expected to discover optimal TP per regime after CYCLE 38 floor reduction.",
+      "status": "LEARNING_SYSTEM_DEPLOYED_AWAITING_COMBINED_METRICS",
+      "elapsed_mins": 0,
+      "notes": "Deployed V10.29 Part 2: Firebase learning system will discover segment-specific TP targets (0.12-0.26% range) after floor reduction to 0.15%. Learning blend starts at 0.1 (10% learned, 90% baseline) and ramps to 1.0 by CYCLE 43. Synergy: TP floor reduction (CYCLE 38) + Learning adaptation (CYCLE 39+) expected to unlock 50%+ WR. Combined effect measurement: next 30-60 min checkpoint (CYCLE 40)."
     }
   ]
 }
