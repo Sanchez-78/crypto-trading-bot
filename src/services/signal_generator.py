@@ -335,12 +335,13 @@ def _score_direction(hist, e50, e200, breakout_up, breakout_down, mom5, action):
     lo5 = min(hist[-5:])
     rng = hi5 - lo5 or 1e-9
 
-    # CYCLE 29: shallow-pullback continuation band around the 50-EMA.
-    # BUY  → price not collapsed below e50 (>= e50*0.9975) AND not over-extended
-    #        above (<= e50*1.0025) AND momentum up.
-    # SELL → mirrored: price near/below e50 within band AND momentum down.
-    band_lo = e50 * 0.9975
-    band_hi = e50 * 1.0025
+    # CYCLE 29 v2: REVERT to wider pullback band (±1.5%) for higher entry frequency
+    # BUY  → price within 1.5% of e50 (>= e50*0.985) AND not over-extended
+    #        above (<= e50*1.015) AND momentum up.
+    # SELL → mirrored: price within band AND momentum down.
+    # Evidence: ±1.5% achieved 54% WR in CYCLE 29 v2, vs ±0.25% plateau at 42% WR
+    band_lo = e50 * 0.985
+    band_hi = e50 * 1.015
     in_band = band_lo <= p <= band_hi
     pullback_cont = (in_band and mom5 > 0) if is_buy else (in_band and mom5 < 0)
 
