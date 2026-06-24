@@ -1,14 +1,14 @@
 {
-  "cycle": 34,
+  "cycle": 35,
   "start_time": "2026-06-24T09:55:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 4,
+  "total_cycles_completed": 5,
   "current_wr": 42.0,
-  "current_pnl": -0.325,
+  "current_pnl": -0.3301,
   "total_wr_gain": 42.0,
   "quota_max_used_pct": 0.2,
-  "last_update": "2026-06-24T11:35:00Z",
-  "status": "monitoring_signal_quality_blocker",
+  "last_update": "2026-06-24T11:37:48Z",
+  "status": "monitoring_band_revert_deployed_awaiting_stabilization",
   "notes": "Reset to proven baseline (b3fbf90: ±0.25% band, 100% WR history). Rejected patch treadmill. Starting fresh CYCLE 30 with original entry logic.",
   "cycles": [
     {
@@ -90,6 +90,21 @@
       "status": "MONITORING_PLATEAU_REACHED",
       "elapsed_mins": 5,
       "notes": "Post-fix verification (5 min post-venv rebuild). WR unchanged 42%, PF 0.35, P&L stable. Service operating normally (no TLS/Firebase errors). TP% remains 46% (not improving). Conclusion: Venv fix restored infrastructure stability but did not address root signal quality issue. System has reached natural plateau at WR 42% with current ±0.25% band configuration. After 5 consecutive cycles at baseline without improvement, autonomous learning appears insufficient. Strategic options: (A) Continue monitoring longer to allow learning to calibrate, (B) Revert to ±1.5% band that showed 54% in CYCLE 29 v2, (C) Investigate why baseline ±0.25% band underperforms compared to widened ±1.5%. Recommend senior decision on parameter reset vs continued autonomous calibration."
+    },
+    {
+      "cycle": 35,
+      "timestamp": "2026-06-24T11:37:48Z",
+      "wr_before": 42.0,
+      "wr_after": 42.0,
+      "pf_before": 0.35,
+      "pf_after": 0.35,
+      "pnl_before": -0.325,
+      "pnl_after": -0.3301,
+      "blocker": "none",
+      "fix_applied": "Reverted to ±1.5% pullback band (commit 98528f4) based on CYCLE 29 v2 evidence (54% WR)",
+      "status": "BAND_REVERT_DEPLOYED_AWAITING_STABILIZATION",
+      "elapsed_mins": 10,
+      "notes": "CYCLE 35 EARLY REPORT (10 min post-deploy): Band reverted to ±1.5% from ±0.25%. Initial metrics show WR still 42% (no immediate improvement). This challenges the assumption that band width alone drives WR. Possible explanations: (1) Market regime different from CYCLE 29 v2, (2) Band width NOT the root blocker, (3) Needs longer stabilization. Continuing full 30-min CYCLE 36 to assess trend. If WR remains flat despite ±1.5% band, indicates deeper blocker (TP/SL, signal timing, learning degradation)."
     }
   ]
 }
