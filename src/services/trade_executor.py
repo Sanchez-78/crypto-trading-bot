@@ -1101,11 +1101,13 @@ def compute_tp_sl(entry, direction, atr=0.003, sym=None, reg=None):
 
     tp_k, sl_k = regime_tp_sl_adjust(tp_k, sl_k, reg or "RANGING")
 
-    # Hard floor: TP must be ≥ MIN_TP_PCT from entry, SL ≥ MIN_SL_PCT.
-    # Prevents degenerate SL=TP=entry when atr collapses to near-zero
-    # (observed: ETH RANGING with ATR≈0 → SL=$2183.43 = entry exactly).
-    tp_dist = max(tp_k * atr, MIN_TP_PCT)
-    sl_dist = max(sl_k * atr, MIN_SL_PCT)
+    # CYCLE 37: Dynamic TP/SL scaling for flat markets.
+    # Problem (CYCLE 36): Static 0.40% TP unreachable in flat markets (ATR<0.1%), causing 80% TIMEOUT exits.
+    # Solution: Scale TP/SL with ATR while maintaining safety floor.
+    # TP adapts: 0.25% (flat) to 0.50% (volatile), proportional to 1.5×ATR
+    # SL adapts: 0.20% (flat) to 0.40% (volatile), proportional to 1.2×ATR
+    tp_dist = max(min(1.5 * atr, 0.005), 0.0025)   # Scale [0.25%, 0.50%] with ATR
+    sl_dist = max(min(1.2 * atr, 0.004), 0.002)    # Scale [0.20%, 0.40%] with ATR
 
     # V10.22 FIX: Explicit direction handling (was: else clause treated all non-BUY as SELL)
     # This prevented LONG/SHORT signals from being handled correctly, causing ~50% inverted TP/SL
