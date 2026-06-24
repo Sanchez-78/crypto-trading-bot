@@ -3252,10 +3252,17 @@ def on_price(data):
         # Chandelier exit: uses highest_high/lowest_low since entry rather than
         # last tick trail_price — gives more room in trending moves, still cuts
         # quickly if price reverses sharply from the peak/trough
-        if pos["action"] == "BUY"  and curr <= chandelier_stop:
-            reason = "TRAIL_SL"
-        elif pos["action"] == "SELL" and curr >= chandelier_stop:
-            reason = "TRAIL_SL"
+        # V10.30: Also check original SL as safety floor (was blocking all SL exits in trailing)
+        if pos["action"] == "BUY":
+            if curr <= pos["sl"]:
+                reason = "SL"  # Original SL safety floor takes priority
+            elif curr <= chandelier_stop:
+                reason = "TRAIL_SL"
+        elif pos["action"] == "SELL":
+            if curr >= pos["sl"]:
+                reason = "SL"  # Original SL safety floor takes priority
+            elif curr >= chandelier_stop:
+                reason = "TRAIL_SL"
     else:
         # V3 BUG FIX: pos["tp"] was stored but never checked — TP exits never fired.
         # Added explicit TP check before SL and removed the TP_FALLBACK (>10%) crutch.
