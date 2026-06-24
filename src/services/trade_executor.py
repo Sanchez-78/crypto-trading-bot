@@ -216,7 +216,7 @@ _PIPELINE_LAST_SUMMARY_TS = [0.0]
 _PIPELINE_STALL_THRESHOLD_S = 600.0  # 10 minutes without new entries
 
 FEE_RT      = 0.0015    # 0.15% round-trip (Binance taker 0.075%×2)
-MIN_TP_PCT  = 0.004     # V10.27: 0.40% min TP — 2.50% was unreachable in 180s hold
+MIN_TP_PCT  = 0.0015    # V10.29: 0.15% min TP — architectural review: 0.40% unreachable in 180s hold window; achievable in 50% of trades per regime-adjusted ATR
 MIN_SL_PCT  = 0.003     # V10.27: 0.30% min SL — sized to the 180s window, clears ~0.15% round-trip cost
 FLUSH_EVERY              = 15   # lowered 60→15s: with 60s window up to 14 trades
                                  # were lost on Railway restart (BATCH not flushed
