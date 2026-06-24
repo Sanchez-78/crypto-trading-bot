@@ -1,14 +1,14 @@
 {
-  "cycle": 30,
+  "cycle": 31,
   "start_time": "2026-06-24T09:55:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 0,
-  "current_wr": null,
-  "current_pnl": null,
-  "total_wr_gain": 0,
+  "total_cycles_completed": 1,
+  "current_wr": 44.0,
+  "current_pnl": -0.262769,
+  "total_wr_gain": 44.0,
   "quota_max_used_pct": 0.2,
-  "last_update": "2026-06-24T09:55:00Z",
-  "status": "monitoring_fresh_baseline_b3fbf90",
+  "last_update": "2026-06-24T10:24:35Z",
+  "status": "monitoring_caution_improving",
   "notes": "Reset to proven baseline (b3fbf90: ±0.25% band, 100% WR history). Rejected patch treadmill. Starting fresh CYCLE 30 with original entry logic.",
   "cycles": [
     {
@@ -30,6 +30,21 @@
       "status": "CAUTION_CONTINUE",
       "elapsed_mins": 30,
       "notes": "Baseline stable on proven ±0.25% band. WR=42% (PASS), PF=0.35 (weak but acceptable), P&L=-0.33 (CAUTION but above FAIL). Exit distribution balanced (46% TP, 42% SL, 12% TIMEOUT). Learning bootstrap mode active. No urgent fixes needed. Recommend collecting 2-3 more cycles before parameter tweaks. Scheduled CYCLE 31 checkpoint +30 min."
+    },
+    {
+      "cycle": 31,
+      "timestamp": "2026-06-24T10:24:35Z",
+      "wr_before": 42.0,
+      "wr_after": 44.0,
+      "pf_before": 0.35,
+      "pf_after": 0.4,
+      "pnl_before": -0.3301,
+      "pnl_after": -0.262769,
+      "blocker": "none",
+      "fix_applied": "none",
+      "status": "CAUTION_IMPROVING",
+      "elapsed_mins": 30,
+      "notes": "Positive trend: WR +2pt (42%→44%), PF +0.05 (0.35→0.4), P&L -0.26 (improved from -0.33, loss reduced by $0.07). Exit distribution stable: 46% TP, 26% SL, 28% TIMEOUT. Learning continuing to calibrate. Service healthy (4h8min uptime). No blocker detected. Trend: Moving toward goal (WR>50%, P&L>0). Scheduled CYCLE 32 checkpoint +30 min."
     }
   ]
 }
