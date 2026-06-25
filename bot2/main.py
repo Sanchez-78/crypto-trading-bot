@@ -1993,7 +1993,7 @@ def main():
             from src.services.paper_trade_executor import close_paper_position
 
             _open_pos = get_open_positions()
-            _MAX_POSITION_AGE_S = 300  # 5 minutes - hard timeout
+            _MAX_POSITION_AGE_S = 600  # 10 minutes - allows TP targets (0.6-1.5% moves) to be reached
 
             if _open_pos:
                 for pos in _open_pos:
