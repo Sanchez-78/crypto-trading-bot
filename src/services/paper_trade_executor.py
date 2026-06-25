@@ -1936,25 +1936,32 @@ def update_paper_positions(
         # max_hold_s is legacy training cap and should NOT control timeout
         timeout_s = pos.get("timeout_s", _MAX_AGE_S)
 
+        # V10.46 CRITICAL FIX: Validate TP/SL prices before evaluation
+        # Blocks cases where pos["tp"]/pos["sl"] are None/0/invalid (would always evaluate to False)
         exit_reason = None
-        # P1.1AI: Side-aware TP/SL check
-        if side == "BUY":
-            tp_hit = current_price >= pos["tp"]
-            sl_hit = current_price <= pos["sl"]
-            log.warning(f"[TP_SL_EVAL_BUY] {symbol} curr={current_price:.8f} >= tp={pos['tp']:.8f}? {tp_hit} | curr <= sl={pos['sl']:.8f}? {sl_hit}")
-        else:  # SELL
-            tp_hit = current_price <= pos["tp"]
-            sl_hit = current_price >= pos["sl"]
-            log.warning(f"[TP_SL_EVAL_SELL] {symbol} curr={current_price:.8f} <= tp={pos['tp']:.8f}? {tp_hit} | curr >= sl={pos['sl']:.8f}? {sl_hit}")
+        if pos.get("tp") and pos["tp"] > 0 and pos.get("sl") and pos["sl"] > 0:
+            # P1.1AI: Side-aware TP/SL check (TP/SL prices valid)
+            if side == "BUY":
+                tp_hit = current_price >= pos["tp"]
+                sl_hit = current_price <= pos["sl"]
+                log.warning(f"[TP_SL_EVAL_BUY] {symbol} curr={current_price:.8f} >= tp={pos['tp']:.8f}? {tp_hit} | curr <= sl={pos['sl']:.8f}? {sl_hit}")
+            else:  # SELL
+                tp_hit = current_price <= pos["tp"]
+                sl_hit = current_price >= pos["sl"]
+                log.warning(f"[TP_SL_EVAL_SELL] {symbol} curr={current_price:.8f} <= tp={pos['tp']:.8f}? {tp_hit} | curr >= sl={pos['sl']:.8f}? {sl_hit}")
 
-        if tp_hit or sl_hit:
-            log.info(f"[TP_SL_HIT] {symbol} side={side} tp_hit={tp_hit} sl_hit={sl_hit}")
+            if tp_hit or sl_hit:
+                log.info(f"[TP_SL_HIT] {symbol} side={side} tp_hit={tp_hit} sl_hit={sl_hit}")
 
-        if tp_hit:
-            exit_reason = "TP"
-        elif sl_hit:
-            exit_reason = "SL"
-        elif age_s >= timeout_s:
+            if tp_hit:
+                exit_reason = "TP"
+            elif sl_hit:
+                exit_reason = "SL"
+        else:
+            # TP/SL prices invalid/missing - log and skip to timeout
+            log.warning(f"[TP_SL_INVALID] {symbol} tp={pos.get('tp', 'MISSING')} sl={pos.get('sl', 'MISSING')} → skip evaluation, timeout only")
+
+        if not exit_reason and age_s >= timeout_s:
             exit_reason = "TIMEOUT"
             log.warning(f"[TIMEOUT_EVAL] {symbol} age={age_s:.0f}s >= timeout={timeout_s:.0f}s, closing")
 
