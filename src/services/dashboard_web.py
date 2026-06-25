@@ -768,7 +768,7 @@ def metrics():
                 open_positions = len(positions)
                 for pos_id, pos_data in (positions.items() if isinstance(positions, dict) else enumerate(positions)):
                     entry_ts = float(pos_data.get('entry_ts', time.time()))
-                    open_positions_list.append({
+                    pos_dict = {
                         'trade_id': str(pos_id)[:8],
                         'symbol': pos_data.get('symbol', 'N/A'),
                         'side': pos_data.get('side', 'BUY'),
@@ -782,7 +782,17 @@ def metrics():
                         'size_usd': float(pos_data.get('size_usd', 0.5)),
                         'pnl_pct': 0.0,
                         'status': 'OPEN'
-                    })
+                    }
+                    # Add ISO timestamp for entry (fallback path)
+                    try:
+                        now_ts = time.time()
+                        entry_dt = datetime.fromtimestamp(entry_ts, tz=timezone.utc)
+                        pos_dict['entry_timestamp'] = entry_dt.isoformat().replace('+00:00', 'Z')
+                        pos_dict['age_seconds'] = int(now_ts - entry_ts)
+                    except:
+                        pos_dict['entry_timestamp'] = None
+                        pos_dict['age_seconds'] = None
+                    open_positions_list.append(pos_dict)
         except:
             pass
 
