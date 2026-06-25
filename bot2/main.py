@@ -1999,7 +1999,13 @@ def main():
                 for pos in _open_pos:
                     try:
                         sym = pos.get("symbol", "")
-                        age_s = int(now - pos.get("entry_ts", now))
+                        # V10.52 FIX: Use entry_ts with fallback to created_at or entry_price context
+                        # If entry_ts missing, position is stale/corrupt - skip it to avoid closing wrong positions
+                        entry_ts = pos.get("entry_ts") or pos.get("created_at") or pos.get("opened_at_ts")
+                        if not entry_ts:
+                            logging.debug(f"[TIMEOUT_SKIP] {sym} has no entry timestamp, skipping stale check")
+                            continue
+                        age_s = int(now - float(entry_ts))
 
                         # Force close if position is too old (prevents indefinite holds)
                         if age_s >= _MAX_POSITION_AGE_S:
