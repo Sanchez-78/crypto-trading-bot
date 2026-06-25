@@ -62,11 +62,9 @@ _AUTO_REMEDIATE = {
     "entry_stall": 3600,  # 60 minutes
 }
 
-# 7-DAY FREEZE PERIOD (2026-06-02 to 2026-06-09)
-# During freeze, only patch if CRITICAL conditions occur:
-# - RECON != OK, Outbox failed, Dashboard zero, Quota critical, Crash, Learning missing after PAPER_EXIT
-# Do NOT patch for: LEARNING_STALL, ENTRY_STALL (baseline metrics only)
-_FREEZE_PERIOD_ACTIVE = True
+# 7-DAY FREEZE PERIOD (2026-06-02 to 2026-06-09) - EXPIRED
+# V10.46: Freeze period ended 2026-06-09. Enabling all patches for real trading readiness.
+_FREEZE_PERIOD_ACTIVE = False
 _FREEZE_CRITICAL_ONLY = {"recon", "outbox", "quota", "crashes", "learning_missing"}  # Only these trigger patches
 _FREEZE_IGNORED = {"learning_stall", "entry_stall"}  # Suppress alerts on these
 

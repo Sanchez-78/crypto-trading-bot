@@ -1534,6 +1534,19 @@ def main():
     else:
         print("  [4.2/7] Firebase health OK ✓", file=sys.stderr, flush=True)
 
+    # V10.46: Initialize Paper Adaptive Learning system for autonomous self-tuning
+    print("  [4.3/7] Initializing learning system for autonomous optimization...", file=sys.stderr, flush=True)
+    global _learning_instance
+    try:
+        from src.services.paper_adaptive_learning import PaperAdaptiveLearning
+        _learning_instance = PaperAdaptiveLearning()
+        print("  [4.3/7] Learning system initialized ✓", file=sys.stderr, flush=True)
+    except Exception as e:
+        import logging
+        logging.warning(f"[LEARNING_INIT_FAILED] {e}")
+        print(f"  [4.3/7] ⚠️  Learning system init failed: {e}", file=sys.stderr, flush=True)
+        _learning_instance = None
+
     # V10.13u: Optional runtime status Firestore write (observability)
     if try_write_runtime_status_to_firestore(runtime_marker):
         print("  [4.5/7] Runtime status written to Firestore ✓", file=sys.stderr, flush=True)
