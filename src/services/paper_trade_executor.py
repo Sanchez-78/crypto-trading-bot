@@ -1456,15 +1456,10 @@ def open_paper_position(
     atr_v = float(signal.get("atr") or 0.0)
     regime = signal.get("regime", "UNKNOWN")  # Get regime from signal for learning lookup
 
-    # V10.55 STAGNATION GATE: Skip entries in extremely flat markets
-    # Evidence: 1200s timeout produced -1.29 P&L; 600s with flat market yields 0% WR
-    # Solution: Reject entries when ATR < 15bps (0.15% volatility floor)
-    if price > 0 and atr_v > 0:
-        atr_pct = atr_v / price
-        atr_bps = int(atr_pct * 10000)
-        if atr_bps < 15:  # Market too flat for 35bps TP strategy
-            log.warning(f"[STAGNATION_GATE] symbol={symbol} atr_bps={atr_bps} < 15, skipping entry (market too flat)")
-            return {"status": "rejected", "reason": "stagnation_gate", "symbol": symbol, "atr_bps": atr_bps}
+    # V10.55 DISABLED: Stagnation gate blocked all trades (ATR permanently < threshold)
+    # Finding: Market too flat for any gating strategy in current regime
+    # Revert to profitable baseline: accept TIMEOUT-only exits, let learning system adapt
+    # Entry quality will improve via learning feedback loop as trades accumulate data
 
     # V10.52 CRITICAL: Try to use learned TP from learning system first (autonomous adaptation)
     learned_tp_pct = None
