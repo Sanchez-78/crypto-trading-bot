@@ -2006,7 +2006,11 @@ def main():
                             logging.info(
                                 f"[EXIT_TIMEOUT] symbol={sym} age_s={age_s} closing due to max_age"
                             )
-                            close_paper_position(sym, "TIMEOUT")
+                            # V10.52 CRITICAL FIX: close_paper_position requires 4 args (was passing only 2)
+                            entry_price = pos.get("entry_price", 0.0)
+                            last_price = pos.get("last_price", entry_price)
+                            pos_id = pos.get("position_id", sym)
+                            close_paper_position(pos_id, last_price, now, "TIMEOUT")
                     except Exception as _pos_timeout_err:
                         logging.debug(f"Timeout close error {sym}: {_pos_timeout_err}")
         except Exception as _timeout_loop_err:
