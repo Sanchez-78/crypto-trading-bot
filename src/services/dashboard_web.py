@@ -664,10 +664,22 @@ def metrics():
             net_pnl = real_metrics.get('net_pnl', 0) or 0.0
             profit_factor = real_metrics.get('profit_factor', 0) or 0.0
             open_positions_list = real_metrics.get('open_positions_list', []) or []
+
+            # Add timestamps to open positions
+            now_ts = time.time()
+            for pos in open_positions_list:
+                entry_ts = float(pos.get('entry_ts', now_ts))
+                entry_dt = datetime.fromtimestamp(entry_ts, tz=timezone.utc)
+                entry_iso = entry_dt.isoformat().replace('+00:00', 'Z')
+                pos['entry_timestamp'] = entry_iso
+                pos['age_seconds'] = int(now_ts - entry_ts)
             # Bot API returns recent_trades, convert to closed_trades_list for dashboard
             recent_trades = real_metrics.get('recent_trades', []) or []
             closed_trades_list = []
             for t in recent_trades:
+                exit_ts = float(t.get('exit_ts', time.time()))
+                exit_dt = datetime.fromtimestamp(exit_ts, tz=timezone.utc)
+                exit_iso = exit_dt.isoformat().replace('+00:00', 'Z')
                 closed_trades_list.append({
                     'trade_id': t.get('trade_id', ''),
                     'symbol': t.get('symbol', ''),
@@ -677,7 +689,8 @@ def metrics():
                     'pnl_pct': float(t.get('pnl_pct', 0)),
                     'reason': t.get('exit_reason', 'UNKNOWN'),
                     'hold_s': float(t.get('hold_s', 0)),
-                    'exit_time': int(t.get('exit_ts', int(time.time())))
+                    'exit_time': int(exit_ts),
+                    'exit_timestamp': exit_iso
                 })
 
             # Generate ISO timestamp
