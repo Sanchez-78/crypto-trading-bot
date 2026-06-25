@@ -665,6 +665,9 @@ def metrics():
             profit_factor = real_metrics.get('profit_factor', 0) or 0.0
             open_positions_list = real_metrics.get('open_positions_list', []) or []
 
+            import sys
+            print(f"[DASH] Processing {len(open_positions_list)} positions for timestamps", file=sys.stderr, flush=True)
+
             # Add timestamps to open positions
             now_ts = time.time()
             for pos in open_positions_list:
@@ -680,7 +683,8 @@ def metrics():
 
             if open_positions_list:
                 import sys
-                print(f"[DASH] First position after timestamp processing: {open_positions_list[0]}", file=sys.stderr, flush=True)
+                sample_pos = open_positions_list[0]
+                print(f"[DASH] Timestamp processing complete. First position has entry_timestamp={sample_pos.get('entry_timestamp')}, age_seconds={sample_pos.get('age_seconds')}", file=sys.stderr, flush=True)
 
             # Bot API returns recent_trades, convert to closed_trades_list for dashboard
             recent_trades = real_metrics.get('recent_trades', []) or []
