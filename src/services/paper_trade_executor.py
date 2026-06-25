@@ -1856,22 +1856,11 @@ def check_and_close_timeout_positions(now: Optional[float] = None) -> List[dict]
             # V10.49 CRITICAL: Record TIMEOUT_NO_PRICE exits in learning system
             if _learning_instance:
                 try:
-                    _learning_instance.record_exit(
-                        symbol=symbol,
-                        side=pos.get("side", "BUY"),
-                        entry_price=pos.get("entry_price", 0),
-                        exit_price=0.0,  # No price available
-                        entry_regime=pos.get("regime", "UNKNOWN"),
-                        exit_ts=now,
-                        entry_ts=pos.get("entry_ts", now),
-                        tp_target=pos.get("tp", 0),
-                        sl_target=pos.get("sl", 0),
-                        exit_reason="TIMEOUT_NO_PRICE",
-                        net_pnl_pct=0.0,
-                    )
-                    log.debug(f"[LEARNING_RECORD_EXIT] trade_id={trade_id} symbol={symbol} reason=TIMEOUT_NO_PRICE")
+                    # record_close expects the full closed_trade dict
+                    _learning_instance.record_close(closed_trade)
+                    log.debug(f"[LEARNING_RECORD_CLOSE] trade_id={trade_id} symbol={symbol} reason=TIMEOUT_NO_PRICE")
                 except Exception as e:
-                    log.warning(f"[LEARNING_RECORD_EXIT_ERROR] trade_id={trade_id} err={str(e)[:100]}")
+                    log.warning(f"[LEARNING_RECORD_CLOSE_ERROR] trade_id={trade_id} err={str(e)[:100]}")
             else:
                 log.error(f"[LEARNING_NOT_WIRED_TIMEOUT_PATH] _learning_instance is None for {trade_id}! Learning disabled.")
 
@@ -2637,24 +2626,13 @@ def close_paper_position(
     # V10.49 CRITICAL: Wire learning into exit handler
     # Record this exit in the learning system for regime-TP adaptation
     if _learning_instance:
-        log.warning(f"[LEARNING_ACTIVE] Instance present, recording exit for {pos['symbol']}")
+        log.warning(f"[LEARNING_ACTIVE] Instance present, recording close for {pos['symbol']}")
         try:
-            _learning_instance.record_exit(
-                symbol=pos.get("symbol"),
-                side=pos.get("side", "BUY"),
-                entry_price=entry_price,
-                exit_price=price,
-                entry_regime=pos.get("regime", "UNKNOWN"),
-                exit_ts=ts,
-                entry_ts=pos.get("entry_ts", ts),
-                tp_target=pos.get("tp", 0),
-                sl_target=pos.get("sl", 0),
-                exit_reason=reason,
-                net_pnl_pct=pnl_data.get("net_pnl_pct", 0),
-            )
-            log.debug(f"[LEARNING_RECORD_EXIT] trade_id={position_id} symbol={pos['symbol']} outcome={pnl_data.get('outcome')}")
+            # record_close expects the full closed_trade dict, not individual parameters
+            _learning_instance.record_close(closed_trade)
+            log.debug(f"[LEARNING_RECORD_CLOSE] trade_id={position_id} symbol={pos['symbol']} outcome={pnl_data.get('outcome')}")
         except Exception as e:
-            log.warning(f"[LEARNING_RECORD_EXIT_ERROR] trade_id={position_id} err={str(e)[:100]}")
+            log.warning(f"[LEARNING_RECORD_CLOSE_ERROR] trade_id={position_id} err={str(e)[:100]}")
     else:
         # V10.50: DIAGNOSTIC - learning instance not wired
         log.error(f"[LEARNING_NOT_WIRED] _learning_instance is None! Trade {position_id} not recorded. This should not happen after V10.49 deployment.")
