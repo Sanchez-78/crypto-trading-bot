@@ -1539,7 +1539,9 @@ def main():
     global _learning_instance
     try:
         from src.services.paper_adaptive_learning import PaperAdaptiveLearning
+        from src.services.paper_trade_executor import set_learning_instance
         _learning_instance = PaperAdaptiveLearning()
+        set_learning_instance(_learning_instance)  # V10.49: CRITICAL - wire learning into exit handler
         print("  [4.3/7] Learning system initialized ✓", file=sys.stderr, flush=True)
     except Exception as e:
         import logging

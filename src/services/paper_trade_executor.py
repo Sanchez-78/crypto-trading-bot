@@ -27,6 +27,15 @@ from src.core.event_bus import subscribe_once
 
 log = logging.getLogger(__name__)
 
+# V10.49 CRITICAL: Wire learning system into exit handler
+# Learning instance must be imported and available globally
+_learning_instance = None
+def set_learning_instance(instance):
+    """Set the global learning instance (called from bot2/main.py)."""
+    global _learning_instance
+    _learning_instance = instance
+    log.info("[LEARNING_WIRED] Global learning instance connected to paper_trade_executor")
+
 # Phase 4C: Live PAPER metrics
 try:
     from src.services.paper_training_metrics import record_paper_entry
@@ -1844,6 +1853,26 @@ def check_and_close_timeout_positions(now: Optional[float] = None) -> List[dict]
             # P1.1AJ: Emit quality exit for TIMEOUT_NO_PRICE (idempotent, all training positions)
             _log_quality_exit_once(closed_trade, pos, path="timeout_no_price")
 
+            # V10.49 CRITICAL: Record TIMEOUT_NO_PRICE exits in learning system
+            if _learning_instance:
+                try:
+                    _learning_instance.record_exit(
+                        symbol=symbol,
+                        side=pos.get("side", "BUY"),
+                        entry_price=pos.get("entry_price", 0),
+                        exit_price=0.0,  # No price available
+                        entry_regime=pos.get("regime", "UNKNOWN"),
+                        exit_ts=now,
+                        entry_ts=pos.get("entry_ts", now),
+                        tp_target=pos.get("tp", 0),
+                        sl_target=pos.get("sl", 0),
+                        exit_reason="TIMEOUT_NO_PRICE",
+                        net_pnl_pct=0.0,
+                    )
+                    log.debug(f"[LEARNING_RECORD_EXIT] trade_id={trade_id} symbol={symbol} reason=TIMEOUT_NO_PRICE")
+                except Exception as e:
+                    log.warning(f"[LEARNING_RECORD_EXIT_ERROR] trade_id={trade_id} err={str(e)[:100]}")
+
             _save_paper_state()
             closed_trades.append(closed_trade)
 
@@ -2602,6 +2631,27 @@ def close_paper_position(
             increment_trades_lost()
     except Exception as e:
         log.error(f"[CANONICAL_UPDATE_ERROR] Failed to update trade counts: {e}")
+
+    # V10.49 CRITICAL: Wire learning into exit handler
+    # Record this exit in the learning system for regime-TP adaptation
+    if _learning_instance:
+        try:
+            _learning_instance.record_exit(
+                symbol=pos.get("symbol"),
+                side=pos.get("side", "BUY"),
+                entry_price=entry_price,
+                exit_price=price,
+                entry_regime=pos.get("regime", "UNKNOWN"),
+                exit_ts=ts,
+                entry_ts=pos.get("entry_ts", ts),
+                tp_target=pos.get("tp", 0),
+                sl_target=pos.get("sl", 0),
+                exit_reason=reason,
+                net_pnl_pct=pnl_data.get("net_pnl_pct", 0),
+            )
+            log.debug(f"[LEARNING_RECORD_EXIT] trade_id={position_id} symbol={pos['symbol']} outcome={pnl_data.get('outcome')}")
+        except Exception as e:
+            log.warning(f"[LEARNING_RECORD_EXIT_ERROR] trade_id={position_id} err={str(e)[:100]}")
 
     return closed_trade
 
