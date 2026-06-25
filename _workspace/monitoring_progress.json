@@ -7,9 +7,9 @@
   "current_pnl": 0.0,
   "total_wr_gain": -14.21,
   "quota_max_used_pct": 0.2,
-  "last_update": "2026-06-25T09:17:00Z",
-  "status": "cycle_47_tp_reachability_fix_deployed_awaiting_measurement",
-  "notes": "CYCLE 47: V10.46 infrastructure fixes (learning init + freeze removal) deployed successfully. Dashboard API confirmed service running + 89 closed trades all timeouts. ROOT CAUSE CONFIRMED: TP floor 15 bps unreachable in market moves (0.3-0.4% observed). CYCLE 48 FIX: Increased MIN_TP_PCT from 0.15% to 0.60% (60 bps), synced paper_trade_executor defaults. Expected outcome: TP/SL exits resume, WR improves, learning warms up.",
+  "last_update": "2026-06-25T07:21:00Z",
+  "status": "cycle_48_tp_floor_deployed_merge_conflict_fixed_awaiting_new_trades",
+  "notes": "CRITICAL PATH: V10.47 (MIN_TP_PCT 0.15% → 0.60%, synced bps defaults) deployed successfully. Git merge conflict in signal_generator.py line 338 blocked startup (syntax error: <<<<<<< HEAD). Resolved conflict, service restarted (PID 2123840, healthy). Old 92 closed trades created before restart still have unreachable TP targets (all timeouts). NEW trades created after restart at 07:21:18 UTC will use 60 bps TP floor. CYCLE 48 monitoring in 30 min will measure if TP/SL exits resume with new reachable floor.",
   "cycles": [
     {
       "cycle": 42,
@@ -90,16 +90,16 @@
       "cycle": 47,
       "timestamp": "2026-06-25T09:17:00Z",
       "wr_before": 42.0,
-      "wr_after": null,
+      "wr_after": 27.79,
       "pf_before": 2.93,
-      "pf_after": null,
+      "pf_after": 0.0,
       "pnl_before": 0.112511,
-      "pnl_after": null,
-      "blocker": "tp_floor_unreachable_15bps",
-      "fix_applied": "V10.47: MIN_TP_PCT 0.15% → 0.60% (60 bps). Synced paper_trade_executor defaults. Root cause: 15 bps (0.15%) unreachable in 0.3-0.4% market moves.",
-      "status": "ROOT_CAUSE_FIX_DEPLOYED",
-      "elapsed_mins": 0,
-      "notes": "Dashboard metrics verified: 89 trades ALL timeout exits. Exit eval code running but TP targets never hit. Forensics: Current price 570.865, TP 572.863 (0.36% move needed, but target only 15 bps / 0.15%). Fixed by increasing to 60 bps (0.60%), which is 1.5x average observed move—reachable in hold window. CYCLE 48 will measure WR improvement from TP/SL exits resuming."
+      "pnl_after": 0.0,
+      "blocker": "service_crash_git_merge_conflict",
+      "fix_applied": "V10.47: MIN_TP_PCT 0.15% → 0.60% (root cause: TP floor unreachable). V10.46 deployed OK but merge conflict in signal_generator.py line 338 blocked startup.",
+      "status": "MERGED_CONFLICT_FIXED_RESTARTED",
+      "elapsed_mins": 3,
+      "notes": "V10.47 deployed with critical TP floor increase (60 bps, reachable in market moves). Dashboard API confirmed 89→92 closed trades, still 100% timeouts. Service crashed 3x due to merge conflict marker (<<<<<<< HEAD). Conflict resolved by removing markers. Service restarted successfully. Old 92 trades use old TP; new trades will use 60 bps. CYCLE 48 will measure if TP/SL exits resume."
     }
   ]
 }

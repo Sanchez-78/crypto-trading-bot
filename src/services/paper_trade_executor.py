@@ -1817,6 +1817,7 @@ def check_and_close_timeout_positions(now: Optional[float] = None) -> List[dict]
                 "exit_ts": now,
                 "exit_reason": "TIMEOUT_NO_PRICE",
                 "duration_s": age_s,
+                "hold_s": age_s,  # V10.48: Add hold_s field for dashboard (was missing)
                 "gross_pnl_pct": 0.0,
                 "net_pnl_pct": 0.0,
                 "outcome": "FLAT",
@@ -2409,6 +2410,7 @@ def close_paper_position(
         "exit_ts": ts,
         "exit_reason": reason,
         "duration_s": duration_s,
+        "hold_s": duration_s,  # V10.48: Add hold_s field for dashboard (was missing, causing 0 display)
         "gross_pnl_pct": pnl_data["gross_pnl_pct"],
         "fee_pct": pnl_data["fee_pct"],
         "slippage_pct": pnl_data["slippage_pct"],
