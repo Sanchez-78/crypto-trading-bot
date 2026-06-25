@@ -754,6 +754,7 @@ def metrics():
                 positions = json_module.load(f)
                 open_positions = len(positions)
                 for pos_id, pos_data in (positions.items() if isinstance(positions, dict) else enumerate(positions)):
+                    entry_ts = float(pos_data.get('entry_ts', time.time()))
                     open_positions_list.append({
                         'trade_id': str(pos_id)[:8],
                         'symbol': pos_data.get('symbol', 'N/A'),
@@ -762,7 +763,8 @@ def metrics():
                         'current_price': float(pos_data.get('last_price', pos_data.get('entry_price', 0))),
                         'tp': float(pos_data.get('tp', 0)),
                         'sl': float(pos_data.get('sl', 0)),
-                        'current_hold_s': int(time.time() - float(pos_data.get('entry_ts', time.time()))),
+                        'entry_ts': entry_ts,
+                        'current_hold_s': int(time.time() - entry_ts),
                         'regime': pos_data.get('regime', 'N/A'),
                         'size_usd': float(pos_data.get('size_usd', 0.5)),
                         'pnl_pct': 0.0,
