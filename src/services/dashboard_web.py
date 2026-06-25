@@ -707,24 +707,31 @@ def metrics():
             # Generate ISO timestamp
             iso_timestamp = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
 
-            return jsonify({
-                "closed_trades": int(closed_trades),
-                "open_positions": real_metrics.get('open_positions', 0) or 0,
-                "open_positions_list": open_positions_list,
-                "closed_trades_list": closed_trades_list,
-                "profit_factor": float(profit_factor),
-                "win_rate_pct": float(win_rate),
-                "net_pnl": float(net_pnl),
-                "exit_distribution": real_metrics.get('exit_distribution', {}),
-                "timestamp": iso_timestamp,
-                "last_update": iso_timestamp
-            })
+            # Only return API metrics if they contain actual trades
+            # (Bot API gets metrics from logs which may be empty/rotated, so 0 trades means unreliable data)
+            if closed_trades > 0:
+                return jsonify({
+                    "closed_trades": int(closed_trades),
+                    "open_positions": real_metrics.get('open_positions', 0) or 0,
+                    "open_positions_list": open_positions_list,
+                    "closed_trades_list": closed_trades_list,
+                    "profit_factor": float(profit_factor),
+                    "win_rate_pct": float(win_rate),
+                    "net_pnl": float(net_pnl),
+                    "exit_distribution": real_metrics.get('exit_distribution', {}),
+                    "timestamp": iso_timestamp,
+                    "last_update": iso_timestamp
+                })
+            else:
+                # API returned 0 trades - log-based metrics are unreliable
+                # Fall through to database fallback
+                import sys
+                print(f"[DASH] Port 5000 API returned 0 trades (log-based metrics unreliable). Using database...", file=sys.stderr, flush=True)
         except Exception as api_error:
             import sys
             print(f"[DASH] Port 5000 API failed: {api_error}", file=sys.stderr, flush=True)
-            # Fall back to database if API fails
 
-        # FALLBACK: Try database if API unavailable
+        # FALLBACK: Try database if API unavailable or API returned 0 trades
         conn = sqlite3.connect("local_learning_storage/learning_database.sqlite", timeout=2)
         cursor = conn.cursor()
 
