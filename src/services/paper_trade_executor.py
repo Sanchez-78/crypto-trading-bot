@@ -1454,11 +1454,11 @@ def open_paper_position(
     # V10.28: Prioritize explicit env var over dynamic calculation
     # Get ATR for logging regardless of calculation path
     atr_v = float(signal.get("atr") or 0.0)
-    regime = pos.get("regime", "UNKNOWN")  # Get regime for learning lookup
+    regime = signal.get("regime", "UNKNOWN")  # Get regime from signal for learning lookup
 
     # V10.52 CRITICAL: Try to use learned TP from learning system first (autonomous adaptation)
     learned_tp_pct = None
-    if _learning_instance:
+    if _learning_instance and regime != "UNKNOWN":
         try:
             atr_pct = atr_v / price if atr_v > 0 and price > 0 else 0.01
             learned_tp_pct = _learning_instance.get_regime_tp_target(regime, atr_pct)
