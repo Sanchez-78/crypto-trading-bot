@@ -299,6 +299,8 @@ class PaperAdaptiveLearning:
             }
             with open(self._state_file, 'w') as f:
                 json.dump(data, f, indent=2)
+            # V10.52: Log successful write to verify filesystem persistence
+            log.info(f"[LEARNING_STATE_SAVED] regime_tp_strategy={len(self.regime_tp_strategy)} buckets, lifetime_n={self.lifetime_n}, file={self._state_file}")
         except Exception as e:
             log.warning("[PAPER_LEARNING_STATE_SAVE] failed: %s", e)
 
@@ -319,6 +321,9 @@ class PaperAdaptiveLearning:
                 ...
             }
         """
+        # V10.52: Log entry to verify learning is receiving data
+        log.info(f"[LEARNING_RECORD_CLOSE] Recording trade: symbol={trade.get('symbol')} outcome={trade.get('outcome')} regime={trade.get('regime')}")
+
         try:
             net_pnl_pct = float(trade.get("net_pnl_pct", 0.0))
         except (TypeError, ValueError):
