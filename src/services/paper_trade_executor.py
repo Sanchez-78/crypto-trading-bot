@@ -1872,6 +1872,8 @@ def check_and_close_timeout_positions(now: Optional[float] = None) -> List[dict]
                     log.debug(f"[LEARNING_RECORD_EXIT] trade_id={trade_id} symbol={symbol} reason=TIMEOUT_NO_PRICE")
                 except Exception as e:
                     log.warning(f"[LEARNING_RECORD_EXIT_ERROR] trade_id={trade_id} err={str(e)[:100]}")
+            else:
+                log.error(f"[LEARNING_NOT_WIRED_TIMEOUT_PATH] _learning_instance is None for {trade_id}! Learning disabled.")
 
             _save_paper_state()
             closed_trades.append(closed_trade)
@@ -2635,6 +2637,7 @@ def close_paper_position(
     # V10.49 CRITICAL: Wire learning into exit handler
     # Record this exit in the learning system for regime-TP adaptation
     if _learning_instance:
+        log.warning(f"[LEARNING_ACTIVE] Instance present, recording exit for {pos['symbol']}")
         try:
             _learning_instance.record_exit(
                 symbol=pos.get("symbol"),
@@ -2652,6 +2655,9 @@ def close_paper_position(
             log.debug(f"[LEARNING_RECORD_EXIT] trade_id={position_id} symbol={pos['symbol']} outcome={pnl_data.get('outcome')}")
         except Exception as e:
             log.warning(f"[LEARNING_RECORD_EXIT_ERROR] trade_id={position_id} err={str(e)[:100]}")
+    else:
+        # V10.50: DIAGNOSTIC - learning instance not wired
+        log.error(f"[LEARNING_NOT_WIRED] _learning_instance is None! Trade {position_id} not recorded. This should not happen after V10.49 deployment.")
 
     return closed_trade
 
