@@ -1993,7 +1993,7 @@ def main():
             from src.services.paper_trade_executor import close_paper_position
 
             _open_pos = get_open_positions()
-            _MAX_POSITION_AGE_S = 1200  # 20 minutes - extended for extremely flat market periods (0.03-0.04% moves/600s)
+            _MAX_POSITION_AGE_S = 600  # 10 minutes - revert to profitable baseline (V10.54 losses from 1200s timeout)
 
             if _open_pos:
                 for pos in _open_pos:
