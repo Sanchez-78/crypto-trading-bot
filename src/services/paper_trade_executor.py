@@ -1451,11 +1451,11 @@ def open_paper_position(
         tp_zone_bps = int(os.getenv("PAPER_TP_ZONE_BPS"))
     else:
         # Env var not set — use dynamic calculation as fallback
-        tp_zone_bps_static = int(os.getenv("PAPER_TP_ZONE_BPS", "15"))  # V10.45 CRITICAL FIX: 15 bps (0.15%) to match MIN_TP_PCT
+        tp_zone_bps_static = int(os.getenv("PAPER_TP_ZONE_BPS", "60"))  # V10.47: Reachable floor (0.60% = ~1.5x 0.36% move observed)
         if atr_v > 0 and price:
             atr_pct = atr_v / price
-            dynamic_tp_bps = max(45, int(atr_pct * 10000 * 0.5))
-            tp_zone_bps = min(dynamic_tp_bps, 50)
+            dynamic_tp_bps = max(55, int(atr_pct * 10000 * 0.5))
+            tp_zone_bps = min(dynamic_tp_bps, 80)
         else:
             tp_zone_bps = tp_zone_bps_static
     sl_zone_bps = int(os.getenv("PAPER_SL_ZONE_BPS", "30"))  # default 30bps (0.30%) — per commit c4b03ba; SL stays static
@@ -2683,7 +2683,7 @@ def calibrate_paper_training_geometry(
     # V10.21: Calibrate TP for paper trading
     # For paper_live: respect configured PAPER_TP_ZONE_BPS, don't override with hardcoded floor
     if mode == "paper_live":
-        tp_zone_bps = int(os.getenv("PAPER_TP_ZONE_BPS", "15"))  # V10.45 CRITICAL FIX: 15 bps (0.15%) to match MIN_TP_PCT in trade_executor.py
+        tp_zone_bps = int(os.getenv("PAPER_TP_ZONE_BPS", "60"))  # V10.47: Reachable floor 60 bps (0.60%) — matches open_paper_position logic
         # V10.29 ROOT-CAUSE FIX: bps -> PERCENT (not fraction). Downstream computes
         # new_tp = entry * (1 + new_tp_pct/100.0), so tp_floor_pct must be a percent
         # to be consistent with the paper_train branch (floor = fee_drag+0.03 ≈ 0.21%).
