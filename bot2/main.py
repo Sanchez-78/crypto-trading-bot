@@ -1993,7 +1993,7 @@ def main():
             from src.services.paper_trade_executor import close_paper_position
 
             _open_pos = get_open_positions()
-            _MAX_POSITION_AGE_S = 900  # 15 minutes - allows market to develop 0.6-1.5% moves even in low-volatility periods
+            _MAX_POSITION_AGE_S = 1200  # 20 minutes - extended for extremely flat market periods (0.03-0.04% moves/600s)
 
             if _open_pos:
                 for pos in _open_pos:
