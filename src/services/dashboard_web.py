@@ -668,11 +668,20 @@ def metrics():
             # Add timestamps to open positions
             now_ts = time.time()
             for pos in open_positions_list:
-                entry_ts = float(pos.get('entry_ts', now_ts))
-                entry_dt = datetime.fromtimestamp(entry_ts, tz=timezone.utc)
-                entry_iso = entry_dt.isoformat().replace('+00:00', 'Z')
-                pos['entry_timestamp'] = entry_iso
-                pos['age_seconds'] = int(now_ts - entry_ts)
+                try:
+                    entry_ts = float(pos.get('entry_ts', now_ts))
+                    entry_dt = datetime.fromtimestamp(entry_ts, tz=timezone.utc)
+                    entry_iso = entry_dt.isoformat().replace('+00:00', 'Z')
+                    pos['entry_timestamp'] = entry_iso
+                    pos['age_seconds'] = int(now_ts - entry_ts)
+                except Exception as e:
+                    import sys
+                    print(f"[DASH] Error processing position timestamp: {e}, pos={pos}", file=sys.stderr, flush=True)
+
+            if open_positions_list:
+                import sys
+                print(f"[DASH] First position after timestamp processing: {open_positions_list[0]}", file=sys.stderr, flush=True)
+
             # Bot API returns recent_trades, convert to closed_trades_list for dashboard
             recent_trades = real_metrics.get('recent_trades', []) or []
             closed_trades_list = []
