@@ -84,7 +84,7 @@ def safe_idle_seconds(last_trade_ts, now=None):
 from src.services.market_stream import start
 from src.services.firebase_client import init_firebase, daily_budget_report, load_history, save_metrics_full, HISTORY_LIMIT
 from src.services.learning_event import get_metrics, bootstrap_from_history
-from src.services.trade_executor import get_open_positions
+from src.services.paper_trade_executor import get_open_positions
 from src.services.signal_generator import warmup
 from src.services.dashboard_live import dashboard_loop
 from src.services.metrics_engine import MetricsEngine

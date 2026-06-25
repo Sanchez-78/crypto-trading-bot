@@ -2682,6 +2682,18 @@ def get_paper_trade_by_id(trade_id: str) -> Optional[dict]:
     return None
 
 
+def get_open_positions():
+    """Return dict of all open paper trading positions with full internal state (includes entry_ts).
+
+    This is used by bot2/main.py for timeout and monitoring logic.
+    Includes entry_ts field which is essential for position age calculations.
+
+    Returns: dict mapping position_id -> position_dict (with entry_ts, created_at, etc.)
+    """
+    with _POSITION_LOCK:
+        return dict(_POSITIONS)
+
+
 def calibrate_paper_training_geometry(
     *,
     mode: str,
