@@ -2676,7 +2676,7 @@ def calibrate_paper_training_geometry(
     # V10.21: Calibrate TP for paper trading
     # For paper_live: respect configured PAPER_TP_ZONE_BPS, don't override with hardcoded floor
     if mode == "paper_live":
-        tp_zone_bps = int(os.getenv("PAPER_TP_ZONE_BPS", "35"))  # Use configured value, not hardcoded floor
+        tp_zone_bps = int(os.getenv("PAPER_TP_ZONE_BPS", "40"))  # V10.44: Sync with open_paper_position default (40 bps, not 35)
         # V10.29 ROOT-CAUSE FIX: bps -> PERCENT (not fraction). Downstream computes
         # new_tp = entry * (1 + new_tp_pct/100.0), so tp_floor_pct must be a percent
         # to be consistent with the paper_train branch (floor = fee_drag+0.03 ≈ 0.21%).
@@ -2700,6 +2700,15 @@ def calibrate_paper_training_geometry(
     else:
         # FLAT MARKET (0-0.15% movement): Use configured floor (respect tp_floor_pct, don't hardcode)
         tp_target_pct = tp_floor_pct
+
+    # V10.44: Ensure calibrated TP respects MIN_TP_PCT global floor
+    # This prevents calibration logic from overriding the TP floor change deployed in trade_executor.py
+    try:
+        from src.services.trade_executor import MIN_TP_PCT
+        min_tp_pct = MIN_TP_PCT * 100.0  # Convert fraction to percent
+        tp_floor_pct = max(tp_floor_pct, min_tp_pct)
+    except (ImportError, AttributeError):
+        pass  # Fallback to configured tp_floor_pct if import fails
 
     # V10.27: CRITICAL - always use calibrated TP, not max(original, calibrated)
     # This allows shrinking in flat markets while keeping wide targets in volatile markets
