@@ -1482,12 +1482,15 @@ def open_paper_position(
         log.info(f"[LEARNING_ADAPTATION] Using learned TP {tp_zone_bps}bps for {symbol}")
     else:
         # Fallback: Env var not set and no learned TP — use dynamic calculation
-        # V10.53 REVERT: Return to 35bps (20bps created losses due to cost floor floor)
-        # Root cause: Need MORE TIME for market to move, not LESS TP (hold 900s instead of 600s)
-        tp_zone_bps_static = int(os.getenv("PAPER_TP_ZONE_BPS", "35"))  # 0.35% = minimum profitable target
+        # CYCLE 30 FIX: Adaptive TP for low-volatility markets
+        # Evidence: 85 TIMEOUT exits (30.6% WR) vs 37 TP exits (94.6% WR)
+        # Root cause: Market volatility ~0.03-0.04%, but static TP=35bps unreachable
+        # Solution: Lower dynamic TP floor to 25bps to adapt to ultra-low volatility
+        # Safety: Cost floor ~18bps, new TP 25bps gives 7bps margin (0.07%) - acceptable
+        tp_zone_bps_static = int(os.getenv("PAPER_TP_ZONE_BPS", "35"))  # 0.35% default
         if atr_v > 0 and price:
             atr_pct = atr_v / price
-            dynamic_tp_bps = max(30, int(atr_pct * 10000 * 0.5))  # Keep ATR floor at 30bps
+            dynamic_tp_bps = max(25, int(atr_pct * 10000 * 0.5))  # Lowered floor from 30 to 25bps for volatility adaptation
             tp_zone_bps = min(dynamic_tp_bps, 80)
         else:
             tp_zone_bps = tp_zone_bps_static
