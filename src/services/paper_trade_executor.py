@@ -1477,10 +1477,11 @@ def open_paper_position(
         log.info(f"[LEARNING_ADAPTATION] Using learned TP {tp_zone_bps}bps for {symbol}")
     else:
         # Fallback: Env var not set and no learned TP — use dynamic calculation
-        tp_zone_bps_static = int(os.getenv("PAPER_TP_ZONE_BPS", "60"))  # V10.47: Reachable floor (0.60% = ~1.5x 0.36% move observed)
+        # V10.53 FIX: Reduced from 60bps to 35bps (real market moves only 0.03-0.04% in 600s window)
+        tp_zone_bps_static = int(os.getenv("PAPER_TP_ZONE_BPS", "35"))  # 0.35% = achievable in quiet markets
         if atr_v > 0 and price:
             atr_pct = atr_v / price
-            dynamic_tp_bps = max(55, int(atr_pct * 10000 * 0.5))
+            dynamic_tp_bps = max(30, int(atr_pct * 10000 * 0.5))  # Lowered floor from 55 to 30bps
             tp_zone_bps = min(dynamic_tp_bps, 80)
         else:
             tp_zone_bps = tp_zone_bps_static
