@@ -677,7 +677,14 @@ def metrics():
             recent_trades = real_metrics.get('recent_trades', []) or []
             closed_trades_list = []
             for t in recent_trades:
-                exit_ts = float(t.get('exit_ts', time.time()))
+                # Exit timestamp: use exit_ts if available, else estimate from now - hold_s
+                hold_s = float(t.get('hold_s', 0))
+                if t.get('exit_ts'):
+                    exit_ts = float(t.get('exit_ts'))
+                else:
+                    # Estimate: assume trade closed recently, so exit ~now - hold_s
+                    exit_ts = now_ts - hold_s if hold_s > 0 else now_ts
+
                 exit_dt = datetime.fromtimestamp(exit_ts, tz=timezone.utc)
                 exit_iso = exit_dt.isoformat().replace('+00:00', 'Z')
                 closed_trades_list.append({
@@ -688,7 +695,7 @@ def metrics():
                     'exit_price': float(t.get('exit_price', 0)),
                     'pnl_pct': float(t.get('pnl_pct', 0)),
                     'reason': t.get('exit_reason', 'UNKNOWN'),
-                    'hold_s': float(t.get('hold_s', 0)),
+                    'hold_s': hold_s,
                     'exit_time': int(exit_ts),
                     'exit_timestamp': exit_iso
                 })
