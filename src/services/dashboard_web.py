@@ -709,7 +709,33 @@ def metrics():
 
             # Only return API metrics if they contain actual trades
             # (Bot API gets metrics from logs which may be empty/rotated, so 0 trades means unreliable data)
+            # NOTE: Always query database for exit_distribution (don't rely on bot API for accurate exit reasons)
             if closed_trades > 0:
+                # Query database for accurate exit_distribution (bot API may have hardcoded/stale data)
+                try:
+                    db_conn = sqlite3.connect("local_learning_storage/learning_database.sqlite", timeout=2)
+                    db_cursor = db_conn.cursor()
+                    db_cursor.execute("""
+                        SELECT
+                            SUM(CASE WHEN LOWER(COALESCE(exit_reason, '')) = 'tp' THEN 1 ELSE 0 END) as tp,
+                            SUM(CASE WHEN LOWER(COALESCE(exit_reason, '')) = 'sl' THEN 1 ELSE 0 END) as sl,
+                            SUM(CASE WHEN LOWER(COALESCE(exit_reason, '')) IN ('scratch', 'scratch_exit') THEN 1 ELSE 0 END) as scratch,
+                            SUM(CASE WHEN LOWER(COALESCE(exit_reason, '')) IN ('stagnation', 'stagnation_exit') THEN 1 ELSE 0 END) as stagnation,
+                            SUM(CASE WHEN LOWER(COALESCE(exit_reason, '')) IN ('timeout', 'stale_timeout') THEN 1 ELSE 0 END) as timeout
+                        FROM trades
+                    """)
+                    tp, sl, scratch, stagnation, timeout = db_cursor.fetchone() or (0, 0, 0, 0, 0)
+                    db_conn.close()
+                    db_exit_distribution = {
+                        'tp': int(tp) if tp else 0,
+                        'sl': int(sl) if sl else 0,
+                        'scratch': int(scratch) if scratch else 0,
+                        'stagnation': int(stagnation) if stagnation else 0,
+                        'timeout': int(timeout) if timeout else 0
+                    }
+                except:
+                    db_exit_distribution = real_metrics.get('exit_distribution', {})
+
                 return jsonify({
                     "closed_trades": int(closed_trades),
                     "open_positions": real_metrics.get('open_positions', 0) or 0,
@@ -718,7 +744,7 @@ def metrics():
                     "profit_factor": float(profit_factor),
                     "win_rate_pct": float(win_rate),
                     "net_pnl": float(net_pnl),
-                    "exit_distribution": real_metrics.get('exit_distribution', {}),
+                    "exit_distribution": db_exit_distribution,
                     "timestamp": iso_timestamp,
                     "last_update": iso_timestamp
                 })
