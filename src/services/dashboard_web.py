@@ -781,7 +781,8 @@ def metrics():
         wins = int(wins) if wins else 0
         net_pnl = float(net_pnl) if net_pnl else 0.0
         win_rate = (wins / closed_trades * 100) if closed_trades > 0 else 0.0
-        profit_factor = 0.0
+        losses = closed_trades - wins if closed_trades > 0 else 0
+        profit_factor = (wins / (losses + 0.0001)) if losses > 0 else (1.0 if wins > 0 else 0.0)
 
         # Build exit distribution from query results (computed above)
         exits = {
