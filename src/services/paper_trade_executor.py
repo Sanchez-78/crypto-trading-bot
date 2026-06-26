@@ -555,6 +555,27 @@ def _normalize_position_for_loading(pos: dict) -> dict:
     if "symbol" not in pos:
         pos["symbol"] = "UNKNOWN"
 
+    # P1.1AV: Ensure tp/sl exist — missing tp/sl causes evaluation gate at line 1987 to fail (skip TP/SL, timeout only)
+    # FIX: Load positions from JSON lack tp/sl fields (None), causing gate: if pos.get("tp") and pos["tp"] > 0 and pos.get("sl") and pos["sl"] > 0 to fail
+    # This skips entire TP/SL block → ALL positions timeout. Add safe defaults.
+    if "tp" not in pos or pos.get("tp") is None or pos.get("tp") == 0:
+        # Calculate TP default from entry_price + tp_zone_bps (35 bps default)
+        entry_price = pos.get("entry_price", 0.0)
+        side = pos.get("side", "BUY")
+        tp_zone_bps = int(os.getenv("PAPER_TP_ZONE_BPS", "35"))
+        tp_pct = 1.0 + tp_zone_bps / 10000 if side == "BUY" else 1.0 - tp_zone_bps / 10000
+        pos["tp"] = entry_price * tp_pct if entry_price > 0 else 0.0
+        log.warning(f"[TP_DEFAULT] {pos.get('symbol', 'UNKNOWN')} side={side} entry={entry_price:.8f} tp_zone_bps={tp_zone_bps} → tp={pos['tp']:.8f}")
+
+    if "sl" not in pos or pos.get("sl") is None or pos.get("sl") == 0:
+        # Calculate SL default from entry_price - sl_zone_bps (30 bps default)
+        entry_price = pos.get("entry_price", 0.0)
+        side = pos.get("side", "BUY")
+        sl_zone_bps = int(os.getenv("PAPER_SL_ZONE_BPS", "30"))
+        sl_pct = 1.0 - sl_zone_bps / 10000 if side == "BUY" else 1.0 + sl_zone_bps / 10000
+        pos["sl"] = entry_price * sl_pct if entry_price > 0 else 0.0
+        log.warning(f"[SL_DEFAULT] {pos.get('symbol', 'UNKNOWN')} side={side} entry={entry_price:.8f} sl_zone_bps={sl_zone_bps} → sl={pos['sl']:.8f}")
+
     return pos
 
 
