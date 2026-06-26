@@ -63,7 +63,7 @@ _POSITION_SIZE_BASE = float(os.getenv("PAPER_POSITION_SIZE_USD", "25"))  # Base 
 _FEE_PCT = float(os.getenv("PAPER_FEE_PCT", "0.0015"))  # 0.15% round-trip
 _SLIPPAGE_PCT = float(os.getenv("PAPER_SLIPPAGE_PCT", "0.0003"))  # 0.03%
 _MAX_OPEN = int(os.getenv("PAPER_MAX_OPEN_POSITIONS", "5"))  # Increased to allow more diversification
-_MAX_AGE_S = float(os.getenv("PAPER_MAX_POSITION_AGE_S", "1200"))  # CYCLE 31: Increased to 1200s (20 min) to reach TP in low volatility (was 600s)
+_MAX_AGE_S = float(os.getenv("PAPER_MAX_POSITION_AGE_S", "600"))  # Reverted to 600s (was 1200s in CYCLE 31)
 _MIN_EV_THRESHOLD = float(os.getenv("PAPER_MIN_EV_THRESHOLD", "0.01"))  # V10.26 FIX: Block zero-EV trades (was 0.0, allowing random entries)
 _MIN_SEGMENT_PF = float(os.getenv("PAPER_MIN_SEGMENT_PF", "0.0"))  # AGGRESSIVE: No segment PF gating
 _TIME_BASED_FILTERING = os.getenv("PAPER_TIME_BASED_FILTERING", "false").lower() == "true"  # AGGRESSIVE: No time gating
@@ -1208,6 +1208,96 @@ def _check_training_sampler_caps(symbol: str, bucket: Optional[str]) -> Optional
     return None
 
 
+def _classify_volatility_regime(atr_pct: float) -> tuple[str, float]:
+    """Classify market volatility based on ATR percentage.
+
+    PHASE 1: Real-time volatility detection for adaptive position timeout.
+
+    Args:
+        atr_pct: ATR as percentage of price (e.g., 0.01 = 1%)
+
+    Returns:
+        tuple: (regime_name, timeout_multiplier)
+        - STAGNATION (< 0.01%): Skip entries
+        - LOW_VOL (0.01-0.05%): 2.0x timeout (1200s max hold)
+        - MEDIUM_VOL (0.05-0.15%): 1.0x timeout (baseline 600s)
+        - HIGH_VOL (0.15-0.50%): 0.67x timeout (400s fast exit)
+        - EXTREME_VOL (>= 0.50%): Skip entries (too volatile)
+    """
+    if atr_pct < 0.0001:  # < 0.01%
+        return "STAGNATION", 0.0
+    elif atr_pct < 0.0005:  # < 0.05%
+        return "LOW_VOL", 2.0
+    elif atr_pct < 0.0015:  # < 0.15%
+        return "MEDIUM_VOL", 1.0
+    elif atr_pct < 0.0050:  # < 0.50%
+        return "HIGH_VOL", 0.67
+    else:  # >= 0.50%
+        return "EXTREME_VOL", 0.0
+
+
+def _calculate_adaptive_timeout(atr_pct: float, signal: dict, price: float) -> dict:
+    """Calculate adaptive position timeout based on volatility regime.
+
+    PHASE 1: Real-time timeout calculation with safety guardrails.
+
+    Combines:
+    - ATR-based volatility regime
+    - Signal regime metadata
+    - Dynamic trend factor (if ADX available)
+
+    Args:
+        atr_pct: ATR as percentage of price
+        signal: Signal dict with regime, features (may contain adx)
+        price: Current entry price
+
+    Returns:
+        dict: {
+            "timeout_s": int,  # Calculated timeout [300, 1500]
+            "vol_regime": str,  # Volatility classification
+            "atr_pct": float,  # Computed ATR %
+            "calc_reason": str,  # Why timeout was set
+        }
+    """
+    # Classify volatility
+    vol_regime, vol_factor = _classify_volatility_regime(atr_pct)
+
+    # Skip if extreme conditions
+    if vol_regime in ["STAGNATION", "EXTREME_VOL"]:
+        return {
+            "timeout_s": 0,
+            "vol_regime": vol_regime,
+            "atr_pct": atr_pct,
+            "calc_reason": f"skip_entries_{vol_regime.lower()}",
+        }
+
+    # Calculate trend factor from signal regime (proxy for ADX)
+    # LOW/FALLING regimes → 0.8x (fast exit)
+    # MEDIUM/RISING regimes → 1.0x (baseline)
+    # HIGH/STRONG regimes → 1.2x (extended hold)
+    regime = signal.get("regime", "NEUTRAL")
+    if regime in ["STRONG_UPTREND", "STRONG_DOWNTREND"]:
+        trend_factor = 1.2  # Strong trend = longer hold
+    elif regime in ["FALLING", "WEAKTREND"]:
+        trend_factor = 0.8  # Weak trend = faster exit
+    else:  # NEUTRAL, RISING, or unknown
+        trend_factor = 1.0  # Baseline or neutral trend
+
+    # Adaptive timeout = base × vol_factor × trend_factor
+    base_timeout = 600  # 10 minutes baseline
+    calculated_timeout = base_timeout * vol_factor * trend_factor
+
+    # Safety guardrails: [300, 1500] seconds
+    timeout_s = max(300, min(1500, int(calculated_timeout)))
+
+    return {
+        "timeout_s": timeout_s,
+        "vol_regime": vol_regime,
+        "atr_pct": atr_pct,
+        "calc_reason": f"adaptive_vol={vol_regime.lower()}_trend={trend_factor:.1f}x",
+    }
+
+
 def open_paper_position(
     signal: dict,
     price: float,
@@ -1593,6 +1683,34 @@ def open_paper_position(
     if tp_sl_calibrated:
         tp_sl = tp_sl_calibrated
 
+    # PHASE 1: Adaptive timeout based on real-time volatility
+    atr_pct = atr_v / price if atr_v > 0 and price > 0 else 0.0001  # Default to near-zero vol
+    adaptive_timeout_result = _calculate_adaptive_timeout(atr_pct, signal, price)
+    timeout_s_adaptive = adaptive_timeout_result["timeout_s"]
+    vol_regime_classified = adaptive_timeout_result["vol_regime"]
+    timeout_calc_reason = adaptive_timeout_result["calc_reason"]
+
+    # Log timeout calculation for diagnostics
+    if timeout_s_adaptive > 0:
+        log.info(
+            "[TIMEOUT_ADAPTIVE_CALC] symbol=%s vol_regime=%s atr_pct=%.4f%% "
+            "timeout_s=%d reason=%s",
+            symbol,
+            vol_regime_classified,
+            atr_pct * 100,
+            timeout_s_adaptive,
+            timeout_calc_reason,
+        )
+    else:
+        log.warning(
+            "[TIMEOUT_ADAPTIVE_SKIP] symbol=%s vol_regime=%s atr_pct=%.4f%% "
+            "reason=%s",
+            symbol,
+            vol_regime_classified,
+            atr_pct * 100,
+            timeout_calc_reason,
+        )
+
     position = {
         "trade_id": trade_id,
         "mode": "paper_live",
@@ -1621,7 +1739,9 @@ def open_paper_position(
         "geometry_calibrated": tp_sl.get("calibrated", False),
         "tp_pct_before_calibration": tp_sl.get("tp_pct_before", tp_sl.get("tp_pct", 0.0)),
         "sl_pct_before_calibration": tp_sl.get("sl_pct_before", tp_sl.get("sl_pct", 0.0)),
-        "timeout_s": _MAX_AGE_S,
+        "timeout_s": timeout_s_adaptive if timeout_s_adaptive > 0 else _MAX_AGE_S,  # PHASE 1: Adaptive timeout
+        "volatility_regime": vol_regime_classified,  # PHASE 1: Classification for learning
+        "timeout_calc_atr_pct": atr_pct,  # PHASE 1: ATR % at entry for analysis
         "regime": signal.get("regime", "NEUTRAL"),
         "features": signal.get("features", {}),
         "ev_at_entry": signal.get("ev", 0.0),
