@@ -735,15 +735,20 @@ def metrics():
         conn = sqlite3.connect("local_learning_storage/learning_database.sqlite", timeout=2)
         cursor = conn.cursor()
 
-        # Get all trade statistics
+        # Get all trade statistics (extended to include exit_reason counts)
         cursor.execute("""
             SELECT
                 COUNT(*) as total,
                 SUM(CASE WHEN pnl_pct > 0 THEN 1 ELSE 0 END) as wins,
-                SUM(pnl_usd) as net_pnl
+                SUM(pnl_usd) as net_pnl,
+                SUM(CASE WHEN LOWER(COALESCE(exit_reason, '')) = 'tp' THEN 1 ELSE 0 END) as tp_cnt,
+                SUM(CASE WHEN LOWER(COALESCE(exit_reason, '')) = 'sl' THEN 1 ELSE 0 END) as sl_cnt,
+                SUM(CASE WHEN LOWER(COALESCE(exit_reason, '')) IN ('scratch', 'scratch_exit') THEN 1 ELSE 0 END) as scratch_cnt,
+                SUM(CASE WHEN LOWER(COALESCE(exit_reason, '')) IN ('stagnation', 'stagnation_exit') THEN 1 ELSE 0 END) as stagnation_cnt,
+                SUM(CASE WHEN LOWER(COALESCE(exit_reason, '')) IN ('timeout', 'stale_timeout') THEN 1 ELSE 0 END) as timeout_cnt
             FROM trades
         """)
-        total, wins, net_pnl = cursor.fetchone() or (0, 0, 0)
+        total, wins, net_pnl, tp_cnt, sl_cnt, scratch_cnt, stagnation_cnt, timeout_cnt = cursor.fetchone() or (0, 0, 0, 0, 0, 0, 0, 0)
 
         # Fallback: compute from database
         closed_trades = int(total) if total else 0
@@ -751,6 +756,15 @@ def metrics():
         net_pnl = float(net_pnl) if net_pnl else 0.0
         win_rate = (wins / closed_trades * 100) if closed_trades > 0 else 0.0
         profit_factor = 0.0
+
+        # Build exit distribution from query results (computed above)
+        exits = {
+            'tp': int(tp_cnt) if tp_cnt else 0,
+            'sl': int(sl_cnt) if sl_cnt else 0,
+            'scratch': int(scratch_cnt) if scratch_cnt else 0,
+            'stagnation': int(stagnation_cnt) if stagnation_cnt else 0,
+            'timeout': int(timeout_cnt) if timeout_cnt else 0
+        }
 
         iso_timestamp = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
 
@@ -827,7 +841,7 @@ def metrics():
             "profit_factor": float(profit_factor),
             "win_rate_pct": float(win_rate),
             "net_pnl": float(net_pnl),
-            "exit_distribution": {"timeout": closed_trades, "tp": 0, "sl": 0, "scratch": 0, "stagnation": 0},
+            "exit_distribution": exits,
             "timestamp": iso_timestamp,
             "last_update": iso_timestamp
         })
