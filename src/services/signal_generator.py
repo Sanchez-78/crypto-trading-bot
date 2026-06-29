@@ -88,7 +88,7 @@ def _rsi(series, n=14):
     gains  = [max(series[i] - series[i-1], 0) for i in range(1, len(series))]
     losses = [max(series[i-1] - series[i], 0) for i in range(1, len(series))]
     ag = _ema(gains[-n*3:],  n) or 1e-9
-    al = _ema(losses[-n*3:], n) or max(ag * 0.01, 1e-9)  # Min 1% of gains (prevents RSI saturation on monotone data)
+    al = _ema(losses[-n*3:], n) or 1e-9  # CYCLE 51: removed 1% floor that forced RSI=99 on flat/monotone data
     return 100 - 100 / (1 + ag / al)
 
 
@@ -149,9 +149,9 @@ def _adx(series, n=14):
     tr_s  = _ema(trs[-n*3:],   n) or 1e-9
     di_p  = 100 * _ema(ups[-n*3:],   n) / tr_s
     di_m  = 100 * _ema(downs[-n*3:], n) / tr_s
-    max_di = max(di_p, di_m)
     min_di = min(di_p, di_m)
-    min_di = max(min_di, max_di * 0.01)  # CYCLE 25 FIX: Floor minority DI to prevent saturation on monotone trends
+    # CYCLE 51: removed `min_di = max(min_di, max_di * 0.01)` — the 1% floor
+    # forced ADX=98 on monotone trends, the saturation it was meant to prevent.
     di_p, di_m = (di_p, min_di) if di_p > di_m else (min_di, di_m)
     adx   = 100 * abs(di_p - di_m) / ((di_p + di_m) or 1e-9)
     return adx, di_p, di_m

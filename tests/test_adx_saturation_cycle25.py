@@ -1,8 +1,11 @@
 """
-Unit tests for Cycle 25 ADX saturation fix.
+Unit tests for ADX behaviour on monotone trends.
 
-Verifies that the symmetric DI floor prevents saturation on monotone trends
-in both directions (uptrend and downtrend).
+CYCLE 51: The Cycle 25 symmetric DI floor (min_di = max(min_di, max_di*0.01))
+was removed because it CREATED saturation (forced ADX=98) instead of preventing
+it. These tests now verify natural behaviour: on synthetic monotone data the
+minority DI is 0 and ADX saturates to ~100 (correct — real market data is never
+perfectly monotone, so it never pins to the floor in production).
 """
 
 import sys
@@ -23,13 +26,12 @@ def test_adx_monotone_uptrend_saturation():
 
     adx_val, di_p, di_m = _adx(monotone_up, n=14)
 
-    # Verify ADX is bounded (should not be exactly 100.0)
+    # Verify ADX is bounded and naturally saturates near 100 on pure monotone
     assert 0 <= adx_val <= 100.0, f"ADX out of bounds: {adx_val}"
-    assert adx_val < 99.0, f"ADX should be < 99 on uptrend, got {adx_val}"
+    assert adx_val > 99.0, f"ADX should saturate near 100 on monotone uptrend, got {adx_val}"
 
-    # Verify DI floor prevents di_m from being 0
-    assert di_m > 0, f"di_m should be floored > 0, got {di_m}"
-    assert di_m >= di_p * 0.01, f"di_m floor violated: {di_m} < {di_p * 0.01}"
+    # Minority DI is naturally 0 on pure monotone data (no floor anymore)
+    assert di_m == 0, f"di_m should be 0 on pure uptrend (floor removed), got {di_m}"
 
     # Verify regime detection unaffected (BULL_TREND if di_p > di_m)
     assert di_p > di_m, "Uptrend should have di_p > di_m (BULL_TREND)"
@@ -42,20 +44,25 @@ def test_adx_monotone_downtrend_saturation():
 
     adx_val, di_p, di_m = _adx(monotone_down, n=14)
 
-    # Verify ADX is bounded (should not be exactly 100.0)
+    # Verify ADX is bounded and naturally saturates near 100 on pure monotone
     assert 0 <= adx_val <= 100.0, f"ADX out of bounds: {adx_val}"
-    assert adx_val < 99.0, f"ADX should be < 99 on downtrend, got {adx_val}"
+    assert adx_val > 99.0, f"ADX should saturate near 100 on monotone downtrend, got {adx_val}"
 
-    # Verify DI floor prevents di_p from being 0
-    assert di_p > 0, f"di_p should be floored > 0, got {di_p}"
-    assert di_p >= di_m * 0.01, f"di_p floor violated: {di_p} < {di_m * 0.01}"
+    # Minority DI is naturally 0 on pure monotone data (no floor anymore)
+    assert di_p == 0, f"di_p should be 0 on pure downtrend (floor removed), got {di_p}"
 
     # Verify regime detection unaffected (BEAR_TREND if di_m > di_p)
     assert di_m > di_p, "Downtrend should have di_m > di_p (BEAR_TREND)"
 
 
-def test_adx_health_gate_threshold():
-    """Test that floored ADX doesn't exceed health-gate threshold (97.0)."""
+def test_adx_natural_saturation_on_monotone():
+    """CYCLE 51: pure monotone synthetic data saturates ADX to ~100 naturally.
+
+    The Cycle 25 floor artificially capped this near 98, which masked the real
+    indicator value and produced false BULL_TREND on flat markets. With the
+    floor removed, synthetic monotone data correctly reaches ~100. Real market
+    data is never perfectly monotone, so production ADX varies across 0-100.
+    """
     # Two monotone extremes
     monotone_up = [100.0 + i * 0.1 for i in range(100)]
     monotone_down = [100.0 - i * 0.1 for i in range(100)]
@@ -63,11 +70,9 @@ def test_adx_health_gate_threshold():
     adx_up, _, _ = _adx(monotone_up, n=14)
     adx_down, _, _ = _adx(monotone_down, n=14)
 
-    # Both should be below health-gate threshold (97.0) so gate doesn't
-    # incorrectly block saturated but valid monotone trends
-    # Allowing up to 98.02 with 1% margin above threshold:
-    assert adx_up < 98.5, f"Uptrend ADX {adx_up} exceeds margin above gate (97.0)"
-    assert adx_down < 98.5, f"Downtrend ADX {adx_down} exceeds margin above gate (97.0)"
+    # Both saturate near 100 on pure monotone series (no artificial cap)
+    assert adx_up > 99.0, f"Uptrend ADX {adx_up} should saturate near 100"
+    assert adx_down > 99.0, f"Downtrend ADX {adx_down} should saturate near 100"
 
 
 def test_adx_regime_stability_after_floor():
@@ -95,8 +100,8 @@ if __name__ == "__main__":
     test_adx_monotone_downtrend_saturation()
     print("✓ test_adx_monotone_downtrend_saturation PASS")
 
-    test_adx_health_gate_threshold()
-    print("✓ test_adx_health_gate_threshold PASS")
+    test_adx_natural_saturation_on_monotone()
+    print("✓ test_adx_natural_saturation_on_monotone PASS")
 
     test_adx_regime_stability_after_floor()
     print("✓ test_adx_regime_stability_after_floor PASS")
