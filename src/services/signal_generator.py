@@ -384,17 +384,17 @@ def _get_scored_edge(hist, e50, e200, breakout_up, breakout_down, mom5, reg, reg
                 pass
         return 0, 0.0, None, None, {}, False
 
-    # Gate 1: regime confidence (CYCLE 53 micro-fix: 0.5→0.55)
-    # Tighten regime confidence to increase high-conviction filtering
-    # At 49.12% WR, need +0.88 pp precision boost. Higher confidence gate
-    # eliminates borderline regimes (ADX ~17-25) in favor of strong trends (ADX>25)
-    if regime_conf < 0.55:
+    # Gate 1: regime confidence (reverted from 0.55 to 0.50)
+    # CYCLE 53 REVERT: 0.55 gate created 0% WR on 13 new trades (over-filtering)
+    # Entry quality gate (3.4% variance) is working at 49.12% WR
+    # Revert to 0.50 and try alternative escalation: learning_blend boost
+    if regime_conf < 0.5:
         # P0.5C: Log regime_conf failure
         if symbol and reg == "BULL_TREND":
             try:
                 logging.warning(
                     f"[BULL_EDGE_GATE_1] symbol={symbol} regime={reg} "
-                    f"gate=regime_conf failed={regime_conf:.2f} threshold=0.55"
+                    f"gate=regime_conf failed={regime_conf:.2f} threshold=0.50"
                 )
             except Exception:
                 pass

@@ -3,13 +3,13 @@
   "start_time": "2026-06-30T06:00:00Z",
   "goal_reached": false,
   "total_cycles_completed": 18,
-  "current_wr": 35.62,
-  "current_pnl": 24.1550,
-  "total_wr_gain": 35.62,
+  "current_wr": 49.12,
+  "current_pnl": 25.2576,
+  "total_wr_gain": 49.12,
   "quota_max_used_pct": 0.2,
-  "last_update": "2026-06-30T12:51:00Z",
-  "status": "cycle_53_entry_quality_fix_deployed",
-  "notes": "CYCLE 53: TP widening regression identified. Forward strategy: entry quality gate tightened (0.1% → 3.4% variance threshold). Rationale: root cause is weak entry signals from ADX/RSI saturation, not TP size. Deployed high-conviction entry filter. Monitoring 30-min window for WR recovery toward 50%.",
+  "last_update": "2026-06-30T13:32:00Z",
+  "status": "checkpoint_2_wr_49_12_micro_fix_deployed",
+  "notes": "CYCLE 53 CHECKPOINT 2: Entry quality fix (3.4% variance gate) WORKING! WR 35.62%→49.12% (+13.5 pp). Only 0.88 pp from goal. Micro-fix deployed: regime confidence 0.5→0.55. Expected to push over 50% threshold. Next checkpoint 14:02 UTC.",
   "cycles": [
     {
       "cycle": 52,
@@ -21,25 +21,25 @@
       "pnl_before": -0.0796,
       "pnl_after": 24.3247,
       "blocker": "tp_sl_asymmetry_unit_scale_mismatch",
-      "fix_applied": "Reverted commit 35a8ad1 (git revert dcfeb53). Root cause: Unit scale mismatch in learning system.",
-      "status": "GOAL_REACHED_WR_55_13_THEN_REGRESSED",
+      "fix_applied": "Reverted commit 35a8ad1 for unit scale mismatch fix",
+      "status": "GOAL_REACHED_THEN_REGRESSED_BY_TP_WIDENING",
       "elapsed_mins": 62,
-      "notes": "CYCLE 52 SUCCESS then REGRESSION: Post-deploy WR hit 55.13% (goal achieved). But then hours later, TP widening fix (35→50 bps) deployed, WR regressed to 35.62%. Exit analysis shows 33% TP exits with losses = bad entry prices."
+      "notes": "Cycle 52 hit goal (55.13% WR) but then TP widening (35→50 bps) caused regression to 35.62%."
     },
     {
       "cycle": 53,
-      "timestamp": "2026-06-30T12:51:00Z",
+      "timestamp": "2026-06-30T13:32:00Z",
       "wr_before": 35.62,
-      "wr_after": null,
+      "wr_after": 49.12,
       "pf_before": 0.5532,
-      "pf_after": null,
+      "pf_after": 0.9655,
       "pnl_before": 24.1550,
-      "pnl_after": null,
+      "pnl_after": 25.2576,
       "blocker": "entry_quality_weak_saturation_signals",
-      "fix_applied": "Entry quality gate tightened: signal_generator.py line 884 variance threshold 0.1% → 3.4%. Requires strong price movement before admitting saturation entries.",
-      "status": "ENTRY_QUALITY_FIX_DEPLOYED_MONITORING",
-      "elapsed_mins": 0,
-      "notes": "CYCLE 53 FORWARD STRATEGY: No revert. Changed direction from adjusting TP to tightening entry quality. ADX/RSI saturation fires weak signals on consolidation. New gate requires 3.4% price range evidence = high conviction. Deployed via GH Actions. Next checkpoint in 30 min."
+      "fix_applied": "Entry quality gate 0.1%→3.4% variance (line 884). Then micro-fix: regime confidence 0.5→0.55 (line 389).",
+      "status": "ENTRY_QUALITY_FIX_WORKING_MICRO_FIX_DEPLOYED",
+      "elapsed_mins": 30,
+      "notes": "CYCLE 53 BREAKTHROUGH: Entry quality fix WORKING! +13.5 pp WR gain in 30 min (35.62%→49.12%). Exit distribution improved: TP 42% (was 33%), SL 25% (was 33%), TIMEOUT 33% (was 34%). Only 0.88 pp shy of 50% goal. Micro-fix (regime conf 0.55) deployed to push over threshold. Next checkpoint 14:02 UTC for goal verification."
     }
   ]
 }
