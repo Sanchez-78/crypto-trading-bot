@@ -16,6 +16,19 @@ from typing import Optional, Dict, List
 
 log = logging.getLogger(__name__)
 
+# Firebase persistence for learning state (Phase 1)
+try:
+    from src.services.firebase_learning_persistence import (
+        load_learning, save_learning, learning_heartbeat, validate_learned_tp
+    )
+    _firebase_available = True
+except ImportError:
+    _firebase_available = False
+    load_learning = None
+    save_learning = None
+    learning_heartbeat = None
+    validate_learned_tp = None
+
 # Phase 4C: Live PAPER metrics
 try:
     from src.services.paper_training_metrics import record_paper_exit, record_learning_update
@@ -225,28 +238,65 @@ class PaperAdaptiveLearning:
             log.warning("[PAPER_ADAPTIVE_STATE_RECONCILE_ERROR] %s", str(e))
 
     def _load_state(self) -> None:
-        """Load persistent state from JSON file."""
-        try:
-            if os.path.exists(self._state_file):
-                with open(self._state_file, 'r') as f:
-                    data = json.load(f)
+        """Load persistent state from Firebase (primary) or JSON file (fallback).
 
-                self.lifetime_n = data.get("lifetime_n", 0)
-                self.lifetime_pf = data.get("lifetime_pf", 1.0)
-                self.lifetime_expectancy = data.get("lifetime_expectancy", 0.0)
-                self.lifecycle = data.get("lifecycle", "PAPER_COLLECTING")
+        PHASE 1 FIX: Try Firebase first. This survives service restarts and deployments.
+        Fall back to local JSON if Firebase unavailable.
+        """
+        data = None
 
-                # Restore rolling windows
-                self.rolling20 = deque(data.get("rolling20", []), maxlen=20)
-                self.rolling50 = deque(data.get("rolling50", []), maxlen=50)
-                self.rolling100 = deque(data.get("rolling100", []), maxlen=100)
+        # Try Firebase first (PHASE 1: persistent learning state)
+        if _firebase_available and load_learning:
+            try:
+                firebase_state = load_learning()
+                if firebase_state:
+                    data = firebase_state
+                    log.info("[PAPER_LEARNING_STATE_RESTORE] Loaded from Firebase (persistent)")
+            except Exception as e:
+                log.warning("[PAPER_LEARNING_FIREBASE_LOAD] failed: %s (will try local JSON)", e)
+
+        # Fall back to local JSON file if Firebase not available or no data
+        if not data:
+            try:
+                if os.path.exists(self._state_file):
+                    with open(self._state_file, 'r') as f:
+                        data = json.load(f)
+                    log.info("[PAPER_LEARNING_STATE_RESTORE] Loaded from local JSON (fallback)")
+            except Exception as e:
+                log.warning("[PAPER_LEARNING_STATE_RESTORE] local JSON also failed: %s", e)
+
+        # Apply loaded data if available
+        if data:
+            try:
+                self.lifetime_n = data.get("lifetime_metrics", {}).get("trades_closed", 0)
+                self.lifetime_pf = data.get("lifetime_metrics", {}).get("profit_factor", 1.0)
+                self.lifetime_expectancy = data.get("lifetime_metrics", {}).get("expectancy", 0.0)
+                self.lifecycle = data.get("learning_controls", {}).get("lifecycle", "PAPER_COLLECTING")
+
+                # Restore rolling windows from Firebase format
+                rolling_data = data.get("rolling_windows", {})
+                self.rolling20 = deque(rolling_data.get("rolling20", []), maxlen=20)
+                self.rolling50 = deque(rolling_data.get("rolling50", []), maxlen=50)
+                self.rolling100 = deque(rolling_data.get("rolling100", []), maxlen=100)
 
                 self.segment_weights = data.get("segment_weights", {})
 
                 # V10.29: Restore regime-volatility TP learning state
-                self.regime_tp_strategy = data.get("regime_tp_strategy", self.regime_tp_strategy)
-                self.regime_tp_learning_enabled = data.get("regime_tp_learning_enabled", False)
-                self.regime_tp_learning_blend = data.get("regime_tp_learning_blend", 0.0)
+                regime_tp = data.get("regime_tp_strategy", self.regime_tp_strategy)
+
+                # PHASE 1: Validate learned TP values before using them
+                if _firebase_available and validate_learned_tp and len(self.rolling100) >= 20:
+                    if validate_learned_tp(regime_tp):
+                        self.regime_tp_strategy = regime_tp
+                        self.regime_tp_learning_enabled = True
+                        log.info("[PAPER_LEARNING_VALIDATE] Learned TP strategy validated and enabled")
+                    else:
+                        log.warning("[PAPER_LEARNING_VALIDATE] Learned TP strategy failed validation, using baseline")
+                else:
+                    self.regime_tp_strategy = regime_tp
+
+                self.regime_tp_learning_enabled = data.get("learning_controls", {}).get("learning_enabled", False)
+                self.regime_tp_learning_blend = data.get("learning_controls", {}).get("learning_blend", 0.0)
 
                 # P1.1AP-O1A: Restore qualification metadata
                 self.qualification_schema_version = data.get("qualification_schema_version", 1)
@@ -258,12 +308,13 @@ class PaperAdaptiveLearning:
                 log.info(
                     "[PAPER_LEARNING_STATE_RESTORE] state_ok=True "
                     "lifetime_n=%d rolling20=%d rolling50=%d rolling100=%d "
-                    "lifecycle=%s",
+                    "lifecycle=%s learning_enabled=%s",
                     self.lifetime_n,
                     len(self.rolling20),
                     len(self.rolling50),
                     len(self.rolling100),
-                    self.lifecycle
+                    self.lifecycle,
+                    self.regime_tp_learning_enabled
                 )
 
                 # P1.1AP-O2: Restore admission control policy state
@@ -271,14 +322,54 @@ class PaperAdaptiveLearning:
 
                 # P1.1AP-N1 Fix 3: Reconcile state to remove D_NEG contamination
                 self._reconcile_state()
-        except Exception as e:
-            log.warning("[PAPER_LEARNING_STATE_RESTORE] failed: %s", e)
+            except Exception as e:
+                log.error("[PAPER_LEARNING_STATE_RESTORE] failed to apply data: %s", e)
 
     def _save_state(self) -> None:
-        """Persist state to JSON file."""
+        """Persist state to Firebase (primary) and JSON file (backup).
+
+        PHASE 1 FIX: Save to Firebase first for persistence across restarts.
+        Also save to local JSON for compatibility and offline fallback.
+        """
+        data = {
+            "lifetime_metrics": {
+                "trades_closed": self.lifetime_n,
+                "profit_factor": self.lifetime_pf,
+                "expectancy": self.lifetime_expectancy,
+                "net_pnl": self.lifetime_net_pnl,
+            },
+            "learning_controls": {
+                "lifecycle": self.lifecycle,
+                "learning_enabled": self.regime_tp_learning_enabled,
+                "learning_blend": self.regime_tp_learning_blend,
+            },
+            "regime_tp_strategy": self.regime_tp_strategy,
+            "rolling_windows": {
+                "rolling20": list(self.rolling20),
+                "rolling50": list(self.rolling50),
+                "rolling100": list(self.rolling100),
+            },
+            "segment_weights": self.segment_weights,
+            "qualification_schema_version": self.qualification_schema_version,
+            "qualification_started_at": self.qualification_started_at,
+            "qualification_n": self.qualification_n,
+            "qualification_window": list(self.qualification_window),
+            "operator_unlock": self.operator_unlock,
+            "paper_admission_controls": self.paper_admission_controls,
+        }
+
+        # PHASE 1: Save to Firebase (primary, persistent)
+        if _firebase_available and save_learning:
+            try:
+                save_learning(data)
+            except Exception as e:
+                log.warning("[LEARNING_STATE_FIREBASE_SAVE] failed: %s (will try local JSON)", e)
+
+        # Save to local JSON (backup, offline fallback)
         try:
             os.makedirs(os.path.dirname(self._state_file), exist_ok=True)
-            data = {
+            # Flatten data for JSON compatibility (Firebase uses nested format)
+            json_data = {
                 "lifetime_n": self.lifetime_n,
                 "lifetime_pf": self.lifetime_pf,
                 "lifetime_expectancy": self.lifetime_expectancy,
@@ -298,11 +389,12 @@ class PaperAdaptiveLearning:
                 "regime_tp_learning_blend": self.regime_tp_learning_blend,
             }
             with open(self._state_file, 'w') as f:
-                json.dump(data, f, indent=2)
-            # V10.52: Log successful write to verify filesystem persistence
-            log.info(f"[LEARNING_STATE_SAVED] regime_tp_strategy={len(self.regime_tp_strategy)} buckets, lifetime_n={self.lifetime_n}, file={self._state_file}")
+                json.dump(json_data, f, indent=2)
+            log.info(f"[LEARNING_STATE_SAVED] Firebase + local JSON. "
+                    f"trades={self.lifetime_n}, PF={self.lifetime_pf:.2f}x, "
+                    f"blend={self.regime_tp_learning_blend:.1%}")
         except Exception as e:
-            log.warning("[PAPER_LEARNING_STATE_SAVE] failed: %s", e)
+            log.warning("[LEARNING_STATE_JSON_SAVE] failed: %s", e)
 
     def record_close(self, trade: dict) -> None:
         """Record a closed paper trade and update metrics.
