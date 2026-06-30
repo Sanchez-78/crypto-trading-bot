@@ -668,16 +668,16 @@ class PaperAdaptiveLearning:
                 self.regime_tp_learning_enabled = True
                 log.info("[TP_LEARNING_ENABLED] After %d closes, regime-tp learning activated", self.lifetime_n)
 
-            # Ramp up learning blend based on closes (CYCLE 53: accelerated ramp-up)
+            # Ramp up learning blend based on closes (CYCLE 53: reverted to stable baseline)
             if self.regime_tp_learning_enabled:
-                if self.lifetime_n < 50:
+                if self.lifetime_n < 150:
                     self.regime_tp_learning_blend = 0.1
-                elif self.lifetime_n < 100:
-                    self.regime_tp_learning_blend = 0.3
-                elif self.lifetime_n < 150:
-                    self.regime_tp_learning_blend = 0.5
                 elif self.lifetime_n < 200:
-                    self.regime_tp_learning_blend = 0.7
+                    self.regime_tp_learning_blend = 0.3
+                elif self.lifetime_n < 250:
+                    self.regime_tp_learning_blend = 0.5
+                elif self.lifetime_n < 300:
+                    self.regime_tp_learning_blend = 0.8
                 else:
                     self.regime_tp_learning_blend = 1.0
 
