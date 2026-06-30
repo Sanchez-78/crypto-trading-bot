@@ -755,23 +755,24 @@ class PaperAdaptiveLearning:
                             current_tp, new_tp
                         )
 
-            # Enable learning after 100 total closes across all regimes
-            if self.lifetime_n >= 100 and not self.regime_tp_learning_enabled:
+            # PHASE 1 FIX: Enable learning after 50 total closes (faster activation)
+            # Lower threshold allows learning to contribute earlier, builds learned TP values faster
+            if self.lifetime_n >= 50 and not self.regime_tp_learning_enabled:
                 self.regime_tp_learning_enabled = True
-                log.info("[TP_LEARNING_ENABLED] After %d closes, regime-tp learning activated", self.lifetime_n)
+                log.info("[TP_LEARNING_ENABLED] After %d closes, regime-tp learning activated (PHASE 1 warmup=50)", self.lifetime_n)
 
-            # Ramp up learning blend based on closes (CYCLE 53: reverted to stable baseline)
+            # PHASE 1: Ramp up learning blend (adjusted for 50-trade activation)
             if self.regime_tp_learning_enabled:
-                if self.lifetime_n < 150:
-                    self.regime_tp_learning_blend = 0.1
+                if self.lifetime_n < 100:
+                    self.regime_tp_learning_blend = 0.1  # 50-100 trades: low influence
+                elif self.lifetime_n < 150:
+                    self.regime_tp_learning_blend = 0.3  # 100-150 trades: ramping
                 elif self.lifetime_n < 200:
-                    self.regime_tp_learning_blend = 0.3
-                elif self.lifetime_n < 250:
-                    self.regime_tp_learning_blend = 0.5
+                    self.regime_tp_learning_blend = 0.5  # 150-200 trades: moderate
                 elif self.lifetime_n < 300:
-                    self.regime_tp_learning_blend = 0.8
+                    self.regime_tp_learning_blend = 0.8  # 200-300 trades: strong
                 else:
-                    self.regime_tp_learning_blend = 1.0
+                    self.regime_tp_learning_blend = 1.0  # 300+ trades: full learning
 
         except Exception as e:
             log.warning("[TP_LEARNING_UPDATE_ERROR] %s", str(e))
