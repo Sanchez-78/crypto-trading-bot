@@ -1489,7 +1489,7 @@ def open_paper_position(
             atr_pct = atr_v / price if atr_v > 0 and price > 0 else 0.01
             learned_tp_pct = _learning_instance.get_regime_tp_target(regime, atr_pct)
             if learned_tp_pct and learned_tp_pct > 0:
-                tp_zone_bps_learned = int(learned_tp_pct * 10000)  # Convert percent to bps
+                tp_zone_bps_learned = int(learned_tp_pct * 100)  # learned_tp_pct is already %, convert to bps (0.18% = 18 bps)
                 log.info(f"[LEARNING_TP_USED] symbol={symbol} regime={regime} learned_tp={learned_tp_pct*100:.3f}% ({tp_zone_bps_learned}bps)")
         except Exception as e:
             log.warning(f"[LEARNING_TP_ERROR] Failed to get learned TP: {e}")
@@ -1499,8 +1499,9 @@ def open_paper_position(
         tp_zone_bps = int(os.getenv("PAPER_TP_ZONE_BPS"))
     elif learned_tp_pct and learned_tp_pct > 0:
         # V10.52: Use learned TP if available (enables bot self-improvement)
-        tp_zone_bps = int(learned_tp_pct * 10000)
-        log.info(f"[LEARNING_ADAPTATION] Using learned TP {tp_zone_bps}bps for {symbol}")
+        # FIX: learned_tp_pct is already in percentage (0.18 = 0.18%), not decimal (0.0018)
+        tp_zone_bps = int(learned_tp_pct * 100)  # Convert 0.18% to 18 bps (not 1800)
+        log.info(f"[LEARNING_ADAPTATION] Using learned TP {tp_zone_bps}bps ({learned_tp_pct*100:.2f}%) for {symbol}")
     else:
         # Fallback: Env var not set and no learned TP — use dynamic calculation
         # V10.53 REVERT: Return to 35bps (20bps created losses due to cost floor floor)
