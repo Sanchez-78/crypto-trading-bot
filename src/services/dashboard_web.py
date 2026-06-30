@@ -376,6 +376,46 @@ HTML_TEMPLATE = r"""
             </table>
         </div>
 
+        <!-- Learning Adjustment Process -->
+        <div class="stats-table">
+            <h3>🤖 Learning Adjustment Process</h3>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px;">
+                <div style="background: rgba(15, 23, 41, 0.8); padding: 15px; border-radius: 8px;">
+                    <div style="color: #888; font-size: 11px; margin-bottom: 5px;">LEARNING STATUS</div>
+                    <div id="learning_enabled" style="font-size: 16px; font-weight: bold; color: #00ff00;">—</div>
+                </div>
+                <div style="background: rgba(15, 23, 41, 0.8); padding: 15px; border-radius: 8px;">
+                    <div style="color: #888; font-size: 11px; margin-bottom: 5px;">LEARNING BLEND</div>
+                    <div id="learning_blend" style="font-size: 16px; font-weight: bold; color: #1e90ff;">0.0%</div>
+                </div>
+                <div style="background: rgba(15, 23, 41, 0.8); padding: 15px; border-radius: 8px;">
+                    <div style="color: #888; font-size: 11px; margin-bottom: 5px;">ENTRY QUALITY GATE</div>
+                    <div id="entry_quality" style="font-size: 16px; font-weight: bold; color: #ffaa00;">—</div>
+                </div>
+                <div style="background: rgba(15, 23, 41, 0.8); padding: 15px; border-radius: 8px;">
+                    <div style="color: #888; font-size: 11px; margin-bottom: 5px;">LIFETIME CLOSES</div>
+                    <div id="lifetime_closes" style="font-size: 16px; font-weight: bold; color: #e0e0e0;">0</div>
+                </div>
+            </div>
+
+            <h4 style="color: #1e90ff; margin-top: 20px; margin-bottom: 10px; font-size: 12px;">Regime TP Strategy (Adaptive Targets)</h4>
+            <table id="regimeTable">
+                <thead>
+                    <tr>
+                        <th>Regime</th>
+                        <th>Volatility</th>
+                        <th>TP Target %</th>
+                        <th>Win Rate</th>
+                        <th>Closes (n)</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="regimeBody">
+                    <tr><td colspan="6" style="text-align: center; color: #888;">Loading regime data...</td></tr>
+                </tbody>
+            </table>
+        </div>
+
         <!-- Recent Trades Table -->
         <div class="stats-table">
             <h3>📋 Last 30 Closed Trades</h3>
@@ -428,6 +468,71 @@ HTML_TEMPLATE = r"""
             } catch (e) {
                 console.error('Trades fetch error:', e);
                 return [];
+            }
+        }
+
+        async function fetchLearningState() {
+            try {
+                const response = await fetch('/api/dashboard/learning-state');
+                if (!response.ok) throw new Error('API error');
+                return await response.json();
+            } catch (e) {
+                console.error('Learning state fetch error:', e);
+                return null;
+            }
+        }
+
+        function updateLearningMetrics(data) {
+            if (!data) return;
+
+            // Update learning status indicators
+            document.getElementById('learning_enabled').textContent =
+                data.learning_enabled ? '✓ ACTIVE' : '○ INACTIVE';
+            document.getElementById('learning_enabled').style.color =
+                data.learning_enabled ? '#00ff00' : '#888';
+
+            document.getElementById('learning_blend').textContent =
+                (data.learning_blend * 100).toFixed(1) + '%';
+
+            const entryQuality = data.entry_quality_gate || {};
+            document.getElementById('entry_quality').textContent =
+                entryQuality.passing ? '✓ PASS' : '✗ FAIL';
+            document.getElementById('entry_quality').style.color =
+                entryQuality.passing ? '#00ff00' : '#ff4444';
+
+            document.getElementById('lifetime_closes').textContent =
+                data.lifetime_closes || 0;
+
+            // Update regime TP strategy table
+            const regimeBody = document.getElementById('regimeBody');
+            const regimeData = data.regime_tp_strategy || {};
+
+            let rows = [];
+            for (const [regime, volBands] of Object.entries(regimeData)) {
+                for (const [volBand, stats] of Object.entries(volBands || {})) {
+                    const tpPct = stats.tp_pct || 0;
+                    const wr = (stats.wr || 0) * 100;
+                    const n = stats.n || 0;
+                    const wrStatus = wr >= 55 ? '✓ HIGH' : wr >= 45 ? '• MID' : '✗ LOW';
+                    const wrColor = wr >= 55 ? '#00ff00' : wr >= 45 ? '#ffaa00' : '#ff4444';
+
+                    rows.push(`
+                        <tr>
+                            <td><strong>${regime}</strong></td>
+                            <td>${volBand.replace('_', ' ').toUpperCase()}</td>
+                            <td><strong>${(tpPct * 100).toFixed(2)}%</strong></td>
+                            <td style="color: ${wrColor};">${wr.toFixed(1)}%</td>
+                            <td>${n}</td>
+                            <td style="color: ${wrColor};">${wrStatus}</td>
+                        </tr>
+                    `);
+                }
+            }
+
+            if (rows.length === 0) {
+                regimeBody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #888;">No regime data yet</td></tr>';
+            } else {
+                regimeBody.innerHTML = rows.join('');
             }
         }
 
@@ -572,9 +677,15 @@ HTML_TEMPLATE = r"""
 
         async function updateDashboard() {
             const data = await fetchMetrics();
+            const learningData = await fetchLearningState();
             if (!data) return;
 
             lastData = data;
+
+            // Update learning metrics
+            if (learningData) {
+                updateLearningMetrics(learningData);
+            }
 
             // Update metrics
             document.getElementById('closed_trades').textContent = data.closed_trades || 0;
@@ -1152,6 +1263,74 @@ def readiness_status():
     except Exception as e:
         log.error(f"[READINESS_STATUS_ERROR] {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/dashboard/learning-state')
+def learning_state():
+    """Expose learning system auto-adjustment process and regime TP strategy."""
+    try:
+        import os
+        from pathlib import Path
+
+        learning_state_file = Path("server_local_backups/paper_adaptive_learning_state.json")
+
+        if not learning_state_file.exists():
+            return jsonify({
+                "learning_enabled": False,
+                "status": "no_learning_state_file",
+                "regime_tp_strategy": {},
+                "lifetime_closes": 0,
+                "message": "Learning system not yet initialized"
+            }), 200
+
+        with open(learning_state_file, 'r') as f:
+            state = json.load(f)
+
+        regime_tp_strategy = state.get("regime_tp_strategy", {})
+        rolling20 = state.get("rolling20", [])
+        rolling50 = state.get("rolling50", [])
+
+        non_timeout_count_50 = sum(
+            1 for trade in rolling50
+            if len(trade) >= 2 and (trade[1] != "FLAT" or trade[0] != 0)
+        )
+        entry_success_rate_50 = non_timeout_count_50 / len(rolling50) if rolling50 else 0.0
+
+        recent_trades_50 = []
+        for i, trade in enumerate(reversed(rolling50[-10:])):
+            if len(trade) >= 4:
+                recent_trades_50.append({
+                    "index": len(rolling50) - i - 1,
+                    "pnl_pct": float(trade[0]),
+                    "outcome": trade[1],
+                    "symbol_regime": trade[2] if len(trade) > 2 else "UNKNOWN",
+                    "timestamp": trade[3] if len(trade) > 3 else None
+                })
+
+        return jsonify({
+            "timestamp": int(time.time()),
+            "learning_enabled": state.get("regime_tp_learning_enabled", False),
+            "learning_blend": float(state.get("regime_tp_learning_blend", 0.0)),
+            "lifecycle": state.get("lifecycle", "UNKNOWN"),
+            "lifetime_closes": int(state.get("lifetime_n", 0)),
+            "lifetime_pf": float(state.get("lifetime_pf", 1.0)),
+            "lifetime_expectancy": float(state.get("lifetime_expectancy", 0.0)),
+            "entry_quality_gate": {
+                "passing": entry_success_rate_50 > 0.75,
+                "non_timeout_pct": float(entry_success_rate_50 * 100)
+            },
+            "regime_tp_strategy": regime_tp_strategy,
+            "rolling_windows": {
+                "rolling20_size": len(rolling20),
+                "rolling50_size": len(rolling50),
+                "rolling50_recent_10_trades": recent_trades_50
+            },
+            "status": "active"
+        }), 200
+
+    except Exception as e:
+        log.error(f"[LEARNING_STATE_ERROR] {e}", exc_info=True)
+        return jsonify({"error": str(e), "status": "error"}), 500
 
 
 if __name__ == '__main__':
