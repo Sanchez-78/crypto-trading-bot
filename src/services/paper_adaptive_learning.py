@@ -268,13 +268,33 @@ class PaperAdaptiveLearning:
         # Apply loaded data if available
         if data:
             try:
-                self.lifetime_n = data.get("lifetime_metrics", {}).get("trades_closed", 0)
-                self.lifetime_pf = data.get("lifetime_metrics", {}).get("profit_factor", 1.0)
-                self.lifetime_expectancy = data.get("lifetime_metrics", {}).get("expectancy", 0.0)
-                self.lifecycle = data.get("learning_controls", {}).get("lifecycle", "PAPER_COLLECTING")
+                # PHASE 1 FIX: Support BOTH Firebase format AND old JSON format
+                # Firebase format: {"lifetime_metrics": {"trades_closed": N}}
+                # Old JSON format: {"lifetime_n": N}
+                if "lifetime_metrics" in data:
+                    # Firebase/new format
+                    self.lifetime_n = data.get("lifetime_metrics", {}).get("trades_closed", 0)
+                    self.lifetime_pf = data.get("lifetime_metrics", {}).get("profit_factor", 1.0)
+                    self.lifetime_expectancy = data.get("lifetime_metrics", {}).get("expectancy", 0.0)
+                else:
+                    # Old JSON format (fallback)
+                    self.lifetime_n = data.get("lifetime_n", 0)
+                    self.lifetime_pf = data.get("lifetime_pf", 1.0)
+                    self.lifetime_expectancy = data.get("lifetime_expectancy", 0.0)
 
-                # Restore rolling windows from Firebase format
+                # Lifecycle can be in either format
+                self.lifecycle = data.get("learning_controls", {}).get("lifecycle") or data.get("lifecycle", "PAPER_COLLECTING")
+
+                # PHASE 1 FIX: Support both formats for rolling windows
+                # Firebase format: {"rolling_windows": {"rolling20": [...]}}
+                # Old JSON format: {"rolling20": [...]}
                 rolling_data = data.get("rolling_windows", {})
+                if not rolling_data:  # Fallback to old format
+                    rolling_data = {
+                        "rolling20": data.get("rolling20", []),
+                        "rolling50": data.get("rolling50", []),
+                        "rolling100": data.get("rolling100", []),
+                    }
                 self.rolling20 = deque(rolling_data.get("rolling20", []), maxlen=20)
                 self.rolling50 = deque(rolling_data.get("rolling50", []), maxlen=50)
                 self.rolling100 = deque(rolling_data.get("rolling100", []), maxlen=100)
