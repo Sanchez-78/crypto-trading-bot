@@ -596,33 +596,6 @@ class PaperAdaptiveLearning:
                 action
             )
 
-    def should_adapt_tp(self) -> bool:
-        """FIX 2: Only adapt TP if entries are reasonably good (>75% reach TP/SL, not timeout).
-
-        Entry quality gate prevents TP adaptation when entry timing/quality is poor.
-        Only meaningful to adapt TP if entries are actually reaching target prices.
-        """
-        if len(self.rolling50) < 50:
-            return False
-
-        # Count non-timeout exits in rolling50
-        non_timeout_count = sum(
-            1 for trade in self.rolling50
-            if trade[1] != "FLAT" or trade[0] != 0  # Assume FLAT with 0 pnl = timeout
-        )
-
-        # Count exit_reason == "TIMEOUT" more directly by checking outcome
-        timeout_count = sum(
-            1 for trade in self.rolling50
-            if trade[1] == "FLAT" and trade[0] == 0  # FLAT+0pnl typically = timeout
-        )
-
-        non_timeout_count = len(self.rolling50) - timeout_count
-        entry_success_rate = non_timeout_count / len(self.rolling50) if self.rolling50 else 0.0
-
-        # Only adapt if entries are 75%+ quality
-        return entry_success_rate > 0.75
-
     def _update_regime_tp_strategy(self, trade: Dict) -> None:
         """V10.29: Update regime-volatility TP learning after trade close.
 
@@ -663,43 +636,37 @@ class PaperAdaptiveLearning:
                 strategy["wr"] = (wr_old * n_old + outcome_val) / strategy["n"]
 
             # Learning adaptation: every 50 closes, check if we should adjust TP
-            # FIX 2: Only adapt TP if entry quality gate passes
-            if strategy["n"] % 50 == 0 and strategy["n"] >= 50 and self.should_adapt_tp():
+            if strategy["n"] % 50 == 0 and strategy["n"] >= 50:
                 current_wr = strategy["wr"]
                 current_tp = strategy["tp_pct"]
 
-                # FIX 1 & 4: Adaptive rule with reversed direction and cost floor enforcement
-                # Cost floor: TP must exceed 18bps cost + 5bps safety margin = 23bps (0.0023)
-                COST_FLOOR_BPS = 18
-                MIN_SAFETY_MARGIN_BPS = 5
-                SAFE_TP_FLOOR_PERCENT = (COST_FLOOR_BPS + MIN_SAFETY_MARGIN_BPS) / 10000  # 0.0023
-
-                # FIX 1: When WR < 45%, TIGHTEN TP (not widen) to exit losses faster
+                # Simple adaptive rule: if WR is too low, widen TP slightly (more time to reach exit)
+                # If WR is too high, slightly tighten TP (less time wasted in flat trades)
                 if current_wr < 0.45:  # Too many losses
-                    new_tp = max(current_tp - 0.01, SAFE_TP_FLOOR_PERCENT)  # Tighten with cost floor
+                    new_tp = min(current_tp + 0.01, 0.40)  # Widen, but cap at 0.40%
                     if new_tp != current_tp:
                         strategy["tp_pct"] = new_tp
                         log.info(
                             "[TP_LEARNING_ADAPT] regime=%s vol_band=%s wr=%.3f n=%d "
-                            "tp_adjusted %.4f → %.4f reason=low_wr_tighten_to_exit_faster",
+                            "tp_adjusted %.4f → %.4f reason=low_wr",
                             regime, vol_band, current_wr, strategy["n"],
                             current_tp, new_tp
                         )
                 elif current_wr > 0.55:  # Too many wins (TP too wide?)
-                    new_tp = max(current_tp - 0.01, SAFE_TP_FLOOR_PERCENT)  # Tighten with cost floor
+                    new_tp = max(current_tp - 0.01, 0.10)  # Tighten, but floor at 0.10%
                     if new_tp != current_tp:
                         strategy["tp_pct"] = new_tp
                         log.info(
                             "[TP_LEARNING_ADAPT] regime=%s vol_band=%s wr=%.3f n=%d "
-                            "tp_adjusted %.4f → %.4f reason=high_wr_tighten_to_avoid_flat",
+                            "tp_adjusted %.4f → %.4f reason=high_wr",
                             regime, vol_band, current_wr, strategy["n"],
                             current_tp, new_tp
                         )
 
-            # FIX 3: Enable learning after 500 total closes (better confidence for WR estimation)
-            if self.lifetime_n >= 500 and not self.regime_tp_learning_enabled:
+            # Enable learning after 100 total closes across all regimes
+            if self.lifetime_n >= 100 and not self.regime_tp_learning_enabled:
                 self.regime_tp_learning_enabled = True
-                log.info("[TP_LEARNING_ENABLED] After %d closes, regime-tp learning activated (500-close warmup)", self.lifetime_n)
+                log.info("[TP_LEARNING_ENABLED] After %d closes, regime-tp learning activated", self.lifetime_n)
 
             # Ramp up learning blend based on closes
             if self.regime_tp_learning_enabled:
