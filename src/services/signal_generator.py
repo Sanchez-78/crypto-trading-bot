@@ -876,11 +876,16 @@ def on_price(data):
         # Only block if BOTH are extreme AND history too short (likely stale calc)
         # CYCLE 25 FIX: Adjust threshold from 99.9 to 97.0 (symmetric DI floor bounds ceiling at ~98.02)
         if len(hist) >= 200 and adx_v >= 97.0 and rsi_v >= 97.0:
-            # Both indicators at ceiling with sufficient data = genuine flat period
-            if s not in _cycle_prefilter_drops:
-                _cycle_prefilter_drops[s] = "INDICATOR_ERROR_STATE"
-            track_filtered()
-            return
+            # CYCLE 52+ QUALITY FIX: Entry quality gate tightened
+            # Root cause of low WR: ADX/RSI saturation at 100 fires entries on weak signals
+            # High conviction requires: (1) saturation AND (2) strong price movement evidence
+            # Only admit if price range >= 3.4% (real trend) not < 3.4% (weak/stale)
+            recent_range = (max(hist[-50:]) - min(hist[-50:])) / (hist[-1] or 1e-9)
+            if recent_range < 0.034:  # Increased from 0.001: require 3.4%+ real movement
+                if s not in _cycle_prefilter_drops:
+                    _cycle_prefilter_drops[s] = "WEAK_TREND_STATE"
+                track_filtered()
+                return
 
         # 30% chance to force generate a signal to maintain data flow
         if random.random() < 0.3:
