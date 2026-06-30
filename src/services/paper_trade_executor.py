@@ -1504,16 +1504,17 @@ def open_paper_position(
         log.info(f"[LEARNING_ADAPTATION] Using learned TP {tp_zone_bps}bps ({learned_tp_pct*100:.2f}%) for {symbol}")
     else:
         # Fallback: Env var not set and no learned TP — use dynamic calculation
-        # V10.53 REVERT: Return to 35bps (20bps created losses due to cost floor floor)
-        # Root cause: Need MORE TIME for market to move, not LESS TP (hold 900s instead of 600s)
-        tp_zone_bps_static = int(os.getenv("PAPER_TP_ZONE_BPS", "35"))  # 0.35% = minimum profitable target
+        # V10.55 CYCLE 52+ FIX: Increase baseline TP to 50bps (was 35bps, too aggressive)
+        # Evidence: 39.83% WR with 0.18-0.36% learned TP exiting at losses
+        # Solution: Wider TP bands allow market to move more before exit → more profits
+        tp_zone_bps_static = int(os.getenv("PAPER_TP_ZONE_BPS", "50"))  # 0.50% = baseline for wider targets
         if atr_v > 0 and price:
             atr_pct = atr_v / price
-            dynamic_tp_bps = max(30, int(atr_pct * 10000 * 0.5))  # Keep ATR floor at 30bps
-            tp_zone_bps = min(dynamic_tp_bps, 80)
+            dynamic_tp_bps = max(40, int(atr_pct * 10000 * 0.8))  # ATR floor raised to 40bps, multiplier 0.8
+            tp_zone_bps = min(dynamic_tp_bps, 100)  # Cap at 1.0% to avoid runaway
         else:
             tp_zone_bps = tp_zone_bps_static
-    sl_zone_bps = int(os.getenv("PAPER_SL_ZONE_BPS", "30"))  # default 30bps (0.30%) — per commit c4b03ba; SL stays static
+    sl_zone_bps = int(os.getenv("PAPER_SL_ZONE_BPS", "40"))  # Increased from 30bps to 40bps for breathing room
     tp_pct_env = 1.0 + tp_zone_bps / 10000 if side == "BUY" else 1.0 - tp_zone_bps / 10000
     sl_pct_env = 1.0 - sl_zone_bps / 10000 if side == "BUY" else 1.0 + sl_zone_bps / 10000
     tp_price_env = price * tp_pct_env
