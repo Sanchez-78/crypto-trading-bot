@@ -877,15 +877,16 @@ def on_price(data):
         # Real data shows ADX=100/RSI=100 during flat market consolidation (legitimate)
         # Only block if BOTH are extreme AND history too short (likely stale calc)
         # CYCLE 25 FIX: Adjust threshold from 99.9 to 97.0 (symmetric DI floor bounds ceiling at ~98.02)
+        # CYCLE 57 EMERGENCY FIX: Reduce price range gate from 3.4% to 0.15% (was blocking all entries during saturation)
         if len(hist) >= 200 and adx_v >= 97.0 and rsi_v >= 97.0:
-            # CYCLE 52+ QUALITY FIX: Entry quality gate tightened
-            # Root cause of low WR: ADX/RSI saturation at 100 fires entries on weak signals
-            # High conviction requires: (1) saturation AND (2) strong price movement evidence
-            # Only admit if price range >= 3.4% (real trend) not < 3.4% (weak/stale)
+            # CYCLE 52+ QUALITY FIX: Entry quality gate relaxed for high-conviction regime signals
+            # Root cause of 0% entries: 3.4% price movement gate too strict during saturation
+            # Saturation + trend regime = valid signal, allow entry
+            # Only admit if price range >= 0.15% (real trend, not dead-flat consolidation)
             recent_range = (max(hist[-50:]) - min(hist[-50:])) / (hist[-1] or 1e-9)
-            if recent_range < 0.034:  # Increased from 0.001: require 3.4%+ real movement
+            if recent_range < 0.0015:  # Reduced from 0.034: allow entries during saturation
                 if s not in _cycle_prefilter_drops:
-                    _cycle_prefilter_drops[s] = "WEAK_TREND_STATE"
+                    _cycle_prefilter_drops[s] = "DEAD_FLAT_CONSOLIDATION"
                 track_filtered()
                 return
 
