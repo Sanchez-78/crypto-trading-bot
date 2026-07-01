@@ -6,7 +6,11 @@ Verify all safety systems are operational before real trading.
 
 import sys
 import json
+import os
 from pathlib import Path
+
+# Fix PYTHONPATH for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 def check_phase1_validation():
     """Verify Phase 1 (learning) is stable."""
