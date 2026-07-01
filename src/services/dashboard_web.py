@@ -11,8 +11,25 @@ import time
 import subprocess
 import re
 import logging
+import os
 
 log = logging.getLogger(__name__)
+
+def load_lifetime_metrics():
+    """Load lifetime metrics from learning state file."""
+    try:
+        state_file = "server_local_backups/paper_adaptive_learning_state.json"
+        if os.path.exists(state_file):
+            with open(state_file, 'r') as f:
+                data = json.load(f)
+            return {
+                "lifetime_n": data.get("lifetime_n", 0),
+                "lifetime_pf": data.get("lifetime_pf", 1.0),
+                "lifetime_expectancy": data.get("lifetime_expectancy", 0.0),
+            }
+    except Exception as e:
+        log.warning(f"Could not load lifetime metrics: {e}")
+    return {"lifetime_n": 0, "lifetime_pf": 1.0, "lifetime_expectancy": 0.0}
 
 # Start readiness monitoring (will auto-start background thread)
 try:
@@ -847,8 +864,12 @@ def metrics():
                 except:
                     db_exit_distribution = real_metrics.get('exit_distribution', {})
 
+                # Load lifetime metrics from learning state
+                lifetime_metrics = load_lifetime_metrics()
+
                 return jsonify({
                     "closed_trades": int(closed_trades),
+                    "lifetime_closed_trades": lifetime_metrics["lifetime_n"],
                     "open_positions": real_metrics.get('open_positions', 0) or 0,
                     "open_positions_list": open_positions_list,
                     "closed_trades_list": closed_trades_list,
@@ -857,7 +878,12 @@ def metrics():
                     "net_pnl": float(net_pnl),
                     "exit_distribution": db_exit_distribution,
                     "timestamp": iso_timestamp,
-                    "last_update": iso_timestamp
+                    "last_update": iso_timestamp,
+                    "lifetime_metrics": {
+                        "lifetime_n": lifetime_metrics["lifetime_n"],
+                        "lifetime_pf": lifetime_metrics["lifetime_pf"],
+                        "lifetime_expectancy": lifetime_metrics["lifetime_expectancy"]
+                    }
                 })
             else:
                 # API returned 0 trades - log-based metrics are unreliable
@@ -971,8 +997,12 @@ def metrics():
             except:
                 pass
 
+        # Load lifetime metrics from learning state
+        lifetime_metrics = load_lifetime_metrics()
+
         return jsonify({
             "closed_trades": closed_trades,
+            "lifetime_closed_trades": lifetime_metrics["lifetime_n"],
             "open_positions": open_positions,
             "open_positions_list": open_positions_list,
             "closed_trades_list": closed_trades_list,
@@ -981,7 +1011,12 @@ def metrics():
             "net_pnl": float(net_pnl),
             "exit_distribution": exits,
             "timestamp": iso_timestamp,
-            "last_update": iso_timestamp
+            "last_update": iso_timestamp,
+            "lifetime_metrics": {
+                "lifetime_n": lifetime_metrics["lifetime_n"],
+                "lifetime_pf": lifetime_metrics["lifetime_pf"],
+                "lifetime_expectancy": lifetime_metrics["lifetime_expectancy"]
+            }
         })
     except Exception as e:
         from datetime import datetime, timezone
