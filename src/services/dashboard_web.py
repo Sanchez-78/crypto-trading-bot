@@ -57,7 +57,7 @@ def populate_trades_from_logs():
         except:
             logs = ""
 
-        conn = sqlite3.connect("local_learning_storage/learning_database.sqlite", timeout=2)
+        conn = sqlite3.connect("/opt/cryptomaster/local_learning_storage/learning_database.sqlite", timeout=2)
         cursor = conn.cursor()
 
         # Parse [PAPER_EXIT] lines
@@ -848,7 +848,7 @@ def metrics():
             if closed_trades > 0:
                 # Query database for accurate exit_distribution (bot API may have hardcoded/stale data)
                 try:
-                    db_conn = sqlite3.connect("local_learning_storage/learning_database.sqlite", timeout=2)
+                    db_conn = sqlite3.connect("/opt/cryptomaster/local_learning_storage/learning_database.sqlite", timeout=2)
                     db_cursor = db_conn.cursor()
                     db_cursor.execute("""
                         SELECT
@@ -902,7 +902,7 @@ def metrics():
             print(f"[DASH] Port 5000 API failed: {api_error}", file=sys.stderr, flush=True)
 
         # FALLBACK: Try database if API unavailable or API returned 0 trades
-        conn = sqlite3.connect("local_learning_storage/learning_database.sqlite", timeout=2)
+        conn = sqlite3.connect("/opt/cryptomaster/local_learning_storage/learning_database.sqlite", timeout=2)
         cursor = conn.cursor()
 
         # Get all trade statistics (extended to include exit_reason counts)
