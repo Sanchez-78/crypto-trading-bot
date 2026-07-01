@@ -15,6 +15,29 @@ import threading
 import time
 import os
 
+def load_lifetime_metrics():
+    """Load lifetime metrics from learning state file."""
+    try:
+        # Try multiple paths for flexibility
+        paths = [
+            "server_local_backups/paper_adaptive_learning_state.json",
+            "/opt/cryptomaster/server_local_backups/paper_adaptive_learning_state.json",
+            os.path.expanduser("~/cryptomaster/server_local_backups/paper_adaptive_learning_state.json"),
+        ]
+
+        for state_file in paths:
+            if os.path.exists(state_file):
+                with open(state_file, 'r') as f:
+                    data = json.load(f)
+                return {
+                    "lifetime_n": data.get("lifetime_n", 0),
+                    "lifetime_pf": data.get("lifetime_pf", 1.0),
+                    "lifetime_expectancy": data.get("lifetime_expectancy", 0.0),
+                }
+    except Exception as e:
+        pass  # Silent fail, return defaults
+    return {"lifetime_n": 0, "lifetime_pf": 1.0, "lifetime_expectancy": 0.0}
+
 class DashboardHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         # API endpoints
@@ -228,11 +251,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
             # Placeholder for readiness (would need more complex parsing)
             readiness_by_symbol = []
 
+            # Load lifetime metrics from learning state file
+            lifetime_metrics = load_lifetime_metrics()
+
             response = {
                 'win_rate_pct': round(win_rate_pct, 1),
                 'profit_factor': round(profit_factor, 2),
                 'net_pnl': round(net_pnl, 8),
                 'closed_trades': total,
+                'lifetime_closed_trades': lifetime_metrics['lifetime_n'],
                 'open_positions': open_positions,
                 'open_positions_list': open_positions_list,
                 'recent_trades': recent_trades,
@@ -240,6 +267,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 'readiness_by_symbol': readiness_by_symbol,
                 'timestamp': int(time.time()),
                 'last_update': datetime.utcnow().isoformat(),
+                'lifetime_metrics': {
+                    'lifetime_n': lifetime_metrics['lifetime_n'],
+                    'lifetime_pf': lifetime_metrics['lifetime_pf'],
+                    'lifetime_expectancy': lifetime_metrics['lifetime_expectancy']
+                },
                 '_debug': {
                     'pos_load_error': pos_load_error,
                     'logs_length': len(logs),
@@ -247,7 +279,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     'status': 'OK' if not pos_load_error else 'PARTIAL'
                 }
             }
-            print(f'[API_METRICS] Returning {open_positions} open positions', file=sys.stderr, flush=True)
+            print(f'[API_METRICS] Returning {open_positions} open positions, lifetime={lifetime_metrics["lifetime_n"]}', file=sys.stderr, flush=True)
             self.send_json(response)
         except Exception as e:
             print(f'[API_METRICS_ERROR] {e}', file=sys.stderr, flush=True)
