@@ -18,15 +18,22 @@ log = logging.getLogger(__name__)
 def load_lifetime_metrics():
     """Load lifetime metrics from learning state file."""
     try:
-        state_file = "server_local_backups/paper_adaptive_learning_state.json"
-        if os.path.exists(state_file):
-            with open(state_file, 'r') as f:
-                data = json.load(f)
-            return {
-                "lifetime_n": data.get("lifetime_n", 0),
-                "lifetime_pf": data.get("lifetime_pf", 1.0),
-                "lifetime_expectancy": data.get("lifetime_expectancy", 0.0),
-            }
+        # Try multiple paths for flexibility
+        paths = [
+            "server_local_backups/paper_adaptive_learning_state.json",
+            "/opt/cryptomaster/server_local_backups/paper_adaptive_learning_state.json",
+            os.path.expanduser("~/cryptomaster/server_local_backups/paper_adaptive_learning_state.json"),
+        ]
+
+        for state_file in paths:
+            if os.path.exists(state_file):
+                with open(state_file, 'r') as f:
+                    data = json.load(f)
+                return {
+                    "lifetime_n": data.get("lifetime_n", 0),
+                    "lifetime_pf": data.get("lifetime_pf", 1.0),
+                    "lifetime_expectancy": data.get("lifetime_expectancy", 0.0),
+                }
     except Exception as e:
         log.warning(f"Could not load lifetime metrics: {e}")
     return {"lifetime_n": 0, "lifetime_pf": 1.0, "lifetime_expectancy": 0.0}
