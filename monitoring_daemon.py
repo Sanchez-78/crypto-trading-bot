@@ -151,6 +151,8 @@ def save_progress(progress):
 
 
 def main():
+    global LEARNING_ENABLED
+
     # Initialize learning system
     learning = None
     if LEARNING_ENABLED:
