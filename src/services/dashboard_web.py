@@ -1139,13 +1139,15 @@ def recent_trades():
 
         trades = []
 
+        # SKIP journalctl parsing (too slow with large logs)
+        # Just use database or return empty for now
         # Fetch recent journalctl logs (last 4 hours) and parse [PAPER_EXIT] records
         try:
             result = subprocess.run(
-                ['journalctl', '-u', 'cryptomaster.service', '--since', '4 hours ago', '--no-pager', '-q'],
+                ['journalctl', '-u', 'cryptomaster.service', '--since', '2 hours ago', '--no-pager', '-q'],
                 capture_output=True,
                 text=True,
-                timeout=5
+                timeout=2
             )
             logs = result.stdout
 
