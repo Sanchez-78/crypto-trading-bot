@@ -1135,15 +1135,91 @@ def recent_trades():
     """Return last 30 closed trades with ISO timestamps"""
     try:
         from datetime import datetime, timezone
+        import subprocess
 
-        # Try to get trades from database first
+        trades = []
+
+        # Fetch recent journalctl logs (last 4 hours) and parse [PAPER_EXIT] records
+        try:
+            result = subprocess.run(
+                ['journalctl', '-u', 'cryptomaster.service', '--since', '4 hours ago', '--no-pager', '-q'],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            logs = result.stdout
+
+            # Parse [PAPER_EXIT] lines
+            for line in logs.split('\n'):
+                if '[PAPER_EXIT]' not in line:
+                    continue
+
+                try:
+                    # Extract fields using regex
+                    trade_id_match = re.search(r'trade_id=(\S+)', line)
+                    symbol_match = re.search(r'symbol=(\S+)', line)
+                    side_match = re.search(r'side=(\S+)', line)
+                    entry_match = re.search(r'entry=([\d.]+)', line)
+                    exit_match = re.search(r'exit=([\d.]+)', line)
+                    pnl_pct_match = re.search(r'net_pnl_pct=([\d.\-eE+]+)', line)
+                    reason_match = re.search(r'reason=(\S+)', line)
+                    hold_match = re.search(r'hold_s=([\d.]+)', line)
+                    timestamp_match = re.search(r'timestamp=(\S+)', line)
+
+                    if all([trade_id_match, symbol_match, entry_match, exit_match, pnl_pct_match]):
+                        entry_val = float(entry_match.group(1))
+                        exit_val = float(exit_match.group(1))
+                        pnl_pct_val = float(pnl_pct_match.group(1))
+                        pnl_usd_val = entry_val * pnl_pct_val / 100.0
+                        hold_s_val = float(hold_match.group(1)) if hold_match else 600
+
+                        # Use provided timestamp or estimate from now - hold_s
+                        if timestamp_match:
+                            try:
+                                exit_ts = int(datetime.fromisoformat(timestamp_match.group(1).replace('Z', '+00:00')).timestamp())
+                            except:
+                                exit_ts = int(time.time()) - int(hold_s_val)
+                        else:
+                            exit_ts = int(time.time()) - int(hold_s_val)
+
+                        exit_dt = datetime.fromtimestamp(exit_ts, tz=timezone.utc)
+                        exit_iso = exit_dt.isoformat().replace('+00:00', 'Z')
+
+                        entry_ts = exit_ts - int(hold_s_val)
+                        entry_dt = datetime.fromtimestamp(entry_ts, tz=timezone.utc)
+                        entry_iso = entry_dt.isoformat().replace('+00:00', 'Z')
+
+                        trades.append({
+                            'trade_id': trade_id_match.group(1),
+                            'symbol': symbol_match.group(1),
+                            'side': side_match.group(1) if side_match else 'BUY',
+                            'entry_price': entry_val,
+                            'exit_price': exit_val,
+                            'pnl_pct': pnl_pct_val,
+                            'pnl_usd': pnl_usd_val,
+                            'exit_reason': reason_match.group(1) if reason_match else 'UNKNOWN',
+                            'entry_ts': entry_iso,
+                            'exit_ts': exit_iso,
+                            'hold_s': int(hold_s_val)
+                        })
+                except:
+                    pass
+
+            # Sort by exit time (newest first) and limit to 30
+            trades = sorted(trades, key=lambda t: t['exit_ts'], reverse=True)[:30]
+
+            if trades:
+                return jsonify(trades)
+        except Exception as e:
+            print(f"[DASHBOARD] Error parsing journalctl logs: {e}")
+
+        # Fallback to database if journalctl parsing fails
         try:
             db_path = 'local_learning_storage/learning_database.sqlite'
             conn = sqlite3.connect(db_path, timeout=2)
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
 
-            # Get last 30 closed trades with timestamps
             cursor.execute("""
                 SELECT trade_id, symbol, side, entry_price, exit_price,
                        entry_ts, exit_ts, pnl_pct, pnl_usd, exit_reason, hold_s
@@ -1152,12 +1228,10 @@ def recent_trades():
                 LIMIT 30
             """)
 
-            trades = []
             for row in cursor.fetchall():
                 entry_ts = row['entry_ts']
                 exit_ts = row['exit_ts']
 
-                # Convert timestamps to ISO format
                 if entry_ts and entry_ts > 0 and entry_ts < 100000000000:
                     entry_ts_iso = datetime.fromtimestamp(entry_ts, tz=timezone.utc).isoformat().replace('+00:00', 'Z')
                 else:
@@ -1184,35 +1258,11 @@ def recent_trades():
 
             conn.close()
             return jsonify(trades)
-        except Exception as db_error:
-            print(f"[DASHBOARD] Database error: {db_error}")
+        except:
+            pass
 
-            # Fallback to API
-            import urllib.request
-            import json as json_module
-
-            response = urllib.request.urlopen('http://localhost:5000/api/dashboard/metrics', timeout=5)
-            metrics_data = json_module.loads(response.read().decode())
-
-            closed = metrics_data.get('closed_trades', 0)
-            trades = []
-            for i in range(min(closed, 30)):
-                exit_ts_val = int(time.time()) - (i * 60)
-                trades.append({
-                    'trade_id': f'paper_{i:010d}',
-                    'symbol': 'ETHUSDT',
-                    'side': 'BUY',
-                    'entry_price': 1650.0 + i,
-                    'exit_price': 1651.0 + i,
-                    'pnl_pct': -0.05 + (i * 0.01),
-                    'pnl_usd': -0.0001,
-                    'exit_reason': 'TIMEOUT',
-                    'entry_ts': datetime.fromtimestamp(exit_ts_val - 60, tz=timezone.utc).isoformat().replace('+00:00', 'Z'),
-                    'exit_ts': datetime.fromtimestamp(exit_ts_val, tz=timezone.utc).isoformat().replace('+00:00', 'Z'),
-                    'hold_s': 60
-                })
-
-            return jsonify(trades[:30])
+        # Final fallback: return empty list
+        return jsonify([])
 
     except Exception as e:
         print(f"[DASHBOARD] Error in recent_trades: {e}")
