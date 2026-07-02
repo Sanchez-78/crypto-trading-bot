@@ -121,8 +121,8 @@ def init_learning_data():
     for exp in experiments:
         db.record_experiment(exp)
         db.update_rule_from_experiment(exp)
-        print(f"  ✓ Cycle {exp['cycle_number']}: {exp['parameter']} "
-              f"{exp['old_value']:.4f}→{exp['new_value']:.4f}: {exp['outcome']}")
+        print(f"  [OK] Cycle {exp['cycle_number']}: {exp['parameter']} "
+              f"{exp['old_value']:.4f}->{exp['new_value']:.4f}: {exp['outcome']}")
 
     # Add known failures to blacklist
     blacklist_entries = [
@@ -143,7 +143,7 @@ def init_learning_data():
     print("\nAdding known failures to blacklist...")
     for entry in blacklist_entries:
         db.add_to_blacklist(entry['parameter'], entry['value'], entry['reason'], entry['days'])
-        print(f"  ✓ Blacklisted: {entry['parameter']}={entry['value']:.4f} ({entry['days']}d)")
+        print(f"  [OK] Blacklisted: {entry['parameter']}={entry['value']:.4f} ({entry['days']}d)")
 
     # Print learning statistics
     stats = db.get_statistics()
@@ -170,7 +170,7 @@ def init_learning_data():
 
     conn.close()
 
-    print("\n✅ Learning database ready for Phase 2!")
+    print("\n[READY] Learning database ready for Phase 2!")
 
 
 if __name__ == '__main__':

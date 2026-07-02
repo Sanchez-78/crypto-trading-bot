@@ -317,8 +317,8 @@ class StrategyLearningDB:
             """, (parameter, new_value, new_value * 0.8, new_value * 1.2, 1.0 if success else 0.0))
         else:
             # Update existing rule
-            old_success_rate = rule[7]  # success_rate
-            old_sample_count = rule[8]  # sample_count
+            old_success_rate = rule[7] or 0.5  # success_rate (default to 0.5 if NULL)
+            old_sample_count = rule[8] or 1  # sample_count (default to 1 if NULL)
             new_sample_count = old_sample_count + 1
             new_success_rate = (
                 (old_success_rate * old_sample_count + (1.0 if success else 0.0)) / new_sample_count
