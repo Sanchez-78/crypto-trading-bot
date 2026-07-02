@@ -1135,13 +1135,20 @@ def recent_trades():
     """Return last 30 closed trades with ISO timestamps"""
     try:
         from datetime import datetime, timezone
-        import subprocess
 
         trades = []
 
-        # SKIP journalctl parsing (too slow with large logs)
-        # Just use database or return empty for now
-        # Fetch recent journalctl logs (last 4 hours) and parse [PAPER_EXIT] records
+        # FIRST: Try to get trades from real-time cache (most reliable)
+        try:
+            from src.services.recent_trades_cache import get_recent_trades
+            trades = get_recent_trades(30)
+            if trades:
+                return jsonify(trades)
+        except:
+            pass
+
+        # FALLBACK: Fetch recent journalctl logs (last 2 hours) and parse [PAPER_EXIT] records
+        import subprocess
         try:
             result = subprocess.run(
                 ['journalctl', '-u', 'cryptomaster.service', '--since', '2 hours ago', '--no-pager', '-q'],
