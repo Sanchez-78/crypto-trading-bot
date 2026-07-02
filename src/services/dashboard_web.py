@@ -784,19 +784,24 @@ def dashboard():
 def metrics():
     try:
         from datetime import datetime, timezone
+        # Forward to cryptomaster's actual metrics API
         import urllib.request
         import json as json_module
 
-        now_ts = time.time()
-        open_positions_list = []
-
-        # Try to get open positions from bot API on port 5000 (if available)
+        # Get metrics from cryptomaster's actual dashboard API on port 5000
         try:
             response = urllib.request.urlopen('http://localhost:5000/api/dashboard/metrics', timeout=5)
             real_metrics = json_module.loads(response.read().decode())
+
+            # Extract metrics (cryptomaster already returns correct format)
+            closed_trades = real_metrics.get('closed_trades', 0) or 0
+            win_rate = real_metrics.get('win_rate_pct', 0) or 0
+            net_pnl = real_metrics.get('net_pnl', 0) or 0.0
+            profit_factor = real_metrics.get('profit_factor', 0) or 0.0
             open_positions_list = real_metrics.get('open_positions_list', []) or []
 
             # Add timestamps to open positions
+            now_ts = time.time()
             for pos in open_positions_list:
                 try:
                     entry_ts = float(pos.get('entry_ts', now_ts))
@@ -804,20 +809,104 @@ def metrics():
                     entry_iso = entry_dt.isoformat().replace('+00:00', 'Z')
                     pos['entry_timestamp'] = entry_iso
                     pos['age_seconds'] = int(now_ts - entry_ts)
-                except:
+                except Exception as e:
                     pass
+
+            # Bot API returns recent_trades, convert to closed_trades_list for dashboard
+            recent_trades = real_metrics.get('recent_trades', []) or []
+            closed_trades_list = []
+            for t in recent_trades:
+                # Exit timestamp: use exit_ts if available, else estimate from now - hold_s
+                hold_s = float(t.get('hold_s', 0))
+                if t.get('exit_ts'):
+                    exit_ts = float(t.get('exit_ts'))
+                else:
+                    # Estimate: assume trade closed recently, so exit ~now - hold_s
+                    exit_ts = now_ts - hold_s if hold_s > 0 else now_ts
+
+                exit_dt = datetime.fromtimestamp(exit_ts, tz=timezone.utc)
+                exit_iso = exit_dt.isoformat().replace('+00:00', 'Z')
+                closed_trades_list.append({
+                    'trade_id': t.get('trade_id', ''),
+                    'symbol': t.get('symbol', ''),
+                    'side': t.get('side', 'BUY'),
+                    'entry_price': float(t.get('entry_price', 0)),
+                    'exit_price': float(t.get('exit_price', 0)),
+                    'pnl_pct': float(t.get('pnl_pct', 0)),
+                    'reason': t.get('exit_reason', 'UNKNOWN'),
+                    'hold_s': hold_s,
+                    'exit_time': int(exit_ts),
+                    'exit_timestamp': exit_iso
+                })
+
+            # Generate ISO timestamp
+            iso_timestamp = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+
+            # Only return API metrics if they contain actual trades
+            # (Bot API gets metrics from logs which may be empty/rotated, so 0 trades means unreliable data)
+            # NOTE: Always query database for exit_distribution (don't rely on bot API for accurate exit reasons)
+            if closed_trades > 0:
+                # Query database for accurate exit_distribution (bot API may have hardcoded/stale data)
+                try:
+                    db_conn = sqlite3.connect("/opt/cryptomaster/local_learning_storage/learning_database.sqlite", timeout=2)
+                    db_cursor = db_conn.cursor()
+                    db_cursor.execute("""
+                        SELECT
+                            SUM(CASE WHEN LOWER(COALESCE(exit_reason, '')) = 'tp' THEN 1 ELSE 0 END) as tp,
+                            SUM(CASE WHEN LOWER(COALESCE(exit_reason, '')) = 'sl' THEN 1 ELSE 0 END) as sl,
+                            SUM(CASE WHEN LOWER(COALESCE(exit_reason, '')) IN ('scratch', 'scratch_exit') THEN 1 ELSE 0 END) as scratch,
+                            SUM(CASE WHEN LOWER(COALESCE(exit_reason, '')) IN ('stagnation', 'stagnation_exit') THEN 1 ELSE 0 END) as stagnation,
+                            SUM(CASE WHEN LOWER(COALESCE(exit_reason, '')) IN ('timeout', 'stale_timeout') THEN 1 ELSE 0 END) as timeout
+                        FROM trades
+                    """)
+                    tp, sl, scratch, stagnation, timeout = db_cursor.fetchone() or (0, 0, 0, 0, 0)
+                    db_conn.close()
+                    db_exit_distribution = {
+                        'tp': int(tp) if tp else 0,
+                        'sl': int(sl) if sl else 0,
+                        'scratch': int(scratch) if scratch else 0,
+                        'stagnation': int(stagnation) if stagnation else 0,
+                        'timeout': int(timeout) if timeout else 0
+                    }
+                except:
+                    db_exit_distribution = real_metrics.get('exit_distribution', {})
+
+                # Load lifetime metrics from learning state
+                lifetime_metrics = load_lifetime_metrics()
+
+                return jsonify({
+                    "closed_trades": int(closed_trades),
+                    "lifetime_closed_trades": lifetime_metrics["lifetime_n"],
+                    "open_positions": real_metrics.get('open_positions', 0) or 0,
+                    "open_positions_list": open_positions_list,
+                    "closed_trades_list": closed_trades_list,
+                    "profit_factor": float(profit_factor),
+                    "win_rate_pct": float(win_rate),
+                    "net_pnl": float(net_pnl),
+                    "exit_distribution": db_exit_distribution,
+                    "timestamp": iso_timestamp,
+                    "last_update": iso_timestamp,
+                    "lifetime_metrics": {
+                        "lifetime_n": lifetime_metrics["lifetime_n"],
+                        "lifetime_pf": lifetime_metrics["lifetime_pf"],
+                        "lifetime_expectancy": lifetime_metrics["lifetime_expectancy"]
+                    }
+                })
+            else:
+                # API returned 0 trades - log-based metrics are unreliable
+                # Fall through to database fallback
+                import sys
+                print(f"[DASH] Port 5000 API returned 0 trades (log-based metrics unreliable). Using database...", file=sys.stderr, flush=True)
         except Exception as api_error:
             import sys
-            print(f"[DASH] Port 5000 API unavailable: {api_error}", file=sys.stderr, flush=True)
+            print(f"[DASH] Port 5000 API failed: {api_error}", file=sys.stderr, flush=True)
 
-        # ALWAYS query database for accurate metrics and closed trades (don't rely on API)
-        db_conn = sqlite3.connect("/opt/cryptomaster/local_learning_storage/learning_database.sqlite", timeout=2)
-
-        # Query database for all metrics and closed trades
-        db_cursor = db_conn.cursor()
+        # FALLBACK: Try database if API unavailable or API returned 0 trades
+        conn = sqlite3.connect("/opt/cryptomaster/local_learning_storage/learning_database.sqlite", timeout=2)
+        cursor = conn.cursor()
 
         # Get all trade statistics (extended to include exit_reason counts)
-        db_cursor.execute("""
+        cursor.execute("""
             SELECT
                 COUNT(*) as total,
                 SUM(CASE WHEN pnl_pct > 0 THEN 1 ELSE 0 END) as wins,
@@ -829,9 +918,9 @@ def metrics():
                 SUM(CASE WHEN LOWER(COALESCE(exit_reason, '')) IN ('timeout', 'stale_timeout') THEN 1 ELSE 0 END) as timeout_cnt
             FROM trades
         """)
-        total, wins, net_pnl, tp_cnt, sl_cnt, scratch_cnt, stagnation_cnt, timeout_cnt = db_cursor.fetchone() or (0, 0, 0, 0, 0, 0, 0, 0)
+        total, wins, net_pnl, tp_cnt, sl_cnt, scratch_cnt, stagnation_cnt, timeout_cnt = cursor.fetchone() or (0, 0, 0, 0, 0, 0, 0, 0)
 
-        # Compute metrics from database
+        # Fallback: compute from database
         closed_trades = int(total) if total else 0
         wins = int(wins) if wins else 0
         net_pnl = float(net_pnl) if net_pnl else 0.0
@@ -839,30 +928,7 @@ def metrics():
         losses = closed_trades - wins if closed_trades > 0 else 0
         profit_factor = (wins / (losses + 0.0001)) if losses > 0 else (1.0 if wins > 0 else 0.0)
 
-        # Get recent closed trades (last 50)
-        closed_trades_list = []
-        try:
-            db_cursor.execute("SELECT trade_id, symbol, entry_price, exit_price, pnl_pct, exit_reason, hold_s, exit_ts FROM trades ORDER BY exit_ts DESC LIMIT 50")
-            for row in db_cursor.fetchall():
-                exit_ts = float(row[7]) if row[7] else now_ts
-                exit_dt = datetime.fromtimestamp(exit_ts, tz=timezone.utc)
-                exit_iso = exit_dt.isoformat().replace('+00:00', 'Z')
-                closed_trades_list.append({
-                    'trade_id': row[0],
-                    'symbol': row[1],
-                    'entry_price': float(row[2]),
-                    'exit_price': float(row[3]),
-                    'pnl_pct': float(row[4]),
-                    'reason': row[5] or 'UNKNOWN',
-                    'hold_s': float(row[6]) if row[6] else 0,
-                    'exit_time': int(exit_ts),
-                    'exit_timestamp': exit_iso
-                })
-        except Exception as e:
-            import sys
-            print(f"[DASH] Error fetching closed trades: {e}", file=sys.stderr, flush=True)
-
-        # Build exit distribution
+        # Build exit distribution from query results (computed above)
         exits = {
             'tp': int(tp_cnt) if tp_cnt else 0,
             'sl': int(sl_cnt) if sl_cnt else 0,
