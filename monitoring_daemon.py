@@ -9,6 +9,8 @@ import json
 import time
 import sys
 import os
+import re
+import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -233,8 +235,21 @@ def main():
                         )
                         if allowed and confidence > 0.5:
                             print(f"\n🧠 AUTONOMOUS: Relaxing gate {current_gate:.4f} → {optimal:.4f} (confidence: {confidence*100:.0f}%)")
-                            progress['last_gate'] = current_gate
-                            # Gate change will be picked up next cycle via get_current_gate_from_code()
+                            print(f"   Applying parameter change via executor...")
+                            try:
+                                result = subprocess.run(
+                                    ['/opt/cryptomaster/venv/bin/python3', '/opt/cryptomaster/apply_learned_gate.py', f'{optimal:.4f}'],
+                                    capture_output=True,
+                                    text=True,
+                                    timeout=30
+                                )
+                                if result.returncode == 0:
+                                    print(f"   ✅ Parameter change applied and deployed")
+                                    progress['last_gate'] = current_gate
+                                else:
+                                    print(f"   ❌ Parameter change failed: {result.stderr}")
+                            except Exception as e:
+                                print(f"   ❌ Executor error: {e}")
 
             # Update progress tracking
             progress['cycle'] = cycle_num
