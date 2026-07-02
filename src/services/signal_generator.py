@@ -882,9 +882,9 @@ def on_price(data):
             # CYCLE 52+ QUALITY FIX: Entry quality gate relaxed for high-conviction regime signals
             # Root cause of 0% entries: 3.4% price movement gate too strict during saturation
             # Saturation + trend regime = valid signal, allow entry
-            # Only admit if price range >= 0.30% (real trend, not dead-flat consolidation)
+            # Only admit if price range >= 0.40% (real trend, not dead-flat consolidation)
             recent_range = (max(hist[-50:]) - min(hist[-50:])) / (hist[-1] or 1e-9)
-            if recent_range < 0.0030:  # Increased from 0.0015: filter marginal consolidations, reduce timeouts
+            if recent_range < 0.0040:  # Increased from 0.0030: further reduce timeout exits, target 55% WR
                 if s not in _cycle_prefilter_drops:
                     _cycle_prefilter_drops[s] = "DEAD_FLAT_CONSOLIDATION"
                 track_filtered()
