@@ -982,21 +982,31 @@ def metrics():
         # Load closed trades from database for fallback
         closed_trades_list = []
         try:
-            cursor2 = conn.cursor()
-            cursor2.execute("SELECT trade_id, symbol, entry_price, exit_price, pnl_pct, exit_reason, hold_s, exit_ts FROM trades ORDER BY exit_ts DESC LIMIT 50")
+            conn2 = sqlite3.connect("/opt/cryptomaster/local_learning_storage/learning_database.sqlite", timeout=2)
+            cursor2 = conn2.cursor()
+            cursor2.execute("SELECT trade_id, symbol, entry_price, exit_price, pnl_pct, pnl_usd, exit_reason, hold_s, entry_ts, exit_ts FROM trades ORDER BY exit_ts DESC LIMIT 30")
             for row in cursor2.fetchall():
+                entry_ts = row[8] if row[8] else time.time()
+                exit_ts = row[9] if row[9] else time.time()
+                exit_dt = datetime.fromtimestamp(exit_ts, tz=timezone.utc)
+                entry_dt = datetime.fromtimestamp(entry_ts, tz=timezone.utc)
                 closed_trades_list.append({
                     'trade_id': row[0],
                     'symbol': row[1],
-                    'entry_price': float(row[2]),
-                    'exit_price': float(row[3]),
-                    'pnl_pct': float(row[4]),
-                    'reason': row[5],
-                    'hold_s': float(row[6]) if row[6] else 0,
-                    'exit_time': int(row[7]) if row[7] else int(time.time())
+                    'side': 'BUY',  # Default, would need to be in DB schema for accuracy
+                    'entry_price': float(row[2]) if row[2] else 0,
+                    'exit_price': float(row[3]) if row[3] else 0,
+                    'pnl_pct': float(row[4]) if row[4] else 0,
+                    'pnl_usd': float(row[5]) if row[5] else 0,
+                    'exit_reason': row[6],
+                    'hold_s': int(row[7]) if row[7] else 0,
+                    'entry_timestamp': entry_dt.isoformat().replace('+00:00', 'Z'),
+                    'exit_timestamp': exit_dt.isoformat().replace('+00:00', 'Z')
                 })
-        except:
-            pass
+            conn2.close()
+        except Exception as e:
+            import sys
+            print(f"[DASHBOARD] Error loading trades: {e}", file=sys.stderr, flush=True)
         finally:
             try:
                 conn = sqlite3.connect("local_learning_storage/learning_database.sqlite", timeout=2)
