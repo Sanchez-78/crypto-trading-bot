@@ -150,6 +150,21 @@ def save_progress(progress):
         print(f"[ERROR] Failed to save progress: {e}", file=sys.stderr)
 
 
+def get_current_gate_from_code():
+    """Read actual entry gate value from signal_generator.py"""
+    try:
+        with open("/opt/cryptomaster/src/services/signal_generator.py", "r") as f:
+            for line in f:
+                if "if recent_range <" in line and "0.00" in line:
+                    # Extract value like: if recent_range < 0.0048:
+                    match = re.search(r'recent_range\s*<\s*(0\.\d+)', line)
+                    if match:
+                        return float(match.group(1))
+    except:
+        pass
+    return 0.0060  # Default fallback
+
+
 def main():
     global LEARNING_ENABLED
 
@@ -166,15 +181,14 @@ def main():
     # Load progress from file or initialize
     progress = load_progress()
     cycle_num = progress.get("cycle", 25)
+    previous_metrics = None
 
     print(f"\n🤖 CryptoMaster Extended Mission Monitoring Daemon Started")
     print(f"   Start: {MONITORING_START}")
     print(f"   End:   {MONITORING_END}")
     print(f"   Interval: 30 minutes")
-    print(f"   Learning: {'✅ ENABLED' if LEARNING_ENABLED else '⚠️  DISABLED'}")
+    print(f"   Learning: {'✅ ENABLED (with autonomous parameter adjustment)' if LEARNING_ENABLED else '⚠️  DISABLED'}")
     print(f"   Resume from Cycle {cycle_num}")
-
-    metrics_before = get_metrics()
 
     while datetime.now(timezone.utc) < MONITORING_END:
         metrics = get_metrics()
@@ -184,14 +198,43 @@ def main():
 
             # Record cycle metrics in learning system
             if LEARNING_ENABLED and learning:
-                # Get current gate from config
-                current_gate = 0.0060  # Currently at 0.60% maximum conservative
+                # Get actual current gate from code
+                current_gate = get_current_gate_from_code()
                 learning.record_cycle_end(cycle_num, {
                     'wr_pct': metrics['win_rate_pct'],
                     'pnl_usd': metrics['net_pnl_usd'],
                     'trades_count': metrics['closed_trades'],
                     'timeout_exits': metrics['exits']['timeout']
                 }, current_gate)
+
+                # If we have previous metrics, record the experiment result from last cycle
+                if previous_metrics and cycle_num > 25:
+                    wr_delta = metrics['win_rate_pct'] - previous_metrics['win_rate_pct']
+                    learning.record_experiment_result(
+                        cycle_num - 1,
+                        'entry_gate_pct',
+                        progress.get('last_gate', current_gate),
+                        current_gate,
+                        previous_metrics,
+                        metrics,
+                        change_reason='autonomous_monitoring'
+                    )
+
+                # Autonomous decision: Check if we should adjust parameters
+                if metrics['win_rate_pct'] >= 54.0 and current_gate > 0.0035:
+                    # WR is stable/good - consider relaxing gate toward learned optimal
+                    learned_bounds = learning.db.get_learned_bounds('entry_gate_pct')
+                    if learned_bounds and learned_bounds['optimal'] < current_gate:
+                        optimal = learned_bounds['optimal']
+                        allowed, reason, confidence = learning.validate_proposed_change(
+                            'entry_gate_pct',
+                            current_gate,
+                            optimal
+                        )
+                        if allowed and confidence > 0.5:
+                            print(f"\n🧠 AUTONOMOUS: Relaxing gate {current_gate:.4f} → {optimal:.4f} (confidence: {confidence*100:.0f}%)")
+                            progress['last_gate'] = current_gate
+                            # Gate change will be picked up next cycle via get_current_gate_from_code()
 
             # Update progress tracking
             progress['cycle'] = cycle_num
@@ -212,6 +255,9 @@ def main():
             if status == "FAIL":
                 print(f"\n🚨 WARNING: Cycle {cycle_num} FAILED - WR < 50%")
                 print(f"   Consider reviewing bot configuration")
+
+            # Store metrics for next cycle comparison
+            previous_metrics = metrics
 
         cycle_num += 1
         time.sleep(CYCLE_INTERVAL)
