@@ -1216,19 +1216,24 @@ def recent_trades():
             print(f"[DASHBOARD] Error parsing journalctl logs: {e}")
 
         # Fallback to database if journalctl parsing fails
+        # BUT ONLY RETURN TODAY'S TRADES (last 24 hours) to avoid stale data
         try:
+            from datetime import datetime, timezone, timedelta
             db_path = 'local_learning_storage/learning_database.sqlite'
             conn = sqlite3.connect(db_path, timeout=2)
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
 
+            # Only get trades from last 24 hours
+            cutoff_ts = time.time() - (24 * 3600)
             cursor.execute("""
                 SELECT trade_id, symbol, side, entry_price, exit_price,
                        entry_ts, exit_ts, pnl_pct, pnl_usd, exit_reason, hold_s
                 FROM trades
+                WHERE exit_ts > ?
                 ORDER BY exit_ts DESC
                 LIMIT 30
-            """)
+            """, (cutoff_ts,))
 
             for row in cursor.fetchall():
                 entry_ts = row['entry_ts']
@@ -1259,11 +1264,16 @@ def recent_trades():
                 })
 
             conn.close()
-            return jsonify(trades)
-        except:
-            pass
 
-        # Final fallback: return empty list
+            # If we have fresh trades from today, return them
+            if trades:
+                return jsonify(trades)
+        except Exception as e:
+            print(f"[DASHBOARD] Database fallback error: {e}")
+
+        # Final fallback: return empty list rather than stale data
+        # Better to show no trades than 6-day-old trades
+        print(f"[DASHBOARD] No fresh trades found in last 24h - returning empty list")
         return jsonify([])
 
     except Exception as e:
