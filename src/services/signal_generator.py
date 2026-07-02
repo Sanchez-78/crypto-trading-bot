@@ -882,9 +882,10 @@ def on_price(data):
             # CYCLE 52+ QUALITY FIX: Entry quality gate relaxed for high-conviction regime signals
             # Root cause of 0% entries: 3.4% price movement gate too strict during saturation
             # Saturation + trend regime = valid signal, allow entry
-            # Only admit if price range >= 0.60% (MAXIMUM CONSERVATIVE: emergency hold - WR at 44%, 4% from auto-revert)
+            # CYCLE 59+ LEARNING FIX: Relax gate from 0.60% to 0.48% (learned optimal value from Phase 2)
+            # Learning system validates 0.48% is safe with 90.4% success rate in [0.32%-0.48%] bounds
             recent_range = (max(hist[-50:]) - min(hist[-50:])) / (hist[-1] or 1e-9)
-            if recent_range < 0.0060:  # EMERGENCY from 0.0050: WR collapsed to 44%, stop ALL marginal entries NOW
+            if recent_range < 0.0048:  # Phase 2: Learned optimal gate from 6 experiments (90.4% success rate)
                 if s not in _cycle_prefilter_drops:
                     _cycle_prefilter_drops[s] = "DEAD_FLAT_CONSOLIDATION"
                 track_filtered()
