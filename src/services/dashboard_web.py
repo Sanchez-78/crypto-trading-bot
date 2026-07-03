@@ -39,14 +39,35 @@ def load_lifetime_metrics():
     return {"lifetime_n": 0, "lifetime_pf": 1.0, "lifetime_expectancy": 0.0}
 
 
-def get_live_metrics_from_cache():
-    """Read LIVE closed-trade metrics from cache.sqlite (the active sink).
+def _load_learning_state():
+    """Load the adaptive-learning JSON state (durable, survives restarts)."""
+    import json as _json
+    paths = [
+        "/opt/cryptomaster/server_local_backups/paper_adaptive_learning_state.json",
+        "server_local_backups/paper_adaptive_learning_state.json",
+    ]
+    for sp in paths:
+        try:
+            if os.path.exists(sp):
+                with open(sp) as f:
+                    return _json.load(f)
+        except Exception:
+            continue
+    return {}
 
-    The legacy `trades` table in learning_database.sqlite has had no writer
-    since commit 8abefe25 (2026-07-02) removed on_paper_trade_closed; it is
-    frozen at June-26 data. The live paper-close path writes to
-    local_persistent_cache -> cache.sqlite:closed_trades. Read that instead.
-    Returns a full metrics dict, or None to let the caller fall back.
+
+def get_live_metrics_from_cache():
+    """Return LIVE, restart-durable metrics for the dashboard/API.
+
+    Data-source strategy (never read the dead `trades` table):
+      * Headline WR / PF / lifetime_n / expectancy come from the adaptive
+        learning JSON state (durable across restarts).
+      * Per-session full trade detail (prices, exit_reason, USD pnl) comes from
+        cache.sqlite:closed_trades — the active close sink, but EPHEMERAL: it is
+        reset to empty on every bot restart.
+      * If cache.sqlite is empty (just restarted), the trade list is rebuilt
+        from the durable learning rolling window so the dashboard is never blank.
+    Returns a metrics dict, or None only if no live source exists at all.
     """
     import sqlite3
     from datetime import datetime, timezone
@@ -58,80 +79,107 @@ def get_live_metrics_from_cache():
             cache_path = 'local_learning_storage/cache.sqlite'
             pos_path = 'data/paper_open_positions.json'
 
-        if not os.path.exists(cache_path):
+        lifetime_metrics = load_lifetime_metrics()
+        state = _load_learning_state()
+        rolling = state.get('rolling100') or state.get('rolling50') or []
+        lifetime_n = int(lifetime_metrics.get('lifetime_n', 0) or 0)
+
+        # No durable source at all -> let caller use its legacy path.
+        if not rolling and lifetime_n == 0:
             return None
 
-        conn = sqlite3.connect(cache_path, timeout=2)
-        cur = conn.cursor()
+        def _pnl(e):
+            return e[0] if isinstance(e, (list, tuple)) and e and isinstance(e[0], (int, float)) else 0.0
 
-        cur.execute(
-            "SELECT COUNT(*), "
-            "SUM(CASE WHEN win=1 THEN 1 ELSE 0 END), "
-            "SUM(COALESCE(pnl_usd,0)), "
-            "SUM(CASE WHEN pnl_usd>0 THEN pnl_usd ELSE 0 END), "
-            "SUM(CASE WHEN pnl_usd<0 THEN pnl_usd ELSE 0 END) "
-            "FROM closed_trades"
-        )
-        total, wins, net_pnl, gp, gl = cur.fetchone() or (0, 0, 0, 0, 0)
-        total = int(total or 0)
-        if total == 0:
-            conn.close()
-            return None
-        wins = int(wins or 0)
-        net_pnl = float(net_pnl or 0)
-        gp = float(gp or 0)
-        gl = float(gl or 0)
-        win_rate = (wins / total * 100.0) if total else 0.0
-        profit_factor = (gp / abs(gl)) if gl < 0 else (1.0 if gp > 0 else 0.0)
+        def _outcome(e):
+            if isinstance(e, (list, tuple)):
+                for x in e:
+                    if isinstance(x, str) and x.upper() in ('WIN', 'LOSS', 'FLAT'):
+                        return x.upper()
+                return 'WIN' if _pnl(e) > 0 else 'LOSS'
+            return ''
 
+        roll_n = len(rolling)
+        roll_wins = sum(1 for e in rolling if _outcome(e) == 'WIN')
+        win_rate = (roll_wins / roll_n * 100.0) if roll_n else 0.0
+
+        # --- Per-session detail from cache.sqlite (may be empty after restart) ---
+        session_n = 0
+        session_net = 0.0
         exits = {'tp': 0, 'sl': 0, 'scratch': 0, 'stagnation': 0, 'timeout': 0}
-        for reason, cnt in cur.execute(
-            "SELECT LOWER(COALESCE(exit_reason,'')), COUNT(*) "
-            "FROM closed_trades GROUP BY LOWER(COALESCE(exit_reason,''))"
-        ):
-            if reason == 'tp':
-                exits['tp'] = cnt
-            elif reason == 'sl':
-                exits['sl'] = cnt
-            elif 'scratch' in reason:
-                exits['scratch'] += cnt
-            elif 'stag' in reason:
-                exits['stagnation'] += cnt
-            elif 'timeout' in reason:
-                exits['timeout'] += cnt
-
         closed_trades_list = []
-        for row in cur.execute(
-            "SELECT trade_id, symbol, entry_price, exit_price, pnl_usd, pnl_pct, "
-            "exit_reason, entry_ts, exit_ts, regime, win "
-            "FROM closed_trades ORDER BY exit_ts DESC LIMIT 30"
-        ):
-            tid, sym, ep, xp, pu, pp, reason, ets, xts, regime, win = row
-            ep = float(ep or 0)
-            xp = float(xp or 0)
-            if pp is None:
-                pp = ((xp / ep - 1.0) * 100.0) if ep else 0.0
-            ets = float(ets or 0)
-            xts = float(xts or 0)
-            closed_trades_list.append({
-                'trade_id': tid,
-                'symbol': sym,
-                'side': 'BUY',
-                'entry_price': ep,
-                'exit_price': xp,
-                'pnl_pct': float(pp or 0),
-                'pnl_usd': float(pu or 0),
-                'reason': reason,
-                'exit_reason': reason,
-                'hold_s': int(xts - ets) if (xts and ets) else 0,
-                'regime': regime or 'UNKNOWN',
-                'win': int(win or 0),
-                'exit_time': int(xts) if xts else 0,
-                'entry_timestamp': datetime.fromtimestamp(ets, tz=timezone.utc).isoformat().replace('+00:00', 'Z') if ets else '',
-                'exit_timestamp': datetime.fromtimestamp(xts, tz=timezone.utc).isoformat().replace('+00:00', 'Z') if xts else '',
-            })
-        conn.close()
+        if os.path.exists(cache_path):
+            try:
+                conn = sqlite3.connect(cache_path, timeout=2)
+                cur = conn.cursor()
+                row = cur.execute(
+                    "SELECT COUNT(*), SUM(COALESCE(pnl_usd,0)) FROM closed_trades"
+                ).fetchone() or (0, 0)
+                session_n = int(row[0] or 0)
+                session_net = float(row[1] or 0)
+                for reason, cnt in cur.execute(
+                    "SELECT LOWER(COALESCE(exit_reason,'')), COUNT(*) "
+                    "FROM closed_trades GROUP BY LOWER(COALESCE(exit_reason,''))"
+                ):
+                    if reason == 'tp':
+                        exits['tp'] = cnt
+                    elif reason == 'sl':
+                        exits['sl'] = cnt
+                    elif 'scratch' in reason:
+                        exits['scratch'] += cnt
+                    elif 'stag' in reason:
+                        exits['stagnation'] += cnt
+                    elif 'timeout' in reason:
+                        exits['timeout'] += cnt
+                for r in cur.execute(
+                    "SELECT trade_id, symbol, entry_price, exit_price, pnl_usd, pnl_pct, "
+                    "exit_reason, entry_ts, exit_ts, regime, win "
+                    "FROM closed_trades ORDER BY exit_ts DESC LIMIT 30"
+                ):
+                    tid, sym, ep, xp, pu, pp, reason, ets, xts, regime, win = r
+                    ep = float(ep or 0)
+                    xp = float(xp or 0)
+                    if pp is None:
+                        pp = ((xp / ep - 1.0) * 100.0) if ep else 0.0
+                    ets = float(ets or 0)
+                    xts = float(xts or 0)
+                    closed_trades_list.append({
+                        'trade_id': tid, 'symbol': sym, 'side': 'BUY',
+                        'entry_price': ep, 'exit_price': xp,
+                        'pnl_pct': float(pp or 0), 'pnl_usd': float(pu or 0),
+                        'reason': reason, 'exit_reason': reason,
+                        'hold_s': int(xts - ets) if (xts and ets) else 0,
+                        'regime': regime or 'UNKNOWN', 'win': int(win or 0),
+                        'exit_time': int(xts) if xts else 0,
+                        'entry_timestamp': datetime.fromtimestamp(ets, tz=timezone.utc).isoformat().replace('+00:00', 'Z') if ets else '',
+                        'exit_timestamp': datetime.fromtimestamp(xts, tz=timezone.utc).isoformat().replace('+00:00', 'Z') if xts else '',
+                    })
+                conn.close()
+            except Exception:
+                pass
 
+        # --- Fallback list from durable rolling window (cache empty post-restart) ---
+        if not closed_trades_list and rolling:
+            for e in reversed(rolling[-30:]):
+                if not isinstance(e, (list, tuple)) or len(e) < 3:
+                    continue
+                seg = next((x for x in e if isinstance(x, str) and ':' in x), '::')
+                parts = seg.split(':')
+                ts = next((x for x in e if isinstance(x, (int, float)) and x > 1e9), 0)
+                outcome = _outcome(e)
+                closed_trades_list.append({
+                    'trade_id': '', 'symbol': parts[0] if parts else '?', 'side': parts[2] if len(parts) > 2 else 'BUY',
+                    'entry_price': 0, 'exit_price': 0,
+                    'pnl_pct': round(_pnl(e), 4), 'pnl_usd': 0.0,
+                    'reason': outcome, 'exit_reason': outcome,
+                    'hold_s': 0, 'regime': parts[1] if len(parts) > 1 else 'UNKNOWN',
+                    'win': 1 if outcome == 'WIN' else 0,
+                    'exit_time': int(ts),
+                    'entry_timestamp': '',
+                    'exit_timestamp': datetime.fromtimestamp(ts, tz=timezone.utc).isoformat().replace('+00:00', 'Z') if ts else '',
+                })
+
+        # --- Open positions ---
         open_positions_list = []
         try:
             import json as _json
@@ -142,49 +190,46 @@ def get_live_metrics_from_cache():
             for pid, p in iterable:
                 ets = float(p.get('entry_ts', now_ts))
                 open_positions_list.append({
-                    'trade_id': str(pid)[:12],
-                    'symbol': p.get('symbol', 'N/A'),
+                    'trade_id': str(pid)[:12], 'symbol': p.get('symbol', 'N/A'),
                     'side': p.get('side', 'BUY'),
                     'entry_price': float(p.get('entry_price', 0)),
                     'current_price': float(p.get('last_price', p.get('entry_price', 0))),
-                    'tp': float(p.get('tp', 0)),
-                    'sl': float(p.get('sl', 0)),
-                    'entry_ts': ets,
-                    'age_seconds': int(now_ts - ets),
+                    'tp': float(p.get('tp', 0)), 'sl': float(p.get('sl', 0)),
+                    'entry_ts': ets, 'age_seconds': int(now_ts - ets),
                     'current_hold_s': int(now_ts - ets),
                     'regime': p.get('regime', 'N/A'),
                     'size_usd': float(p.get('size_usd', 0.5)),
-                    'pnl_pct': 0.0,
-                    'status': 'OPEN',
+                    'pnl_pct': 0.0, 'status': 'OPEN',
                     'entry_timestamp': datetime.fromtimestamp(ets, tz=timezone.utc).isoformat().replace('+00:00', 'Z'),
                 })
         except Exception:
             pass
 
-        lifetime_metrics = load_lifetime_metrics()
         iso = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
         return {
-            'closed_trades': total,
-            'lifetime_closed_trades': lifetime_metrics['lifetime_n'],
+            'closed_trades': lifetime_n,
+            'session_closed_trades': session_n,
+            'lifetime_closed_trades': lifetime_n,
             'open_positions': len(open_positions_list),
             'open_positions_list': open_positions_list,
             'closed_trades_list': closed_trades_list,
-            'profit_factor': round(profit_factor, 3),
+            'profit_factor': round(float(lifetime_metrics.get('lifetime_pf', 0.0) or 0.0), 3),
             'win_rate_pct': round(win_rate, 2),
-            'net_pnl': round(net_pnl, 6),
+            'win_rate_window': roll_n,
+            'net_pnl': round(session_net, 6),
             'exit_distribution': exits,
             'timestamp': iso,
             'last_update': iso,
-            'data_source': 'cache.sqlite_live',
+            'data_source': 'learning_state+cache.sqlite',
             'lifetime_metrics': {
-                'lifetime_n': lifetime_metrics['lifetime_n'],
-                'lifetime_pf': lifetime_metrics['lifetime_pf'],
-                'lifetime_expectancy': lifetime_metrics['lifetime_expectancy'],
+                'lifetime_n': lifetime_n,
+                'lifetime_pf': lifetime_metrics.get('lifetime_pf', 0.0),
+                'lifetime_expectancy': lifetime_metrics.get('lifetime_expectancy', 0.0),
             },
         }
     except Exception as e:
         import sys
-        print(f"[DASHBOARD] live cache read failed: {e}", file=sys.stderr, flush=True)
+        print(f"[DASHBOARD] live metrics read failed: {e}", file=sys.stderr, flush=True)
         return None
 
 # Start readiness monitoring (will auto-start background thread)
