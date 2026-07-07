@@ -2787,7 +2787,11 @@ def calibrate_paper_training_geometry(
         # Evidence: 38/38 TP exits losses, WR 0%, P&L -$6.45 (30-min window 2026-06-22).
         tp_floor_pct = tp_zone_bps / 100.0  # e.g. 35 bps → 0.35%
         tp_cap_pct = 1.50      # Maximum 1.5% (vs 0.45% for training)
-        sl_default_pct = 0.80  # INCREASED SL 0.60% → 0.80% (was too tight)
+        # 2026-07-07: env-drive SL so PAPER_SL_ZONE_BPS actually takes effect for
+        # paper_live positions (was hardcoded 0.80, which silently ignored the env
+        # band and made the swing-horizon experiment run TP70/SL80 instead of 70/50).
+        # Default 80 preserves prior behaviour when the env var is unset.
+        sl_default_pct = int(os.getenv("PAPER_SL_ZONE_BPS", "80")) / 100.0
     else:  # paper_train
         tp_floor_pct = fee_drag_pct + 0.03  # ~0.21%
         tp_cap_pct = 2.50      # V10.21: Increased from 0.45% to allow 2.5% TP targets
