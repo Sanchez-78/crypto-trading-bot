@@ -216,7 +216,7 @@ _PIPELINE_LAST_SUMMARY_TS = [0.0]
 _PIPELINE_STALL_THRESHOLD_S = 600.0  # 10 minutes without new entries
 
 FEE_RT      = 0.0015    # 0.15% round-trip (Binance taker 0.075%×2)
-MIN_TP_PCT  = 0.006     # V10.47: 0.60% min TP (60 bps) — matches observed market moves in 400s hold windows, consistent with paper_trade_executor defaults
+MIN_TP_PCT  = 0.0020    # 2026-07-03: reverted V10.47's 60bps floor — it was 5x the realized ~12bps/20min move → 100% TIMEOUT regression (June ran TP:48/SL:29/TIMEOUT:9). 20bps sits just above the 18bps cost floor (cycle-27: never below cost) and lets the learned TP (15-26bps) flow through max(learned,MIN) at :1100.
 MIN_SL_PCT  = 0.003     # V10.27: 0.30% min SL — sized to the 180s window, clears ~0.15% round-trip cost
 FLUSH_EVERY              = 15   # lowered 60→15s: with 60s window up to 14 trades
                                  # were lost on Railway restart (BATCH not flushed
