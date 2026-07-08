@@ -1396,6 +1396,47 @@ def recent_trades():
 
         trades = []
 
+        # PRIMARY: cache.sqlite closed_trades — the restart-durable live sink that
+        # carries REAL entry/exit prices and REAL exit reasons (TP/SL/TIMEOUT/
+        # SCRATCH/STAGNATION). Prefer it over the in-memory cache / journal / rolling
+        # fallbacks below, which have no prices or only WIN/LOSS/FLAT outcomes.
+        try:
+            cache_path = ('/opt/cryptomaster/local_learning_storage/cache.sqlite'
+                          if os.path.exists('/opt/cryptomaster')
+                          else 'local_learning_storage/cache.sqlite')
+            if os.path.exists(cache_path):
+                conn = sqlite3.connect(cache_path, timeout=2)
+                cur = conn.cursor()
+                cache_trades = []
+                for r in cur.execute(
+                    "SELECT trade_id, symbol, entry_price, exit_price, pnl_usd, "
+                    "pnl_pct, exit_reason, entry_ts, exit_ts, regime, win "
+                    "FROM closed_trades ORDER BY exit_ts DESC LIMIT 30"
+                ):
+                    tid, sym, ep, xp, pu, pp, reason, ets, xts, regime, win = r
+                    ep = float(ep or 0)
+                    xp = float(xp or 0)
+                    if pp is None:
+                        pp = ((xp / ep - 1.0) * 100.0) if ep else 0.0
+                    ets = float(ets or 0)
+                    xts = float(xts or 0)
+                    cache_trades.append({
+                        'trade_id': tid or '', 'symbol': sym, 'side': 'BUY',
+                        'entry_price': ep, 'exit_price': xp,
+                        'pnl_pct': float(pp or 0), 'pnl_usd': float(pu or 0),
+                        'reason': reason or 'UNKNOWN', 'exit_reason': reason or 'UNKNOWN',
+                        'regime': regime or 'UNKNOWN', 'win': int(win or 0),
+                        'hold_s': int(xts - ets) if (xts and ets) else 0,
+                        'exit_time': int(xts) if xts else 0,
+                        'entry_ts': datetime.fromtimestamp(ets, tz=timezone.utc).isoformat().replace('+00:00', 'Z') if ets else '',
+                        'exit_ts': datetime.fromtimestamp(xts, tz=timezone.utc).isoformat().replace('+00:00', 'Z') if xts else '',
+                    })
+                conn.close()
+                if cache_trades:
+                    return jsonify(cache_trades)
+        except Exception:
+            pass
+
         # FIRST: Try to get trades from real-time cache (most reliable)
         try:
             from src.services.recent_trades_cache import get_recent_trades
