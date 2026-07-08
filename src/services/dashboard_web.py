@@ -56,6 +56,51 @@ def _load_learning_state():
     return {}
 
 
+def _closed_trades_from_rolling(rolling, limit=30):
+    """Build a closed-trades list from the durable learning rolling window.
+
+    Rolling entries look like:
+        [pnl_pct, "WIN"/"LOSS"/"FLAT", "SYMBOL:REGIME:SIDE", ts, source, bucket]
+    This window survives bot restarts (unlike cache.sqlite / journald), so it is
+    the fallback used when the ephemeral session sink is empty. Exit-reason is NOT
+    stored here, so we honestly surface the WIN/LOSS/FLAT outcome as the reason
+    rather than inventing a TP/SL split.
+    """
+    from datetime import datetime, timezone
+    out = []
+    try:
+        for e in reversed(list(rolling)[-limit:]):
+            if not isinstance(e, (list, tuple)) or len(e) < 3:
+                continue
+            pnl = e[0] if isinstance(e[0], (int, float)) else 0.0
+            outcome = ''
+            for x in e:
+                if isinstance(x, str) and x.upper() in ('WIN', 'LOSS', 'FLAT'):
+                    outcome = x.upper()
+                    break
+            if not outcome:
+                outcome = 'WIN' if pnl > 0 else 'LOSS'
+            seg = next((x for x in e if isinstance(x, str) and ':' in x), '::')
+            parts = seg.split(':')
+            ts = next((x for x in e if isinstance(x, (int, float)) and x > 1e9), 0)
+            exit_iso = datetime.fromtimestamp(ts, tz=timezone.utc).isoformat().replace('+00:00', 'Z') if ts else ''
+            out.append({
+                'trade_id': '', 'symbol': parts[0] if parts and parts[0] else '?',
+                'side': parts[2] if len(parts) > 2 else 'BUY',
+                'entry_price': 0, 'exit_price': 0,
+                'pnl_pct': round(float(pnl), 4), 'pnl_usd': 0.0,
+                'reason': outcome, 'exit_reason': outcome,
+                'hold_s': 0, 'regime': parts[1] if len(parts) > 1 else 'UNKNOWN',
+                'win': 1 if outcome == 'WIN' else 0,
+                'exit_time': int(ts),
+                'entry_ts': '', 'entry_timestamp': '',
+                'exit_ts': exit_iso, 'exit_timestamp': exit_iso,
+            })
+    except Exception:
+        pass
+    return out
+
+
 def get_live_metrics_from_cache():
     """Return LIVE, restart-durable metrics for the dashboard/API.
 
@@ -160,24 +205,18 @@ def get_live_metrics_from_cache():
 
         # --- Fallback list from durable rolling window (cache empty post-restart) ---
         if not closed_trades_list and rolling:
-            for e in reversed(rolling[-30:]):
-                if not isinstance(e, (list, tuple)) or len(e) < 3:
-                    continue
-                seg = next((x for x in e if isinstance(x, str) and ':' in x), '::')
-                parts = seg.split(':')
-                ts = next((x for x in e if isinstance(x, (int, float)) and x > 1e9), 0)
-                outcome = _outcome(e)
-                closed_trades_list.append({
-                    'trade_id': '', 'symbol': parts[0] if parts else '?', 'side': parts[2] if len(parts) > 2 else 'BUY',
-                    'entry_price': 0, 'exit_price': 0,
-                    'pnl_pct': round(_pnl(e), 4), 'pnl_usd': 0.0,
-                    'reason': outcome, 'exit_reason': outcome,
-                    'hold_s': 0, 'regime': parts[1] if len(parts) > 1 else 'UNKNOWN',
-                    'win': 1 if outcome == 'WIN' else 0,
-                    'exit_time': int(ts),
-                    'entry_timestamp': '',
-                    'exit_timestamp': datetime.fromtimestamp(ts, tz=timezone.utc).isoformat().replace('+00:00', 'Z') if ts else '',
-                })
+            closed_trades_list = _closed_trades_from_rolling(rolling, 30)
+
+        # --- Honest exit_distribution fallback when the session sink is empty ---
+        # cache.sqlite (ephemeral) is the only source of TP/SL/timeout reasons; it
+        # is wiped on every bot restart. The durable rolling window carries only
+        # WIN/LOSS/FLAT outcomes, so surface those counts rather than leaving the
+        # chart all-zeros. We do NOT fabricate a TP/SL split we don't have.
+        if session_n == 0 and rolling:
+            exits['win'] = sum(1 for e in rolling if _outcome(e) == 'WIN')
+            exits['loss'] = sum(1 for e in rolling if _outcome(e) == 'LOSS')
+            exits['flat'] = sum(1 for e in rolling if _outcome(e) == 'FLAT')
+            exits['basis'] = 'outcome'  # marks reasons unavailable, only win/loss known
 
         # --- Open positions ---
         open_positions_list = []
@@ -826,19 +865,28 @@ HTML_TEMPLATE = r"""
             if (exitChart) exitChart.destroy();
 
             const exits = data.exit_distribution || {};
+            // Prefer the TP/SL/timeout reason split (from the live session sink).
+            // After a bot restart that sink is empty; fall back to the durable
+            // WIN/LOSS/FLAT outcome counts so the chart is honest, not blank.
+            const reasonTotal = (exits.timeout || 0) + (exits.tp || 0) + (exits.sl || 0)
+                + (exits.scratch || 0) + (exits.stagnation || 0);
+            let exitLabels, exitData, exitColors;
+            if (reasonTotal > 0) {
+                exitLabels = ['Timeout', 'TP', 'SL', 'Scratch', 'Stagnation'];
+                exitData = [exits.timeout || 0, exits.tp || 0, exits.sl || 0, exits.scratch || 0, exits.stagnation || 0];
+                exitColors = ['#1e90ff', '#00ff00', '#ff4444', '#ffaa00', '#ff00ff'];
+            } else {
+                exitLabels = ['Wins', 'Losses', 'Flat'];
+                exitData = [exits.win || 0, exits.loss || 0, exits.flat || 0];
+                exitColors = ['#00ff00', '#ff4444', '#888888'];
+            }
             exitChart = new Chart(exitCtx, {
                 type: 'doughnut',
                 data: {
-                    labels: ['Timeout', 'TP', 'SL', 'Scratch', 'Stagnation'],
+                    labels: exitLabels,
                     datasets: [{
-                        data: [
-                            exits.timeout || 0,
-                            exits.tp || 0,
-                            exits.sl || 0,
-                            exits.scratch || 0,
-                            exits.stagnation || 0
-                        ],
-                        backgroundColor: ['#1e90ff', '#00ff00', '#ff4444', '#ffaa00', '#ff00ff'],
+                        data: exitData,
+                        backgroundColor: exitColors,
                         borderColor: '#0a0e27',
                         borderWidth: 2
                     }]
@@ -1487,6 +1535,19 @@ def recent_trades():
                 return jsonify(trades)
         except Exception as e:
             print(f"[DASHBOARD] Database fallback error: {e}")
+
+        # DURABLE FALLBACK: the learning rolling window survives bot restarts,
+        # whereas cache.sqlite, the runtime cache and journald are all wiped/rotated
+        # on restart. Rebuild the list from it so the table is never blank after a
+        # restart (exit_reason is not stored there, so we show WIN/LOSS/FLAT).
+        try:
+            state = _load_learning_state()
+            rolling = state.get('rolling100') or state.get('rolling50') or []
+            rows = _closed_trades_from_rolling(rolling, 30)
+            if rows:
+                return jsonify(rows)
+        except Exception as e:
+            print(f"[DASHBOARD] rolling-window fallback error: {e}")
 
         # Final fallback: return empty list rather than stale data
         # Better to show no trades than 6-day-old trades
