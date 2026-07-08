@@ -20,3 +20,5 @@ src/runtime/v5_quota_usage.sqlite
 data/research/
 logs_extracted_tmp/
 .claude/worktrees/
+local_learning_storage/cache.sqlite
+runtime/firebase_cache.sqlite
