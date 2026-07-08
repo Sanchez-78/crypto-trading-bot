@@ -445,6 +445,14 @@ def _get_scored_edge(hist, e50, e200, breakout_up, breakout_down, mom5, reg, reg
         else:
             action = None
 
+    # 2026-07-08: env-gated MEAN-REVERSION test (PAPER_INVERT_SIGNAL). The bot's
+    # ~27% overall WR (trend-following BUY 7% / SELL 76% in a falling window)
+    # suggests lagging trend-following buys tops / sells bottoms in a mean-reverting
+    # market. Fade the regime instead: flip the side, keep the conviction (base_score).
+    # Pure direction test — measures whether WR flips >50%. Default off = no change.
+    if action is not None and os.getenv("PAPER_INVERT_SIGNAL", "false").lower() == "true":
+        action = "SELL" if action == "BUY" else "BUY"
+
     # Gate 2b: Reject if no action passed regime/score gates
     if action is None:
         if symbol and reg == "BULL_TREND":
