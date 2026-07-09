@@ -345,8 +345,11 @@ def start():
             # the heartbeat (they send a ping every ~3 min; websocket-client
             # auto-responds). Client-side pings with a 10s timeout triggered
             # false disconnects whenever Hetzner→Binance RTT spiked briefly.
-            print(f"📡 Calling ws.run_forever() (ping_interval=0, server-driven heartbeat)...", file=sys.stderr, flush=True)
-            ws.run_forever(ping_interval=0)
+            # 2026-07-09: ping_interval=0 (no client keepalive) left stalled/half-open
+            # sockets undetected. Tolerant keepalive (180s/60s) recovers true stalls
+            # while surviving Hetzner↔Binance RTT spikes that a short ping would false-trip.
+            print(f"📡 Calling ws.run_forever() (ping_interval=180, ping_timeout=60)...", file=sys.stderr, flush=True)
+            ws.run_forever(ping_interval=180, ping_timeout=60)
             print(f"📡 ws.run_forever() returned (closed)", file=sys.stderr, flush=True)
         except Exception as e:
             print(f"⚠️  WebSocket exception (attempt #{connection_attempts}): {type(e).__name__}: {e}", file=sys.stderr, flush=True)

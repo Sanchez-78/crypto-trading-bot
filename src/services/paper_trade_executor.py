@@ -64,6 +64,11 @@ _FEE_PCT = float(os.getenv("PAPER_FEE_PCT", "0.0015"))  # 0.15% round-trip
 _SLIPPAGE_PCT = float(os.getenv("PAPER_SLIPPAGE_PCT", "0.0003"))  # 0.03%
 _MAX_OPEN = int(os.getenv("PAPER_MAX_OPEN_POSITIONS", "5"))  # Increased to allow more diversification
 _MAX_AGE_S = float(os.getenv("PAPER_MAX_POSITION_AGE_S", "1200"))  # CYCLE 31: Increased to 1200s (20 min) to reach TP in low volatility (was 600s)
+# 2026-07-09: the per-tick [TP_SL_EVAL] log.warning ran on the WebSocket receive
+# thread at ~325 lines/s, saturating it → Binance dropped the slow consumer every
+# ~2 min (feed reconnect churn / near-frozen prices). Gate it behind a debug flag
+# (default OFF) so the price feed stays healthy. Set PAPER_DEBUG_TP_SL_EVAL=1 to re-enable.
+_DEBUG_TP_SL_EVAL = os.getenv("PAPER_DEBUG_TP_SL_EVAL", "") == "1"
 _MIN_EV_THRESHOLD = float(os.getenv("PAPER_MIN_EV_THRESHOLD", "0.01"))  # V10.26 FIX: Block zero-EV trades (was 0.0, allowing random entries)
 _MIN_SEGMENT_PF = float(os.getenv("PAPER_MIN_SEGMENT_PF", "0.0"))  # AGGRESSIVE: No segment PF gating
 _TIME_BASED_FILTERING = os.getenv("PAPER_TIME_BASED_FILTERING", "false").lower() == "true"  # AGGRESSIVE: No time gating
@@ -2012,11 +2017,13 @@ def update_paper_positions(
             if side == "BUY":
                 tp_hit = current_price >= pos["tp"]
                 sl_hit = current_price <= pos["sl"]
-                log.warning(f"[TP_SL_EVAL_BUY] {symbol} curr={current_price:.8f} >= tp={pos['tp']:.8f}? {tp_hit} | curr <= sl={pos['sl']:.8f}? {sl_hit}")
+                if _DEBUG_TP_SL_EVAL:
+                    log.warning(f"[TP_SL_EVAL_BUY] {symbol} curr={current_price:.8f} >= tp={pos['tp']:.8f}? {tp_hit} | curr <= sl={pos['sl']:.8f}? {sl_hit}")
             else:  # SELL
                 tp_hit = current_price <= pos["tp"]
                 sl_hit = current_price >= pos["sl"]
-                log.warning(f"[TP_SL_EVAL_SELL] {symbol} curr={current_price:.8f} <= tp={pos['tp']:.8f}? {tp_hit} | curr >= sl={pos['sl']:.8f}? {sl_hit}")
+                if _DEBUG_TP_SL_EVAL:
+                    log.warning(f"[TP_SL_EVAL_SELL] {symbol} curr={current_price:.8f} <= tp={pos['tp']:.8f}? {tp_hit} | curr >= sl={pos['sl']:.8f}? {sl_hit}")
 
             if tp_hit or sl_hit:
                 log.info(f"[TP_SL_HIT] {symbol} side={side} tp_hit={tp_hit} sl_hit={sl_hit}")
