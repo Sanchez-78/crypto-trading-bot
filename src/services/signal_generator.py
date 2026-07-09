@@ -636,6 +636,15 @@ def on_price(data):
         _first_run = False
 
     s, p = data["symbol"], data["price"]
+    # 2026-07-09: env-gated symbol blacklist (forward test). Symbol-filter analysis
+    # of the inverted (mean-reversion) strategy showed BNB/XRP have anti-edge while
+    # ETH/ADA/SOL/BTC show DA~62% (95% CI lower bound 54% > 50%). Skip blacklisted
+    # symbols to forward-test whether the filtered edge holds out-of-sample. The
+    # in-sample split is post-hoc, so this is validation, not a confirmed edge.
+    # Default empty = no change.
+    _bl = os.getenv("PAPER_SYMBOL_BLACKLIST", "")
+    if _bl and s in _bl.split(","):
+        return
     obi  = data.get("obi", 0.0)
 
     # V10.13d: Track market data freshness and tick arrival
