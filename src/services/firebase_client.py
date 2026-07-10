@@ -95,8 +95,8 @@ _is_new_day = (_midnight_utc - datetime.timedelta(hours=24)) < _now_utc <= _midn
 _QUOTA_WINDOW_START = time.time()  # Midnight UTC of current quota day
 _QUOTA_READS = 0 if _is_new_day else 0    # Reset if crossed midnight
 _QUOTA_WRITES = 0 if _is_new_day else 0   # Reset if crossed midnight
-_QUOTA_MAX_READS = 40000   # Daily limit: 40,000 reads
-_QUOTA_MAX_WRITES = 15000  # Daily limit: 15,000 writes
+_QUOTA_MAX_READS = int(os.getenv("FIREBASE_QUOTA_MAX_READS", "50000"))   # Daily limit: 50,000 reads = real Firebase free-tier ceiling (was 40,000; raised to real max 2026-07-10). Blaze (paid) needed to exceed.
+_QUOTA_MAX_WRITES = int(os.getenv("FIREBASE_QUOTA_MAX_WRITES", "20000"))  # Daily limit: 20,000 writes = real Firebase free-tier ceiling (was 15,000; raised to real max 2026-07-10). Blaze (paid) needed to exceed.
 
 # EMERGENCY (2026-04-25): Firebase degradation tracking — safe mode on 429/unavailable
 _FIREBASE_READ_DEGRADED = False
@@ -144,7 +144,7 @@ def _reset_quota_if_new_day():
             _QUOTA_READS = 0
             _QUOTA_WRITES = 0
         import logging
-        logging.warning("[QUOTA_RESET] Firebase quota reset to 40k reads, 15k writes (passed 07:00 UTC)")
+        logging.warning(f"[QUOTA_RESET] Firebase quota reset to {_QUOTA_MAX_READS:,} reads, {_QUOTA_MAX_WRITES:,} writes (passed 07:00 UTC)")
     else:
         # Debug log to understand quota state
         import logging
