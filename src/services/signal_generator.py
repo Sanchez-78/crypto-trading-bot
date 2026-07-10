@@ -48,6 +48,7 @@ _rsi_full_hist = {}   # symbol -> list[float], rolling RSI series for divergence
 _obi_hist      = {}   # symbol -> list[float], rolling OBI for z-score normalization
 _price_z_hist  = {}   # symbol -> list[float], rolling 20-price window for Z-score
 _first_run = True  # V10.27 CYCLE 24 FIX: Flag to clear stale history on service restart
+_dev_price_hist = {}  # symbol -> list[(ts, price)] for the DEV_FADE trailing-deviation gate
 
 # ── V10.13d: Per-cycle signal generation tracking ──────────────────────────────
 _cycle_ticks          = 0          # fresh ticks received this cycle
@@ -69,6 +70,30 @@ DEBOUNCE_S   = 15    # seconds between signals per symbol (was 30 — halved to
                       # double evaluation throughput; portfolio gate caps execution rate)
 SIDE_WINDOW  = 10    # signals to track for side balance
 SIDE_MAX_PCT = 0.60  # penalise if > 60% one side
+
+# ── DEV_FADE: validated mean-reversion strategy (2026-07-10) ────────────────────
+# Fade moves > _DEV_GATE_BPS over a _DEV_LOOKBACK_S window (mean-reversion at the
+# 5-15 min horizon). Evidence: recorder replay 21.6h ETH/SOL/ADA showed short-horizon
+# (<3 min) price is a random walk (DA~50%, no edge — the bot's historical failure mode),
+# while >25 bps deviations revert over ~15 min. Honest maker fill sim (adverse selection
+# modelled) + OOS held-out 6 h: gross +7.4/+10.5 bps (lo95 +5.0/+6.2), DA ~63%, net
+# +3.4/+6.5 bps at futures-maker cost (~4 bps rt). Env-gated (default OFF); safe to ship.
+_DEV_FADE       = os.getenv("PAPER_DEVIATION_FADE", "false").lower() == "true"
+_DEV_GATE_BPS   = float(os.getenv("PAPER_DEV_GATE_BPS", "25"))
+_DEV_LOOKBACK_S = float(os.getenv("PAPER_DEV_LOOKBACK_S", "900"))
+
+
+def _trailing_dev_bps(sym, now):
+    """Price change (bps) over the trailing _DEV_LOOKBACK_S window, or None if the
+    per-symbol history does not yet span the window. Drives the DEV_FADE gate."""
+    h = _dev_price_hist.get(sym)
+    if not h or h[0][0] > now - _DEV_LOOKBACK_S:
+        return None  # history does not yet span the lookback
+    cutoff = now - _DEV_LOOKBACK_S
+    ref = next((px for ts, px in h if ts >= cutoff), None)
+    if not ref:
+        return None
+    return (h[-1][1] - ref) / ref * 10000.0
 
 
 # ── Indicators ────────────────────────────────────────────────────────────────
@@ -663,6 +688,15 @@ def on_price(data):
         hist.pop(0)         # was 600 (20 min) — EMA(200) and HTF EMA(150) now
                             # have 3× more data to converge; HTF trend detection
 
+    # DEV_FADE: maintain a time-indexed price ring (tick rate varies, so the
+    # deviation gate must be time-based, not tick-count-based).
+    if _DEV_FADE:
+        dh = _dev_price_hist.setdefault(s, [])
+        dh.append((now, p))
+        _cut = now - _DEV_LOOKBACK_S - 60
+        while dh and dh[0][0] < _cut:
+            dh.pop(0)
+
     if len(hist) < MIN_TICKS:
         if s not in _cycle_prefilter_drops:
             _cycle_prefilter_drops[s] = "INDICATORS_NOT_READY"
@@ -785,6 +819,24 @@ def on_price(data):
 
     base_sc, w_sc, action, edge, edge_features, explore = _get_scored_edge(
         hist, e50, e200, breakout_up, breakout_down, mom5, reg, regime_conf, symbol=s)
+
+    # ── DEV_FADE override: validated mean-reversion gate (2026-07-10) ─────────
+    # When enabled, this supersedes the trend/forced candidate logic entirely:
+    # only fire on >gate deviations, always fade them. Sub-gate ticks (the bot's
+    # historical noise trades) are suppressed. action is set non-None here, so the
+    # downstream `if action is None` forced-explore block is skipped naturally.
+    if _DEV_FADE:
+        dev_bps = _trailing_dev_bps(s, now)
+        if dev_bps is None or abs(dev_bps) < _DEV_GATE_BPS:
+            if s not in _cycle_prefilter_drops:
+                _cycle_prefilter_drops[s] = "DEV_FADE_NO_DEVIATION"
+            track_filtered()
+            return
+        action = "SELL" if dev_bps > 0 else "BUY"   # fade the move (mean-reversion)
+        edge = "DEV_FADE"
+        edge_features = {"dev_bps": round(dev_bps, 1)}
+        explore = False
+        base_sc, w_sc = 5.0, 1.0
 
     # P0.5D: Log AFTER _get_scored_edge — what did it return?
     call_ts = time.time()
