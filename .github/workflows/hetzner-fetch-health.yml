@@ -220,6 +220,26 @@ jobs:
           ' 2>&1 || echo '(metrics aggregation failed)'
           " > artifacts/trading_metrics.txt
 
+          # ── cache.sqlite direct probe (write-path vs read-path diagnosis) ─
+          ssh $SSH_OPTS "$HETZNER_USER@$HETZNER_HOST" "
+            python3 - <<'PYEOF'
+          import sqlite3, datetime
+          db = '$HETZNER_PROJECT_DIR/local_learning_storage/cache.sqlite'
+          try:
+              conn = sqlite3.connect(f'file:{db}?mode=ro', uri=True, timeout=5)
+              c = conn.cursor()
+              c.execute('SELECT COUNT(*) FROM closed_trades')
+              print('total rows:', c.fetchone()[0])
+              c.execute('SELECT trade_id, symbol, side, exit_ts, pnl_pct, win, exit_reason FROM closed_trades ORDER BY exit_ts DESC LIMIT 6')
+              for r in c.fetchall():
+                  ts = datetime.datetime.utcfromtimestamp(r[3]).isoformat() if r[3] else '?'
+                  print(ts, r[1], r[2], 'pnl_pct:', r[4], 'win:', r[5], r[6], r[0])
+              conn.close()
+          except Exception as e:
+              print('cache.sqlite probe failed:', e)
+          PYEOF
+          " > artifacts/cache_sqlite_probe.txt 2>&1 || echo 'probe ssh failed' >> artifacts/cache_sqlite_probe.txt
+
       # ── 3. Print mobile-readable summary ──────────────────────────────────
       - name: Print mobile summary
         run: |
