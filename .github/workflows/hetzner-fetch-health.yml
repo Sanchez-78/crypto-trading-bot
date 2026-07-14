@@ -102,6 +102,35 @@ jobs:
             systemctl list-timers '*-autodeploy.timer' --no-pager 2>&1 || true
           " > artifacts/service_status.txt
 
+          # ── Firebase quota forensics (last 26h, targeted grep) ────────────
+          # The raw tail is useless during log floods; grep the quota lifecycle
+          # events directly so 429s vs. genuine read storms are distinguishable.
+          ssh $SSH_OPTS "$HETZNER_USER@$HETZNER_HOST" "
+            journalctl -u '$HETZNER_SERVICE_NAME' --since '26 hours ago' --no-pager -o short-iso 2>/dev/null \
+              | grep -E 'QUOTA_RESET|QUOTA_DEBUG|QUOTA_HARD_GATE|QUOTA_SOFT_GATE|QUOTA_CRITICAL|QUOTA_WARNING|429|FIREBASE_DEGRADED|QUOTA_EXHAUSTED|LEARNING.*health|CACHE_WARM|QUOTA_FIX' \
+              | sed 's/\(key\|token\|secret\|password\|api_key\|apikey\|passwd\)\([=: ]\+\)[^ ,\"'\'']\+/\1\2[REDACTED]/gi' \
+              | tail -400 \
+              || echo 'no quota events found'
+          " > artifacts/quota_forensics.txt
+
+          # ── Deploy loop log (why git fetch fails at line 181) ─────────────
+          ssh $SSH_OPTS "$HETZNER_USER@$HETZNER_HOST" "
+            echo '=== newest deploy_loop.log tail ===' && \
+            LOG=\$(ls -t '$HETZNER_PROJECT_DIR'/reports/*/deploy_loop.log 2>/dev/null | head -1) && \
+            echo \"file: \$LOG\" && tail -60 \"\$LOG\" 2>/dev/null | \
+              sed 's#https://[^@]*@#https://[REDACTED]@#g' || echo 'no deploy_loop.log found' && \
+            echo '' && \
+            echo '=== autodeploy service journal (last 40 lines) ===' && \
+            journalctl -u cryptomaster-autodeploy.service -n 40 --no-pager -o short-iso 2>/dev/null | \
+              sed 's#https://[^@]*@#https://[REDACTED]@#g' || true && \
+            echo '' && \
+            echo '=== git remote scheme (sanitized) ===' && \
+            git -C '$HETZNER_PROJECT_DIR' config --get remote.origin.url 2>&1 | \
+              sed 's#//[^@/]*@#//[REDACTED]@#; s#\(github.com[:/][^ ]*\)#\1#' || true && \
+            echo '=== repo owner vs root ===' && \
+            stat -c 'repo owner: %U' '$HETZNER_PROJECT_DIR/.git' 2>/dev/null || true
+          " > artifacts/deploy_diagnostics.txt
+
       # ── 3. Print mobile-readable summary ──────────────────────────────────
       - name: Print mobile summary
         run: |
