@@ -202,10 +202,19 @@ new_sha="$(git rev-parse HEAD)"
 # Compile and selected tests before any restart.
 $PYTHON_BIN -m compileall src bot2 daily_log_fix_prompt_bot start.py | tee -a "$LOG_FILE"
 if [ "$RUN_FULL_TESTS" = "true" ]; then
-  $PYTHON_BIN -m pytest tests/test_paper_mode.py -q | tee -a "$LOG_FILE"
-  $PYTHON_BIN -m pytest tests/test_app_metrics_contract.py -q | tee -a "$LOG_FILE"
-  $PYTHON_BIN -m pytest tests/test_v3_1_hotfix.py -q | tee -a "$LOG_FILE"
-  $PYTHON_BIN -m pytest daily_log_fix_prompt_bot/tests -q | tee -a "$LOG_FILE"
+  # Debian 12+ servers lack pytest in system Python (PEP 668) and the test
+  # deps (numpy, firebase_admin) are not installed system-wide. CI already
+  # runs the full suite on every PR; server-side pytest is a bonus gate.
+  # Same pattern as the install workflow (PR #11). compileall above is the
+  # real server-side blocker and always runs.
+  if $PYTHON_BIN -m pytest --version >/dev/null 2>&1; then
+    $PYTHON_BIN -m pytest tests/test_paper_mode.py -q | tee -a "$LOG_FILE"
+    $PYTHON_BIN -m pytest tests/test_app_metrics_contract.py -q | tee -a "$LOG_FILE"
+    $PYTHON_BIN -m pytest tests/test_v3_1_hotfix.py -q | tee -a "$LOG_FILE"
+    $PYTHON_BIN -m pytest daily_log_fix_prompt_bot/tests -q | tee -a "$LOG_FILE"
+  else
+    echo "[$RUN_TS] pytest not available on server; skipping (suite verified by CI)" | tee -a "$LOG_FILE"
+  fi
 fi
 
 # Restart only when there was a code change. Still run audit every cycle.
