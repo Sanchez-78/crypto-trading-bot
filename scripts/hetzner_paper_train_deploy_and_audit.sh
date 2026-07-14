@@ -171,11 +171,18 @@ if [ -f .env ]; then
   block_if_env_true "LIVE_TRADING_CONFIRMED"
 fi
 
-# Git 2.35+ rejects repos owned by a different user (common when systemd
-# runs as root but the repo was cloned by another user). Use wildcard to
-# avoid symlink path-mismatch; HOME=/root ensures the config is written even
-# if systemd does not propagate HOME to the service environment.
-HOME=/root git config --global --add safe.directory '*' 2>/dev/null || true
+# Git 2.35+ rejects repos owned by a different user. Root cause found
+# 2026-07-14 via sandbox reproduction: systemd services do NOT set $HOME,
+# and git WITHOUT $HOME never reads /root/.gitconfig at all — so any
+# safe.directory written there is invisible to every git call in this
+# script. Export HOME for the whole script so the global config is read.
+if [ "$(id -u)" = "0" ]; then
+  export HOME="${HOME:-/root}"
+fi
+# Dedup guard: --add on every 2h cycle grew /root/.gitconfig to 77 KB.
+if ! git config --global --get-all safe.directory 2>/dev/null | grep -qx '\*'; then
+  git config --global --add safe.directory '*' 2>/dev/null || true
+fi
 
 old_sha="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
 git fetch "$REMOTE_NAME" "$BRANCH_NAME" | tee -a "$LOG_FILE"
