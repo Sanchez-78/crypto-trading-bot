@@ -143,8 +143,15 @@ def _reset_quota_if_new_day():
             _QUOTA_WINDOW_START = today_reset_time_utc.timestamp()
             _QUOTA_READS = 0
             _QUOTA_WRITES = 0
+            _READ_ATTRIBUTION.clear()
         import logging
         logging.warning(f"[QUOTA_RESET] Firebase quota reset to {_QUOTA_MAX_READS:,} reads, {_QUOTA_MAX_WRITES:,} writes (passed 07:00 UTC)")
+        # A quota_429 degradation is caused by quota exhaustion, which this
+        # reset just cleared — recover now instead of serving out the blind
+        # 24h window (which kept learning dead for up to a full day).
+        if _FIREBASE_DEGRADED_REASON == "quota_429":
+            _clear_firebase_degradation()
+            logging.warning("[QUOTA_RESET] cleared quota_429 degradation — Firebase ops resume")
     else:
         # Debug log to understand quota state
         import logging
@@ -211,12 +218,28 @@ def _can_read(count=1):
         allowed = (_QUOTA_READS + count) <= _QUOTA_MAX_READS
         return allowed, _QUOTA_READS, _QUOTA_MAX_READS
 
-def _record_read(count=1):
-    """Record read operation(s)."""
-    global _QUOTA_READS
+# Per-caller read attribution: without it a maxed counter cannot be traced
+# to its consumer (journal floods rotate history away within minutes).
+_READ_ATTRIBUTION: dict = {}
+_ATTRIBUTION_LOG_INTERVAL_S = 300
+_LAST_ATTRIBUTION_LOG_TS = 0.0
+
+
+def _record_read(count=1, label="unlabeled"):
+    """Record read operation(s), attributed to the calling context."""
+    global _QUOTA_READS, _LAST_ATTRIBUTION_LOG_TS
     with _QUOTA_LOCK:
         _QUOTA_READS += count
+        _READ_ATTRIBUTION[label] = _READ_ATTRIBUTION.get(label, 0) + count
         reads_pct = _QUOTA_READS/_QUOTA_MAX_READS*100
+    now_ts = time.time()
+    if now_ts - _LAST_ATTRIBUTION_LOG_TS >= _ATTRIBUTION_LOG_INTERVAL_S:
+        _LAST_ATTRIBUTION_LOG_TS = now_ts
+        top = sorted(_READ_ATTRIBUTION.items(), key=lambda kv: -kv[1])[:6]
+        import logging
+        logging.warning("[QUOTA_ATTRIBUTION] reads=%d/%d top=%s",
+                        _QUOTA_READS, _QUOTA_MAX_READS,
+                        " ".join(f"{k}:{v}" for k, v in top))
     writes_pct = _QUOTA_WRITES/_QUOTA_MAX_WRITES*100
     severity = _get_quota_severity(reads_pct, writes_pct)
     import logging
@@ -433,7 +456,7 @@ def _read_doc_dict(doc_ref, *, label: str, cache: dict | None = None,
     try:
         doc = doc_ref.get()
         data = doc.to_dict() or dict(fallback)
-        _record_read(1)
+        _record_read(1, label=label)
         if cache is not None and ttl > 0:
             _cache_set(cache, data)
         return dict(data)
@@ -692,7 +715,7 @@ def load_history(limit=HISTORY_LIMIT):
         _HISTORY_CACHE["data"] = [d.to_dict() for d in docs]
         _HISTORY_CACHE["ts"]   = time.time()
         _HISTORY_CACHE["limit"] = max(limit, len(_HISTORY_CACHE["data"]))
-        _record_read(max(1, len(_HISTORY_CACHE["data"])))
+        _record_read(max(1, len(_HISTORY_CACHE["data"])), label="load_history")
 
         # V10.15: Populate caches with freshly loaded data
         cache_key = f"history:{limit}"
@@ -1418,7 +1441,7 @@ def load_all_signals(limit=SIGNALS_LIMIT):
         )
         _SIGNALS_CACHE["data"] = [d.to_dict() for d in docs]
         _SIGNALS_CACHE["ts"]   = time.time()
-        _record_read(max(1, len(_SIGNALS_CACHE["data"])))
+        _record_read(max(1, len(_SIGNALS_CACHE["data"])), label="load_all_signals")
         print(f"📥 Firebase: loaded {len(_SIGNALS_CACHE['data'])} signals")
     except Exception as e:
         print(f"❌ load_all_signals: {e}")
@@ -1970,7 +1993,7 @@ def load_commands_since(since_ms: int, limit: int = 10) -> list[dict]:
             .get()
         )
         commands = [{"id": d.id, **d.to_dict()} for d in snap]
-        _record_read(max(1, len(commands)))
+        _record_read(max(1, len(commands)), label="load_commands_since")
         return commands
     except Exception as exc:
         _handle_quota_error("load_commands_since", exc)

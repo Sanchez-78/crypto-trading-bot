@@ -207,3 +207,30 @@ def test_load_push_token_uses_cache():
     assert fc.load_push_token() == "ExponentPushToken[abc]"
     assert token_ref.get_calls == 1
     assert fc.get_quota_status()["reads"] == 1
+
+
+def test_quota_reset_clears_quota_429_degradation():
+    """2026-07-14: quota_429 degradation must clear at the 07:00 UTC quota
+    reset, not serve out a blind 24h window (kept learning dead all day)."""
+    _reset_firebase_state(FakeDB(collections={}))
+    fc._mark_quota_exhausted("simulated 429")
+    assert fc.get_firebase_health()["available"] is False
+    assert fc.get_quota_status()["reads"] == fc._QUOTA_MAX_READS
+
+    # Force the window back before today's 07:00 UTC so a reset is due.
+    fc._QUOTA_WINDOW_START = time.time() - 48 * 3600
+    fc._reset_quota_if_new_day()
+
+    assert fc.get_quota_status()["reads"] == 0
+    assert fc.get_firebase_health()["available"] is True
+
+
+def test_record_read_attributes_by_label():
+    _reset_firebase_state(FakeDB(collections={}))
+    fc._READ_ATTRIBUTION.clear()
+    fc._record_read(3, label="load_history")
+    fc._record_read(2, label="load_history")
+    fc._record_read(1, label="load_commands_since")
+    assert fc._READ_ATTRIBUTION["load_history"] == 5
+    assert fc._READ_ATTRIBUTION["load_commands_since"] == 1
+    assert fc.get_quota_status()["reads"] == 6
