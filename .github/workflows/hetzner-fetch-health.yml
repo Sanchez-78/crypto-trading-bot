@@ -128,8 +128,46 @@ jobs:
             git -C '$HETZNER_PROJECT_DIR' config --get remote.origin.url 2>&1 | \
               sed 's#//[^@/]*@#//[REDACTED]@#; s#\(github.com[:/][^ ]*\)#\1#' || true && \
             echo '=== repo owner vs root ===' && \
-            stat -c 'repo owner: %U' '$HETZNER_PROJECT_DIR/.git' 2>/dev/null || true
+            stat -c 'repo owner: %U uid: %u' '$HETZNER_PROJECT_DIR/.git' 2>/dev/null || true
           " > artifacts/deploy_diagnostics.txt
+
+          # ── Git failure reproduction (captures the real error text) ───────
+          # The autodeploy journal rotates away within minutes (log flood), so
+          # reproduce the failing git calls: once in the SSH context, once
+          # inside a transient systemd unit replicating the service sandbox.
+          ssh $SSH_OPTS "$HETZNER_USER@$HETZNER_HOST" "
+            cd '$HETZNER_PROJECT_DIR' || exit 0
+            echo '=== ssh whoami / git version ==='
+            echo \"user=\$(id -un) uid=\$(id -u) HOME=\$HOME\"
+            git --version 2>&1
+            echo ''
+            echo '=== script version on server (lines 174-182) ==='
+            sed -n '174,182p' scripts/hetzner_paper_train_deploy_and_audit.sh 2>/dev/null || echo 'script missing'
+            echo ''
+            echo '=== ssh-context git rev-parse ==='
+            git rev-parse HEAD 2>&1 || true
+            echo '=== ssh-context git fetch --dry-run ==='
+            git fetch origin main --dry-run 2>&1 | sed 's#//[^@/]*@#//[REDACTED]@#g' || true
+            echo ''
+            echo '=== sandbox-replicated git rev-parse (systemd-run) ==='
+            systemd-run --wait --collect --pipe --unit=cm-gitdiag-\$\$ \
+              -p ProtectSystem=full -p PrivateTmp=true -p NoNewPrivileges=true \
+              -p WorkingDirectory='$HETZNER_PROJECT_DIR' \
+              -p 'ReadWritePaths=$HETZNER_PROJECT_DIR /tmp' \
+              /usr/bin/git rev-parse HEAD 2>&1 || echo '(systemd-run unavailable or failed — see above)'
+            echo '=== sandbox-replicated git fetch --dry-run ==='
+            systemd-run --wait --collect --pipe --unit=cm-gitdiag2-\$\$ \
+              -p ProtectSystem=full -p PrivateTmp=true -p NoNewPrivileges=true \
+              -p WorkingDirectory='$HETZNER_PROJECT_DIR' \
+              -p 'ReadWritePaths=$HETZNER_PROJECT_DIR /tmp' \
+              /usr/bin/git fetch origin main --dry-run 2>&1 | sed 's#//[^@/]*@#//[REDACTED]@#g' || echo '(systemd-run unavailable or failed)'
+            echo ''
+            echo '=== root gitconfig state ==='
+            ls -la /root/.gitconfig 2>&1 || true
+            grep -A2 'safe' /root/.gitconfig 2>/dev/null || echo '(no safe.directory in /root/.gitconfig or unreadable)'
+            echo '=== autodeploy unit + dropins on server ==='
+            systemctl cat cryptomaster-autodeploy.service 2>&1 | head -40 || true
+          " > artifacts/git_failure_repro.txt
 
       # ── 3. Print mobile-readable summary ──────────────────────────────────
       - name: Print mobile summary
