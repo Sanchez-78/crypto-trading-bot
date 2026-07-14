@@ -6,7 +6,14 @@ import shlex
 import subprocess
 from pathlib import Path
 from .config import Settings
-from .ssh_client import SSHClient
+
+# SSH (paramiko) is only needed for REMOTE log fetch. On the Hetzner server
+# itself the bot reads local journalctl, and Debian's system Python has no
+# paramiko (PEP 668) — a hard import here killed every audit cycle (exit 1).
+try:
+    from .ssh_client import SSHClient
+except ImportError:
+    SSHClient = None
 
 log = logging.getLogger(__name__)
 
@@ -29,6 +36,9 @@ class LogFetcher:
         self.config = config
         self.ssh = None
         self.last_source = "none"
+        if SSHClient is None:
+            log.info("paramiko not installed; remote SSH fetch disabled, using local logs")
+            return
         try:
             self.ssh = SSHClient(
                 config.hetzner_host,
