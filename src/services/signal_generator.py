@@ -82,6 +82,11 @@ _DEV_FADE       = os.getenv("PAPER_DEVIATION_FADE", "false").lower() == "true"
 _DEV_GATE_BPS   = float(os.getenv("PAPER_DEV_GATE_BPS", "25"))
 _DEV_LOOKBACK_S = float(os.getenv("PAPER_DEV_LOOKBACK_S", "900"))
 
+# P0.5 debug trace (P0_5E/P0_5D/BULL_EDGE lines) fires per tick per BULL_TREND
+# symbol (~75+ lines/s) and floods the journal — same slow-consumer hazard the
+# TP_SL_EVAL gate fixed in 0da5256. Set PAPER_DEBUG_SIGNAL_TRACE=1 to re-enable.
+_DEBUG_SIGNAL_TRACE = os.getenv("PAPER_DEBUG_SIGNAL_TRACE", "") == "1"
+
 
 def _trailing_dev_bps(sym, now):
     """Price change (bps) over the trailing _DEV_LOOKBACK_S window, or None if the
@@ -393,13 +398,13 @@ def _get_scored_edge(hist, e50, e200, breakout_up, breakout_down, mom5, reg, reg
     Returns (base_score, w_score, action, edge_type, features, explore).
     """
     # P0.5E: Debug entry
-    if reg == "BULL_TREND" and symbol:
+    if _DEBUG_SIGNAL_TRACE and reg == "BULL_TREND" and symbol:
         import sys
         print(f"[P0_5E_ENTRY] {symbol} BULL_TREND enter _get_scored_edge", file=sys.stderr, flush=True)
 
     if len(hist) < 51:
         # P0.5D: Log hist buffer failure (likely root cause!)
-        if symbol and reg == "BULL_TREND":
+        if _DEBUG_SIGNAL_TRACE and symbol and reg == "BULL_TREND":
             try:
                 logging.warning(
                     f"[P0_5D_HIST_GATE_0] symbol={symbol} regime={reg} "
@@ -415,7 +420,7 @@ def _get_scored_edge(hist, e50, e200, breakout_up, breakout_down, mom5, reg, reg
     # Revert to 0.50 and try alternative escalation: learning_blend boost
     if regime_conf < 0.5:
         # P0.5C: Log regime_conf failure
-        if symbol and reg == "BULL_TREND":
+        if _DEBUG_SIGNAL_TRACE and symbol and reg == "BULL_TREND":
             try:
                 logging.warning(
                     f"[BULL_EDGE_GATE_1] symbol={symbol} regime={reg} "
@@ -480,7 +485,7 @@ def _get_scored_edge(hist, e50, e200, breakout_up, breakout_down, mom5, reg, reg
 
     # Gate 2b: Reject if no action passed regime/score gates
     if action is None:
-        if symbol and reg == "BULL_TREND":
+        if _DEBUG_SIGNAL_TRACE and symbol and reg == "BULL_TREND":
             try:
                 logging.warning(
                     f"[P0_5D_GATE_2_REGIME_BLOCK] symbol={symbol} "
@@ -495,7 +500,7 @@ def _get_scored_edge(hist, e50, e200, breakout_up, breakout_down, mom5, reg, reg
     combo = tuple(sorted(k for k, v in features.items() if isinstance(v, bool) and v))
     if not allow_combo(combo):
         # P0.5D: Log Gate 3 combo failure
-        if symbol and reg == "BULL_TREND":
+        if _DEBUG_SIGNAL_TRACE and symbol and reg == "BULL_TREND":
             try:
                 logging.warning(
                     f"[P0_5D_GATE_3_COMBO] symbol={symbol} "
@@ -808,7 +813,7 @@ def on_price(data):
         regime_conf = 0.6  # HIGH_VOL: borderline confidence
 
     # P0.5D: Log BEFORE calling _get_scored_edge
-    if reg == "BULL_TREND":
+    if _DEBUG_SIGNAL_TRACE and reg == "BULL_TREND":
         try:
             logging.warning(
                 f"[P0_5D_BEFORE_CALL] symbol={s} regime={reg} "
@@ -840,7 +845,7 @@ def on_price(data):
 
     # P0.5D: Log AFTER _get_scored_edge — what did it return?
     call_ts = time.time()
-    if reg == "BULL_TREND":
+    if _DEBUG_SIGNAL_TRACE and reg == "BULL_TREND":
         try:
             logging.warning(
                 f"[P0_5D_AFTER_CALL] ts={call_ts:.1f} symbol={s} regime={reg} "
@@ -850,7 +855,7 @@ def on_price(data):
             pass
 
     # P0.5C: Log edge decision outcome for BULL_TREND
-    if reg == "BULL_TREND" and action is None:
+    if _DEBUG_SIGNAL_TRACE and reg == "BULL_TREND" and action is None:
         try:
             logging.warning(
                 f"[BULL_EDGE_FAILED] ts={call_ts:.1f} symbol={s} regime={reg} "
