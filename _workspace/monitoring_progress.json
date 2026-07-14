@@ -1,44 +1,30 @@
 {
-  "cycle": 58,
-  "start_time": "2026-07-01T06:30:00Z",
-  "goal_reached": true,
-  "total_cycles_completed": 58,
-  "current_wr": 54.65,
-  "current_pnl": 25.27,
-  "total_wr_gain": 54.65,
-  "quota_max_used_pct": 0.2,
-  "last_update": "2026-07-01T10:13:00Z",
-  "status": "GOAL_ACHIEVED_AUTONOMOUS_SYSTEM_SELF_HEALING",
-  "phase": "CYCLE 58: EMERGENCY FIX VALIDATED - STABILITY MONITORING ACTIVE",
-  "issues": {
-    "dashboard_ui": {
-      "status": "KNOWN_ISSUE",
-      "description": "Dashboard Flask service crashed (missing dependencies). UI shows stale data from 5 days ago.",
-      "impact": "Display only - bot trading is UNAFFECTED",
-      "trades_verified": "Direct database query confirms all recent trades are current (6 min old)",
-      "action": "Logged as display issue, does not block autonomous monitoring"
+  "run": 2,
+  "goal": {"wr_pct_min": 56.0, "pnl_positive": true, "mode": "paper_only"},
+  "cycle": 1,
+  "start_time": "2026-07-14T14:25:00Z",
+  "goal_reached": false,
+  "total_cycles_completed": 1,
+  "current_wr": null,
+  "current_pnl": null,
+  "last_update": "2026-07-14T14:35:00Z",
+  "status": "monitoring",
+  "notes": [
+    "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
+    "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
+    "Firebase quota exhausted until 2026-07-15T07:00Z - learning dead until then (fix deployed: degradation auto-clears at reset)",
+    "sqlite3 CLI not on server - dashboard API is the metrics source"
+  ],
+  "cycles": [
+    {
+      "cycle": 1,
+      "timestamp": "2026-07-14T14:35:00Z",
+      "wr_before": null,
+      "wr_after": null,
+      "blocker": "metrics_incorrect: closed_trades_list pnl_usd/win sign+scale wrong for subset (ADAUSDT paper_26d068c6cc7c, paper_b770c35e0c78); WR from win field untrustworthy. Secondary: 100% TIMEOUT exits recent window, all BUY/BULL_TREND.",
+      "fix_applied": "infra repairs PR #18-#25 (deploy loop green, audit reports live); dashboard audit agent dispatched; probe upgrade in progress",
+      "deploy_result": "PASS (repair run #4: deploy status OK, audit ok)",
+      "elapsed_mins": 30
     }
-  },
-  "cycle_55_metrics": {
-    "session_closed_trades": 114,
-    "win_rate_pct": 52.63,
-    "net_pnl_usd": 25.25,
-    "exits_tp": 48,
-    "exits_sl": 29,
-    "exits_timeout": 37,
-    "latest_trade_age_minutes": 6.1,
-    "timestamp": "2026-07-01T08:35:00Z"
-  },
-  "assessment": {
-    "status": "PASS_GOAL_MAINTAINED",
-    "reason": "WR 52.63% > 50%, P&L +$25.25 > 0%. Bot actively trading with 114 closes. All safety systems operational.",
-    "recommendation": "Continue monitoring. Dashboard UI issue is display-only; bot operation unaffected."
-  },
-  "summary": {
-    "elapsed_time_hours": 2.083,
-    "remaining_time_hours": 45.917,
-    "cycles_completed": 55,
-    "max_cycles": 96,
-    "goal_achievement_status": "✅ ACHIEVED & MAINTAINED"
-  }
+  ]
 }
