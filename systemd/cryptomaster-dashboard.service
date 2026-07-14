@@ -9,9 +9,15 @@ Type=simple
 User=root
 WorkingDirectory=/opt/cryptomaster
 Environment="PYTHONUNBUFFERED=1"
-ExecStart=/opt/cryptomaster/venv/bin/python3 /opt/cryptomaster/src/services/dashboard_web.py
+# PERMANENT FIX (CLAUDE.md 2026-06-11 + commit 78a564c 2026-07-03):
+# - Direct python (no Gunicorn/WSGI wrappers).
+# - Venv lives OUTSIDE the repo (/opt/dashboard_venv, built from
+#   requirements-dashboard.txt) because deploy runs `git stash -u`.
+# - start_flask_dashboard.py (tracked) fixes sys.path/cwd so
+#   src.services.* imports work; do not exec dashboard_web.py directly.
+ExecStart=/opt/dashboard_venv/bin/python3 -u /opt/cryptomaster/start_flask_dashboard.py
 Restart=always
-RestartSec=5
+RestartSec=10
 StartLimitInterval=60
 StartLimitBurst=3
 StandardOutput=journal

@@ -2480,11 +2480,13 @@ def close_paper_position(
     closed_trade = {
         **pos,
         "trade_id": position_id,  # V10.15l: Explicit trade ID for logging
+        "side": side,  # C8 (dashboard_audit 2026-07-14): normalized direction for persistence
         "exit_price": price,
         "exit_ts": ts,
         "exit_reason": reason,
         "duration_s": duration_s,
         "hold_s": duration_s,  # V10.48: Add hold_s field for dashboard (was missing, causing 0 display)
+        "pnl_pct": pnl_data["net_pnl_pct"],  # C8: alias so save_closed_trade persists side-aware net pnl_pct (column was NULL)
         "gross_pnl_pct": pnl_data["gross_pnl_pct"],
         "fee_pct": pnl_data["fee_pct"],
         "slippage_pct": pnl_data["slippage_pct"],

@@ -62,6 +62,14 @@ def _init_db():
         )
     """)
 
+    # C8 migration (dashboard_audit 2026-07-14): legacy cache.sqlite lacks the
+    # side column, so trade direction was lost at persistence time and the
+    # dashboard hardcoded side='BUY' (inverting displayed pnl_pct for shorts).
+    try:
+        cursor.execute("ALTER TABLE closed_trades ADD COLUMN side TEXT")
+    except sqlite3.OperationalError:
+        pass  # column already exists
+
     # Learning metrics (cumulative)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS learning_metrics (
@@ -224,18 +232,21 @@ def save_closed_trade(trade: Dict[str, Any]):
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT OR REPLACE INTO closed_trades
-                (trade_id, symbol, entry_ts, exit_ts, entry_price, exit_price,
+                (trade_id, symbol, side, entry_ts, exit_ts, entry_price, exit_price,
                  pnl_usd, pnl_pct, win, exit_reason, regime, mfe, mae, synced_to_firebase)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
             """, (
                 trade.get("trade_id"),
                 trade.get("symbol"),
+                trade.get("side") or trade.get("action") or "BUY",
                 trade.get("entry_ts"),
                 trade.get("exit_ts"),
                 trade.get("entry_price"),
                 trade.get("exit_price"),
                 trade.get("pnl_usd"),
-                trade.get("pnl_pct"),
+                # C8: executor emits net_pnl_pct (side-aware, cost-inclusive);
+                # a bare pnl_pct key historically did not exist -> column was NULL
+                trade.get("pnl_pct") if trade.get("pnl_pct") is not None else trade.get("net_pnl_pct"),
                 1 if trade.get("win") else 0,
                 trade.get("exit_reason"),
                 trade.get("regime"),
