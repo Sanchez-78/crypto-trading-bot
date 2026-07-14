@@ -1,0 +1,174 @@
+name: Hetzner Repair Autodeploy
+
+# Manual-only repair workflow. Fixes the broken autodeploy pipeline:
+# systemd services don't set $HOME, so git never reads /root/.gitconfig
+# and every timer cycle dies with "dubious ownership" (exit 128).
+#
+# What it does (SSH context, where git provably works):
+#   1. Safety gates: hard-block live_real / ENABLE_REAL_ORDERS /
+#      LIVE_TRADING_CONFIRMED. paper_live only warns (mode pre-exists;
+#      this workflow does not change .env and cannot enable anything).
+#   2. git fetch + reset the server repo to origin/main.
+#   3. Install updated systemd units (HOME=/root fix) + daemon-reload.
+#   4. Compact the 77 KB /root/.gitconfig duplicate safe.directory spam.
+#   5. Start one deploy/audit cycle and report its status.
+#
+# It does NOT touch .env and does NOT restart cryptomaster directly —
+# the deploy script itself restarts it only when the deployed SHA changes
+# (the normal paper-mode deploy path).
+
+on:
+  workflow_dispatch:
+    inputs:
+      hetzner_port:
+        description: 'SSH port on the Hetzner server'
+        required: false
+        default: '22'
+
+jobs:
+  repair:
+    name: Repair autodeploy pipeline on Hetzner
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set up SSH key and pin host key
+        env:
+          HETZNER_SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          SSH_PORT: ${{ inputs.hetzner_port }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$HETZNER_SSH_KEY" > ~/.ssh/hetzner_deploy_key
+          chmod 600 ~/.ssh/hetzner_deploy_key
+          PORT="${SSH_PORT:-22}"
+          ssh-keyscan -p "$PORT" -T 15 "$HETZNER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          if [ ! -s ~/.ssh/known_hosts ]; then
+            echo "CRITICAL: ssh-keyscan returned no keys — host unreachable"
+            exit 1
+          fi
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Repair autodeploy on server
+        env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          HETZNER_USER: ${{ secrets.HETZNER_USER }}
+          HETZNER_PROJECT_DIR: ${{ secrets.HETZNER_PROJECT_DIR }}
+          HETZNER_SERVICE_NAME: ${{ secrets.HETZNER_SERVICE_NAME }}
+          SSH_PORT: ${{ inputs.hetzner_port }}
+        run: |
+          PORT="${SSH_PORT:-22}"
+          SSH_OPTS="-p $PORT -i ~/.ssh/hetzner_deploy_key \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile=~/.ssh/known_hosts \
+            -o ConnectTimeout=30 \
+            -o BatchMode=yes"
+
+          ssh $SSH_OPTS "$HETZNER_USER@$HETZNER_HOST" \
+            "PROJECT_DIR='$HETZNER_PROJECT_DIR' SERVICE_NAME='$HETZNER_SERVICE_NAME' bash -s" << 'REMOTE_EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          : "${PROJECT_DIR:?HETZNER_PROJECT_DIR secret not set}"
+          : "${SERVICE_NAME:?HETZNER_SERVICE_NAME secret not set}"
+
+          echo "════════════════════════════════════════════════════════════════"
+          echo "  CryptoMaster — Autodeploy Pipeline Repair"
+          echo "  $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "════════════════════════════════════════════════════════════════"
+
+          cd "$PROJECT_DIR"
+
+          # ── Helper: normalise .env value ────────────────────────────────
+          env_value() {
+            local key="$1" file="${2:-.env}"
+            [ -f "$file" ] || return 0
+            awk -F= -v key="$key" '
+              /^[[:space:]]*#/ { next }
+              /^[[:space:]]*$/ { next }
+              {
+                k=$1
+                sub(/^[[:space:]]*export[[:space:]]+/, "", k)
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", k)
+                if (k == key) {
+                  v=substr($0, index($0,"=")+1)
+                  sub(/[[:space:]]+#.*$/, "", v)
+                  gsub(/^[[:space:]]+|[[:space:]]+$/, "", v)
+                  gsub(/^\047|\047$/, "", v)
+                  gsub(/^"|"$/, "", v)
+                  print tolower(v)
+                }
+              }' "$file" | tail -n 1
+          }
+
+          # ── 1. Safety gates ─────────────────────────────────────────────
+          echo "[1/5] Safety gates..."
+          MODE="$(env_value TRADING_MODE .env)"
+          if [ "$MODE" = "live_real" ]; then
+            echo "CRITICAL: TRADING_MODE=live_real — refusing to touch anything"
+            exit 1
+          fi
+          for key in ENABLE_REAL_ORDERS LIVE_TRADING_CONFIRMED; do
+            v="$(env_value "$key" .env)"
+            case "$v" in
+              true|1|yes|on)
+                echo "CRITICAL: .env contains ${key}=${v} — refusing"
+                exit 1
+                ;;
+            esac
+          done
+          if [ "$MODE" = "paper_live" ]; then
+            echo "  WARNING: TRADING_MODE=paper_live (paper-only mode; no real orders possible)."
+            echo "  This workflow does not change .env — continuing with repair."
+          fi
+          echo "  Safety gates OK (mode=${MODE:-unset})"
+
+          # ── 2. Update repo (SSH context: git works here) ────────────────
+          echo "[2/5] Updating repo to origin/main..."
+          export HOME="${HOME:-/root}"
+          OLD_SHA="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
+          git fetch origin main 2>&1 | tail -3
+          git checkout main 2>&1 | tail -1 || true
+          git reset --hard origin/main 2>&1 | tail -1
+          NEW_SHA="$(git rev-parse HEAD)"
+          chmod +x scripts/hetzner_paper_train_deploy_and_audit.sh
+          echo "  SHA: $OLD_SHA -> $NEW_SHA"
+
+          # ── 3. Compact bloated gitconfig + ensure wildcard entry ────────
+          echo "[3/5] Compacting /root/.gitconfig safe.directory spam..."
+          SIZE_BEFORE="$(stat -c%s /root/.gitconfig 2>/dev/null || echo 0)"
+          git config --global --unset-all safe.directory 2>/dev/null || true
+          git config --global --add safe.directory '*'
+          SIZE_AFTER="$(stat -c%s /root/.gitconfig 2>/dev/null || echo 0)"
+          echo "  gitconfig: ${SIZE_BEFORE} -> ${SIZE_AFTER} bytes"
+
+          # ── 4. Install fixed systemd units ──────────────────────────────
+          echo "[4/5] Installing updated systemd units..."
+          cp systemd/cryptomaster-autodeploy.service /etc/systemd/system/
+          cp systemd/cryptomaster-autodeploy.timer   /etc/systemd/system/ 2>/dev/null || true
+          systemctl daemon-reload
+          echo "  Units installed + daemon-reload done"
+
+          # ── 5. Run one deploy/audit cycle and report ────────────────────
+          echo "[5/5] Starting one deploy/audit cycle..."
+          systemctl start cryptomaster-autodeploy.service || true
+          sleep 10
+
+          echo ""
+          echo "════════════════════════════════════════════════════════════════"
+          echo "  RESULT"
+          echo "════════════════════════════════════════════════════════════════"
+          systemctl status cryptomaster-autodeploy.service --no-pager -n 0 2>&1 | head -6 || true
+          echo ""
+          if [ -f "$PROJECT_DIR/reports/latest_deploy_status.md" ]; then
+            echo "── latest_deploy_status.md ──"
+            cat "$PROJECT_DIR/reports/latest_deploy_status.md"
+          fi
+          echo ""
+          echo "  timer:                   $(systemctl is-active cryptomaster-autodeploy.timer 2>/dev/null || echo inactive)"
+          echo "  cryptomaster:            $(systemctl is-active "$SERVICE_NAME" 2>/dev/null || echo inactive)"
+          echo "  live_real enabled:       no (gate-checked)"
+          echo "  ENABLE_REAL_ORDERS:      no (gate-checked)"
+          echo "  LIVE_TRADING_CONFIRMED:  no (gate-checked)"
+          echo "════════════════════════════════════════════════════════════════"
+          REMOTE_EOF
