@@ -249,6 +249,21 @@ jobs:
               || echo 'no close-path events found'
           " > artifacts/close_path_forensics.txt
 
+          # ── Restart-loop forensics (who stops the bot and why) ────────────
+          ssh $SSH_OPTS "$HETZNER_USER@$HETZNER_HOST" "
+            echo '=== systemd start/stop events (6h) ==='
+            journalctl -u '$HETZNER_SERVICE_NAME' --since '6 hours ago' --no-pager -o short-iso 2>/dev/null \
+              | grep -E 'systemd\[1\]|Started|Stopping|Stopped|Main process|Failed with result|Consumed|oom|OOM|watchdog|Watchdog|Deactivated' \
+              | tail -60 || true
+            echo ''
+            echo '=== unit restart config ==='
+            systemctl show '$HETZNER_SERVICE_NAME' -p NRestarts -p Restart -p WatchdogUSec -p MemoryMax -p Result -p ExecMainStatus 2>&1 || true
+            echo ''
+            echo '=== STARTUP FAILED / exit markers (6h) ==='
+            journalctl -u '$HETZNER_SERVICE_NAME' --since '6 hours ago' --no-pager -o short-iso 2>/dev/null \
+              | grep -E 'STARTUP FAILED|CRASH DETECTED|sys.exit|MemoryError|Killed' | tail -20 || echo '(none)'
+          " > artifacts/restart_forensics.txt
+
       # ── 3. Print mobile-readable summary ──────────────────────────────────
       - name: Print mobile summary
         run: |
