@@ -1,19 +1,24 @@
 {
   "run": 2,
-  "goal": {"wr_pct_min": 56.0, "pnl_positive": true, "mode": "paper_only"},
-  "cycle": 1,
+  "goal": {
+    "wr_pct_min": 56.0,
+    "pnl_positive": true,
+    "mode": "paper_only"
+  },
+  "cycle": 5,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 1,
-  "current_wr": null,
-  "current_pnl": null,
-  "last_update": "2026-07-14T14:35:00Z",
+  "total_cycles_completed": 5,
+  "current_wr": 33.0,
+  "current_pnl": 2.2638,
+  "last_update": "2026-07-14T20:50:00Z",
   "status": "monitoring",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
     "Firebase quota exhausted until 2026-07-15T07:00Z - learning dead until then (fix deployed: degradation auto-clears at reset)",
-    "sqlite3 CLI not on server - dashboard API is the metrics source"
+    "sqlite3 CLI not on server - dashboard API is the metrics source",
+    "Operational discipline: batch observability merges; each src/ merge restarts the bot and kills open positions."
   ],
   "cycles": [
     {
@@ -25,6 +30,50 @@
       "fix_applied": "infra repairs PR #18-#25 (deploy loop green, audit reports live); dashboard audit agent dispatched; probe upgrade in progress",
       "deploy_result": "PASS (repair run #4: deploy status OK, audit ok)",
       "elapsed_mins": 30
+    },
+    {
+      "cycle": 2,
+      "timestamp": "2026-07-14T19:40:00Z",
+      "wr_before": 46.67,
+      "wr_after": 60.0,
+      "pf_before": 0.663,
+      "pf_after": 2.214,
+      "pnl_before": -1.2493,
+      "pnl_after": 2.2638,
+      "blocker": "dashboard metrics incorrect for external app (side lost, pnl_pct NULL->long-only recompute, 500s, 9 contract mismatches, missing flask dep)",
+      "fix_applied": "PR #27 dashboard correctness (side/pnl_pct persistence, never-500, Czech contract fields, ms timestamps, requirements-dashboard.txt, systemd unit) + PR #28 repair step 4b (dashboard venv/unit/restart/HTTP-verify). Deployed via repair run, dashboard HTTP 200, deploy cycle OK.",
+      "commit": "211c658 + 1709733",
+      "deploy_result": "PASS",
+      "note": "Last-30 window beats goal (WR 60% PF 2.21) but headline window still 36%/0.276 - old losses. Need bigger sample + learning alive (quota resets 07:00 UTC) before goal check. closed_trades_list capped at 30 items - consider ?limit= param.",
+      "elapsed_mins": 300
+    },
+    {
+      "cycle": 3,
+      "timestamp": "2026-07-14T20:12:00Z",
+      "status": "CAUTION",
+      "wr_after": 60.0,
+      "note": "No new closes since 19:36 (bot restarted 19:33, 3 positions open, next expiry 512s). Rolling-100 headline 36%/PF 0.276 vs last-30 60%/2.21. Learning stalled until 07:00 UTC quota reset (expected). Backlog: LEARNING_STALL msg shows epoch as duration; UPDATE_PAPER_DEBUG 184 calls/s; accepted=65 vs paper_entries=0 in summary - watch.",
+      "fix_applied": "none (observation cycle)",
+      "deploy_result": "n/a"
+    },
+    {
+      "cycle": 4,
+      "timestamp": "2026-07-14T20:22:00Z",
+      "status": "CAUTION",
+      "wr_after": 33.0,
+      "note": "3 new closes (16399->16402), rolling-100 WR 36->33 PF 0.257. ANOMALY: closed_trades_list newest=18:52 while count grew at ~20:17 - list path may cache/read different source than counters. Watch next cycle; if persists = display bug for Android app. Night observation mode until 07:00 UTC quota reset.",
+      "fix_applied": "none",
+      "deploy_result": "n/a"
+    },
+    {
+      "cycle": 5,
+      "timestamp": "2026-07-14T20:50:00Z",
+      "status": "FAIL->FIXED",
+      "blocker": "RESTART LOOP: deploy.yml (on: push main) does systemctl restart cryptomaster on EVERY merge. My observability merges restarted bot at 20:33/20:38/20:44 - positions died before 15min timeout, no closes, learning starved, dashboard list stale. Evidence: restart_forensics.txt systemd clean Stopping events, NRestarts=0.",
+      "fix_applied": "PR #32: paths filter on deploy.yml (runtime code only: src/, bot2/, start.py, requirements, config.py) + workflow_dispatch. Non-runtime merges now flow via 2h timer without restart. The stale-list anomaly from cycles 4-5 was a SYMPTOM of the restart loop, not a dashboard bug.",
+      "commit": "7a03401",
+      "deploy_result": "PASS (merge itself no longer triggers restart - filter proven immediately)",
+      "lesson": "BATCH merges; avoid touching src/ unless intended to restart the bot."
     }
   ]
 }
