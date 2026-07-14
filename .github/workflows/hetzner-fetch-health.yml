@@ -169,6 +169,38 @@ jobs:
             systemctl cat cryptomaster-autodeploy.service 2>&1 | head -40 || true
           " > artifacts/git_failure_repro.txt
 
+          # ── Trading metrics probe (WR / PF / P&L from cache.sqlite) ────
+          ssh $SSH_OPTS "$HETZNER_USER@$HETZNER_HOST" "
+            DB='$HETZNER_PROJECT_DIR/local_learning_storage/cache.sqlite'
+            echo '=== dashboard /api/dashboard/metrics (5s timeout) ==='
+            curl -s -m 5 http://localhost:5001/api/dashboard/metrics 2>/dev/null | head -c 3000 || echo '(dashboard unreachable)'
+            echo ''
+            echo '=== cache.sqlite trading metrics ==='
+            if command -v sqlite3 >/dev/null && [ -f \"\$DB\" ]; then
+              for W in 86400 604800; do
+                echo \"-- window \${W}s --\"
+                sqlite3 \"\$DB\" \"SELECT 'n=' || COUNT(*) ||
+                  ' wins=' || COALESCE(SUM(win),0) ||
+                  ' wr_pct=' || COALESCE(ROUND(100.0*SUM(win)/NULLIF(COUNT(*),0),2),0) ||
+                  ' pnl_usd=' || COALESCE(ROUND(SUM(pnl_usd),4),0) ||
+                  ' gross_win=' || COALESCE(ROUND(SUM(CASE WHEN pnl_usd>0 THEN pnl_usd ELSE 0 END),4),0) ||
+                  ' gross_loss=' || COALESCE(ROUND(SUM(CASE WHEN pnl_usd<0 THEN -pnl_usd ELSE 0 END),4),0)
+                  FROM closed_trades WHERE exit_ts > strftime('%s','now') - \$W;\" 2>&1
+              done
+              echo '-- last 10 closes --'
+              sqlite3 \"\$DB\" \"SELECT datetime(exit_ts,'unixepoch') || ' ' || symbol || ' ' || exit_reason ||
+                ' win=' || win || ' pnl_usd=' || ROUND(pnl_usd,4) || ' regime=' || COALESCE(regime,'?')
+                FROM closed_trades ORDER BY exit_ts DESC LIMIT 10;\" 2>&1
+              echo '-- by exit_reason (7d) --'
+              sqlite3 \"\$DB\" \"SELECT exit_reason || ': n=' || COUNT(*) || ' wr=' ||
+                COALESCE(ROUND(100.0*SUM(win)/NULLIF(COUNT(*),0),1),0) || '% pnl=' || ROUND(SUM(pnl_usd),4)
+                FROM closed_trades WHERE exit_ts > strftime('%s','now') - 604800
+                GROUP BY exit_reason ORDER BY COUNT(*) DESC;\" 2>&1
+            else
+              echo '(sqlite3 or cache.sqlite not available)'
+            fi
+          " > artifacts/trading_metrics.txt
+
       # ── 3. Print mobile-readable summary ──────────────────────────────────
       - name: Print mobile summary
         run: |
