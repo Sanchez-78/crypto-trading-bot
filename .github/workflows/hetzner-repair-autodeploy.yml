@@ -149,6 +149,28 @@ jobs:
           systemctl daemon-reload
           echo "  Units installed + daemon-reload done"
 
+          # ── 4b. Dashboard refresh (venv + unit + restart + verify) ──────
+          echo "[4b] Refreshing dashboard service..."
+          if [ ! -x /opt/dashboard_venv/bin/python3 ]; then
+            echo "  creating /opt/dashboard_venv..."
+            python3 -m venv /opt/dashboard_venv 2>&1 | tail -1 || true
+          fi
+          if [ -x /opt/dashboard_venv/bin/pip ] && [ -f requirements-dashboard.txt ]; then
+            /opt/dashboard_venv/bin/pip install -q -r requirements-dashboard.txt 2>&1 | tail -1 || true
+          fi
+          if [ -f systemd/cryptomaster-dashboard.service ]; then
+            cp systemd/cryptomaster-dashboard.service /etc/systemd/system/
+            systemctl daemon-reload
+          fi
+          systemctl restart cryptomaster-dashboard.service 2>&1 || true
+          sleep 4
+          DASH_HTTP="$(curl -s -m 8 -o /dev/null -w '%{http_code}' http://localhost:5001/api/dashboard/metrics 2>/dev/null || echo 000)"
+          echo "  dashboard /api/dashboard/metrics HTTP: $DASH_HTTP"
+          if [ "$DASH_HTTP" != "200" ]; then
+            echo "  WARNING: dashboard not healthy after restart (HTTP $DASH_HTTP)"
+            systemctl status cryptomaster-dashboard.service --no-pager -n 12 2>&1 || true
+          fi
+
           # ── 5. Run one deploy/audit cycle and report ────────────────────
           echo "[5/5] Starting one deploy/audit cycle..."
           systemctl start cryptomaster-autodeploy.service || true
