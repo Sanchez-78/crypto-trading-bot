@@ -1,0 +1,5 @@
+# Dependencies for /opt/dashboard_venv (dashboard only — do NOT merge into the bot's requirements.txt).
+# dashboard_web.py needs ONLY Flask; everything else it imports is stdlib or guarded.
+# Context: 2026-07-01 outage — the venv was rebuilt from requirements.txt (which lacks
+# flask) -> ModuleNotFoundError -> systemd crash-loop. See _workspace/dashboard_audit.md §5.
+flask>=3.0

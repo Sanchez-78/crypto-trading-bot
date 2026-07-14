@@ -56,6 +56,39 @@ def _load_learning_state():
     return {}
 
 
+def _android_contract_fields(state=None):
+    """Android contract fields (dashboard_audit 2026-07-14, M1/M3/M4).
+
+    closed_today counts durable rolling-window entries closed since UTC
+    start-of-day (survives bot restarts). learning_status / recommendation use
+    the Czech labels required by the android-dashboard-contract skill.
+    """
+    from datetime import datetime, timezone
+    if state is None:
+        state = _load_learning_state()
+    rolling = state.get('rolling100') or state.get('rolling50') or []
+    midnight = datetime.now(timezone.utc).replace(
+        hour=0, minute=0, second=0, microsecond=0).timestamp()
+    closed_today = sum(
+        1 for e in rolling
+        if isinstance(e, (list, tuple))
+        and any(isinstance(x, (int, float)) and x > 1e9 and x >= midnight for x in e)
+    )
+    lifetime_n = int(state.get('lifetime_n', 0) or 0)
+    if state.get('regime_tp_learning_enabled'):
+        learning_status = 'UČENÍ'
+    elif lifetime_n > 0:
+        learning_status = 'PŘIPRAVEN'
+    else:
+        learning_status = 'VYPNUTO'
+    return {
+        'closed_today': closed_today,
+        'learning_status': learning_status,
+        # No live signal feed in this process; ČEKAT is the safe honest default.
+        'recommendation': 'ČEKAT',
+    }
+
+
 def _closed_trades_from_rolling(rolling, limit=30):
     """Build a closed-trades list from the durable learning rolling window.
 
@@ -83,7 +116,7 @@ def _closed_trades_from_rolling(rolling, limit=30):
             seg = next((x for x in e if isinstance(x, str) and ':' in x), '::')
             parts = seg.split(':')
             ts = next((x for x in e if isinstance(x, (int, float)) and x > 1e9), 0)
-            exit_iso = datetime.fromtimestamp(ts, tz=timezone.utc).isoformat().replace('+00:00', 'Z') if ts else ''
+            exit_iso = datetime.fromtimestamp(ts, tz=timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z') if ts else ''
             out.append({
                 'trade_id': '', 'symbol': parts[0] if parts and parts[0] else '?',
                 'side': parts[2] if len(parts) > 2 else 'BUY',
@@ -176,28 +209,38 @@ def get_live_metrics_from_cache():
                         exits['stagnation'] += cnt
                     elif 'timeout' in reason:
                         exits['timeout'] += cnt
-                for r in cur.execute(
-                    "SELECT trade_id, symbol, entry_price, exit_price, pnl_usd, pnl_pct, "
-                    "exit_reason, entry_ts, exit_ts, regime, win "
-                    "FROM closed_trades ORDER BY exit_ts DESC LIMIT 30"
-                ):
-                    tid, sym, ep, xp, pu, pp, reason, ets, xts, regime, win = r
+                # C8 (dashboard_audit 2026-07-14): read the stored side; legacy
+                # cache.sqlite files predate the side column, so fall back to NULL.
+                _q = ("SELECT trade_id, symbol, entry_price, exit_price, pnl_usd, pnl_pct, "
+                      "exit_reason, entry_ts, exit_ts, regime, win, {side} "
+                      "FROM closed_trades ORDER BY exit_ts DESC LIMIT 30")
+                try:
+                    rows = list(cur.execute(_q.format(side="side")))
+                except sqlite3.OperationalError:  # legacy DB without side column
+                    rows = list(cur.execute(_q.format(side="NULL")))
+                for r in rows:
+                    tid, sym, ep, xp, pu, pp, reason, ets, xts, regime, win, side = r
                     ep = float(ep or 0)
                     xp = float(xp or 0)
                     if pp is None:
+                        # Legacy NULL pnl_pct: recompute long-formula, then correct sign
                         pp = ((xp / ep - 1.0) * 100.0) if ep else 0.0
+                        if (side or '').upper() in ('SELL', 'SHORT'):
+                            pp = -pp  # short: direction-corrected
+                        elif side is None and pu is not None and pp * float(pu) < 0:
+                            pp = -pp  # legacy row: trust side-aware pnl_usd sign
                     ets = float(ets or 0)
                     xts = float(xts or 0)
                     closed_trades_list.append({
-                        'trade_id': tid, 'symbol': sym, 'side': 'BUY',
+                        'trade_id': tid, 'symbol': sym, 'side': (side or 'BUY'),
                         'entry_price': ep, 'exit_price': xp,
                         'pnl_pct': float(pp or 0), 'pnl_usd': float(pu or 0),
                         'reason': reason, 'exit_reason': reason,
                         'hold_s': int(xts - ets) if (xts and ets) else 0,
                         'regime': regime or 'UNKNOWN', 'win': int(win or 0),
                         'exit_time': int(xts) if xts else 0,
-                        'entry_timestamp': datetime.fromtimestamp(ets, tz=timezone.utc).isoformat().replace('+00:00', 'Z') if ets else '',
-                        'exit_timestamp': datetime.fromtimestamp(xts, tz=timezone.utc).isoformat().replace('+00:00', 'Z') if xts else '',
+                        'entry_timestamp': datetime.fromtimestamp(ets, tz=timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z') if ets else '',
+                        'exit_timestamp': datetime.fromtimestamp(xts, tz=timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z') if xts else '',
                     })
                 conn.close()
             except Exception:
@@ -228,25 +271,36 @@ def get_live_metrics_from_cache():
             iterable = positions.items() if isinstance(positions, dict) else enumerate(positions)
             for pid, p in iterable:
                 ets = float(p.get('entry_ts', now_ts))
+                # Android contract (M7/M8): side-aware live pnl_pct + age_s/hold_s keys
+                _ep = float(p.get('entry_price', 0))
+                _cp = float(p.get('last_price', p.get('entry_price', 0)))
+                _side = p.get('side', 'BUY')
+                _pnl = ((_cp / _ep - 1.0) * 100.0) if _ep else 0.0
+                if str(_side).upper() in ('SELL', 'SHORT'):
+                    _pnl = -_pnl
                 open_positions_list.append({
                     'trade_id': str(pid)[:12], 'symbol': p.get('symbol', 'N/A'),
-                    'side': p.get('side', 'BUY'),
-                    'entry_price': float(p.get('entry_price', 0)),
-                    'current_price': float(p.get('last_price', p.get('entry_price', 0))),
+                    'side': _side,
+                    'entry_price': _ep,
+                    'current_price': _cp,
                     'tp': float(p.get('tp', 0)), 'sl': float(p.get('sl', 0)),
                     'entry_ts': ets, 'age_seconds': int(now_ts - ets),
+                    'age_s': int(now_ts - ets),
                     'current_hold_s': int(now_ts - ets),
+                    'hold_s': int(now_ts - ets),
                     'regime': p.get('regime', 'N/A'),
                     'size_usd': float(p.get('size_usd', 0.5)),
-                    'pnl_pct': 0.0, 'status': 'OPEN',
-                    'entry_timestamp': datetime.fromtimestamp(ets, tz=timezone.utc).isoformat().replace('+00:00', 'Z'),
+                    'pnl_pct': round(_pnl, 4), 'status': 'OPEN',
+                    'entry_timestamp': datetime.fromtimestamp(ets, tz=timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z'),
                 })
         except Exception:
             pass
 
-        iso = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+        iso = datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
         return {
             'closed_trades': lifetime_n,
+            'total_trades': lifetime_n,  # Android contract alias (M2)
+            **_android_contract_fields(state),
             'session_closed_trades': session_n,
             'lifetime_closed_trades': lifetime_n,
             'open_positions': len(open_positions_list),
@@ -259,6 +313,7 @@ def get_live_metrics_from_cache():
             'exit_distribution': exits,
             'timestamp': iso,
             'last_update': iso,
+            'last_update_utc': iso,  # Android contract (M5), ms-precision ISO8601 Z
             'data_source': 'learning_state+cache.sqlite',
             'lifetime_metrics': {
                 'lifetime_n': lifetime_n,
@@ -1054,7 +1109,7 @@ def metrics():
                 try:
                     entry_ts = float(pos.get('entry_ts', now_ts))
                     entry_dt = datetime.fromtimestamp(entry_ts, tz=timezone.utc)
-                    entry_iso = entry_dt.isoformat().replace('+00:00', 'Z')
+                    entry_iso = entry_dt.isoformat(timespec='milliseconds').replace('+00:00', 'Z')
                     pos['entry_timestamp'] = entry_iso
                     pos['age_seconds'] = int(now_ts - entry_ts)
                 except Exception as e:
@@ -1073,7 +1128,7 @@ def metrics():
                     exit_ts = now_ts - hold_s if hold_s > 0 else now_ts
 
                 exit_dt = datetime.fromtimestamp(exit_ts, tz=timezone.utc)
-                exit_iso = exit_dt.isoformat().replace('+00:00', 'Z')
+                exit_iso = exit_dt.isoformat(timespec='milliseconds').replace('+00:00', 'Z')
                 closed_trades_list.append({
                     'trade_id': t.get('trade_id', ''),
                     'symbol': t.get('symbol', ''),
@@ -1088,7 +1143,7 @@ def metrics():
                 })
 
             # Generate ISO timestamp
-            iso_timestamp = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+            iso_timestamp = datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
 
             # Only return API metrics if they contain actual trades
             # (Bot API gets metrics from logs which may be empty/rotated, so 0 trades means unreliable data)
@@ -1124,6 +1179,8 @@ def metrics():
 
                 return jsonify({
                     "closed_trades": int(closed_trades),
+                    "total_trades": int(closed_trades),  # Android contract alias (M2)
+                    **_android_contract_fields(),
                     "lifetime_closed_trades": lifetime_metrics["lifetime_n"],
                     "open_positions": real_metrics.get('open_positions', 0) or 0,
                     "open_positions_list": open_positions_list,
@@ -1134,6 +1191,7 @@ def metrics():
                     "exit_distribution": db_exit_distribution,
                     "timestamp": iso_timestamp,
                     "last_update": iso_timestamp,
+                    "last_update_utc": iso_timestamp,  # Android contract (M5)
                     "lifetime_metrics": {
                         "lifetime_n": lifetime_metrics["lifetime_n"],
                         "lifetime_pf": lifetime_metrics["lifetime_pf"],
@@ -1185,7 +1243,7 @@ def metrics():
             'timeout': int(timeout_cnt) if timeout_cnt else 0
         }
 
-        iso_timestamp = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+        iso_timestamp = datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
 
         conn.close()
 
@@ -1218,7 +1276,7 @@ def metrics():
                     try:
                         now_ts = time.time()
                         entry_dt = datetime.fromtimestamp(entry_ts, tz=timezone.utc)
-                        pos_dict['entry_timestamp'] = entry_dt.isoformat().replace('+00:00', 'Z')
+                        pos_dict['entry_timestamp'] = entry_dt.isoformat(timespec='milliseconds').replace('+00:00', 'Z')
                         pos_dict['age_seconds'] = int(now_ts - entry_ts)
                     except:
                         pos_dict['entry_timestamp'] = None
@@ -1248,8 +1306,8 @@ def metrics():
                     'pnl_usd': float(row[5]) if row[5] else 0,
                     'exit_reason': row[6],
                     'hold_s': int(row[7]) if row[7] else 0,
-                    'entry_timestamp': entry_dt.isoformat().replace('+00:00', 'Z'),
-                    'exit_timestamp': exit_dt.isoformat().replace('+00:00', 'Z')
+                    'entry_timestamp': entry_dt.isoformat(timespec='milliseconds').replace('+00:00', 'Z'),
+                    'exit_timestamp': exit_dt.isoformat(timespec='milliseconds').replace('+00:00', 'Z')
                 })
             conn2.close()
         except Exception as e:
@@ -1267,6 +1325,8 @@ def metrics():
 
         return jsonify({
             "closed_trades": closed_trades,
+            "total_trades": closed_trades,  # Android contract alias (M2)
+            **_android_contract_fields(),
             "lifetime_closed_trades": lifetime_metrics["lifetime_n"],
             "open_positions": open_positions,
             "open_positions_list": open_positions_list,
@@ -1277,6 +1337,7 @@ def metrics():
             "exit_distribution": exits,
             "timestamp": iso_timestamp,
             "last_update": iso_timestamp,
+            "last_update_utc": iso_timestamp,  # Android contract (M5)
             "lifetime_metrics": {
                 "lifetime_n": lifetime_metrics["lifetime_n"],
                 "lifetime_pf": lifetime_metrics["lifetime_pf"],
@@ -1285,8 +1346,23 @@ def metrics():
         })
     except Exception as e:
         from datetime import datetime, timezone
-        iso_timestamp = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
-        return jsonify({"error": str(e), "timestamp": iso_timestamp}), 500
+        iso_timestamp = datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+        # Never-500 (dashboard_audit 2026-07-14, Fix 1): the Android app must
+        # always receive valid, parseable JSON — degrade with HTTP 200 instead
+        # of surfacing missing DB/table/JSON failures as 500.
+        return jsonify({
+            "error": str(e),
+            "degraded": True,
+            "open_positions": 0, "open_positions_list": [],
+            "closed_trades_list": [],
+            "closed_today": 0, "total_trades": 0, "closed_trades": 0,
+            "win_rate_pct": 0.0, "profit_factor": 0.0, "net_pnl": 0.0,
+            "learning_status": "VYPNUTO",
+            "recommendation": "ČEKAT",
+            "exit_distribution": {},
+            "timestamp": iso_timestamp, "last_update": iso_timestamp,
+            "last_update_utc": iso_timestamp,
+        }), 200
 
 @app.route('/api/dashboard/metrics/enhanced')
 def enhanced_metrics():
@@ -1296,7 +1372,7 @@ def enhanced_metrics():
         import json as json_module
         from datetime import datetime, timezone
 
-        iso_timestamp = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+        iso_timestamp = datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
 
         # Cost floor constants (from override.conf)
         COST_FLOOR_BPS = 18  # 15bps fee + 3bps slippage
@@ -1385,8 +1461,19 @@ def enhanced_metrics():
         })
     except Exception as e:
         from datetime import datetime, timezone
-        iso_timestamp = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
-        return jsonify({"error": str(e), "timestamp": iso_timestamp}), 500
+        iso_timestamp = datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+        # Never-500 (dashboard_audit 2026-07-14): degrade with valid JSON shape.
+        return jsonify({
+            "error": str(e),
+            "degraded": True,
+            "metrics": {
+                "win_rate_pct": 0.0, "profit_factor": 0.0, "net_pnl": 0.0,
+                "closed_trades": 0,
+                "exit_distribution": {"tp": 0, "sl": 0, "timeout": 0},
+            },
+            "profitability": {},
+            "timestamp": iso_timestamp,
+        }), 200
 
 @app.route('/api/trades/recent')
 def recent_trades():
@@ -1408,28 +1495,38 @@ def recent_trades():
                 conn = sqlite3.connect(cache_path, timeout=2)
                 cur = conn.cursor()
                 cache_trades = []
-                for r in cur.execute(
-                    "SELECT trade_id, symbol, entry_price, exit_price, pnl_usd, "
-                    "pnl_pct, exit_reason, entry_ts, exit_ts, regime, win "
-                    "FROM closed_trades ORDER BY exit_ts DESC LIMIT 30"
-                ):
-                    tid, sym, ep, xp, pu, pp, reason, ets, xts, regime, win = r
+                # C8 (dashboard_audit 2026-07-14): read the stored side; legacy
+                # cache.sqlite files predate the side column, so fall back to NULL.
+                _q = ("SELECT trade_id, symbol, entry_price, exit_price, pnl_usd, "
+                      "pnl_pct, exit_reason, entry_ts, exit_ts, regime, win, {side} "
+                      "FROM closed_trades ORDER BY exit_ts DESC LIMIT 30")
+                try:
+                    rows = list(cur.execute(_q.format(side="side")))
+                except sqlite3.OperationalError:  # legacy DB without side column
+                    rows = list(cur.execute(_q.format(side="NULL")))
+                for r in rows:
+                    tid, sym, ep, xp, pu, pp, reason, ets, xts, regime, win, side = r
                     ep = float(ep or 0)
                     xp = float(xp or 0)
                     if pp is None:
+                        # Legacy NULL pnl_pct: recompute long-formula, then correct sign
                         pp = ((xp / ep - 1.0) * 100.0) if ep else 0.0
+                        if (side or '').upper() in ('SELL', 'SHORT'):
+                            pp = -pp  # short: direction-corrected
+                        elif side is None and pu is not None and pp * float(pu) < 0:
+                            pp = -pp  # legacy row: trust side-aware pnl_usd sign
                     ets = float(ets or 0)
                     xts = float(xts or 0)
                     cache_trades.append({
-                        'trade_id': tid or '', 'symbol': sym, 'side': 'BUY',
+                        'trade_id': tid or '', 'symbol': sym, 'side': (side or 'BUY'),
                         'entry_price': ep, 'exit_price': xp,
                         'pnl_pct': float(pp or 0), 'pnl_usd': float(pu or 0),
                         'reason': reason or 'UNKNOWN', 'exit_reason': reason or 'UNKNOWN',
                         'regime': regime or 'UNKNOWN', 'win': int(win or 0),
                         'hold_s': int(xts - ets) if (xts and ets) else 0,
                         'exit_time': int(xts) if xts else 0,
-                        'entry_ts': datetime.fromtimestamp(ets, tz=timezone.utc).isoformat().replace('+00:00', 'Z') if ets else '',
-                        'exit_ts': datetime.fromtimestamp(xts, tz=timezone.utc).isoformat().replace('+00:00', 'Z') if xts else '',
+                        'entry_ts': datetime.fromtimestamp(ets, tz=timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z') if ets else '',
+                        'exit_ts': datetime.fromtimestamp(xts, tz=timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z') if xts else '',
                     })
                 conn.close()
                 if cache_trades:
@@ -1491,11 +1588,11 @@ def recent_trades():
                             exit_ts = int(time.time()) - int(hold_s_val)
 
                         exit_dt = datetime.fromtimestamp(exit_ts, tz=timezone.utc)
-                        exit_iso = exit_dt.isoformat().replace('+00:00', 'Z')
+                        exit_iso = exit_dt.isoformat(timespec='milliseconds').replace('+00:00', 'Z')
 
                         entry_ts = exit_ts - int(hold_s_val)
                         entry_dt = datetime.fromtimestamp(entry_ts, tz=timezone.utc)
-                        entry_iso = entry_dt.isoformat().replace('+00:00', 'Z')
+                        entry_iso = entry_dt.isoformat(timespec='milliseconds').replace('+00:00', 'Z')
 
                         trades.append({
                             'trade_id': trade_id_match.group(1),
@@ -1546,12 +1643,12 @@ def recent_trades():
                 exit_ts = row['exit_ts']
 
                 if entry_ts and entry_ts > 0 and entry_ts < 100000000000:
-                    entry_ts_iso = datetime.fromtimestamp(entry_ts, tz=timezone.utc).isoformat().replace('+00:00', 'Z')
+                    entry_ts_iso = datetime.fromtimestamp(entry_ts, tz=timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
                 else:
                     entry_ts_iso = str(entry_ts) if entry_ts else None
 
                 if exit_ts and exit_ts > 0 and exit_ts < 100000000000:
-                    exit_ts_iso = datetime.fromtimestamp(exit_ts, tz=timezone.utc).isoformat().replace('+00:00', 'Z')
+                    exit_ts_iso = datetime.fromtimestamp(exit_ts, tz=timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
                 else:
                     exit_ts_iso = str(exit_ts) if exit_ts else None
 
@@ -1673,7 +1770,9 @@ def readiness_check():
         return jsonify(result), 200
     except Exception as e:
         log.error(f"[READINESS_CHECK_ERROR] {e}", exc_info=True)
-        return jsonify({"error": str(e), "readiness_score": 0, "is_ready_for_trading": False}), 500
+        # Never-500 (dashboard_audit 2026-07-14, Fix 5): degrade with HTTP 200.
+        return jsonify({"error": str(e), "readiness_score": 0, "is_ready_for_trading": False,
+                        "blocker_reasons": ["service_degraded"]}), 200
 
 
 @app.route('/api/dashboard/readiness/status')
@@ -1685,7 +1784,8 @@ def readiness_status():
         return jsonify(status), 200
     except Exception as e:
         log.error(f"[READINESS_STATUS_ERROR] {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+        # Never-500 (dashboard_audit 2026-07-14, Fix 5): degrade with HTTP 200.
+        return jsonify({"error": str(e), "status": "degraded"}), 200
 
 
 @app.route('/api/dashboard/learning-state')
@@ -1753,7 +1853,9 @@ def learning_state():
 
     except Exception as e:
         log.error(f"[LEARNING_STATE_ERROR] {e}", exc_info=True)
-        return jsonify({"error": str(e), "status": "error"}), 500
+        # Never-500 (dashboard_audit 2026-07-14, Fix 5): degrade with HTTP 200.
+        return jsonify({"error": str(e), "status": "error", "learning_enabled": False,
+                        "regime_tp_strategy": {}, "lifetime_closes": 0}), 200
 
 
 if __name__ == '__main__':
