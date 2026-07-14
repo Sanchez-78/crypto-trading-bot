@@ -1,9 +1,26 @@
 name: Deploy to Hetzner
 
+# 2026-07-14: paths filter added. This workflow restarts cryptomaster on
+# EVERY push to main; observability/tests/docs merges were restarting the
+# bot every ~5 min, killing open positions before their 15-min timeout
+# (evidence: restart_forensics.txt — systemd "Stopping" at 20:33/20:38/20:44,
+# exactly correlated with PR #29/#30/#31 merges). Restart only when runtime
+# code actually changes; workflow/tests/docs changes deploy via the 2h
+# autodeploy timer without a restart (it restarts only on SHA change with
+# code impact — and even then only after its test gate).
 on:
   push:
     branches:
       - main
+    paths:
+      - 'src/**'
+      - 'bot2/**'
+      - 'start.py'
+      - 'start_flask_dashboard.py'
+      - 'requirements.txt'
+      - 'requirements-dashboard.txt'
+      - 'config.py'
+  workflow_dispatch:
 
 jobs:
   deploy:
