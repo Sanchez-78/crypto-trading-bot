@@ -240,6 +240,15 @@ jobs:
           PYEOF
           " > artifacts/cache_sqlite_probe.txt 2>&1 || echo 'probe ssh failed' >> artifacts/cache_sqlite_probe.txt
 
+          # ── Close-path forensics (why save_closed_trade stopped writing) ──
+          ssh $SSH_OPTS "$HETZNER_USER@$HETZNER_HOST" "
+            journalctl -u '$HETZNER_SERVICE_NAME' --since '4 hours ago' --no-pager -o short-iso 2>/dev/null \
+              | grep -E 'LOCAL_CACHE|SAVE_FAILED|PAPER_EXIT|LEARNING_SKIPPED|LEARNING_UPDATE|OperationalError|no column|KeyError|close_paper_position|Traceback' \
+              | sed 's/\(key\|token\|secret\|password\|api_key\|apikey\|passwd\)\([=: ]\+\)[^ ,\"'\''\'']\+/\1\2[REDACTED]/gi' \
+              | tail -120 \
+              || echo 'no close-path events found'
+          " > artifacts/close_path_forensics.txt
+
       # ── 3. Print mobile-readable summary ──────────────────────────────────
       - name: Print mobile summary
         run: |
