@@ -22,7 +22,7 @@ on:
 
 jobs:
   set-size:
-    name: Set paper position size
+    name: Set paper TP zone
     runs-on: ubuntu-latest
 
     steps:
@@ -60,7 +60,7 @@ jobs:
             echo "CRITICAL: tp_bps '$TP_BPS' is not numeric"; exit 1
           fi
           if awk "BEGIN{exit !($TP_BPS > 150 || $TP_BPS < 5)}"; then
-            echo "CRITICAL: tp_bps $TP_BPS > 1000 — refusing (sanity cap for paper sim)"; exit 1
+            echo "CRITICAL: tp_bps $TP_BPS out of band 5-150 — refusing"; exit 1
           fi
 
           # Safety gates: never proceed with live flags
@@ -75,7 +75,7 @@ jobs:
           echo "Safety gates OK"
 
           echo "== current value =="
-          grep -n "^PAPER_TP_ZONE_BPS=" .env || echo "PAPER_TP_ZONE_BPS not set (code default 25)"
+          grep -n "^PAPER_TP_ZONE_BPS=" .env || echo "PAPER_TP_ZONE_BPS not set (code default 60)"
 
           cp .env .env.bak.papertp
           sed -i '/^PAPER_TP_ZONE_BPS=/d' .env
