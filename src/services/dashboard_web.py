@@ -134,6 +134,90 @@ def _closed_trades_from_rolling(rolling, limit=30):
     return out
 
 
+def _rolling_window_metrics(cache_path, limit=100):
+    """Headline WR / PF / net from the newest N closed trades in cache.sqlite.
+
+    This is the AUTHORITATIVE source for the dashboard headline (bug 2026-07-15):
+    it reflects the bot's RECENT form (last <=100 rows of closed_trades, ordered by
+    exit_ts DESC) — NOT the lifetime aggregate (dominated by the pre-fix losing era,
+    16k+ trades) and NOT the durable learning rolling window (which can disagree with
+    the cache close-sink). Before this, the headline profit_factor was sourced from
+    lifetime_pf and win_rate from roll_wins/roll_n, so the app showed a red 41%/0.38
+    while the actual recent window was ~62% WR / positive.
+
+    Win rule: pnl_usd>0, or pnl_pct>0 when pnl_usd is NULL/0.
+    Profit factor: gross_win/gross_loss from pnl_usd; if every pnl_usd is 0/NULL,
+    fall back to pnl_pct as the P&L basis.
+
+    Returns {'n','wins','win_rate_pct','profit_factor','net_pnl'} or None on ANY
+    error / empty cache. Uses a read-only sqlite connection (mode=ro) with a short
+    timeout and NEVER raises, so callers can fall back and preserve never-500/blank.
+    """
+    try:
+        if not cache_path or not os.path.exists(cache_path):
+            return None
+        conn = sqlite3.connect(f"file:{cache_path}?mode=ro", uri=True, timeout=2)
+        try:
+            rows = conn.execute(
+                "SELECT pnl_usd, pnl_pct FROM closed_trades "
+                "ORDER BY exit_ts DESC LIMIT ?", (int(limit),)
+            ).fetchall()
+        finally:
+            conn.close()
+    except Exception:
+        return None
+
+    if not rows:
+        return None
+
+    def _num(x):
+        try:
+            return float(x)
+        except (TypeError, ValueError):
+            return None
+
+    usd = [_num(r[0]) for r in rows]
+    pct = [_num(r[1]) for r in rows]
+    # Choose one P&L basis for gross/net so units stay consistent: prefer USD,
+    # fall back to pct only when no row carries a non-zero pnl_usd.
+    basis_is_usd = any(v is not None and v != 0.0 for v in usd)
+
+    n = len(rows)
+    wins = 0
+    gross_win = 0.0
+    gross_loss = 0.0
+    net = 0.0
+    for u, p in zip(usd, pct):
+        # Per-row win: USD sign when present, else pct sign (task spec).
+        if u is not None and u != 0.0:
+            is_win = u > 0
+        else:
+            is_win = p is not None and p > 0
+        if is_win:
+            wins += 1
+        val = (u if u is not None else 0.0) if basis_is_usd else (p if p is not None else 0.0)
+        if val > 0:
+            gross_win += val
+        elif val < 0:
+            gross_loss += -val
+        net += val
+
+    if gross_loss > 0:
+        pf = gross_win / gross_loss
+    elif gross_win > 0:
+        pf = 99.0  # wins with no losing P&L in the window; capped, JSON-safe
+    else:
+        pf = 0.0
+
+    return {
+        'n': n,
+        'wins': wins,
+        'win_rate_pct': round(wins / n * 100.0, 2) if n else 0.0,
+        'profit_factor': round(pf, 3),
+        'net_pnl': round(net, 6),
+    }
+
+
 def get_live_metrics_from_cache():
     """Return LIVE, restart-durable metrics for the dashboard/API.
 
@@ -296,6 +380,25 @@ def get_live_metrics_from_cache():
         except Exception:
             pass
 
+        # --- Headline from the RECENT window (bug 2026-07-15) ---------------
+        # The headline WR/PF must reflect current bot form, sourced from ONE
+        # authoritative place: the newest <=100 rows of cache.sqlite:closed_trades.
+        # Previously PF came from lifetime_pf (16k+ trades, pre-fix losing era) and
+        # WR from the durable rolling window (roll_wins/roll_n), which disagreed with
+        # the recent closed trades. Fall back to the old learning-state values ONLY
+        # when the cache is empty/unavailable, so never-500 / never-blank is kept.
+        rolling_hdr = _rolling_window_metrics(cache_path, 100)
+        if rolling_hdr:
+            headline_pf = round(float(rolling_hdr['profit_factor']), 3)
+            headline_wr = round(float(rolling_hdr['win_rate_pct']), 2)
+            headline_window = int(rolling_hdr['n'])
+            net_pnl_window = round(float(rolling_hdr['net_pnl']), 6)
+        else:
+            headline_pf = round(float(lifetime_metrics.get('lifetime_pf', 0.0) or 0.0), 3)
+            headline_wr = round(win_rate, 2)
+            headline_window = roll_n
+            net_pnl_window = round(session_net, 6)
+
         iso = datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
         return {
             'closed_trades': lifetime_n,
@@ -306,10 +409,11 @@ def get_live_metrics_from_cache():
             'open_positions': len(open_positions_list),
             'open_positions_list': open_positions_list,
             'closed_trades_list': closed_trades_list,
-            'profit_factor': round(float(lifetime_metrics.get('lifetime_pf', 0.0) or 0.0), 3),
-            'win_rate_pct': round(win_rate, 2),
-            'win_rate_window': roll_n,
+            'profit_factor': headline_pf,
+            'win_rate_pct': headline_wr,
+            'win_rate_window': headline_window,
             'net_pnl': round(session_net, 6),
+            'net_pnl_window': net_pnl_window,
             'exit_distribution': exits,
             'timestamp': iso,
             'last_update': iso,
