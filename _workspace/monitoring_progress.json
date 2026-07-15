@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 5,
+  "cycle": 6,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 5,
-  "current_wr": 33.0,
-  "current_pnl": 2.2638,
-  "last_update": "2026-07-14T20:50:00Z",
+  "total_cycles_completed": 6,
+  "current_wr": 54.0,
+  "current_pnl": 0.0217,
+  "last_update": "2026-07-15T05:40:00Z",
   "status": "monitoring",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -74,6 +74,16 @@
       "commit": "7a03401",
       "deploy_result": "PASS (merge itself no longer triggers restart - filter proven immediately)",
       "lesson": "BATCH merges; avoid touching src/ unless intended to restart the bot."
+    },
+    {
+      "cycle": 6,
+      "timestamp": "2026-07-15T05:40:00Z",
+      "status": "CAUTION->ACTION",
+      "wr_after": 54.0,
+      "pnl_after": 0.0217,
+      "note": "Overnight uninterrupted run (+92 closes). Trend: prev-100 50.0%/-0.011 -> last-100 54.0%/+0.0217 -> last-30 63.3%/PF 2.15. Edge analysis 859 trades: BNBUSDT 0/72, XRPUSDT 1/65, DOTUSDT 2/34 = anti-edge; SELL trades 7/8 wins. Reviewer-agent APPROVED WITH CONDITIONS blacklist of BNB+XRP (DOT held out): bounded forward-test, time-distribution check, re-eval after +100 closes vs baseline 54%/+0.0217, rollback baseline captured.",
+      "fix_applied": "hetzner-apply-symbol-blacklist.yml workflow (apply/revert/status, live-flag gates, single env key touch, auto-rollback on failed restart)",
+      "deploy_result": "pending workflow run"
     }
   ]
 }
