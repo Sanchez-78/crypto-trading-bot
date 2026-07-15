@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 7,
+  "cycle": 9,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 7,
-  "current_wr": 54.0,
-  "current_pnl": 0.0217,
-  "last_update": "2026-07-15T06:05:00Z",
+  "total_cycles_completed": 9,
+  "current_wr": 53.0,
+  "current_pnl": 0.0197,
+  "last_update": "2026-07-15T07:35:00Z",
   "status": "monitoring",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -94,6 +94,16 @@
       "note": "Blacklist BNB+XRP applied 05:29 (run 1, success, service active, no rollback). No new closes 05:29-06:00 (post-restart entry ramp). last-100 54%/+0.0217 unchanged. 0 restarts since apply. Re-eval checkpoint: at ~16597 total closes vs baseline 54%/+0.0217. Next: verify 07:00 quota reset revives learning.",
       "fix_applied": "PAPER_SYMBOL_BLACKLIST=BNBUSDT,XRPUSDT live on server",
       "deploy_result": "PASS"
+    },
+    {
+      "cycle": 9,
+      "timestamp": "2026-07-15T07:35:00Z",
+      "status": "CAUTION+INVESTIGATION",
+      "wr_after": 53.0,
+      "pnl_after": 0.0197,
+      "note": "Post-07:00 check: NO [QUOTA_RESET] logged (process restarted 05:29 with fresh counters, so no reset was due - quota NOT the learning blocker anymore). LEARNING health still 0.0 BAD and LEARNING_UPDATE ok=True count 0 despite +18 closes. close_path_forensics grep EMPTY (no PAPER_EXIT/LEARNING_UPDATE markers in 4h journal) - either different log markers in paper_live close path or learning hook not wired (set_learning_instance?). NEXT CYCLE: targeted journal grep for actual close markers (PAPER_CLOSED, record_close, learning_monitor) + check bootstrap wiring of _learning_instance. Trend: last-100 53%/+0.0197 (stable), last-30 63.3%/PF 1.55. 0 restarts. Blacklist holding (no BNB/XRP).",
+      "fix_applied": "none (investigation)",
+      "deploy_result": "n/a"
     }
   ]
 }
