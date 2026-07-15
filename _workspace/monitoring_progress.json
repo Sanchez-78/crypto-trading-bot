@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 9,
+  "cycle": 11,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 9,
-  "current_wr": 53.0,
-  "current_pnl": 0.0197,
-  "last_update": "2026-07-15T07:35:00Z",
-  "status": "monitoring",
+  "total_cycles_completed": 11,
+  "current_wr": 57.0,
+  "current_pnl": 0.0415,
+  "last_update": "2026-07-15T13:25:00Z",
+  "status": "goal_candidate_stabilization_window",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -104,6 +104,18 @@
       "note": "Post-07:00 check: NO [QUOTA_RESET] logged (process restarted 05:29 with fresh counters, so no reset was due - quota NOT the learning blocker anymore). LEARNING health still 0.0 BAD and LEARNING_UPDATE ok=True count 0 despite +18 closes. close_path_forensics grep EMPTY (no PAPER_EXIT/LEARNING_UPDATE markers in 4h journal) - either different log markers in paper_live close path or learning hook not wired (set_learning_instance?). NEXT CYCLE: targeted journal grep for actual close markers (PAPER_CLOSED, record_close, learning_monitor) + check bootstrap wiring of _learning_instance. Trend: last-100 53%/+0.0197 (stable), last-30 63.3%/PF 1.55. 0 restarts. Blacklist holding (no BNB/XRP).",
       "fix_applied": "none (investigation)",
       "deploy_result": "n/a"
+    },
+    {
+      "cycle": 11,
+      "timestamp": "2026-07-15T13:25:00Z",
+      "status": "MILESTONE",
+      "wr_before": 53.0,
+      "wr_after": 57.0,
+      "pnl_before": 0.0197,
+      "pnl_after": 0.0415,
+      "note": "LEARNING ALIVE: LEARNING_UPDATE ok=True count 3, errors 0 (first since P0.3C regression; fix PR #38 deployed 08:50). rolling-100 CROSSED GOAL: 57.0% WR / +0.0415 pnl (prev-100 49%). Trend 50->53->54->57. Blacklist re-eval at 16600 closes: 57% vs baseline 54% = improved, keeping. GOAL NOT declared yet - 24h stabilization window opened, target check ~2026-07-16T13:20Z: rolling-100 must hold >56% + positive P&L with learning alive.",
+      "fix_applied": "PR #38 learning hook fix (reviewer-approved, 358 tests green)",
+      "deploy_result": "PASS (auto-deploy via deploy.yml, single controlled restart)"
     }
   ]
 }
