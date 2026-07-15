@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 19,
+  "cycle": 20,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 19,
-  "current_wr": 63.0,
-  "current_pnl": 0.0959,
-  "last_update": "2026-07-15T17:38:00Z",
+  "total_cycles_completed": 20,
+  "current_wr": 62.0,
+  "current_pnl": 0.0207,
+  "last_update": "2026-07-15T21:00:00Z",
   "status": "goal_candidate_stabilization_window",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -180,6 +180,16 @@
       "wr_after": 63.0,
       "pnl_after": 0.0959,
       "note": "last-100 63%/+0.0959 (rolling P&L accelerating). Dashboard headline 63%/PF 1.48. Lifetime net_pnl -0.337 (essentially flat; $25 sizing live since 16:04 but only ~55 trades at new size - lifetime will turn positive as $25 closes accumulate). DOTUSDT now winning (was held out of blacklist - correct call). 7th cycle above goal."
+    },
+    {
+      "cycle": 20,
+      "timestamp": "2026-07-15T21:00:00Z",
+      "status": "DASHBOARD_FIX_DEPLOYED",
+      "wr_after": 62.0,
+      "pnl_after": 0.0207,
+      "note": "FALSE ALARM resolved: user screenshot showed 41%/0.38 RED - was dashboard headline sourcing LIFETIME (PF 0.372) + learning rolling window, NOT actual recent form. Fix PR #49 deployed (headline now from cache.sqlite last-100). Verified: NEW headline WR 62%/PF 1.033/window 100 = matches edge_analysis. lifetime kept separate. NOTE: window PF only ~1.03 despite WR 62% - wins smaller than losses in USD (timeout mean-reversion), P&L edge thin but positive. Goal window criteria met (WR>56 + positive). Lifetime still -0.37, recovering via $25 sizing.",
+      "fix_applied": "PR #49 dashboard headline rolling-window (reviewer self-adversarial, 24 tests)",
+      "deploy_result": "PASS (repair run, dashboard HTTP verified)"
     }
   ]
 }
