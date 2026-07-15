@@ -2597,12 +2597,16 @@ def close_paper_position(
 
     # P1.1L Phase 6: Call learning update for training trades
     # P1.1Q: Use safe adapter with canonical normalization
-    if pos.get("paper_source") == "training_sampler":
+    # FIX(2026-07-15): P0.3C routing rewrites paper_source -> "paper_evidence_collection"
+    # for all gated (cold-state) admits, which orphaned these hooks. Widen to both labels.
+    # NOTE: strict-EV "normal_rde_take" / "paper_adaptive_recovery" closes are still NOT
+    # covered here — revisit when segments graduate to strict EV (see review follow-up).
+    if pos.get("paper_source") in ("training_sampler", "paper_evidence_collection"):
         _safe_learning_update_for_paper_trade(pos, pnl_data)
 
     # P1.1AP-N: Record canonical close for adaptive learning (rolling metrics + policy adaptation)
     # P1.1AP-N1: Use authoritative eligibility predicate to exclude D_NEG and other ineligible rows
-    if pos.get("paper_source") == "training_sampler":
+    if pos.get("paper_source") in ("training_sampler", "paper_evidence_collection"):
         eligible, skip_reason = _is_eligible_canonical_paper_learning_trade(pos, pnl_data, closed_trade)
         if eligible:
             _record_adaptive_learning_close(closed_trade, pos, pnl_data)
