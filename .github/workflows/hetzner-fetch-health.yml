@@ -264,6 +264,53 @@ jobs:
               | grep -E 'STARTUP FAILED|CRASH DETECTED|sys.exit|MemoryError|Killed' | tail -20 || echo '(none)'
           " > artifacts/restart_forensics.txt
 
+          # ── Edge analysis: where do losses concentrate (859-trade history) ─
+          ssh $SSH_OPTS "$HETZNER_USER@$HETZNER_HOST" "
+            python3 - <<'PYEOF'
+          import sqlite3
+          db = '$HETZNER_PROJECT_DIR/local_learning_storage/cache.sqlite'
+          try:
+              conn = sqlite3.connect(f'file:{db}?mode=ro', uri=True, timeout=5)
+              c = conn.cursor()
+              def agg(title, sql):
+                  print(f'== {title} ==')
+                  for row in c.execute(sql).fetchall():
+                      print(' ', row)
+              agg('by exit_reason (all)', \"\"\"
+                SELECT exit_reason, COUNT(*), SUM(win),
+                       ROUND(100.0*SUM(win)/COUNT(*),1) AS wr,
+                       ROUND(SUM(pnl_usd),4) AS pnl
+                FROM closed_trades GROUP BY exit_reason ORDER BY COUNT(*) DESC\"\"\")
+              agg('by regime (all)', \"\"\"
+                SELECT COALESCE(regime,'?'), COUNT(*), SUM(win),
+                       ROUND(100.0*SUM(win)/COUNT(*),1),
+                       ROUND(SUM(pnl_usd),4)
+                FROM closed_trades GROUP BY regime ORDER BY COUNT(*) DESC\"\"\")
+              agg('by symbol (all)', \"\"\"
+                SELECT symbol, COUNT(*), SUM(win),
+                       ROUND(100.0*SUM(win)/COUNT(*),1),
+                       ROUND(SUM(pnl_usd),4)
+                FROM closed_trades GROUP BY symbol ORDER BY SUM(pnl_usd) ASC\"\"\")
+              agg('trend: last 100 vs previous 100', \"\"\"
+                SELECT 'last100', COUNT(*), SUM(win), ROUND(100.0*SUM(win)/COUNT(*),1), ROUND(SUM(pnl_usd),4)
+                FROM (SELECT * FROM closed_trades ORDER BY exit_ts DESC LIMIT 100)\"\"\")
+              agg('', \"\"\"
+                SELECT 'prev100', COUNT(*), SUM(win), ROUND(100.0*SUM(win)/COUNT(*),1), ROUND(SUM(pnl_usd),4)
+                FROM (SELECT * FROM closed_trades ORDER BY exit_ts DESC LIMIT 100 OFFSET 100)\"\"\")
+              agg('by side (new rows only)', \"\"\"
+                SELECT COALESCE(side,'(legacy NULL)'), COUNT(*), SUM(win),
+                       ROUND(100.0*SUM(win)/COUNT(*),1), ROUND(SUM(pnl_usd),4)
+                FROM closed_trades GROUP BY side\"\"\")
+              agg('by hour of day (UTC, all)', \"\"\"
+                SELECT strftime('%H', exit_ts, 'unixepoch'), COUNT(*),
+                       ROUND(100.0*SUM(win)/COUNT(*),1), ROUND(SUM(pnl_usd),4)
+                FROM closed_trades GROUP BY 1 ORDER BY 4 ASC LIMIT 8\"\"\")
+              conn.close()
+          except Exception as e:
+              print('edge analysis failed:', e)
+          PYEOF
+          " > artifacts/edge_analysis.txt 2>&1 || echo 'edge ssh failed' >> artifacts/edge_analysis.txt
+
       # ── 3. Print mobile-readable summary ──────────────────────────────────
       - name: Print mobile summary
         run: |
