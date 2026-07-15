@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 18,
+  "cycle": 19,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 18,
-  "current_wr": 61.0,
-  "current_pnl": 0.0609,
-  "last_update": "2026-07-15T16:25:00Z",
+  "total_cycles_completed": 19,
+  "current_wr": 63.0,
+  "current_pnl": 0.0959,
+  "last_update": "2026-07-15T17:38:00Z",
   "status": "goal_candidate_stabilization_window",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -172,6 +172,14 @@
       "wr_after": 61.0,
       "pnl_after": 0.0609,
       "note": "last-100 61%/+0.0609 (6th cycle above goal). PAPER_POSITION_SIZE_USD=25 deployed 16:04 (user-approved, PR #46) - first $25 closes land ~16:20+, verify scale next cycle. User goal emphasis: positive lifetime P&L (currently -$0.32; expected positive within ~1 day at 50x sizing)."
+    },
+    {
+      "cycle": 19,
+      "timestamp": "2026-07-15T17:38:00Z",
+      "status": "STABILIZING",
+      "wr_after": 63.0,
+      "pnl_after": 0.0959,
+      "note": "last-100 63%/+0.0959 (rolling P&L accelerating). Dashboard headline 63%/PF 1.48. Lifetime net_pnl -0.337 (essentially flat; $25 sizing live since 16:04 but only ~55 trades at new size - lifetime will turn positive as $25 closes accumulate). DOTUSDT now winning (was held out of blacklist - correct call). 7th cycle above goal."
     }
   ]
 }
