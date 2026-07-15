@@ -1,0 +1,99 @@
+name: Hetzner Set Paper TP Zone
+
+# Reviewer-gated TP geometry experiment (2026-07-15): tighten paper TP zone
+# so the DEV_FADE reversion is locked before it decays to a TIMEOUT.
+# Default 20 bps (down from effective 60): a 25bps deviation reverting toward
+# its mean actually touches +20bps, converting partial-reversion timeouts into
+# real TP exits -> predicted PF 1.03 -> ~1.2-1.35, WR flat to +5pts.
+# PAPER-ONLY: PAPER_TP_ZONE_BPS feeds paper_trade_executor simulated exits;
+# live orders remain hard-gated by live_trading_allowed() regardless.
+#
+# Touches EXACTLY ONE env key (PAPER_TP_ZONE_BPS). Hard-blocks
+# live_real/ENABLE_REAL_ORDERS/LIVE_TRADING_CONFIRMED. Auto-rollback if the
+# service fails to come back after restart.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tp_bps:
+        description: 'Paper take-profit zone in bps (5-150)'
+        required: true
+        default: '20'
+
+jobs:
+  set-size:
+    name: Set paper TP zone
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set up SSH key and pin host key
+        env:
+          HETZNER_SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$HETZNER_SSH_KEY" > ~/.ssh/hetzner_deploy_key
+          chmod 600 ~/.ssh/hetzner_deploy_key
+          ssh-keyscan -p 22 -T 15 "$HETZNER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          [ -s ~/.ssh/known_hosts ] || { echo "host unreachable"; exit 1; }
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Apply on server
+        env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          HETZNER_USER: ${{ secrets.HETZNER_USER }}
+          HETZNER_PROJECT_DIR: ${{ secrets.HETZNER_PROJECT_DIR }}
+          HETZNER_SERVICE_NAME: ${{ secrets.HETZNER_SERVICE_NAME }}
+          TP_BPS: ${{ inputs.tp_bps }}
+        run: |
+          SSH_OPTS="-p 22 -i ~/.ssh/hetzner_deploy_key -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile=~/.ssh/known_hosts -o ConnectTimeout=30 -o BatchMode=yes"
+
+          ssh $SSH_OPTS "$HETZNER_USER@$HETZNER_HOST" \
+            "PROJECT_DIR='$HETZNER_PROJECT_DIR' SERVICE_NAME='$HETZNER_SERVICE_NAME' TP_BPS='$TP_BPS' bash -s" << 'REMOTE_EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          cd "$PROJECT_DIR"
+
+          # Numeric sanity: paper-only but keep it within a sane band.
+          if ! echo "$TP_BPS" | grep -Eq '^[0-9]+(\.[0-9]+)?$'; then
+            echo "CRITICAL: tp_bps '$TP_BPS' is not numeric"; exit 1
+          fi
+          if awk "BEGIN{exit !($TP_BPS > 150 || $TP_BPS < 5)}"; then
+            echo "CRITICAL: tp_bps $TP_BPS out of band 5-150 — refusing"; exit 1
+          fi
+
+          # Safety gates: never proceed with live flags
+          for pair in "TRADING_MODE live_real" "ENABLE_REAL_ORDERS true" "LIVE_TRADING_CONFIRMED true"; do
+            key="${pair% *}"; bad="${pair#* }"
+            v="$(grep -E "^[[:space:]]*(export[[:space:]]+)?${key}=" .env 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '\"'"'"' ' | tr 'A-Z' 'a-z' || true)"
+            if [ "$v" = "$bad" ] || { [ "$bad" = "true" ] && { [ "$v" = "1" ] || [ "$v" = "yes" ] || [ "$v" = "on" ]; }; }; then
+              echo "CRITICAL: .env has ${key}=${v} — refusing to touch anything"
+              exit 1
+            fi
+          done
+          echo "Safety gates OK"
+
+          echo "== current value =="
+          grep -n "^PAPER_TP_ZONE_BPS=" .env || echo "PAPER_TP_ZONE_BPS not set (code default 60)"
+
+          cp .env .env.bak.papertp
+          sed -i '/^PAPER_TP_ZONE_BPS=/d' .env
+          echo "PAPER_TP_ZONE_BPS=$TP_BPS" >> .env
+          echo "Applied: PAPER_TP_ZONE_BPS=$TP_BPS"
+
+          systemctl restart "$SERVICE_NAME"
+          sleep 12
+          ACTIVE="$(systemctl is-active "$SERVICE_NAME" 2>/dev/null || echo inactive)"
+          echo "service: $ACTIVE"
+          if [ "$ACTIVE" != "active" ]; then
+            echo "ROLLBACK: restoring .env and restarting"
+            mv .env.bak.papertp .env
+            systemctl restart "$SERVICE_NAME"
+            exit 1
+          fi
+          echo ""
+          echo "live_real enabled:       no (gate-checked)"
+          echo "ENABLE_REAL_ORDERS:      no (gate-checked)"
+          echo "LIVE_TRADING_CONFIRMED:  no (gate-checked)"
+          REMOTE_EOF

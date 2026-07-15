@@ -311,6 +311,38 @@ jobs:
           PYEOF
           " > artifacts/edge_analysis.txt 2>&1 || echo 'edge ssh failed' >> artifacts/edge_analysis.txt
 
+          # ── MFE distribution of WINNERS (TP=20 pre-flight, reviewer cond #1) ─
+          # Does a winner peak >20bps mid-life then decay to a small TIMEOUT gain
+          # (TP20 would lock the peak -> PF up) or close at/above its MFE (TP20 clips)?
+          ssh $SSH_OPTS "$HETZNER_USER@$HETZNER_HOST" "
+            python3 - <<'PYEOF'
+          import sqlite3
+          db='$HETZNER_PROJECT_DIR/local_learning_storage/cache.sqlite'
+          try:
+              c=sqlite3.connect(f'file:{db}?mode=ro',uri=True,timeout=5).cursor()
+              # winners in last 300 closes: mfe (max favorable %) vs realized pnl_pct
+              rows=c.execute(\"SELECT pnl_pct, mfe FROM closed_trades WHERE win=1 AND exit_ts > strftime('%s','now')-604800 ORDER BY exit_ts DESC LIMIT 300\").fetchall()
+              n=len(rows); import statistics as st
+              mfes=[abs(r[1]) for r in rows if r[1] is not None]
+              pnls=[abs(r[0]) for r in rows if r[0] is not None]
+              print('winners_n:',n)
+              if mfes:
+                  print('winner MFE bps: mean=%.1f median=%.1f p25=%.1f p75=%.1f' % (
+                      st.mean(mfes)*100, st.median(mfes)*100,
+                      sorted(mfes)[len(mfes)//4]*100, sorted(mfes)[3*len(mfes)//4]*100))
+              if pnls:
+                  print('winner realized pnl bps: mean=%.1f median=%.1f' % (st.mean(pnls)*100, st.median(pnls)*100))
+              over20=sum(1 for m in mfes if m*100>=20)
+              print('winners with MFE>=20bps: %d/%d (%.0f%%)' % (over20,len(mfes),100*over20/max(len(mfes),1)))
+              # decay proof: MFE meaningfully above realized close?
+              pairs=[(abs(r[1]),abs(r[0])) for r in rows if r[1] is not None and r[0] is not None]
+              decayed=sum(1 for m,p in pairs if m*100>=20 and p < m*0.8)
+              print('winners peaked>=20 then gave back >20%%: %d/%d' % (decayed,len(pairs)))
+          except Exception as e:
+              print('mfe probe failed:',e)
+          PYEOF
+          " > artifacts/mfe_distribution.txt 2>&1 || echo 'mfe ssh failed' >> artifacts/mfe_distribution.txt
+
       # ── 3. Print mobile-readable summary ──────────────────────────────────
       - name: Print mobile summary
         run: |
