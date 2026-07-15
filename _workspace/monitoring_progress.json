@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 13,
+  "cycle": 14,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 13,
-  "current_wr": 58.0,
-  "current_pnl": 0.0539,
-  "last_update": "2026-07-15T13:50:00Z",
+  "total_cycles_completed": 14,
+  "current_wr": 60.0,
+  "current_pnl": 0.0571,
+  "last_update": "2026-07-15T14:50:00Z",
   "status": "goal_candidate_stabilization_window",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -132,6 +132,14 @@
       "wr_after": 58.0,
       "pnl_after": 0.0539,
       "note": "last-100 58.0%/+0.0539 (WR climbing). LEARNING_UPDATE counter refreshes with next 2h audit cycle (health report is timer-generated). Window on track for GOAL check 2026-07-16T13:20Z."
+    },
+    {
+      "cycle": 14,
+      "timestamp": "2026-07-15T14:50:00Z",
+      "status": "STABILIZING",
+      "wr_after": 60.0,
+      "pnl_after": 0.0571,
+      "note": "LEARNING FULLY CONFIRMED via live journal: [LEARNING_UPDATE] ok=True flows on every close (learning_source=paper_evidence_collection), PAPER_CANONICAL_LEARNING_UPDATE shows rolling100_pf=1.47, policy_action=continue_learning. health.md was stale (2h timer). last-100 60.0%/+0.0571, 0 restarts. Window on track."
     }
   ]
 }
