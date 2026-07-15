@@ -1,0 +1,96 @@
+name: Hetzner Set Paper Position Size
+
+# User-approved sizing change (2026-07-15): raise paper position size from
+# ~$0.50 to a visible size. PAPER-ONLY: PAPER_POSITION_SIZE_USD feeds
+# paper_trade_executor simulated sizing; live orders remain hard-gated by
+# live_trading_allowed() regardless of this value.
+#
+# Touches EXACTLY ONE env key (PAPER_POSITION_SIZE_USD). Hard-blocks
+# live_real/ENABLE_REAL_ORDERS/LIVE_TRADING_CONFIRMED. Auto-rollback if the
+# service fails to come back after restart.
+
+on:
+  workflow_dispatch:
+    inputs:
+      size_usd:
+        description: 'Paper position size in USD'
+        required: true
+        default: '25'
+
+jobs:
+  set-size:
+    name: Set paper position size
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set up SSH key and pin host key
+        env:
+          HETZNER_SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$HETZNER_SSH_KEY" > ~/.ssh/hetzner_deploy_key
+          chmod 600 ~/.ssh/hetzner_deploy_key
+          ssh-keyscan -p 22 -T 15 "$HETZNER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          [ -s ~/.ssh/known_hosts ] || { echo "host unreachable"; exit 1; }
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Apply on server
+        env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          HETZNER_USER: ${{ secrets.HETZNER_USER }}
+          HETZNER_PROJECT_DIR: ${{ secrets.HETZNER_PROJECT_DIR }}
+          HETZNER_SERVICE_NAME: ${{ secrets.HETZNER_SERVICE_NAME }}
+          SIZE_USD: ${{ inputs.size_usd }}
+        run: |
+          SSH_OPTS="-p 22 -i ~/.ssh/hetzner_deploy_key -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile=~/.ssh/known_hosts -o ConnectTimeout=30 -o BatchMode=yes"
+
+          ssh $SSH_OPTS "$HETZNER_USER@$HETZNER_HOST" \
+            "PROJECT_DIR='$HETZNER_PROJECT_DIR' SERVICE_NAME='$HETZNER_SERVICE_NAME' SIZE_USD='$SIZE_USD' bash -s" << 'REMOTE_EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          cd "$PROJECT_DIR"
+
+          # Numeric sanity: paper-only but keep it within a sane band.
+          if ! echo "$SIZE_USD" | grep -Eq '^[0-9]+(\.[0-9]+)?$'; then
+            echo "CRITICAL: size_usd '$SIZE_USD' is not numeric"; exit 1
+          fi
+          if awk "BEGIN{exit !($SIZE_USD > 1000)}"; then
+            echo "CRITICAL: size_usd $SIZE_USD > 1000 — refusing (sanity cap for paper sim)"; exit 1
+          fi
+
+          # Safety gates: never proceed with live flags
+          for pair in "TRADING_MODE live_real" "ENABLE_REAL_ORDERS true" "LIVE_TRADING_CONFIRMED true"; do
+            key="${pair% *}"; bad="${pair#* }"
+            v="$(grep -E "^[[:space:]]*(export[[:space:]]+)?${key}=" .env 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '\"'"'"' ' | tr 'A-Z' 'a-z' || true)"
+            if [ "$v" = "$bad" ] || { [ "$bad" = "true" ] && { [ "$v" = "1" ] || [ "$v" = "yes" ] || [ "$v" = "on" ]; }; }; then
+              echo "CRITICAL: .env has ${key}=${v} — refusing to touch anything"
+              exit 1
+            fi
+          done
+          echo "Safety gates OK"
+
+          echo "== current value =="
+          grep -n "^PAPER_POSITION_SIZE_USD=" .env || echo "PAPER_POSITION_SIZE_USD not set (code default 25)"
+
+          cp .env .env.bak.papersize
+          sed -i '/^PAPER_POSITION_SIZE_USD=/d' .env
+          echo "PAPER_POSITION_SIZE_USD=$SIZE_USD" >> .env
+          echo "Applied: PAPER_POSITION_SIZE_USD=$SIZE_USD"
+
+          systemctl restart "$SERVICE_NAME"
+          sleep 12
+          ACTIVE="$(systemctl is-active "$SERVICE_NAME" 2>/dev/null || echo inactive)"
+          echo "service: $ACTIVE"
+          if [ "$ACTIVE" != "active" ]; then
+            echo "ROLLBACK: restoring .env and restarting"
+            mv .env.bak.papersize .env
+            systemctl restart "$SERVICE_NAME"
+            exit 1
+          fi
+          echo ""
+          echo "live_real enabled:       no (gate-checked)"
+          echo "ENABLE_REAL_ORDERS:      no (gate-checked)"
+          echo "LIVE_TRADING_CONFIRMED:  no (gate-checked)"
+          REMOTE_EOF
