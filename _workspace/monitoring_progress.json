@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 6,
+  "cycle": 7,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 6,
+  "total_cycles_completed": 7,
   "current_wr": 54.0,
   "current_pnl": 0.0217,
-  "last_update": "2026-07-15T05:40:00Z",
+  "last_update": "2026-07-15T06:05:00Z",
   "status": "monitoring",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -84,6 +84,16 @@
       "note": "Overnight uninterrupted run (+92 closes). Trend: prev-100 50.0%/-0.011 -> last-100 54.0%/+0.0217 -> last-30 63.3%/PF 2.15. Edge analysis 859 trades: BNBUSDT 0/72, XRPUSDT 1/65, DOTUSDT 2/34 = anti-edge; SELL trades 7/8 wins. Reviewer-agent APPROVED WITH CONDITIONS blacklist of BNB+XRP (DOT held out): bounded forward-test, time-distribution check, re-eval after +100 closes vs baseline 54%/+0.0217, rollback baseline captured.",
       "fix_applied": "hetzner-apply-symbol-blacklist.yml workflow (apply/revert/status, live-flag gates, single env key touch, auto-rollback on failed restart)",
       "deploy_result": "pending workflow run"
+    },
+    {
+      "cycle": 7,
+      "timestamp": "2026-07-15T06:05:00Z",
+      "status": "CAUTION",
+      "wr_after": 54.0,
+      "pnl_after": 0.0217,
+      "note": "Blacklist BNB+XRP applied 05:29 (run 1, success, service active, no rollback). No new closes 05:29-06:00 (post-restart entry ramp). last-100 54%/+0.0217 unchanged. 0 restarts since apply. Re-eval checkpoint: at ~16597 total closes vs baseline 54%/+0.0217. Next: verify 07:00 quota reset revives learning.",
+      "fix_applied": "PAPER_SYMBOL_BLACKLIST=BNBUSDT,XRPUSDT live on server",
+      "deploy_result": "PASS"
     }
   ]
 }
