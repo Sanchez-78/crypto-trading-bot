@@ -1,105 +1,112 @@
 name: Deploy to Hetzner
 
-# 2026-07-14: paths filter added. This workflow restarts cryptomaster on
-# EVERY push to main; observability/tests/docs merges were restarting the
-# bot every ~5 min, killing open positions before their 15-min timeout
-# (evidence: restart_forensics.txt — systemd "Stopping" at 20:33/20:38/20:44,
-# exactly correlated with PR #29/#30/#31 merges). Restart only when runtime
-# code actually changes; workflow/tests/docs changes deploy via the 2h
-# autodeploy timer without a restart (it restarts only on SHA change with
-# code impact — and even then only after its test gate).
+# Audit PR1 (P1.5, 2026-07-16): deterministic, single-service deploy.
+# - Deploys ONLY the canonical legacy service `cryptomaster.service`.
+#   The standalone second-loop V5 paper unit is NO LONGER deployed/restarted
+#   here (V5 stays a library bridge inside the legacy process; the standalone
+#   unit is disabled via the manual-only disable-v5-paper workflow).
+# - Pins the checkout to the EXACT triggering SHA (github.sha) via hard-reset
+#   after verifying the commit is reachable — no non-deterministic fetch+merge.
+# - Runtime data (cache.sqlite, learning state, open positions, outbox) is
+#   gitignored and must never be stashed or wiped; a tracked-dirty tree fails
+#   the deploy (file names only, no content).
+# - Fail-closed live-safety gate before any restart.
+#
+# DISPATCH-ONLY (audit 2026-07-16): the push trigger is intentionally REMOVED.
+# Deployment must be an explicit, operator-approved step — merging code to main
+# must never auto-restart the live paper bot (open positions would be killed
+# mid-hold; see restart_forensics.txt for the prior auto-restart incident).
+# Deploy is now triggered manually (workflow_dispatch), which pins to the ref's
+# github.sha via the deterministic reset below. The 2h autodeploy timer remains
+# the other (SHA-change-gated) path.
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'src/**'
-      - 'bot2/**'
-      - 'start.py'
-      - 'start_flask_dashboard.py'
-      - 'requirements.txt'
-      - 'requirements-dashboard.txt'
-      - 'config.py'
   workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy via SSH
+      - name: Deploy via SSH (deterministic, legacy-only)
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          DEPLOY_SHA: ${{ github.sha }}
         with:
           host: ${{ secrets.HETZNER_HOST }}
           username: ${{ secrets.HETZNER_USER }}
           key: ${{ secrets.HETZNER_SSH_KEY }}
+          envs: DEPLOY_SHA
           script: |
-            set -e
+            set -euo pipefail
 
-            echo "========== DEPLOYING LEGACY BOT =========="
+            echo "========== DEPLOYING LEGACY BOT (deterministic) =========="
+            export HOME="${HOME:-/root}"
             cd /opt/cryptomaster
             git config --global --add safe.directory /opt/cryptomaster
 
-            # Abort any stuck merge conflict
+            # ── Deterministic SHA validation ────────────────────────────────
+            if ! printf '%s' "$DEPLOY_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+              echo "ERROR: DEPLOY_SHA '$DEPLOY_SHA' is not a 40-hex commit sha"; exit 1
+            fi
+
+            # ── Tracked-dirty guard (do NOT stash; runtime data is gitignored) ─
+            if ! git diff --quiet || ! git diff --cached --quiet; then
+              echo "ERROR: tracked working tree is dirty on the server — refusing to deploy."
+              echo "Offending tracked files (names only, no content):"
+              git status --short --untracked-files=no
+              exit 1
+            fi
+
             git merge --abort 2>/dev/null || true
 
-            # Stash any local changes (e.g., runtime SQLite files modified by live bot)
-            git stash -u || true
-
+            # ── Deterministic checkout of the exact triggering commit ───────
             git fetch origin main
-            REMOTE=$(git rev-parse origin/main)
-            git pull origin main
+            if ! git cat-file -e "${DEPLOY_SHA}^{commit}" 2>/dev/null; then
+              echo "ERROR: commit $DEPLOY_SHA not reachable on the server after fetch"; exit 1
+            fi
+            git reset --hard "$DEPLOY_SHA"
+            HEAD_NOW="$(git rev-parse HEAD)"
+            if [ "$HEAD_NOW" != "$DEPLOY_SHA" ]; then
+              echo "ERROR: HEAD ($HEAD_NOW) != DEPLOY_SHA ($DEPLOY_SHA) — aborting before restart"; exit 1
+            fi
+            echo "[DEPLOY_SHA_VERIFIED] HEAD=$HEAD_NOW"
 
-            # Ensure virtualenv exists
+            # ── venv ────────────────────────────────────────────────────────
             if [ ! -f venv/bin/python ]; then
               echo "[DEPLOY] Virtualenv missing, creating..."
               python3 -m venv venv
               venv/bin/pip install --upgrade pip setuptools wheel
               [ -f requirements.txt ] && venv/bin/pip install -r requirements.txt
-              echo "[DEPLOY] Virtualenv created ✓"
+              echo "[DEPLOY] Virtualenv created"
             fi
 
-            # Validate entrypoint
+            # ── Compile gate ────────────────────────────────────────────────
             test -f start.py || { echo "ERROR: start.py not found"; exit 1; }
-            ./venv/bin/python -m py_compile start.py || { echo "ERROR: start.py syntax error"; exit 1; }
-            ./venv/bin/python -m py_compile bot2/main.py || { echo "ERROR: bot2/main.py syntax error"; exit 1; }
-            ./venv/bin/python -m py_compile src/services/runtime_flags.py || { echo "ERROR: runtime_flags.py syntax error"; exit 1; }
-            ./venv/bin/python -m py_compile src/services/firebase_client.py || { echo "ERROR: firebase_client.py syntax error"; exit 1; }
-
+            ./venv/bin/python -m py_compile start.py bot2/main.py \
+              src/services/runtime_flags.py src/services/firebase_client.py \
+              || { echo "ERROR: compile gate failed"; exit 1; }
             echo "[DEPLOY] Legacy compilation validation passed"
+
+            # ── Fail-closed live-safety gate BEFORE restart ─────────────────
+            envval() {
+              # strip an inline "# comment", then quotes/spaces, then lowercase
+              grep -E "^[[:space:]]*(export[[:space:]]+)?$1=" .env 2>/dev/null | tail -1 \
+                | cut -d= -f2- | sed 's/[[:space:]]*#.*$//' \
+                | tr -d '"'"'"' ' | tr 'A-Z' 'a-z' || true
+            }
+            if [ -f .env ]; then
+              mode="$(envval TRADING_MODE)"; ero="$(envval ENABLE_REAL_ORDERS)"; ltc="$(envval LIVE_TRADING_CONFIRMED)"
+              is_true() { case "$1" in true|1|yes|on) return 0;; *) return 1;; esac; }
+              if [ "$mode" = "live_real" ] || is_true "$ero" || is_true "$ltc"; then
+                echo "CRITICAL: live-trading indicator in .env (TRADING_MODE=$mode ENABLE_REAL_ORDERS=$ero LIVE_TRADING_CONFIRMED=$ltc) — refusing to restart. Not auto-correcting."
+                exit 1
+              fi
+            fi
+            echo "[DEPLOY_SAFETY_GATE_OK] no live flags in .env"
+
+            # ── Restart ONLY the canonical legacy service ───────────────────
             systemctl restart cryptomaster
             sleep 3
             systemctl is-active cryptomaster || { echo "ERROR: cryptomaster service failed to start"; exit 1; }
-            echo "[DEPLOY] Legacy bot deployed and active ✓"
-
-            echo ""
-            echo "========== DEPLOYING V5 PAPER BOT =========="
-            cd /opt/cryptomaster_v5_validation
-            git config --global --add safe.directory /opt/cryptomaster_v5_validation
-            git config pull.ff only
-            git fetch origin main
-            git reset --hard origin/main
-
-            # Ensure virtualenv exists
-            if [ ! -f venv/bin/python ]; then
-              echo "[DEPLOY] V5 virtualenv missing, creating..."
-              python3 -m venv venv
-              venv/bin/pip install --upgrade pip setuptools wheel
-              [ -f requirements.txt ] && venv/bin/pip install -r requirements.txt
-              echo "[DEPLOY] V5 virtualenv created ✓"
-            fi
-
-            # Validate V5 entrypoint
-            test -f src/v5_bot/paper/__main__.py || { echo "ERROR: V5 __main__.py not found"; exit 1; }
-            ./venv/bin/python -m py_compile src/v5_bot/paper/__main__.py || { echo "ERROR: V5 __main__.py syntax error"; exit 1; }
-            ./venv/bin/python -m py_compile src/v5_bot/paper/runner.py || { echo "ERROR: V5 runner.py syntax error"; exit 1; }
-            ./venv/bin/python -m py_compile src/v5_bot/firebase/repository.py || { echo "ERROR: V5 repository.py syntax error"; exit 1; }
-
-            echo "[DEPLOY] V5 compilation validation passed"
-            systemctl restart cryptomaster-v5-paper || { echo "[WARN] systemctl restart returned error (may be expected)"; }
-            sleep 5
-            echo "[DEPLOY] V5 Paper bot restart initiated ✓"
-            echo "[DEPLOY] Service logs (last 10 lines) after restart:"
-            journalctl -u cryptomaster-v5-paper -n 10 --no-pager 2>/dev/null || echo "  (logs not yet available)"
-
-            echo ""
-            echo "[DEPLOY] ✅ ALL DEPLOYMENTS SUCCESSFUL"
+            echo "[DEPLOY] Legacy bot deployed and active — SHA $HEAD_NOW"
+            echo "[DEPLOY] Standalone V5 paper bot is intentionally NOT deployed here (see the manual disable-v5-paper workflow)."
+            echo "[DEPLOY] ✅ DEPLOY SUCCESSFUL"
