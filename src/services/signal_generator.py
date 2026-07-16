@@ -82,6 +82,12 @@ _DEV_FADE       = os.getenv("PAPER_DEVIATION_FADE", "false").lower() == "true"
 _DEV_GATE_BPS   = float(os.getenv("PAPER_DEV_GATE_BPS", "25"))
 _DEV_LOOKBACK_S = float(os.getenv("PAPER_DEV_LOOKBACK_S", "900"))
 
+# DEV_FADE side filter (2026-07-16, evidence: side-tracked closes showed BUY-fades
+# 71.7% WR /+0.17 vs SELL-fades 54.7% WR /-0.23 — fading rallies fights the crypto
+# uptrend). Values: "both" (default, no change) | "buy_only" | "sell_only".
+# Reversible via env; revert to "both" if a downtrend flips the edge.
+_DEV_FADE_SIDES = os.getenv("PAPER_FADE_SIDES", "both").strip().lower()
+
 # P0.5 debug trace (P0_5E/P0_5D/BULL_EDGE lines) fires per tick per BULL_TREND
 # symbol (~75+ lines/s) and floods the journal — same slow-consumer hazard the
 # TP_SL_EVAL gate fixed in 0da5256. Set PAPER_DEBUG_SIGNAL_TRACE=1 to re-enable.
@@ -838,6 +844,13 @@ def on_price(data):
             track_filtered()
             return
         action = "SELL" if dev_bps > 0 else "BUY"   # fade the move (mean-reversion)
+        # Side filter: drop the anti-edge side when configured (default "both" = no-op).
+        if (_DEV_FADE_SIDES == "buy_only" and action == "SELL") or \
+           (_DEV_FADE_SIDES == "sell_only" and action == "BUY"):
+            if s not in _cycle_prefilter_drops:
+                _cycle_prefilter_drops[s] = f"DEV_FADE_SIDE_FILTERED_{action}"
+            track_filtered()
+            return
         edge = "DEV_FADE"
         edge_features = {"dev_bps": round(dev_bps, 1)}
         explore = False
