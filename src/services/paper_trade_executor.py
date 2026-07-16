@@ -9,11 +9,15 @@ import json
 from typing import Optional, Dict, List
 
 # V10.27: Load .env configuration (if python-dotenv available)
+# P0.1 (audit 2026-07-16): override=False so a checked-out .env can NEVER silently
+# override safety-critical env vars set by systemd/the process manager. The deploy
+# environment (systemd Environment= / ExecStart) is the source of truth; .env only
+# fills gaps for values NOT already exported.
 try:
     from dotenv import load_dotenv
-    load_dotenv(override=True)  # Load .env and override existing env vars
+    load_dotenv(override=False)  # P0.1: never override systemd-provided env vars
 except ImportError:
-    # Fallback: manual .env loading
+    # Fallback: manual .env loading — also non-overriding (skip keys already in env)
     _env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.env')
     if os.path.exists(_env_path):
         with open(_env_path) as f:
@@ -21,19 +25,84 @@ except ImportError:
                 line = line.strip()
                 if line and not line.startswith('#'):
                     k, v = line.split('=', 1)
-                    os.environ[k] = v
+                    if k not in os.environ:  # P0.1: do not override existing systemd env
+                        os.environ[k] = v
 
 from src.core.event_bus import subscribe_once
 
 log = logging.getLogger(__name__)
 
+
+def _is_truthy_env(value: Optional[str]) -> bool:
+    """Return True if an env string looks affirmative (1/true/yes/on)."""
+    if value is None:
+        return False
+    return value.strip().lower() in ("1", "true", "yes", "on", "y", "t")
+
+
+def _enforce_paper_safe_mode() -> None:
+    """P0.1 (audit 2026-07-16): fail-closed re-validation of trading-mode env.
+
+    This module is the PAPER executor and must never run against a real-order
+    configuration. If, after .env load, any live indicator is set
+    (TRADING_MODE=live_real, or ENABLE_REAL_ORDERS / LIVE_TRADING_CONFIRMED truthy),
+    log CRITICAL and force the process back to paper-safe values in os.environ.
+
+    We deliberately do NOT raise: crashing the paper loop is worse than clamping.
+    The invariant enforced is only that .env can never *silently promote* this
+    paper executor to live.
+    """
+    trading_mode = os.environ.get("TRADING_MODE", "")
+    enable_real = os.environ.get("ENABLE_REAL_ORDERS", "")
+    live_confirmed = os.environ.get("LIVE_TRADING_CONFIRMED", "")
+
+    live_indicated = (
+        trading_mode.strip().lower() == "live_real"
+        or _is_truthy_env(enable_real)
+        or _is_truthy_env(live_confirmed)
+    )
+    if live_indicated:
+        log.critical(
+            "[PAPER_SAFETY_OVERRIDE] Live trading indicator detected in environment "
+            "(TRADING_MODE=%r ENABLE_REAL_ORDERS=%r LIVE_TRADING_CONFIRMED=%r) — "
+            "this is the PAPER executor; forcing paper-safe values. .env can never "
+            "promote paper -> live.",
+            trading_mode, enable_real, live_confirmed,
+        )
+        os.environ["TRADING_MODE"] = "paper"
+        os.environ["ENABLE_REAL_ORDERS"] = "0"
+        os.environ["LIVE_TRADING_CONFIRMED"] = "0"
+
+
+# P0.1: enforce paper-safe precedence immediately at import, after .env is loaded.
+_enforce_paper_safe_mode()
+
 # V10.49 CRITICAL: Wire learning system into exit handler
 # Learning instance must be imported and available globally
 _learning_instance = None
 def set_learning_instance(instance):
-    """Set the global learning instance (called from bot2/main.py)."""
+    """Set the global learning instance (called from bot2/main.py).
+
+    P0.2 (audit 2026-07-16): converge on the SINGLE process-wide learner singleton.
+    Previously bot2 constructed a distinct PaperAdaptiveLearning() and passed it here,
+    while the canonical close path recorded into get_learner()'s singleton — so every
+    eligible close was recorded TWICE (double-counting lifetime_n / rolling windows /
+    PF / WR / expectancy). We now ALWAYS bind `_learning_instance` to the get_learner()
+    singleton, ignoring any distinct instance, so there is exactly one learner object.
+    """
     global _learning_instance
-    _learning_instance = instance
+    try:
+        from src.services.paper_adaptive_learning import get_learner
+        _learning_instance = get_learner()
+        if instance is not None and instance is not _learning_instance:
+            log.warning(
+                "[LEARNING_WIRED] Ignoring distinct PaperAdaptiveLearning instance; "
+                "bound to the get_learner() singleton (P0.2 double-learning fix)."
+            )
+    except Exception as e:
+        # Fail-safe: fall back to whatever was passed rather than leaving unwired.
+        _learning_instance = instance
+        log.error("[LEARNING_WIRED] Could not resolve get_learner() singleton: %s", e)
     log.info("[LEARNING_WIRED] Global learning instance connected to paper_trade_executor")
 
 # Phase 4C: Live PAPER metrics
@@ -42,12 +111,22 @@ try:
 except ImportError:
     record_paper_entry = None
 
-# Local Learning Storage (V10.15k): Replace Firebase for learning data
-try:
-    from src.services.learning_integration import on_paper_trade_closed
-except ImportError:
-    on_paper_trade_closed = None
-    log.warning("[LEARNING] Failed to import local learning storage")
+# P0.4 (audit 2026-07-16): The historical import
+#     from src.services.learning_integration import on_paper_trade_closed
+# targeted a symbol that does NOT exist (learning_integration defines
+# `class LearningIntegration` + a `learning` instance, with NO `on_paper_trade_closed`
+# function/method). The import therefore ALWAYS failed -> on_paper_trade_closed=None
+# -> the downstream `if on_paper_trade_closed:` sink was permanently dead code.
+#
+# The AUTHORITATIVE cache.sqlite sink for closed trades is
+#     src.services.local_persistent_cache.save_closed_trade(...)
+# invoked from src/services/trade_executor.py:1662. That path already dedupes on
+# trade_id via `INSERT OR REPLACE INTO closed_trades`. The dead import and its
+# branch have been removed to eliminate a misleading second "sink" that never ran.
+#
+# TODO(canonical-handler): a single canonical on_close handler that fans out to
+# (adaptive learning + local_persistent_cache + metrics) is desirable, but is a
+# larger refactor and intentionally out of scope for this correctness patch.
 
 # P0.3B: Segment EV Gate (Pure logic for strict EV vs evidence collection)
 try:
@@ -2626,29 +2705,12 @@ def close_paper_position(
     with _PAPER_CLOSED_TRADES_LOCK:
         _PAPER_CLOSED_TRADES_BUFFER.append(closed_trade)
 
-    # V10.15k: Record to LOCAL LEARNING STORAGE (zero Firebase reads/writes!)
-    if on_paper_trade_closed:
-        try:
-            on_paper_trade_closed(
-                trade_id=position_id,
-                symbol=pos.get("symbol", "UNKNOWN"),
-                side=side,
-                entry_price=entry_price,
-                exit_price=price,
-                entry_ts=pos.get("entry_ts", int(ts)),
-                exit_ts=int(ts),
-                pnl_pct=pnl_data.get("net_pnl_pct", 0.0) / 100.0,
-                pnl_usd=closed_trade.get("unit_pnl", 0.0),
-                exit_reason=reason,
-                regime=pos.get("regime", "NEUTRAL"),
-                size_usd=size_usd,
-                mfe_pct=pos.get("max_seen", entry_price) / entry_price - 1 if entry_price > 0 else 0,
-                mae_pct=pos.get("min_seen", entry_price) / entry_price - 1 if entry_price > 0 else 0,
-                cost_edge_ok=pos.get("cost_edge_ok", False),
-                learning_source=pos.get("paper_source", "paper_training"),
-            )
-        except Exception as e:
-            log.error(f"[LEARNING_RECORD_ERROR] Failed to record learning: {e}")
+    # P0.4 (audit 2026-07-16): the former `if on_paper_trade_closed:` local-learning
+    # sink was DEAD CODE (import always failed — see module header) and has been
+    # removed. The authoritative cache.sqlite sink is
+    # local_persistent_cache.save_closed_trade(...) (called from
+    # trade_executor.py:1662, deduped via INSERT OR REPLACE on trade_id). No
+    # behavior change: this branch never executed.
 
     # Persist state after closing position
     _save_paper_state()
@@ -2683,19 +2745,14 @@ def close_paper_position(
     except Exception as e:
         log.error(f"[CANONICAL_UPDATE_ERROR] Failed to update trade counts: {e}")
 
-    # V10.49 CRITICAL: Wire learning into exit handler
-    # Record this exit in the learning system for regime-TP adaptation
-    if _learning_instance:
-        log.warning(f"[LEARNING_ACTIVE] Instance present, recording close for {pos['symbol']}")
-        try:
-            # record_close expects the full closed_trade dict, not individual parameters
-            _learning_instance.record_close(closed_trade)
-            log.debug(f"[LEARNING_RECORD_CLOSE] trade_id={position_id} symbol={pos['symbol']} outcome={pnl_data.get('outcome')}")
-        except Exception as e:
-            log.warning(f"[LEARNING_RECORD_CLOSE_ERROR] trade_id={position_id} err={str(e)[:100]}")
-    else:
-        # V10.50: DIAGNOSTIC - learning instance not wired
-        log.error(f"[LEARNING_NOT_WIRED] _learning_instance is None! Trade {position_id} not recorded. This should not happen after V10.49 deployment.")
+    # P0.2 (audit 2026-07-16): the former second record path here
+    #     _learning_instance.record_close(closed_trade)
+    # double-counted every eligible close. The canonical, eligibility-gated recorder
+    # is `_record_adaptive_learning_close(...)` above (which routes through the
+    # get_learner() singleton and correctly excludes D_NEG control shadows). Recording
+    # a second time — especially the raw, ungated closed_trade — corrupted lifetime_n /
+    # rolling windows / PF / WR / expectancy, so this redundant path is removed.
+    # record_close() also now dedupes by trade_id as a defense-in-depth safety net.
 
     return closed_trade
 

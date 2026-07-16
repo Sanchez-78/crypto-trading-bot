@@ -1538,9 +1538,13 @@ def main():
     print("  [4.3/7] Initializing learning system for autonomous optimization...", file=sys.stderr, flush=True)
     global _learning_instance
     try:
-        from src.services.paper_adaptive_learning import PaperAdaptiveLearning
+        # P0.2 (audit 2026-07-16): use the SINGLE process-wide learner singleton.
+        # Previously this constructed a distinct PaperAdaptiveLearning(), which the
+        # executor recorded into IN ADDITION to get_learner()'s singleton -> every
+        # close was learned twice. Bind to get_learner() so there is one learner.
+        from src.services.paper_adaptive_learning import get_learner
         from src.services.paper_trade_executor import set_learning_instance
-        _learning_instance = PaperAdaptiveLearning()
+        _learning_instance = get_learner()
         set_learning_instance(_learning_instance)  # V10.49: CRITICAL - wire learning into exit handler
         print("  [4.3/7] Learning system initialized ✓", file=sys.stderr, flush=True)
     except Exception as e:

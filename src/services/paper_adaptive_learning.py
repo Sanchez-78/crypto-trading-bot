@@ -66,6 +66,12 @@ class PaperAdaptiveLearning:
         self.rolling50 = deque(maxlen=50)
         self.rolling100 = deque(maxlen=100)
 
+        # P0.2 (audit 2026-07-16): persistent dedupe of already-recorded trade_ids.
+        # Defense-in-depth so a close can never be learned twice (e.g. if two call
+        # sites both fire for one trade_id). Bounded FIFO; membership set kept in sync.
+        self._recorded_trade_ids = deque(maxlen=5000)
+        self._recorded_trade_ids_set = set()
+
         # Segment weights: {segment_key: weight}
         # Weight affects priority in next paper entries
         self.segment_weights = {}
@@ -325,6 +331,13 @@ class PaperAdaptiveLearning:
                 self.qualification_window = deque(data.get("qualification_window", []), maxlen=100)
                 self.operator_unlock = data.get("operator_unlock", False)
 
+                # P0.2: restore persistent trade_id dedupe ledger (bounded).
+                _recorded = data.get("recorded_trade_ids", [])
+                self._recorded_trade_ids = deque(
+                    (str(t) for t in _recorded), maxlen=self._recorded_trade_ids.maxlen
+                )
+                self._recorded_trade_ids_set = set(self._recorded_trade_ids)
+
                 log.info(
                     "[PAPER_LEARNING_STATE_RESTORE] state_ok=True "
                     "lifetime_n=%d rolling20=%d rolling50=%d rolling100=%d "
@@ -376,6 +389,8 @@ class PaperAdaptiveLearning:
             "qualification_window": list(self.qualification_window),
             "operator_unlock": self.operator_unlock,
             "paper_admission_controls": self.paper_admission_controls,
+            # P0.2: persistent trade_id dedupe ledger (bounded).
+            "recorded_trade_ids": list(self._recorded_trade_ids),
         }
 
         # PHASE 1: Save to Firebase (primary, persistent)
@@ -407,6 +422,8 @@ class PaperAdaptiveLearning:
                 "regime_tp_strategy": self.regime_tp_strategy,
                 "regime_tp_learning_enabled": self.regime_tp_learning_enabled,
                 "regime_tp_learning_blend": self.regime_tp_learning_blend,
+                # P0.2: persistent trade_id dedupe ledger (bounded).
+                "recorded_trade_ids": list(self._recorded_trade_ids),
             }
             with open(self._state_file, 'w') as f:
                 json.dump(json_data, f, indent=2)
@@ -433,6 +450,18 @@ class PaperAdaptiveLearning:
                 ...
             }
         """
+        # P0.2 (audit 2026-07-16): persistent dedupe by trade_id. If this exact
+        # trade_id was already recorded, skip — recording it again would double-count
+        # lifetime_n / rolling windows / PF / WR / expectancy. Empty/missing trade_ids
+        # are NOT deduped (nothing to key on) and always record.
+        trade_id = str(trade.get("trade_id", "") or "")
+        if trade_id and trade_id in self._recorded_trade_ids_set:
+            log.info(
+                "[LEARNING_RECORD_CLOSE_DEDUPE] trade_id=%s already recorded — skipping",
+                trade_id,
+            )
+            return
+
         # V10.52: Log entry to verify learning is receiving data
         log.info(f"[LEARNING_RECORD_CLOSE] Recording trade: symbol={trade.get('symbol')} outcome={trade.get('outcome')} regime={trade.get('regime')}")
 
@@ -454,6 +483,14 @@ class PaperAdaptiveLearning:
         self.rolling20.append(entry)
         self.rolling50.append(entry)
         self.rolling100.append(entry)
+
+        # P0.2: mark this trade_id recorded (bounded FIFO + membership set in sync).
+        if trade_id:
+            if len(self._recorded_trade_ids) == self._recorded_trade_ids.maxlen:
+                evicted = self._recorded_trade_ids[0]
+                self._recorded_trade_ids_set.discard(evicted)
+            self._recorded_trade_ids.append(trade_id)
+            self._recorded_trade_ids_set.add(trade_id)
 
         # Update lifetime metrics
         self.lifetime_n += 1
@@ -1207,17 +1244,24 @@ def get_segment_metrics(symbol: str, regime: str, side: str) -> Optional[Dict]:
         if not matching:
             return None
 
+        # P0.3 (audit 2026-07-16): rolling entries are now 6-tuples
+        # (net_pnl_pct, outcome, segment_key, ts, learning_source, admission_bucket)
+        # — see record_close(). The previous fixed 4-tuple unpack
+        # (`for _, outcome, _, _ in matching`) raised ValueError on every 6-tuple,
+        # which was swallowed below and returned None, so segment cooldowns never
+        # activated. Use index-based, length-tolerant parsing instead. Index 0 is
+        # net_pnl_pct, index 1 is outcome; both exist in the 4- and 6-tuple formats.
         n = len(matching)
-        wins = sum(1 for _, outcome, _, _ in matching if outcome == "WIN")
-        losses = sum(1 for _, outcome, _, _ in matching if outcome == "LOSS")
+        wins = sum(1 for e in matching if len(e) >= 2 and e[1] == "WIN")
+        losses = sum(1 for e in matching if len(e) >= 2 and e[1] == "LOSS")
 
         # Profit factor
-        wins_pnl = sum(pnl for pnl, outcome, _, _ in matching if outcome == "WIN")
-        losses_pnl = abs(sum(pnl for pnl, outcome, _, _ in matching if outcome == "LOSS"))
+        wins_pnl = sum(float(e[0]) for e in matching if len(e) >= 2 and e[1] == "WIN")
+        losses_pnl = abs(sum(float(e[0]) for e in matching if len(e) >= 2 and e[1] == "LOSS"))
         pf = wins_pnl / losses_pnl if losses_pnl > 0 else (1.0 if wins_pnl > 0 else 0.0)
 
         # Expectancy
-        expectancy = sum(pnl for pnl, _, _, _ in matching) / n if n > 0 else 0.0
+        expectancy = sum(float(e[0]) for e in matching if len(e) >= 1) / n if n > 0 else 0.0
 
         return {
             "n": n,
