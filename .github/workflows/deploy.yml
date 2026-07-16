@@ -12,20 +12,14 @@ name: Deploy to Hetzner
 #   the deploy (file names only, no content).
 # - Fail-closed live-safety gate before any restart.
 #
-# Paths filter (2026-07-14): only runtime-code pushes trigger a restart;
-# workflow/docs/tests changes reach the server via the 2h autodeploy timer.
+# DISPATCH-ONLY (audit 2026-07-16): the push trigger is intentionally REMOVED.
+# Deployment must be an explicit, operator-approved step — merging code to main
+# must never auto-restart the live paper bot (open positions would be killed
+# mid-hold; see restart_forensics.txt for the prior auto-restart incident).
+# Deploy is now triggered manually (workflow_dispatch), which pins to the ref's
+# github.sha via the deterministic reset below. The 2h autodeploy timer remains
+# the other (SHA-change-gated) path.
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'src/**'
-      - 'bot2/**'
-      - 'start.py'
-      - 'start_flask_dashboard.py'
-      - 'requirements.txt'
-      - 'requirements-dashboard.txt'
-      - 'config.py'
   workflow_dispatch:
 
 jobs:
@@ -94,8 +88,10 @@ jobs:
 
             # ── Fail-closed live-safety gate BEFORE restart ─────────────────
             envval() {
+              # strip an inline "# comment", then quotes/spaces, then lowercase
               grep -E "^[[:space:]]*(export[[:space:]]+)?$1=" .env 2>/dev/null | tail -1 \
-                | cut -d= -f2- | tr -d '"'"'"' ' | tr 'A-Z' 'a-z' || true
+                | cut -d= -f2- | sed 's/[[:space:]]*#.*$//' \
+                | tr -d '"'"'"' ' | tr 'A-Z' 'a-z' || true
             }
             if [ -f .env ]; then
               mode="$(envval TRADING_MODE)"; ero="$(envval ENABLE_REAL_ORDERS)"; ltc="$(envval LIVE_TRADING_CONFIRMED)"

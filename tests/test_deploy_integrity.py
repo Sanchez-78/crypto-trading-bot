@@ -75,3 +75,12 @@ def test_v5_disable_workflow_is_manual_and_nondestructive():
     assert "systemctl stop" in t and "systemctl disable" in t and "systemctl mask" in t
     assert "rm -rf" not in t
     assert "systemctl restart cryptomaster\n" not in t  # must not restart legacy
+
+
+def test_deploy_is_dispatch_only_no_push_trigger():
+    """Audit 2026-07-16: deploy must NOT auto-run on push (no bot auto-restart on merge)."""
+    doc = yaml.safe_load(_deploy_text())
+    on = doc.get("on") or doc.get(True)
+    assert isinstance(on, dict)
+    assert "push" not in on, "push trigger must be removed — deploy is manual/dispatch-only"
+    assert "workflow_dispatch" in on

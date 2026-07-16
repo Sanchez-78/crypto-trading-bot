@@ -62,8 +62,9 @@ jobs:
           # Safety: never proceed with live flags in .env (path from override or default)
           for D in /opt/cryptomaster /opt/CryptoMaster_srv; do [ -f "$D/.env" ] && ENVF="$D/.env" && break; done
           if [ -n "${ENVF:-}" ]; then
-            v() { grep -E "^[[:space:]]*(export[[:space:]]+)?$1=" "$ENVF" | tail -1 | cut -d= -f2- | tr -d '"'"'"' ' | tr 'A-Z' 'a-z' || true; }
-            if [ "$(v TRADING_MODE)" = "live_real" ] || [ "$(v ENABLE_REAL_ORDERS)" = "true" ] || [ "$(v LIVE_TRADING_CONFIRMED)" = "true" ]; then
+            v() { grep -E "^[[:space:]]*(export[[:space:]]+)?$1=" "$ENVF" | tail -1 | cut -d= -f2- | sed 's/[[:space:]]*#.*$//' | tr -d '"'"'"' ' | tr 'A-Z' 'a-z' || true; }
+            is_true() { case "$1" in true|1|yes|on) return 0;; *) return 1;; esac; }
+            if [ "$(v TRADING_MODE)" = "live_real" ] || is_true "$(v ENABLE_REAL_ORDERS)" || is_true "$(v LIVE_TRADING_CONFIRMED)"; then
               echo "CRITICAL: live flag in $ENVF — refusing"; exit 1
             fi
           fi
