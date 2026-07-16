@@ -15,6 +15,8 @@ Back-off resets to 1 s after a healthy session (> 60 s uptime).
 """
 
 import json
+import logging
+import os
 import time
 import urllib.request
 import urllib.error
@@ -37,17 +39,46 @@ except ImportError:
     def safe_log_exception(e):
         return f"{type(e).__name__}: {str(e)}"
 
+log = logging.getLogger(__name__)
+
 # ── Geo-block flag — set on HTTP 451; survives reconnect attempts ─────────────
 _geo_blocked: bool = False
 
 # ── Price cache for paper position evaluation ──────────────────────────────────
 _symbol_prices: dict[str, float] = {}
 
+# ── Per-tick debug (OFF by default) ───────────────────────────────────────────
+# A raw per-tick log fires once per symbol per tick (~75+ lines/s) and floods
+# the journal — the same slow-consumer hazard that gated the signal traces.
+# Default is silent. When explicitly enabled it is BOTH sampled (1 in N ticks)
+# and throttled (at most one line per interval), and prints only bounded numeric
+# fields — never a raw payload or secret.
+_TICK_DEBUG = os.getenv("MARKET_TICK_DEBUG", "0") == "1"
+_TICK_DEBUG_SAMPLE_EVERY = max(1, int(os.getenv("MARKET_TICK_DEBUG_SAMPLE_EVERY", "1000")))
+_TICK_DEBUG_MIN_INTERVAL_S = float(os.getenv("MARKET_TICK_DEBUG_MIN_INTERVAL_S", "30"))
+_tick_debug_count = 0
+_tick_debug_last_emit = 0.0
+
+
+def _maybe_tick_debug(sym: str, bid: float, ask: float, p: float, obi: float) -> None:
+    """Emit a sampled + throttled per-tick debug line. No-op unless MARKET_TICK_DEBUG=1."""
+    if not _TICK_DEBUG:
+        return
+    global _tick_debug_count, _tick_debug_last_emit
+    _tick_debug_count += 1
+    if _tick_debug_count % _TICK_DEBUG_SAMPLE_EVERY != 0:
+        return
+    now = time.time()
+    if now - _tick_debug_last_emit < _TICK_DEBUG_MIN_INTERVAL_S:
+        return
+    _tick_debug_last_emit = now
+    log.debug("tick %s bid=%.4f ask=%.4f mid=%.4f obi=%.3f", sym, bid, ask, p, obi)
+
+
 # ── Shared tick dispatcher ────────────────────────────────────────────────────
 
 def _dispatch(sym: str, bid: float, ask: float, bid_qty: float = 0.0, ask_qty: float = 0.0) -> None:
     """Compute OBI, publish price_tick, push into SignalEngine."""
-    import sys
     if not sym or bid <= 0 or ask <= 0:
         return
     p     = (bid + ask) / 2.0
@@ -56,10 +87,7 @@ def _dispatch(sym: str, bid: float, ask: float, bid_qty: float = 0.0, ask_qty: f
     total = vol_b + vol_a
     obi   = (vol_b - vol_a) / total if total > 0 else 0.0
 
-    # V10.13d: Log dispatch to track price flow
-    import logging
-    import time
-    logging.debug(f"_dispatch: {sym} bid={bid:.4f} ask={ask:.4f} p={p:.4f} obi={obi:.3f}")
+    _maybe_tick_debug(sym, bid, ask, p, obi)
 
     _symbol_prices[sym] = p
     from src.services.paper_trade_executor import update_paper_positions
@@ -74,7 +102,7 @@ def _dispatch(sym: str, bid: float, ask: float, bid_qty: float = 0.0, ask_qty: f
                        "bid": bid, "ask": ask,
                        "bid_qty": bid_qty, "ask_qty": ask_qty})
     except Exception as e:
-        logging.warning(f"signal_engine push failed: {e}")
+        log.warning(f"signal_engine push failed: {e}")
 
 
 # ── WebSocket helpers ─────────────────────────────────────────────────────────
