@@ -237,3 +237,35 @@ def test_p0_4_dead_import_symbol_removed():
 def test_p0_4_authoritative_cache_sink_exists():
     from src.services import local_persistent_cache
     assert callable(local_persistent_cache.save_closed_trade)
+
+
+# --------------------------------------------------------------------------- #
+# P0.2 regression (audit review 2026-07-16) — TIMEOUT_NO_PRICE must NOT be
+# canonical-learned after the singleton rebind.
+# --------------------------------------------------------------------------- #
+
+def test_timeout_no_price_not_canonical_learned(tmp_path):
+    """A quarantined TIMEOUT_NO_PRICE close must not increment lifetime_n or rolling."""
+    learner = _fresh_learner(tmp_path)
+    t = _trade("TNP1", outcome="FLAT", net_pnl_pct=0.0)
+    t["exit_reason"] = "TIMEOUT_NO_PRICE"
+    t["learning_skipped"] = True
+    learner.record_close(t)
+    assert learner.lifetime_n == 0
+    assert len(learner.rolling100) == 0
+
+
+def test_learning_skipped_flag_alone_quarantines(tmp_path):
+    """learning_skipped=True (without the exit_reason) is also excluded."""
+    learner = _fresh_learner(tmp_path)
+    t = _trade("SK1", outcome="FLAT", net_pnl_pct=0.0)
+    t["learning_skipped"] = True
+    learner.record_close(t)
+    assert learner.lifetime_n == 0
+
+
+def test_normal_close_still_records_after_quarantine_guard(tmp_path):
+    """A normal close (no quarantine flags) still records exactly once."""
+    learner = _fresh_learner(tmp_path)
+    learner.record_close(_trade("OK1", outcome="WIN", net_pnl_pct=0.3))
+    assert learner.lifetime_n == 1

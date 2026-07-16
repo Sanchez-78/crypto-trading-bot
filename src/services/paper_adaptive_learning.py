@@ -450,6 +450,18 @@ class PaperAdaptiveLearning:
                 ...
             }
         """
+        # P0.2 regression fix (audit review 2026-07-16): TIMEOUT_NO_PRICE closes are
+        # quarantined FLAT non-trades (no real fill price). They are excluded from
+        # canonical learning by the eligibility gate and the qualification path;
+        # enforce the same exclusion here so NO caller can inflate lifetime_n /
+        # rolling windows with them (defense-in-depth for the singleton).
+        if trade.get("learning_skipped") or trade.get("exit_reason") == "TIMEOUT_NO_PRICE":
+            log.debug(
+                "[LEARNING_RECORD_CLOSE_QUARANTINE] trade_id=%s exit_reason=%s — not canonical-learned",
+                trade.get("trade_id", ""), trade.get("exit_reason", ""),
+            )
+            return
+
         # P0.2 (audit 2026-07-16): persistent dedupe by trade_id. If this exact
         # trade_id was already recorded, skip — recording it again would double-count
         # lifetime_n / rolling windows / PF / WR / expectancy. Empty/missing trade_ids

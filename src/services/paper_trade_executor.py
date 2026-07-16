@@ -1984,14 +1984,24 @@ def check_and_close_timeout_positions(now: Optional[float] = None) -> List[dict]
             # P1.1AJ: Emit quality exit for TIMEOUT_NO_PRICE (idempotent, all training positions)
             _log_quality_exit_once(closed_trade, pos, path="timeout_no_price")
 
-            # V10.49 CRITICAL: Record TIMEOUT_NO_PRICE exits in learning system
-            if _learning_instance:
+            # P0.2 regression fix (audit review 2026-07-16): do NOT feed
+            # TIMEOUT_NO_PRICE into canonical learning. These are quarantined
+            # FLAT non-trades (learning_skipped=True, no real fill price); the
+            # eligibility gate rejects them as "timeout_no_price_invalid" and the
+            # qualification path excludes them. Before P0.2, _learning_instance was
+            # a throwaway object so this call was harmless; now it is the get_learner()
+            # singleton, so recording here would inflate lifetime_n / rolling windows
+            # with FLAT non-trades (worst during WS slow-consumer bursts). Skip it.
+            if _learning_instance and not closed_trade.get("learning_skipped") \
+                    and closed_trade.get("exit_reason") != "TIMEOUT_NO_PRICE":
                 try:
                     # record_close expects the full closed_trade dict
                     _learning_instance.record_close(closed_trade)
-                    log.debug(f"[LEARNING_RECORD_CLOSE] trade_id={trade_id} symbol={symbol} reason=TIMEOUT_NO_PRICE")
+                    log.debug(f"[LEARNING_RECORD_CLOSE] trade_id={trade_id} symbol={symbol} reason={closed_trade.get('exit_reason')}")
                 except Exception as e:
                     log.warning(f"[LEARNING_RECORD_CLOSE_ERROR] trade_id={trade_id} err={str(e)[:100]}")
+            elif _learning_instance:
+                log.debug(f"[LEARNING_RECORD_CLOSE_SKIP] trade_id={trade_id} reason=TIMEOUT_NO_PRICE quarantined (not canonical-learned)")
             else:
                 log.error(f"[LEARNING_NOT_WIRED_TIMEOUT_PATH] _learning_instance is None for {trade_id}! Learning disabled.")
 
