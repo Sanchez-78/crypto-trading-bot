@@ -1,8 +1,12 @@
 # CryptoMaster — Audit Changes Log (continuation handoff)
 
 > **Purpose:** hand-off for the next round of the external audit. For every finding: what changed, where, how it was verified, the runtime result, and what still needs re-auditing. Pairs with `EXTERNAL_AUDIT_PROMPT.md`.
-> **As of:** 2026-07-16 ~16:45 UTC. **Deployed SHA on server:** `8750a49` (verified: `cryptomaster.service` active since 16:42 UTC).
+> **As of:** 2026-07-16 ~17:15 UTC. **Deployed SHA on server:** `c6565c3` (P0 fixes `8750a49` + clamp nit `c6565c3`; `cryptomaster.service` active since 16:42 UTC).
 > **Standing constraints (unchanged):** paper-only (`TRADING_MODE=paper_live`), REAL trading = NO-GO, never enable live, every trading-core change goes through evidence → independent reviewer → reversible deploy.
+
+> **Re-audit follow-up (external, 2026-07-16, `CryptoMaster_aktualizovane_overeni_auditu`):** static verification confirmed P0.1/P0.2/P0.3 fixed, P0.4 partial. It found ONE nit — the fail-closed clamp set `TRADING_MODE=paper` (invalid; coerced to `paper_live`, never a live bypass). **FIXED in `c6565c3`** (clamp now sets `paper_live`; tests updated). 16 P0 tests pass.
+>
+> **Runtime confirmation status (P0.2/P0.3): STILL PENDING — honest.** At snapshot `cryptomaster-health-517` (17:12 UTC) the bot had had **zero eligible closes since the 16:42 deploy** (newest cache row 16:20, pre-deploy; `buy_only` has low trade frequency — needs a down-deviation to fade + 15-min hold). `close_path_forensics.txt` therefore had no post-deploy `[PAPER_CANONICAL_LEARNING_UPDATE]` / quarantine markers to inspect. **The single-step `lifetime_n` and TIMEOUT_NO_PRICE-quarantine invariants are code-verified + unit-tested but NOT yet observed live.** Re-run `hetzner-fetch-health.yml` after ≥ a few post-16:42 closes and confirm from `close_path_forensics.txt`. Until then, treat P0.2/P0.3 as static-pass / runtime-pending.
 
 ---
 
