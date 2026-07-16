@@ -1,0 +1,116 @@
+name: Hetzner Set DEV_FADE Sides
+
+# Reviewer-approved DEV_FADE side-filter experiment (2026-07-16).
+# Evidence: BUY-fades 71.7% WR /+0.17 vs SELL-fades 54.7% WR /-0.23 — fading
+# rallies fights the crypto uptrend. Set PAPER_FADE_SIDES=buy_only to drop the
+# anti-edge SELL side. Reversible: set back to "both" + restart.
+#
+# PAPER-ONLY: PAPER_FADE_SIDES only filters DEV_FADE paper signals; live orders
+# remain hard-gated by live_trading_allowed() regardless.
+#
+# Touches EXACTLY ONE env key (PAPER_FADE_SIDES). Hard-blocks
+# live_real/ENABLE_REAL_ORDERS/LIVE_TRADING_CONFIRMED. Reviewer condition #2:
+# refuses if SIGNAL_INVERT_TEST=1 or PAPER_INVERT_SIGNAL=true (double-flip would
+# execute the anti-edge side). Auto-rollback if the service fails to restart.
+
+on:
+  workflow_dispatch:
+    inputs:
+      fade_sides:
+        description: 'DEV_FADE side filter: both | buy_only | sell_only'
+        required: true
+        default: 'buy_only'
+        type: choice
+        options: ['buy_only', 'both', 'sell_only']
+
+jobs:
+  set-fade-sides:
+    name: Set DEV_FADE side filter
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set up SSH key and pin host key
+        env:
+          HETZNER_SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$HETZNER_SSH_KEY" > ~/.ssh/hetzner_deploy_key
+          chmod 600 ~/.ssh/hetzner_deploy_key
+          ssh-keyscan -p 22 -T 15 "$HETZNER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          [ -s ~/.ssh/known_hosts ] || { echo "host unreachable"; exit 1; }
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Apply on server
+        env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          HETZNER_USER: ${{ secrets.HETZNER_USER }}
+          HETZNER_PROJECT_DIR: ${{ secrets.HETZNER_PROJECT_DIR }}
+          HETZNER_SERVICE_NAME: ${{ secrets.HETZNER_SERVICE_NAME }}
+          FADE_SIDES: ${{ inputs.fade_sides }}
+        run: |
+          SSH_OPTS="-p 22 -i ~/.ssh/hetzner_deploy_key -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile=~/.ssh/known_hosts -o ConnectTimeout=30 -o BatchMode=yes"
+
+          ssh $SSH_OPTS "$HETZNER_USER@$HETZNER_HOST" \
+            "PROJECT_DIR='$HETZNER_PROJECT_DIR' SERVICE_NAME='$HETZNER_SERVICE_NAME' FADE_SIDES='$FADE_SIDES' bash -s" << 'REMOTE_EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          cd "$PROJECT_DIR"
+
+          # Enum sanity
+          case "$FADE_SIDES" in
+            both|buy_only|sell_only) ;;
+            *) echo "CRITICAL: fade_sides '$FADE_SIDES' invalid (both|buy_only|sell_only)"; exit 1 ;;
+          esac
+
+          envval() {
+            grep -E "^[[:space:]]*(export[[:space:]]+)?$1=" .env 2>/dev/null | tail -1 \
+              | cut -d= -f2- | tr -d '"'"'"' ' | tr 'A-Z' 'a-z' || true
+          }
+
+          # Safety gates: never proceed with live flags
+          for pair in "TRADING_MODE live_real" "ENABLE_REAL_ORDERS true" "LIVE_TRADING_CONFIRMED true"; do
+            key="${pair% *}"; bad="${pair#* }"
+            v="$(envval "$key")"
+            if [ "$v" = "$bad" ] || { [ "$bad" = "true" ] && { [ "$v" = "1" ] || [ "$v" = "yes" ] || [ "$v" = "on" ]; }; }; then
+              echo "CRITICAL: .env has ${key}=${v} — refusing to touch anything"; exit 1
+            fi
+          done
+
+          # Reviewer condition #2: block double-flip. buy_only/sell_only must not
+          # combine with an active signal inversion, which would execute the
+          # anti-edge side the filter is meant to suppress.
+          if [ "$FADE_SIDES" != "both" ]; then
+            inv1="$(envval SIGNAL_INVERT_TEST)"; inv2="$(envval PAPER_INVERT_SIGNAL)"
+            if [ "$inv1" = "1" ] || [ "$inv2" = "true" ] || [ "$inv2" = "1" ]; then
+              echo "CRITICAL: SIGNAL_INVERT_TEST/PAPER_INVERT_SIGNAL active — double-flip risk; refusing"; exit 1
+            fi
+          fi
+          echo "Safety gates OK (invert flags clear)"
+
+          echo "== current value =="
+          grep -n "^PAPER_FADE_SIDES=" .env || echo "PAPER_FADE_SIDES not set (code default both)"
+
+          cp .env .env.bak.fadesides
+          sed -i '/^PAPER_FADE_SIDES=/d' .env
+          echo "PAPER_FADE_SIDES=$FADE_SIDES" >> .env
+          echo "Applied: PAPER_FADE_SIDES=$FADE_SIDES"
+
+          systemctl restart "$SERVICE_NAME"
+          sleep 12
+          ACTIVE="$(systemctl is-active "$SERVICE_NAME" 2>/dev/null || echo inactive)"
+          echo "service: $ACTIVE"
+          if [ "$ACTIVE" != "active" ]; then
+            echo "ROLLBACK: restoring .env and restarting"
+            mv .env.bak.fadesides .env
+            systemctl restart "$SERVICE_NAME"
+            exit 1
+          fi
+          # Confirm the filter is live in the logs (best-effort)
+          journalctl -u "$SERVICE_NAME" -n 40 --no-pager 2>/dev/null | grep -iE "DEV_FADE_SIDE_FILTERED|BOOT_VERSION" | head -3 || true
+          echo ""
+          echo "live_real enabled:       no (gate-checked)"
+          echo "ENABLE_REAL_ORDERS:      no (gate-checked)"
+          echo "LIVE_TRADING_CONFIRMED:  no (gate-checked)"
+          REMOTE_EOF
