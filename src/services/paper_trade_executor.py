@@ -69,7 +69,10 @@ def _enforce_paper_safe_mode() -> None:
             "promote paper -> live.",
             trading_mode, enable_real, live_confirmed,
         )
-        os.environ["TRADING_MODE"] = "paper"
+        # Use a VALID paper mode from runtime_mode.TradingMode (paper_live), not the
+        # invalid literal "paper" — get_trading_mode() would coerce "paper" to the
+        # default anyway, but keep the env self-consistent (audit re-check 2026-07-16).
+        os.environ["TRADING_MODE"] = "paper_live"
         os.environ["ENABLE_REAL_ORDERS"] = "0"
         os.environ["LIVE_TRADING_CONFIRMED"] = "0"
 
