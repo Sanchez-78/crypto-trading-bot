@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 21,
+  "cycle": 22,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 21,
+  "total_cycles_completed": 22,
   "current_wr": 62.0,
   "current_pnl": 0.0207,
-  "last_update": "2026-07-15T21:25:00Z",
-  "status": "goal_candidate_stabilization_window",
+  "last_update": "2026-07-16T08:45:00Z",
+  "status": "buy_only_experiment_live",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -198,6 +198,28 @@
       "note": "TP=20 pre-flight (reviewer cond #1) INCONCLUSIVE + data hints inversion. Winner MFE column is NULL in cache.sqlite (not persisted) so peak-then-decay cannot be confirmed. Winner REALIZED pnl: mean 19.2 / median 20.1 bps over 270 winners. Winners already realize ~20bps at TIMEOUT, so TP=20 would CLIP roughly half of them (those closing >20) rather than rescue decayed winners -> likely NO PF gain, possible harm. DECISION: do NOT deploy TP=20 (evidence-first discipline; reviewer cond #1 not satisfied). Real diagnosis: winners ~20bps gross vs ~18bps paper cost (fee 15 + slip 3) = net ~+2bps/win; losers ~31bps (from PF 1.03 @ WR 62 -> avg_loss/avg_win ~1.58). The thin edge is dominated by the 18bps cost model (4.5x realistic maker ~4bps). Lowering simulated cost would flatter numbers dishonestly -> NOT doing that. Goal window criteria MET (WR 62 + positive rolling P&L); profit thin but real. Workflow hetzner-set-paper-tp.yml exists but held unrun.",
       "fix_applied": "none deployed (TP held on failed pre-flight)",
       "deploy_result": "n/a - experiment gated OUT by evidence"
+    },
+    {
+      "cycle": 22,
+      "timestamp": "2026-07-16T08:45:00Z",
+      "status": "EXPERIMENT_DEPLOYED",
+      "note": "Root cause of PF<1: SELL-fades anti-edge (-0.23) vs BUY-fades (+0.17). Deployed PAPER_FADE_SIDES=buy_only (code PR #53 default both=no-op; workflow PR #54 with invert-guard cond #2). Applied 08:43, invert flags clear, service active. Now BUY-only fade. Monitoring for 80-100 BUY closes with rollback triggers.",
+      "fix_applied": "PAPER_FADE_SIDES=buy_only (reviewer-approved experiment)",
+      "deploy_result": "PASS"
     }
-  ]
+  ],
+  "experiment": {
+    "name": "DEV_FADE buy_only",
+    "deployed": "2026-07-16T08:43Z",
+    "baseline": "rolling-100 PF 0.95 / WR 66% (SELL side dragging)",
+    "evidence": "BUY-fades 60/71.7%/+0.17 vs SELL-fades 64/54.7%/-0.23",
+    "measure_after": "80-100 BUY closes",
+    "rollback_triggers": [
+      "BUY-fade WR < 58%",
+      "rolling-100 PF fails to exceed ~1.10",
+      "regime turns bearish (HTF/EMA200 down)"
+    ],
+    "rollback_action": "hetzner-set-fade-sides.yml fade_sides=both",
+    "reviewer": "APPROVED as monitored reversible experiment (PR #53/#54)"
+  }
 }
