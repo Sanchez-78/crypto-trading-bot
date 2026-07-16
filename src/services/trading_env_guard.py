@@ -5,32 +5,43 @@ carelessly they can silently flip the bot onto the exact side it was configured
 to avoid — the "double-flip footgun". This module is the single fail-closed gate
 that refuses to start into such an ambiguous configuration.
 
-Pipeline (order in which each flag touches the side):
+Pipeline (order in which each flag touches the side), verified against
+signal_generator.py:
 
     PAPER_FADE_SIDES     "both"(default) | "buy_only" | "sell_only"
-        DEV_FADE side filter (signal_generator.py). Drops the anti-edge side
-        BEFORE execution — a deliberate one-sided selection.
-    PAPER_INVERT_SIGNAL  "true" flips BUY<->SELL in the scoring path
-        (signal_generator.py, after the regime/score gates).
-    SIGNAL_INVERT_TEST   "1" flips BUY<->SELL for EVERY signal right before
-        evaluate_signal() — applied AFTER the fade side filter.
+        DEV_FADE side filter (signal_generator.py:846-853, reachable only
+        inside `if _DEV_FADE:`). Drops the anti-edge side BEFORE execution —
+        a deliberate one-sided selection.
+    SIGNAL_INVERT_TEST   "1" flips BUY<->SELL for EVERY final signal right
+        before evaluate_signal() (signal_generator.py:1141) — applied AFTER
+        the fade side filter. This IS an active double-flip with a one-sided
+        fade: the filter keeps BUY, then this flips it to SELL => the bot
+        trades exactly the anti-edge side that was dropped.
+    PAPER_INVERT_SIGNAL  "true" flips BUY<->SELL inside _get_scored_edge
+        (signal_generator.py:489). On the DEV_FADE path this flip is
+        immediately OVERWRITTEN when `action` is recomputed from dev_bps
+        (signal_generator.py:846), so today it does NOT reach the fade filter
+        and is NOT an active double-flip. It is still rejected here as a
+        conservative, fail-closed measure: the combination is ambiguous and
+        one code-reorder away from becoming live, and the deploy-time guard
+        (hetzner-set-fade-sides.yml) already refuses it — keeping both guards
+        consistent.
 
 Truth table (does the traded side stay unambiguous?):
 
-    fade_sides   invert_active   verdict
-    both         no              OK  (default)
-    both         yes             OK  (symmetric flip; no side was dropped)
-    buy_only     no              OK  (documented reversible experiment)
-    sell_only    no              OK
-    buy_only     yes             INVALID — filter keeps BUY, a later inversion
-                                 flips it to SELL => trades the exact anti-edge
-                                 side that was dropped
-    sell_only    yes             INVALID (mirror image)
+    fade_sides           invert_active   verdict
+    both                 no              OK  (default)
+    both                 yes             OK  (symmetric flip; no side dropped)
+    buy_only / sell_only no              OK  (documented reversible experiment)
+    buy_only / sell_only SIGNAL_INVERT_TEST   INVALID — active double-flip
+    buy_only / sell_only PAPER_INVERT_SIGNAL  INVALID — conservative (see above)
 
-A one-sided fade selects a side on purpose; a downstream inversion silently
-reverses that choice. Fail-closed: refuse to start rather than trade the
-opposite side unnoticed. This guard never auto-corrects (it does not silently
-pick a side) — it only refuses.
+Fail-closed: refuse to start rather than risk trading the opposite side
+unnoticed. This guard never auto-corrects (it does not silently pick a side) —
+it only refuses. The check is intentionally conservative: it also fires when
+PAPER_DEVIATION_FADE is off (fade filter inert), because a one-sided
+PAPER_FADE_SIDES is only ever set with DEV_FADE in mind, so the pairing is a
+config smell regardless.
 
 This does NOT change DEV_FADE logic; it only validates the env combination.
 """

@@ -4,6 +4,8 @@ Verifies the truth table in trading_env_guard: a one-sided PAPER_FADE_SIDES
 combined with any active signal-inversion flag is rejected fail-closed, while
 each flag alone (the existing documented contracts) is preserved.
 """
+from pathlib import Path
+
 import pytest
 
 from src.services.trading_env_guard import (
@@ -12,6 +14,8 @@ from src.services.trading_env_guard import (
     check_trading_env,
     validate_trading_env,
 )
+
+REPO = Path(__file__).resolve().parents[1]
 
 # ── Valid: default, symmetric flips, one-sided fade alone, inversion alone ─────
 VALID = [
@@ -72,6 +76,15 @@ def test_guard_never_mutates_env_or_auto_flips():
     with pytest.raises(InvalidTradingEnvError):
         validate_trading_env(env)
     assert env == snapshot, "guard must not mutate the environment"
+
+
+@pytest.mark.parametrize("entrypoint", ["start.py", "bot2/main.py"])
+def test_guard_is_wired_at_every_startup_chokepoint(entrypoint):
+    """'Centralized' means every launcher hits the guard. start.py guards the
+    early boot; bot2/main.py:main() guards the chokepoint all launchers funnel
+    through (main.py, start_fresh.py, direct `python bot2/main.py`)."""
+    src = (REPO / entrypoint).read_text(encoding="utf-8")
+    assert "validate_trading_env" in src, f"{entrypoint} must call the env guard"
 
 
 def test_real_safety_flags_stay_false_on_valid_path():
