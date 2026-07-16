@@ -26,6 +26,20 @@ if os.path.exists("src/services"):
     print("[PATH] SERVICES:", os.listdir("src/services"))
 
 # =========================
+# FAIL-CLOSED TRADING-ENV GUARD
+# Refuse to start into an ambiguous double-flip config (e.g. a one-sided
+# PAPER_FADE_SIDES combined with SIGNAL_INVERT_TEST/PAPER_INVERT_SIGNAL, which
+# would silently trade the anti-edge side). See trading_env_guard.py.
+# =========================
+from src.services.trading_env_guard import validate_trading_env, InvalidTradingEnvError
+
+try:
+    validate_trading_env()
+except InvalidTradingEnvError as e:
+    print(f"[FATAL] {e}")
+    sys.exit(3)
+
+# =========================
 # SAFE START
 # =========================
 try:

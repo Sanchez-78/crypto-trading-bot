@@ -1407,6 +1407,18 @@ def main():
         force=True
     )
 
+    # Fail-closed trading-env guard (audit PR2 / P2). Centralized at the one
+    # chokepoint every launcher funnels through (start.py, start_fresh.py,
+    # main.py, direct `python bot2/main.py`) — refuse to start into an ambiguous
+    # double-flip config BEFORE any trading thread is spawned. start.py also
+    # calls this earlier; the check is idempotent and side-effect-free.
+    from src.services.trading_env_guard import validate_trading_env, InvalidTradingEnvError
+    try:
+        validate_trading_env()
+    except InvalidTradingEnvError as _env_err:
+        print(f"[FATAL] {_env_err}", file=sys.stderr, flush=True)
+        sys.exit(3)
+
     version_str = get_version_string()
     print("\n" + "="*80, file=sys.stderr, flush=True)
     print(f"🚀 MAIN() STARTING — {version_str}", file=sys.stderr, flush=True)
