@@ -1,0 +1,92 @@
+name: Hetzner Disable V5 Paper (manual, reversible)
+
+# Audit PR1 (P1.5, 2026-07-16): manual-only, reversible teardown of the
+# standalone `cryptomaster-v5-paper` second trading loop. V5 stays a library
+# bridge inside the legacy process; only the standalone unit is stopped.
+#
+# This workflow does NOT delete anything (no unit-file/data/dir deletion) and
+# never touches cryptomaster.service. It stop → disable → mask the V5 unit and
+# verifies the end state. Requires an explicit confirmation input.
+#
+# SAFETY: hard-blocks if .env indicates live trading. Read-only "status" mode
+# available. Run only with explicit operator approval.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type DISABLE_V5_PAPER to proceed (or STATUS for read-only)'
+        required: true
+        default: 'STATUS'
+
+jobs:
+  disable-v5:
+    name: Disable standalone V5 paper service
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up SSH key and pin host key
+        env:
+          HETZNER_SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$HETZNER_SSH_KEY" > ~/.ssh/hetzner_deploy_key
+          chmod 600 ~/.ssh/hetzner_deploy_key
+          ssh-keyscan -p 22 -T 15 "$HETZNER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          [ -s ~/.ssh/known_hosts ] || { echo "host unreachable"; exit 1; }
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Read state + (optionally) disable
+        env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          HETZNER_USER: ${{ secrets.HETZNER_USER }}
+          HETZNER_SERVICE_NAME: ${{ secrets.HETZNER_SERVICE_NAME }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          SSH_OPTS="-p 22 -i ~/.ssh/hetzner_deploy_key -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile=~/.ssh/known_hosts -o ConnectTimeout=30 -o BatchMode=yes"
+          mkdir -p artifacts
+
+          ssh $SSH_OPTS "$HETZNER_USER@$HETZNER_HOST" \
+            "SERVICE_NAME='$HETZNER_SERVICE_NAME' CONFIRM='$CONFIRM' bash -s" << 'REMOTE_EOF' | tee artifacts/v5_disable.txt
+          #!/usr/bin/env bash
+          set -euo pipefail
+          V5="cryptomaster-v5-paper.service"
+
+          echo "=== BEFORE STATE ==="
+          echo "exists: $(systemctl list-unit-files "$V5" --no-legend 2>/dev/null | awk '{print $1}' || echo none)"
+          echo "is-active: $(systemctl is-active "$V5" 2>/dev/null || echo inactive)"
+          echo "is-enabled: $(systemctl is-enabled "$V5" 2>/dev/null || echo n/a)"
+          systemctl show "$V5" -p FragmentPath -p MainPID -p ExecStart 2>/dev/null || true
+
+          # Safety: never proceed with live flags in .env (path from override or default)
+          for D in /opt/cryptomaster /opt/CryptoMaster_srv; do [ -f "$D/.env" ] && ENVF="$D/.env" && break; done
+          if [ -n "${ENVF:-}" ]; then
+            v() { grep -E "^[[:space:]]*(export[[:space:]]+)?$1=" "$ENVF" | tail -1 | cut -d= -f2- | tr -d '"'"'"' ' | tr 'A-Z' 'a-z' || true; }
+            if [ "$(v TRADING_MODE)" = "live_real" ] || [ "$(v ENABLE_REAL_ORDERS)" = "true" ] || [ "$(v LIVE_TRADING_CONFIRMED)" = "true" ]; then
+              echo "CRITICAL: live flag in $ENVF — refusing"; exit 1
+            fi
+          fi
+
+          if [ "$CONFIRM" != "DISABLE_V5_PAPER" ]; then
+            echo ""; echo "STATUS mode (confirm != DISABLE_V5_PAPER) — no changes made."; exit 0
+          fi
+
+          echo ""; echo "=== DISABLING (stop -> disable -> mask; NO delete) ==="
+          systemctl stop "$V5" 2>&1 || echo "  stop: (already stopped or absent)"
+          systemctl disable "$V5" 2>&1 || echo "  disable: (already disabled or absent)"
+          systemctl mask "$V5" 2>&1 || echo "  mask: (already masked or absent)"
+
+          echo ""; echo "=== AFTER STATE ==="
+          echo "V5 is-active: $(systemctl is-active "$V5" 2>/dev/null || echo inactive)"
+          echo "V5 is-enabled: $(systemctl is-enabled "$V5" 2>/dev/null || echo masked)"
+          echo "legacy ($SERVICE_NAME) is-active: $(systemctl is-active "$SERVICE_NAME" 2>/dev/null || echo inactive)"
+          echo "live_real enabled: no (gate-checked)"
+          REMOTE_EOF
+
+      - name: Upload before/after artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: v5-disable-state
+          path: artifacts/
+          retention-days: 14
