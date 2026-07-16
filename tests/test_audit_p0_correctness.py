@@ -88,21 +88,21 @@ def test_p0_1_live_flag_clamped_to_paper_safe(monkeypatch):
     pte._enforce_paper_safe_mode()
 
     import os
-    assert os.environ["TRADING_MODE"] == "paper"
+    assert os.environ["TRADING_MODE"] == "paper_live"  # valid TradingMode, not the invalid "paper"
     assert os.environ["ENABLE_REAL_ORDERS"] == "0"
     assert os.environ["LIVE_TRADING_CONFIRMED"] == "0"
 
 
 def test_p0_1_paper_env_left_untouched(monkeypatch):
     """When no live indicator is present, enforcement must not mutate the env."""
-    monkeypatch.setenv("TRADING_MODE", "paper")
+    monkeypatch.setenv("TRADING_MODE", "paper_live")
     monkeypatch.delenv("ENABLE_REAL_ORDERS", raising=False)
     monkeypatch.delenv("LIVE_TRADING_CONFIRMED", raising=False)
 
     pte._enforce_paper_safe_mode()
 
     import os
-    assert os.environ["TRADING_MODE"] == "paper"
+    assert os.environ["TRADING_MODE"] == "paper_live"
     # enforcement only writes when clamping, so these stay absent
     assert "ENABLE_REAL_ORDERS" not in os.environ
     assert "LIVE_TRADING_CONFIRMED" not in os.environ
