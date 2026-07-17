@@ -123,7 +123,26 @@ class BinanceClient:
     async def market_order(
         self, symbol: str, side: str, quantity: float
     ) -> dict[str, Any]:
-        """Place a market order. side = "BUY" | "SELL"."""
+        """Place a market order. side = "BUY" | "SELL".
+
+        FAIL-CLOSED REAL=NO-GO ENFORCEMENT (audit F1, 2026-07-17):
+        this is a real, signed Binance order primitive. It is guarded here at the
+        primitive itself (defense-in-depth) so NO caller — including
+        _handle_signal, the exit path, or a future re-wiring with
+        EXECUTION_ENGINE_ENABLED=1 — can reach the HTTP `/api/v3/order` submission
+        unless the central four-flag live guard passes. In paper mode the guard is
+        never satisfied, so the HTTP call below is unreachable and no real order is
+        ever placed.
+        """
+        from src.core.runtime_mode import check_live_order_guard
+        guard = check_live_order_guard(symbol, side)
+        if not guard.get("allowed"):
+            log.error(
+                "[EXECUTION_ENGINE_ORDER_BLOCKED] symbol=%s side=%s reason=%s — "
+                "no real order submitted (REAL=NO-GO)",
+                symbol, side, guard.get("reason"),
+            )
+            return {}
         try:
             client = await self._get_client()
             params = self._sign({
