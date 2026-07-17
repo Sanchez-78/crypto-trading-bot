@@ -46,29 +46,41 @@ EFFECT_TYPES = ("adaptive_learning", "bucket_metrics", "legacy_bridge", "firebas
 _MODE_OFF, _MODE_SHADOW, _MODE_AUTHORITATIVE = "off", "shadow", "authoritative"
 
 
+# Only these startup modes are accepted; everything else (authoritative, typos,
+# unknown strings) is rejected fail-closed at boot (audit F5, round 2).
+_VALID_STARTUP_MODES = frozenset({"", _MODE_OFF, _MODE_SHADOW})
+
+
+def raw_pipeline_mode() -> str:
+    """The literal configured value (lowercased/trimmed), NOT coerced to 'off'."""
+    return os.getenv("PAPER_CANONICAL_PIPELINE", "").strip().lower()
+
+
 def pipeline_mode() -> str:
-    m = os.getenv("PAPER_CANONICAL_PIPELINE", _MODE_OFF).strip().lower()
+    m = raw_pipeline_mode()
     return m if m in (_MODE_OFF, _MODE_SHADOW, _MODE_AUTHORITATIVE) else _MODE_OFF
 
 
 class UnsupportedPipelineModeError(RuntimeError):
-    """Raised at startup when an unimplemented pipeline mode is requested."""
+    """Raised at startup when an unsupported/unknown pipeline mode is requested."""
 
 
 def assert_supported_mode() -> None:
-    """Fail-closed startup guard (audit F5).
+    """Fail-closed startup guard (audit F5, round 2).
 
-    pipeline_mode() recognizes 'authoritative', but the live callsite only acts
-    on 'shadow' — so setting PAPER_CANONICAL_PIPELINE=authoritative would LOOK
-    like activation while silently doing nothing (no single-writer cutover is
-    wired). Refuse to start into that ambiguous state rather than mislead the
-    operator. Phase B will remove this guard when the authoritative path exists.
+    Only unset / 'off' / 'shadow' may start. 'authoritative' (Phase B, not wired)
+    AND any unknown value or typo (e.g. 'authoritativ', 'shadowx', 'enabled')
+    are rejected — previously they silently coerced to 'off', so an operator who
+    fat-fingered the flag believed the pipeline was active while it was a no-op.
+    Reject the ambiguity rather than mislead.
     """
-    if pipeline_mode() == _MODE_AUTHORITATIVE:
+    raw = raw_pipeline_mode()
+    if raw not in _VALID_STARTUP_MODES:
         raise UnsupportedPipelineModeError(
-            "[CANONICAL_PIPELINE_AUTHORITATIVE_NOT_IMPLEMENTED] "
-            "PAPER_CANONICAL_PIPELINE=authoritative is not supported yet "
-            "(Phase B not wired). Use 'shadow' or leave unset."
+            f"[CANONICAL_PIPELINE_UNSUPPORTED_MODE] PAPER_CANONICAL_PIPELINE={raw!r} "
+            "is not a supported startup mode. Allowed: unset, 'off', 'shadow'. "
+            "'authoritative' (Phase B) is not wired; unknown values are rejected "
+            "fail-closed."
         )
 
 

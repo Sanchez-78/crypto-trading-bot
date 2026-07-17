@@ -2,10 +2,26 @@
 
 ---
 
-## ⭐ ROUND 2 STATUS (2026-07-17) — authoritative; supersedes the Round-1 notes below
+## ⭐ ROUND 3 STATUS (2026-07-17) — authoritative; supersedes everything below
 
 > **Deployed SHA on server:** `main` HEAD (autodeploy timer, 2h). **REAL trading = NO-GO (unchanged).** Paper-only (`TRADING_MODE=paper_train`), 0 open positions, `live_trading_allowed=false`, `zz-force-paper-only.conf` active.
-> Pair with `EXTERNAL_AUDIT_PROMPT_v2.md` and the external report `CryptoMaster_EXTERNAL_AUDIT_REPORT_v2`.
+> Pairs with `EXTERNAL_AUDIT_PROMPT_v3.md` and external reports `CryptoMaster_EXTERNAL_AUDIT_REPORT_v2` / `_v3`.
+
+### External-audit remediation status (per the Round-3 report)
+| Finding | Round-3 verdict | Remediation |
+|---------|-----------------|-------------|
+| **F1** unguarded real Binance order path | CLOSED STATICALLY (runtime sign-off pending fresh artifact) | #69 — `market_order` fail-closed via `check_live_order_guard()` before any HTTP |
+| **F2/F3** deploy/process SHA drift + unsafe restart | was PARTIAL → **round-2 fixes done** (this branch) | #71 + follow-up: decide restart off **READY** marker (written post-init), fail-closed on missing marker, root-owned `.deploy_hold` + TTL, **fail-closed** position parse, `deployed_bot_sha` only after `is-active`+READY convergence |
+| **F4** auth bypass when security ON | CLOSED STATICALLY | #70 |
+| **F5** pipeline mode no-op | was PARTIAL → **round-2 fix done** (this branch) | unknown/typo mode now **fail-closed** (`assert_supported_mode`: only unset/off/shadow start) |
+| **F9** audit log stale | REOPENED → **this update** | log now reflects PR #69–#71 + round-2 residual fixes |
+
+### Still OPEN (auditor roadmap order)
+- **F8 (Medium, HIGH VALUE)** — persist explicit `mfe/mae` (fraction+pct+bps) **plus 1s directional price-path** so a TP/SL counterfactual is honest (MFE/MAE alone can't order TP-before-SL). Auditor: **GO autonomous PR**, deploy needs operator. *This is the next step before any edge decision.*
+- **F6/F7 (High/Med, Med)** — one explicit `headline` window (additive API, migrate browser to `recent.wins/losses/flats`) + dual PF (`profit_factor_pct_basis` / `_usd_basis` with `basis` metadata). Auditor: GO autonomous, deploy after Android smoke test.
+- **F10 (Med)** — firewall workflow: external remote-probe + `ufw active` + IPv4/IPv6 + rollback. GO for prep, APPLY needs operator.
+- **F11 (Med, runtime-only)** — single-step `lifetime_n` proof from full `close_path_forensics.txt` (needs fresh server artifact).
+- **Dashboard security enable / PR6 Phase B / edge change** — all **NO-GO** now; see `EXTERNAL_AUDIT_PROMPT_v3.md` §11 for the preflight/criteria.
 
 ### MASTER IMPLEMENTATION PROMPT — all merged (each reviewer-gated)
 | PR | Finding | Status |
@@ -17,19 +33,7 @@
 | #66 | P1.6 dashboard auth + localhost bind + non-root hardening | ✅ merged |
 | #67 | P0.4 canonical close pipeline — **SHADOW mode, default off** | ✅ merged |
 
-### Incident + external-audit remediation (Round 2)
-| Fix | Finding | Status |
-|-----|---------|--------|
-| #68 | **Incident:** autodeploy landed PR5's fail-closed auth → dashboard 503 lockout. **Ship-dark** (`DASHBOARD_SECURITY_ENABLED`, default off) + `hetzner-restore-dashboard.yml`. Dashboard restored (`degraded:false`). | ✅ merged |
-| #69 | **F1 (Critical):** unguarded real Binance `POST /api/v3/order` in `execution_engine.market_order`. Now **fail-closed** via `check_live_order_guard()`; regression test asserts `/api/v3/order` exists in exactly one guarded file. Trading-safety: **SAFE**. | ✅ merged |
-| (this branch) | **F4:** `DASHBOARD_AUTH_DISABLED` no longer bypasses auth when security is ON (`dashboard_auth.evaluate`). | ✅ done |
-| (this branch) | **F5:** `PAPER_CANONICAL_PIPELINE=authoritative` now **fail-closed refuses startup** (`assert_supported_mode`, wired in `bot2/main.py`). | ✅ done |
-| (this branch) | **F9:** this log updated. | ✅ done |
-
-### Still OPEN (external audit Round 2) — not yet addressed
-- **F2/F3 (High) — deploy/process SHA drift + autodeploy:** dashboard restore + autodeploy reset the shared checkout but don't restart the trading process, so the running bot SHA can differ from repo HEAD. Autodeploy still auto-deploys every `main` SHA (incl. docs-only). **TODO:** `deployed_bot_sha` marker, separate dashboard checkout/worktree, autodeploy hold + code-impact + zero-position gate.
-- **F6 (High/Medium) — dashboard headline mixes windows:** web chart multiplies `lifetime_n` by `recent WR` and counts FLAT as loss. **TODO:** one explicit `headline` window; frontend consumes `recent.wins/losses/flats`.
-- **F7/F8/F10/F11 (Medium):** PF pct-vs-USD basis; persist `mfe_pct/mae_pct` (needed for any TP counterfactual); firewall workflow remote-probe; full `close_path_forensics` proof of single-step `lifetime_n`.
+> The Round-2 incident (#68 ship-dark dashboard restore) and the full 6-PR master implementation are covered above / in `EXTERNAL_AUDIT_PROMPT_v3.md`.
 
 ### Runtime (snapshot `health-526`, honest)
 - **Safety:** paper_train, live gated, 0 positions. ✅

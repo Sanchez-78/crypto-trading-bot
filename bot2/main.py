@@ -1753,6 +1753,15 @@ def main():
 
     print("\n✅ BOOTSTRAP COMPLETE — Starting main event loop...\n", file=sys.stderr, flush=True)
 
+    # READY marker (audit F2/F3 round 2): all mandatory init is done and the main
+    # loop is about to start — record the SHA the autodeploy should treat as the
+    # healthy running process (distinct from the early BOOT marker). Best-effort.
+    try:
+        from src.services.deploy_marker import write_ready_marker
+        write_ready_marker()
+    except Exception:
+        pass
+
     # V10.13u+18e: ECON BAD diagnostics periodic heartbeat
     _last_econ_bad_diag_heartbeat_ts = 0.0
     _ECON_BAD_RUNTIME_HEARTBEAT_EVERY_S = 30.0

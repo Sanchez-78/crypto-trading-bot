@@ -94,28 +94,49 @@ def _autodeploy_text() -> str:
     return AUTODEPLOY.read_text(encoding="utf-8")
 
 
-def test_autodeploy_decides_restart_off_running_process_sha():
+def test_autodeploy_decides_restart_off_ready_marker():
     t = _autodeploy_text()
-    # restart decision keys off the running-process marker, not just repo HEAD
-    assert "reports/running_bot_sha" in t
-    assert "running_sha" in t
+    # restart decision keys off the READY marker (healthy process), not repo HEAD
+    assert "reports/ready_bot_sha" in t
+    assert "ready_sha" in t
     assert 'restart_needed="true"' in t
+
+
+def test_autodeploy_fail_closed_on_missing_ready_marker():
+    t = _autodeploy_text()
+    # missing READY marker must fail-closed (restart), not skip
+    idx = t.index('if [ "$ready_sha" = "unknown" ]; then')
+    tail = t[idx:idx + 300]
+    assert 'restart_needed="true"' in tail
+    assert "FAIL-CLOSED" in tail
 
 
 def test_autodeploy_has_code_impact_gate():
     t = _autodeploy_text()
-    # docs/workflow/test-only changes must not restart the trading bot
     assert "git diff --name-only" in t
     assert "no code impact" in t
 
 
-def test_autodeploy_has_hold_file_and_zero_position_gate():
+def test_autodeploy_hold_file_is_root_owned_checked():
     t = _autodeploy_text()
     assert ".deploy_hold" in t
+    assert "stat -c '%u'" in t          # root-ownership check
+    assert "not root-owned" in t
+    assert "expires_at_epoch" in t      # TTL support
+
+
+def test_autodeploy_zero_position_gate_is_fail_closed():
+    t = _autodeploy_text()
     assert "paper_open_positions.json" in t
+    assert "UNKNOWN" in t and "fail-closed" in t
     assert "deferring restart" in t
 
 
-def test_autodeploy_writes_deployed_marker():
+def test_autodeploy_writes_deployed_marker_after_is_active_and_ready():
     t = _autodeploy_text()
     assert "reports/deployed_bot_sha" in t
+    # deployed marker write must come AFTER the is-active check
+    assert t.index("is-active --quiet") < t.index(
+        'echo "$new_sha" > "$PROJECT_DIR/reports/deployed_bot_sha"')
+    # and gated on READY convergence
+    assert 'post_ready' in t

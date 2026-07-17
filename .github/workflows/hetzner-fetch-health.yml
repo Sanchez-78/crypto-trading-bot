@@ -149,11 +149,12 @@ jobs:
             echo '=== repo owner vs root ===' && \
             stat -c 'repo owner: %U uid: %u' '$HETZNER_PROJECT_DIR/.git' 2>/dev/null || true && \
             echo '' && \
-            echo '=== SHA identity (audit F2/F3): repo vs deployed vs running ===' && \
-            echo \"repo_head_sha:  \$(git -C '$HETZNER_PROJECT_DIR' rev-parse HEAD 2>/dev/null || echo unknown)\" && \
+            echo '=== SHA identity (audit F2/F3): repo vs deployed vs ready vs boot ===' && \
+            echo \"repo_head_sha:   \$(git -C '$HETZNER_PROJECT_DIR' rev-parse HEAD 2>/dev/null || echo unknown)\" && \
             echo \"deployed_bot_sha: \$(cat '$HETZNER_PROJECT_DIR/reports/deployed_bot_sha' 2>/dev/null || echo none)\" && \
-            echo \"running_bot_sha:  \$(cat '$HETZNER_PROJECT_DIR/reports/running_bot_sha' 2>/dev/null || echo none)\" && \
-            echo \"deploy_hold:      \$([ -f '$HETZNER_PROJECT_DIR/.deploy_hold' ] && echo PRESENT || echo absent)\"
+            echo \"ready_bot_sha:    \$(cat '$HETZNER_PROJECT_DIR/reports/ready_bot_sha' 2>/dev/null || echo none)\" && \
+            echo \"boot_bot_sha:     \$(cat '$HETZNER_PROJECT_DIR/reports/running_bot_sha' 2>/dev/null || echo none)\" && \
+            echo \"deploy_hold:      \$([ -f '$HETZNER_PROJECT_DIR/.deploy_hold' ] && stat -c 'PRESENT uid=%u' '$HETZNER_PROJECT_DIR/.deploy_hold' || echo absent)\"
           " > artifacts/deploy_diagnostics.txt
 
           # ── Git failure reproduction (captures the real error text) ───────
