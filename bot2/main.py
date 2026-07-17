@@ -1429,6 +1429,15 @@ def main():
         print(f"[FATAL] {_pipe_err}", file=sys.stderr, flush=True)
         sys.exit(3)
 
+    # Record the running process's code SHA (audit F2/F3) so the autodeploy can
+    # detect repo-vs-process drift and restart only when the process is genuinely
+    # stale. Best-effort, never fatal.
+    try:
+        from src.services.deploy_marker import write_running_sha_marker
+        write_running_sha_marker()
+    except Exception:
+        pass
+
     version_str = get_version_string()
     print("\n" + "="*80, file=sys.stderr, flush=True)
     print(f"🚀 MAIN() STARTING — {version_str}", file=sys.stderr, flush=True)

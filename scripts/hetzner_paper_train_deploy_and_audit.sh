@@ -185,16 +185,21 @@ if ! git config --global --get-all safe.directory 2>/dev/null | grep -qx '\*'; t
 fi
 
 old_sha="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
+# F2/F3: the SHA the trading PROCESS is actually running (written by the bot at
+# startup). Used to decide restart, so a repo already fast-forwarded by another
+# workflow (e.g. dashboard restore) but with a stale process is still caught.
+running_sha="$( { cat "$PROJECT_DIR/reports/running_bot_sha" 2>/dev/null || true; } | tr -d '[:space:]' )"
+[ -n "$running_sha" ] || running_sha="unknown"
 git fetch "$REMOTE_NAME" "$BRANCH_NAME" | tee -a "$LOG_FILE"
 remote_sha="$(git rev-parse "$REMOTE_NAME/$BRANCH_NAME")"
 
 if [ "$old_sha" != "$remote_sha" ]; then
   changed="true"
-  echo "[$RUN_TS] updating $old_sha -> $remote_sha" | tee -a "$LOG_FILE"
+  echo "[$RUN_TS] syncing repo $old_sha -> $remote_sha" | tee -a "$LOG_FILE"
   git checkout "$BRANCH_NAME" | tee -a "$LOG_FILE"
   git reset --hard "$REMOTE_NAME/$BRANCH_NAME" | tee -a "$LOG_FILE"
 else
-  echo "[$RUN_TS] already up to date: $old_sha" | tee -a "$LOG_FILE"
+  echo "[$RUN_TS] repo already up to date: $old_sha" | tee -a "$LOG_FILE"
 fi
 
 new_sha="$(git rev-parse HEAD)"
@@ -217,11 +222,58 @@ if [ "$RUN_FULL_TESTS" = "true" ]; then
   fi
 fi
 
-# Restart only when there was a code change. Still run audit every cycle.
-if [ "$changed" = "true" ]; then
-  echo "[$RUN_TS] restarting $SERVICE_NAME" | tee -a "$LOG_FILE"
+# ── F2/F3: restart the trading process only when it is genuinely stale AND the
+# change touches real code AND it is safe to do so. Decide off the RUNNING
+# process SHA (not repo HEAD), so drift introduced by another workflow is caught.
+restart_needed="false"
+restart_skip_reason=""
+if [ "$running_sha" = "unknown" ]; then
+  # No marker yet (first run after this change, or older build): fall back to the
+  # repo-change signal so we don't get stuck on a stale process forever.
+  [ "$changed" = "true" ] && restart_needed="true"
+elif [ "$running_sha" != "$new_sha" ]; then
+  # Process is stale vs repo. Restart only if the delta touches real code — a
+  # docs/workflow/test-only change must not kill a live paper position.
+  if impact="$(git diff --name-only "$running_sha" "$new_sha" 2>/dev/null)"; then
+    code_impact="$(printf '%s\n' "$impact" \
+      | grep -Ev '^(docs/|\.github/|tests/|.*\.md$|AUDIT_|EXTERNAL_|HANDOVER)' || true)"
+    if [ -n "$code_impact" ]; then
+      restart_needed="true"
+    else
+      restart_skip_reason="docs/workflow-only change (no code impact)"
+    fi
+  else
+    # Cannot diff (running_sha unknown to git, e.g. after a rebase) — be safe and
+    # restart the stale process.
+    restart_needed="true"
+  fi
+fi
+
+# Operator freeze: a root-owned hold file blocks all restarts (health still runs).
+if [ "$restart_needed" = "true" ] && [ -f "$PROJECT_DIR/.deploy_hold" ]; then
+  restart_needed="false"
+  restart_skip_reason="deploy hold file present ($PROJECT_DIR/.deploy_hold)"
+fi
+
+# Zero-open-position gate: never kill a live paper position mid-hold; defer to the
+# next cycle (positions time out within ~15 min).
+if [ "$restart_needed" = "true" ]; then
+  POS_JSON="$PROJECT_DIR/data/paper_open_positions.json"
+  if [ -s "$POS_JSON" ] && grep -q '"symbol"' "$POS_JSON" 2>/dev/null; then
+    restart_needed="false"
+    restart_skip_reason="open positions present — deferring restart to next cycle"
+  fi
+fi
+
+if [ "$restart_needed" = "true" ]; then
+  echo "[$RUN_TS] restarting $SERVICE_NAME (running $running_sha -> $new_sha)" | tee -a "$LOG_FILE"
   systemctl restart "$SERVICE_NAME"
   sleep 8
+  # Record the SHA we intended to deploy; the process rewrites running_bot_sha
+  # itself at startup, so the two converge once it is up.
+  echo "$new_sha" > "$PROJECT_DIR/reports/deployed_bot_sha" 2>/dev/null || true
+elif [ -n "$restart_skip_reason" ]; then
+  echo "[$RUN_TS] restart skipped: $restart_skip_reason (running=$running_sha repo=$new_sha)" | tee -a "$LOG_FILE"
 fi
 
 if systemctl is-active --quiet "$SERVICE_NAME"; then

@@ -84,3 +84,38 @@ def test_deploy_is_dispatch_only_no_push_trigger():
     assert isinstance(on, dict)
     assert "push" not in on, "push trigger must be removed — deploy is manual/dispatch-only"
     assert "workflow_dispatch" in on
+
+
+# ── Audit F2/F3: autodeploy script hardening (SHA drift + safe restart) ────────
+AUTODEPLOY = REPO / "scripts/hetzner_paper_train_deploy_and_audit.sh"
+
+
+def _autodeploy_text() -> str:
+    return AUTODEPLOY.read_text(encoding="utf-8")
+
+
+def test_autodeploy_decides_restart_off_running_process_sha():
+    t = _autodeploy_text()
+    # restart decision keys off the running-process marker, not just repo HEAD
+    assert "reports/running_bot_sha" in t
+    assert "running_sha" in t
+    assert 'restart_needed="true"' in t
+
+
+def test_autodeploy_has_code_impact_gate():
+    t = _autodeploy_text()
+    # docs/workflow/test-only changes must not restart the trading bot
+    assert "git diff --name-only" in t
+    assert "no code impact" in t
+
+
+def test_autodeploy_has_hold_file_and_zero_position_gate():
+    t = _autodeploy_text()
+    assert ".deploy_hold" in t
+    assert "paper_open_positions.json" in t
+    assert "deferring restart" in t
+
+
+def test_autodeploy_writes_deployed_marker():
+    t = _autodeploy_text()
+    assert "reports/deployed_bot_sha" in t
