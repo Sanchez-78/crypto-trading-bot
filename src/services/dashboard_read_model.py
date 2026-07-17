@@ -76,7 +76,10 @@ def _load_learning_state(errors):
     try:
         if os.path.exists(path):
             with open(path) as f:
-                return json.load(f)
+                data = json.load(f)
+            if isinstance(data, dict):
+                return data
+            errors.append("learning_state_unreadable")  # valid JSON but not an object
     except (json.JSONDecodeError, OSError):
         errors.append("learning_state_unreadable")
     return {}
@@ -128,7 +131,7 @@ def _read_recent_rows(errors, limit=RECENT_WINDOW):
         out.append({
             "trade_id": tid, "symbol": sym,
             "entry_price": _f(ep), "exit_price": _f(xp),
-            "pnl_usd": _f(pu), "pnl_pct": _f(pp),
+            "pnl_usd": _f(pu), "pnl_pct": _f(pp), "pnl_pct_null": pp is None,
             "exit_reason": reason, "entry_ts": _f(ets), "exit_ts": _f(xts),
             "regime": regime, "win": int(win or 0), "side": side, "outcome": outcome,
         })
@@ -225,8 +228,9 @@ def _closed_trades_list(rows, limit=30):
         ep, xp, pu = r["entry_price"], r["exit_price"], r["pnl_usd"]
         pp = r["pnl_pct"]
         side = r.get("side")
-        # Legacy NULL pnl_pct: recompute long-formula then correct sign for shorts.
-        if r["pnl_pct"] == 0.0 and ep and xp and not r.get("outcome"):
+        # Legacy NULL pnl_pct (matches old `if pp is None`): recompute long-formula
+        # then correct sign for shorts. A genuine stored 0.0 is left untouched.
+        if r.get("pnl_pct_null") and ep and xp:
             recomputed = (xp / ep - 1.0) * 100.0
             if (side or "").upper() in ("SELL", "SHORT"):
                 recomputed = -recomputed
@@ -286,6 +290,10 @@ def _open_positions(errors):
         with open(pos_path) as f:
             positions = json.load(f)
     except (json.JSONDecodeError, OSError):
+        errors.append("positions_unreadable")
+        return out
+    # Valid JSON but not an object/array -> degrade ONLY positions, not the payload.
+    if not isinstance(positions, (dict, list)):
         errors.append("positions_unreadable")
         return out
     now_ts = time.time()
@@ -418,14 +426,21 @@ def get_enhanced_metrics() -> dict:
 
 
 def get_recent_trades(limit=30) -> list:
-    """Recent closed trades — same cache.sqlite the headline uses (audit 8.3)."""
+    """Recent closed trades — same cache.sqlite the headline uses (audit 8.3).
+
+    Never raises: the Flask wrapper has no guard of its own, so this is the
+    never-500 boundary for /api/trades/recent.
+    """
     errors: list[str] = []
-    rows = _read_recent_rows(errors, max(limit, RECENT_WINDOW))
-    if rows:
-        return _closed_trades_list(rows, limit)
-    state = _load_learning_state(errors)
-    rolling = state.get("rolling100") or state.get("rolling50") or []
-    return _closed_trades_from_rolling(rolling, limit)
+    try:
+        rows = _read_recent_rows(errors, max(limit, RECENT_WINDOW))
+        if rows:
+            return _closed_trades_list(rows, limit)
+        state = _load_learning_state(errors)
+        rolling = state.get("rolling100") or state.get("rolling50") or []
+        return _closed_trades_from_rolling(rolling, limit)
+    except Exception:
+        return []
 
 
 def _rolling_outcome(e):

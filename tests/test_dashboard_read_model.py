@@ -216,19 +216,30 @@ def test_no_learning_database_in_active_code():
         assert code_lines == [], f"{f} still connects to learning_database.sqlite"
 
 
+def _strip_module_docstring(src):
+    """Return source with the leading module docstring removed (comment/doc mentions
+    of forbidden sources are fine; only executable references matter)."""
+    parts = src.split('"""')
+    return "".join(parts[2:]) if len(parts) >= 3 else src
+
+
 def test_no_shellout_in_request_path():
     src = (REPO / "src/services/dashboard_web.py").read_text()
     assert "journalctl" not in src
     assert "os.system" not in src
     assert "import subprocess" not in src
-    rmsrc = (REPO / "src/services/dashboard_read_model.py").read_text()
-    # only appears inside the module docstring listing what is NOT read
-    assert "subprocess" not in rmsrc.split('"""')[2] if '"""' in rmsrc else True
+    # In the read model, forbidden tokens may appear only in the module docstring.
+    body = _strip_module_docstring((REPO / "src/services/dashboard_read_model.py").read_text())
+    for token in ("subprocess", "journalctl", "os.system", "learning_database"):
+        assert token not in body, f"read model body must not reference {token}"
 
 
 # ── 16. never-500 across failure modes ────────────────────────────────────────
 
-@pytest.mark.parametrize("setup", ["nothing", "corrupt_db", "broken_json", "empty_db"])
+@pytest.mark.parametrize("setup", [
+    "nothing", "corrupt_db", "broken_json", "empty_db",
+    "nondict_state_list", "nondict_state_int", "nondict_positions",
+])
 def test_never_raises(env, setup):
     if setup == "corrupt_db":
         env["cache"].write_text("nope")
@@ -237,11 +248,46 @@ def test_never_raises(env, setup):
         env["pos"].write_text("{bad")
     elif setup == "empty_db":
         _make_cache(env["cache"], [])
-    d = rm.get_metrics()          # must not raise
+    elif setup == "nondict_state_list":
+        # valid JSON but not an object -> the exact former 500 escape path
+        env["state"].write_text("[1, 2, 3]")
+    elif setup == "nondict_state_int":
+        env["state"].write_text("42")
+    elif setup == "nondict_positions":
+        _make_cache(env["cache"], [_row("a", "BUY", 0.82, 0.41, "WIN")])
+        env["pos"].write_text("123")
+    d = rm.get_metrics()           # must not raise
     e = rm.get_enhanced_metrics()  # must not raise
-    t = rm.get_recent_trades()     # must not raise
+    t = rm.get_recent_trades()     # must not raise (unguarded Flask wrapper)
     assert isinstance(d, dict) and isinstance(e, dict) and isinstance(t, list)
     assert "timestamp" in d
+
+
+def test_bad_positions_does_not_collapse_payload(env):
+    """A corrupt positions file must degrade ONLY positions, not wipe the metrics."""
+    _make_cache(env["cache"], [
+        _row("a", "BUY", 0.82, 0.41, "WIN"), _row("b", "SELL", -0.30, -0.15, "LOSS"),
+    ])
+    env["pos"].write_text("123")  # valid JSON, not a dict/list
+    d = rm.get_metrics()
+    assert "positions_unreadable" in d["errors"]
+    assert d["open_positions_list"] == []
+    # cache-derived metrics survive intact
+    assert d["win_rate_window"] == 2
+    assert len(d["closed_trades_list"]) == 2
+    assert d["data_source"] == "learning_state+cache.sqlite"  # NOT the degraded envelope
+
+
+def test_genuine_zero_pnl_pct_not_recomputed(env):
+    """A stored 0.0 pnl_pct (with outcome) must be left as 0.0, not recomputed."""
+    _make_cache(env["cache"], [
+        {"trade_id": "flat", "symbol": "BTCUSDT", "entry_ts": 1, "exit_ts": 2,
+         "entry_price": 100.0, "exit_price": 101.0, "pnl_usd": 0.0, "pnl_pct": 0.0,
+         "win": 0, "exit_reason": "TIMEOUT", "regime": "BULL_TREND",
+         "side": "BUY", "outcome": "FLAT"},
+    ])
+    t = rm.get_recent_trades(30)
+    assert t[0]["pnl_pct"] == 0.0  # NOT recomputed to (101/100-1)*100 = 1.0
 
 
 # ── 17. Android contract: timestamps + Czech statuses ─────────────────────────
