@@ -181,6 +181,43 @@ def test_exit_distribution(env):
 
 # ── 12. main and enhanced identical headline ──────────────────────────────────
 
+def test_headline_block_single_window(env):
+    # Audit F6: one explicit headline object, all fields from the same window.
+    _make_cache(env["cache"], [
+        _row("a", "BUY", 0.82, 0.41, "WIN"),
+        _row("b", "SELL", -0.30, -0.15, "LOSS"),
+        _row("c", "BUY", 0.02, 0.01, "FLAT"),
+    ])
+    d = rm.get_metrics()
+    h = d["headline"]
+    assert h["n"] == 3 and h["wins"] == 1 and h["losses"] == 1 and h["flats"] == 1
+    assert h["win_rate_pct"] == pytest.approx(33.33, abs=0.01)
+    assert h["win_rate_pct"] == d["win_rate_pct"]      # same window as top-level
+    assert h["profit_factor_default_basis"] == "pct_points"
+    for k in ("schema_version", "profit_factor_pct_basis", "profit_factor_usd_basis",
+              "net_pnl_pct", "net_pnl_usd", "source", "generated_at"):
+        assert k in h
+
+
+def test_dual_pf_differs_with_variable_size(env):
+    # Audit F7: identical pct signs but different USD sizing -> the two PF bases
+    # genuinely differ, so both must be exposed.
+    _make_cache(env["cache"], [
+        _row("a", "BUY", 1.0, 0.1, "WIN"),     # pct +1.0 / usd +0.1
+        _row("b", "BUY", -0.5, -0.5, "LOSS"),  # pct -0.5 / usd -0.5 (loss sized larger)
+    ])
+    h = rm.get_metrics()["headline"]
+    assert h["profit_factor_pct_basis"] == pytest.approx(2.0)   # 1.0/0.5
+    assert h["profit_factor_usd_basis"] == pytest.approx(0.2)   # 0.1/0.5
+
+
+def test_browser_chart_uses_headline_not_lifetime_times_wr():
+    src = (REPO / "src/services/dashboard_web.py").read_text()
+    assert "totalTrades * (data.win_rate_pct" not in src   # buggy pattern gone
+    assert "data.headline" in src
+    assert "'Wins', 'Losses', 'Flat'" in src               # FLAT is its own slice
+
+
 def test_main_and_enhanced_identical_headline(env):
     _make_cache(env["cache"], [
         _row("a", "BUY", 0.82, 0.41, "WIN"), _row("b", "SELL", -0.30, -0.15, "LOSS"),

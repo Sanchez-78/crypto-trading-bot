@@ -1008,21 +1008,24 @@ HTML_TEMPLATE = r"""
                 }
             });
 
-            // Win/Loss Chart
+            // Win/Loss/Flat Chart — audit F6: read the SINGLE headline window
+            // (wins/losses/flats from the same recent window). Never multiply the
+            // lifetime count by the recent win rate, and never fold FLAT into LOSS.
             const winlossCtx = document.getElementById('winlossChart');
             if (winlossChart) winlossChart.destroy();
 
-            const totalTrades = data.closed_trades || 1;
-            const wins = Math.round(totalTrades * (data.win_rate_pct || 0) / 100);
-            const losses = totalTrades - wins;
+            const hl = data.headline || {};
+            const wins = hl.wins || 0;
+            const losses = hl.losses || 0;
+            const flats = hl.flats || 0;
 
             winlossChart = new Chart(winlossCtx, {
                 type: 'doughnut',
                 data: {
-                    labels: ['Wins', 'Losses'],
+                    labels: ['Wins', 'Losses', 'Flat'],
                     datasets: [{
-                        data: [wins, losses],
-                        backgroundColor: ['#00ff00', '#ff4444'],
+                        data: [wins, losses, flats],
+                        backgroundColor: ['#00ff00', '#ff4444', '#888888'],
                         borderColor: '#0a0e27',
                         borderWidth: 2
                     }]
