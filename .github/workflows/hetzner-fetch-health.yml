@@ -147,7 +147,13 @@ jobs:
             git -C '$HETZNER_PROJECT_DIR' config --get remote.origin.url 2>&1 | \
               sed 's#//[^@/]*@#//[REDACTED]@#; s#\(github.com[:/][^ ]*\)#\1#' || true && \
             echo '=== repo owner vs root ===' && \
-            stat -c 'repo owner: %U uid: %u' '$HETZNER_PROJECT_DIR/.git' 2>/dev/null || true
+            stat -c 'repo owner: %U uid: %u' '$HETZNER_PROJECT_DIR/.git' 2>/dev/null || true && \
+            echo '' && \
+            echo '=== SHA identity (audit F2/F3): repo vs deployed vs running ===' && \
+            echo \"repo_head_sha:  \$(git -C '$HETZNER_PROJECT_DIR' rev-parse HEAD 2>/dev/null || echo unknown)\" && \
+            echo \"deployed_bot_sha: \$(cat '$HETZNER_PROJECT_DIR/reports/deployed_bot_sha' 2>/dev/null || echo none)\" && \
+            echo \"running_bot_sha:  \$(cat '$HETZNER_PROJECT_DIR/reports/running_bot_sha' 2>/dev/null || echo none)\" && \
+            echo \"deploy_hold:      \$([ -f '$HETZNER_PROJECT_DIR/.deploy_hold' ] && echo PRESENT || echo absent)\"
           " > artifacts/deploy_diagnostics.txt
 
           # ── Git failure reproduction (captures the real error text) ───────
