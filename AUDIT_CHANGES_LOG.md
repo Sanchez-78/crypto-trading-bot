@@ -16,12 +16,15 @@
 | **F5** pipeline mode no-op | was PARTIAL → **round-2 fix done** (this branch) | unknown/typo mode now **fail-closed** (`assert_supported_mode`: only unset/off/shadow start) |
 | **F9** audit log stale | REOPENED → **this update** | log now reflects PR #69–#71 + round-2 residual fixes |
 
-### Still OPEN (auditor roadmap order)
-- **F8 (Medium, HIGH VALUE)** — persist explicit `mfe/mae` (fraction+pct+bps) **plus 1s directional price-path** so a TP/SL counterfactual is honest (MFE/MAE alone can't order TP-before-SL). Auditor: **GO autonomous PR**, deploy needs operator. *This is the next step before any edge decision.*
-- **F6/F7 (High/Med, Med)** — one explicit `headline` window (additive API, migrate browser to `recent.wins/losses/flats`) + dual PF (`profit_factor_pct_basis` / `_usd_basis` with `basis` metadata). Auditor: GO autonomous, deploy after Android smoke test.
-- **F10 (Med)** — firewall workflow: external remote-probe + `ufw active` + IPv4/IPv6 + rollback. GO for prep, APPLY needs operator.
-- **F11 (Med, runtime-only)** — single-step `lifetime_n` proof from full `close_path_forensics.txt` (needs fresh server artifact).
-- **Dashboard security enable / PR6 Phase B / edge change** — all **NO-GO** now; see `EXTERNAL_AUDIT_PROMPT_v3.md` §11 for the preflight/criteria.
+### Round-3 remediation — done since (all reviewer-gated)
+- **F8 (#73)** — `trade_excursion.py`: persist gross MFE/MAE (fraction+pct+bps, side-aware) + `time_to_mfe/mae` (extreme ordering = first-order TP-before-SL proxy) + `favorable_first()`. Additive cache columns. Observability only; reviewer proved max/min values identical over 200k tick sims. **F8b (full 1s price-path table) deferred** — global-extreme timestamps give first-order ordering; the per-candidate-level path is the refinement.
+- **F6/F7 (#74)** — one explicit `headline` window (wins/losses/flats/WR/net all same window) + dual PF (`profit_factor_pct_basis`/`_usd_basis`). Browser chart reads `data.headline.*` (no more lifetime×recent-WR; FLAT its own slice). Additive — Android contract PRESERVED (android-contract gate PASS). Degraded envelope carries a zeroed headline.
+
+### Still OPEN (operator- or snapshot-gated)
+- **F10 (Med)** — firewall workflow needs external remote-probe + `ufw active` + IPv4/IPv6 + rollback. GO for prep, **APPLY needs operator**.
+- **F11 (Med, runtime-only)** — single-step `lifetime_n` proof from full `close_path_forensics.txt` — **needs a fresh server artifact** (`hetzner-fetch-health.yml`).
+- **F1 runtime sign-off** — statically CLOSED; the absolute "no runtime path reaches real order submission" sentence needs a fresh artifact confirming `EXECUTION_ENGINE_ENABLED != 1` + live flags false.
+- **Dashboard security enable (`DASHBOARD_SECURITY_ENABLED=1`) / PR6 Phase B / any edge change** — all **NO-GO** now; see `EXTERNAL_AUDIT_PROMPT_v3.md` §11 for preflight/criteria. Edge E1–E4 offline counterfactual is now *unblocked* by F8 (needs ≥100–200 post-deploy closes carrying the excursion data).
 
 ### MASTER IMPLEMENTATION PROMPT — all merged (each reviewer-gated)
 | PR | Finding | Status |
