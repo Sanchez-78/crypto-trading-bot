@@ -1,0 +1,97 @@
+name: Hetzner Restore Dashboard (manual)
+
+# Incident recovery (2026-07-17): the server autodeploys `main` on a timer, so
+# PR5's fail-closed auth + localhost bind landed by default and locked the
+# Android app out (503 auth_not_configured). The ship-dark hotfix makes that
+# security posture opt-in (DASHBOARD_SECURITY_ENABLED, default off). This
+# workflow syncs the hotfix to the server and restarts ONLY the dashboard unit
+# so it comes back up open (0.0.0.0, no auth) exactly as before PR5.
+#
+# It does NOT touch cryptomaster.service (the trading bot) and makes no trading
+# change. Read-mostly: fast-forward the repo + restart the dashboard + verify.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type RESTORE_DASHBOARD to act (or STATUS for read-only)'
+        required: true
+        default: 'STATUS'
+
+jobs:
+  restore-dashboard:
+    name: Sync hotfix + restart dashboard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up SSH key and pin host key
+        env:
+          HETZNER_SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$HETZNER_SSH_KEY" > ~/.ssh/hetzner_deploy_key
+          chmod 600 ~/.ssh/hetzner_deploy_key
+          ssh-keyscan -p 22 -T 15 "$HETZNER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          [ -s ~/.ssh/known_hosts ] || { echo "host unreachable"; exit 1; }
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Sync hotfix + restart dashboard
+        env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          HETZNER_USER: ${{ secrets.HETZNER_USER }}
+          HETZNER_PROJECT_DIR: ${{ secrets.HETZNER_PROJECT_DIR }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          SSH_OPTS="-p 22 -i ~/.ssh/hetzner_deploy_key -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile=~/.ssh/known_hosts -o ConnectTimeout=30 -o BatchMode=yes"
+          ssh $SSH_OPTS "$HETZNER_USER@$HETZNER_HOST" \
+            "DIR='${HETZNER_PROJECT_DIR:-/opt/cryptomaster}' CONFIRM='$CONFIRM' bash -s" << 'REMOTE_EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          cd "$DIR"
+          export HOME="${HOME:-/root}"
+          git config --global --add safe.directory "$DIR" 2>/dev/null || true
+
+          echo "=== BEFORE ==="
+          echo "current SHA: $(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+          echo "dashboard health (localhost):"
+          curl -fsS "http://127.0.0.1:5001/api/dashboard/metrics" 2>/dev/null | head -c 300 || echo "  (unreachable / degraded)"
+          echo ""
+
+          # Safety: never act if .env indicates live trading (defense-in-depth;
+          # this workflow does not touch trading, but refuse on any live flag).
+          if [ -f .env ]; then
+            v() { grep -E "^[[:space:]]*(export[[:space:]]+)?$1=" .env | tail -1 | cut -d= -f2- | sed 's/[[:space:]]*#.*$//' | tr -d '"'"'"' ' | tr 'A-Z' 'a-z' || true; }
+            is_true() { case "$1" in true|1|yes|on) return 0;; *) return 1;; esac; }
+            if [ "$(v TRADING_MODE)" = "live_real" ] || is_true "$(v ENABLE_REAL_ORDERS)" || is_true "$(v LIVE_TRADING_CONFIRMED)"; then
+              echo "CRITICAL: live flag in .env — refusing"; exit 1
+            fi
+          fi
+
+          if [ "$CONFIRM" != "RESTORE_DASHBOARD" ]; then
+            echo "STATUS mode — no changes made."; exit 0
+          fi
+
+          echo "=== SYNC hotfix (fast-forward to origin/main) ==="
+          git fetch origin main
+          git reset --hard origin/main
+          echo "new SHA: $(git rev-parse --short HEAD)"
+
+          echo "=== RESTART dashboard unit ONLY (trading bot untouched) ==="
+          UNIT=""
+          for u in cryptomaster-dashboard cryptomaster-dashboard.service; do
+            if systemctl list-unit-files "$u" >/dev/null 2>&1 && systemctl cat "$u" >/dev/null 2>&1; then UNIT="$u"; break; fi
+          done
+          [ -n "$UNIT" ] || { echo "ERROR: dashboard unit not found"; exit 1; }
+          systemctl restart "$UNIT"
+          sleep 4
+
+          echo "=== AFTER ==="
+          systemctl is-active "$UNIT" || echo "  (dashboard not active!)"
+          echo "healthz:"; curl -fsS "http://127.0.0.1:5001/healthz" 2>/dev/null || echo "  (healthz failed)"
+          echo ""
+          echo "metrics (must be 200 JSON, NOT auth_not_configured):"
+          curl -fsS "http://127.0.0.1:5001/api/dashboard/metrics" 2>/dev/null | head -c 400 || echo "  (metrics failed)"
+          echo ""
+          echo "[RESTORE] cryptomaster.service left untouched: $(systemctl is-active cryptomaster 2>/dev/null || echo unknown)"
+          REMOTE_EOF

@@ -18,10 +18,12 @@ os.chdir('/opt/cryptomaster')
 from src.services.dashboard_web import app
 
 if __name__ == '__main__':
-    # Audit PR5 (P1.6): default bind is localhost (127.0.0.1), NOT 0.0.0.0.
-    # Override via DASHBOARD_BIND_HOST / DASHBOARD_PORT only behind a VPN or an
-    # authenticated HTTPS reverse proxy. Bearer-token auth is enforced by the
-    # centralized middleware in dashboard_web (fail-closed without a token).
-    host = os.getenv("DASHBOARD_BIND_HOST", "127.0.0.1")
+    # Ship-dark (hotfix 2026-07-17): the secure localhost bind only becomes the
+    # default once DASHBOARD_SECURITY_ENABLED=1; until then the bind stays
+    # 0.0.0.0 (prior behaviour) so the autodeployed dashboard keeps serving the
+    # Android app. DASHBOARD_BIND_HOST always overrides. See dashboard_auth.
+    from src.services.dashboard_auth import security_enabled
+    default_host = "127.0.0.1" if security_enabled() else "0.0.0.0"
+    host = os.getenv("DASHBOARD_BIND_HOST", default_host)
     port = int(os.getenv("DASHBOARD_PORT", "5001"))
     app.run(host=host, port=port, debug=False, use_reloader=False)

@@ -14,6 +14,14 @@ Security contract (audit 9.4 / 9.10):
   * the health endpoint is exempt and minimal (no strategy, no metrics),
   * X-Forwarded-For is never trusted for auth decisions.
 
+SHIP-DARK ROLLOUT (hotfix 2026-07-17): the whole security posture (localhost
+bind + auth enforcement) is OFF by default and only activates when
+DASHBOARD_SECURITY_ENABLED=1. This is required because the server autodeploys
+`main` on a timer — landing PR5's fail-closed auth by default locked the Android
+app out (503, no token). With the flag off the dashboard keeps its prior
+behaviour (public bind, no auth); flip the flag ON only once the token is
+provisioned and the app's token flow is ready.
+
 Explicit escape hatch for local dev / tests: DASHBOARD_AUTH_DISABLED=1.
 """
 import hmac
@@ -24,6 +32,11 @@ log = logging.getLogger(__name__)
 
 _TRUE = {"1", "true", "yes", "on"}
 DEFAULT_EXEMPT = ("/healthz",)
+
+
+def security_enabled() -> bool:
+    """Master switch for the dashboard security posture. Default OFF (ship-dark)."""
+    return str(os.getenv("DASHBOARD_SECURITY_ENABLED", "")).strip().lower() in _TRUE
 
 
 def auth_disabled() -> bool:
@@ -65,7 +78,9 @@ def evaluate(authorization_header: str) -> tuple[bool, int, str | None]:
 
     error_code is a machine-readable string safe to expose (never the token).
     """
-    if auth_disabled():
+    if not security_enabled() or auth_disabled():
+        # Ship-dark: with the master switch off the API is open exactly as it was
+        # before PR5 — no 503, no lockout — until security is explicitly enabled.
         return True, 200, None
     server_token = load_api_token()
     if not server_token:

@@ -13,7 +13,28 @@ TOKEN = "s3cr3t-token-value-not-in-repo"
 def clean_env(monkeypatch):
     for k in ("DASHBOARD_API_TOKEN", "DASHBOARD_AUTH_DISABLED", "CREDENTIALS_DIRECTORY"):
         monkeypatch.delenv(k, raising=False)
+    # Most tests exercise the ENFORCED posture; enable the master switch here.
+    # The ship-dark default (flag off) has its own dedicated tests that clear it.
+    monkeypatch.setenv("DASHBOARD_SECURITY_ENABLED", "1")
     yield
+
+
+# ── ship-dark master switch (default OFF = open, pre-PR5 behaviour) ────────────
+
+def test_security_disabled_by_default_is_open(monkeypatch):
+    monkeypatch.delenv("DASHBOARD_SECURITY_ENABLED", raising=False)
+    assert da.security_enabled() is False
+    # no token, no header -> still allowed (no 503, no lockout)
+    allowed, status, code = da.evaluate("")
+    assert allowed is True and status == 200 and code is None
+
+
+def test_master_switch_gates_enforcement(monkeypatch):
+    monkeypatch.setenv("DASHBOARD_API_TOKEN", TOKEN)
+    monkeypatch.delenv("DASHBOARD_SECURITY_ENABLED", raising=False)
+    assert da.evaluate("")[0] is True            # off -> open
+    monkeypatch.setenv("DASHBOARD_SECURITY_ENABLED", "1")
+    assert da.evaluate("")[0] is False           # on -> enforced
 
 
 # ── pure decision (evaluate) ──────────────────────────────────────────────────
@@ -119,6 +140,14 @@ def test_token_never_in_error_body(client, monkeypatch):
     assert TOKEN not in r.get_data(as_text=True)  # neither the server nor the sent token echoed
 
 
+def test_endpoints_open_when_security_disabled(client, monkeypatch):
+    # ship-dark default: with the master switch off the API serves the app as
+    # before PR5 — no 503, no token needed.
+    monkeypatch.delenv("DASHBOARD_SECURITY_ENABLED", raising=False)
+    assert client.get("/api/dashboard/metrics").status_code == 200
+    assert client.get("/api/trades/recent").status_code == 200
+
+
 def test_unconfigured_server_fails_closed_503(client, monkeypatch):
     # no token, auth not disabled -> protected endpoints refuse (never open API)
     r = client.get("/api/dashboard/metrics")
@@ -146,15 +175,18 @@ def _binding_lines(src):
     return [ln for ln in src.splitlines() if "app.run(" in ln]
 
 
-def test_bind_default_is_localhost_not_wildcard():
-    # Check the actual binding call, not comment prose.
+def test_bind_is_security_gated():
+    # Ship-dark: the binding is configurable and its DEFAULT is gated on
+    # security_enabled() — 127.0.0.1 when security is on, 0.0.0.0 (prior
+    # behaviour) when off. The app.run call must use a variable, never a literal.
     for f in ("start_flask_dashboard.py", "src/services/dashboard_web.py"):
         src = (REPO / f).read_text()
-        for ln in _binding_lines(src):
-            assert "0.0.0.0" not in ln, f"{f} still binds 0.0.0.0: {ln}"
-            assert "host=host" in ln or "host=_host" in ln, f"{f} bind not configurable: {ln}"
+        assert "security_enabled()" in src, f"{f} bind not gated on security flag"
+        assert '"127.0.0.1"' in src and '"0.0.0.0"' in src
         assert "DASHBOARD_BIND_HOST" in src
-        assert '"127.0.0.1"' in src  # safe default
+        for ln in _binding_lines(src):
+            assert "host=host" in ln or "host=_host" in ln, f"{f} bind not configurable: {ln}"
+            assert "0.0.0.0" not in ln and "127.0.0.1" not in ln  # no hardcoded host on the call
 
 
 def test_firewall_workflow_is_manual_and_not_auto():
