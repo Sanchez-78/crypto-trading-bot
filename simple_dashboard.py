@@ -57,8 +57,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.handle_api_symbol_trades(symbol)
         # HTML dashboard
         elif self.path == '/' or self.path == '/index.html':
-            html = self.generate_dashboard()
-            self.send_response(200)
+            # Belt-and-suspenders (2026-07-17): this port is public and scanned;
+            # a render error must degrade to a 500 page, not an unhandled traceback.
+            try:
+                html = self.generate_dashboard()
+                status = 200
+            except Exception as _e:
+                html = f"<html><body><h1>Dashboard temporarily unavailable</h1><p>{type(_e).__name__}</p></body></html>"
+                status = 500
+            self.send_response(status)
             self.send_header('Content-type', 'text/html; charset=utf-8')
             self.send_header('Cache-Control', 'no-cache')
             self.end_headers()
@@ -570,22 +577,31 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 </tr>
         """
 
-        # Build recent closed trades rows
+        # Build recent closed trades rows. FIX (2026-07-17): the old code iterated
+        # an undefined/non-list `closed_trades` and assumed `pnl_usd` was a "$..."
+        # string, so every hit crashed generate_dashboard with a TypeError — and
+        # this dashboard is public on :5000, so external port scanners spammed the
+        # journal with tracebacks. Use the API's actual `closed_trades_list`, guard
+        # every field, and never crash the request.
         trade_rows = ''
-        for i, trade in enumerate(closed_trades[-20:]):  # Last 20
-            # Parse PnL from string (e.g., "$-0.00005000")
-            pnl_str = trade['pnl_usd'].replace('$', '')
+        _closed = live_data.get('closed_trades_list', []) if isinstance(live_data, dict) else []
+        if not isinstance(_closed, list):
+            _closed = []
+        for trade in _closed[-20:]:  # Last 20
+            if not isinstance(trade, dict):
+                continue
+            _pnl_raw = trade.get('pnl_usd', 0)
             try:
-                pnl_value = float(pnl_str)
-            except:
+                pnl_value = float(str(_pnl_raw).replace('$', '').strip() or 0)
+            except (TypeError, ValueError):
                 pnl_value = 0.0
             pnl_class = 'positive' if pnl_value >= 0 else 'negative'
             trade_rows += f"""
                 <tr>
-                    <td>{trade['symbol']}</td>
-                    <td class="{pnl_class}">{trade['pnl_usd']}</td>
-                    <td>{trade['exit_reason']}</td>
-                    <td>{int(trade.get('hold_s', 0))}</td>
+                    <td>{trade.get('symbol', 'N/A')}</td>
+                    <td class="{pnl_class}">{_pnl_raw}</td>
+                    <td>{trade.get('exit_reason', trade.get('reason', '—'))}</td>
+                    <td>{int(trade.get('hold_s', 0) or 0)}</td>
                 </tr>
         """
 
