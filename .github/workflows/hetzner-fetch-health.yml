@@ -102,6 +102,25 @@ jobs:
             systemctl list-timers '*-autodeploy.timer' --no-pager 2>&1 || true
           " > artifacts/service_status.txt
 
+          # ── Canonical close pipeline probe (audit PR6 / section 11) ───────
+          # READ-ONLY. In shadow mode the canonical tables may not exist yet;
+          # tolerate their absence. Verifies shadow agreement + effect ledger.
+          ssh $SSH_OPTS "$HETZNER_USER@$HETZNER_HOST" "
+            echo '=== pipeline mode (.env, redacted) ===' && \
+            grep -E '^[[:space:]]*(export[[:space:]]+)?PAPER_CANONICAL_PIPELINE=' '$HETZNER_PROJECT_DIR/.env' 2>/dev/null || echo 'PAPER_CANONICAL_PIPELINE not set (off)' && \
+            echo '' && \
+            echo '=== shadow agreement / conflicts (last 26h) ===' && \
+            journalctl -u '$HETZNER_SERVICE_NAME' --since '26 hours ago' --no-pager 2>/dev/null \
+              | grep -E 'CANONICAL_PIPELINE_SHADOW|CANONICAL_CLOSE_CONFLICT|CANONICAL_CLOSE_PERSIST_ERROR' \
+              | sed 's/\(key\|token\|secret\|password\)\([=: ]\+\)[^ ,\"'\'']\+/\1\2[REDACTED]/gi' \
+              | tail -200 || echo 'no canonical pipeline events (shadow off or no closes)' && \
+            echo '' && \
+            echo '=== canonical tables (read-only, may be absent in shadow) ===' && \
+            DB='$HETZNER_PROJECT_DIR/local_learning_storage/cache.sqlite' && \
+            sqlite3 \"file:\$DB?mode=ro\" \"SELECT 'canonical_closes='||COUNT(*) FROM paper_canonical_closes;\" 2>/dev/null || echo 'paper_canonical_closes: not present (shadow mode)' && \
+            sqlite3 \"file:\$DB?mode=ro\" \"SELECT effect_type||':'||status||'='||COUNT(*) FROM paper_close_effects GROUP BY effect_type, status;\" 2>/dev/null || echo 'paper_close_effects: not present (shadow mode)'
+          " > artifacts/canonical_pipeline_probe.txt
+
           # ── Firebase quota forensics (last 26h, targeted grep) ────────────
           # The raw tail is useless during log floods; grep the quota lifecycle
           # events directly so 429s vs. genuine read storms are distinguishable.
