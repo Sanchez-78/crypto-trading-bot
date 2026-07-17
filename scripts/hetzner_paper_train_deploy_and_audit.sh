@@ -188,7 +188,7 @@ old_sha="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
 # F2/F3: the SHA the trading PROCESS is actually running (written by the bot at
 # startup). Used to decide restart, so a repo already fast-forwarded by another
 # workflow (e.g. dashboard restore) but with a stale process is still caught.
-running_sha="$(tr -d '[:space:]' < "$PROJECT_DIR/reports/running_bot_sha" 2>/dev/null || true)"
+running_sha="$( { cat "$PROJECT_DIR/reports/running_bot_sha" 2>/dev/null || true; } | tr -d '[:space:]' )"
 [ -n "$running_sha" ] || running_sha="unknown"
 git fetch "$REMOTE_NAME" "$BRANCH_NAME" | tee -a "$LOG_FILE"
 remote_sha="$(git rev-parse "$REMOTE_NAME/$BRANCH_NAME")"
