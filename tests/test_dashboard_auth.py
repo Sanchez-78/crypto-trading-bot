@@ -62,10 +62,24 @@ def test_correct_token_200(monkeypatch):
     assert allowed is True and status == 200 and code is None
 
 
-def test_auth_disabled_allows(monkeypatch):
+def test_auth_disabled_ignored_when_security_on(monkeypatch):
+    # Audit F4: with security ON, DASHBOARD_AUTH_DISABLED must NOT bypass auth.
+    monkeypatch.setenv("DASHBOARD_AUTH_DISABLED", "1")  # security is ON via fixture
+    allowed, status, code = da.evaluate("")
+    assert allowed is False and status == 503 and code == "auth_not_configured"
+
+
+def test_auth_disabled_only_applies_when_security_off(monkeypatch):
+    # When security is OFF the API is open anyway (ship-dark); auth_disabled is
+    # moot. The dangerous "security ON + auth disabled + public" combo is closed.
+    monkeypatch.delenv("DASHBOARD_SECURITY_ENABLED", raising=False)
     monkeypatch.setenv("DASHBOARD_AUTH_DISABLED", "1")
-    allowed, status, _ = da.evaluate("")
-    assert allowed is True and status == 200
+    assert da.evaluate("")[0] is True
+    # now security ON + a token set + auth disabled -> auth STILL enforced
+    monkeypatch.setenv("DASHBOARD_SECURITY_ENABLED", "1")
+    monkeypatch.setenv("DASHBOARD_API_TOKEN", TOKEN)
+    assert da.evaluate("")[0] is False                     # no header -> blocked
+    assert da.evaluate(f"Bearer {TOKEN}")[0] is True       # only a valid token works
 
 
 def test_malformed_authorization_header(monkeypatch):

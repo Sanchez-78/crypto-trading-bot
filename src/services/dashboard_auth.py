@@ -22,7 +22,9 @@ app out (503, no token). With the flag off the dashboard keeps its prior
 behaviour (public bind, no auth); flip the flag ON only once the token is
 provisioned and the app's token flow is ready.
 
-Explicit escape hatch for local dev / tests: DASHBOARD_AUTH_DISABLED=1.
+Dev/test escape hatch: DASHBOARD_AUTH_DISABLED=1 — but it applies ONLY while
+security is OFF. Once DASHBOARD_SECURITY_ENABLED=1, it is ignored (auth stays
+enforced) so a hardened posture can never be silently bypassed (audit F4).
 """
 import hmac
 import logging
@@ -78,10 +80,18 @@ def evaluate(authorization_header: str) -> tuple[bool, int, str | None]:
 
     error_code is a machine-readable string safe to expose (never the token).
     """
-    if not security_enabled() or auth_disabled():
+    if not security_enabled():
         # Ship-dark: with the master switch off the API is open exactly as it was
         # before PR5 — no 503, no lockout — until security is explicitly enabled.
         return True, 200, None
+    if auth_disabled():
+        # Audit F4: a hardened posture (security ON) must NOT be silently
+        # bypassable. DASHBOARD_AUTH_DISABLED is a dev/test escape that applies
+        # only while security is OFF; once security is ON it is IGNORED and
+        # logged, so auth always stays enforced. (For an open dev dashboard,
+        # leave DASHBOARD_SECURITY_ENABLED unset instead.)
+        log.warning("[DASHBOARD_AUTH] DASHBOARD_AUTH_DISABLED ignored while "
+                    "DASHBOARD_SECURITY_ENABLED=1 — auth stays enforced")
     server_token = load_api_token()
     if not server_token:
         return False, 503, "auth_not_configured"

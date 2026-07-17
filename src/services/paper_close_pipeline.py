@@ -51,6 +51,27 @@ def pipeline_mode() -> str:
     return m if m in (_MODE_OFF, _MODE_SHADOW, _MODE_AUTHORITATIVE) else _MODE_OFF
 
 
+class UnsupportedPipelineModeError(RuntimeError):
+    """Raised at startup when an unimplemented pipeline mode is requested."""
+
+
+def assert_supported_mode() -> None:
+    """Fail-closed startup guard (audit F5).
+
+    pipeline_mode() recognizes 'authoritative', but the live callsite only acts
+    on 'shadow' — so setting PAPER_CANONICAL_PIPELINE=authoritative would LOOK
+    like activation while silently doing nothing (no single-writer cutover is
+    wired). Refuse to start into that ambiguous state rather than mislead the
+    operator. Phase B will remove this guard when the authoritative path exists.
+    """
+    if pipeline_mode() == _MODE_AUTHORITATIVE:
+        raise UnsupportedPipelineModeError(
+            "[CANONICAL_PIPELINE_AUTHORITATIVE_NOT_IMPLEMENTED] "
+            "PAPER_CANONICAL_PIPELINE=authoritative is not supported yet "
+            "(Phase B not wired). Use 'shadow' or leave unset."
+        )
+
+
 # ── immutable close event ─────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
