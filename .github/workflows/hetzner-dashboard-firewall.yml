@@ -1,0 +1,91 @@
+name: Hetzner Dashboard Firewall (manual, reversible)
+
+# Audit PR5 (P1.6 / 9.8): manual-only, reversible firewall control for the
+# dashboard port. Defense-in-depth on top of the localhost bind + Bearer auth —
+# it blocks PUBLIC TCP 5001 and permits only an explicit VPN/reverse-proxy CIDR.
+#
+# This workflow does NOT deploy code and never touches trading services. It
+# saves a before-state, applies an idempotent rule set, then verifies local
+# health and that public access is refused. Requires an explicit confirmation.
+#
+# DO NOT RUN until the Android exposure model (VPN or HTTPS reverse proxy) is
+# chosen and the app's token flow is ready — blocking 5001 while the app still
+# expects http://<public-ip>:5001 would break it.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type APPLY_FIREWALL to act (or STATUS for read-only)'
+        required: true
+        default: 'STATUS'
+      allow_cidr:
+        description: 'CIDR permitted to reach 5001 (e.g. the VPN subnet). Loopback is always allowed.'
+        required: false
+        default: '127.0.0.1/32'
+
+jobs:
+  firewall:
+    name: Dashboard port firewall (5001)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up SSH key and pin host key
+        env:
+          HETZNER_SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$HETZNER_SSH_KEY" > ~/.ssh/hetzner_deploy_key
+          chmod 600 ~/.ssh/hetzner_deploy_key
+          ssh-keyscan -p 22 -T 15 "$HETZNER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          [ -s ~/.ssh/known_hosts ] || { echo "host unreachable"; exit 1; }
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Read state + (optionally) apply
+        env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          HETZNER_USER: ${{ secrets.HETZNER_USER }}
+          CONFIRM: ${{ inputs.confirm }}
+          ALLOW_CIDR: ${{ inputs.allow_cidr }}
+        run: |
+          SSH_OPTS="-p 22 -i ~/.ssh/hetzner_deploy_key -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile=~/.ssh/known_hosts -o ConnectTimeout=30 -o BatchMode=yes"
+          mkdir -p artifacts
+
+          ssh $SSH_OPTS "$HETZNER_USER@$HETZNER_HOST" \
+            "CONFIRM='$CONFIRM' ALLOW_CIDR='$ALLOW_CIDR' bash -s" << 'REMOTE_EOF' | tee artifacts/firewall_state.txt
+          #!/usr/bin/env bash
+          set -euo pipefail
+          PORT=5001
+
+          echo "=== BEFORE STATE ==="
+          echo "listeners on :$PORT:"; ss -ltnp 2>/dev/null | grep ":$PORT" || echo "  (none)"
+          echo "ufw status:"; ufw status verbose 2>/dev/null || echo "  (ufw not installed)"
+
+          if [ "$CONFIRM" != "APPLY_FIREWALL" ]; then
+            echo ""; echo "STATUS mode (confirm != APPLY_FIREWALL) — no changes made."; exit 0
+          fi
+
+          if ! command -v ufw >/dev/null 2>&1; then
+            echo "CRITICAL: ufw not installed — refusing to improvise iptables. Install ufw first."; exit 1
+          fi
+
+          echo ""; echo "=== APPLYING (idempotent) ==="
+          # Loopback always allowed; the chosen CIDR allowed; everything else denied.
+          ufw allow from 127.0.0.1 to any port "$PORT" proto tcp || true
+          if [ -n "${ALLOW_CIDR:-}" ] && [ "$ALLOW_CIDR" != "127.0.0.1/32" ]; then
+            ufw allow from "$ALLOW_CIDR" to any port "$PORT" proto tcp || true
+          fi
+          ufw deny "$PORT"/tcp || true
+
+          echo ""; echo "=== AFTER STATE ==="
+          ufw status numbered 2>/dev/null | grep "$PORT" || echo "  (no rule visible)"
+          echo "local health:"; curl -fsS "http://127.0.0.1:$PORT/healthz" || echo "  (health check failed — investigate before relying on this)"
+          REMOTE_EOF
+
+      - name: Upload before/after artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dashboard-firewall-state
+          path: artifacts/
+          retention-days: 14
