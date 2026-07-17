@@ -290,6 +290,23 @@ def test_shadow_logs_and_returns_decision(monkeypatch, caplog):
     assert any("[CANONICAL_PIPELINE_SHADOW]" in r.getMessage() for r in caplog.records)
 
 
+def test_authoritative_mode_refused_at_startup(monkeypatch):
+    # Audit F5: authoritative (Phase B) is not wired -> fail-closed at startup
+    # rather than silently no-op.
+    monkeypatch.setenv("PAPER_CANONICAL_PIPELINE", "authoritative")
+    with pytest.raises(pcp.UnsupportedPipelineModeError):
+        pcp.assert_supported_mode()
+
+
+@pytest.mark.parametrize("mode", ["", "off", "shadow", "OFF", "Shadow", "bogus"])
+def test_supported_modes_do_not_raise(monkeypatch, mode):
+    if mode:
+        monkeypatch.setenv("PAPER_CANONICAL_PIPELINE", mode)
+    else:
+        monkeypatch.delenv("PAPER_CANONICAL_PIPELINE", raising=False)
+    pcp.assert_supported_mode()  # off/shadow/unset/unknown -> allowed to start
+
+
 def test_shadow_never_raises_on_bad_input(monkeypatch):
     monkeypatch.setenv("PAPER_CANONICAL_PIPELINE", "shadow")
     # missing/garbage fields must not raise out of the shadow hook; it returns

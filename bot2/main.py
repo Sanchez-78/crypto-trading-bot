@@ -1419,6 +1419,16 @@ def main():
         print(f"[FATAL] {_env_err}", file=sys.stderr, flush=True)
         sys.exit(3)
 
+    # Fail-closed guard (audit F5): PAPER_CANONICAL_PIPELINE=authoritative is not
+    # wired yet — refuse to start rather than silently no-op into a config that
+    # looks like the Phase-B cutover is live.
+    from src.services.paper_close_pipeline import assert_supported_mode, UnsupportedPipelineModeError
+    try:
+        assert_supported_mode()
+    except UnsupportedPipelineModeError as _pipe_err:
+        print(f"[FATAL] {_pipe_err}", file=sys.stderr, flush=True)
+        sys.exit(3)
+
     version_str = get_version_string()
     print("\n" + "="*80, file=sys.stderr, flush=True)
     print(f"🚀 MAIN() STARTING — {version_str}", file=sys.stderr, flush=True)

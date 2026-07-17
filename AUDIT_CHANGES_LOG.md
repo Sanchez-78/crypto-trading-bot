@@ -1,5 +1,45 @@
 # CryptoMaster — Audit Changes Log (continuation handoff)
 
+---
+
+## ⭐ ROUND 2 STATUS (2026-07-17) — authoritative; supersedes the Round-1 notes below
+
+> **Deployed SHA on server:** `main` HEAD (autodeploy timer, 2h). **REAL trading = NO-GO (unchanged).** Paper-only (`TRADING_MODE=paper_train`), 0 open positions, `live_trading_allowed=false`, `zz-force-paper-only.conf` active.
+> Pair with `EXTERNAL_AUDIT_PROMPT_v2.md` and the external report `CryptoMaster_EXTERNAL_AUDIT_REPORT_v2`.
+
+### MASTER IMPLEMENTATION PROMPT — all merged (each reviewer-gated)
+| PR | Finding | Status |
+|----|---------|--------|
+| #62 | P1.5 deterministic **dispatch-only** deploy + reversible V5 teardown | ✅ merged |
+| #63 | P2 per-tick log throttle + fail-closed **double-flip env guard** | ✅ merged |
+| #64 | P2.9/P1.8 canonical outcome + PnL-units contract (golden-locked) | ✅ merged |
+| #65 | P1.7 one dashboard read-model (never-500, dead sources removed) | ✅ merged |
+| #66 | P1.6 dashboard auth + localhost bind + non-root hardening | ✅ merged |
+| #67 | P0.4 canonical close pipeline — **SHADOW mode, default off** | ✅ merged |
+
+### Incident + external-audit remediation (Round 2)
+| Fix | Finding | Status |
+|-----|---------|--------|
+| #68 | **Incident:** autodeploy landed PR5's fail-closed auth → dashboard 503 lockout. **Ship-dark** (`DASHBOARD_SECURITY_ENABLED`, default off) + `hetzner-restore-dashboard.yml`. Dashboard restored (`degraded:false`). | ✅ merged |
+| #69 | **F1 (Critical):** unguarded real Binance `POST /api/v3/order` in `execution_engine.market_order`. Now **fail-closed** via `check_live_order_guard()`; regression test asserts `/api/v3/order` exists in exactly one guarded file. Trading-safety: **SAFE**. | ✅ merged |
+| (this branch) | **F4:** `DASHBOARD_AUTH_DISABLED` no longer bypasses auth when security is ON (`dashboard_auth.evaluate`). | ✅ done |
+| (this branch) | **F5:** `PAPER_CANONICAL_PIPELINE=authoritative` now **fail-closed refuses startup** (`assert_supported_mode`, wired in `bot2/main.py`). | ✅ done |
+| (this branch) | **F9:** this log updated. | ✅ done |
+
+### Still OPEN (external audit Round 2) — not yet addressed
+- **F2/F3 (High) — deploy/process SHA drift + autodeploy:** dashboard restore + autodeploy reset the shared checkout but don't restart the trading process, so the running bot SHA can differ from repo HEAD. Autodeploy still auto-deploys every `main` SHA (incl. docs-only). **TODO:** `deployed_bot_sha` marker, separate dashboard checkout/worktree, autodeploy hold + code-impact + zero-position gate.
+- **F6 (High/Medium) — dashboard headline mixes windows:** web chart multiplies `lifetime_n` by `recent WR` and counts FLAT as loss. **TODO:** one explicit `headline` window; frontend consumes `recent.wins/losses/flats`.
+- **F7/F8/F10/F11 (Medium):** PF pct-vs-USD basis; persist `mfe_pct/mae_pct` (needed for any TP counterfactual); firewall workflow remote-probe; full `close_path_forensics` proof of single-step `lifetime_n`.
+
+### Runtime (snapshot `health-526`, honest)
+- **Safety:** paper_train, live gated, 0 positions. ✅
+- **Dashboard:** `degraded:false`, read-model live, Android contract intact. ✅
+- **Edge:** recent PF **0.771**, 24h PF **0.173**, lifetime PF 0.289; **100% TIMEOUT exits** (TP~54bps vs realized ~13-16bps). **NOT profitable.** Strongest segment: `BEAR_TREND` (+0.055); worst: `BULL_TREND` (−0.754). **No strategy change permitted without evidence-first mandate.**
+
+---
+
+## Round 1 (2026-07-16) — historical, retained for provenance
+
 > **Purpose:** hand-off for the next round of the external audit. For every finding: what changed, where, how it was verified, the runtime result, and what still needs re-auditing. Pairs with `EXTERNAL_AUDIT_PROMPT.md`.
 > **As of:** 2026-07-16 ~17:15 UTC. **Deployed SHA on server:** `c6565c3` (P0 fixes `8750a49` + clamp nit `c6565c3`; `cryptomaster.service` active since 16:42 UTC).
 > **Standing constraints (unchanged):** paper-only (`TRADING_MODE=paper_live`), REAL trading = NO-GO, never enable live, every trading-core change goes through evidence → independent reviewer → reversible deploy.
