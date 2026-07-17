@@ -192,16 +192,114 @@ old_sha="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
 read_marker() { { cat "$1" 2>/dev/null || true; } | tr -d '[:space:]'; }
 ready_sha="$(read_marker "$PROJECT_DIR/reports/ready_bot_sha")"; [ -n "$ready_sha" ] || ready_sha="unknown"
 boot_sha="$(read_marker "$PROJECT_DIR/reports/running_bot_sha")"; [ -n "$boot_sha" ] || boot_sha="unknown"
+# Fetch updates the remote objects only — it NEVER mutates the working tree, so
+# the live process's code is untouched until (and unless) the gates below pass.
 git fetch "$REMOTE_NAME" "$BRANCH_NAME" | tee -a "$LOG_FILE"
 remote_sha="$(git rev-parse "$REMOTE_NAME/$BRANCH_NAME")"
 
 if [ "$old_sha" != "$remote_sha" ]; then
   changed="true"
+else
+  echo "[$RUN_TS] repo already up to date: $old_sha" | tee -a "$LOG_FILE"
+fi
+
+# ── F2/F3 (round 3): AUDITOR REJECT FIX — decide EVERYTHING from the fetched SHAs
+# BEFORE mutating the working tree. Two operations are hazardous to a live process:
+#   (1) `git reset --hard`  — swaps the code files the running bot reads/imports;
+#   (2) `systemctl restart` — kills the running bot (and any open paper position).
+# Both are gated below. `git diff <sha> <sha>` needs only the fetched objects, so
+# the code-impact classification runs with the working tree still on old_sha.
+adopt_code="false"     # allow `git reset --hard` to remote_sha (working-tree swap)
+restart_needed="false" # allow `systemctl restart`
+code_change="false"    # incoming delta touches real (non-docs) code
+restart_skip_reason=""
+
+if [ "$changed" = "true" ]; then
+  adopt_code="true"     # by default a changed repo syncs; gates may revoke this
+  if [ "$ready_sha" = "unknown" ]; then
+    # FAIL-CLOSED: cannot prove a healthy process is on the current code. Treat as
+    # a code change requiring adopt+restart. (Self-heals: restarted bot writes READY.)
+    code_change="true"; restart_needed="true"
+  elif [ "$ready_sha" != "$remote_sha" ]; then
+    # Healthy process is stale vs incoming. Restart only if the delta touches real
+    # code — a docs/workflow/test-only change must not kill a live paper position.
+    if impact="$(git diff --name-only "$ready_sha" "$remote_sha" 2>/dev/null)"; then
+      code_impact="$(printf '%s\n' "$impact" \
+        | grep -Ev '^(docs/|\.github/|tests/|.*\.md$|AUDIT_|EXTERNAL_|HANDOVER)' || true)"
+      if [ -n "$code_impact" ]; then
+        code_change="true"; restart_needed="true"
+      else
+        restart_skip_reason="docs/workflow-only change (no code impact)"
+      fi
+    else
+      code_change="true"; restart_needed="true"  # cannot diff -> assume stale code
+    fi
+  fi
+  # else ready_sha == remote_sha: healthy process already on the incoming code; the
+  # working tree may just be stale, so adopt (sync files) without a restart.
+fi
+
+# Operator freeze: a ROOT-OWNED, non-expired hold file blocks the hazardous ops.
+# It blocks the restart always, and the code-swap when the delta is real code (a
+# docs-only sync is harmless). A non-root-owned hold is untrusted; an expired hold
+# is ignored. (Health/audit reporting below still runs.)
+HOLD_FILE="$PROJECT_DIR/.deploy_hold"
+if [ "$changed" = "true" ] && [ -f "$HOLD_FILE" ] && { [ "$restart_needed" = "true" ] || [ "$code_change" = "true" ]; }; then
+  hold_uid="$(stat -c '%u' "$HOLD_FILE" 2>/dev/null || echo -1)"
+  if [ "$hold_uid" != "0" ]; then
+    echo "[$RUN_TS] WARNING: $HOLD_FILE not root-owned (uid=$hold_uid) — IGNORING (untrusted)" | tee -a "$LOG_FILE"
+  else
+    hold_expired="$($PYTHON_BIN - "$HOLD_FILE" <<'PY' 2>/dev/null || echo false
+import json, sys, time
+try:
+    exp = json.load(open(sys.argv[1])).get("expires_at_epoch")
+    print("true" if (exp is not None and float(exp) < time.time()) else "false")
+except Exception:
+    print("false")
+PY
+)"
+    if [ "$hold_expired" = "true" ]; then
+      echo "[$RUN_TS] deploy hold present but EXPIRED — ignoring" | tee -a "$LOG_FILE"
+    else
+      restart_needed="false"
+      [ "$code_change" = "true" ] && adopt_code="false"
+      restart_skip_reason="root-owned deploy hold present ($HOLD_FILE)"
+    fi
+  fi
+fi
+
+# Zero-open-position gate (FAIL-CLOSED): never swap code or kill the process while
+# a live paper position is open. UNKNOWN (corrupt/unreadable/odd schema) REFUSES
+# rather than assuming zero. Only gates real-code changes — a docs-only sync is safe.
+if [ "$changed" = "true" ] && [ "$code_change" = "true" ] && { [ "$restart_needed" = "true" ] || [ "$adopt_code" = "true" ]; }; then
+  POS_JSON="$PROJECT_DIR/data/paper_open_positions.json"
+  pos_count="$($PYTHON_BIN - "$POS_JSON" <<'PY' 2>/dev/null || echo UNKNOWN
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+    print(len(d) if isinstance(d, (dict, list)) else "UNKNOWN")
+except FileNotFoundError:
+    print(0)
+except Exception:
+    print("UNKNOWN")
+PY
+)"
+  if [ "$pos_count" = "UNKNOWN" ]; then
+    restart_needed="false"; adopt_code="false"
+    restart_skip_reason="open-position state UNKNOWN (unreadable/corrupt) — refusing code swap (fail-closed)"
+  elif [ "$pos_count" != "0" ]; then
+    restart_needed="false"; adopt_code="false"
+    restart_skip_reason="$pos_count open position(s) — deferring code swap/restart to next cycle"
+  fi
+fi
+
+# Only NOW — after every gate — do we mutate the working tree.
+if [ "$adopt_code" = "true" ]; then
   echo "[$RUN_TS] syncing repo $old_sha -> $remote_sha" | tee -a "$LOG_FILE"
   git checkout "$BRANCH_NAME" | tee -a "$LOG_FILE"
   git reset --hard "$REMOTE_NAME/$BRANCH_NAME" | tee -a "$LOG_FILE"
-else
-  echo "[$RUN_TS] repo already up to date: $old_sha" | tee -a "$LOG_FILE"
+elif [ "$changed" = "true" ]; then
+  echo "[$RUN_TS] repo change withheld from working tree: ${restart_skip_reason:-gated} (staying on $old_sha, remote=$remote_sha)" | tee -a "$LOG_FILE"
 fi
 
 new_sha="$(git rev-parse HEAD)"
@@ -224,82 +322,9 @@ if [ "$RUN_FULL_TESTS" = "true" ]; then
   fi
 fi
 
-# ── F2/F3 (round 2): restart the trading process only when the HEALTHY process
-# is genuinely stale AND the change touches real code AND it is safe. Decide off
-# the READY marker; missing READY is fail-closed (restart).
-restart_needed="false"
-restart_skip_reason=""
-if [ "$ready_sha" = "unknown" ]; then
-  # FAIL-CLOSED: cannot prove a healthy process is on the current code. Restart.
-  # (Self-heals: the restarted bot publishes READY; steady state then matches.)
-  restart_needed="true"
-elif [ "$ready_sha" != "$new_sha" ]; then
-  # Healthy process is stale vs repo. Restart only if the delta touches real code
-  # — a docs/workflow/test-only change must not kill a live paper position.
-  if impact="$(git diff --name-only "$ready_sha" "$new_sha" 2>/dev/null)"; then
-    code_impact="$(printf '%s\n' "$impact" \
-      | grep -Ev '^(docs/|\.github/|tests/|.*\.md$|AUDIT_|EXTERNAL_|HANDOVER)' || true)"
-    if [ -n "$code_impact" ]; then
-      restart_needed="true"
-    else
-      restart_skip_reason="docs/workflow-only change (no code impact)"
-    fi
-  else
-    restart_needed="true"   # cannot diff (ready_sha unknown to git) -> stale -> restart
-  fi
-fi
-
-# Operator freeze: a ROOT-OWNED hold file blocks all restarts (health still runs).
-# A non-root-owned hold is untrusted and ignored; an expired TTL hold is ignored.
-HOLD_FILE="$PROJECT_DIR/.deploy_hold"
-if [ "$restart_needed" = "true" ] && [ -f "$HOLD_FILE" ]; then
-  hold_uid="$(stat -c '%u' "$HOLD_FILE" 2>/dev/null || echo -1)"
-  if [ "$hold_uid" != "0" ]; then
-    echo "[$RUN_TS] WARNING: $HOLD_FILE not root-owned (uid=$hold_uid) — IGNORING (untrusted)" | tee -a "$LOG_FILE"
-  else
-    hold_expired="$($PYTHON_BIN - "$HOLD_FILE" <<'PY' 2>/dev/null || echo false
-import json, sys, time
-try:
-    exp = json.load(open(sys.argv[1])).get("expires_at_epoch")
-    print("true" if (exp is not None and float(exp) < time.time()) else "false")
-except Exception:
-    print("false")
-PY
-)"
-    if [ "$hold_expired" = "true" ]; then
-      echo "[$RUN_TS] deploy hold present but EXPIRED — ignoring" | tee -a "$LOG_FILE"
-    else
-      restart_needed="false"
-      restart_skip_reason="root-owned deploy hold present ($HOLD_FILE)"
-    fi
-  fi
-fi
-
-# Zero-open-position gate (FAIL-CLOSED): never kill a live paper position mid-hold.
-# Parse the position state; UNKNOWN (corrupt/unreadable/odd schema) REFUSES the
-# restart rather than assuming zero.
-if [ "$restart_needed" = "true" ]; then
-  POS_JSON="$PROJECT_DIR/data/paper_open_positions.json"
-  pos_count="$($PYTHON_BIN - "$POS_JSON" <<'PY' 2>/dev/null || echo UNKNOWN
-import json, sys
-try:
-    d = json.load(open(sys.argv[1]))
-    print(len(d) if isinstance(d, (dict, list)) else "UNKNOWN")
-except FileNotFoundError:
-    print(0)
-except Exception:
-    print("UNKNOWN")
-PY
-)"
-  if [ "$pos_count" = "UNKNOWN" ]; then
-    restart_needed="false"
-    restart_skip_reason="open-position state UNKNOWN (unreadable/corrupt) — refusing restart (fail-closed)"
-  elif [ "$pos_count" != "0" ]; then
-    restart_needed="false"
-    restart_skip_reason="$pos_count open position(s) — deferring restart to next cycle"
-  fi
-fi
-
+# The restart decision and all its gates (code-impact, operator hold, zero-open-
+# position) were already resolved ABOVE — before the working-tree mutation — so the
+# same gate can never allow a code swap it would have blocked for the restart.
 if [ "$restart_needed" = "true" ]; then
   echo "[$RUN_TS] restarting $SERVICE_NAME (ready $ready_sha -> $new_sha)" | tee -a "$LOG_FILE"
   systemctl restart "$SERVICE_NAME"
