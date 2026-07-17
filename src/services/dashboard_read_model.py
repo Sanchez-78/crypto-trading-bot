@@ -492,6 +492,15 @@ def _degraded_envelope(errors, iso):
         "open_positions": 0, "open_positions_list": [], "closed_trades_list": [],
         "profit_factor": 0.0, "win_rate_pct": 0.0, "win_rate_window": 0,
         "net_pnl": 0.0, "net_pnl_window": 0.0, "session_n": 0,
+        # F6: zeroed headline so the shape is consistent even when degraded.
+        "headline": {
+            "schema_version": 1, "window": "recent_0", "n": 0,
+            "wins": 0, "losses": 0, "flats": 0, "win_rate_pct": 0.0,
+            "profit_factor_pct_basis": 0.0, "profit_factor_usd_basis": 0.0,
+            "profit_factor_default_basis": "pct_points",
+            "net_pnl_pct": 0.0, "net_pnl_usd": 0.0,
+            "source": "degraded", "generated_at": iso,
+        },
         "exit_distribution": {"tp": 0, "sl": 0, "scratch": 0, "stagnation": 0, "timeout": 0},
         "timestamp": iso, "last_update": iso, "last_update_utc": iso,
         "data_source": "degraded",

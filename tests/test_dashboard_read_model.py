@@ -109,6 +109,12 @@ def test_empty_cache_json_fallback(env):
 
 # ── 5. no cache + no JSON -> degraded but valid ───────────────────────────────
 
+def test_degraded_envelope_has_headline():
+    d = rm._degraded_envelope(["x"], "2026-07-17T00:00:00.000Z")
+    assert "headline" in d and d["headline"]["n"] == 0
+    assert d["headline"]["profit_factor_default_basis"] == "pct_points"
+
+
 def test_no_sources_degraded_valid(env):
     d = rm.get_metrics()
     assert d["degraded"] is True
