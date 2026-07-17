@@ -2713,6 +2713,22 @@ def close_paper_position(
     # P1.1Q: Update bucket metrics with safe adapter
     _safe_bucket_metrics_update_for_paper_trade(closed_trade)
 
+    # Audit PR6 (P0.4) Phase-A shadow: log-only comparison of the canonical
+    # pipeline's eligibility decision vs this path. Gated by
+    # PAPER_CANONICAL_PIPELINE=shadow (default off) — executes NO side effects,
+    # never disturbs the live close. Cheap getenv short-circuits when off.
+    if os.getenv("PAPER_CANONICAL_PIPELINE", "off").strip().lower() == "shadow":
+        try:
+            from src.services.paper_close_pipeline import run_shadow
+            if pos.get("paper_source") in ("training_sampler", "paper_evidence_collection"):
+                _old_elig, _old_reason = _is_eligible_canonical_paper_learning_trade(
+                    pos, pnl_data, closed_trade)
+            else:
+                _old_elig, _old_reason = False, "paper_source_not_admitted"
+            run_shadow(closed_trade, _old_elig, _old_reason)
+        except Exception:
+            pass  # shadow must never affect the live path
+
     # P1.1AG: Add to closed trades buffer for summary aggregation
     with _PAPER_CLOSED_TRADES_LOCK:
         _PAPER_CLOSED_TRADES_BUFFER.append(closed_trade)
