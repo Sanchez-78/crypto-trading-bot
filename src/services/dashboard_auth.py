@@ -71,7 +71,10 @@ def evaluate(authorization_header: str) -> tuple[bool, int, str | None]:
     if not server_token:
         return False, 503, "auth_not_configured"
     provided = _extract_bearer(authorization_header or "")
-    if provided and hmac.compare_digest(provided, server_token):
+    # Compare as bytes: hmac.compare_digest raises TypeError on a non-ASCII str,
+    # which a hostile client could send to force a 500. Bytes compare is still
+    # constant-time and degrades a bad token to a clean 401.
+    if provided and hmac.compare_digest(provided.encode("utf-8"), server_token.encode("utf-8")):
         return True, 200, None
     return False, 401, "unauthorized"
 

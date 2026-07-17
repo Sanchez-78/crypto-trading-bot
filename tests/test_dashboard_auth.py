@@ -57,6 +57,13 @@ def test_malformed_authorization_header(monkeypatch):
     assert allowed is True
 
 
+def test_non_ascii_token_denied_not_crashed(monkeypatch):
+    monkeypatch.setenv("DASHBOARD_API_TOKEN", TOKEN)
+    # A non-ASCII bearer token must degrade to 401, never raise (would be a 500).
+    allowed, status, code = da.evaluate("Bearer tökén-ünïcödé-☠")
+    assert allowed is False and status == 401 and code == "unauthorized"
+
+
 def test_credential_file_preferred(monkeypatch, tmp_path):
     monkeypatch.setenv("CREDENTIALS_DIRECTORY", str(tmp_path))
     (tmp_path / "dashboard_api_token").write_text(TOKEN + "\n")
