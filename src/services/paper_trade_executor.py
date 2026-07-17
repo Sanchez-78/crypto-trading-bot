@@ -2086,9 +2086,16 @@ def update_paper_positions(
             if trade_id in _POSITIONS:
                 _POSITIONS[trade_id]["last_price"] = current_price
                 _POSITIONS[trade_id]["last_price_ts"] = ts
-                # Update extremes
-                _POSITIONS[trade_id]["max_seen"] = max(_POSITIONS[trade_id].get("max_seen", current_price), current_price)
-                _POSITIONS[trade_id]["min_seen"] = min(_POSITIONS[trade_id].get("min_seen", current_price), current_price)
+                # Update extremes AND record when each was FIRST reached (audit F8:
+                # the ordering of the favorable vs adverse extreme is what makes a
+                # TP/SL counterfactual honest). Observability only — no exit logic.
+                _p = _POSITIONS[trade_id]
+                if current_price > _p.get("max_seen", current_price - 1):
+                    _p["max_seen"] = current_price
+                    _p["max_seen_ts"] = ts
+                if current_price < _p.get("min_seen", current_price + 1):
+                    _p["min_seen"] = current_price
+                    _p["min_seen_ts"] = ts
 
         # Check exit conditions (P1.1AI: side-aware)
         entry_price = pos["entry_price"]
@@ -2589,6 +2596,20 @@ def close_paper_position(
         "weighted_pnl": net_pnl_usd,
         "win": 1 if net_pnl_usd > 0 else 0,  # V10.22: For cache
     }
+
+    # Audit F8: attach the gross MFE/MAE excursion contract (explicit units +
+    # extreme-ordering timestamps) so an offline TP/SL counterfactual is possible.
+    # Observability only — no exit/cost/strategy effect.
+    try:
+        from src.services.trade_excursion import compute_excursion
+        closed_trade.update(compute_excursion(
+            closed_trade.get("side", pos.get("side", "BUY")),
+            pos.get("entry_price"), pos.get("max_seen"), pos.get("min_seen"),
+            entry_ts=pos.get("entry_ts"),
+            max_seen_ts=pos.get("max_seen_ts"), min_seen_ts=pos.get("min_seen_ts"),
+        ))
+    except Exception:
+        pass
 
     # P1.1AP-E: Stale position quarantine — check BEFORE all quality/econ/learning logs
     is_stale, stale_reason = _is_stale_paper_position(pnl_data, pos["entry_price"], price, pos)

@@ -92,6 +92,34 @@ def test_save_persists_canonical_outcome_and_version(cache_db):
     assert row == ("WIN", METRICS_CONTRACT_VERSION)
 
 
+def test_migration_adds_f8_excursion_columns(cache_db):
+    _make_legacy_db(cache_db)
+    lpc._init_db()
+    cols = _columns(cache_db)
+    for c in ("mfe_gross_pct", "mae_gross_pct", "mfe_gross_bps", "mae_gross_bps",
+              "time_to_mfe_ms", "time_to_mae_ms", "excursion_policy_version"):
+        assert c in cols, c
+
+
+def test_save_persists_f8_excursion(cache_db):
+    lpc._init_db()
+    lpc.save_closed_trade({
+        "trade_id": "t-exc", "symbol": "BTCUSDT", "side": "BUY",
+        "net_pnl_pct": 0.10, "pnl_usd": 0.01, "win": 1, "outcome": "WIN",
+        "mfe_gross_pct": 0.30, "mae_gross_pct": -0.12,
+        "mfe_gross_bps": 30.0, "mae_gross_bps": -12.0,
+        "time_to_mfe_ms": 4200, "time_to_mae_ms": 9100,
+        "excursion_policy_version": 1,
+    })
+    conn = sqlite3.connect(str(cache_db))
+    row = conn.execute(
+        "SELECT mfe_gross_pct, mae_gross_pct, mfe_gross_bps, mae_gross_bps, "
+        "time_to_mfe_ms, time_to_mae_ms, excursion_policy_version "
+        "FROM closed_trades WHERE trade_id='t-exc'").fetchone()
+    conn.close()
+    assert row == (0.30, -0.12, 30.0, -12.0, 4200, 9100, 1)
+
+
 def test_save_derives_outcome_when_absent(cache_db):
     lpc._init_db()
     # no 'outcome' key -> derive from net pct via the canonical classifier

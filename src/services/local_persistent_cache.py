@@ -80,8 +80,21 @@ def _init_db():
     # classified it, so readers use the stored outcome instead of re-deriving
     # it with a divergent pnl_usd>0 rule. Additive + idempotent; legacy rows
     # keep NULL and are classified at read time via the canonical classifier.
-    for _col, _decl in (("outcome", "outcome TEXT"),
-                        ("metrics_contract_version", "metrics_contract_version INTEGER")):
+    # F8 migration (audit 2026-07-17): explicit-unit gross MFE/MAE excursion +
+    # extreme-ordering timestamps, so an offline TP/SL counterfactual is honest
+    # (the legacy `mfe`/`mae` columns have no explicit unit). Additive + idempotent.
+    _f8_cols = (
+        ("outcome", "outcome TEXT"),
+        ("metrics_contract_version", "metrics_contract_version INTEGER"),
+        ("mfe_gross_pct", "mfe_gross_pct REAL"),
+        ("mae_gross_pct", "mae_gross_pct REAL"),
+        ("mfe_gross_bps", "mfe_gross_bps REAL"),
+        ("mae_gross_bps", "mae_gross_bps REAL"),
+        ("time_to_mfe_ms", "time_to_mfe_ms INTEGER"),
+        ("time_to_mae_ms", "time_to_mae_ms INTEGER"),
+        ("excursion_policy_version", "excursion_policy_version INTEGER"),
+    )
+    for _col, _decl in _f8_cols:
         try:
             cursor.execute(f"ALTER TABLE closed_trades ADD COLUMN {_decl}")
         except sqlite3.OperationalError:
@@ -258,8 +271,11 @@ def save_closed_trade(trade: Dict[str, Any]):
                 INSERT OR REPLACE INTO closed_trades
                 (trade_id, symbol, side, entry_ts, exit_ts, entry_price, exit_price,
                  pnl_usd, pnl_pct, win, exit_reason, regime, mfe, mae,
-                 outcome, metrics_contract_version, synced_to_firebase)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                 outcome, metrics_contract_version,
+                 mfe_gross_pct, mae_gross_pct, mfe_gross_bps, mae_gross_bps,
+                 time_to_mfe_ms, time_to_mae_ms, excursion_policy_version,
+                 synced_to_firebase)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
             """, (
                 trade.get("trade_id"),
                 trade.get("symbol"),
@@ -279,6 +295,14 @@ def save_closed_trade(trade: Dict[str, Any]):
                 trade.get("mae"),
                 outcome,
                 METRICS_CONTRACT_VERSION if outcome is not None else None,
+                # F8: explicit-unit gross excursion + extreme-ordering timestamps
+                trade.get("mfe_gross_pct"),
+                trade.get("mae_gross_pct"),
+                trade.get("mfe_gross_bps"),
+                trade.get("mae_gross_bps"),
+                trade.get("time_to_mfe_ms"),
+                trade.get("time_to_mae_ms"),
+                trade.get("excursion_policy_version"),
             ))
             conn.commit()
             conn.close()
