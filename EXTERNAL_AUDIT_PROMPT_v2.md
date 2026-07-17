@@ -130,4 +130,53 @@ Písemný report, který KONČÍ explicitním rozhodnutím. Struktura:
 
 ---
 
+---
+
+## Příloha A — Aktuální runtime metriky (snapshot `hetzner-fetch-health.yml`, běh 526, SHA `6f33830`, 2026-07-17T12:58Z)
+
+> Čísla jsou z čerstvého read-only serverového artefaktu. Ke každému bloku je uveden zdrojový soubor artefaktu.
+
+### A.1 Deploy & safety (`latest_deploy_status.md`, `service_status.txt`, `latest_health.md`)
+- Server SHA: `6f33830` (== `main`); `cryptomaster.service` active, uptime řádově hodiny; **0 otevřených pozic**.
+- Target mode: `paper_train`; **`live_real allowed: false`**; `ENABLE_REAL_ORDERS=true allowed: false`; `LIVE_TRADING_CONFIRMED=true allowed: false`.
+- Drop-iny: `10-paper-only.conf`, `20-real-trading.conf`, `30-phase2-real-trading.conf`, `zz-force-paper-only.conf` (paper-only vynuceno posledním drop-inem).
+- `LEARNING_UPDATE_ERROR: 0`, `BUCKET_METRICS_ERROR: 0`, `TIMEOUT_NO_PRICE: 0`. (Pozn.: health probe hlásí `Trading mode: neutral` a `PAPER_EXIT: 0` v grep-okně — jde o artefakt probe okna, ne o skutečný stav; závěry ber z `cache.sqlite`/`edge_analysis`, ne z `latest_health.md`.)
+
+### A.2 Dashboard / read-model (`dashboard_metrics.json`)
+- **`degraded: false`, `errors: []`** (dashboard obnoven; ship-dark aktivní, `DASHBOARD_SECURITY_ENABLED` unset → veřejný bez auth).
+- `data_source: learning_state+cache.sqlite`; `open_positions: 0`; `learning_status: UČENÍ`; `recommendation: ČEKAT`.
+- **Kanonický `recent{}` blok:** `recent_window_n=100`, `wins=45`, `losses=37`, `flats=18`, `recent_win_rate_pct=45.0`, `recent_profit_factor=0.771`, `recent_net_pnl_usd=-0.369`, `recent_net_pnl_pct=-2.37`, `outcome_policy_version=1`.
+- Pozn.: `win_rate_pct=45.0` (kanonická WIN/(W+L+F), ±0.05 pp deadband) vs `edge_analysis` „last100 = 59 %" (pravidlo `pnl>0`, bez deadbandu) — **to je přesně dopad PR4/PR3**: poctivější, nižší headline WR.
+
+### A.3 Lifetime (`dashboard_metrics.json` → `lifetime`)
+- `lifetime_n=16958`, `lifetime_profit_factor=0.289`, `lifetime_expectancy=-0.096` (dominováno historickou ztrátovou érou).
+
+### A.4 Segmentový rozklad (`edge_analysis.txt`) — formát `(klíč, n, wins, WR%, avg_pnl_pct)`
+- **by exit_reason:** `TIMEOUT` 1005, WR 30.7 %, avg −0.699 → **100 % exitů je 15min TIMEOUT** (`tp=0, sl=0` v `exit_distribution`).
+- **by regime:** `BULL_TREND` 755 / WR 25.3 % / **−0.754** (silně ztrátové); `BEAR_TREND` 250 / WR 47.2 % / **+0.055** (mírně kladné) — DEV_FADE fade funguje v poklesu, ne v růstu.
+- **by side (nové řádky se `side`):** `BUY` 82 / WR 64.6 % / −0.097; `SELL` 64 / WR 54.7 % / −0.228 (BUY > SELL, konzistentní s `buy_only` hypotézou; obě net záporné).
+- **by symbol (avg_pnl):** ETH −0.239, DOT −0.158, ADA −0.126, BNB −0.074, XRP −0.061, SOL −0.035, BTC −0.006 (všechny záporné).
+- **trend:** last100 net −0.369 vs prev100 net +0.055 (poslední okno horší).
+
+### A.5 Okna (`trading_metrics.txt`)
+- 24h: n=17, WR 41.2 %, **PF 0.173**, pnl_pct_sum −2.16.
+- 7d: n=30, WR 46.7 %, **PF 0.22**, pnl_pct_sum −2.97.
+
+### A.6 TP/SL realita (`quota_forensics.txt` → `[EXEC]` řádky)
+- TP/SL **se nastavují**, např. `regime=BEAR_TREND entry=1827.05 TP=1836.85 SL=1821.57` → TP ≈ **+53.6 bps**, SL ≈ **−30.0 bps** od entry.
+- 15min pohyb tyto úrovně (zejména TP) prakticky nikdy nedosáhne → **všechny pozice končí na TIMEOUT** na tržní ceně. **To je hlavní důvod, proč se edge nerealizuje** (mělká reverze ~13–16 bps vs TP ~54 bps).
+
+### A.7 MFE (`mfe_distribution.txt`)
+- `winners_n=263`; realizovaný winner pnl: mean **16.1 bps**, median **12.9 bps**. `MFE>=20bps` sloupec je NULL (mfe se nepersistuje) → nelze potvrdit, zda TP zúžení pomůže; k tomu je třeba doplnit persistenci `mfe`.
+
+### A.8 Pipeline (`canonical_pipeline_probe.txt`)
+- `PAPER_CANONICAL_PIPELINE not set (off)`; `paper_canonical_closes` / `paper_close_effects` **nepřítomné** (PR6 shadow správně neaktivní). Žádné `CANONICAL_PIPELINE_SHADOW` / `CONFLICT` eventy.
+
+### A.9 Souhrn pro rozhodnutí
+- **Bezpečnost:** OK (paper-only, live gaté, 0 pozic).
+- **Kontrakt/observabilita:** OK (read-model live, degraded=false, kanonické outcome).
+- **Ziskovost:** **NE** — recent PF 0.771, 24h PF 0.173; edge (~13–16 bps) < náklad (18 bps); TP (~54 bps) nedosažitelný v 15min okně → vše timeout. Nejsilnější segment: `BEAR_TREND` (+0.055). Nejslabší: `BULL_TREND` (−0.754).
+
+---
+
 Díky. V případě potřeby runtime přístupu se ozvi kvůli bezpečnému předání read-only credentials.
