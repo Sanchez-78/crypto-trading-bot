@@ -275,6 +275,19 @@ jobs:
               || echo 'no close-path events found'
           " > artifacts/close_path_forensics.txt
 
+          # ── Recent exception bodies (audit F11-adjacent): the close-path grep
+          # above only catches the 'Traceback' header line; capture the FULL
+          # traceback body + a little context so a non-fatal exception can be
+          # identified. Sanitized; last 200 lines.
+          ssh $SSH_OPTS "$HETZNER_USER@$HETZNER_HOST" "
+            journalctl -u '$HETZNER_SERVICE_NAME' --since '4 hours ago' --no-pager -o short-iso 2>/dev/null \
+              | grep -A 18 -B 1 -E 'Traceback \(most recent call last\)' \
+              | sed 's/\(key\|token\|secret\|password\|api_key\|apikey\|passwd\)\([=: ]\+\)[^ ,\"'\''\'']\+/\1\2[REDACTED]/gi' \
+              | sed 's#/home/[^ ]*/##g; s#/opt/[^ ]*/##g' \
+              | tail -200 \
+              || echo 'no exceptions found'
+          " > artifacts/recent_exceptions.txt
+
           # ── Restart-loop forensics (who stops the bot and why) ────────────
           ssh $SSH_OPTS "$HETZNER_USER@$HETZNER_HOST" "
             echo '=== systemd start/stop events (6h) ==='
