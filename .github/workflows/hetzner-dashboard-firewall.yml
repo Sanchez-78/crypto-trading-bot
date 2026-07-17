@@ -5,8 +5,11 @@ name: Hetzner Dashboard Firewall (manual, reversible)
 # it blocks PUBLIC TCP 5001 and permits only an explicit VPN/reverse-proxy CIDR.
 #
 # This workflow does NOT deploy code and never touches trading services. It
-# saves a before-state, applies an idempotent rule set, then verifies local
-# health and that public access is refused. Requires an explicit confirmation.
+# saves a before-state, applies an idempotent rule set, then FAIL-CLOSED verifies
+# (audit F10): ufw is active, the deny rule exists for IPv4 (and checks IPv6),
+# local health still works, AND an external probe from the public GitHub runner
+# confirms port 5001 is actually refused. A ROLLBACK_FIREWALL mode reverts the
+# rules. Requires an explicit confirmation.
 #
 # DO NOT RUN until the Android exposure model (VPN or HTTPS reverse proxy) is
 # chosen and the app's token flow is ready — blocking 5001 while the app still
@@ -16,7 +19,7 @@ on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: 'Type APPLY_FIREWALL to act (or STATUS for read-only)'
+        description: 'STATUS (read-only) | APPLY_FIREWALL | ROLLBACK_FIREWALL'
         required: true
         default: 'STATUS'
       allow_cidr:
@@ -62,26 +65,71 @@ jobs:
           echo "listeners on :$PORT:"; ss -ltnp 2>/dev/null | grep ":$PORT" || echo "  (none)"
           echo "ufw status:"; ufw status verbose 2>/dev/null || echo "  (ufw not installed)"
 
-          if [ "$CONFIRM" != "APPLY_FIREWALL" ]; then
-            echo ""; echo "STATUS mode (confirm != APPLY_FIREWALL) — no changes made."; exit 0
+          if [ "$CONFIRM" = "STATUS" ]; then
+            echo ""; echo "STATUS mode — no changes made."; exit 0
           fi
-
           if ! command -v ufw >/dev/null 2>&1; then
             echo "CRITICAL: ufw not installed — refusing to improvise iptables. Install ufw first."; exit 1
           fi
 
+          if [ "$CONFIRM" = "ROLLBACK_FIREWALL" ]; then
+            # Audit F10: reversible — remove the deny (and the CIDR allow) so the
+            # port is reachable again. Loopback allow is harmless to leave.
+            echo ""; echo "=== ROLLBACK ==="
+            yes | ufw delete deny "$PORT"/tcp 2>&1 || echo "  (no deny rule)"
+            if [ -n "${ALLOW_CIDR:-}" ] && [ "$ALLOW_CIDR" != "127.0.0.1/32" ]; then
+              yes | ufw delete allow from "$ALLOW_CIDR" to any port "$PORT" proto tcp 2>&1 || true
+            fi
+            echo "after rollback:"; ufw status numbered 2>/dev/null | grep "$PORT" || echo "  (no $PORT rule — open)"
+            echo "local health:"; curl -fsS "http://127.0.0.1:$PORT/healthz" || echo "  (local health failed)"
+            exit 0
+          fi
+
+          if [ "$CONFIRM" != "APPLY_FIREWALL" ]; then
+            echo "unknown confirm value '$CONFIRM' — refusing"; exit 1
+          fi
+
           echo ""; echo "=== APPLYING (idempotent) ==="
-          # Loopback always allowed; the chosen CIDR allowed; everything else denied.
           ufw allow from 127.0.0.1 to any port "$PORT" proto tcp || true
           if [ -n "${ALLOW_CIDR:-}" ] && [ "$ALLOW_CIDR" != "127.0.0.1/32" ]; then
             ufw allow from "$ALLOW_CIDR" to any port "$PORT" proto tcp || true
           fi
           ufw deny "$PORT"/tcp || true
 
-          echo ""; echo "=== AFTER STATE ==="
-          ufw status numbered 2>/dev/null | grep "$PORT" || echo "  (no rule visible)"
-          echo "local health:"; curl -fsS "http://127.0.0.1:$PORT/healthz" || echo "  (health check failed — investigate before relying on this)"
+          echo ""; echo "=== AFTER STATE / VERIFY (fail-closed) ==="
+          # 1) ufw must actually be ACTIVE (rules are inert otherwise).
+          if ! ufw status 2>/dev/null | grep -q "Status: active"; then
+            echo "CRITICAL: ufw is INSTALLED but NOT ACTIVE — rules are inert. Refusing."; exit 1
+          fi
+          echo "ufw: active ✓"
+          # 2) the deny rule must be present for BOTH IPv4 and IPv6.
+          v4="$(ufw status | grep -E "^$PORT/tcp\s+DENY" | grep -v '(v6)' || true)"
+          v6="$(ufw status | grep -E "^$PORT/tcp \(v6\)\s+DENY" || true)"
+          echo "IPv4 deny: ${v4:-MISSING}"
+          echo "IPv6 deny: ${v6:-MISSING}"
+          if [ -z "$v4" ]; then echo "CRITICAL: IPv4 deny rule missing"; exit 1; fi
+          if [ -z "$v6" ]; then echo "WARNING: IPv6 deny rule not visible — verify ufw IPV6=yes in /etc/default/ufw"; fi
+          # 3) local health must still work (loopback allowed).
+          echo "local health:"; curl -fsS "http://127.0.0.1:$PORT/healthz" || { echo "CRITICAL: local health failed after apply"; exit 1; }
+          echo "[FIREWALL_APPLIED_OK]"
           REMOTE_EOF
+
+      # Audit F10: external vantage-point probe. From the GitHub runner (a public
+      # network location, NOT loopback and NOT the allow CIDR), the port MUST be
+      # refused/timed-out after APPLY. If it CONNECTS, the firewall isn't blocking
+      # public access — fail the workflow (fail-closed).
+      - name: External public-access probe (must be refused after APPLY)
+        if: ${{ success() && inputs.confirm == 'APPLY_FIREWALL' }}
+        env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+        run: |
+          echo "Probing http://$HETZNER_HOST:5001/ from the public runner (must NOT connect)..."
+          if curl -fsS --max-time 12 "http://$HETZNER_HOST:5001/healthz" >/dev/null 2>&1; then
+            echo "CRITICAL: public 5001 is STILL REACHABLE from the runner after APPLY — firewall not effective."
+            echo "Run this workflow with confirm=ROLLBACK_FIREWALL and investigate (cloud firewall? ufw inactive? bind 0.0.0.0?)."
+            exit 1
+          fi
+          echo "[EXTERNAL_PROBE_OK] public 5001 refused/timed-out from the runner ✓"
 
       - name: Upload before/after artifact
         uses: actions/upload-artifact@v4

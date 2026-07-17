@@ -140,3 +140,31 @@ def test_autodeploy_writes_deployed_marker_after_is_active_and_ready():
         'echo "$new_sha" > "$PROJECT_DIR/reports/deployed_bot_sha"')
     # and gated on READY convergence
     assert 'post_ready' in t
+
+
+# ── Audit F10: dashboard firewall workflow verification + rollback ─────────────
+FIREWALL = REPO / ".github/workflows/hetzner-dashboard-firewall.yml"
+
+
+def _firewall_text() -> str:
+    return FIREWALL.read_text(encoding="utf-8")
+
+
+def test_firewall_is_manual_dispatch_only():
+    doc = yaml.safe_load(_firewall_text())
+    on = doc.get("on") or doc.get(True)
+    assert "workflow_dispatch" in on and "push" not in on
+
+
+def test_firewall_has_rollback_mode():
+    t = _firewall_text()
+    assert "ROLLBACK_FIREWALL" in t
+    assert "ufw delete deny" in t
+
+
+def test_firewall_verifies_active_and_ipv4_ipv6_and_external_probe():
+    t = _firewall_text()
+    assert 'grep -q "Status: active"' in t          # ufw must be active
+    assert "(v6)" in t                               # IPv6 rule check
+    assert "External public-access probe" in t       # runner-side external probe
+    assert "STILL REACHABLE" in t                     # fail-closed if reachable
