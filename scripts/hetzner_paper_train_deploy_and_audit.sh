@@ -185,11 +185,13 @@ if ! git config --global --get-all safe.directory 2>/dev/null | grep -qx '\*'; t
 fi
 
 old_sha="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
-# F2/F3: the SHA the trading PROCESS is actually running (written by the bot at
-# startup). Used to decide restart, so a repo already fast-forwarded by another
-# workflow (e.g. dashboard restore) but with a stale process is still caught.
-running_sha="$( { cat "$PROJECT_DIR/reports/running_bot_sha" 2>/dev/null || true; } | tr -d '[:space:]' )"
-[ -n "$running_sha" ] || running_sha="unknown"
+# F2/F3 (round 2): decide restart off the READY marker (written by the bot ONLY
+# after full init), not the early BOOT marker — a crash-looping build that writes
+# BOOT but never reaches READY is treated as stale, not healthy. Missing READY is
+# FAIL-CLOSED (we cannot prove a healthy process on the current code).
+read_marker() { { cat "$1" 2>/dev/null || true; } | tr -d '[:space:]'; }
+ready_sha="$(read_marker "$PROJECT_DIR/reports/ready_bot_sha")"; [ -n "$ready_sha" ] || ready_sha="unknown"
+boot_sha="$(read_marker "$PROJECT_DIR/reports/running_bot_sha")"; [ -n "$boot_sha" ] || boot_sha="unknown"
 git fetch "$REMOTE_NAME" "$BRANCH_NAME" | tee -a "$LOG_FILE"
 remote_sha="$(git rev-parse "$REMOTE_NAME/$BRANCH_NAME")"
 
@@ -222,19 +224,19 @@ if [ "$RUN_FULL_TESTS" = "true" ]; then
   fi
 fi
 
-# ── F2/F3: restart the trading process only when it is genuinely stale AND the
-# change touches real code AND it is safe to do so. Decide off the RUNNING
-# process SHA (not repo HEAD), so drift introduced by another workflow is caught.
+# ── F2/F3 (round 2): restart the trading process only when the HEALTHY process
+# is genuinely stale AND the change touches real code AND it is safe. Decide off
+# the READY marker; missing READY is fail-closed (restart).
 restart_needed="false"
 restart_skip_reason=""
-if [ "$running_sha" = "unknown" ]; then
-  # No marker yet (first run after this change, or older build): fall back to the
-  # repo-change signal so we don't get stuck on a stale process forever.
-  [ "$changed" = "true" ] && restart_needed="true"
-elif [ "$running_sha" != "$new_sha" ]; then
-  # Process is stale vs repo. Restart only if the delta touches real code — a
-  # docs/workflow/test-only change must not kill a live paper position.
-  if impact="$(git diff --name-only "$running_sha" "$new_sha" 2>/dev/null)"; then
+if [ "$ready_sha" = "unknown" ]; then
+  # FAIL-CLOSED: cannot prove a healthy process is on the current code. Restart.
+  # (Self-heals: the restarted bot publishes READY; steady state then matches.)
+  restart_needed="true"
+elif [ "$ready_sha" != "$new_sha" ]; then
+  # Healthy process is stale vs repo. Restart only if the delta touches real code
+  # — a docs/workflow/test-only change must not kill a live paper position.
+  if impact="$(git diff --name-only "$ready_sha" "$new_sha" 2>/dev/null)"; then
     code_impact="$(printf '%s\n' "$impact" \
       | grep -Ev '^(docs/|\.github/|tests/|.*\.md$|AUDIT_|EXTERNAL_|HANDOVER)' || true)"
     if [ -n "$code_impact" ]; then
@@ -243,41 +245,79 @@ elif [ "$running_sha" != "$new_sha" ]; then
       restart_skip_reason="docs/workflow-only change (no code impact)"
     fi
   else
-    # Cannot diff (running_sha unknown to git, e.g. after a rebase) — be safe and
-    # restart the stale process.
-    restart_needed="true"
+    restart_needed="true"   # cannot diff (ready_sha unknown to git) -> stale -> restart
   fi
 fi
 
-# Operator freeze: a root-owned hold file blocks all restarts (health still runs).
-if [ "$restart_needed" = "true" ] && [ -f "$PROJECT_DIR/.deploy_hold" ]; then
-  restart_needed="false"
-  restart_skip_reason="deploy hold file present ($PROJECT_DIR/.deploy_hold)"
+# Operator freeze: a ROOT-OWNED hold file blocks all restarts (health still runs).
+# A non-root-owned hold is untrusted and ignored; an expired TTL hold is ignored.
+HOLD_FILE="$PROJECT_DIR/.deploy_hold"
+if [ "$restart_needed" = "true" ] && [ -f "$HOLD_FILE" ]; then
+  hold_uid="$(stat -c '%u' "$HOLD_FILE" 2>/dev/null || echo -1)"
+  if [ "$hold_uid" != "0" ]; then
+    echo "[$RUN_TS] WARNING: $HOLD_FILE not root-owned (uid=$hold_uid) — IGNORING (untrusted)" | tee -a "$LOG_FILE"
+  else
+    hold_expired="$($PYTHON_BIN - "$HOLD_FILE" <<'PY' 2>/dev/null || echo false
+import json, sys, time
+try:
+    exp = json.load(open(sys.argv[1])).get("expires_at_epoch")
+    print("true" if (exp is not None and float(exp) < time.time()) else "false")
+except Exception:
+    print("false")
+PY
+)"
+    if [ "$hold_expired" = "true" ]; then
+      echo "[$RUN_TS] deploy hold present but EXPIRED — ignoring" | tee -a "$LOG_FILE"
+    else
+      restart_needed="false"
+      restart_skip_reason="root-owned deploy hold present ($HOLD_FILE)"
+    fi
+  fi
 fi
 
-# Zero-open-position gate: never kill a live paper position mid-hold; defer to the
-# next cycle (positions time out within ~15 min).
+# Zero-open-position gate (FAIL-CLOSED): never kill a live paper position mid-hold.
+# Parse the position state; UNKNOWN (corrupt/unreadable/odd schema) REFUSES the
+# restart rather than assuming zero.
 if [ "$restart_needed" = "true" ]; then
   POS_JSON="$PROJECT_DIR/data/paper_open_positions.json"
-  if [ -s "$POS_JSON" ] && grep -q '"symbol"' "$POS_JSON" 2>/dev/null; then
+  pos_count="$($PYTHON_BIN - "$POS_JSON" <<'PY' 2>/dev/null || echo UNKNOWN
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+    print(len(d) if isinstance(d, (dict, list)) else "UNKNOWN")
+except FileNotFoundError:
+    print(0)
+except Exception:
+    print("UNKNOWN")
+PY
+)"
+  if [ "$pos_count" = "UNKNOWN" ]; then
     restart_needed="false"
-    restart_skip_reason="open positions present — deferring restart to next cycle"
+    restart_skip_reason="open-position state UNKNOWN (unreadable/corrupt) — refusing restart (fail-closed)"
+  elif [ "$pos_count" != "0" ]; then
+    restart_needed="false"
+    restart_skip_reason="$pos_count open position(s) — deferring restart to next cycle"
   fi
 fi
 
 if [ "$restart_needed" = "true" ]; then
-  echo "[$RUN_TS] restarting $SERVICE_NAME (running $running_sha -> $new_sha)" | tee -a "$LOG_FILE"
+  echo "[$RUN_TS] restarting $SERVICE_NAME (ready $ready_sha -> $new_sha)" | tee -a "$LOG_FILE"
   systemctl restart "$SERVICE_NAME"
   sleep 8
-  # Record the SHA we intended to deploy; the process rewrites running_bot_sha
-  # itself at startup, so the two converge once it is up.
-  echo "$new_sha" > "$PROJECT_DIR/reports/deployed_bot_sha" 2>/dev/null || true
 elif [ -n "$restart_skip_reason" ]; then
-  echo "[$RUN_TS] restart skipped: $restart_skip_reason (running=$running_sha repo=$new_sha)" | tee -a "$LOG_FILE"
+  echo "[$RUN_TS] restart skipped: $restart_skip_reason (ready=$ready_sha boot=$boot_sha repo=$new_sha)" | tee -a "$LOG_FILE"
 fi
 
 if systemctl is-active --quiet "$SERVICE_NAME"; then
   service_active="true"
+  # F2/F3 (round 2): record deployed_bot_sha ONLY after the service is confirmed
+  # active AND the process has published a READY marker for the new SHA — so the
+  # marker never claims a successful deploy for a crash-looping build. Written
+  # here (post-is-active), not right after `systemctl restart`.
+  post_ready="$(read_marker "$PROJECT_DIR/reports/ready_bot_sha")"
+  if [ -n "$post_ready" ] && [ "$post_ready" = "$new_sha" ]; then
+    echo "$new_sha" > "$PROJECT_DIR/reports/deployed_bot_sha" 2>/dev/null || true
+  fi
 else
   service_active="false"
   status="CRITICAL"

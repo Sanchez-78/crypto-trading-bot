@@ -41,3 +41,24 @@ def test_write_marker_noop_without_git(tmp_path):
     # non-git dir: returns None, writes nothing, never raises
     assert dm.write_running_sha_marker(str(tmp_path)) is None
     assert not (tmp_path / "reports" / "running_bot_sha").exists()
+
+
+def test_ready_marker_distinct_from_boot(tmp_path):
+    head = _init_git_repo(tmp_path)
+    assert dm.write_running_sha_marker(str(tmp_path)) == head   # BOOT
+    assert dm.write_ready_marker(str(tmp_path)) == head         # READY
+    assert (tmp_path / "reports" / "running_bot_sha").read_text().strip() == head
+    assert (tmp_path / "reports" / "ready_bot_sha").read_text().strip() == head
+
+
+def test_ready_marker_noop_without_git(tmp_path):
+    assert dm.write_ready_marker(str(tmp_path)) is None
+    assert not (tmp_path / "reports" / "ready_bot_sha").exists()
+
+
+def test_atomic_write_leaves_no_tmp_file(tmp_path):
+    head = _init_git_repo(tmp_path)
+    dm.write_ready_marker(str(tmp_path))
+    # the temp file used by the atomic os.replace must not linger
+    leftovers = list((tmp_path / "reports").glob("ready_bot_sha.tmp*"))
+    assert leftovers == []
