@@ -20,6 +20,11 @@ import os
 from typing import Optional, List, Dict, Any
 from threading import Lock
 
+from src.core.trade_metrics_contract import (
+    METRICS_CONTRACT_VERSION,
+    classify_outcome,
+)
+
 _log = logging.getLogger(__name__)
 
 # Local storage paths
@@ -69,6 +74,18 @@ def _init_db():
         cursor.execute("ALTER TABLE closed_trades ADD COLUMN side TEXT")
     except sqlite3.OperationalError:
         pass  # column already exists
+
+    # PR3 migration (audit 2026-07-16): persist the canonical outcome
+    # (WIN/LOSS/FLAT, ±0.05pp net deadband) and the contract version that
+    # classified it, so readers use the stored outcome instead of re-deriving
+    # it with a divergent pnl_usd>0 rule. Additive + idempotent; legacy rows
+    # keep NULL and are classified at read time via the canonical classifier.
+    for _col, _decl in (("outcome", "outcome TEXT"),
+                        ("metrics_contract_version", "metrics_contract_version INTEGER")):
+        try:
+            cursor.execute(f"ALTER TABLE closed_trades ADD COLUMN {_decl}")
+        except sqlite3.OperationalError:
+            pass  # column already exists
 
     # Learning metrics (cumulative)
     cursor.execute("""
@@ -230,11 +247,19 @@ def save_closed_trade(trade: Dict[str, Any]):
         try:
             conn = sqlite3.connect(LOCAL_DB_PATH, timeout=2)
             cursor = conn.cursor()
+            # PR3: net_pnl_pct is the canonical (side-aware, cost-inclusive) value.
+            net_pct = trade.get("pnl_pct") if trade.get("pnl_pct") is not None else trade.get("net_pnl_pct")
+            # Prefer the outcome the executor already classified; only derive from
+            # net_pct as a fallback so the stored value is always canonical.
+            outcome = trade.get("outcome")
+            if outcome is None and net_pct is not None:
+                outcome = classify_outcome(net_pct).value
             cursor.execute("""
                 INSERT OR REPLACE INTO closed_trades
                 (trade_id, symbol, side, entry_ts, exit_ts, entry_price, exit_price,
-                 pnl_usd, pnl_pct, win, exit_reason, regime, mfe, mae, synced_to_firebase)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                 pnl_usd, pnl_pct, win, exit_reason, regime, mfe, mae,
+                 outcome, metrics_contract_version, synced_to_firebase)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
             """, (
                 trade.get("trade_id"),
                 trade.get("symbol"),
@@ -246,12 +271,14 @@ def save_closed_trade(trade: Dict[str, Any]):
                 trade.get("pnl_usd"),
                 # C8: executor emits net_pnl_pct (side-aware, cost-inclusive);
                 # a bare pnl_pct key historically did not exist -> column was NULL
-                trade.get("pnl_pct") if trade.get("pnl_pct") is not None else trade.get("net_pnl_pct"),
+                net_pct,
                 1 if trade.get("win") else 0,
                 trade.get("exit_reason"),
                 trade.get("regime"),
                 trade.get("mfe"),
                 trade.get("mae"),
+                outcome,
+                METRICS_CONTRACT_VERSION if outcome is not None else None,
             ))
             conn.commit()
             conn.close()

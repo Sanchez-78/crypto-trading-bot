@@ -29,6 +29,7 @@ except ImportError:
                         os.environ[k] = v
 
 from src.core.event_bus import subscribe_once
+from src.core.trade_metrics_contract import classify_outcome
 
 log = logging.getLogger(__name__)
 
@@ -986,13 +987,11 @@ def _calculate_pnl(
     # Net PnL
     net_pnl_pct = gross_pnl_pct - fee_cost_pct - slippage_cost_pct
 
-    # Outcome based on net PnL (not exit reason)
-    if net_pnl_pct > 0.05:  # 0.05% profit threshold
-        outcome = "WIN"
-    elif net_pnl_pct < -0.05:  # -0.05% loss threshold
-        outcome = "LOSS"
-    else:
-        outcome = "FLAT"
+    # Outcome based on net PnL after costs (not exit reason). Classified via the
+    # single canonical ±0.05pp deadband in trade_metrics_contract — behaviour is
+    # identical to the previous inline >0.05 / <-0.05 branch. Pass the UNROUNDED
+    # net so the boundary comparison matches the historical result exactly.
+    outcome = classify_outcome(net_pnl_pct).value
 
     return {
         "gross_pnl_pct": round(gross_pnl_pct, 4),
