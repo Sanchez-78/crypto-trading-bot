@@ -21,6 +21,14 @@ pytest.importorskip("flask")
 from src.services import dashboard_web
 import src.services.local_persistent_cache as lpc
 
+@pytest.fixture(autouse=True)
+def _disable_dashboard_auth(monkeypatch):
+    """These tests exercise contract/degradation, not the PR5 Bearer-token gate
+    (that has its own suite in test_dashboard_auth.py). Run them with auth off so
+    the endpoint logic is reached."""
+    monkeypatch.setenv("DASHBOARD_AUTH_DISABLED", "1")
+
+
 MS_ISO_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$")
 
 ANDROID_CONTRACT_KEYS = (

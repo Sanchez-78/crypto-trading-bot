@@ -436,6 +436,19 @@ except Exception as e:
 
 app = Flask(__name__)
 
+# Audit PR5 (P1.6): single centralized Bearer-token gate on every route. Fail
+# closed — an unconfigured server returns 503, never an open public API. The
+# minimal /healthz below is the only exempt path.
+from src.services.dashboard_auth import install_auth
+install_auth(app)
+
+
+@app.route('/healthz')
+def healthz():
+    """Liveness probe — intentionally minimal (no strategy, no metrics, no auth)."""
+    return jsonify({"status": "ok"}), 200
+
+
 # HTML Dashboard Template
 HTML_TEMPLATE = r"""
 <!DOCTYPE html>
@@ -1300,4 +1313,8 @@ def learning_state():
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5001, debug=False)  # Use 5001 to avoid conflict with cryptomaster's internal dashboard
+    # Audit PR5 (P1.6): safe default bind is localhost — never 0.0.0.0. Public
+    # exposure must go through a VPN or an authenticated HTTPS reverse proxy.
+    _host = os.getenv("DASHBOARD_BIND_HOST", "127.0.0.1")
+    _port = int(os.getenv("DASHBOARD_PORT", "5001"))
+    app.run(host=_host, port=_port, debug=False)
