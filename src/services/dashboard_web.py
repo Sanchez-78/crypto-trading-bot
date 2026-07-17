@@ -1313,8 +1313,12 @@ def learning_state():
 
 
 if __name__ == '__main__':
-    # Audit PR5 (P1.6): safe default bind is localhost — never 0.0.0.0. Public
-    # exposure must go through a VPN or an authenticated HTTPS reverse proxy.
-    _host = os.getenv("DASHBOARD_BIND_HOST", "127.0.0.1")
+    # Ship-dark (hotfix 2026-07-17): localhost bind is the default only when
+    # DASHBOARD_SECURITY_ENABLED=1; otherwise 0.0.0.0 (prior behaviour) so the
+    # autodeployed dashboard keeps serving the Android app until security is
+    # explicitly enabled. DASHBOARD_BIND_HOST always overrides.
+    from src.services.dashboard_auth import security_enabled
+    _default_host = "127.0.0.1" if security_enabled() else "0.0.0.0"
+    _host = os.getenv("DASHBOARD_BIND_HOST", _default_host)
     _port = int(os.getenv("DASHBOARD_PORT", "5001"))
     app.run(host=_host, port=_port, debug=False)
