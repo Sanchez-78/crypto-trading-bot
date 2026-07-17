@@ -140,10 +140,20 @@ class EligibilityDecision:
 
 
 def canonical_learning_eligibility(event: PaperCloseEvent) -> EligibilityDecision:
-    """Mirror the current _is_eligible_canonical_paper_learning_trade gate exactly.
+    """Mirror the current eligibility decision, plus two safe-superset guards.
 
-    Exclusions run before the positive source check so a bad close can never be
-    admitted on the strength of its source.
+    The legacy predicate (_is_eligible_canonical_paper_learning_trade) checks
+    D_NEG / quarantined / TIMEOUT_NO_PRICE / shadow_only, and the call site adds
+    the paper_source gate. This reproduces all of those, and additionally
+    excludes `learning_skipped` and non-positive prices (`invalid_prices`).
+
+    Those two additions do NOT diverge on any real close reaching this point:
+    `learning_skipped` is set only on the TIMEOUT_NO_PRICE branch (which never
+    reaches close_paper_position), and a genuine fill always has positive prices.
+    They are defense-in-depth for Phase B, where record_close's own guards are
+    bypassed — so shadow-mode agreement stays ~100% and any disagreement flags
+    genuinely corrupt data. Exclusions run before the positive source check so a
+    bad close can never be admitted on the strength of its source.
     """
     def no(reason):
         return EligibilityDecision(False, reason)

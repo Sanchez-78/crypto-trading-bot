@@ -165,6 +165,53 @@ def test_unverified_sources_not_admitted(src):
     assert d.reason.startswith("source_not_in_canonical_set")
 
 
+# ── shadow parity: canonical == legacy effective decision on real closes ──────
+
+def _legacy_effective_eligible(ct):
+    """Reference model of the OLD path's effective learn/don't-learn decision:
+    the call-site paper_source gate AND the 4 checks in
+    _is_eligible_canonical_paper_learning_trade."""
+    if ct.get("paper_source") not in ("training_sampler", "paper_evidence_collection"):
+        return False
+    if ct.get("training_bucket") == "D_NEG_EV_CONTROL" or ct.get("bucket") == "D_NEG_EV_CONTROL":
+        return False
+    if ct.get("quarantined"):
+        return False
+    if ct.get("exit_reason") == "TIMEOUT_NO_PRICE":
+        return False
+    if ct.get("shadow_only") or ct.get("learning_shadow_skip"):
+        return False
+    return True
+
+
+@pytest.mark.parametrize("over", [
+    {},                                                   # normal eligible
+    {"paper_source": "normal_rde_take"},                  # source not admitted
+    {"paper_source": "paper_adaptive_recovery"},
+    {"paper_source": "paper_evidence_collection"},        # eligible
+    {"training_bucket": "D_NEG_EV_CONTROL"},
+    {"quarantined": True},
+    {"exit_reason": "TIMEOUT_NO_PRICE"},
+    {"shadow_only": True},
+    {"symbol": "ETHUSDT", "side": "SELL", "net_pnl_pct": -0.3, "outcome": "LOSS"},
+])
+def test_shadow_parity_with_legacy_on_real_closes(over):
+    """For any REAL close (positive prices, not learning_skipped) the canonical
+    verdict must equal the legacy effective decision."""
+    ct = _ct(**over)
+    canonical = pcp.canonical_learning_eligibility(pcp.from_closed_trade(ct)).eligible
+    assert canonical == _legacy_effective_eligible(ct), over
+
+
+def test_extra_guards_only_fire_on_impossible_or_corrupt_data():
+    # learning_skipped never reaches this path in prod; invalid prices = non-fill.
+    assert pcp.canonical_learning_eligibility(_ev(learning_skipped=True)).reason == "learning_skipped"
+    assert pcp.canonical_learning_eligibility(_ev(entry_price=0.0)).reason == "invalid_prices"
+    # both would have been "eligible" under the legacy predicate (it checks neither)
+    assert _legacy_effective_eligible(_ct(learning_skipped=True)) is True
+    assert _legacy_effective_eligible(_ct(entry_price=0.0)) is True
+
+
 # ── 13. effect-ledger recovery after process restart (re-open same DB) ────────
 
 def test_ledger_recovery_across_reopen(db):
