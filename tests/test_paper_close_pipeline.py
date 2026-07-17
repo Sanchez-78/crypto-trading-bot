@@ -292,5 +292,16 @@ def test_shadow_logs_and_returns_decision(monkeypatch, caplog):
 
 def test_shadow_never_raises_on_bad_input(monkeypatch):
     monkeypatch.setenv("PAPER_CANONICAL_PIPELINE", "shadow")
-    # missing/garbage fields must not raise out of the shadow hook
-    assert pcp.run_shadow({"trade_id": None, "net_pnl_pct": "x"}, False) is not None or True
+    # missing/garbage fields must not raise out of the shadow hook; it returns
+    # either a decision or None, never an exception.
+    result = pcp.run_shadow({"trade_id": None, "net_pnl_pct": "x"}, False)
+    assert result is None or isinstance(result, pcp.EligibilityDecision)
+
+
+def test_persist_bad_db_path_type_returns_error():
+    # F1: a non-str db_path (config error, not data) must return status=error,
+    # never raise — the "never raises" contract.
+    for bad in (None, 123, ["x"], {"a": 1}):
+        r = pcp.persist_closed_paper_trade(_ev(), bad)
+        assert r.status == "error" and not r.persisted
+    assert pcp.mark_effect(None, "t1", "adaptive_learning", "done") is False

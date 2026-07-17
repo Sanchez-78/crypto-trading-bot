@@ -313,7 +313,9 @@ def persist_closed_paper_trade(event: PaperCloseEvent, db_path: str,
                     "VALUES (?,?,?,0,?,?)", (event.trade_id, effect_type, "pending", now, now))
         conn.execute("COMMIT")
         return ClosePipelineResult(event.trade_id, "inserted", True, elig, effects)
-    except sqlite3.Error as e:
+    except (sqlite3.Error, TypeError, ValueError, OSError) as e:
+        # TypeError/ValueError/OSError guard against a bad db_path (config, not
+        # data) so the "never raises" contract holds even before Phase B.
         if conn is not None:
             try:
                 conn.execute("ROLLBACK")
@@ -345,7 +347,7 @@ def mark_effect(db_path: str, trade_id: str, effect_type: str, status: str,
             return True
         finally:
             conn.close()
-    except sqlite3.Error:
+    except (sqlite3.Error, TypeError, ValueError, OSError):
         return False
 
 
