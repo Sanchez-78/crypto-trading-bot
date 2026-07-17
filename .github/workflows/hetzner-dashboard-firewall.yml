@@ -119,7 +119,7 @@ jobs:
       # refused/timed-out after APPLY. If it CONNECTS, the firewall isn't blocking
       # public access — fail the workflow (fail-closed).
       - name: External public-access probe (must be refused after APPLY)
-        if: ${{ inputs.confirm == 'APPLY_FIREWALL' }}
+        if: ${{ success() && inputs.confirm == 'APPLY_FIREWALL' }}
         env:
           HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
         run: |
