@@ -156,10 +156,46 @@ def test_firewall_is_manual_dispatch_only():
     assert "workflow_dispatch" in on and "push" not in on
 
 
-def test_firewall_has_rollback_mode():
+def test_firewall_rollback_is_fail_closed():
+    """Audit F10-r2: rollback must NEVER reopen the public port. It re-asserts the
+    secure baseline (keep the deny) instead of deleting it."""
     t = _firewall_text()
     assert "ROLLBACK_FIREWALL" in t
-    assert "ufw delete deny" in t
+    # fail-closed: rollback must NOT delete the public deny (that would reopen it)
+    assert "ufw delete deny" not in t
+    # rollback re-asserts the secure baseline via apply_secure and verifies it
+    assert "re-assert" in t
+    assert "[ROLLBACK_SECURE_OK]" in t
+
+
+def test_firewall_validates_inputs_against_injection():
+    """Audit F10-r2: confirm/allow_cidr/ports are validated (enum + ipaddress +
+    port allowlist) BEFORE reaching the remote shell — no injection surface."""
+    t = _firewall_text()
+    assert "Validate inputs" in t
+    assert "ip_network" in t                         # allow_cidr validated as a network
+    assert "subset of '5000 5001'" in t              # ports allowlist
+
+
+def test_firewall_validation_runs_before_ssh_and_blocklists_metachars():
+    """Audit F10-r2: the anti-injection validation must run BEFORE the SSH step
+    (else it can't protect it), and must reject shell metacharacters explicitly
+    (belt-and-suspenders on top of ip_network)."""
+    t = _firewall_text()
+    validate = t.index("Validate inputs")
+    ssh_step = t.index("Read state + (optionally) apply")
+    assert validate < ssh_step, "input validation must precede the SSH step"
+    # explicit metacharacter blocklist present
+    assert "disallowed characters" in t
+
+
+def test_firewall_defaults_to_port_5000_not_5001():
+    """5001 is the LIVE Android API port — it must NOT be firewalled by default.
+    An accidental run defaults to 5000 (the redundant legacy dashboard) only."""
+    doc = yaml.safe_load(_firewall_text())
+    on = doc.get("on") or doc.get(True)
+    ports = on["workflow_dispatch"]["inputs"]["ports"]
+    assert str(ports["default"]) == "5000"
 
 
 def test_firewall_verifies_active_and_ipv4_ipv6_and_external_probe():
