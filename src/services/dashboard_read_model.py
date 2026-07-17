@@ -199,18 +199,29 @@ def _row_outcome(row) -> TradeOutcome:
 # ── recent-window headline (ONE definition, shared by all endpoints) ──────────
 
 def _recent_headline(rows):
-    """Canonical WR/PF/net over the recent window. Same numbers everywhere."""
+    """Canonical WR/PF/net over the recent window. Same numbers everywhere.
+
+    Audit F7: profit factor is exposed on BOTH bases — normalized (pct-points,
+    strategy-quality, size-independent) and economic (USD, real sizing impact) —
+    because with variable position size the two differ. `recent_profit_factor`
+    keeps the pct basis as the documented default.
+    """
     outcomes = [_row_outcome(r) for r in rows]
     net_pct = [r.get("pnl_pct", 0.0) for r in rows]
-    net_usd = sum(r.get("pnl_usd", 0.0) for r in rows)
+    net_usd_vals = [r.get("pnl_usd", 0.0) for r in rows]
+    pf_pct = round(compute_profit_factor(net_pct), 3)
+    pf_usd = round(compute_profit_factor(net_usd_vals), 3)
     wins = sum(1 for o in outcomes if o is TradeOutcome.WIN)
     losses = sum(1 for o in outcomes if o is TradeOutcome.LOSS)
     flats = sum(1 for o in outcomes if o is TradeOutcome.FLAT)
     return {
         "recent_window_n": len(rows),
         "recent_win_rate_pct": round(compute_win_rate(outcomes) * 100.0, 2),
-        "recent_profit_factor": round(compute_profit_factor(net_pct), 3),
-        "recent_net_pnl_usd": round(net_usd, 6),
+        "recent_profit_factor": pf_pct,                     # default = pct basis
+        "recent_profit_factor_pct_basis": pf_pct,
+        "recent_profit_factor_usd_basis": pf_usd,
+        "profit_factor_default_basis": "pct_points",
+        "recent_net_pnl_usd": round(sum(net_usd_vals), 6),
         "recent_net_pnl_pct": round(sum(net_pct), 4),
         "wins": wins,
         "losses": losses,
@@ -386,6 +397,25 @@ def get_metrics() -> dict:
             "win_rate_window": headline["recent_window_n"],
             "net_pnl": round(session_net, 6),
             "net_pnl_window": headline["recent_net_pnl_usd"],
+            # Audit F6: ONE explicit single-window headline object the frontend
+            # must consume (never mix lifetime_n * recent WR; FLAT is its own
+            # bucket, not a loss). All fields are from the SAME recent window.
+            "headline": {
+                "schema_version": 1,
+                "window": f"recent_{headline['recent_window_n']}",
+                "n": headline["recent_window_n"],
+                "wins": headline["wins"],
+                "losses": headline["losses"],
+                "flats": headline["flats"],
+                "win_rate_pct": headline["recent_win_rate_pct"],
+                "profit_factor_pct_basis": headline["recent_profit_factor_pct_basis"],
+                "profit_factor_usd_basis": headline["recent_profit_factor_usd_basis"],
+                "profit_factor_default_basis": "pct_points",
+                "net_pnl_pct": headline["recent_net_pnl_pct"],
+                "net_pnl_usd": headline["recent_net_pnl_usd"],
+                "source": "cache.sqlite:closed_trades",
+                "generated_at": iso,
+            },
             # Explicit windows + metadata (audit 8.4).
             "recent": {**headline, "source": "cache.sqlite:closed_trades",
                        "unit": "pct_points+usd", "generated_at": iso},
@@ -462,6 +492,15 @@ def _degraded_envelope(errors, iso):
         "open_positions": 0, "open_positions_list": [], "closed_trades_list": [],
         "profit_factor": 0.0, "win_rate_pct": 0.0, "win_rate_window": 0,
         "net_pnl": 0.0, "net_pnl_window": 0.0, "session_n": 0,
+        # F6: zeroed headline so the shape is consistent even when degraded.
+        "headline": {
+            "schema_version": 1, "window": "recent_0", "n": 0,
+            "wins": 0, "losses": 0, "flats": 0, "win_rate_pct": 0.0,
+            "profit_factor_pct_basis": 0.0, "profit_factor_usd_basis": 0.0,
+            "profit_factor_default_basis": "pct_points",
+            "net_pnl_pct": 0.0, "net_pnl_usd": 0.0,
+            "source": "degraded", "generated_at": iso,
+        },
         "exit_distribution": {"tp": 0, "sl": 0, "scratch": 0, "stagnation": 0, "timeout": 0},
         "timestamp": iso, "last_update": iso, "last_update_utc": iso,
         "data_source": "degraded",
