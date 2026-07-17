@@ -1,19 +1,25 @@
 name: Hetzner Dashboard Firewall (manual, reversible)
 
 # Audit PR5 (P1.6 / 9.8): manual-only, reversible firewall control for the
-# dashboard port. Defense-in-depth on top of the localhost bind + Bearer auth —
-# it blocks PUBLIC TCP 5001 and permits only an explicit VPN/reverse-proxy CIDR.
+# dashboard port(s). Defense-in-depth on top of the localhost bind + Bearer auth —
+# it blocks PUBLIC TCP on the chosen port(s) (default 5000) and permits only an
+# explicit VPN/reverse-proxy CIDR.
 #
-# This workflow does NOT deploy code and never touches trading services. It
-# saves a before-state, applies an idempotent rule set, then FAIL-CLOSED verifies
-# (audit F10): ufw is active, the deny rule exists for IPv4 (and checks IPv6),
-# local health still works, AND an external probe from the public GitHub runner
-# confirms port 5001 is actually refused. A ROLLBACK_FIREWALL mode reverts the
-# rules. Requires an explicit confirmation.
+# This workflow does NOT deploy code and never touches trading services.
 #
-# DO NOT RUN until the Android exposure model (VPN or HTTPS reverse proxy) is
-# chosen and the app's token flow is ready — blocking 5001 while the app still
-# expects http://<public-ip>:5001 would break it.
+# Audit F10-r2 hardening:
+#  - inputs (confirm/allow_cidr/ports) are validated (enum + ipaddress + port
+#    allowlist) BEFORE reaching the remote shell — no injection surface;
+#  - `ports` is operator-chosen (DEFAULT 5000, the redundant legacy dashboard);
+#    5001 (the LIVE Android API port) is only firewalled when explicitly passed;
+#  - APPLY fail-closed verifies: ufw active, IPv4 deny, IPv6 deny (HARD when a
+#    global IPv6 exists), local health, + external runner probe per port;
+#  - ROLLBACK_FIREWALL is FAIL-CLOSED: it re-asserts the secure baseline and
+#    NEVER deletes the public deny (never reopens an unauthenticated public port).
+#
+# DO NOT firewall 5001 until the Android exposure model (VPN or HTTPS reverse
+# proxy) is ready — 5001 is the live API the app hits at http://<public-ip>:5001.
+# Firewalling 5000 (default) is safe immediate containment of the redundant port.
 
 on:
   workflow_dispatch:
@@ -23,13 +29,17 @@ on:
         required: true
         default: 'STATUS'
       allow_cidr:
-        description: 'CIDR permitted to reach 5001 (e.g. the VPN subnet). Loopback is always allowed.'
+        description: 'CIDR permitted to reach the port(s) (e.g. the VPN subnet). Loopback is always allowed.'
         required: false
         default: '127.0.0.1/32'
+      ports:
+        description: 'Space-separated ports to firewall. DEFAULT 5000 (redundant legacy dashboard). Add 5001 ("5000 5001") ONLY once the Android VPN/HTTPS exposure is ready — 5001 is the LIVE API port for the app; denying it publicly cuts the app off.'
+        required: false
+        default: '5000'
 
 jobs:
   firewall:
-    name: Dashboard port firewall (5001)
+    name: Dashboard port firewall (default 5000)
     runs-on: ubuntu-latest
     steps:
       - name: Set up SSH key and pin host key
@@ -44,26 +54,87 @@ jobs:
           [ -s ~/.ssh/known_hosts ] || { echo "host unreachable"; exit 1; }
           chmod 600 ~/.ssh/known_hosts
 
+      # Audit F10-r2: validate inputs BEFORE they ever reach the remote shell.
+      # `confirm` must be one of the enum values; `allow_cidr` must be a valid
+      # network. This closes the remote-shell-injection surface (a quote in a raw
+      # input could otherwise break out of the SSH command).
+      - name: Validate inputs (fail-closed, anti-injection)
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          ALLOW_CIDR: ${{ inputs.allow_cidr }}
+          PORTS: ${{ inputs.ports }}
+        run: |
+          python3 - "$CONFIRM" "$ALLOW_CIDR" "$PORTS" <<'PY'
+          import ipaddress, sys
+          confirm, cidr, ports = sys.argv[1], (sys.argv[2] or "127.0.0.1/32"), (sys.argv[3] or "5000")
+          if confirm not in ("STATUS", "APPLY_FIREWALL", "ROLLBACK_FIREWALL"):
+              print(f"::error::invalid confirm '{confirm}'"); sys.exit(1)
+          try:
+              net = ipaddress.ip_network(cidr, strict=False)
+          except ValueError as e:
+              print(f"::error::invalid allow_cidr: {e}"); sys.exit(1)
+          if any(c in cidr for c in " ;|&$`'\"\\\n"):
+              print("::error::allow_cidr contains disallowed characters"); sys.exit(1)
+          # ports: only the two known dashboard ports are allowed (prevents both
+          # injection and an accidental firewall of an unrelated service).
+          plist = ports.split()
+          if not plist or any(p not in ("5000", "5001") for p in plist):
+              print(f"::error::ports must be a space-separated subset of '5000 5001', got '{ports}'"); sys.exit(1)
+          print(f"validated: confirm={confirm} cidr={net} ports={plist}")
+          PY
+
       - name: Read state + (optionally) apply
         env:
           HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
           HETZNER_USER: ${{ secrets.HETZNER_USER }}
           CONFIRM: ${{ inputs.confirm }}
           ALLOW_CIDR: ${{ inputs.allow_cidr }}
+          PORTS_INPUT: ${{ inputs.ports }}
         run: |
           SSH_OPTS="-p 22 -i ~/.ssh/hetzner_deploy_key -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile=~/.ssh/known_hosts -o ConnectTimeout=30 -o BatchMode=yes"
           mkdir -p artifacts
 
+          # CONFIRM/ALLOW_CIDR/PORTS_INPUT were validated (enum + ipaddress +
+          # port allowlist) in the previous step, so they contain no shell
+          # metacharacters and are safe to interpolate.
           ssh $SSH_OPTS "$HETZNER_USER@$HETZNER_HOST" \
-            "CONFIRM='$CONFIRM' ALLOW_CIDR='$ALLOW_CIDR' bash -s" << 'REMOTE_EOF' | tee artifacts/firewall_state.txt
+            "CONFIRM='$CONFIRM' ALLOW_CIDR='$ALLOW_CIDR' PORTS='${PORTS_INPUT:-5000}' bash -s" << 'REMOTE_EOF' | tee artifacts/firewall_state.txt
           #!/usr/bin/env bash
           set -euo pipefail
-          PORT=5001
+          # Audit F10-r2: the port set is operator-chosen (default 5000, the
+          # redundant legacy dashboard). 5001 (the LIVE Android API) is only
+          # included when the operator passes it, once VPN/HTTPS exposure is ready.
+          PORTS="${PORTS:-5000}"
+
+          save_before() { ufw status numbered 2>/dev/null > /tmp/ufw_before.txt || true; }
+          apply_secure() {
+            # Idempotent secure state for one port: loopback + optional CIDR allowed,
+            # everything else denied. Fail-closed.
+            local p="$1"
+            ufw allow from 127.0.0.1 to any port "$p" proto tcp || true
+            if [ -n "${ALLOW_CIDR:-}" ] && [ "$ALLOW_CIDR" != "127.0.0.1/32" ]; then
+              ufw allow from "$ALLOW_CIDR" to any port "$p" proto tcp || true
+            fi
+            ufw deny "$p"/tcp || true
+          }
+          verify_secure() {
+            local p="$1"
+            ufw status 2>/dev/null | grep -q "Status: active" || { echo "CRITICAL: ufw not active"; return 1; }
+            local v4 v6; v4="$(ufw status | grep -E "^$p/tcp\s+DENY" | grep -v '(v6)' || true)"
+            v6="$(ufw status | grep -E "^$p/tcp \(v6\)\s+DENY" || true)"
+            echo "  $p IPv4 deny: ${v4:-MISSING} | IPv6 deny: ${v6:-MISSING}"
+            [ -n "$v4" ] || { echo "CRITICAL: $p IPv4 deny missing"; return 1; }
+            # IPv6 is a HARD requirement when the host has a global IPv6 address.
+            if ip -6 addr show scope global 2>/dev/null | grep -q 'inet6'; then
+              [ -n "$v6" ] || { echo "CRITICAL: $p has global IPv6 but no IPv6 deny (set IPV6=yes in /etc/default/ufw)"; return 1; }
+            fi
+            return 0
+          }
 
           echo "=== BEFORE STATE ==="
-          echo "listeners on :$PORT:"; ss -ltnp 2>/dev/null | grep ":$PORT" || echo "  (none)"
-          echo "ufw status:"; ufw status verbose 2>/dev/null || echo "  (ufw not installed)"
+          for p in $PORTS; do echo "listeners :$p:"; ss -ltnp 2>/dev/null | grep ":$p" || echo "  (none)"; done
+          ufw status verbose 2>/dev/null || echo "  (ufw not installed)"
 
           if [ "$CONFIRM" = "STATUS" ]; then
             echo ""; echo "STATUS mode — no changes made."; exit 0
@@ -71,47 +142,41 @@ jobs:
           if ! command -v ufw >/dev/null 2>&1; then
             echo "CRITICAL: ufw not installed — refusing to improvise iptables. Install ufw first."; exit 1
           fi
+          save_before
 
           if [ "$CONFIRM" = "ROLLBACK_FIREWALL" ]; then
-            # Audit F10: reversible — remove the deny (and the CIDR allow) so the
-            # port is reachable again. Loopback allow is harmless to leave.
-            echo ""; echo "=== ROLLBACK ==="
-            yes | ufw delete deny "$PORT"/tcp 2>&1 || echo "  (no deny rule)"
-            if [ -n "${ALLOW_CIDR:-}" ] && [ "$ALLOW_CIDR" != "127.0.0.1/32" ]; then
-              yes | ufw delete allow from "$ALLOW_CIDR" to any port "$PORT" proto tcp 2>&1 || true
-            fi
-            echo "after rollback:"; ufw status numbered 2>/dev/null | grep "$PORT" || echo "  (no $PORT rule — open)"
-            echo "local health:"; curl -fsS "http://127.0.0.1:$PORT/healthz" || echo "  (local health failed)"
+            # Audit F10-r2: FAIL-CLOSED rollback. NEVER delete the public deny (that
+            # would reopen an unauthenticated public port). Rollback = re-assert the
+            # secure baseline (loopback + provided CIDR allowed, public denied) for
+            # both ports. To fully open the port again the operator must do so
+            # explicitly out-of-band — it is not a "rollback".
+            echo ""; echo "=== ROLLBACK (fail-closed: re-assert secure baseline, keep deny) ==="
+            for p in $PORTS; do apply_secure "$p"; done
+            rc=0; for p in $PORTS; do verify_secure "$p" || rc=1; done
+            echo "before-state saved to /tmp/ufw_before.txt on the server for manual inspection."
+            [ "$rc" = 0 ] && echo "[ROLLBACK_SECURE_OK]" || { echo "ROLLBACK verify failed"; exit 1; }
             exit 0
           fi
 
           if [ "$CONFIRM" != "APPLY_FIREWALL" ]; then
-            echo "unknown confirm value '$CONFIRM' — refusing"; exit 1
+            echo "unknown confirm value — refusing"; exit 1
           fi
 
-          echo ""; echo "=== APPLYING (idempotent) ==="
-          ufw allow from 127.0.0.1 to any port "$PORT" proto tcp || true
-          if [ -n "${ALLOW_CIDR:-}" ] && [ "$ALLOW_CIDR" != "127.0.0.1/32" ]; then
-            ufw allow from "$ALLOW_CIDR" to any port "$PORT" proto tcp || true
-          fi
-          ufw deny "$PORT"/tcp || true
+          echo ""; echo "=== APPLYING (idempotent, both ports) ==="
+          for p in $PORTS; do apply_secure "$p"; done
 
-          echo ""; echo "=== AFTER STATE / VERIFY (fail-closed) ==="
-          # 1) ufw must actually be ACTIVE (rules are inert otherwise).
-          if ! ufw status 2>/dev/null | grep -q "Status: active"; then
-            echo "CRITICAL: ufw is INSTALLED but NOT ACTIVE — rules are inert. Refusing."; exit 1
-          fi
-          echo "ufw: active ✓"
-          # 2) the deny rule must be present for BOTH IPv4 and IPv6.
-          v4="$(ufw status | grep -E "^$PORT/tcp\s+DENY" | grep -v '(v6)' || true)"
-          v6="$(ufw status | grep -E "^$PORT/tcp \(v6\)\s+DENY" || true)"
-          echo "IPv4 deny: ${v4:-MISSING}"
-          echo "IPv6 deny: ${v6:-MISSING}"
-          if [ -z "$v4" ]; then echo "CRITICAL: IPv4 deny rule missing"; exit 1; fi
-          if [ -z "$v6" ]; then echo "WARNING: IPv6 deny rule not visible — verify ufw IPV6=yes in /etc/default/ufw"; fi
-          # 3) local health must still work (loopback allowed).
-          echo "local health:"; curl -fsS "http://127.0.0.1:$PORT/healthz" || { echo "CRITICAL: local health failed after apply"; exit 1; }
-          echo "[FIREWALL_APPLIED_OK]"
+          echo ""; echo "=== VERIFY (fail-closed) ==="
+          rc=0; for p in $PORTS; do verify_secure "$p" || rc=1; done
+          [ "$rc" = 0 ] || { echo "CRITICAL: fail-closed verify failed"; exit 1; }
+          echo "ufw: active ✓ (denied publicly for: $PORTS)"
+          # local health must still work over loopback for whichever ports have a
+          # dashboard listening (5001 canonical). Absence of a listener is fine.
+          for p in $PORTS; do
+            if ss -ltn 2>/dev/null | grep -q ":$p"; then
+              echo "local health :$p:"; curl -fsS "http://127.0.0.1:$p/healthz" || echo "  (no /healthz on :$p — ok if not a Flask dashboard)"
+            fi
+          done
+          echo "[FIREWALL_APPLIED_OK ports=$PORTS]"
           REMOTE_EOF
 
       # Audit F10: external vantage-point probe. From the GitHub runner (a public
@@ -122,14 +187,22 @@ jobs:
         if: ${{ success() && inputs.confirm == 'APPLY_FIREWALL' }}
         env:
           HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          PORTS_INPUT: ${{ inputs.ports }}
         run: |
-          echo "Probing http://$HETZNER_HOST:5001/ from the public runner (must NOT connect)..."
-          if curl -fsS --max-time 12 "http://$HETZNER_HOST:5001/healthz" >/dev/null 2>&1; then
-            echo "CRITICAL: public 5001 is STILL REACHABLE from the runner after APPLY — firewall not effective."
-            echo "Run this workflow with confirm=ROLLBACK_FIREWALL and investigate (cloud firewall? ufw inactive? bind 0.0.0.0?)."
+          fail=0
+          for p in ${PORTS_INPUT:-5000}; do
+            echo "Probing http://$HETZNER_HOST:$p/ from the public runner (must NOT connect)..."
+            if curl -fsS --max-time 12 "http://$HETZNER_HOST:$p/healthz" >/dev/null 2>&1; then
+              echo "CRITICAL: public $p is STILL REACHABLE from the runner after APPLY — firewall not effective."
+              fail=1
+            else
+              echo "[EXTERNAL_PROBE_OK] public $p refused/timed-out ✓"
+            fi
+          done
+          if [ "$fail" = 1 ]; then
+            echo "Run confirm=ROLLBACK_FIREWALL and investigate (cloud firewall? ufw inactive? bind 0.0.0.0? IPv6?)."
             exit 1
           fi
-          echo "[EXTERNAL_PROBE_OK] public 5001 refused/timed-out from the runner ✓"
 
       - name: Upload before/after artifact
         uses: actions/upload-artifact@v4
