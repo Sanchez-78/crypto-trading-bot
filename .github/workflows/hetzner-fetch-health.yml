@@ -404,6 +404,36 @@ jobs:
           PYEOF
           " > artifacts/closed_trades.csv 2>>artifacts/csv_dump_err.txt || echo 'csv dump ssh failed' >> artifacts/csv_dump_err.txt
 
+          # ── F8b observation-only data-collection probe (audit v5 §8) ───────
+          # READ-ONLY. Row counts of the shadow dataset + a WIDE (30 min) journal
+          # grep for SHADOW_OBSERVE vs SIGNAL_OPENING — the short log tail above is
+          # too small to catch the ~20-min signal cadence. Confirms observation
+          # mode is actually collecting and NOT opening positions.
+          ssh $SSH_OPTS "$HETZNER_USER@$HETZNER_HOST" "
+            echo '=== env flags ==='
+            grep -E '^(PAPER_DATA_COLLECTION_ONLY|PAPER_SYMBOL_BLACKLIST)=' '$HETZNER_PROJECT_DIR/.env' 2>/dev/null || echo '(neither key set)'
+            echo '=== shadow_excursion.sqlite row counts ==='
+            python3 - <<'PYEOF'
+          import sqlite3
+          db='$HETZNER_PROJECT_DIR/local_learning_storage/shadow_excursion.sqlite'
+          try:
+              c=sqlite3.connect(f'file:{db}?mode=ro',uri=True,timeout=5).cursor()
+              for t in ('shadow_excursion_observations','shadow_path_1s','shadow_first_crossing'):
+                  try: print(f'  {t}:', c.execute(f'SELECT COUNT(*) FROM {t}').fetchone()[0])
+                  except Exception as e: print(f'  {t}: (missing) {e}')
+              try:
+                  print('  by data_quality:', c.execute(\"SELECT data_quality,COUNT(*) FROM shadow_excursion_observations GROUP BY data_quality\").fetchall())
+                  print('  latest signal_ts_ms:', c.execute('SELECT MAX(signal_ts_ms) FROM shadow_excursion_observations').fetchone()[0])
+              except Exception as e: print('  agg:', e)
+          except Exception as e:
+              print('  shadow_excursion.sqlite not present yet:', e)
+          PYEOF
+            echo '=== journal 30-min: SHADOW_OBSERVE vs SIGNAL_OPENING ==='
+            journalctl -u '$HETZNER_SERVICE_NAME' --since '30 minutes ago' --no-pager -o cat 2>/dev/null | grep -cE 'SHADOW_OBSERVE' | sed 's/^/  SHADOW_OBSERVE: /' || echo '  SHADOW_OBSERVE: 0'
+            journalctl -u '$HETZNER_SERVICE_NAME' --since '30 minutes ago' --no-pager -o cat 2>/dev/null | grep -cE 'SIGNAL_OPENING|SIGNAL_OPENED' | sed 's/^/  SIGNAL_OPEN: /' || echo '  SIGNAL_OPEN: 0'
+            journalctl -u '$HETZNER_SERVICE_NAME' --since '30 minutes ago' --no-pager -o cat 2>/dev/null | grep -E 'SHADOW_OBSERVE' | tail -3 || true
+          " > artifacts/shadow_collection_probe.txt 2>&1 || echo 'shadow probe ssh failed' >> artifacts/shadow_collection_probe.txt
+
       # ── 3. Print mobile-readable summary ──────────────────────────────────
       - name: Print mobile summary
         run: |
