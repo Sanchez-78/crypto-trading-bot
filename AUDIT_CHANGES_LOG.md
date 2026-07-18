@@ -2,7 +2,29 @@
 
 ---
 
-## ⭐ ROUND 3 STATUS (2026-07-17) — authoritative; supersedes everything below
+## ⭐ ROUND 4/5 STATUS (2026-07-18) — authoritative; supersedes everything below
+
+> **Deployed SHA on server:** `1eba962` (autodeploy 2h). **REAL trading = NO-GO (unchanged).** Paper-only, **trading PAUSED** (`PAPER_SYMBOL_BLACKLIST` = all 7 symbols → `signal_generator.py:682` returns → 0 new entries), `open_positions=0`.
+> Pairs with `EXTERNAL_AUDIT_PROMPT_v5.md` (+ external report v4).
+
+### Round-4 remediation
+| Finding | R4 verdict | R5 status | PR | Gate |
+|---------|-----------|-----------|----|----|
+| **F10** firewall | injection (HIGH) | anti-injection validation (enum + `ipaddress` + port allowlist) before SSH; fail-closed rollback (never `ufw delete deny`); default port **5000** (5001 = LIVE API untouched) | **#77 merged** | reviewer APPROVE (LOW) + trading-safety SAFE |
+| **F2/F3** reset-before-gate | REJECT | `git reset --hard` + restart now AFTER hold + zero-position gates; decided from fetched SHAs before any working-tree mutation; docs-only sync stays allowed | **#79 open** | reviewer gate in progress; `bash -n` OK, 22/22 static tests |
+| **health CSV** | (new) | read-only full `closed_trades` CSV dump for offline E1–E4 | **#78 merged** | self-verified (read-only, non-trading) |
+
+### Round-5 core finding — negative expectancy + E1–E4 blocked
+- **All 1021 local closes are `TIMEOUT`** (TP ~54bps / SL never hit). WR 31% (win col), net −0.9164 usd. Clean `pnl_pct` subset (162): **PF 0.924**, −18.77 bps/trade after 18bps cost.
+- Segments: `BULL_TREND` 25.8% vs `BEAR_TREND` 46.3%; BNB 0/72, XRP 1/65. → DEV_FADE has no edge in current regime.
+- **E1–E4 cannot run:** excursion columns populated on only **6/1021** rows (F8 population just started). Pause halts further accumulation → catch-22. Auditor to decide data-collection path / F8b priority / strategy fate (`EXTERNAL_AUDIT_PROMPT_v5.md` §6).
+
+### Runtime (health-536, server `1eba962`)
+- F2/F3 mechanism live: `repo=ready=boot=1a72e42`, `deployed=5a26731` (marker lag), `deploy_hold absent`, owner uid 999 (non-root). Code-impact gate correctly skipped restart for workflow-only #77/#78. Pause confirmed (mode neutral, 0 entries).
+
+---
+
+## ⭐ ROUND 3 STATUS (2026-07-17) — superseded by Round 4/5 above
 
 > **Deployed SHA on server:** `main` HEAD (autodeploy timer, 2h). **REAL trading = NO-GO (unchanged).** Paper-only (`TRADING_MODE=paper_train`), 0 open positions, `live_trading_allowed=false`, `zz-force-paper-only.conf` active.
 > Pairs with `EXTERNAL_AUDIT_PROMPT_v3.md` and external reports `CryptoMaster_EXTERNAL_AUDIT_REPORT_v2` / `_v3`.
