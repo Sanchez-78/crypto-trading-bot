@@ -1715,15 +1715,23 @@ def main():
     warmup()
     print("  [8/8] Warmup complete ✓", file=sys.stderr, flush=True)
 
-    print("  [8.5/8] Starting dashboard HTTP server...", file=sys.stderr, flush=True)
-    try:
-        import threading
-        from simple_dashboard import run_server as run_dashboard
-        dashboard_thread = threading.Thread(target=lambda: run_dashboard(port=5000), daemon=True)
-        dashboard_thread.start()
-        print("  [8.5/8] Dashboard HTTP server started ✓", file=sys.stderr, flush=True)
-    except Exception as e:
-        print(f"  [WARNING] Dashboard HTTP server failed: {e}", file=sys.stderr, flush=True)
+    # Audit v5 §6/§13: the legacy :5000 stdlib dashboard (simple_dashboard) is
+    # redundant with the canonical Flask :5001 read-model, is publicly scanned, and
+    # runs INSIDE the trading process. It is now DISABLED BY DEFAULT and only starts
+    # when LEGACY_DASHBOARD_5000_ENABLED is explicitly truthy. Metrics are served by
+    # the separate :5001 Flask service (dashboard_web.py), which the Android app uses.
+    if os.getenv("LEGACY_DASHBOARD_5000_ENABLED", "false").lower() in ("true", "1", "yes", "on"):
+        print("  [8.5/8] Starting LEGACY :5000 dashboard (explicitly enabled)...", file=sys.stderr, flush=True)
+        try:
+            import threading
+            from simple_dashboard import run_server as run_dashboard
+            dashboard_thread = threading.Thread(target=lambda: run_dashboard(port=5000), daemon=True)
+            dashboard_thread.start()
+            print("  [8.5/8] Legacy :5000 dashboard started ✓", file=sys.stderr, flush=True)
+        except Exception as e:
+            print(f"  [WARNING] Legacy :5000 dashboard failed: {e}", file=sys.stderr, flush=True)
+    else:
+        print("  [8.5/8] Legacy :5000 dashboard DISABLED (default; set LEGACY_DASHBOARD_5000_ENABLED=1 to re-enable)", file=sys.stderr, flush=True)
 
     # V10.13s: Detect and correct stale warm-start contamination after reset
     print("  [V10.13s] Validating runtime state consistency...", file=sys.stderr, flush=True)
