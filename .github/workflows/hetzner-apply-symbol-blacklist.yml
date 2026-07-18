@@ -69,18 +69,21 @@ jobs:
           if action not in ("apply", "revert", "status"):
               print(f"::error::invalid action '{action}'"); sys.exit(1)
           # Exact allowlist of the only symbols the bot trades. Any whitespace,
-          # quote, or shell metacharacter makes a token fail this membership test,
-          # so nothing unsafe can survive to the SSH command / .env write.
+          # quote, or shell metacharacter makes a token fail this membership test.
           ALLOWED = {"BTCUSDT", "ETHUSDT", "ADAUSDT", "BNBUSDT", "DOTUSDT",
                      "SOLUSDT", "XRPUSDT", "LTCUSDT", "LINKUSDT"}
-          if action == "apply":
-              toks = symbols.split(",")
-              if not symbols.strip() or any(t not in ALLOWED for t in toks):
-                  print(f"::error::apply symbols must be a comma list (no spaces) from {sorted(ALLOWED)}, got '{symbols}'")
-                  sys.exit(1)
-              print("validated apply:", ",".join(toks))
-          else:
-              print(f"validated: action={action}")
+          # SYMBOLS is interpolated into the SSH command for EVERY action, so it
+          # must be validated for EVERY action — a crafted `symbols` under
+          # action=revert/status is otherwise a remote-shell-injection sink.
+          # Empty is allowed for revert/status; if non-empty it must be a clean
+          # allowlisted comma-list. apply additionally REQUIRES a non-empty list.
+          toks = symbols.split(",") if symbols.strip() else []
+          if toks and any(t not in ALLOWED for t in toks):
+              print(f"::error::symbols must be a comma list (no spaces) from {sorted(ALLOWED)}, got '{symbols}'")
+              sys.exit(1)
+          if action == "apply" and not toks:
+              print("::error::apply requires a non-empty symbols list"); sys.exit(1)
+          print(f"validated: action={action} symbols={','.join(toks) or '(none)'}")
           PY
 
       - name: Apply on server

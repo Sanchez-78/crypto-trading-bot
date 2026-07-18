@@ -224,6 +224,41 @@ def test_blacklist_validates_inputs_before_ssh():
     assert "ALLOWED" in t and "not in ALLOWED" in t   # exact symbol allowlist
 
 
+def _blacklist_validator_src() -> str:
+    """Extract the embedded `python3 - "$ACTION" "$SYMBOLS" <<'PY' ... PY` body
+    and de-indent it so it can be executed as the real validator."""
+    import re
+    t = _blacklist_text()
+    m = re.search(r'python3 - "\$ACTION" "\$SYMBOLS" <<\'PY\'\n(.*?)\n\s*PY\n', t, re.S)
+    assert m, "validator heredoc not found"
+    lines = [ln[10:] if ln.startswith(" " * 10) else ln for ln in m.group(1).splitlines()]
+    return "\n".join(lines)
+
+
+def test_blacklist_validator_rejects_injection_on_every_action():
+    """Audit v5 (reviewer HIGH): SYMBOLS is interpolated into the SSH command for
+    EVERY action, so a crafted `symbols` under action=revert/status must be
+    rejected too — not just under apply."""
+    import subprocess, sys, tempfile, os
+    src = _blacklist_validator_src()
+    with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False) as f:
+        f.write(src); path = f.name
+    try:
+        run = lambda *a: subprocess.run([sys.executable, path, *a], capture_output=True, text=True).returncode
+        # the exact RCE payload from the reviewer, under revert — MUST be rejected
+        assert run("revert", "x'; touch /tmp/pwned; '") != 0
+        assert run("status", "$(reboot)") != 0
+        assert run("apply", "BTCUSDT;reboot") != 0
+        assert run("apply", "BTC USDT") != 0           # space breaks allowlist
+        # legitimate inputs still pass
+        assert run("revert", "") == 0
+        assert run("status", "") == 0
+        assert run("apply", "BTCUSDT,ETHUSDT") == 0
+        assert run("apply", "") != 0                    # apply requires a list
+    finally:
+        os.unlink(path)
+
+
 def test_blacklist_zero_position_gate_before_restart_fail_closed():
     """Audit v5: a zero-open-position gate (fail-closed, UNKNOWN=block) must run
     before the service restart, and revert the .env change if it refuses."""
