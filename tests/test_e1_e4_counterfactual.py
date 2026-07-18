@@ -116,6 +116,33 @@ def test_symbol_concentration_blocks_go(tmp_path):
     assert any("concentration" in x for x in r["reasons"])
 
 
+def test_non_stationary_edge_in_dev_only_is_no_go(tmp_path):
+    """Look-ahead guard: a strong edge in the dev period (first 80%) that DISAPPEARS
+    in the test period (last 20%) must return NO-GO — the OOS verdict comes from the
+    untouched test split, not the (good) in-sample set. A regression that reported
+    in-sample metrics as OOS, or selected on the full set, would flip this to GO."""
+    obs = []
+    syms = ("AAA", "BBB", "CCC", "DDD", "EEE")
+    n = 400
+    n_dev = int(0.8 * n)
+    for i in range(n):
+        sym = syms[i % len(syms)]
+        regime = ("BULL", "BEAR", "RANGE")[i % 3]
+        ts = 1_000_000_000_000 + i * 3_600_000
+        if i < n_dev:
+            fav = (i % 5 != 0)      # dev: 80% favorable -> strong edge
+        else:
+            fav = (i % 2 != 0)      # test: 50% favorable -> no edge
+        obs.append((_fav_first if fav else _adv_first)(f"o{i}", sym, regime, ts))
+    db = tmp_path / "s.sqlite"
+    _write_db(db, obs)
+    r = E.walk_forward(E.load_observations(str(db)))
+    # in-sample looks great; OOS on the untouched (edgeless) test split must fail
+    assert r["in_sample"]["expectancy_bps"] > 0
+    assert r["verdict"] == "NO-GO", r
+    assert r["oos"]["expectancy_bps"] <= 0 or r["oos"]["pf"] < E.PF_GATE
+
+
 def test_data_quality_filter_excludes_sparse(tmp_path):
     obs = _dataset(10, 4)
     for o in obs:

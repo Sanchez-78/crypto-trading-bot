@@ -215,14 +215,18 @@ def walk_forward(observations: List[Observation], cost: float = COST_BPS,
     hour_share, _ = _concentration(test, tp, sl, cost, lambda o: o.hour)
     regime_share, _ = _concentration(test, tp, sl, cost, lambda o: o.regime)
 
-    # per-segment sample sufficiency on the test split (by symbol)
+    # per-segment sample sufficiency on the FULL dataset (by symbol): every symbol
+    # we would trade needs enough total support to trust its contribution.
     seg_counts: Dict[str, int] = defaultdict(int)
-    for o in test:
+    for o in observations:
         seg_counts[o.symbol] += 1
+    thin_segments = sorted(s for s, c in seg_counts.items() if c < MIN_SEG)
 
     reasons: List[str] = []
     if oos["n"] < MIN_SEG:
         reasons.append(f"test split too small: {oos['n']} < {MIN_SEG}")
+    if thin_segments:
+        reasons.append(f"segments with < {MIN_SEG} observations: {thin_segments}")
     if not (oos["pf"] >= PF_GATE):
         reasons.append(f"OOS PF {oos['pf']:.3f} < {PF_GATE}")
     if not (oos["expectancy_bps"] > 0):
