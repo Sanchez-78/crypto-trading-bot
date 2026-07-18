@@ -672,6 +672,17 @@ def on_price(data):
         _first_run = False
 
     s, p = data["symbol"], data["price"]
+    # F8b observation-only (audit v5 §8): feed every tick to the shadow excursion
+    # recorder so active observers capture the forward price path. No-op unless
+    # PAPER_DATA_COLLECTION_ONLY is enabled. Placed BEFORE the blacklist gate so
+    # observers keep getting ticks regardless of signal filtering. Never opens a
+    # position or touches trading state.
+    try:
+        from src.services import shadow_excursion_recorder as _shadow
+        if _shadow.enabled():
+            _shadow.record_tick(s, float(p), int(float(data.get("ts", time.time())) * 1000))
+    except Exception:
+        pass
     # 2026-07-09: env-gated symbol blacklist (forward test). Symbol-filter analysis
     # of the inverted (mean-reversion) strategy showed BNB/XRP have anti-edge while
     # ETH/ADA/SOL/BTC show DA~62% (95% CI lower bound 54% > 50%). Skip blacklisted

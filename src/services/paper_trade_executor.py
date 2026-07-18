@@ -3852,6 +3852,27 @@ def _on_signal_created(signal: dict) -> None:
         is_blocked = ("quarantined" in decision.reason.lower() or "not_in_evidence_scope" in decision.reason.lower())
 
         if decision.strict_ev_allowed or not is_blocked:
+            # F8b observation-only (audit v5 §7/§8): when data-collection mode is on,
+            # the signal that WOULD open a position is instead recorded for the
+            # offline E1–E4 counterfactual and NO position is opened — no learning,
+            # no close, no dashboard trade metric, no real-order path.
+            try:
+                from src.services import shadow_excursion_recorder as _shadow
+                if _shadow.enabled():
+                    _ts_ms = int(float(ts) * 1000)
+                    _shadow.record_signal(
+                        observation_id=f"{symbol}_{action}_{_ts_ms}",
+                        symbol=symbol, side=action, regime=regime,
+                        signal_ts_ms=_ts_ms, entry_ref_price=float(price),
+                        features={"p0_reason": decision.reason,
+                                  "source": signal.get("learning_source")})
+                    signal["__paper_handled"] = True  # prevent RDE double-processing
+                    log.info("[SHADOW_OBSERVE] %s %s price=%s ts=%s (data-collection only, NO position)",
+                             symbol, action, price, ts)
+                    return
+            except Exception as e:
+                log.exception("[SHADOW_OBSERVE_ERROR] %s %s: %s", symbol, action, e)
+
             log.info("[SIGNAL_OPENING] %s %s price=%s ts=%s", symbol, action, price, ts)
             open_paper_position(
                 signal=signal,

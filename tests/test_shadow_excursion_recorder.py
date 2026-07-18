@@ -191,6 +191,21 @@ def test_sweep_expired_finalizes_silent_observers(tmp_path):
     assert n == [(2,)]
 
 
+def test_on_tick_auto_sweeps_silent_symbols(tmp_path):
+    """The throttled global sweep inside on_tick (clocked by the incoming tick ts)
+    finalizes an observer whose OWN symbol has gone silent, using another symbol's
+    tick as the clock — so no external scheduler is needed."""
+    rec = _rec(tmp_path, horizon_s=5)
+    t0 = 8_000_000
+    rec.record_signal("silent", "ETHUSDT", "BUY", "?", t0, 100.0)   # ETH then goes silent
+    rec.on_tick("ETHUSDT", 100.1, t0 + 100)      # seeds last_sweep, ETH observer young
+    # ADAUSDT keeps ticking; a tick past ETH's horizon must sweep the silent ETH obs
+    rec.on_tick("ADAUSDT", 50.0, t0 + 6000)
+    assert rec.active_count == 0                  # ETH observer finalized by the sweep
+    n = _query(tmp_path, "SELECT COUNT(*) FROM shadow_excursion_observations WHERE observation_id='silent'")
+    assert n == [(1,)]
+
+
 def test_no_trading_side_effects_surface():
     """The recorder must not IMPORT or CALL any order/close/learning/firebase path
     (checked via AST identifiers, so docstring prose describing what it avoids does

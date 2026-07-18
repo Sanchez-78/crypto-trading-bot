@@ -209,6 +209,11 @@ class ShadowExcursionRecorder:
         self._active: Dict[str, _Observer] = {}
         self._by_symbol: Dict[str, List[str]] = {}
         self._conn: Optional[sqlite3.Connection] = None
+        # Throttled global sweep, clocked by the incoming tick ts (see on_tick), so
+        # observers on a symbol that goes silent are still finalized without any
+        # external scheduler or wall-clock read. Sweep at most once per horizon.
+        self._sweep_interval_ms = self.horizon_ms
+        self._last_sweep_ms = 0
 
     # ── persistence ────────────────────────────────────────────────────────
     def _db(self) -> sqlite3.Connection:
@@ -285,6 +290,12 @@ class ShadowExcursionRecorder:
         """Feed a price tick. Updates every active observer for `symbol` and
         finalizes+persists any whose horizon has elapsed. In-memory hot path."""
         with self._lock:
+            # Throttled global sweep clocked by the incoming tick ts — finalizes
+            # observers whose symbol has gone silent, using ANOTHER symbol's ticks
+            # as the clock. Keeps the module self-sufficient (no external scheduler).
+            if ts_ms - self._last_sweep_ms >= self._sweep_interval_ms:
+                self._last_sweep_ms = ts_ms
+                self._sweep_locked(ts_ms)
             ids = list(self._by_symbol.get(symbol, ()))
             if not ids:
                 return
@@ -304,21 +315,24 @@ class ShadowExcursionRecorder:
                 if lst and oid in lst:
                     lst.remove(oid)
 
+    def _sweep_locked(self, now_ms: int) -> int:
+        """Finalize+persist expired observers. Caller MUST hold self._lock."""
+        done = [oid for oid, obs in self._active.items()
+                if now_ms - obs.signal_ts_ms >= obs.horizon_ms]
+        for oid in done:
+            obs = self._active.pop(oid)
+            self._persist(obs, now_ms)
+            lst = self._by_symbol.get(obs.symbol)
+            if lst and oid in lst:
+                lst.remove(oid)
+        return len(done)
+
     def sweep_expired(self, now_ms: int) -> int:
         """Finalize+persist observers whose horizon has elapsed as of now_ms, even
-        if their symbol has gone silent (no ticks drive their finalize). The
-        integration should call this periodically so a stalled feed cannot leak
-        observers unbounded. Returns the number persisted."""
+        if their symbol has gone silent. on_tick also runs this on a throttle, so
+        an external caller is optional; still exposed for shutdown/explicit sweeps."""
         with self._lock:
-            done = [oid for oid, obs in self._active.items()
-                    if now_ms - obs.signal_ts_ms >= obs.horizon_ms]
-            for oid in done:
-                obs = self._active.pop(oid)
-                self._persist(obs, now_ms)
-                lst = self._by_symbol.get(obs.symbol)
-                if lst and oid in lst:
-                    lst.remove(oid)
-            return len(done)
+            return self._sweep_locked(now_ms)
 
     def flush_all(self, now_ms: int) -> int:
         """Finalize+persist every still-active observer (e.g. on shutdown). Returns
@@ -357,7 +371,14 @@ def get_recorder() -> Optional[ShadowExcursionRecorder]:
     if _singleton is None:
         with _singleton_lock:
             if _singleton is None:
-                _singleton = ShadowExcursionRecorder()
+                rec = ShadowExcursionRecorder()
+                # Flush any still-open observers on process exit so the tail of a
+                # collection run is not lost. wall-clock is used ONLY here (exit),
+                # never in the hot path. Best-effort.
+                import atexit
+                import time as _time
+                atexit.register(lambda: rec.flush_all(int(_time.time() * 1000)))
+                _singleton = rec
     return _singleton
 
 
