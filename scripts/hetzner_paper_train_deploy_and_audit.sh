@@ -195,16 +195,60 @@ boot_sha="$(read_marker "$PROJECT_DIR/reports/running_bot_sha")"; [ -n "$boot_sh
 git fetch "$REMOTE_NAME" "$BRANCH_NAME" | tee -a "$LOG_FILE"
 remote_sha="$(git rev-parse "$REMOTE_NAME/$BRANCH_NAME")"
 
+deployed_sha="$(read_marker "$PROJECT_DIR/reports/deployed_bot_sha")"; [ -n "$deployed_sha" ] || deployed_sha="unknown"
+
+# ── Audit v5 §12: OPERATOR-APPROVAL model. This timer is READ-ONLY. It fetches,
+# classifies the pending change, validates the INCOMING code in a THROWAWAY
+# staging worktree, and NOTIFIES — it NEVER resets the live checkout and NEVER
+# restarts the trading service. Deploying is a separate MANUAL step
+# (hetzner-deploy-apply.yml) an operator triggers. A live paper position can
+# therefore never be killed, and no code is swapped under the running process.
+new_sha="$old_sha"          # the live working tree is intentionally NOT advanced
+update_available="false"
+code_impact_pending=""
+staging_compile="not_run"
 if [ "$old_sha" != "$remote_sha" ]; then
-  changed="true"
-  echo "[$RUN_TS] syncing repo $old_sha -> $remote_sha" | tee -a "$LOG_FILE"
-  git checkout "$BRANCH_NAME" | tee -a "$LOG_FILE"
-  git reset --hard "$REMOTE_NAME/$BRANCH_NAME" | tee -a "$LOG_FILE"
+  update_available="true"
+  # classify code vs docs from fetched objects (no working-tree mutation)
+  if impact="$(git diff --name-only "$old_sha" "$remote_sha" 2>/dev/null)"; then
+    code_impact_pending="$(printf '%s\n' "$impact" \
+      | grep -Ev '^(docs/|\.github/|tests/|.*\.md$|AUDIT_|EXTERNAL_|HANDOVER)' || true)"
+  fi
+  # Staging validation: compile the incoming SHA in a detached throwaway worktree
+  # so the operator learns whether it is safe to deploy — without touching live.
+  STAGING="$(mktemp -d /tmp/cm-staging.XXXXXX 2>/dev/null || echo "")"
+  if [ -n "$STAGING" ] && git worktree add --detach "$STAGING" "$remote_sha" >/dev/null 2>&1; then
+    if ( cd "$STAGING" && $PYTHON_BIN -m compileall -q src bot2 daily_log_fix_prompt_bot start.py ) >>"$LOG_FILE" 2>&1; then
+      staging_compile="ok"
+    else
+      staging_compile="FAILED"
+    fi
+    git worktree remove --force "$STAGING" >/dev/null 2>&1 || rm -rf "$STAGING" 2>/dev/null || true
+  else
+    staging_compile="worktree_error"; [ -n "$STAGING" ] && rm -rf "$STAGING" 2>/dev/null || true
+  fi
+  echo "[$RUN_TS] UPDATE AVAILABLE $old_sha -> $remote_sha (code_impact=$([ -n "$code_impact_pending" ] && echo yes || echo docs-only) staging_compile=$staging_compile) — operator deploy required (hetzner-deploy-apply.yml)" | tee -a "$LOG_FILE"
 else
   echo "[$RUN_TS] repo already up to date: $old_sha" | tee -a "$LOG_FILE"
 fi
 
-new_sha="$(git rev-parse HEAD)"
+# Operator-facing marker. It NEVER claims a deployment — it reports what is live,
+# what is ready, and what is available. (Audit v5 §4: report distinguishes
+# live_head / deployed / ready / remote_available; no "deployed" claim on fetch.)
+cat > "$PROJECT_DIR/reports/update_available.json" <<UJSON 2>/dev/null || true
+{
+  "checked_at": "$RUN_TS",
+  "live_head_sha": "$old_sha",
+  "remote_sha": "$remote_sha",
+  "deployed_bot_sha": "$deployed_sha",
+  "ready_bot_sha": "$ready_sha",
+  "boot_bot_sha": "$boot_sha",
+  "update_available": $update_available,
+  "code_impact": $([ -n "$code_impact_pending" ] && echo true || echo false),
+  "staging_compile": "$staging_compile",
+  "needs_operator_deploy": $update_available
+}
+UJSON
 
 # Compile and selected tests before any restart.
 $PYTHON_BIN -m compileall src bot2 daily_log_fix_prompt_bot start.py | tee -a "$LOG_FILE"
@@ -224,106 +268,23 @@ if [ "$RUN_FULL_TESTS" = "true" ]; then
   fi
 fi
 
-# ── F2/F3 (round 2): restart the trading process only when the HEALTHY process
-# is genuinely stale AND the change touches real code AND it is safe. Decide off
-# the READY marker; missing READY is fail-closed (restart).
-restart_needed="false"
-restart_skip_reason=""
-if [ "$ready_sha" = "unknown" ]; then
-  # FAIL-CLOSED: cannot prove a healthy process is on the current code. Restart.
-  # (Self-heals: the restarted bot publishes READY; steady state then matches.)
-  restart_needed="true"
-elif [ "$ready_sha" != "$new_sha" ]; then
-  # Healthy process is stale vs repo. Restart only if the delta touches real code
-  # — a docs/workflow/test-only change must not kill a live paper position.
-  if impact="$(git diff --name-only "$ready_sha" "$new_sha" 2>/dev/null)"; then
-    code_impact="$(printf '%s\n' "$impact" \
-      | grep -Ev '^(docs/|\.github/|tests/|.*\.md$|AUDIT_|EXTERNAL_|HANDOVER)' || true)"
-    if [ -n "$code_impact" ]; then
-      restart_needed="true"
-    else
-      restart_skip_reason="docs/workflow-only change (no code impact)"
-    fi
-  else
-    restart_needed="true"   # cannot diff (ready_sha unknown to git) -> stale -> restart
-  fi
-fi
-
-# Operator freeze: a ROOT-OWNED hold file blocks all restarts (health still runs).
-# A non-root-owned hold is untrusted and ignored; an expired TTL hold is ignored.
-HOLD_FILE="$PROJECT_DIR/.deploy_hold"
-if [ "$restart_needed" = "true" ] && [ -f "$HOLD_FILE" ]; then
-  hold_uid="$(stat -c '%u' "$HOLD_FILE" 2>/dev/null || echo -1)"
-  if [ "$hold_uid" != "0" ]; then
-    echo "[$RUN_TS] WARNING: $HOLD_FILE not root-owned (uid=$hold_uid) — IGNORING (untrusted)" | tee -a "$LOG_FILE"
-  else
-    hold_expired="$($PYTHON_BIN - "$HOLD_FILE" <<'PY' 2>/dev/null || echo false
-import json, sys, time
-try:
-    exp = json.load(open(sys.argv[1])).get("expires_at_epoch")
-    print("true" if (exp is not None and float(exp) < time.time()) else "false")
-except Exception:
-    print("false")
-PY
-)"
-    if [ "$hold_expired" = "true" ]; then
-      echo "[$RUN_TS] deploy hold present but EXPIRED — ignoring" | tee -a "$LOG_FILE"
-    else
-      restart_needed="false"
-      restart_skip_reason="root-owned deploy hold present ($HOLD_FILE)"
-    fi
-  fi
-fi
-
-# Zero-open-position gate (FAIL-CLOSED): never kill a live paper position mid-hold.
-# Parse the position state; UNKNOWN (corrupt/unreadable/odd schema) REFUSES the
-# restart rather than assuming zero.
-if [ "$restart_needed" = "true" ]; then
-  POS_JSON="$PROJECT_DIR/data/paper_open_positions.json"
-  pos_count="$($PYTHON_BIN - "$POS_JSON" <<'PY' 2>/dev/null || echo UNKNOWN
-import json, sys
-try:
-    d = json.load(open(sys.argv[1]))
-    print(len(d) if isinstance(d, (dict, list)) else "UNKNOWN")
-except FileNotFoundError:
-    print(0)
-except Exception:
-    print("UNKNOWN")
-PY
-)"
-  if [ "$pos_count" = "UNKNOWN" ]; then
-    restart_needed="false"
-    restart_skip_reason="open-position state UNKNOWN (unreadable/corrupt) — refusing restart (fail-closed)"
-  elif [ "$pos_count" != "0" ]; then
-    restart_needed="false"
-    restart_skip_reason="$pos_count open position(s) — deferring restart to next cycle"
-  fi
-fi
-
-if [ "$restart_needed" = "true" ]; then
-  echo "[$RUN_TS] restarting $SERVICE_NAME (ready $ready_sha -> $new_sha)" | tee -a "$LOG_FILE"
-  systemctl restart "$SERVICE_NAME"
-  sleep 8
-elif [ -n "$restart_skip_reason" ]; then
-  echo "[$RUN_TS] restart skipped: $restart_skip_reason (ready=$ready_sha boot=$boot_sha repo=$new_sha)" | tee -a "$LOG_FILE"
-fi
-
+# ── Audit v5 §12: READ-ONLY health check. The operator-approval timer NEVER
+# restarts the trading service and NEVER writes deployed_bot_sha (only the manual
+# deploy workflow does, after it converges). It only observes and reports so an
+# operator can decide. A stale/crash-looped process is surfaced, not auto-healed.
 if systemctl is-active --quiet "$SERVICE_NAME"; then
   service_active="true"
-  # F2/F3 (round 2): record deployed_bot_sha ONLY after the service is confirmed
-  # active AND the process has published a READY marker for the new SHA — so the
-  # marker never claims a successful deploy for a crash-looping build. Written
-  # here (post-is-active), not right after `systemctl restart`.
-  post_ready="$(read_marker "$PROJECT_DIR/reports/ready_bot_sha")"
-  if [ -n "$post_ready" ] && [ "$post_ready" = "$new_sha" ]; then
-    echo "$new_sha" > "$PROJECT_DIR/reports/deployed_bot_sha" 2>/dev/null || true
+  if [ "$update_available" = "true" ]; then
+    message="update available ($old_sha -> $remote_sha, staging_compile=$staging_compile) — run hetzner-deploy-apply.yml to deploy"
+  fi
+  if [ "$ready_sha" != "unknown" ] && [ "$ready_sha" != "$deployed_sha" ]; then
+    echo "[$RUN_TS] note: ready_sha=$ready_sha deployed_sha=$deployed_sha (operator may re-deploy to converge)" | tee -a "$LOG_FILE"
   fi
 else
   service_active="false"
   status="CRITICAL"
-  message="service is not active after deploy/audit cycle"
-  write_reports
-  exit 1
+  message="service is NOT active — timer does not auto-restart (operator-approval). Investigate or run hetzner-deploy-apply.yml."
+  echo "[$RUN_TS] CRITICAL: $SERVICE_NAME inactive; NOT auto-restarting (operator-approval model)" | tee -a "$LOG_FILE"
 fi
 
 # Always run audit/health report after deploy check if available.
@@ -357,12 +318,19 @@ else
   audit_status="skipped:not_found"
 fi
 
-status="OK"
-if [ "$changed" = "true" ]; then
-  message="deployed new main commit and ran audit/health report"
-else
-  message="no new commit; service active; audit/health report refreshed"
+# Audit v5 (reviewer): do NOT clobber a dead-service CRITICAL. In the
+# operator-approval model the report headline IS the operator's primary signal —
+# only mark OK when the service is actually active, and preserve the
+# update-available / dead-service message set above.
+if [ "$service_active" = "true" ]; then
+  status="OK"
+  if [ "$update_available" = "true" ]; then
+    message="update available ($old_sha -> $remote_sha, staging_compile=$staging_compile) — run hetzner-deploy-apply.yml to deploy"
+  else
+    message="no new commit; service active; audit/health report refreshed"
+  fi
 fi
+# else: service_active=false -> keep status=CRITICAL and the dead-service message.
 write_reports
 
 echo "[$RUN_TS] deploy/audit loop complete: $status" | tee -a "$LOG_FILE"

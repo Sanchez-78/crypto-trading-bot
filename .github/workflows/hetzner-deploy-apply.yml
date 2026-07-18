@@ -1,0 +1,209 @@
+name: Hetzner Deploy Apply (manual, gated)
+
+# Audit v5 §4/§12: OPERATOR-APPROVAL deploy. The 2h autodeploy timer is READ-ONLY
+# (fetch + staging-compile + notify, never resets live / never restarts). THIS
+# workflow is the ONLY thing that swaps the live checkout and restarts the trading
+# service, and only when an operator dispatches it.
+#
+# Gate order (all fail-closed, all BEFORE the live working tree is mutated):
+#   1. inputs validated (confirm enum + target_sha hex) before the remote shell;
+#   2. live-flag safety block (never deploy a live_real/real-orders .env);
+#   3. target SHA resolved + reachability-checked;
+#   4. STAGING worktree compile/test of the INCOMING code (fail => abort, no touch);
+#   5. zero-open-position gate (missing/corrupt = UNKNOWN = refuse);
+#   6. operator hold (root-owned + TTL) refuses;
+#   -> only now: atomic switch (git reset --hard target) + restart;
+#   7. rich READY verify (is-active AND ready_bot_sha == target within timeout);
+#   8. rollback to the previous SHA + restart on any post-switch failure.
+#
+# confirm=PLAN performs 1–5 as a DRY RUN (no switch, no restart). Use it first.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'PLAN (dry-run: validate+stage only) | DEPLOY (switch + restart)'
+        required: true
+        default: 'PLAN'
+        type: choice
+        options: ['PLAN', 'DEPLOY']
+      target_sha:
+        description: 'Full 40-hex commit to deploy. Empty = origin/main HEAD.'
+        required: false
+        default: ''
+
+jobs:
+  deploy:
+    name: Gated operator deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up SSH key and pin host key
+        env:
+          HETZNER_SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$HETZNER_SSH_KEY" > ~/.ssh/hetzner_deploy_key
+          chmod 600 ~/.ssh/hetzner_deploy_key
+          ssh-keyscan -p 22 -T 15 "$HETZNER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          [ -s ~/.ssh/known_hosts ] || { echo "host unreachable"; exit 1; }
+          chmod 600 ~/.ssh/known_hosts
+
+      # Validate BEFORE the inputs reach the remote shell (anti-injection).
+      - name: Validate inputs (fail-closed, anti-injection)
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          TARGET_SHA: ${{ inputs.target_sha }}
+        run: |
+          python3 - "$CONFIRM" "$TARGET_SHA" <<'PY'
+          import re, sys
+          confirm, target = sys.argv[1], (sys.argv[2] if len(sys.argv) > 2 else "")
+          if confirm not in ("PLAN", "DEPLOY"):
+              print(f"::error::invalid confirm '{confirm}'"); sys.exit(1)
+          if target and not re.fullmatch(r"[0-9a-fA-F]{40}", target):
+              print(f"::error::target_sha must be empty or a full 40-hex commit, got '{target}'")
+              sys.exit(1)
+          print(f"validated: confirm={confirm} target={'origin/main HEAD' if not target else target}")
+          PY
+
+      - name: Deploy on server (gated)
+        env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          HETZNER_USER: ${{ secrets.HETZNER_USER }}
+          HETZNER_PROJECT_DIR: ${{ secrets.HETZNER_PROJECT_DIR }}
+          HETZNER_SERVICE_NAME: ${{ secrets.HETZNER_SERVICE_NAME }}
+          CONFIRM: ${{ inputs.confirm }}
+          TARGET_SHA: ${{ inputs.target_sha }}
+        run: |
+          SSH_OPTS="-p 22 -i ~/.ssh/hetzner_deploy_key -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile=~/.ssh/known_hosts -o ConnectTimeout=30 -o BatchMode=yes"
+          mkdir -p artifacts
+
+          # CONFIRM (enum) and TARGET_SHA (hex or empty) were validated above, so
+          # they carry no shell metacharacters and are safe to interpolate.
+          ssh $SSH_OPTS "$HETZNER_USER@$HETZNER_HOST" \
+            "PROJECT_DIR='$HETZNER_PROJECT_DIR' SERVICE_NAME='$HETZNER_SERVICE_NAME' CONFIRM='$CONFIRM' TARGET_SHA='$TARGET_SHA' bash -s" << 'REMOTE_EOF' | tee artifacts/deploy_apply.txt
+          #!/usr/bin/env bash
+          set -euo pipefail
+          cd "$PROJECT_DIR"
+          PYTHON_BIN="${PYTHON_BIN:-python3}"
+          if [ "$(id -u)" = "0" ]; then export HOME="${HOME:-/root}"; fi
+          git config --global --get-all safe.directory 2>/dev/null | grep -qx '\*' \
+            || git config --global --add safe.directory '*' 2>/dev/null || true
+          read_marker() { { cat "$1" 2>/dev/null || true; } | tr -d '[:space:]'; }
+
+          # ── Gate 2: live-flag safety block ────────────────────────────────
+          for pair in "TRADING_MODE live_real" "ENABLE_REAL_ORDERS true" "LIVE_TRADING_CONFIRMED true"; do
+            key="${pair% *}"; bad="${pair#* }"
+            v="$(grep -E "^[[:space:]]*(export[[:space:]]+)?${key}=" .env 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '\"'"'"' ' | tr 'A-Z' 'a-z' || true)"
+            if [ "$v" = "$bad" ] || { [ "$bad" = "true" ] && { [ "$v" = "1" ] || [ "$v" = "yes" ] || [ "$v" = "on" ]; }; }; then
+              echo "CRITICAL: .env has ${key}=${v} — refusing to deploy"; exit 1
+            fi
+          done
+          echo "safety gates OK"
+
+          # ── Gate 3: resolve + reachability-check the target ───────────────
+          git fetch origin main 2>&1 | tail -2
+          if [ -n "${TARGET_SHA:-}" ]; then target="$TARGET_SHA"; else target="$(git rev-parse origin/main)"; fi
+          git cat-file -e "${target}^{commit}" 2>/dev/null || { echo "CRITICAL: target $target not reachable"; exit 1; }
+          old_sha="$(git rev-parse HEAD)"
+          echo "live=$old_sha target=$target confirm=$CONFIRM"
+
+          # ── Gate 4: STAGING compile/test of the incoming code (no live touch) ─
+          staging_ok="false"
+          STAGING="$(mktemp -d /tmp/cm-deploy.XXXXXX)"
+          if git worktree add --detach "$STAGING" "$target" >/dev/null 2>&1; then
+            if ( cd "$STAGING" && $PYTHON_BIN -m compileall -q src bot2 daily_log_fix_prompt_bot start.py ) 2>&1 | tail -5; then
+              if $PYTHON_BIN -m pytest --version >/dev/null 2>&1; then
+                ( cd "$STAGING" && $PYTHON_BIN -m pytest tests/test_paper_mode.py tests/test_app_metrics_contract.py -q ) 2>&1 | tail -8 && staging_ok="true" || staging_ok="false"
+              else
+                staging_ok="true"   # compile passed; pytest unavailable on server (CI covers it)
+              fi
+            fi
+            git worktree remove --force "$STAGING" >/dev/null 2>&1 || rm -rf "$STAGING"
+          else
+            rm -rf "$STAGING" 2>/dev/null || true
+          fi
+          [ "$staging_ok" = "true" ] || { echo "CRITICAL: staging compile/test FAILED for $target — not deploying"; exit 1; }
+          echo "staging validation OK"
+
+          # ── Gate 5: zero-open-position (FAIL-CLOSED: missing/corrupt = UNKNOWN) ─
+          pos_count="$($PYTHON_BIN - "data/paper_open_positions.json" <<'PYEOF'
+          import json, sys
+          try:
+              d = json.load(open(sys.argv[1]))
+              print(len(d) if isinstance(d, (dict, list)) else "UNKNOWN")
+          except FileNotFoundError:
+              print("UNKNOWN")
+          except Exception:
+              print("UNKNOWN")
+          PYEOF
+          )"
+          if [ "$pos_count" != "0" ]; then
+            echo "CRITICAL: open-position state = '$pos_count' (fail-closed) — not deploying"; exit 1
+          fi
+          echo "zero-position gate OK"
+
+          # ── Gate 6: operator hold (root-owned + TTL) ──────────────────────
+          HOLD_FILE="$PROJECT_DIR/.deploy_hold"
+          if [ -f "$HOLD_FILE" ]; then
+            hold_uid="$(stat -c '%u' "$HOLD_FILE" 2>/dev/null || echo -1)"
+            if [ "$hold_uid" = "0" ]; then
+              hold_expired="$($PYTHON_BIN - "$HOLD_FILE" <<'PYEOF' 2>/dev/null || echo false
+          import json, sys, time
+          try:
+              exp = json.load(open(sys.argv[1])).get("expires_at_epoch")
+              print("true" if (exp is not None and float(exp) < time.time()) else "false")
+          except Exception:
+              print("false")
+          PYEOF
+          )"
+              [ "$hold_expired" = "true" ] || { echo "CRITICAL: root-owned deploy hold active — not deploying"; exit 1; }
+            else
+              echo "WARNING: $HOLD_FILE not root-owned (uid=$hold_uid) — ignoring (untrusted)"
+            fi
+          fi
+          echo "hold gate OK"
+
+          if [ "$CONFIRM" = "PLAN" ]; then
+            echo "[DEPLOY_PLAN_OK] all gates passed for $target — DRY RUN, no switch/restart performed."
+            exit 0
+          fi
+
+          # ── Atomic switch (gated) + restart ───────────────────────────────
+          echo "[$( date -u +%FT%TZ )] switching live $old_sha -> $target and restarting"
+          git checkout main >/dev/null 2>&1 || git checkout -B main >/dev/null 2>&1 || true
+          git reset --hard "$target" 2>&1 | tail -2
+          systemctl restart "$SERVICE_NAME"
+
+          # ── Gate 7: rich READY verify (is-active AND ready_bot_sha == target) ─
+          converged="false"
+          for _ in $(seq 1 20); do
+            sleep 3
+            systemctl is-active --quiet "$SERVICE_NAME" || continue
+            rsha="$(read_marker "$PROJECT_DIR/reports/ready_bot_sha")"
+            if [ "$rsha" = "$target" ]; then converged="true"; break; fi
+          done
+
+          if [ "$converged" = "true" ]; then
+            echo "$target" > "$PROJECT_DIR/reports/deployed_bot_sha" 2>/dev/null || true
+            echo "[DEPLOY_OK] live now $target, service active, READY converged."
+            exit 0
+          fi
+
+          # ── Gate 8: rollback on failure ───────────────────────────────────
+          echo "CRITICAL: $target did not converge (is-active/READY). ROLLING BACK to $old_sha."
+          git reset --hard "$old_sha" 2>&1 | tail -2
+          systemctl restart "$SERVICE_NAME"
+          sleep 6
+          systemctl is-active --quiet "$SERVICE_NAME" && echo "[ROLLBACK_OK] restored $old_sha" || echo "[ROLLBACK_WARN] service still not active after rollback — investigate"
+          exit 1
+          REMOTE_EOF
+
+      - name: Upload deploy log
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy-apply-log
+          path: artifacts/
+          retention-days: 14
