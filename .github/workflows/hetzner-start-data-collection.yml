@@ -121,10 +121,17 @@ jobs:
           echo "applied ($ACTION): $(grep -E '^(PAPER_DATA_COLLECTION_ONLY|PAPER_SYMBOL_BLACKLIST)=' .env || echo '(neither key)')"
 
           # ── Restart + verify (auto-rollback on failure) ───────────────────
+          # POLL is-active up to ~100s: the bot's full init (warmup + hydration)
+          # takes longer than a single short sleep, so a one-shot check false-fails
+          # and rolls back a healthy start. Only roll back if it truly never comes up.
           systemctl restart "$SERVICE_NAME"
-          sleep 12
-          if [ "$(systemctl is-active "$SERVICE_NAME" 2>/dev/null || echo inactive)" != "active" ]; then
-            echo "ROLLBACK: service not active — restoring .env"
+          active="false"
+          for _ in $(seq 1 20); do
+            sleep 5
+            if systemctl is-active --quiet "$SERVICE_NAME"; then active="true"; break; fi
+          done
+          if [ "$active" != "true" ]; then
+            echo "ROLLBACK: service not active after ~100s — restoring .env"
             mv .env.bak.datacoll .env
             systemctl restart "$SERVICE_NAME"
             exit 1
