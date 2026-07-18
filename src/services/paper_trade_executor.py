@@ -3872,6 +3872,13 @@ def _on_signal_created(signal: dict) -> None:
                     return
             except Exception as e:
                 log.exception("[SHADOW_OBSERVE_ERROR] %s %s: %s", symbol, action, e)
+                # Fail toward "do not trade": if data-collection is intended, never
+                # open a position even when the recorder errored — keeps the E1–E4
+                # observation dataset clean and honors the operator's intent. Read
+                # the env directly (the recorder itself may be what raised).
+                if os.getenv("PAPER_DATA_COLLECTION_ONLY", "false").strip().lower() in ("true", "1", "yes", "on"):
+                    signal["__paper_handled"] = True
+                    return
 
             log.info("[SIGNAL_OPENING] %s %s price=%s ts=%s", symbol, action, price, ts)
             open_paper_position(

@@ -40,6 +40,22 @@ def test_entry_diversion_records_and_skips_open_when_enabled():
     assert '__paper_handled' in t[record:open_call]
 
 
+def test_entry_diversion_fail_closed_on_recorder_error():
+    """Both gates: when data-collection is enabled, a recorder error must NOT fall
+    through to open_paper_position (that would open a paper position while observing
+    and pollute the E1–E4 dataset). The except path re-checks the env flag and
+    returns, so the enabled branch is fail-closed on error too."""
+    t = EXEC.read_text(encoding="utf-8")
+    hook = t.index("shadow_excursion_recorder")
+    open_call = t.index("open_paper_position(\n", hook)
+    block = t[hook:open_call]
+    assert "except Exception" in block
+    # the env flag is re-read in the except (the recorder itself may be what raised)
+    assert "PAPER_DATA_COLLECTION_ONLY" in block
+    # both the happy path and the except path return before the open call
+    assert block.count("return") >= 2
+
+
 def test_integration_is_default_off():
     """Both hooks are guarded by _shadow.enabled(), which is false unless
     PAPER_DATA_COLLECTION_ONLY is set — so normal operation is unchanged."""
