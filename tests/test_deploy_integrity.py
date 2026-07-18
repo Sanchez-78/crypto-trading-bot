@@ -325,3 +325,21 @@ def test_firewall_external_probe_is_tcp_not_http_healthz():
     assert "SOCK_STREAM" in tail and ".connect(" in tail
     assert "AF_INET" in tail and "AF_INET6" in tail   # both families probed
     assert "/healthz" not in tail                      # not the old HTTP probe
+
+
+# ── Audit v5 §6/§13: legacy :5000 dashboard disabled by default ────────────────
+BOT2_MAIN = REPO / "bot2/main.py"
+
+
+def test_legacy_port_5000_dashboard_disabled_by_default():
+    """Audit v5 §6: the redundant :5000 stdlib dashboard (running inside the
+    trading process, publicly scanned) must NOT start unless explicitly enabled."""
+    t = BOT2_MAIN.read_text(encoding="utf-8")
+    flag = 'LEGACY_DASHBOARD_5000_ENABLED'
+    assert flag in t
+    # the run_dashboard(port=5000) start must be guarded by the flag check
+    gate = t.index(flag)
+    start = t.index("run_dashboard(port=5000)")
+    assert gate < start, "the :5000 start must be gated behind the flag"
+    # default is off: getenv default 'false'
+    assert '"LEGACY_DASHBOARD_5000_ENABLED", "false"' in t
