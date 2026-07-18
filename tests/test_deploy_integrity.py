@@ -129,7 +129,24 @@ def test_autodeploy_zero_position_gate_is_fail_closed():
     t = _autodeploy_text()
     assert "paper_open_positions.json" in t
     assert "UNKNOWN" in t and "fail-closed" in t
-    assert "deferring restart" in t
+    assert "deferring code swap/restart" in t
+
+
+def test_autodeploy_gates_run_before_working_tree_mutation():
+    """Audit F2/F3-r3: the auditor's Round-4 REJECT. `git reset --hard` mutates the
+    code the live process reads/imports, so it MUST come after the operator-hold and
+    zero-open-position gates — never before. A held/in-position server must not have
+    its working tree swapped."""
+    t = _autodeploy_text()
+    reset = t.index('git reset --hard "$REMOTE_NAME/$BRANCH_NAME"')
+    hold = t.index('HOLD_FILE="$PROJECT_DIR/.deploy_hold"')
+    pos = t.index('POS_JSON="$PROJECT_DIR/data/paper_open_positions.json"')
+    assert hold < reset, "operator-hold gate must be evaluated before git reset --hard"
+    assert pos < reset, "zero-position gate must be evaluated before git reset --hard"
+    # both gates can revoke the working-tree adoption, not just the restart
+    assert 'adopt_code="false"' in t
+    # exactly one real reset command (guard against reintroducing an early reset)
+    assert t.count('git reset --hard "$REMOTE_NAME/$BRANCH_NAME"') == 1
 
 
 def test_autodeploy_writes_deployed_marker_after_is_active_and_ready():
