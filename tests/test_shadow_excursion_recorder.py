@@ -153,6 +153,44 @@ def test_module_hooks_are_noop_when_disabled(tmp_path, monkeypatch):
     R.record_tick("ETHUSDT", 100.0, 2)   # no-op, no error
 
 
+def test_persist_works_across_threads(tmp_path):
+    """Reviewer: the cached sqlite connection may be created on a tick thread and
+    reused from the main thread (flush_all on shutdown). check_same_thread=False +
+    the lock must make that safe — without it sqlite raises ProgrammingError and
+    the observation is lost."""
+    import threading
+    rec = _rec(tmp_path, horizon_s=5)
+    t0 = 3_000_000
+
+    def worker():
+        rec.record_signal("wt", "ETHUSDT", "BUY", "?", t0, 100.0)
+        rec.on_tick("ETHUSDT", 100.1, t0 + 1000)
+        rec.on_tick("ETHUSDT", 100.2, t0 + 6000)   # finalize on THIS (worker) thread
+
+    th = threading.Thread(target=worker)
+    th.start(); th.join()
+    # now persist a second observation from the MAIN thread using the same conn
+    rec.record_signal("mt", "ADAUSDT", "BUY", "?", t0, 100.0)
+    rec.on_tick("ADAUSDT", 100.1, t0 + 1000)
+    assert rec.flush_all(t0 + 2000) == 1          # must not raise ProgrammingError
+    ids = {r[0] for r in _query(tmp_path, "SELECT observation_id FROM shadow_excursion_observations")}
+    assert ids == {"wt", "mt"}
+
+
+def test_sweep_expired_finalizes_silent_observers(tmp_path):
+    rec = _rec(tmp_path, horizon_s=5)
+    t0 = 4_000_000
+    rec.record_signal("a", "ETHUSDT", "BUY", "?", t0, 100.0)
+    rec.record_signal("b", "SOLUSDT", "BUY", "?", t0, 100.0)
+    rec.on_tick("ETHUSDT", 100.1, t0 + 1000)
+    # both symbols go silent; a periodic sweep past the horizon must finalize both
+    assert rec.sweep_expired(t0 + 1000) == 0       # not yet elapsed
+    assert rec.sweep_expired(t0 + 6000) == 2       # both elapsed -> persisted
+    assert rec.active_count == 0
+    n = _query(tmp_path, "SELECT COUNT(*) FROM shadow_excursion_observations")
+    assert n == [(2,)]
+
+
 def test_no_trading_side_effects_surface():
     """The recorder must not IMPORT or CALL any order/close/learning/firebase path
     (checked via AST identifiers, so docstring prose describing what it avoids does
@@ -171,7 +209,10 @@ def test_no_trading_side_effects_surface():
                 called.add(f.attr)
             elif isinstance(f, ast.Name):
                 called.add(f.id)
-    forbidden_imports = {"firebase_admin", "google.cloud.firestore"}
-    assert not (imported & forbidden_imports), f"recorder must not import {imported & forbidden_imports}"
-    for name in ("open_paper_position", "market_order", "close_paper_position"):
+    forbidden_substr = ("firebase", "firestore", "event_bus", "firebase_client",
+                        "paper_trade_executor", "learning")
+    for mod in imported:
+        assert not any(s in mod.lower() for s in forbidden_substr), \
+            f"recorder must not import trading/learning/firebase module {mod}"
+    for name in ("open_paper_position", "market_order", "close_paper_position", "publish"):
         assert name not in called, f"recorder must not call {name}"

@@ -216,7 +216,12 @@ class ShadowExcursionRecorder:
             d = os.path.dirname(self.db_path)
             if d:
                 os.makedirs(d, exist_ok=True)
-            self._conn = sqlite3.connect(self.db_path, timeout=10)
+            # check_same_thread=False: the connection is cached on the process and
+            # may be used from whichever thread finalizes an observation (a tick
+            # thread) or flushes on shutdown (the main thread). Our _lock already
+            # serializes every access, so cross-thread use is safe here — without
+            # this, sqlite raises ProgrammingError and the observation is lost.
+            self._conn = sqlite3.connect(self.db_path, timeout=10, check_same_thread=False)
             self._conn.executescript(_SCHEMA)
             self._conn.commit()
         return self._conn
@@ -298,6 +303,22 @@ class ShadowExcursionRecorder:
                 lst = self._by_symbol.get(symbol)
                 if lst and oid in lst:
                     lst.remove(oid)
+
+    def sweep_expired(self, now_ms: int) -> int:
+        """Finalize+persist observers whose horizon has elapsed as of now_ms, even
+        if their symbol has gone silent (no ticks drive their finalize). The
+        integration should call this periodically so a stalled feed cannot leak
+        observers unbounded. Returns the number persisted."""
+        with self._lock:
+            done = [oid for oid, obs in self._active.items()
+                    if now_ms - obs.signal_ts_ms >= obs.horizon_ms]
+            for oid in done:
+                obs = self._active.pop(oid)
+                self._persist(obs, now_ms)
+                lst = self._by_symbol.get(obs.symbol)
+                if lst and oid in lst:
+                    lst.remove(oid)
+            return len(done)
 
     def flush_all(self, now_ms: int) -> int:
         """Finalize+persist every still-active observer (e.g. on shutdown). Returns
