@@ -86,60 +86,88 @@ def test_deploy_is_dispatch_only_no_push_trigger():
     assert "workflow_dispatch" in on
 
 
-# ── Audit F2/F3: autodeploy script hardening (SHA drift + safe restart) ────────
+# ── Audit v5 §4/§12: operator-approval deploy model ───────────────────────────
+# The 2h autodeploy timer is now READ-ONLY (fetch + staging-compile + notify). A
+# separate MANUAL workflow performs the gated switch + restart.
 AUTODEPLOY = REPO / "scripts/hetzner_paper_train_deploy_and_audit.sh"
+MANUAL_DEPLOY = REPO / ".github/workflows/hetzner-deploy-apply.yml"
 
 
 def _autodeploy_text() -> str:
     return AUTODEPLOY.read_text(encoding="utf-8")
 
 
-def test_autodeploy_decides_restart_off_ready_marker():
+def _manual_deploy_text() -> str:
+    return MANUAL_DEPLOY.read_text(encoding="utf-8")
+
+
+def test_autodeploy_timer_is_read_only():
+    """Audit v5 §12: the timer must NEVER reset the live checkout or restart the
+    trading service — deployment is a separate manual, operator-triggered step."""
     t = _autodeploy_text()
-    # restart decision keys off the READY marker (healthy process), not repo HEAD
-    assert "reports/ready_bot_sha" in t
-    assert "ready_sha" in t
-    assert 'restart_needed="true"' in t
+    assert "git reset --hard" not in t, "timer must not reset the live working tree"
+    assert "systemctl restart" not in t, "timer must not restart the trading service"
+    assert "READ-ONLY" in t
 
 
-def test_autodeploy_fail_closed_on_missing_ready_marker():
+def test_autodeploy_timer_validates_incoming_code_in_staging_worktree():
+    """Audit v5 scenario 2: the incoming code is compiled in a THROWAWAY worktree,
+    not by mutating the live tree."""
     t = _autodeploy_text()
-    # missing READY marker must fail-closed (restart), not skip
-    idx = t.index('if [ "$ready_sha" = "unknown" ]; then')
-    tail = t[idx:idx + 300]
-    assert 'restart_needed="true"' in tail
-    assert "FAIL-CLOSED" in tail
+    assert "git worktree add --detach" in t
+    assert "staging_compile" in t
 
 
-def test_autodeploy_has_code_impact_gate():
+def test_autodeploy_timer_reports_update_not_deployment():
+    """Audit v5 §4: the timer publishes an 'update available' marker and never
+    writes deployed_bot_sha (which would falsely claim a deployment)."""
     t = _autodeploy_text()
-    assert "git diff --name-only" in t
-    assert "no code impact" in t
+    assert "update_available.json" in t
+    assert '> "$PROJECT_DIR/reports/deployed_bot_sha"' not in t  # timer never writes it
+    # it still reports service state (read-only health), without restarting
+    assert "is-active --quiet" in t
 
 
-def test_autodeploy_hold_file_is_root_owned_checked():
-    t = _autodeploy_text()
-    assert ".deploy_hold" in t
-    assert "stat -c '%u'" in t          # root-ownership check
-    assert "not root-owned" in t
-    assert "expires_at_epoch" in t      # TTL support
+# ── manual gated deploy workflow ──────────────────────────────────────────────
+def test_manual_deploy_validates_inputs_before_ssh():
+    t = _manual_deploy_text()
+    doc = yaml.safe_load(t)
+    on = doc.get("on") or doc.get(True)
+    assert "workflow_dispatch" in on and "push" not in on
+    assert t.index("Validate inputs") < t.index("Deploy on server")
+    assert "[0-9a-fA-F]{40}" in t          # target_sha must be a full hex commit
 
 
-def test_autodeploy_zero_position_gate_is_fail_closed():
-    t = _autodeploy_text()
-    assert "paper_open_positions.json" in t
-    assert "UNKNOWN" in t and "fail-closed" in t
-    assert "deferring restart" in t
+def test_manual_deploy_all_gates_before_switch():
+    """Staging compile, zero-position (UNKNOWN=block) and operator hold must all be
+    evaluated BEFORE the live `git reset --hard` switch."""
+    t = _manual_deploy_text()
+    switch = t.index('git reset --hard "$target"')
+    assert t.index("git worktree add --detach") < switch      # staging compile first
+    assert t.index("paper_open_positions.json") < switch      # zero-position gate first
+    assert t.index("deploy hold active") < switch             # operator hold first
+    assert "UNKNOWN" in t and 'print("UNKNOWN")' in t          # missing state = block
+    assert "staging compile/test FAILED" in t                 # abort on staging failure
 
 
-def test_autodeploy_writes_deployed_marker_after_is_active_and_ready():
-    t = _autodeploy_text()
-    assert "reports/deployed_bot_sha" in t
-    # deployed marker write must come AFTER the is-active check
-    assert t.index("is-active --quiet") < t.index(
-        'echo "$new_sha" > "$PROJECT_DIR/reports/deployed_bot_sha"')
-    # and gated on READY convergence
-    assert 'post_ready' in t
+def test_manual_deploy_rich_ready_verify_and_rollback():
+    """Deploy must verify is-active AND ready_bot_sha == target, and roll back to
+    the previous SHA on failure."""
+    t = _manual_deploy_text()
+    assert "ready_bot_sha" in t and "converged" in t
+    assert "ROLLING BACK" in t
+    assert 'git reset --hard "$old_sha"' in t                 # rollback to previous
+    # deployed marker only written after convergence
+    assert t.index("converged=\"true\"") < t.index('> "$PROJECT_DIR/reports/deployed_bot_sha"')
+
+
+def test_manual_deploy_plan_mode_is_dry_run():
+    """confirm=PLAN validates + stages but performs no switch/restart."""
+    t = _manual_deploy_text()
+    assert "[DEPLOY_PLAN_OK]" in t
+    plan = t.index("[DEPLOY_PLAN_OK]")
+    switch = t.index('git reset --hard "$target"')
+    assert plan < switch, "PLAN dry-run must exit before the switch"
 
 
 # ── Audit F10: dashboard firewall workflow verification + rollback ─────────────
