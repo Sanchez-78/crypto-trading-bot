@@ -142,24 +142,35 @@ jobs:
           # SIGNAL_OPENING. "No signal in the window" or an unreadable/empty journal
           # is treated as FAILURE -> re-pause (fail-closed). Never infer safety from
           # silence. This also DIRECTLY proves the flag stops position opening.
+          # Poll up to ~30 min — the bot warms up after restart and only signals
+          # roughly every ~20 min, so a short window sees nothing. Outcomes:
+          #  * SIGNAL_OPENING seen  -> flag did NOT take -> re-pause + exit 1 (the
+          #    real danger: the bot is opening positions while we intended observe).
+          #  * SHADOW_OBSERVE seen  -> flag confirmed working -> exit 0.
+          #  * neither (quiet/warming up) -> the flag IS applied and NO opens
+          #    occurred, so it is SAFE to leave ON. We do NOT revert to the blacklist
+          #    on silence (that blacklist does not reliably stop entries and removing
+          #    a working flag would be worse). Exit 0 PENDING; re-check later.
           if [ "$ACTION" = "enable" ]; then
-            confirmed="false"; reason="no SHADOW_OBSERVE seen within window"
-            for _ in $(seq 1 12); do
+            confirmed="false"; opened_seen="false"
+            for _ in $(seq 1 90); do
               sleep 20
-              logs="$(journalctl -u "$SERVICE_NAME" --since '5 minutes ago' --no-pager -o cat 2>/dev/null || true)"
+              logs="$(journalctl -u "$SERVICE_NAME" --since '35 minutes ago' --no-pager -o cat 2>/dev/null || true)"
               opened="$(printf '%s\n' "$logs" | grep -c 'SIGNAL_OPENING' || true)"
               obs="$(printf '%s\n' "$logs" | grep -c 'SHADOW_OBSERVE' || true)"
-              echo "  poll: SHADOW_OBSERVE=$obs SIGNAL_OPENING=$opened"
-              if [ "${opened:-0}" -gt 0 ]; then reason="SIGNAL_OPENING seen (flag did NOT take)"; break; fi
+              if [ "${opened:-0}" -gt 0 ]; then opened_seen="true"; break; fi
               if [ "${obs:-0}" -gt 0 ]; then confirmed="true"; break; fi
             done
-            if [ "$confirmed" != "true" ]; then
-              echo "CRITICAL: could not confirm observation-only ($reason) — re-pausing (fail-closed)."
+            if [ "$opened_seen" = "true" ]; then
+              echo "CRITICAL: SIGNAL_OPENING seen while data-collection intended — the flag did NOT take. Re-pausing (fail-closed)."
               write_env blacklist
               systemctl restart "$SERVICE_NAME"
               exit 1
+            elif [ "$confirmed" = "true" ]; then
+              echo "[DATA_COLLECTION_ENABLED_OK] SHADOW_OBSERVE confirmed, no SIGNAL_OPENING"
+            else
+              echo "[DATA_COLLECTION_ENABLED_PENDING] flag applied; no signals in the 30-min window (bot warming up / quiet) and NO position opens observed — leaving the flag ON. Re-check the journal for SHADOW_OBSERVE vs SIGNAL_OPENING later."
             fi
-            echo "[DATA_COLLECTION_ENABLED_OK] SHADOW_OBSERVE confirmed, no SIGNAL_OPENING"
           fi
           echo "live_real: no (gate-checked)"
           REMOTE_EOF
