@@ -103,17 +103,22 @@ jobs:
           fi
           echo "zero-position gate OK"
 
-          # ── Atomic .env edit: both keys written together ──────────────────
+          # Atomic .env writer: strip both keys (matching the SAME variants as the
+          # safety gate: export/indented) then append the desired one into a temp
+          # file and `mv` it into place — a single rename, so a crash mid-edit can
+          # never leave the blacklist gone AND the flag unset on disk.
+          write_env() {  # $1 = "flag" (enable) | "blacklist" (pause)
+            local t; t="$(mktemp "$PROJECT_DIR/.env.new.XXXXXX")"
+            grep -vE '^[[:space:]]*(export[[:space:]]+)?(PAPER_DATA_COLLECTION_ONLY|PAPER_SYMBOL_BLACKLIST)=' .env > "$t" || true
+            if [ "$1" = "flag" ]; then echo "PAPER_DATA_COLLECTION_ONLY=1" >> "$t"
+            else echo "PAPER_SYMBOL_BLACKLIST=$BLACKLIST_ALL" >> "$t"; fi
+            chmod --reference=.env "$t" 2>/dev/null || true
+            mv "$t" .env
+          }
+
           cp .env .env.bak.datacoll
-          sed -i '/^PAPER_DATA_COLLECTION_ONLY=/d; /^PAPER_SYMBOL_BLACKLIST=/d' .env
-          if [ "$ACTION" = "enable" ]; then
-            echo "PAPER_DATA_COLLECTION_ONLY=1" >> .env
-            # blacklist intentionally NOT re-added -> signals fire, diverted to observe
-            echo "ENABLED: PAPER_DATA_COLLECTION_ONLY=1, blacklist cleared (observation-only)"
-          else
-            echo "PAPER_SYMBOL_BLACKLIST=$BLACKLIST_ALL" >> .env
-            echo "DISABLED: data-collection off, full-symbol blacklist re-applied (paused)"
-          fi
+          if [ "$ACTION" = "enable" ]; then write_env flag; else write_env blacklist; fi
+          echo "applied ($ACTION): $(grep -E '^(PAPER_DATA_COLLECTION_ONLY|PAPER_SYMBOL_BLACKLIST)=' .env || echo '(neither key)')"
 
           # ── Restart + verify (auto-rollback on failure) ───────────────────
           systemctl restart "$SERVICE_NAME"
@@ -125,20 +130,29 @@ jobs:
             exit 1
           fi
 
-          # ── Post-enable observation verification ──────────────────────────
+          # ── Post-enable verification: POSITIVE confirmation required ───────
+          # Poll up to ~4 min. PASS only if SHADOW_OBSERVE is positively seen AND no
+          # SIGNAL_OPENING. "No signal in the window" or an unreadable/empty journal
+          # is treated as FAILURE -> re-pause (fail-closed). Never infer safety from
+          # silence. This also DIRECTLY proves the flag stops position opening.
           if [ "$ACTION" = "enable" ]; then
-            sleep 20
-            obs="$(journalctl -u "$SERVICE_NAME" --since '90 seconds ago' --no-pager 2>/dev/null | grep -c 'SHADOW_OBSERVE' || true)"
-            opened="$(journalctl -u "$SERVICE_NAME" --since '90 seconds ago' --no-pager 2>/dev/null | grep -c 'SIGNAL_OPENING' || true)"
-            echo "post-enable: SHADOW_OBSERVE=$obs  SIGNAL_OPENING=$opened"
-            if [ "$opened" -gt 0 ]; then
-              echo "CRITICAL: SIGNAL_OPENING seen while data-collection intended — the flag did not take. Re-pausing (fail-closed)."
-              sed -i '/^PAPER_DATA_COLLECTION_ONLY=/d; /^PAPER_SYMBOL_BLACKLIST=/d' .env
-              echo "PAPER_SYMBOL_BLACKLIST=$BLACKLIST_ALL" >> .env
+            confirmed="false"; reason="no SHADOW_OBSERVE seen within window"
+            for _ in $(seq 1 12); do
+              sleep 20
+              logs="$(journalctl -u "$SERVICE_NAME" --since '5 minutes ago' --no-pager -o cat 2>/dev/null || true)"
+              opened="$(printf '%s\n' "$logs" | grep -c 'SIGNAL_OPENING' || true)"
+              obs="$(printf '%s\n' "$logs" | grep -c 'SHADOW_OBSERVE' || true)"
+              echo "  poll: SHADOW_OBSERVE=$obs SIGNAL_OPENING=$opened"
+              if [ "${opened:-0}" -gt 0 ]; then reason="SIGNAL_OPENING seen (flag did NOT take)"; break; fi
+              if [ "${obs:-0}" -gt 0 ]; then confirmed="true"; break; fi
+            done
+            if [ "$confirmed" != "true" ]; then
+              echo "CRITICAL: could not confirm observation-only ($reason) — re-pausing (fail-closed)."
+              write_env blacklist
               systemctl restart "$SERVICE_NAME"
               exit 1
             fi
-            echo "[DATA_COLLECTION_ENABLED_OK] observing without opening positions"
+            echo "[DATA_COLLECTION_ENABLED_OK] SHADOW_OBSERVE confirmed, no SIGNAL_OPENING"
           fi
           echo "live_real: no (gate-checked)"
           REMOTE_EOF
