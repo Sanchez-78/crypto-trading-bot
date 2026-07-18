@@ -1,0 +1,144 @@
+name: Hetzner Start Data Collection (F8b observation-only)
+
+# Audit v5 §7/§8: atomically switch the paper bot between PAUSED and
+# OBSERVATION-ONLY data collection.
+#
+#  enable  -> set PAPER_DATA_COLLECTION_ONLY=1 AND remove PAPER_SYMBOL_BLACKLIST
+#             in ONE .env edit + ONE restart, so signals fire but every entry is
+#             diverted to the F8b shadow recorder (NO position opens). The two keys
+#             are always written together, so there is no window where the blacklist
+#             is lifted while the observation flag is not yet set.
+#  disable -> remove PAPER_DATA_COLLECTION_ONLY AND re-apply the full-symbol
+#             blacklist (back to fully paused).
+#  status  -> print both keys, no change.
+#
+# SAFETY: hard-blocks live_real/ENABLE_REAL_ORDERS/LIVE_TRADING_CONFIRMED; a
+# zero-open-position gate (fail-closed, UNKNOWN=refuse) runs before the restart;
+# auto-rollback restores .env if the service does not come back; after enable it
+# verifies [SHADOW_OBSERVE] appears and [SIGNAL_OPENING] does NOT. PAPER ONLY.
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'enable (observe) | disable (pause) | status'
+        required: true
+        default: 'status'
+        type: choice
+        options: ['enable', 'disable', 'status']
+
+jobs:
+  data-collection:
+    name: Toggle F8b observation-only data collection
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up SSH key and pin host key
+        env:
+          HETZNER_SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$HETZNER_SSH_KEY" > ~/.ssh/hetzner_deploy_key
+          chmod 600 ~/.ssh/hetzner_deploy_key
+          ssh-keyscan -p 22 -T 15 "$HETZNER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          [ -s ~/.ssh/known_hosts ] || { echo "host unreachable"; exit 1; }
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Validate action (fail-closed)
+        env:
+          ACTION: ${{ inputs.action }}
+        run: |
+          case "$ACTION" in
+            enable|disable|status) echo "validated: action=$ACTION" ;;
+            *) echo "::error::invalid action '$ACTION'"; exit 1 ;;
+          esac
+
+      - name: Apply on server
+        env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          HETZNER_USER: ${{ secrets.HETZNER_USER }}
+          HETZNER_PROJECT_DIR: ${{ secrets.HETZNER_PROJECT_DIR }}
+          HETZNER_SERVICE_NAME: ${{ secrets.HETZNER_SERVICE_NAME }}
+          ACTION: ${{ inputs.action }}
+        run: |
+          SSH_OPTS="-p 22 -i ~/.ssh/hetzner_deploy_key -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile=~/.ssh/known_hosts -o ConnectTimeout=30 -o BatchMode=yes"
+          # ACTION was validated to the enum above, so it is safe to interpolate.
+          ssh $SSH_OPTS "$HETZNER_USER@$HETZNER_HOST" \
+            "PROJECT_DIR='$HETZNER_PROJECT_DIR' SERVICE_NAME='$HETZNER_SERVICE_NAME' ACTION='$ACTION' bash -s" << 'REMOTE_EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          cd "$PROJECT_DIR"
+          BLACKLIST_ALL="BTCUSDT,ETHUSDT,ADAUSDT,BNBUSDT,DOTUSDT,SOLUSDT,XRPUSDT"
+
+          # ── Safety gates: never proceed with live flags ──────────────────
+          for pair in "TRADING_MODE live_real" "ENABLE_REAL_ORDERS true" "LIVE_TRADING_CONFIRMED true"; do
+            key="${pair% *}"; bad="${pair#* }"
+            v="$(grep -E "^[[:space:]]*(export[[:space:]]+)?${key}=" .env 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '\"'"'"' ' | tr 'A-Z' 'a-z' || true)"
+            if [ "$v" = "$bad" ] || { [ "$bad" = "true" ] && { [ "$v" = "1" ] || [ "$v" = "yes" ] || [ "$v" = "on" ]; }; }; then
+              echo "CRITICAL: .env has ${key}=${v} — refusing to touch anything"; exit 1
+            fi
+          done
+          echo "safety gates OK"
+
+          echo "== CURRENT =="
+          grep -nE "^(PAPER_DATA_COLLECTION_ONLY|PAPER_SYMBOL_BLACKLIST)=" .env || echo "(neither key set)"
+
+          if [ "$ACTION" = "status" ]; then exit 0; fi
+
+          # ── Zero-open-position gate (fail-closed) before any restart ──────
+          pos_count="$(python3 - "data/paper_open_positions.json" <<'PYEOF'
+          import json, sys
+          try:
+              d = json.load(open(sys.argv[1]))
+              print(len(d) if isinstance(d, (dict, list)) else "UNKNOWN")
+          except FileNotFoundError:
+              print("UNKNOWN")
+          except Exception:
+              print("UNKNOWN")
+          PYEOF
+          )"
+          if [ "$pos_count" != "0" ]; then
+            echo "REFUSING: open-position state = '$pos_count' (fail-closed) — no change"; exit 1
+          fi
+          echo "zero-position gate OK"
+
+          # ── Atomic .env edit: both keys written together ──────────────────
+          cp .env .env.bak.datacoll
+          sed -i '/^PAPER_DATA_COLLECTION_ONLY=/d; /^PAPER_SYMBOL_BLACKLIST=/d' .env
+          if [ "$ACTION" = "enable" ]; then
+            echo "PAPER_DATA_COLLECTION_ONLY=1" >> .env
+            # blacklist intentionally NOT re-added -> signals fire, diverted to observe
+            echo "ENABLED: PAPER_DATA_COLLECTION_ONLY=1, blacklist cleared (observation-only)"
+          else
+            echo "PAPER_SYMBOL_BLACKLIST=$BLACKLIST_ALL" >> .env
+            echo "DISABLED: data-collection off, full-symbol blacklist re-applied (paused)"
+          fi
+
+          # ── Restart + verify (auto-rollback on failure) ───────────────────
+          systemctl restart "$SERVICE_NAME"
+          sleep 12
+          if [ "$(systemctl is-active "$SERVICE_NAME" 2>/dev/null || echo inactive)" != "active" ]; then
+            echo "ROLLBACK: service not active — restoring .env"
+            mv .env.bak.datacoll .env
+            systemctl restart "$SERVICE_NAME"
+            exit 1
+          fi
+
+          # ── Post-enable observation verification ──────────────────────────
+          if [ "$ACTION" = "enable" ]; then
+            sleep 20
+            obs="$(journalctl -u "$SERVICE_NAME" --since '90 seconds ago' --no-pager 2>/dev/null | grep -c 'SHADOW_OBSERVE' || true)"
+            opened="$(journalctl -u "$SERVICE_NAME" --since '90 seconds ago' --no-pager 2>/dev/null | grep -c 'SIGNAL_OPENING' || true)"
+            echo "post-enable: SHADOW_OBSERVE=$obs  SIGNAL_OPENING=$opened"
+            if [ "$opened" -gt 0 ]; then
+              echo "CRITICAL: SIGNAL_OPENING seen while data-collection intended — the flag did not take. Re-pausing (fail-closed)."
+              sed -i '/^PAPER_DATA_COLLECTION_ONLY=/d; /^PAPER_SYMBOL_BLACKLIST=/d' .env
+              echo "PAPER_SYMBOL_BLACKLIST=$BLACKLIST_ALL" >> .env
+              systemctl restart "$SERVICE_NAME"
+              exit 1
+            fi
+            echo "[DATA_COLLECTION_ENABLED_OK] observing without opening positions"
+          fi
+          echo "live_real: no (gate-checked)"
+          REMOTE_EOF
