@@ -5,7 +5,7 @@
 ## ⭐ ROUND 4/5 STATUS (2026-07-18) — authoritative; supersedes everything below
 
 > **Deployed SHA on server:** `1eba962` (autodeploy 2h). **REAL trading = NO-GO (unchanged).** Paper-only, **trading PAUSED** (`PAPER_SYMBOL_BLACKLIST` = all 7 symbols → `signal_generator.py:682` returns → 0 new entries), `open_positions=0`.
-> Pairs with `EXTERNAL_AUDIT_PROMPT_v5.md` (+ external report v4).
+> Pairs with `EXTERNAL_AUDIT_PROMPT_v5.md` (+ external report v5, remediation below).
 
 ### Round-4 remediation
 | Finding | R4 verdict | R5 status | PR | Gate |
@@ -21,6 +21,21 @@
 
 ### Runtime (health-536, server `1eba962`)
 - F2/F3 mechanism live: `repo=ready=boot=1a72e42`, `deployed=5a26731` (marker lag), `deploy_hold absent`, owner uid 999 (non-root). Code-impact gate correctly skipped restart for workflow-only #77/#78. Pause confirmed (mode neutral, 0 entries).
+
+### Round-5 external report (`CryptoMaster_EXTERNAL_AUDIT_REPORT_v5`) — remediation
+> **Cost correction:** `closed_trades.pnl_pct` is already cost-inclusive (net) — the clean 162-row subset is **−0.77 bps/trade AFTER costs** (not −18.77). PF 0.924 < 1; still no edge. Recent windows PF 0.27–0.43.
+
+| v5 finding | verdict | remediation | PR | Gate |
+|-----------|---------|-------------|----|----|
+| **F10 external probe** | REOPENED (`curl -f /healthz` mis-reads 404 as refused) | raw **TCP-connect** probe, IPv4+IPv6 separately, fail-closed | **#81 merged** | reviewer APPROVE |
+| **Blacklist workflow** | NEW HIGH (raw `SYMBOLS`→SSH/.env RCE; restart w/o gate) | validate action enum + exact symbol allowlist **for every action** (revert/status RCE closed); zero-position gate (UNKNOWN=refuse) before restart | **#81 merged** | reviewer REJECT→fix→APPROVE (executable injection test) |
+| **F2/F3-r3 (#79)** | REJECT (4 scenarios) | **superseded by operator-approval model:** read-only timer (fetch+staging-worktree-compile+notify, never reset/restart); new `hetzner-deploy-apply.yml` gated switch (staging compile→zero-position UNKNOWN→hold→switch→rich READY→rollback), PLAN dry-run | **#82** | reviewer REJECT (dead-svc OK clobber)→fix→**APPROVE** |
+| **Port 5000 dashboard** | disable | gated behind `LEGACY_DASHBOARD_5000_ENABLED` (default OFF); :5001 Flask untouched | **#83** | self-verified |
+| **F8b recorder** | GO (mandatory for E1–E4) | `shadow_excursion_recorder.py`: in-memory 1s directional path + first-crossing ladder, persist once to separate sqlite (`shadow_*` tables), default-OFF, no trading side effects; thread-safe persist + TTL sweep | **#84** | reviewer APPROVE + integration fixes |
+
+**Chain:** #77 (F10-r2) → #78 (health CSV) → #80 (v5 prompt) → **#81 (F10-r3 + blacklist) merged** → #82 (deploy model) → #83 (port 5000) → #84 (F8b recorder) — #82–#84 await operator merge.
+
+**Still operator/data/time-gated (v5 §10–15, NOT autonomous):** merge #82–#84 + deploy via `hetzner-deploy-apply.yml`; wire F8b into per-tick path (follow-up PR, runtime-verified) + enable `PAPER_DATA_COLLECTION_ONLY=1`; collect ≥500 shadow observations / ≥14 days / ≥100 per segment; offline E1–E4 walk-forward (OOS PF ≥1.20, expectancy >0 after 18bps, stress 22–25bps, no symbol >40%); then ONE gated paper forward test. **REAL = NO-GO.**
 
 ---
 
