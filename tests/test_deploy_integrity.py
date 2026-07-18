@@ -128,6 +128,20 @@ def test_autodeploy_timer_reports_update_not_deployment():
     assert "is-active --quiet" in t
 
 
+def test_autodeploy_timer_dead_service_stays_critical():
+    """Audit v5 (reviewer): the read-only timer's report headline is the operator's
+    primary signal, so a DEAD service must keep status=CRITICAL — the tail
+    status=OK must be guarded by service_active=true, never unconditional."""
+    t = _autodeploy_text()
+    # the tail OK is wrapped directly by the service_active guard
+    assert 'if [ "$service_active" = "true" ]; then\n  status="OK"' in t
+    # no unconditional `status="OK"` at column 0 (would clobber CRITICAL)
+    assert "\nstatus=\"OK\"" not in t
+    # the dead-service branch sets CRITICAL and does not exit (read-only), so the
+    # guard is what preserves it
+    assert 'service is NOT active' in t and 'status="CRITICAL"' in t
+
+
 # ── manual gated deploy workflow ──────────────────────────────────────────────
 def test_manual_deploy_validates_inputs_before_ssh():
     t = _manual_deploy_text()

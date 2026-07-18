@@ -318,12 +318,19 @@ else
   audit_status="skipped:not_found"
 fi
 
-status="OK"
-if [ "$changed" = "true" ]; then
-  message="deployed new main commit and ran audit/health report"
-else
-  message="no new commit; service active; audit/health report refreshed"
+# Audit v5 (reviewer): do NOT clobber a dead-service CRITICAL. In the
+# operator-approval model the report headline IS the operator's primary signal —
+# only mark OK when the service is actually active, and preserve the
+# update-available / dead-service message set above.
+if [ "$service_active" = "true" ]; then
+  status="OK"
+  if [ "$update_available" = "true" ]; then
+    message="update available ($old_sha -> $remote_sha, staging_compile=$staging_compile) — run hetzner-deploy-apply.yml to deploy"
+  else
+    message="no new commit; service active; audit/health report refreshed"
+  fi
 fi
+# else: service_active=false -> keep status=CRITICAL and the dead-service message.
 write_reports
 
 echo "[$RUN_TS] deploy/audit loop complete: $status" | tee -a "$LOG_FILE"
