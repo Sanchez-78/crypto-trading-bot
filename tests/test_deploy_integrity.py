@@ -204,3 +204,47 @@ def test_firewall_verifies_active_and_ipv4_ipv6_and_external_probe():
     assert "(v6)" in t                               # IPv6 rule check
     assert "External public-access probe" in t       # runner-side external probe
     assert "STILL REACHABLE" in t                     # fail-closed if reachable
+
+
+# ── Audit v5: blacklist workflow hardening (injection + zero-position gate) ────
+BLACKLIST = REPO / ".github/workflows/hetzner-apply-symbol-blacklist.yml"
+
+
+def _blacklist_text() -> str:
+    return BLACKLIST.read_text(encoding="utf-8")
+
+
+def test_blacklist_validates_inputs_before_ssh():
+    """Audit v5 §15 (HIGH): action/symbols must be validated (enum + exact symbol
+    allowlist) BEFORE the SSH step — no raw input reaches the remote shell/.env."""
+    t = _blacklist_text()
+    validate = t.index("Validate inputs")
+    ssh_step = t.index("Apply on server")
+    assert validate < ssh_step, "input validation must precede the SSH step"
+    assert "ALLOWED" in t and "not in ALLOWED" in t   # exact symbol allowlist
+
+
+def test_blacklist_zero_position_gate_before_restart_fail_closed():
+    """Audit v5: a zero-open-position gate (fail-closed, UNKNOWN=block) must run
+    before the service restart, and revert the .env change if it refuses."""
+    t = _blacklist_text()
+    gate = t.index("paper_open_positions.json")
+    restart = t.index('systemctl restart "$SERVICE_NAME"')
+    assert gate < restart, "zero-position gate must run before the restart"
+    assert "UNKNOWN" in t and "REFUSING restart" in t
+    # missing state file is UNKNOWN (block), not silently treated as zero
+    assert 'print("UNKNOWN")' in t
+
+
+def test_firewall_external_probe_is_tcp_not_http_healthz():
+    """Audit F10-r3 (external report v5): the external probe must test the raw TCP
+    connection, NOT an HTTP 2xx. A `curl -f .../healthz` mis-reports an OPEN port
+    that returns 404 (the legacy :5000 dashboard has no /healthz) as 'refused'.
+    A socket connect probing IPv4 AND IPv6 separately is the correct signal."""
+    t = _firewall_text()
+    probe = t.index("External public-access probe")
+    tail = t[probe:probe + 1600]
+    # TCP connect, not an HTTP-status check, in the external probe step
+    assert "SOCK_STREAM" in tail and ".connect(" in tail
+    assert "AF_INET" in tail and "AF_INET6" in tail   # both families probed
+    assert "/healthz" not in tail                      # not the old HTTP probe

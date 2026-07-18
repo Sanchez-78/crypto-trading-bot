@@ -179,10 +179,16 @@ jobs:
           echo "[FIREWALL_APPLIED_OK ports=$PORTS]"
           REMOTE_EOF
 
-      # Audit F10: external vantage-point probe. From the GitHub runner (a public
-      # network location, NOT loopback and NOT the allow CIDR), the port MUST be
-      # refused/timed-out after APPLY. If it CONNECTS, the firewall isn't blocking
-      # public access — fail the workflow (fail-closed).
+      # Audit F10-r3 (external report v5): external vantage-point probe. From the
+      # GitHub runner (a public network location, NOT loopback and NOT the allow
+      # CIDR), the port MUST be refused/timed-out after APPLY. If a TCP connection
+      # ESTABLISHES, the firewall isn't blocking public access — fail (fail-closed).
+      #
+      # r3 FIX: the probe now tests the raw TCP CONNECTION, not an HTTP 2xx. The
+      # old `curl -f .../healthz` failed on any non-2xx (e.g. the legacy :5000
+      # dashboard has no /healthz and returns 404), so an OPEN public port was
+      # mis-reported as "refused". A TCP connect is the correct signal, and IPv4
+      # and IPv6 are probed SEPARATELY (a v6-only exposure must not hide behind v4).
       - name: External public-access probe (must be refused after APPLY)
         if: ${{ success() && inputs.confirm == 'APPLY_FIREWALL' }}
         env:
@@ -191,12 +197,36 @@ jobs:
         run: |
           fail=0
           for p in ${PORTS_INPUT:-5000}; do
-            echo "Probing http://$HETZNER_HOST:$p/ from the public runner (must NOT connect)..."
-            if curl -fsS --max-time 12 "http://$HETZNER_HOST:$p/healthz" >/dev/null 2>&1; then
-              echo "CRITICAL: public $p is STILL REACHABLE from the runner after APPLY — firewall not effective."
-              fail=1
+            echo "TCP-probing $HETZNER_HOST:$p from the public runner (must NOT connect)..."
+            # exit 0 = refused/timeout on every family (good); 1 = reachable (bad).
+            if python3 - "$HETZNER_HOST" "$p" <<'PY'
+          import socket, sys
+          host, port = sys.argv[1], int(sys.argv[2])
+          reachable = []
+          for fam, name in ((socket.AF_INET, "IPv4"), (socket.AF_INET6, "IPv6")):
+              try:
+                  infos = socket.getaddrinfo(host, port, fam, socket.SOCK_STREAM)
+              except socket.gaierror:
+                  print(f"  {name}: no address record"); continue
+              ok = False
+              for info in infos:
+                  s = socket.socket(info[0], socket.SOCK_STREAM); s.settimeout(8)
+                  try:
+                      s.connect(info[4]); ok = True
+                  except OSError:
+                      pass
+                  finally:
+                      s.close()
+                  if ok: break
+              print(f"  {name}: {'REACHABLE' if ok else 'refused/timeout'}")
+              if ok: reachable.append(name)
+          sys.exit(1 if reachable else 0)
+          PY
+            then
+              echo "[EXTERNAL_PROBE_OK] public $p refused/timed-out on all families ✓"
             else
-              echo "[EXTERNAL_PROBE_OK] public $p refused/timed-out ✓"
+              echo "CRITICAL: public $p is STILL REACHABLE (TCP connect) from the runner after APPLY — firewall not effective."
+              fail=1
             fi
           done
           if [ "$fail" = 1 ]; then

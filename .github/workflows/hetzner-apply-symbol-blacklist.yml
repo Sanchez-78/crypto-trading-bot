@@ -16,6 +16,14 @@ name: Hetzner Apply Symbol Blacklist
 #
 # SAFETY: hard-blocks live_real/ENABLE_REAL_ORDERS/LIVE_TRADING_CONFIRMED.
 # Touches EXACTLY ONE env key (PAPER_SYMBOL_BLACKLIST); never edits other lines.
+#
+# Audit v5 hardening (external report §15, new HIGH):
+#  - inputs are validated (action enum + SYMBOLS exact symbol allowlist, no
+#    whitespace/quote/metachar) BEFORE reaching the remote shell — closes the
+#    raw-input remote-shell-injection surface;
+#  - a zero-open-position gate runs on the server BEFORE the restart (fail-closed:
+#    missing/corrupt state = UNKNOWN = refuse) so a restart never kills a live
+#    paper position; the .env change is reverted if the gate refuses.
 
 on:
   workflow_dispatch:
@@ -48,6 +56,32 @@ jobs:
           ssh-keyscan -p 22 -T 15 "$HETZNER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
           [ -s ~/.ssh/known_hosts ] || { echo "host unreachable"; exit 1; }
           chmod 600 ~/.ssh/known_hosts
+
+      # Audit v5: validate BEFORE the inputs ever reach the remote shell.
+      - name: Validate inputs (fail-closed, anti-injection)
+        env:
+          ACTION: ${{ inputs.action }}
+          SYMBOLS: ${{ inputs.symbols }}
+        run: |
+          python3 - "$ACTION" "$SYMBOLS" <<'PY'
+          import sys
+          action, symbols = sys.argv[1], (sys.argv[2] if len(sys.argv) > 2 else "")
+          if action not in ("apply", "revert", "status"):
+              print(f"::error::invalid action '{action}'"); sys.exit(1)
+          # Exact allowlist of the only symbols the bot trades. Any whitespace,
+          # quote, or shell metacharacter makes a token fail this membership test,
+          # so nothing unsafe can survive to the SSH command / .env write.
+          ALLOWED = {"BTCUSDT", "ETHUSDT", "ADAUSDT", "BNBUSDT", "DOTUSDT",
+                     "SOLUSDT", "XRPUSDT", "LTCUSDT", "LINKUSDT"}
+          if action == "apply":
+              toks = symbols.split(",")
+              if not symbols.strip() or any(t not in ALLOWED for t in toks):
+                  print(f"::error::apply symbols must be a comma list (no spaces) from {sorted(ALLOWED)}, got '{symbols}'")
+                  sys.exit(1)
+              print("validated apply:", ",".join(toks))
+          else:
+              print(f"validated: action={action}")
+          PY
 
       - name: Apply on server
         env:
@@ -114,6 +148,28 @@ jobs:
           else
             echo "Reverted: PAPER_SYMBOL_BLACKLIST removed"
           fi
+
+          # ── Zero-open-position gate (fail-closed) ─────────────────────────
+          # A restart kills any live paper position. Refuse if positions are open
+          # or the state is unknowable (missing/corrupt = UNKNOWN = block), and
+          # revert the .env change we just made so nothing is left half-applied.
+          pos_count="$(python3 - "data/paper_open_positions.json" <<'PYEOF'
+          import json, sys
+          try:
+              d = json.load(open(sys.argv[1]))
+              print(len(d) if isinstance(d, (dict, list)) else "UNKNOWN")
+          except FileNotFoundError:
+              print("UNKNOWN")
+          except Exception:
+              print("UNKNOWN")
+          PYEOF
+          )"
+          if [ "$pos_count" != "0" ]; then
+            echo "REFUSING restart: open-position state = '$pos_count' (fail-closed). Reverting .env."
+            mv .env.bak.blacklist .env 2>/dev/null || true
+            exit 1
+          fi
+          echo "zero-position gate OK (0 open)"
 
           # ── Restart + verify ──────────────────────────────────────────────
           systemctl restart "$SERVICE_NAME"
