@@ -33,9 +33,20 @@
 | **Port 5000 dashboard** | disable | gated behind `LEGACY_DASHBOARD_5000_ENABLED` (default OFF); :5001 Flask untouched | **#83** | self-verified |
 | **F8b recorder** | GO (mandatory for E1–E4) | `shadow_excursion_recorder.py`: in-memory 1s directional path + first-crossing ladder, persist once to separate sqlite (`shadow_*` tables), default-OFF, no trading side effects; thread-safe persist + TTL sweep | **#84** | reviewer APPROVE + integration fixes |
 
-**Chain:** #77 (F10-r2) → #78 (health CSV) → #80 (v5 prompt) → **#81 (F10-r3 + blacklist) merged** → #82 (deploy model) → #83 (port 5000) → #84 (F8b recorder) — #82–#84 await operator merge.
+**Chain (all merged to main):** #77 (F10-r2) → #78 (health CSV) → #80 (v5 prompt) → #81 (F10-r3 + blacklist) → #82 (operator-approval deploy) → #83 (port 5000 off) → #84 (F8b recorder) → #85 (log) → **#86 (F8b integration, default-off, fail-closed)** → **#87 (E1–E4 counterfactual analyzer)**. Every code/deploy change reviewer-gated; #86 also trading-safety SAFE.
 
-**Still operator/data/time-gated (v5 §10–15, NOT autonomous):** merge #82–#84 + deploy via `hetzner-deploy-apply.yml`; wire F8b into per-tick path (follow-up PR, runtime-verified) + enable `PAPER_DATA_COLLECTION_ONLY=1`; collect ≥500 shadow observations / ≥14 days / ≥100 per segment; offline E1–E4 walk-forward (OOS PF ≥1.20, expectancy >0 after 18bps, stress 22–25bps, no symbol >40%); then ONE gated paper forward test. **REAL = NO-GO.**
+**Evidence pipeline COMPLETE on main (all default-off / offline):**
+- `shadow_excursion_recorder.py` (#84) + tick/entry hooks (#86) → collects the shadow dataset when `PAPER_DATA_COLLECTION_ONLY=1`.
+- `scripts/e1_e4_counterfactual.py` (#87) → time-based walk-forward GO/NO-GO on whether any (TP,SL) has a validated OOS edge.
+
+**Remaining = operator + time only (v5 §10–15, NOT autonomous):**
+1. Deploy main via `hetzner-deploy-apply.yml` (`confirm=PLAN` then `DEPLOY`); verify read-only timer + service via `hetzner-fetch-health`.
+2. Enable `PAPER_DATA_COLLECTION_ONLY=1` + lift `PAPER_SYMBOL_BLACKLIST`; confirm `[SHADOW_OBSERVE]` (not `[SIGNAL_OPENING]`) in logs.
+3. Collect ≥500 observations / ≥14 days / ≥100 per segment.
+4. Run `python3 scripts/e1_e4_counterfactual.py` — GO requires OOS PF ≥1.20, expectancy >0 after 18bps, ≥0 at 25bps stress, bootstrap CI lower >0, no symbol >40% / hour >40% / regime >50%.
+5. Only on GO + independent review → ONE gated paper forward test. **REAL = absolute NO-GO throughout.**
+
+**Honest bottom line:** DEV_FADE has no proven edge (PF 0.924, all TIMEOUT). The goal (WR>50% + positive P&L) is pursued the only sound way — collect clean evidence, then let E1–E4 either find a validated edge or prove none exists — never blind tuning.
 
 ---
 
