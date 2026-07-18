@@ -1723,7 +1723,11 @@ def main():
     if os.getenv("LEGACY_DASHBOARD_5000_ENABLED", "false").lower() in ("true", "1", "yes", "on"):
         print("  [8.5/8] Starting LEGACY :5000 dashboard (explicitly enabled)...", file=sys.stderr, flush=True)
         try:
-            import threading
+            # NOTE: `threading` is imported at module level (top of file). A local
+            # `import threading` here would make `threading` a function-local name in
+            # main(), and because this block is conditional it would be UNBOUND when
+            # the flag is off — breaking every later threading.Thread(...) in main()
+            # with "cannot access local variable 'threading'". Use the module import.
             from simple_dashboard import run_server as run_dashboard
             dashboard_thread = threading.Thread(target=lambda: run_dashboard(port=5000), daemon=True)
             dashboard_thread.start()

@@ -343,3 +343,16 @@ def test_legacy_port_5000_dashboard_disabled_by_default():
     assert gate < start, "the :5000 start must be gated behind the flag"
     # default is off: getenv default 'false'
     assert '"LEGACY_DASHBOARD_5000_ENABLED", "false"' in t
+
+
+def test_bot2_main_has_no_function_local_import_threading():
+    """Regression (deployed bug): a function-local `import threading` inside a
+    conditional block made `threading` an unbound local in main() when the flag was
+    off, breaking every later threading.Thread(...) with UnboundLocalError. threading
+    must be used from the module-level import only."""
+    import ast
+    tree = ast.parse((REPO / "bot2/main.py").read_text(encoding="utf-8"))
+    local = [(n.name, s.lineno)
+             for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+             for s in ast.walk(n) if isinstance(s, ast.Import) and any(a.name == "threading" for a in s.names)]
+    assert local == [], f"function-local 'import threading' shadows the module import: {local}"
