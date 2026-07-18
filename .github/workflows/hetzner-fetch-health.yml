@@ -382,6 +382,28 @@ jobs:
           PYEOF
           " > artifacts/mfe_distribution.txt 2>&1 || echo 'mfe ssh failed' >> artifacts/mfe_distribution.txt
 
+          # ── FULL closed_trades CSV dump (offline E1–E4 counterfactual input) ─
+          # READ-ONLY (mode=ro). Row-level export so walk-forward / out-of-sample
+          # PF + TP/SL counterfactual can be computed OFF-server. SELECT * with
+          # dynamic headers tolerates schema drift (F8 excursion columns may be
+          # absent on an older server build). This table carries no secrets.
+          ssh $SSH_OPTS "$HETZNER_USER@$HETZNER_HOST" "
+            python3 - <<'PYEOF'
+          import sqlite3, csv, sys
+          db='$HETZNER_PROJECT_DIR/local_learning_storage/cache.sqlite'
+          try:
+              conn=sqlite3.connect(f'file:{db}?mode=ro',uri=True,timeout=15)
+              cur=conn.execute('SELECT * FROM closed_trades ORDER BY exit_ts ASC')
+              w=csv.writer(sys.stdout)
+              w.writerow([d[0] for d in cur.description])
+              for row in cur:
+                  w.writerow(row)
+              conn.close()
+          except Exception as e:
+              sys.stderr.write('CSV_DUMP_FAILED: %s\n' % e)
+          PYEOF
+          " > artifacts/closed_trades.csv 2>>artifacts/csv_dump_err.txt || echo 'csv dump ssh failed' >> artifacts/csv_dump_err.txt
+
       # ── 3. Print mobile-readable summary ──────────────────────────────────
       - name: Print mobile summary
         run: |
