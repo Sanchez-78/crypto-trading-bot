@@ -70,6 +70,20 @@ The full pipeline ran on real data: observation-only collection (server, `PAPER_
 
 ---
 
+## ⭐ 2026-07-19 UPDATE — API outage (self-caused, fixed) + edge-framing reconciliation
+
+### Dashboard :5001 API outage — self-caused during the "permanent crash fix", fixed
+- **#96** authored the real recurring-crash root fix (remove `PartOf=cryptomaster.service`, `StartLimitIntervalSec=0`, `mode=ro` sqlite) — correct. But its restore-workflow `cp` reinstalled the tracked **hardened** unit (`User=cryptomaster-dashboard` + `LoadCredential=…/dashboard_api_token`) over the working **ship-dark open** unit. That user does **not** exist on the server and the credential file is **absent**, so systemd refused to start the unit → **API went down**.
+- **#97** added read-only dashboard-unit diagnostics to `hetzner-restore-dashboard` → confirmed `id: cryptomaster-dashboard: no such user` + `credential file: ABSENT`.
+- **#98** fix: tracked unit reverted to the **ship-dark OPEN, provisioning-free** form (runs as root like the bot, binds `0.0.0.0`, auth opt-in default off, drops `User=/LoadCredential=`/heavy sandbox; keeps the decoupling fixes). Hardened posture stays **opt-in** via `hetzner-one-time-install` once user+credential+read-grants exist. Restore workflow now **backs up the live unit → verifies real 200 JSON (polls ≤40s) → auto-rolls-back** on failure, so a bad unit can never again strand the API.
+- **Applied live & verified:** `hetzner-restore-dashboard RESTORE_DASHBOARD` → `VERIFY: dashboard is active and serving 200 JSON`, healthz `{"status":"ok"}`, metrics 200 (`closed_trades:17099`), `cryptomaster.service` untouched (active).
+- **Lesson (again):** never `cp` a hardened unit onto an unprovisioned server blind. Provisioning-free-by-default + verify-then-rollback is now enforced in the workflow.
+
+### Edge-framing reconciliation (STRATEGY_EDGE_ANALYSIS.md vs the OOS E1–E4)
+`STRATEGY_EDGE_ANALYSIS.md` (#96) reports **+2.83 bps/trade at ZERO cost, PF 2.52, WR 59%** for best config TP=10/SL=5. That is an **in-sample best-config sweep** — optimistically biased (config picked with hindsight on the same rows). The rigorous **out-of-sample walk-forward** (`e1_e4_counterfactual.py`, train/val-select → test-once) on the same 3376 obs is **NO-GO: OOS expectancy −19.3 bps, PF 0 at 18 bps**. Honest synthesis: the signal is *directionally* right (~58% favorable) with a *tiny* gross magnitude (~1 bps median, ~2.8 bps under the most favorable in-sample config); at the assumed 18 bps taker cost the OOS result is clearly negative. The zero-/low-cost story is real but **in-sample-optimistic and NOT OOS-validated at cost**. The maker-execution idea is therefore a *research hypothesis to test* (does a low-cost edge survive OOS at a realistic maker fill cost + adverse selection?), **not** a demonstrated edge. **REAL trading remains absolute NO-GO.**
+
+---
+
 ## ⭐ ROUND 3 STATUS (2026-07-17) — superseded by Round 4/5 above
 
 > **Deployed SHA on server:** `main` HEAD (autodeploy timer, 2h). **REAL trading = NO-GO (unchanged).** Paper-only (`TRADING_MODE=paper_train`), 0 open positions, `live_trading_allowed=false`, `zz-force-paper-only.conf` active.
