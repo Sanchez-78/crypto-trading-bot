@@ -397,6 +397,14 @@ def get_metrics() -> dict:
             "win_rate_window": headline["recent_window_n"],
             "net_pnl": round(session_net, 6),
             "net_pnl_window": headline["recent_net_pnl_usd"],
+            # Additive scope tokens (audit 2026-07-19): make the flat top-level
+            # trio self-documenting so a client never mis-reads the LIFETIME count
+            # (closed_trades) as if WR/PF (a RECENT window) were over all of it.
+            # Machine tokens like data_source — not user-facing, no translation.
+            "closed_trades_scope": "lifetime",
+            "win_rate_scope": f"recent_{headline['recent_window_n']}",
+            "profit_factor_window": headline["recent_window_n"],
+            "profit_factor_scope": f"recent_{headline['recent_window_n']}",
             # Audit F6: ONE explicit single-window headline object the frontend
             # must consume (never mix lifetime_n * recent WR; FLAT is its own
             # bucket, not a loss). All fields are from the SAME recent window.
@@ -492,6 +500,10 @@ def _degraded_envelope(errors, iso):
         "open_positions": 0, "open_positions_list": [], "closed_trades_list": [],
         "profit_factor": 0.0, "win_rate_pct": 0.0, "win_rate_window": 0,
         "net_pnl": 0.0, "net_pnl_window": 0.0, "session_n": 0,
+        # Scope tokens mirrored here so degraded responses keep the identical
+        # key set (module invariant: get_metrics() and _degraded_envelope() agree).
+        "closed_trades_scope": "lifetime", "win_rate_scope": "recent_0",
+        "profit_factor_window": 0, "profit_factor_scope": "recent_0",
         # F6: zeroed headline so the shape is consistent even when degraded.
         "headline": {
             "schema_version": 1, "window": "recent_0", "n": 0,
