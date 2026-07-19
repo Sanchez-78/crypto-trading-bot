@@ -12,24 +12,26 @@ StartLimitIntervalSec=0
 
 [Service]
 Type=simple
-# Audit PR5 (P1.6): run as a dedicated non-root user with ONLY read access to
-# the three data files the dashboard needs (cache.sqlite, learning-state JSON,
-# open-positions JSON). Provision before deploy:
-#   groupadd -r cryptomaster-dashboard
-#   useradd -r -g cryptomaster-dashboard -s /usr/sbin/nologin cryptomaster-dashboard
-#   # grant read on /opt/cryptomaster/{local_learning_storage,server_local_backups,data}
-User=cryptomaster-dashboard
-Group=cryptomaster-dashboard
+# SHIP-DARK OPEN posture (default). This unit must start on a STOCK server with
+# no extra provisioning — that is what keeps the Android API reachable after an
+# autodeploy. The audit PR5 hardening (dedicated non-root user + bearer-token
+# credential + read-only mount) is OPT-IN and is applied only by
+# hetzner-one-time-install once the user/group, credential file, and read-grants
+# exist. Installing the hardened form on an unprovisioned server makes systemd
+# refuse to start (User= missing, LoadCredential= source absent) and takes the
+# API down — this happened on 2026-07-19; do NOT re-add User=/LoadCredential=
+# here without also provisioning them on the server.
+#
+# Runs as root (same as cryptomaster.service) so it can read the root-owned
+# state files (cache.sqlite, learning-state JSON, open-positions JSON).
 WorkingDirectory=/opt/cryptomaster
 Environment="PYTHONUNBUFFERED=1"
-# Safe default bind: localhost only. Public exposure must go through a VPN or an
-# authenticated HTTPS reverse proxy (audit 9.2) — never 0.0.0.0.
-Environment="DASHBOARD_BIND_HOST=127.0.0.1"
+# Bind 0.0.0.0 so the external Android app can reach the API. Auth is opt-in via
+# DASHBOARD_SECURITY_ENABLED (default off = open); when it is enabled the app
+# also flips its default bind to localhost. Public exposure should ultimately go
+# through a VPN or authenticated HTTPS reverse proxy (audit 9.2).
+Environment="DASHBOARD_BIND_HOST=0.0.0.0"
 Environment="DASHBOARD_PORT=5001"
-# Bearer-token auth: systemd hands the token to the process as a credential;
-# Python reads it from $CREDENTIALS_DIRECTORY/dashboard_api_token. The file is
-# root-owned (0400) and never enters the repo, env, logs, or URLs.
-LoadCredential=dashboard_api_token:/etc/cryptomaster/dashboard_api_token
 
 # PERMANENT FIX (CLAUDE.md 2026-06-11 + commit 78a564c 2026-07-03):
 # - Direct python (no Gunicorn/WSGI wrappers).
@@ -43,25 +45,14 @@ RestartSec=10
 # (start-rate limiting is disabled via StartLimitIntervalSec=0 in [Unit] above,
 # so the API always keeps retrying and never stays down after a crash burst.)
 
-# ── Systemd hardening (audit 9.6). Dashboard only READS data — no writes, no
-# shell, no root, no SSH/Firebase key access. Each directive is compatible with
-# a read-only Python+SQLite (mode=ro) service; verify with a service test before
-# tightening further.
+# Light, provisioning-free hardening only. The dashboard opens sqlite read-only
+# (mode=ro) and reads JSON — it never writes under /opt. These directives do not
+# require a dedicated user or credential and do not block root reads, so the unit
+# still starts on a stock server. Heavier sandboxing (non-root User=,
+# ProtectSystem=strict, ReadOnlyPaths, dropped capabilities, LoadCredential) is
+# opt-in via hetzner-one-time-install after the user/credential are provisioned.
 NoNewPrivileges=true
 PrivateTmp=true
-ProtectSystem=strict
-ProtectHome=true
-ProtectKernelTunables=true
-ProtectKernelModules=true
-ProtectControlGroups=true
-RestrictSUIDSGID=true
-LockPersonality=true
-CapabilityBoundingSet=
-AmbientCapabilities=
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
-UMask=0077
-# The service opens cache.sqlite read-only; no path under /opt needs write.
-ReadOnlyPaths=/opt/cryptomaster /opt/dashboard_venv
 
 StandardOutput=journal
 StandardError=journal
