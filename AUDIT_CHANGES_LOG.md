@@ -50,6 +50,26 @@
 
 ---
 
+## ⭐ PRELIMINARY E1–E4 RESULT (2026-07-19) — pipeline end-to-end verified on production
+
+The full pipeline ran on real data: observation-only collection (server, `PAPER_DATA_COLLECTION_ONLY=1`) → `hetzner-export-shadow.yml` (reduced read-only sqlite) → `scripts/e1_e4_counterfactual.py`.
+
+**Dataset:** 3376 shadow observations (all data_quality "ok"), collected in ~12h. Heavily concentrated: 98% BULL_TREND, 92% ETHUSDT — one regime/symbol, NOT the ≥14-day multi-regime set a FINAL verdict needs.
+
+**Verdict: NO-GO.** Best (TP,SL) OOS expectancy −19.3 bps, PF 0, 95% CI [−19.9, −18.7].
+
+**Mechanism (the actual finding):** favorable price excursions are tiny — median final **+1.2 bps**, mean **+0.83 bps**, max favorable first-crossing ~15 bps (never reached +20). Round-trip cost is **18 bps**. The signal is *directionally* slightly right (58% of observations end favorable) but its *magnitude* (~1 bps) is an order of magnitude below cost, so no TP/SL configuration can profit. This is exactly why the audit saw "all TIMEOUT" and PF<1. **Blind TP/SL tuning cannot fix this** — the problem is move size vs cost, not parameters.
+
+**Conclusion for the goal:** the goal is **not reachable with DEV_FADE**, now *proven by evidence* rather than assumed. Recommendation: do not trade DEV_FADE (paper or real); either keep collecting for a definitive multi-regime verdict, or research a fundamentally different strategy. Collection continues (recorder running); **REAL trading remains absolute NO-GO.**
+
+### Incident (2026-07-18, during activation) — self-caused, fixed
+- **Dashboard :5001 outage** — a DEPLOY restart left `cryptomaster-dashboard.service` degraded → restored via `hetzner-restore-dashboard` (trading bot untouched, 200 JSON confirmed).
+- **Threading UnboundLocalError (#92)** — #83 moved `import threading` inside a default-off conditional, making `threading` an unbound local in `main()` → broke thread startup (~10 tracebacks/boot, no signals). #83 was self-verified without a full gate and its test only checked flag gating, not scoping. Fixed + AST regression test + deployed. **Lesson: gate even "small defensive" changes to the trading process.**
+- **Pause correction** — the symbol blacklist did NOT stop trading even when present in `.env` (a signal path bypasses the `signal_generator` gate); the reliable stop is the `PAPER_DATA_COLLECTION_ONLY` flag at the central `_on_signal_created` choke.
+- New ops workflows (all reviewer-gated or read-only): `hetzner-start-data-collection.yml` (atomic observe toggle), `hetzner-export-shadow.yml` (read-only dataset export), shadow probe in `hetzner-fetch-health.yml`.
+
+---
+
 ## ⭐ ROUND 3 STATUS (2026-07-17) — superseded by Round 4/5 above
 
 > **Deployed SHA on server:** `main` HEAD (autodeploy timer, 2h). **REAL trading = NO-GO (unchanged).** Paper-only (`TRADING_MODE=paper_train`), 0 open positions, `live_trading_allowed=false`, `zz-force-paper-only.conf` active.
