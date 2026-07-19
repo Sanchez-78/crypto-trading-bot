@@ -1,0 +1,79 @@
+name: Hetzner Run Maker-Fill Model (read-only)
+
+# Runs scripts/maker_fill_model.py on the server against the FULL shadow dataset
+# (shadow_excursion.sqlite, opened mode=ro) and returns the JSON result as an
+# artifact + inline summary. READ-ONLY: no writes, no restart, no trading change.
+# The script is pulled from origin/main into /tmp (never touches the live working
+# tree — consistent with the read-only autodeploy posture).
+
+on:
+  workflow_dispatch:
+
+jobs:
+  run-model:
+    name: Run maker-fill counterfactual (read-only)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up SSH key and pin host key
+        env:
+          HETZNER_SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$HETZNER_SSH_KEY" > ~/.ssh/hetzner_deploy_key
+          chmod 600 ~/.ssh/hetzner_deploy_key
+          ssh-keyscan -p 22 -T 15 "$HETZNER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          [ -s ~/.ssh/known_hosts ] || { echo "host unreachable"; exit 1; }
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Run model on server (read-only)
+        env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          HETZNER_USER: ${{ secrets.HETZNER_USER }}
+          HETZNER_PROJECT_DIR: ${{ secrets.HETZNER_PROJECT_DIR }}
+        run: |
+          SSH_OPTS="-p 22 -i ~/.ssh/hetzner_deploy_key -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile=~/.ssh/known_hosts -o ConnectTimeout=30 -o BatchMode=yes"
+          mkdir -p artifacts
+          ssh $SSH_OPTS "$HETZNER_USER@$HETZNER_HOST" \
+            "DIR='${HETZNER_PROJECT_DIR:-/opt/cryptomaster}' bash -s" << 'REMOTE_EOF' > artifacts/maker_model_result.json
+          set -euo pipefail
+          cd "$DIR"
+          export HOME="${HOME:-/root}"
+          git config --global --add safe.directory "$DIR" 2>/dev/null || true
+          # Pull the script read-only from origin/main into /tmp — no working-tree change.
+          git fetch origin main >/dev/null 2>&1 || true
+          git show origin/main:scripts/maker_fill_model.py > /tmp/maker_fill_model.py
+          DB="$DIR/local_learning_storage/shadow_excursion.sqlite"
+          if [ ! -f "$DB" ]; then echo "{\"error\":\"shadow db not found\"}"; exit 0; fi
+          python3 /tmp/maker_fill_model.py "$DB"
+          rm -f /tmp/maker_fill_model.py 2>/dev/null || true
+          REMOTE_EOF
+
+      - name: Print summary
+        run: |
+          echo "════════ Maker-fill model result ════════"
+          python3 - <<'PY'
+          import json
+          d = json.load(open('artifacts/maker_model_result.json'))
+          if 'error' in d:
+              print('ERROR:', d['error']); raise SystemExit(0)
+          print('n_observations:', d['n_observations'])
+          print('horizon_F_mean_bps:', d['horizon_F_mean_bps'])
+          print('regimes:', d.get('regimes'))
+          print('taker_expectancy_by_cost:', d['taker_expectancy_by_cost'])
+          print('best_maker_by_cost:', json.dumps(d['best_maker_by_cost']))
+          print('--- adverse selection by offset ---')
+          for o in d['by_offset']:
+              if o['E'] in (0,2,3,4,6,8,10):
+                  print(f"  E={o['E']:>2} fill_rate={o['fill_rate']} adverse_sel={o['adverse_selection_bps']} filled_gross={o['filled_gross_pnl_bps']}")
+          print('--- WALK-FORWARD (OOS) ---')
+          print(json.dumps(d['walk_forward'], indent=2))
+          PY
+
+      - name: Upload result artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: maker-model-result-${{ github.run_number }}
+          path: artifacts/
+          retention-days: 14
