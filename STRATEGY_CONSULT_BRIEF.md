@@ -4,12 +4,10 @@
 
 ---
 
-## 0. TL;DR — the single question
-DEV_FADE is a 1-second mean-reversion "fader" (buys weakness / sells strength) on 7 USDT pairs. It **loses on paper** (lifetime PF 0.68, everything times out slightly negative). We proved *why*: the signal is **directionally right but its magnitude (~1 bp) is an order below the ~18 bp round-trip taker cost**. The **only** thing that could make it viable:
+## 0. TL;DR — the question, and our own (negative) answer
+DEV_FADE is a 1-second mean-reversion "fader" (buys weakness / sells strength) on 7 USDT pairs. It **loses on paper** (lifetime PF 0.68, everything times out slightly negative). We proved *why*: the signal is **directionally right but its magnitude (~2 bp gross) is an order below the ~18 bp round-trip taker cost**. The one thing that could have saved it — **maker / passive execution** — we have now **tested and it fails** (see §5b): adverse selection on a fade entry more than eats the price improvement, and the walk-forward is NO-GO even at *zero* fee.
 
-> **Does the edge survive under realistic *maker / passive* execution (queue position + adverse selection), i.e. can this signal be executed for ≤ ~3 bp round-trip without the fills being adversely selected?**
-
-If your answer is "no", we retire DEV_FADE. If "maybe", we build a maker-fill model and forward-test on paper. That is the whole decision.
+> **We are no longer asking "find us the path." We are asking you to try to REFUTE our refutation:** is our maker-fill / adverse-selection model wrong, or missing an execution style (e.g. a smarter passive/aggressive hybrid, a different horizon, cross-venue) that would make a ~2 bp gross edge executable? If you agree it's dead, we retire DEV_FADE.
 
 ---
 
@@ -41,8 +39,22 @@ We stopped opening positions (`PAPER_DATA_COLLECTION_ONLY=1`) and instead **reco
 
 ## 4. Cost picture
 - Assumed **taker round-trip ≈ 18 bp**.
-- **Break-even round-trip ≈ 2–5 bp** (from the excursion distribution).
-- At 18 bp the edge is buried ~6–18× under cost.
+- **Break-even taker round-trip ≈ 2 bp** (horizon-F mean +2.05 bp on n=9305).
+- At 18 bp the edge is buried ~8× under cost.
+
+## 5b. Maker/passive-fill model result (n=9305) — the hypothesis, tested
+`scripts/maker_fill_model.py` simulates a passive entry E bp better than reference: it fills **only** when the 1s path first moves E bp *against* the trade (adverse), then holds to horizon (conservative — passive exit not modelled). Unfilled = no trade.
+
+| passive offset E | fill rate | adverse-selection gap vs full sample |
+|---|---|---|
+| 2 bp | 59% | **−3.9 bp** |
+| 4 bp | 46% | **−4.8 bp** |
+| 6 bp | 31% | **−6.2 bp** |
+
+- **Best unconditional expectancy by round-trip cost:** 0 bp → +2.0 (best E=0, i.e. just take); 2 bp → +0.005; **3 bp → −0.21; 18 bp → −0.99**. Passive entry never beats taking.
+- **Walk-forward OOS (pick E\* on train, test once):** test expectancy **−0.26 bp @3 bp**, **−0.09 bp @0 bp** (negative even fee-free), −1.08 @18 bp → **NO-GO-OOS**.
+- **Reading:** the price improvement from posting passively is *more than cancelled* by adverse selection — you get filled precisely when the fade is wrong. Maker execution makes DEV_FADE **worse**, not better.
+- **Caveat:** dataset is still ~97.6% BULL_TREND (RANGING only 221 of 9305), 94% ETH. A fader's *best* regime is under-sampled — but adverse selection on a fade entry is structural. This is the main thing we want you to stress-test.
 
 ## 5. The two numbers that must not be conflated
 | Framing | Number | Meaning | Trust |
@@ -66,8 +78,9 @@ The OOS walk-forward is the one that counts: **NO-GO at 18 bp**. The zero-cost s
 ## 8. Data we can hand over
 - `closed_trades.csv` — full row-level trade history (schema-flexible, no secrets).
 - Reduced shadow export (`shadow_excursion_observations` + `shadow_first_crossing` full; `shadow_path_1s` reducible to full 1-second paths on request) — the counterfactual input.
-- `scripts/e1_e4_counterfactual.py` — the walk-forward analyzer (methodology to critique).
-- `STRATEGY_EDGE_ANALYSIS.md` — our own writeup (the +2.83 vs −19.3 reconciliation).
+- `scripts/e1_e4_counterfactual.py` — the walk-forward TP/SL analyzer (methodology to critique).
+- `scripts/maker_fill_model.py` — the maker/passive-fill + adverse-selection model (§5b) — the one we most want you to try to break.
+- `STRATEGY_EDGE_ANALYSIS.md` — our own writeup (with the maker-refutation update at the top).
 
 ---
 *Prepared for external strategy/execution consultation. All numbers verified against raw `cache.sqlite` / `learning_state.json` / the shadow dataset on 2026-07-19.*

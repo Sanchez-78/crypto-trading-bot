@@ -1,5 +1,27 @@
 # Strategy Edge Analysis — grounded in the F8b shadow dataset (2026-07-19)
 
+> ## ⚠️ UPDATE (2026-07-19, later same day) — the maker hypothesis is REFUTED by evidence
+> The "maker-only / passive execution — highest leverage" path below was a *hypothesis*.
+> It has now been **tested** with `scripts/maker_fill_model.py` on the full shadow set
+> (**n=9305** observations) and the answer is **negative**:
+> - **Passive/maker entry makes DEV_FADE worse, not better.** At every round-trip cost the
+>   best passive offset's expectancy is **≤ the taker's**, and at cost ≥ 3 bp it is negative
+>   regardless of offset.
+> - **Adverse selection is brutal and structural:** posting E bp better fills you only in the
+>   subset where price kept moving against you — that filled subset is **−3.9 bp (E=2), −4.8 bp
+>   (E=4), −6.2 bp (E=6)** worse than the full sample, *more* than cancelling the price
+>   improvement.
+> - **Walk-forward OOS: NO-GO** — best-E-on-train tested once gives **−0.26 bp @3 bp cost and
+>   −0.09 bp even at ZERO cost**. Taker at 0 cost is +2.05 bp; passive execution *destroys* it.
+> - **Only positive-expectancy path:** taker at **≤ ~2 bp round-trip** — which is unrealistic
+>   (taker is the expensive side). So there is **no viable execution route** for DEV_FADE at
+>   these costs. Caveat: sample is still ~97.6% BULL_TREND (RANGING only 221 obs), but adverse
+>   selection on a fade entry is a *structural* effect unlikely to reverse with regime.
+>
+> **Net:** don't pursue maker execution for DEV_FADE. The sections below are kept for the record;
+> read them through this correction. REAL trading remains absolute NO-GO.
+
+
 **Data:** 3376 observation-only F8b observations (all data_quality "ok"), collected on the live paper bot. Every observation is a signal DEV_FADE would have traded; we recorded the actual 1s price path and barrier first-crossings instead of opening a position. **Caveat:** ~12h, 98% BULL_TREND, 92% ETHUSDT — one regime/symbol; a final verdict needs ≥14 days multi-regime. But the core numbers below are already load-bearing.
 
 ## The finding that changes the conclusion
