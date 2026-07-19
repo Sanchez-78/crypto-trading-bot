@@ -1,25 +1,37 @@
 # Strategy Edge Analysis — grounded in the F8b shadow dataset (2026-07-19)
 
-> ## ⚠️ UPDATE (2026-07-19, later same day) — the maker hypothesis is REFUTED by evidence
-> The "maker-only / passive execution — highest leverage" path below was a *hypothesis*.
-> It has now been **tested** with `scripts/maker_fill_model.py` on the full shadow set
-> (**n=9305** observations) and the answer is **negative**:
-> - **Passive/maker entry makes DEV_FADE worse, not better.** At every round-trip cost the
->   best passive offset's expectancy is **≤ the taker's**, and at cost ≥ 3 bp it is negative
->   regardless of offset.
-> - **Adverse selection is brutal and structural:** posting E bp better fills you only in the
->   subset where price kept moving against you — that filled subset is **−3.9 bp (E=2), −4.8 bp
->   (E=4), −6.2 bp (E=6)** worse than the full sample, *more* than cancelling the price
->   improvement.
-> - **Walk-forward OOS: NO-GO** — best-E-on-train tested once gives **−0.26 bp @3 bp cost and
->   −0.09 bp even at ZERO cost**. Taker at 0 cost is +2.05 bp; passive execution *destroys* it.
-> - **Only positive-expectancy path:** taker at **≤ ~2 bp round-trip** — which is unrealistic
->   (taker is the expensive side). So there is **no viable execution route** for DEV_FADE at
->   these costs. Caveat: sample is still ~97.6% BULL_TREND (RANGING only 221 obs), but adverse
->   selection on a fade entry is a *structural* effect unlikely to reverse with regime.
+> ## ⚠️ UPDATE 2 (2026-07-19) — the maker "refutation" was OVER-CLAIMED; auditor verdict C
+> An earlier version of this note claimed the maker hypothesis was "refuted by evidence."
+> **External audit kolo 6 (`CryptoMaster_EXTERNAL_AUDIT_REPORT_v6`) returned verdict C: the
+> refutation is methodologically flawed / too broad.** That is correct — I over-claimed. What
+> `scripts/maker_fill_model.py` (n=9305) actually shows, and what it does NOT:
 >
-> **Net:** don't pursue maker execution for DEV_FADE. The sections below are kept for the record;
-> read them through this correction. REAL trading remains absolute NO-GO.
+> **Proven:** the *current* DEV_FADE implementation is unviable — taker at 18 bp is deeply
+> negative (gross horizon mean +2.05 bp), and the *specific* "midpoint-touch entry → exit at
+> original horizon" model shows no OOS edge. **→ Retire the current implementation.**
+>
+> **NOT proven** ("no maker/passive/hybrid execution can ever work"), because the model has
+> real flaws the auditor named:
+> 1. **Midpoint ≠ executable price (P1).** `market_stream._dispatch` publishes midpoint
+>    `(bid+ask)/2` as "price"; the recorder stores the path from midpoint; the model derives
+>    fill from `min_low ≤ −E` on that midpoint. A midpoint touch does not prove a real limit
+>    fill (needs bid/ask, aggTrade aggressor side, queue). This is a *midpoint-touch*
+>    counterfactual, not a *maker-fill* one — and it changes fill rate, conditional return,
+>    the adverse-selection gap, unconditional expectancy, and E* selection all at once.
+> 2. **No fill-time / TIF / cancel model** — a fill at 1 s and at 299 s both P&L against the
+>    same original horizon close; no post-only-then-cancel policy is tested.
+> 3. **Split not purged** — 15 s debounce vs ~300 s horizon → train/test overlap in time; and
+>    **n=9305 is not 9305 independent trials** (~20 concurrent forward paths per symbol).
+> 4. **Dataset ≠ admissible trades** — observations start in `_on_signal_created()` *before*
+>    `open_paper_position()`, bypassing EV/segment/time/exposure/cap gates.
+> 5. **`data_quality=ok` doesn't verify horizon coverage**; regime is ~97.6% BULL / 94% ETH,
+>    real RANGING only 47 rows.
+>
+> **Net (corrected):** retire the *current* DEV_FADE implementation, but do **not** declare the
+> whole mean-reversion class dead. The maker question needs a *corrected* experiment
+> (executable quotes/trades, TIF, purged nested walk-forward, admissible-trade dataset,
+> multi-regime data) — see the auditor's M1–M5. The sections below were written under the
+> over-claim; read them through this correction. REAL trading remains absolute NO-GO.
 
 
 **Data:** 3376 observation-only F8b observations (all data_quality "ok"), collected on the live paper bot. Every observation is a signal DEV_FADE would have traded; we recorded the actual 1s price path and barrier first-crossings instead of opening a position. **Caveat:** ~12h, 98% BULL_TREND, 92% ETHUSDT — one regime/symbol; a final verdict needs ≥14 days multi-regime. But the core numbers below are already load-bearing.

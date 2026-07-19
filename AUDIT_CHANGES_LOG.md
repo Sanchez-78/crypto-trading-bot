@@ -79,7 +79,20 @@ The full pipeline ran on real data: observation-only collection (server, `PAPER_
 - **Applied live & verified:** `hetzner-restore-dashboard RESTORE_DASHBOARD` → `VERIFY: dashboard is active and serving 200 JSON`, healthz `{"status":"ok"}`, metrics 200 (`closed_trades:17099`), `cryptomaster.service` untouched (active).
 - **Lesson (again):** never `cp` a hardened unit onto an unprovisioned server blind. Provisioning-free-by-default + verify-then-rollback is now enforced in the workflow.
 
-### Maker/passive-fill model (n=9305) — the maker hypothesis is REFUTED
+### ⭐ External audit kolo 6 (2026-07-19) — VERDICT C: maker refutation over-claimed
+`CryptoMaster_EXTERNAL_AUDIT_REPORT_v6` reviewed `maker_fill_model.py` @ `0e46810` and returned **verdict C (refutation methodologically flawed / too broad)**. Accepted — the earlier "maker refuted" claim was over-stated and is corrected in `STRATEGY_EDGE_ANALYSIS.md` (UPDATE 2) and `STRATEGY_CONSULT_BRIEF.md` (§0/§5b).
+
+**Auditor's binding findings (all valid):**
+1. **Midpoint ≠ executable price (P1).** `market_stream._dispatch` publishes `(bid+ask)/2` as "price" (verified: `market_stream.py:84`); recorder stores the midpoint path; the model's `min_low ≤ −E` fill is a *midpoint-touch* counterfactual, not a maker-fill one. Changes fill rate, conditional return, adverse-selection gap, unconditional expectancy, and E* selection simultaneously. (bid/ask/qty + depth20 ARE available at `_dispatch`; aggTrade is NOT subscribed.)
+2. No fill-time / TIF / cancel model (1 s and 299 s fills P&L vs the same horizon close).
+3. Split not purged; `n=9305` ≠ 9305 independent trials (15 s debounce vs ~300 s horizon → ~20 concurrent paths/symbol).
+4. Dataset = P0-routable candidates, not admissible trades (observation starts in `_on_signal_created()` before the EV/segment/time/exposure/cap gates).
+5. `data_quality=ok` = `sample_count ≥ horizon_s`, does NOT verify horizon coverage (premature shutdown flush can be labelled ok).
+6. Regime ~97.6% BULL / 94% ETH; real RANGING = 47 rows (QUIET+RANGING = 221 ≠ pure RANGING).
+
+**Auditor GO/NO-GO (accepted):** retire current DEV_FADE impl = **GO**; activate maker per current model = NO-GO; declare whole class refuted = NO-GO (evidence insufficient); corrected recorder (executable quotes/trades) = GO-with-condition; TIF/fill-time/purged model = GO-with-condition (agent + independent quant review); observation-only collection = GO; more paper trades = NO-GO now; REAL = absolute NO-GO. Corrected experiment gated by M1–M5 with a bounded research budget (≈30 days or 500 valid range-like *effective* obs, else archive+pivot).
+
+### Maker/passive-fill model (n=9305) — result stands as a MIDPOINT-TOUCH counterfactual (not a maker-fill refutation)
 `scripts/maker_fill_model.py` (#101) + read-only runner `hetzner-run-maker-model.yml` ran server-side against the full shadow set (**9305 obs**, still ~97.6% BULL / 94% ETH). Result:
 - **Passive/maker entry makes DEV_FADE worse.** Best unconditional expectancy by round-trip cost: 0 bp→+2.0 (best offset E=0, i.e. just take), 2 bp→+0.005, **3 bp→−0.21, 18 bp→−0.99**. Passive never beats taking.
 - **Adverse selection is structural and brutal:** the filled subset is **−3.9 bp (E=2), −4.8 bp (E=4), −6.2 bp (E=6)** worse than the full sample — *more* than the price improvement. You fill precisely when the fade is wrong.
