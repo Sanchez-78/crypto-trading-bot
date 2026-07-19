@@ -68,6 +68,30 @@ jobs:
             fi
           fi
 
+          # Dashboard-unit diagnostics (read-only) — printed in BOTH modes so a
+          # STATUS run reveals exactly why the unit is down (start failure vs
+          # crash-loop vs missing user/credential).
+          DUNIT=""
+          for u in cryptomaster-dashboard cryptomaster-dashboard.service; do
+            if systemctl cat "$u" >/dev/null 2>&1; then DUNIT="$u"; break; fi
+          done
+          echo "=== DASHBOARD UNIT DIAGNOSTICS ($DUNIT) ==="
+          if [ -n "$DUNIT" ]; then
+            systemctl show "$DUNIT" -p ActiveState -p SubState -p Result -p ExecMainStatus -p NRestarts -p User 2>&1 || true
+            echo "--- last 30 journal lines (sanitized) ---"
+            journalctl -u "$DUNIT" -n 30 --no-pager -o short-iso 2>/dev/null \
+              | sed 's/\(key\|token\|secret\|password\)\([=: ]\+\)[^ ,"'"'"']\+/\1\2[REDACTED]/gi' \
+              || echo "  (journal unavailable)"
+          else
+            echo "  (dashboard unit not found)"
+          fi
+          echo "--- installed unit head (/etc/systemd) ---"
+          sed -n '1,45p' /etc/systemd/system/cryptomaster-dashboard.service 2>/dev/null || echo "  (no installed unit)"
+          echo "--- dashboard user / credential presence ---"
+          id cryptomaster-dashboard 2>&1 || echo "  user cryptomaster-dashboard MISSING"
+          [ -f /etc/cryptomaster/dashboard_api_token ] && echo "  credential file: present" || echo "  credential file: ABSENT"
+          echo ""
+
           if [ "$CONFIRM" != "RESTORE_DASHBOARD" ]; then
             echo "STATUS mode — no changes made."; exit 0
           fi
