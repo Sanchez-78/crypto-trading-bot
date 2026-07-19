@@ -2,7 +2,13 @@
 Description=CryptoMaster Dashboard Web Server
 After=network-online.target cryptomaster.service
 Wants=network-online.target
-PartOf=cryptomaster.service
+# NOTE: intentionally NOT PartOf=cryptomaster.service. The dashboard is an
+# INDEPENDENT read-only service; tying it to the bot made every bot restart
+# also restart the dashboard, so a burst of bot restarts tripped the start-rate
+# limit and systemd gave up — leaving the Android API down until a manual
+# restart. Decoupled: bot restarts no longer touch the dashboard.
+# Never give up restarting the API (belt-and-suspenders with the decoupling).
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
@@ -34,8 +40,8 @@ LoadCredential=dashboard_api_token:/etc/cryptomaster/dashboard_api_token
 ExecStart=/opt/dashboard_venv/bin/python3 -u /opt/cryptomaster/start_flask_dashboard.py
 Restart=always
 RestartSec=10
-StartLimitInterval=60
-StartLimitBurst=3
+# (start-rate limiting is disabled via StartLimitIntervalSec=0 in [Unit] above,
+# so the API always keeps retrying and never stays down after a crash burst.)
 
 # ── Systemd hardening (audit 9.6). Dashboard only READS data — no writes, no
 # shell, no root, no SSH/Firebase key access. Each directive is compatible with

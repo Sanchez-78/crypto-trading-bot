@@ -270,7 +270,10 @@ def get_live_metrics_from_cache():
         closed_trades_list = []
         if os.path.exists(cache_path):
             try:
-                conn = sqlite3.connect(cache_path, timeout=2)
+                # mode=ro: the dashboard runs as a non-root user on a ReadOnlyPaths
+                # mount, so a read-write open (which would try to create a -wal/
+                # -journal) fails on the hardened service. Read-only matches intent.
+                conn = sqlite3.connect(f"file:{cache_path}?mode=ro", uri=True, timeout=2)
                 cur = conn.cursor()
                 row = cur.execute(
                     "SELECT COUNT(*), SUM(COALESCE(pnl_usd,0)) FROM closed_trades"

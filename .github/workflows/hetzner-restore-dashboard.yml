@@ -83,6 +83,23 @@ jobs:
             if systemctl list-unit-files "$u" >/dev/null 2>&1 && systemctl cat "$u" >/dev/null 2>&1; then UNIT="$u"; break; fi
           done
           [ -n "$UNIT" ] || { echo "ERROR: dashboard unit not found"; exit 1; }
+
+          # Install the tracked unit if it differs from the live one — this carries
+          # the permanent fix (no PartOf=cryptomaster.service + StartLimitIntervalSec=0)
+          # so the dashboard no longer restarts with the bot and systemd never gives
+          # up restarting it. git reset above does NOT touch /etc/systemd. Needs root;
+          # warns and continues (code fix still applies) if it cannot write.
+          SRC="$DIR/systemd/cryptomaster-dashboard.service"
+          DEST="/etc/systemd/system/cryptomaster-dashboard.service"
+          if [ -f "$SRC" ] && ! cmp -s "$SRC" "$DEST" 2>/dev/null; then
+            if cp "$SRC" "$DEST" 2>/dev/null; then
+              systemctl daemon-reload && echo "installed updated dashboard unit + daemon-reload"
+            else
+              echo "WARNING: cannot write $DEST (not root?) — unit not updated"
+            fi
+          fi
+          # Clear any prior start-rate-limit 'failed' state so the restart actually starts.
+          systemctl reset-failed "$UNIT" 2>/dev/null || true
           systemctl restart "$UNIT"
           sleep 4
 
