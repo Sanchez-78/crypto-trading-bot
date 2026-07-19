@@ -4,10 +4,14 @@
 
 ---
 
-## 0. TL;DR — the question, and our own (negative) answer
-DEV_FADE is a 1-second mean-reversion "fader" (buys weakness / sells strength) on 7 USDT pairs. It **loses on paper** (lifetime PF 0.68, everything times out slightly negative). We proved *why*: the signal is **directionally right but its magnitude (~2 bp gross) is an order below the ~18 bp round-trip taker cost**. The one thing that could have saved it — **maker / passive execution** — we have now **tested and it fails** (see §5b): adverse selection on a fade entry more than eats the price improvement, and the walk-forward is NO-GO even at *zero* fee.
+## 0. TL;DR — status after external audit kolo 6 (verdict C)
+DEV_FADE is a 1-second mean-reversion "fader" (buys weakness / sells strength) on 7 USDT pairs. It **loses on paper** (lifetime PF 0.68, everything times out slightly negative). Root cause: the signal is **directionally right but its magnitude (~2 bp gross) is an order below the ~18 bp round-trip taker cost**.
 
-> **We are no longer asking "find us the path." We are asking you to try to REFUTE our refutation:** is our maker-fill / adverse-selection model wrong, or missing an execution style (e.g. a smarter passive/aggressive hybrid, a different horizon, cross-venue) that would make a ~2 bp gross edge executable? If you agree it's dead, we retire DEV_FADE.
+We built a maker/passive-fill model (§5b) and initially concluded maker execution was "refuted." **An external audit (kolo 6) returned verdict C — that refutation was over-claimed.** The honest, audited position:
+- **Retire the *current* DEV_FADE implementation** — taker at 18 bp is unviable and the current maker model gives no deployable basis. ✅ accepted.
+- **Do NOT declare the whole class dead** — the maker model uses **midpoint** (not executable bid/ask/aggTrade) as the fill signal, models no fill-time/TIF, isn't purged against overlapping horizons, and the dataset isn't the set of *admissible* trades. So it cannot support "no maker execution can ever work."
+
+> **The open question is genuinely open again**, but now with a concrete, bounded corrected experiment (auditor's M1–M5): executable quote/trade fills, TIF/cancel policies, purged nested walk-forward, admissible-trade dataset, multi-regime data. We want you to (a) sanity-check that corrected design, and (b) tell us whether it's worth the bounded research budget vs archiving DEV_FADE now.
 
 ---
 
@@ -42,7 +46,9 @@ We stopped opening positions (`PAPER_DATA_COLLECTION_ONLY=1`) and instead **reco
 - **Break-even taker round-trip ≈ 2 bp** (horizon-F mean +2.05 bp on n=9305).
 - At 18 bp the edge is buried ~8× under cost.
 
-## 5b. Maker/passive-fill model result (n=9305) — the hypothesis, tested
+## 5b. Maker/passive-fill model result (n=9305) — the hypothesis, tested — ⚠️ over-claimed, see §0
+> **Audit kolo-6 caveat:** the "fill" below is a **midpoint touch** (`min_low ≤ −E` on a path built from `(bid+ask)/2`), NOT an executable bid/ask/aggTrade fill. Treat these numbers as a *midpoint-touch counterfactual* — enough to retire the current implementation, NOT enough to refute maker execution in general.
+
 `scripts/maker_fill_model.py` simulates a passive entry E bp better than reference: it fills **only** when the 1s path first moves E bp *against* the trade (adverse), then holds to horizon (conservative — passive exit not modelled). Unfilled = no trade.
 
 | passive offset E | fill rate | adverse-selection gap vs full sample |
