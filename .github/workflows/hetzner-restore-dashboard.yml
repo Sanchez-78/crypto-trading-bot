@@ -109,30 +109,74 @@ jobs:
           [ -n "$UNIT" ] || { echo "ERROR: dashboard unit not found"; exit 1; }
 
           # Install the tracked unit if it differs from the live one — this carries
-          # the permanent fix (no PartOf=cryptomaster.service + StartLimitIntervalSec=0)
-          # so the dashboard no longer restarts with the bot and systemd never gives
-          # up restarting it. git reset above does NOT touch /etc/systemd. Needs root;
-          # warns and continues (code fix still applies) if it cannot write.
+          # the permanent fix (no PartOf=cryptomaster.service + StartLimitIntervalSec=0
+          # + ship-dark OPEN posture). git reset above does NOT touch /etc/systemd.
+          # Needs root; warns and continues (code fix still applies) if it cannot write.
+          #
+          # SAFETY (2026-07-19 incident): a previous run installed the HARDENED unit
+          # over the working open one; systemd refused to start it (User= missing,
+          # LoadCredential= source absent) and the API went down. So: BACK UP the live
+          # unit first, verify the dashboard actually serves after restart, and AUTO-
+          # ROLLBACK to the backup if it does not.
           SRC="$DIR/systemd/cryptomaster-dashboard.service"
           DEST="/etc/systemd/system/cryptomaster-dashboard.service"
+          BAK=""
+          INSTALLED=0
           if [ -f "$SRC" ] && ! cmp -s "$SRC" "$DEST" 2>/dev/null; then
+            if [ -f "$DEST" ]; then BAK="${DEST}.bak.$(date -u +%Y%m%dT%H%M%SZ 2>/dev/null || echo prev)"; cp "$DEST" "$BAK" 2>/dev/null && echo "backed up live unit -> $BAK" || BAK=""; fi
             if cp "$SRC" "$DEST" 2>/dev/null; then
-              systemctl daemon-reload && echo "installed updated dashboard unit + daemon-reload"
+              systemctl daemon-reload && INSTALLED=1 && echo "installed updated dashboard unit + daemon-reload"
             else
               echo "WARNING: cannot write $DEST (not root?) — unit not updated"
             fi
           fi
           # Clear any prior start-rate-limit 'failed' state so the restart actually starts.
           systemctl reset-failed "$UNIT" 2>/dev/null || true
-          systemctl restart "$UNIT"
-          sleep 4
+          systemctl restart "$UNIT" 2>/dev/null || echo "  (restart returned non-zero)"
+
+          # Verify it actually comes up (Flask init is slow): poll is-active + a real
+          # HTTP 200 from the metrics endpoint for up to ~40s before judging.
+          verify_up() {
+            for _ in $(seq 1 20); do
+              if systemctl is-active "$1" >/dev/null 2>&1 \
+                 && curl -fsS -m 4 "http://127.0.0.1:5001/api/dashboard/metrics" >/dev/null 2>&1; then
+                return 0
+              fi
+              sleep 2
+            done
+            return 1
+          }
+
+          if verify_up "$UNIT"; then
+            echo "VERIFY: dashboard is active and serving 200 JSON."
+            # Success — prune the backup we just made (keep /etc tidy).
+            [ -n "$BAK" ] && rm -f "$BAK" 2>/dev/null || true
+          else
+            echo "VERIFY FAILED: dashboard not serving after restart."
+            systemctl show "$UNIT" -p ActiveState -p SubState -p Result -p ExecMainStatus 2>&1 || true
+            journalctl -u "$UNIT" -n 15 --no-pager -o short-iso 2>/dev/null | sed 's/\(key\|token\|secret\|password\)\([=: ]\+\)[^ ,"'"'"']\+/\1\2[REDACTED]/gi' || true
+            if [ "$INSTALLED" = "1" ] && [ -n "$BAK" ] && [ -f "$BAK" ]; then
+              echo "=== AUTO-ROLLBACK: restoring previous unit $BAK ==="
+              cp "$BAK" "$DEST" 2>/dev/null && systemctl daemon-reload && echo "  restored previous unit"
+              systemctl reset-failed "$UNIT" 2>/dev/null || true
+              systemctl restart "$UNIT" 2>/dev/null || true
+              if verify_up "$UNIT"; then
+                echo "  ROLLBACK OK: previous unit is serving again."
+                rm -f "$BAK" 2>/dev/null || true
+              else
+                echo "  ROLLBACK did NOT restore service — manual intervention needed. Backup kept at $BAK"
+              fi
+            else
+              echo "  No usable backup to roll back to (INSTALLED=$INSTALLED, BAK=$BAK)."
+            fi
+          fi
 
           echo "=== AFTER ==="
           systemctl is-active "$UNIT" || echo "  (dashboard not active!)"
-          echo "healthz:"; curl -fsS "http://127.0.0.1:5001/healthz" 2>/dev/null || echo "  (healthz failed)"
+          echo "healthz:"; curl -fsS -m 4 "http://127.0.0.1:5001/healthz" 2>/dev/null || echo "  (healthz failed)"
           echo ""
           echo "metrics (must be 200 JSON, NOT auth_not_configured):"
-          curl -fsS "http://127.0.0.1:5001/api/dashboard/metrics" 2>/dev/null | head -c 400 || echo "  (metrics failed)"
+          curl -fsS -m 4 "http://127.0.0.1:5001/api/dashboard/metrics" 2>/dev/null | head -c 400 || echo "  (metrics failed)"
           echo ""
           echo "[RESTORE] cryptomaster.service left untouched: $(systemctl is-active cryptomaster 2>/dev/null || echo unknown)"
           REMOTE_EOF
