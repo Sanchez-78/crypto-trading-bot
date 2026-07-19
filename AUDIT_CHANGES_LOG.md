@@ -79,6 +79,16 @@ The full pipeline ran on real data: observation-only collection (server, `PAPER_
 - **Applied live & verified:** `hetzner-restore-dashboard RESTORE_DASHBOARD` → `VERIFY: dashboard is active and serving 200 JSON`, healthz `{"status":"ok"}`, metrics 200 (`closed_trades:17099`), `cryptomaster.service` untouched (active).
 - **Lesson (again):** never `cp` a hardened unit onto an unprovisioned server blind. Provisioning-free-by-default + verify-then-rollback is now enforced in the workflow.
 
+### ⭐ DECISION (2026-07-19) — RETIRE DEV_FADE + PIVOT research (autonomous)
+After verdict C, the operator delegated the hypothesis-level call ("make the best decision
+autonomously"). **Decision: retire the current DEV_FADE implementation and pivot research to a
+different signal class** (auditor's own lean; the corrected M1–M5 experiment would most likely
+just re-confirm NO-GO at ~a month's cost). Observation-only collection stays ON (free). Governed
+by `RESEARCH_PIVOT_CHARTER.md` — which codifies the **cost-wall filter** (a candidate must
+plausibly clear ~18 bp gross OR prove a validated ≤~3 bp executable path *before* any infra) and
+the standing **evidence bar** (executable fills not midpoint, admissible-trade dataset, fill-time/
+TIF, purged nested walk-forward, realistic venue costs, GO thresholds). REAL = absolute NO-GO.
+
 ### ⭐ External audit kolo 6 (2026-07-19) — VERDICT C: maker refutation over-claimed
 `CryptoMaster_EXTERNAL_AUDIT_REPORT_v6` reviewed `maker_fill_model.py` @ `0e46810` and returned **verdict C (refutation methodologically flawed / too broad)**. Accepted — the earlier "maker refuted" claim was over-stated and is corrected in `STRATEGY_EDGE_ANALYSIS.md` (UPDATE 2) and `STRATEGY_CONSULT_BRIEF.md` (§0/§5b).
 
