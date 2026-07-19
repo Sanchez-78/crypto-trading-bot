@@ -1,0 +1,70 @@
+name: Hetzner Export Shadow Dataset (read-only)
+
+# Audit v5 §5.3/§10: export the F8b shadow_excursion.sqlite for the offline E1–E4
+# counterfactual. READ-ONLY: opens the live DB in mode=ro and writes only a REDUCED
+# copy to /tmp (ephemeral) — observations + first_crossing (full) + shadow_path_1s
+# reduced to just the final (max second_offset) row per observation, which is all
+# the analyzer needs. The reduced DB is base64-encoded into an artifact.
+# No writes to the live dataset, no restart, no trading interaction.
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  export-shadow:
+    name: Export reduced shadow dataset
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up SSH key and pin host key
+        env:
+          HETZNER_SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$HETZNER_SSH_KEY" > ~/.ssh/hetzner_deploy_key
+          chmod 600 ~/.ssh/hetzner_deploy_key
+          ssh-keyscan -p 22 -T 15 "$HETZNER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          [ -s ~/.ssh/known_hosts ] || { echo "host unreachable"; exit 1; }
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Build + fetch reduced shadow DB
+        env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          HETZNER_USER: ${{ secrets.HETZNER_USER }}
+          HETZNER_PROJECT_DIR: ${{ secrets.HETZNER_PROJECT_DIR }}
+        run: |
+          SSH_OPTS="-p 22 -i ~/.ssh/hetzner_deploy_key -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile=~/.ssh/known_hosts -o ConnectTimeout=30 -o BatchMode=yes"
+          mkdir -p artifacts
+          ssh $SSH_OPTS "$HETZNER_USER@$HETZNER_HOST" "
+            python3 - <<'PYEOF'
+          import sqlite3, base64, sys, os
+          src='$HETZNER_PROJECT_DIR/local_learning_storage/shadow_excursion.sqlite'
+          dst='/tmp/shadow_export.sqlite'
+          try: os.remove(dst)
+          except OSError: pass
+          # uri=True lets us ATTACH the source read-only (mode=ro) while writing dst.
+          d=sqlite3.connect(dst, uri=True, timeout=15)
+          d.execute(\"ATTACH DATABASE ? AS src\", (f'file:{src}?mode=ro',))
+          d.execute('CREATE TABLE shadow_excursion_observations AS SELECT * FROM src.shadow_excursion_observations')
+          d.execute('CREATE TABLE shadow_first_crossing AS SELECT * FROM src.shadow_first_crossing')
+          d.execute('''CREATE TABLE shadow_path_1s AS
+                       SELECT p.* FROM src.shadow_path_1s p
+                       JOIN (SELECT observation_id, MAX(second_offset) m
+                             FROM src.shadow_path_1s GROUP BY observation_id) mx
+                       ON p.observation_id=mx.observation_id AND p.second_offset=mx.m''')
+          d.commit(); d.execute('DETACH DATABASE src'); d.commit()
+          n=d.execute('SELECT COUNT(*) FROM shadow_excursion_observations').fetchone()[0]
+          d.close()
+          sys.stderr.write(f'exported observations={n}\n')
+          with open(dst,'rb') as f: sys.stdout.write(base64.b64encode(f.read()).decode())
+          PYEOF
+          " > artifacts/shadow_export.sqlite.b64 2>artifacts/export_err.txt || echo 'export ssh failed' >> artifacts/export_err.txt
+          echo "b64 bytes: $(wc -c < artifacts/shadow_export.sqlite.b64)"; cat artifacts/export_err.txt
+
+      - name: Upload shadow export
+        uses: actions/upload-artifact@v4
+        with:
+          name: shadow-export
+          path: artifacts/
+          retention-days: 7
