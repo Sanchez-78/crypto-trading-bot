@@ -1313,6 +1313,21 @@ def open_paper_position(
     Returns:
         dict: {"trade_id": ..., "status": "opened", "symbol": ..., ...}
     """
+    # OBSERVE / data-collection gate — AUTHORITATIVE CHOKE (2026-07-20).
+    # This is the single function that creates a paper position, so gating HERE
+    # closes EVERY path — including the realtime_decision_engine and trade_executor
+    # callers that reach open_paper_position() directly and bypass the upstream
+    # _on_signal_created gate. On 2026-07-19 a few RDE-path entries slipped through
+    # while PAPER_DATA_COLLECTION_ONLY=1 was set; gating at the choke makes observe
+    # mode hold 100%. Fail-closed: when the flag is set we NEVER open a position,
+    # regardless of caller. Recording is handled upstream (signal_generator.on_price
+    # + _on_signal_created); this gate only guarantees no position is opened.
+    if os.getenv("PAPER_DATA_COLLECTION_ONLY", "false").strip().lower() in ("true", "1", "yes", "on"):
+        _sym = (signal or {}).get("symbol", "UNKNOWN")
+        log.info("[OBSERVE_BLOCK] %s reason=data_collection_only caller_reason=%s (NO position opened)",
+                 _sym, reason)
+        return {"status": "blocked", "reason": "data_collection_only", "symbol": _sym}
+
     # V10.16: SELL ENFORCEMENT - balance BUY/SELL ratio for diversification
     side_raw = signal.get("action", signal.get("side", "BUY"))
     now_ts = time.time()  # V10.27: define before any early branch; peak-check (2d4aa48) reads it on the price-valid path
