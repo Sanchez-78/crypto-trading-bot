@@ -131,15 +131,31 @@ jobs:
             echo "STATUS mode — no stop/reset/restart performed."; exit 0
           fi
 
+          # Rollback helper — never let set -e abort past it; leaves the bot on
+          # the previous SHA and running (best effort, all steps guarded).
+          rollback() {
+            echo "[ROLLBACK] restoring $old_sha"
+            git reset --hard "$old_sha" 2>&1 | tail -2 || true
+            systemctl restart "$SERVICE_NAME" 2>&1 | tail -2 || true
+            sleep 5
+            systemctl is-active --quiet "$SERVICE_NAME" && echo "[ROLLBACK_OK] restored $old_sha" || echo "[ROLLBACK_WARN] service not active after rollback — investigate"
+          }
+
           # ── STOP -> backup -> switch -> START (bot stopped = no JSON race) ─
           echo "=== RECOVER: stop $SERVICE_NAME ==="
           systemctl stop "$SERVICE_NAME" 2>&1 | tail -2 || true
           sleep 2
           [ -f "$POS" ] && cp "$POS" "${POS}.bak.$(date -u +%Y%m%dT%H%M%SZ)" 2>/dev/null && echo "backed up $POS" || true
           echo "switching $old_sha -> $target"
-          git reset --hard "$target" 2>&1 | tail -2
+          # Guarded so a reset/start failure routes to rollback instead of a
+          # set -e abort that would leave the bot down (reviewer residual-risk #1).
+          if ! git reset --hard "$target" 2>&1 | tail -2; then
+            echo "[RECOVER_FAIL] git reset to target failed"; rollback; exit 1
+          fi
           echo "=== START $SERVICE_NAME (new code: hard-cap will time out the stuck position) ==="
-          systemctl start "$SERVICE_NAME"
+          if ! systemctl start "$SERVICE_NAME" 2>&1 | tail -2; then
+            echo "[RECOVER_FAIL] service start failed"; rollback; exit 1
+          fi
 
           # ── poll: active AND ready==target AND positions drained to 0 ──────
           ok=0
@@ -156,10 +172,8 @@ jobs:
             exit 0
           fi
 
-          echo "[RECOVER_FAIL] positions did not drain to 0 / not READY — ROLLING BACK to $old_sha"
-          git reset --hard "$old_sha" 2>&1 | tail -2
-          systemctl restart "$SERVICE_NAME"; sleep 5
-          systemctl is-active --quiet "$SERVICE_NAME" && echo "[ROLLBACK_OK] restored $old_sha" || echo "[ROLLBACK_WARN] service not active after rollback — investigate"
+          echo "[RECOVER_FAIL] positions did not drain to 0 / not READY"
+          rollback
           exit 1
           REMOTE_EOF
 
