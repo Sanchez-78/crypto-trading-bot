@@ -234,12 +234,17 @@ class ShadowExcursionRecorder:
     def _data_quality(self, obs: _Observer, end_reason: str = "complete") -> str:
         # "ok" if we saw at least ~1 sample/second over the horizon, else "sparse".
         want = max(1, self.horizon_ms // self.second_ms)
-        # COVERAGE INTEGRITY (audit v6 §3.4, 2026-07-20): sample COUNT alone can
-        # pass even when the path never reached the END of the horizon — a symbol
-        # goes silent mid-horizon, or a shutdown flush_all() persists an observer
-        # that hasn't run its full window. That mislabels a truncated path "ok" and
-        # would contaminate the maker-fill (M1) dataset. Verify the last recorded
-        # 1s bucket actually reaches near the horizon end; flag truncation.
+        # DENSITY FIRST: too few samples is 'sparse' regardless of coverage — keep
+        # that signal distinct from truncation (don't conflate "few samples" with
+        # "cut short at the horizon end").
+        if obs.sample_count < want:
+            return "sparse"
+        # COVERAGE INTEGRITY (audit v6 §3.4, 2026-07-20): density can pass while the
+        # path never reached the END of the horizon — many ticks in a short window,
+        # then the symbol goes silent, or a shutdown flush_all() persists an observer
+        # mid-window. That mislabels a TRUNCATED path "ok" and would contaminate the
+        # maker-fill (M1) dataset. When density is fine, truncation is the sole
+        # remaining defect: verify the last 1s bucket reaches near the horizon end.
         secs = [b["second_offset"] for b in obs.buckets]
         if obs._cur is not None:
             secs.append(obs._cur["second_offset"])
@@ -248,7 +253,7 @@ class ShadowExcursionRecorder:
         covered = want_last <= 0 or last_sec >= 0.9 * want_last
         if not covered:
             return "partial_shutdown" if end_reason == "shutdown" else "sparse"
-        return "ok" if obs.sample_count >= want else "sparse"
+        return "ok"
 
     def _persist(self, obs: _Observer, now_ms: int, end_reason: str = "complete") -> None:
         rows = obs.path_rows()

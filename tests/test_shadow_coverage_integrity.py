@@ -33,12 +33,25 @@ def test_full_coverage_is_ok(tmp_path):
     assert _dq(str(tmp_path / "shadow.sqlite"), "full") == "ok"
 
 
-def test_shutdown_truncated_is_flagged(tmp_path):
+def test_high_density_but_truncated_at_shutdown(tmp_path):
+    # The audit 3.4 case: MANY ticks in a short window (density passes) but the
+    # path never reached the horizon end -> must NOT be 'ok'; flagged truncated.
     r = _make(tmp_path)
-    r.record_signal("trunc", "ETHUSDT", "BUY", "BULL_TREND", 0, 100.0)
-    for sec in range(4):                         # only seconds 0..3 of a 10s horizon
-        r.on_tick("ETHUSDT", 100.0 + sec * 0.001, sec * 1000)
-    r.flush_all(4_000)                           # shutdown flush mid-horizon
-    dq = _dq(str(tmp_path / "shadow.sqlite"), "trunc")
+    r.record_signal("dense_trunc", "ETHUSDT", "BUY", "BULL_TREND", 0, 100.0)
+    for sec in range(4):                         # seconds 0..3 only
+        for k in range(4):                       # 16 samples >= want(10): density OK
+            r.on_tick("ETHUSDT", 100.0 + k * 0.0001, sec * 1000 + k * 100)
+    r.flush_all(4_000)
+    dq = _dq(str(tmp_path / "shadow.sqlite"), "dense_trunc")
     assert dq == "partial_shutdown", dq
-    assert dq != "ok"
+
+
+def test_density_sparse_at_shutdown_stays_sparse(tmp_path):
+    # Reconciliation: a genuinely low-density observer flushed at shutdown keeps
+    # 'sparse' (density defect), NOT 'partial_shutdown' — don't conflate the two.
+    r = _make(tmp_path)
+    r.record_signal("sparse", "ETHUSDT", "BUY", "BULL_TREND", 0, 100.0)
+    r.on_tick("ETHUSDT", 100.0, 0)               # single sample << want(10)
+    r.flush_all(1_000)
+    dq = _dq(str(tmp_path / "shadow.sqlite"), "sparse")
+    assert dq == "sparse", dq
