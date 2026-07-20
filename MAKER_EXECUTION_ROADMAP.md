@@ -27,10 +27,21 @@ signals move toward viability. This roadmap is the auditor's M1–M5, done in sm
       (p0_reason/strict_ev_allowed/is_blocked), signal strength (edge/ev/score/obi), and exposure
       snapshot (open_total/open_symbol) into features_json (schema v2) — offline can reconstruct
       the *admissible-trade* subset (auditor §3.5). reviewer APPROVE + trading-safety SAFE.
-- [ ] **M1.3b — capture aggTrade.** New Binance `@aggTrade` WS subscription
-      (aggressor side/price/volume) so fills can be modelled against *traded-through*, not midpoint;
-      record the P0/EV/exposure `admission` outcome so analysis can separate raw-signal edge from
-      *executable* (admissible-trade) edge (auditor §3.5). Bigger — its own PR(s).
+- [x] **M1.3b — capture aggTrade** (#127, merged; deployed live d7b7039 on 2026-07-20).
+      New Binance `@aggTrade` WS subscription (aggressor side/price/volume) so fills can be
+      modelled against *traded-through*, not midpoint. Gated on `_sh.enabled()`, fail-safe off.
+      reviewer APPROVE + trading-safety SAFE. **M1 enrichment is now COMPLETE and live**:
+      coverage integrity (M1.1) + spread (M1.2) + admission (M1.3a) + aggTrade (M1.3b).
+
+## M1 → M2 status (2026-07-20)
+The M2 model pipeline (`scripts/maker_fill_model_v2.py` + `hetzner-run-maker-model-v2.yml`) is
+**verified end-to-end** against the live enriched sqlite (run 29776673209). First run OOM-killed the
+box (110,891 ok obs × up to 300 path rows); loader is now memory-bounded (#128, reviewed) and runs
+clean. First real coverage read: `has_spread=True`, `admission_fraction=0.244` (need ≥0.80 — most
+rows are pre-M1.3a legacy), regimes ~97% BULL_TREND, conservative OOS fills=52 (need ≥200),
+symbol-share=1.0 → **GO correctly locked OFF (multiply).** Not evidence of edge — thin, single-symbol,
+sub-1% fill rate. **Now data/time-bound:** the constraint is accumulating enriched, multi-regime,
+multi-symbol observations in observe mode. Re-run M2 as coverage grows; then M3–M5. **REAL = NO-GO.**
 
 ## Live deploy status (2026-07-20)
 M1.1 + M1.2 + M1.3a are **DEPLOYED LIVE** (server `332acba`, deploy-apply DEPLOY_OK, READY
