@@ -38,6 +38,8 @@ MAKER_COST = {"midpoint": 1.0, "conservative": 4.0}  # round-trip bp by scenario
 GO_MIN_FILLS = 200
 GO_MIN_ADMISSION_FRAC = 0.8   # most obs must carry admission features (not legacy rows)
 GO_MIN_REGIMES = 2
+GO_MIN_PF = 1.20              # auditor §8: OOS profit factor
+GO_MAX_SYMBOL_SHARE = 0.50    # auditor §8: no single symbol > 50% of gross profit
 
 
 def _load(db):
@@ -111,9 +113,32 @@ def _uncond_series(rows, E, tif, scenario, exit_clock, hold_h):
     return out
 
 
-def _n_fills(rows, E, tif, scenario, exit_clock, hold_h):
-    return sum(1 for o in rows
-               if _sim(o, E, tif, scenario, exit_clock, hold_h) is not None)
+def _fill_details(rows, E, tif, scenario, exit_clock, hold_h):
+    """(symbol, pnl) for every FILLED test trade — for PF + symbol concentration."""
+    out = []
+    for o in rows:
+        p = _sim(o, E, tif, scenario, exit_clock, hold_h)
+        if p is not None:
+            out.append((o["symbol"], p))
+    return out
+
+
+def _profit_factor(pnls):
+    gw = sum(p for p in pnls if p > 0)
+    gl = -sum(p for p in pnls if p < 0)
+    if gl <= 0:
+        return float("inf") if gw > 0 else 0.0
+    return gw / gl
+
+
+def _max_symbol_profit_share(details):
+    """Largest single symbol's share of gross PROFIT (auditor §8: must be ≤ 0.5)."""
+    by_sym = {}
+    for sym, p in details:
+        if p > 0:
+            by_sym[sym] = by_sym.get(sym, 0.0) + p
+    tot = sum(by_sym.values())
+    return (max(by_sym.values()) / tot) if tot > 0 else 1.0
 
 
 def _mean(xs):
@@ -172,13 +197,18 @@ def walk_forward(rows, scenario, has_spread):
     E, tif, ec, hh = bkey
     test_series = _uncond_series(test, E, tif, scenario, ec, hh)
     test_exp = _mean(test_series)
-    nf = _n_fills(test, E, tif, scenario, ec, hh)
+    details = _fill_details(test, E, tif, scenario, ec, hh)
+    nf = len(details)
     ci = _block_bootstrap_ci(test_series)
+    pf = _profit_factor([p for _, p in details])
+    sym_share = _max_symbol_profit_share(details)
     return {"scenario": scenario, "E_star": E, "tif_star": tif,
             "exit_clock": ec, "hold_h": hh,
             "train_exp_bps": round(best, 3), "test_exp_bps": round(test_exp, 3),
             "n_test": len(test), "n_test_fills": nf,
             "test_fill_rate": round(nf / len(test), 3) if test else 0.0,
+            "profit_factor": round(pf, 3) if pf != float("inf") else "inf",
+            "max_symbol_profit_share": round(sym_share, 3),
             "boot_ci_5_95": [round(ci[0], 2), round(ci[1], 2)] if ci else None}
 
 
@@ -199,9 +229,13 @@ def main(argv):
     ci = cons.get("boot_ci_5_95")
     coverage_ok = (has_spread and admission_frac >= GO_MIN_ADMISSION_FRAC
                    and len(regimes) >= GO_MIN_REGIMES)
+    _pf = cons.get("profit_factor", 0)
+    _pf_ok = (_pf == "inf") or (isinstance(_pf, (int, float)) and _pf >= GO_MIN_PF)
     go = bool(coverage_ok and ci and ci[0] > 0
               and cons.get("test_exp_bps", -1) > 0
-              and cons.get("n_test_fills", 0) >= GO_MIN_FILLS)
+              and cons.get("n_test_fills", 0) >= GO_MIN_FILLS
+              and _pf_ok
+              and cons.get("max_symbol_profit_share", 1.0) <= GO_MAX_SYMBOL_SHARE)
     out = {
         "n_obs_ok": len(obs), "n_admissible": len(admissible),
         "has_spread_column": has_spread,

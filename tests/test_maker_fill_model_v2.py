@@ -109,3 +109,13 @@ def test_reverting_positive_nonreverting_negative(tmp_path):
     # reverting is a real positive edge; non-reverting can't beat "don't trade" (0),
     # so the model correctly picks a no-fill config -> <= 0, never a fabricated gain.
     assert rev > 0 >= non, (rev, non)
+
+
+def test_go_bar_includes_pf_and_symbol_share(tmp_path):
+    db = str(tmp_path / "s.sqlite"); _build(db, 260, 0)   # single symbol ETHUSDT
+    d = _run(db)
+    cons = d["walk_forward"]["conservative"]
+    assert "profit_factor" in cons and "max_symbol_profit_share" in cons, cons
+    # single-symbol data -> share == 1.0 -> GO must be False regardless of edge
+    assert cons["max_symbol_profit_share"] == 1.0, cons
+    assert d["GO"] is False
