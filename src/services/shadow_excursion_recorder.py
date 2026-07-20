@@ -77,7 +77,7 @@ class _Observer:
         "observation_id", "symbol", "side", "regime", "signal_ts_ms",
         "entry_ref_price", "horizon_ms", "features_json", "ladder",
         "buckets", "_cur_sec", "_cur", "first_cross", "sample_count",
-        "feature_schema_version",
+        "feature_schema_version", "agg",
     )
 
     def __init__(self, observation_id: str, symbol: str, side: str, regime: str,
@@ -99,6 +99,12 @@ class _Observer:
         # (direction, level_bps) -> first_cross_ms ; direction in {"fav","adv"}
         self.first_cross: Dict[Tuple[str, int], int] = {}
         self.sample_count = 0
+        # M1.3b: aggressor traded volume per second_offset -> [buy_qty, sell_qty].
+        # A separate dict (not the price buckets) avoids a bucket-creation race at
+        # record time. NB: path_rows only emits buckets, so an aggTrade in a second
+        # with NO price tick has no bucket and is dropped at persist — rare, since
+        # bookTicker is high-frequency (such sparse seconds are flagged by data_quality).
+        self.agg: Dict[int, List[float]] = {}
 
     def _flush_current(self) -> None:
         if self._cur is not None:
@@ -144,6 +150,18 @@ class _Observer:
             if bps <= -lvl + _EPS and ("adv", lvl) not in self.first_cross:
                 self.first_cross[("adv", lvl)] = ts_ms
 
+    def record_agg(self, is_buyer_maker: bool, qty: float, ts_ms: int, second_ms: int) -> None:
+        """M1.3b: accumulate aggressor traded volume into the observation's second.
+        is_buyer_maker True => aggressor was the SELLER (market sell); False => BUYER."""
+        sec = (ts_ms - self.signal_ts_ms) // second_ms
+        if sec < 0 or sec * second_ms >= self.horizon_ms:
+            return
+        slot = self.agg.get(sec)
+        if slot is None:
+            slot = [0.0, 0.0]
+            self.agg[sec] = slot
+        slot[1 if is_buyer_maker else 0] += qty
+
     def path_rows(self) -> List[Dict[str, Any]]:
         self._flush_current()
         rows = []
@@ -151,7 +169,9 @@ class _Observer:
             first_extreme = "high" if b["first_high_ms"] <= b["first_low_ms"] else "low"
             sn = b.get("spread_n", 0)
             spread_bps = (b["spread_sum"] / sn) if sn else None
-            rows.append({**b, "first_extreme": first_extreme, "spread_bps": spread_bps})
+            ab = self.agg.get(b["second_offset"], (0.0, 0.0))
+            rows.append({**b, "first_extreme": first_extreme, "spread_bps": spread_bps,
+                         "agg_buy_qty": ab[0], "agg_sell_qty": ab[1]})
         return rows
 
 
@@ -184,6 +204,8 @@ CREATE TABLE IF NOT EXISTS shadow_path_1s (
     first_extreme TEXT,
     sample_count INTEGER NOT NULL,
     spread_bps REAL,
+    agg_buy_qty REAL,
+    agg_sell_qty REAL,
     PRIMARY KEY (observation_id, second_offset)
 );
 CREATE TABLE IF NOT EXISTS shadow_first_crossing (
@@ -246,6 +268,10 @@ class ShadowExcursionRecorder:
             if "spread_bps" not in cols:
                 self._conn.execute(
                     "ALTER TABLE shadow_path_1s ADD COLUMN spread_bps REAL")
+            if "agg_buy_qty" not in cols:      # M1.3b
+                self._conn.execute("ALTER TABLE shadow_path_1s ADD COLUMN agg_buy_qty REAL")
+            if "agg_sell_qty" not in cols:
+                self._conn.execute("ALTER TABLE shadow_path_1s ADD COLUMN agg_sell_qty REAL")
             self._conn.commit()
         return self._conn
 
@@ -291,11 +317,12 @@ class ShadowExcursionRecorder:
                 """INSERT OR REPLACE INTO shadow_path_1s
                    (observation_id, second_offset, open_bps, high_bps, low_bps,
                     close_bps, first_high_ms, first_low_ms, first_extreme, sample_count,
-                    spread_bps)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                    spread_bps, agg_buy_qty, agg_sell_qty)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 [(obs.observation_id, r["second_offset"], r["open_bps"], r["high_bps"],
                   r["low_bps"], r["close_bps"], r["first_high_ms"], r["first_low_ms"],
-                  r["first_extreme"], r["sample_count"], r.get("spread_bps")) for r in rows])
+                  r["first_extreme"], r["sample_count"], r.get("spread_bps"),
+                  r.get("agg_buy_qty"), r.get("agg_sell_qty")) for r in rows])
             conn.executemany(
                 """INSERT OR REPLACE INTO shadow_first_crossing
                    (observation_id, direction, level_bps, first_cross_ms)
@@ -375,6 +402,17 @@ class ShadowExcursionRecorder:
                 lst.remove(oid)
         return len(done)
 
+    def on_aggtrade(self, symbol: str, price: float, qty: float,
+                    is_buyer_maker: bool, ts_ms: int) -> None:
+        """M1.3b: route an aggressor trade to every active observer for `symbol`.
+        aggTrades don't drive the horizon clock (ticks do) — they only accumulate
+        traded volume per second. In-memory hot path; no persist here."""
+        with self._lock:
+            for oid in list(self._by_symbol.get(symbol, ())):
+                obs = self._active.get(oid)
+                if obs is not None:
+                    obs.record_agg(bool(is_buyer_maker), float(qty), int(ts_ms), self.second_ms)
+
     def sweep_expired(self, now_ms: int) -> int:
         """Finalize+persist observers whose horizon has elapsed as of now_ms, even
         if their symbol has gone silent. on_tick also runs this on a throttle, so
@@ -444,3 +482,11 @@ def record_tick(symbol: str, price: float, ts_ms: int,
     r = get_recorder()
     if r is not None:
         r.on_tick(symbol, price, ts_ms, bid, ask)
+
+
+def record_aggtrade(symbol: str, price: float, qty: float,
+                    is_buyer_maker: bool, ts_ms: int) -> None:
+    """No-op unless PAPER_DATA_COLLECTION_ONLY is enabled (M1.3b)."""
+    r = get_recorder()
+    if r is not None:
+        r.on_aggtrade(symbol, price, qty, is_buyer_maker, ts_ms)

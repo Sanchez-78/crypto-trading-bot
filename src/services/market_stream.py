@@ -109,11 +109,22 @@ def _dispatch(sym: str, bid: float, ask: float, bid_qty: float = 0.0, ask_qty: f
 # ── WebSocket helpers ─────────────────────────────────────────────────────────
 
 def _stream_url(symbols: list[str]) -> str:
+    # M1.3b: subscribe to @aggTrade (aggressor trades) ONLY when observation-only
+    # data-collection mode is on — it is high-frequency, so we don't add that feed
+    # load in normal operation. (Env flag is read at startup; a mode change needs a
+    # restart, which also re-reads it.)
+    try:
+        from src.services.shadow_excursion_recorder import enabled as _obs_enabled
+        want_agg = _obs_enabled()
+    except Exception:
+        want_agg = False
     parts = []
     for s in symbols:
         sl = s.lower()
         parts.append(f"{sl}@bookTicker")
         parts.append(f"{sl}@depth20@100ms")
+        if want_agg:
+            parts.append(f"{sl}@aggTrade")
     return f"wss://stream.binance.com:9443/stream?streams={'/'.join(parts)}"
 
 
@@ -138,6 +149,22 @@ def _on_message(ws, raw):
                     update_depth(sym, bids, asks)
                 except Exception:
                     pass
+            return
+
+        if "@aggTrade" in stream:
+            # M1.3b: feed aggressor trades to the shadow recorder (observation-only,
+            # default-off, wrapped — can never disrupt the price feed).
+            try:
+                from src.services import shadow_excursion_recorder as _sh
+                if _sh.enabled():
+                    _sh.record_aggtrade(
+                        symbol=data.get("s", "").upper(),
+                        price=float(data.get("p", 0) or 0),
+                        qty=float(data.get("q", 0) or 0),
+                        is_buyer_maker=bool(data.get("m", False)),
+                        ts_ms=int(data.get("T", 0) or 0))
+            except Exception:
+                pass
             return
 
         _dispatch(
