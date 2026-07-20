@@ -2,6 +2,15 @@
 
 ---
 
+## ⭐ 2026-07-20 — observe bypass + stuck-position fixes DEPLOYED LIVE
+Two paper-correctness bugs found from a dashboard screenshot (1 open position + trades opening while observe mode was set), fixed, gated, and deployed:
+- **Observe bypass (#108):** `PAPER_DATA_COLLECTION_ONLY` was enforced only in `signal_generator`/`_on_signal_created`, but RDE (`realtime_decision_engine`) + `trade_executor` call `open_paper_position()` directly. Fix: fail-closed gate at the choke (top of `open_paper_position`). reviewer APPROVE + trading-safety SAFE.
+- **Stuck-position / max-age bug (#110):** `_effective_paper_hold_s` had no upper bound (per-position `timeout_s`/`max_hold_s`), so a position stayed open 14.5h past the 20min soft cap. Fix: `_HARD_MAX_AGE_S` absolute ceiling (2h default). reviewer APPROVE + trading-safety SAFE.
+- **Deploy catch-22 broken (#111/#113):** deploy-apply's zero-position gate refused to restart while the stuck position was open, but the fix that closes it needs the restart. New gated one-off `hetzner-recover-stuck-position.yml` (stop → reset → start → poll drain → rollback; STATUS dry-run; reviewer APPROVE + hardening).
+- **Applied live (RECOVER, 08:40 UTC):** `staging compile OK` → stop → switch `d99aa5d…`→`14355e69…` → start → **poll 1: active, open_positions=0, ready==target** → `[RECOVER_OK]`. Both fixes now live; stuck position closed by the new hard-cap; observe now holds 100% across all callers. Bot observing, REAL = absolute NO-GO. (`hetzner-recover-stuck-position.yml` is a one-off — safe to delete.)
+
+---
+
 ## ⭐ OBSERVE-GATE BYPASS FIX (2026-07-20) — #108, merged; deploy armed
 **Symptom:** dashboard showed 1 open ETHUSDT paper position + `closed_trades` 17102→17128 (~+26 over 24h) while `PAPER_DATA_COLLECTION_ONLY=1` — observe mode did NOT hold 100%.
 **Root cause (forensic):** the observe gate lived only in `signal_generator.py:677` and `_on_signal_created` (~3894), but `realtime_decision_engine.py:3855/4063/4145` and `trade_executor.py:2948` call `open_paper_position()` **directly**, bypassing the gate. So RDE-path entries opened despite the flag.
