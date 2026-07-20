@@ -94,7 +94,8 @@ def _dispatch(sym: str, bid: float, ask: float, bid_qty: float = 0.0, ask_qty: f
     update_paper_positions(_symbol_prices, time.time())
 
     track_price(sym, p)
-    publish("price_tick", {"symbol": sym, "price": p, "obi": obi})
+    publish("price_tick", {"symbol": sym, "price": p, "obi": obi,
+                           "bid": bid, "ask": ask})  # M1.2: executable quote for shadow recorder
     try:
         from src.services.signal_engine import SIGNAL_ENGINE_ENABLED, push_tick
         if SIGNAL_ENGINE_ENABLED:

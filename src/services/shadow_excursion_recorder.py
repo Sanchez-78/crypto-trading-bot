@@ -106,7 +106,8 @@ class _Observer:
             self._cur = None
             self._cur_sec = None
 
-    def update(self, price: float, ts_ms: int, second_ms: int) -> None:
+    def update(self, price: float, ts_ms: int, second_ms: int,
+               spread_bps: Optional[float] = None) -> None:
         bps = _favorable_bps(self.side, self.entry_ref_price, price)
         sec = (ts_ms - self.signal_ts_ms) // second_ms
         if sec != self._cur_sec:
@@ -117,6 +118,9 @@ class _Observer:
                 "open_bps": bps, "high_bps": bps, "low_bps": bps, "close_bps": bps,
                 "first_high_ms": ts_ms, "first_low_ms": ts_ms,
                 "sample_count": 0,
+                # M1.2: accumulate the executable quote spread this second (mean at
+                # persist). Optional — NULL if the feed didn't carry bid/ask.
+                "spread_sum": 0.0, "spread_n": 0,
             }
         b = self._cur
         if bps > b["high_bps"]:
@@ -128,6 +132,9 @@ class _Observer:
         b["close_bps"] = bps
         b["sample_count"] += 1
         self.sample_count += 1
+        if spread_bps is not None:
+            b["spread_sum"] += spread_bps
+            b["spread_n"] += 1
         # first-crossing ladder (favorable +L and adverse -L), record earliest ts.
         # _EPS absorbs float representation error so a price meant to sit exactly on
         # a level (e.g. +10.0 bps that computes as 9.99999999999) still registers.
@@ -142,7 +149,9 @@ class _Observer:
         rows = []
         for b in self.buckets:
             first_extreme = "high" if b["first_high_ms"] <= b["first_low_ms"] else "low"
-            rows.append({**b, "first_extreme": first_extreme})
+            sn = b.get("spread_n", 0)
+            spread_bps = (b["spread_sum"] / sn) if sn else None
+            rows.append({**b, "first_extreme": first_extreme, "spread_bps": spread_bps})
         return rows
 
 
@@ -174,6 +183,7 @@ CREATE TABLE IF NOT EXISTS shadow_path_1s (
     first_low_ms INTEGER,
     first_extreme TEXT,
     sample_count INTEGER NOT NULL,
+    spread_bps REAL,
     PRIMARY KEY (observation_id, second_offset)
 );
 CREATE TABLE IF NOT EXISTS shadow_first_crossing (
@@ -228,6 +238,14 @@ class ShadowExcursionRecorder:
             # this, sqlite raises ProgrammingError and the observation is lost.
             self._conn = sqlite3.connect(self.db_path, timeout=10, check_same_thread=False)
             self._conn.executescript(_SCHEMA)
+            # M1.2 migration: add spread_bps to shadow_path_1s on pre-existing DBs
+            # (CREATE IF NOT EXISTS won't add a column). SQLite ADD COLUMN backfills
+            # NULL and is safe/idempotent; guarded by a table_info check.
+            cols = [r[1] for r in self._conn.execute(
+                "PRAGMA table_info(shadow_path_1s)").fetchall()]
+            if "spread_bps" not in cols:
+                self._conn.execute(
+                    "ALTER TABLE shadow_path_1s ADD COLUMN spread_bps REAL")
             self._conn.commit()
         return self._conn
 
@@ -272,11 +290,12 @@ class ShadowExcursionRecorder:
             conn.executemany(
                 """INSERT OR REPLACE INTO shadow_path_1s
                    (observation_id, second_offset, open_bps, high_bps, low_bps,
-                    close_bps, first_high_ms, first_low_ms, first_extreme, sample_count)
-                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                    close_bps, first_high_ms, first_low_ms, first_extreme, sample_count,
+                    spread_bps)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
                 [(obs.observation_id, r["second_offset"], r["open_bps"], r["high_bps"],
                   r["low_bps"], r["close_bps"], r["first_high_ms"], r["first_low_ms"],
-                  r["first_extreme"], r["sample_count"]) for r in rows])
+                  r["first_extreme"], r["sample_count"], r.get("spread_bps")) for r in rows])
             conn.executemany(
                 """INSERT OR REPLACE INTO shadow_first_crossing
                    (observation_id, direction, level_bps, first_cross_ms)
@@ -305,9 +324,19 @@ class ShadowExcursionRecorder:
             self._by_symbol.setdefault(symbol, []).append(observation_id)
         return True
 
-    def on_tick(self, symbol: str, price: float, ts_ms: int) -> None:
+    def on_tick(self, symbol: str, price: float, ts_ms: int,
+                bid: Optional[float] = None, ask: Optional[float] = None) -> None:
         """Feed a price tick. Updates every active observer for `symbol` and
-        finalizes+persists any whose horizon has elapsed. In-memory hot path."""
+        finalizes+persists any whose horizon has elapsed. In-memory hot path.
+
+        bid/ask (optional, M1.2) let each 1s bucket record the executable quote
+        spread in bps — the input a maker-fill model needs beyond the midpoint path.
+        """
+        spread_bps: Optional[float] = None
+        if bid is not None and ask is not None and bid > 0 and ask >= bid:
+            mid = (bid + ask) * 0.5
+            if mid > 0:
+                spread_bps = (ask - bid) / mid * 10000.0
         with self._lock:
             # Throttled global sweep clocked by the incoming tick ts — finalizes
             # observers whose symbol has gone silent, using ANOTHER symbol's ticks
@@ -327,7 +356,7 @@ class ShadowExcursionRecorder:
                     self._persist(obs, ts_ms)
                     done.append(oid)
                 else:
-                    obs.update(float(price), int(ts_ms), self.second_ms)
+                    obs.update(float(price), int(ts_ms), self.second_ms, spread_bps)
             for oid in done:
                 self._active.pop(oid, None)
                 lst = self._by_symbol.get(symbol)
@@ -409,8 +438,9 @@ def record_signal(*args, **kwargs) -> bool:
     return r.record_signal(*args, **kwargs) if r is not None else False
 
 
-def record_tick(symbol: str, price: float, ts_ms: int) -> None:
-    """No-op unless PAPER_DATA_COLLECTION_ONLY is enabled."""
+def record_tick(symbol: str, price: float, ts_ms: int,
+                bid: Optional[float] = None, ask: Optional[float] = None) -> None:
+    """No-op unless PAPER_DATA_COLLECTION_ONLY is enabled. bid/ask optional (M1.2)."""
     r = get_recorder()
     if r is not None:
-        r.on_tick(symbol, price, ts_ms)
+        r.on_tick(symbol, price, ts_ms, bid, ask)
