@@ -48,7 +48,39 @@ real budget and human direction — not something a quick autonomous screen manu
 charter, we do **not** build infra for a signal that hasn't passed the cost-wall check, and none
 has. REAL trading remains absolute NO-GO.
 
+## Round 2 (2026-07-20) — cross-sectional (relative-value) momentum: fails
+Rank the 7 symbols by past return, long top / short bottom, market-neutral, weekly hold. Best
+config (720h/168h/2) *looked* like a lead — OOS **+12.4 bp/rebalance, PF 1.29** after 36 bp (18/leg
+× 2 legs). Stress test killed it: the **short leg loses (−55 bp)** → the whole profit is the long
+leg (+114 bp) = **market beta**; edge **decays** (102→68→8 bp); block-bootstrap OOS CI **[−272,+225]**
+= noise. Tooling: `xsec_momentum_screen.py`, `xsec_momentum_stresstest.py`.
+
+## Round 3 (2026-07-20) — tail residual reversal (independent advisor's best idea): fails
+An independent quant advisor's top proposal, structurally aimed at our two failure modes:
+beta-neutralized (trade residual `r_i − mean(other 6)`, not raw return) + tail-conditioned (only
+large idiosyncratic moves). Kill-switch first (does the tail revert?): **it barely does, then
+continues.** Actual gross residual reversal (7 majors, 3y): `|z|>2, H=1h → +0.44 bp`; `H=6h →
+−0.73`; `|z|>3, H=1h → −0.38`; `H=24h → −7.38` (large idiosyncratic moves **continue**, not revert
+— news/liquidations trend). Reversion where it exists is ~0.4 bp vs **36 bp** cost; WR 27–46%.
+Exactly the advisor's predicted failure (prior ~20–30%). Tooling: `residual_reversal_probe.py`.
+
+## HONEST BOTTOM LINE (six classes tested)
+DEV_FADE · breakout · time-series momentum · z-score mean-reversion · cross-sectional momentum ·
+tail residual reversal — **all fail the ~18 bp/leg cost wall** out-of-sample, each cost-wall-first
+and stress-tested; two apparent leads (tsmom, xsec) were beta/artifacts, and an expert advisor's
+best structural idea died at the premise. Within what this bot can do — **directional / cross-
+sectional trading of 7 spot majors at retail taker cost** — no durable edge clearing the wall has
+been found, and the evidence is now broad and consistent, not a single miss.
+
+Reaching the goal would require **capabilities the bot does not have**: materially lower cost
+(maker/rebate/VIP tier or a cheaper venue), a different instrument (perp funding/basis carry,
+cross-venue), faster microstructure, or alt/on-chain data — i.e. a new project, not tuning. This
+negative is the input to external audit v7 (independent verification + "did we miss an accessible
+class?"). REAL trading remains absolute NO-GO; the paper bot stays in observation-only.
+
 ## Reusable tooling (kept for the next candidate)
 - `costwall_screen.py` — fetch + multi-signal cost-wall screen with OOS split.
 - `costwall_multiregime.py` — long-history regime breakdown + rolling purged walk-forward.
+- `xsec_momentum_screen.py` / `xsec_momentum_stresstest.py` — cross-sectional + leg/decay/bootstrap.
+- `residual_reversal_probe.py` — beta-neutral tail residual reversal kill-switch.
 Point them at any new candidate signal *before* writing any production code.
