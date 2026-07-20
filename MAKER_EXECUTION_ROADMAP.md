@@ -11,7 +11,9 @@ signals move toward viability. This roadmap is the auditor's M1–M5, done in sm
 - [x] **M1.1 — coverage integrity** (#118, merged). `_data_quality` now density-first + verifies the
       1s path reached ≥90% of the horizon; shutdown-truncated paths tagged `partial_shutdown`.
       Trustworthy horizon data. reviewer REJECT→fix→APPROVE, trading-safety SAFE, 25/25 tests.
-- [ ] **M1.2 — capture executable spread (bid/ask).** Exact edit points:
+- [x] **M1.2 — capture executable spread (bid/ask)** (#120, merged). market_stream→price_tick→
+      on_price→recorder; mean `spread_bps` per 1s bucket + `shadow_path_1s.spread_bps` column +
+      idempotent ALTER migration. reviewer APPROVE + trading-safety SAFE, 28/28. Original spec:
       1. `market_stream.py:~97` — add `bid`/`ask` to the `price_tick` publish dict
          (`publish("price_tick", {... , "bid": bid, "ask": ask})`). Backward-compatible (extra keys).
       2. `signal_generator.py:683` — pass them through:
