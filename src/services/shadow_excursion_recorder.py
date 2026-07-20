@@ -100,8 +100,10 @@ class _Observer:
         self.first_cross: Dict[Tuple[str, int], int] = {}
         self.sample_count = 0
         # M1.3b: aggressor traded volume per second_offset -> [buy_qty, sell_qty].
-        # Kept separate from price buckets so an aggTrade that arrives in a second
-        # with no price tick still counts (no bucket-creation race).
+        # A separate dict (not the price buckets) avoids a bucket-creation race at
+        # record time. NB: path_rows only emits buckets, so an aggTrade in a second
+        # with NO price tick has no bucket and is dropped at persist — rare, since
+        # bookTicker is high-frequency (such sparse seconds are flagged by data_quality).
         self.agg: Dict[int, List[float]] = {}
 
     def _flush_current(self) -> None:
