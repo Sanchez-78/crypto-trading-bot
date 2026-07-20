@@ -32,10 +32,23 @@ signals move toward viability. This roadmap is the auditor's M1–M5, done in sm
       record the P0/EV/exposure `admission` outcome so analysis can separate raw-signal edge from
       *executable* (admissible-trade) edge (auditor §3.5). Bigger — its own PR(s).
 
+## Live deploy status (2026-07-20)
+M1.1 + M1.2 + M1.3a are **DEPLOYED LIVE** (server `332acba`, deploy-apply DEPLOY_OK, READY
+converged). The bot observes (0 positions, REAL NO-GO) and now records coverage-integrity +
+`spread_bps` + admission context — the enriched dataset is accruing. M1.3b/M2 changes are
+NOT yet live.
+
 ## M2–M5 — the model (on enriched data, after collection)
-- [ ] **M2 — executable fill scenarios** per maker offset: optimistic (quote touch) / base
-      (executable side crossed + qualifying aggTrade) / conservative (traded-through + queue haircut).
-      Verdict must hold in base AND conservative.
+- [~] **M2 — executable fill model scaffold BUILT (`scripts/maker_fill_model_v2.py`), PR #124
+      RE-REVIEW PENDING (do not merge).** optimistic (midpoint ceiling — non-executable) /
+      conservative (spread-adjusted, executable — GO taken on THIS). Fixes all audit v6 flaws:
+      admissible-trade filter, data_quality=ok, spread-aware fills, fill-time/TIF, exit-clock
+      A/B grid, horizon-aware embargo, REAL moving-block bootstrap CI, full §8 GO bar
+      (expectancy + CI lower>0 + ≥200 fills + PF≥1.20 + no-symbol>50% + coverage), hard-locked
+      off on thin/legacy/single-regime data. 7 tests green. Reviewer REJECTED v1 (fake
+      bootstrap + dead exit-B) → all fixed → **re-review interrupted by the session limit
+      (resets 15:00 UTC); needs independent re-approval before merge.** `base` scenario
+      (traded-through) still needs aggTrade (M1.3b).
 - [ ] **M3 — pre-registered execution policies:** offset E ∈ {1,2,3,4,6}, TIF ∈ {1,3,5,10,30}s,
       exit clock A (signal expiry) / B (fixed hold from fill); maker→cancel→conditional-taker hybrid.
 - [ ] **M4 — purged nested walk-forward:** embargo ≥ one horizon, cluster-bootstrap by time/regime,
