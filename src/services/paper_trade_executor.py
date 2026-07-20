@@ -147,6 +147,13 @@ _FEE_PCT = float(os.getenv("PAPER_FEE_PCT", "0.0015"))  # 0.15% round-trip
 _SLIPPAGE_PCT = float(os.getenv("PAPER_SLIPPAGE_PCT", "0.0003"))  # 0.03%
 _MAX_OPEN = int(os.getenv("PAPER_MAX_OPEN_POSITIONS", "5"))  # Increased to allow more diversification
 _MAX_AGE_S = float(os.getenv("PAPER_MAX_POSITION_AGE_S", "1200"))  # CYCLE 31: Increased to 1200s (20 min) to reach TP in low volatility (was 600s)
+# 2026-07-20: ABSOLUTE hard ceiling on effective hold. _effective_paper_hold_s
+# derives the hold from per-position timeout_s / max_hold_s, which had NO upper
+# bound for non-training/exploration positions — an oversized value let a position
+# stay open indefinitely (observed: a 14.5h ETHUSDT position never timed out). This
+# hard cap guarantees no paper position is ever held past it, whatever those fields
+# say. Generous (2h) so it never clips a legitimate intraday hold; configurable.
+_HARD_MAX_AGE_S = float(os.getenv("PAPER_HARD_MAX_POSITION_AGE_S", "7200"))
 # 2026-07-09: the per-tick [TP_SL_EVAL] log.warning ran on the WebSocket receive
 # thread at ~325 lines/s, saturating it → Binance dropped the slow consumer every
 # ~2 min (feed reconnect churn / near-frozen prices). Gate it behind a debug flag
@@ -935,10 +942,11 @@ def _effective_paper_hold_s(pos: dict) -> float:
             f"[EFFECTIVE_HOLD_EXPLORATION] bucket={bucket} explore_bucket={explore_bucket} "
             f"max_hold={max_hold:.0f} returning={max_hold:.0f}"
         )
-        return float(max_hold)
+        return min(float(max_hold), _HARD_MAX_AGE_S)
 
     # Non-exploration: use configured timeout or default (V10.26 fix: was max(30.0,...) causing 30s closeout)
     result = timeout or _MAX_AGE_S
+    result = min(result, _HARD_MAX_AGE_S)  # 2026-07-20: never exceed the absolute ceiling
     log.debug(
         f"[EFFECTIVE_HOLD_NONTRAIN] bucket={bucket} explore_bucket={explore_bucket} "
         f"timeout={timeout:.0f} _MAX_AGE_S={_MAX_AGE_S:.0f} result={result:.0f}"
