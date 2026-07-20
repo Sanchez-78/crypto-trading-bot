@@ -680,7 +680,9 @@ def on_price(data):
     try:
         from src.services import shadow_excursion_recorder as _shadow
         if _shadow.enabled():
-            _shadow.record_tick(s, float(p), int(float(data.get("ts", time.time())) * 1000))
+            _shadow.record_tick(
+                s, float(p), int(float(data.get("ts", time.time())) * 1000),
+                bid=data.get("bid"), ask=data.get("ask"))  # M1.2: executable spread
     except Exception:
         pass
     # 2026-07-09: env-gated symbol blacklist (forward test). Symbol-filter analysis
