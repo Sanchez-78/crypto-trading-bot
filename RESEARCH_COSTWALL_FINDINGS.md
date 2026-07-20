@@ -48,7 +48,29 @@ real budget and human direction — not something a quick autonomous screen manu
 charter, we do **not** build infra for a signal that hasn't passed the cost-wall check, and none
 has. REAL trading remains absolute NO-GO.
 
+## Round 2 (2026-07-20) — cross-sectional (relative-value) momentum: also fails
+Tested a *different* class: rank the 7 symbols by past-lookback return, long the top / short the
+bottom, market-neutral, longer holds (cost amortized). Best config (720h lookback, 168h hold,
+2 long / 2 short) *looked* like a lead — **OOS net +12.4 bp/rebalance after 36 bp round-trip
+(18 bp/leg × 2 legs), PF 1.29**. Then the stress test killed it:
+- **The short leg LOSES** (−55 bp) — the entire spread profit is the **long leg (+114 bp) = market
+  beta** (majors net rose over 3y). It is long-momentum in disguise, not neutral alpha.
+- **Decays** across sub-periods: +102 → +68 → **+8 bp**; recent period barely positive.
+- **Block-bootstrap OOS CI = [−272, +225] bp** — the +12 bp is statistically indistinguishable
+  from noise (n=60, huge variance).
+
+## Honest bottom line (both rounds)
+**Two apparent edges (tsmom, cross-sectional momentum) each looked positive and each died under
+proper scrutiny** (single-regime artifact; short-leg-is-beta + decay + no-CI). Within what this bot
+can actually do — directional / cross-sectional trading of 7 spot majors at ~18 bp — **no durable
+edge clearing the cost wall has been found.** Remaining ideas (funding/basis carry, cross-venue
+arb) need capabilities the bot lacks (perp+spot legs, multiple venues). Reaching the goal, if
+possible at all here, requires either new capabilities or genuine alpha (alt-data / microstructure),
+not a screen over close prices. This negative is now the input to external audit v7. REAL = NO-GO.
+
 ## Reusable tooling (kept for the next candidate)
 - `costwall_screen.py` — fetch + multi-signal cost-wall screen with OOS split.
 - `costwall_multiregime.py` — long-history regime breakdown + rolling purged walk-forward.
+- `xsec_momentum_screen.py` — cross-sectional (relative-value) momentum screen.
+- `xsec_momentum_stresstest.py` — leg decomposition + cost/sub-period/bootstrap stress test.
 Point them at any new candidate signal *before* writing any production code.
