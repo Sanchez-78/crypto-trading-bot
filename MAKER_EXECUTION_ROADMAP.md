@@ -23,7 +23,11 @@ signals move toward viability. This roadmap is the auditor's M1–M5, done in sm
       4. Schema: `ALTER TABLE shadow_path_1s ADD COLUMN spread_bps REAL` — idempotent via
          `PRAGMA table_info` in `_db()` (SQLite ADD COLUMN backfills NULL; safe on the live DB).
       Gates: reviewer + trading-safety (touches ingestion — small, additive, default-off).
-- [ ] **M1.3 — capture aggTrade + admission decision.** New Binance `@aggTrade` WS subscription
+- [x] **M1.3a — capture admission context** (#122, merged). observe hook records the P0 decision
+      (p0_reason/strict_ev_allowed/is_blocked), signal strength (edge/ev/score/obi), and exposure
+      snapshot (open_total/open_symbol) into features_json (schema v2) — offline can reconstruct
+      the *admissible-trade* subset (auditor §3.5). reviewer APPROVE + trading-safety SAFE.
+- [ ] **M1.3b — capture aggTrade.** New Binance `@aggTrade` WS subscription
       (aggressor side/price/volume) so fills can be modelled against *traded-through*, not midpoint;
       record the P0/EV/exposure `admission` outcome so analysis can separate raw-signal edge from
       *executable* (admissible-trade) edge (auditor §3.5). Bigger — its own PR(s).
