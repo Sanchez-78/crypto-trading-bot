@@ -2,6 +2,15 @@
 
 ---
 
+## ⭐ OBSERVE-GATE BYPASS FIX (2026-07-20) — #108, merged; deploy armed
+**Symptom:** dashboard showed 1 open ETHUSDT paper position + `closed_trades` 17102→17128 (~+26 over 24h) while `PAPER_DATA_COLLECTION_ONLY=1` — observe mode did NOT hold 100%.
+**Root cause (forensic):** the observe gate lived only in `signal_generator.py:677` and `_on_signal_created` (~3894), but `realtime_decision_engine.py:3855/4063/4145` and `trade_executor.py:2948` call `open_paper_position()` **directly**, bypassing the gate. So RDE-path entries opened despite the flag.
+**Fix (#108):** gate at the authoritative choke — the top of `open_paper_position()`, before any other branch, fail-closed. Every caller now covered; when the flag is set, NO position opens regardless of path. Recording stays upstream. Regression test `tests/test_observe_gate_choke.py` (7/7): blocks for all caller reasons × truthy spellings, off-path unaffected, static guard that the gate is the first branch.
+**Gates:** reviewer-agent **APPROVE (LOW)** (gate precedes the only opener `_POSITIONS[trade_id]=` at :1789; restart-hydration paths correctly untouched; no caller crashes on the blocked dict) + trading-safety **SAFE** (additive, no real-order path, no close/management change — the stale position still closes on TP/SL, no deadlock).
+**Live status:** merged to main (`219dfe5`). `hetzner-deploy-apply` PLAN → **staging validation OK** (new SHA compiles on server), but **Gate 5 (zero-open-position) refuses** while the 1 stale position is open. Deploy is ARMED: operator fires `hetzner-deploy-apply confirm=DEPLOY` once open_positions=0 (the stale position self-closes on TP/SL) → switch + restart + READY verify + rollback-on-fail. The bot is observing (0 opens on 2026-07-20). REAL = absolute NO-GO.
+
+---
+
 ## ⭐ ROUND 4/5 STATUS (2026-07-18) — authoritative; supersedes everything below
 
 > **Deployed SHA on server:** `1eba962` (autodeploy 2h). **REAL trading = NO-GO (unchanged).** Paper-only, **trading PAUSED** (`PAPER_SYMBOL_BLACKLIST` = all 7 symbols → `signal_generator.py:682` returns → 0 new entries), `open_positions=0`.
