@@ -23,9 +23,17 @@ entry E bps better has entry basis f=-E; on fill the gross hold-to-exit = f_exit
 Usage: python3 maker_fill_model_v2.py /path/to/shadow_excursion.sqlite
 PRELIMINARY until the enriched dataset is large + multi-regime; prints coverage,
 and the GO gate is hard-locked off unless coverage/regime/fill thresholds are met.
+
+Memory: each ok observation can hold up to horizon_s (default 300) 1s path rows, so
+weeks of observe-mode recording is millions of rows. The loader counts coverage over
+ALL ok observations but only MATERIALISES paths for the most-recent MFM2_MAX_OBS
+admissible ones (compact arrays), so a run on the live box (shared with the bot) stays
+memory-bounded instead of being OOM-killed. Truncation is reported, never silent.
 """
 from __future__ import annotations
+import array
 import json
+import os
 import random
 import sqlite3
 import sys
@@ -34,6 +42,7 @@ E_LADDER = [1, 2, 3, 4, 6]                 # passive entry offsets (bps)
 TIF_SEC = [1, 3, 5, 10, 30]                # cancel if unfilled within this many seconds (inclusive)
 EXIT_POLICIES = [("A", None), ("B", 30), ("B", 60)]  # A: signal expiry; B: fixed hold from fill
 MAKER_COST = {"midpoint": 1.0, "conservative": 4.0}  # round-trip bp by scenario
+MAX_OBS = int(os.getenv("MFM2_MAX_OBS", "15000"))    # cap materialised obs (memory bound, shared box)
 # GO hard gates (audit §8) — GO can only be True if ALL are met:
 GO_MIN_FILLS = 200
 GO_MIN_ADMISSION_FRAC = 0.8   # most obs must carry admission features (not legacy rows)
@@ -42,65 +51,112 @@ GO_MIN_PF = 1.20              # auditor §8: OOS profit factor
 GO_MAX_SYMBOL_SHARE = 0.50    # auditor §8: no single symbol > 50% of gross profit
 
 
-def _load(db):
-    conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=15)
-    conn.row_factory = sqlite3.Row
-    pcols = {r[1] for r in conn.execute("PRAGMA table_info(shadow_path_1s)")}
-    has_spread = "spread_bps" in pcols
-    obs = {}
-    for o in conn.execute(
-            "SELECT observation_id, symbol, regime, side, signal_ts_ms, horizon_ms, "
-            "features_json FROM shadow_excursion_observations WHERE data_quality='ok' "
-            "ORDER BY signal_ts_ms ASC"):
-        try:
-            feats = json.loads(o["features_json"]) if o["features_json"] else {}
-        except Exception:
-            feats = {}
-        obs[o["observation_id"]] = {
-            "ts": o["signal_ts_ms"], "symbol": o["symbol"], "regime": o["regime"],
-            "horizon_ms": o["horizon_ms"], "feats": feats, "path": []}
-    spread_sel = "spread_bps" if has_spread else "NULL as spread_bps"
-    for r in conn.execute(
-            f"SELECT observation_id, second_offset, low_bps, close_bps, {spread_sel} "
-            "FROM shadow_path_1s ORDER BY observation_id, second_offset"):
-        o = obs.get(r["observation_id"])
-        if o is not None:
-            o["path"].append((r["second_offset"], r["low_bps"], r["close_bps"], r["spread_bps"]))
-    conn.close()
-    return list(obs.values()), has_spread
-
-
-def _admissible(o):
+def _admissible_feats(f):
     """Audit §3.5: keep only signals the live bot would actually have opened. Trust
     the RECORDED decision (is_blocked / strict_ev_allowed) — do not re-derive caps
     (an analyst guess could diverge from the bot's live config). Legacy rows without
     admission features are kept but counted separately in coverage."""
-    f = o["feats"]
     if "is_blocked" in f or "strict_ev_allowed" in f:
         return bool(f.get("strict_ev_allowed")) or not bool(f.get("is_blocked"))
     return True
 
 
+def _load(db):
+    conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=30)
+    conn.row_factory = sqlite3.Row
+    try:
+        conn.execute("PRAGMA cache_size=-8000")  # ~8MB page cache — the DB shares a small box with the bot
+    except sqlite3.Error:
+        pass
+    pcols = {r[1] for r in conn.execute("PRAGMA table_info(shadow_path_1s)")}
+    has_spread = "spread_bps" in pcols
+
+    # Pass 1 — observation METADATA only (no path rows). Coverage counts run over ALL
+    # ok observations; only the most-recent MAX_OBS ADMISSIBLE ones are kept for
+    # simulation, so Pass 2 stays memory-bounded (see module docstring).
+    n_ok = with_feats = n_admissible = 0
+    regimes = {}
+    keep = {}
+    for row in conn.execute(
+            "SELECT observation_id, symbol, regime, signal_ts_ms, horizon_ms, features_json "
+            "FROM shadow_excursion_observations WHERE data_quality='ok' "
+            "ORDER BY signal_ts_ms DESC"):
+        n_ok += 1
+        try:
+            feats = json.loads(row["features_json"]) if row["features_json"] else {}
+        except Exception:
+            feats = {}
+        if feats.get("strict_ev_allowed") is not None:
+            with_feats += 1
+        if not _admissible_feats(feats):
+            continue
+        n_admissible += 1
+        regimes[row["regime"]] = regimes.get(row["regime"], 0) + 1
+        if len(keep) < MAX_OBS:
+            keep[row["observation_id"]] = {
+                "ts": row["signal_ts_ms"], "symbol": row["symbol"],
+                "regime": row["regime"], "horizon_ms": row["horizon_ms"],
+                "sec": array.array("i"), "low": array.array("d"),
+                "close": array.array("d"), "spread": array.array("d")}
+
+    # Pass 2 — path rows for the KEPT observations only. JOIN to data_quality='ok'
+    # (and floor on the oldest kept ts) so SQLite yields far fewer rows storage-side;
+    # PK(observation_id, second_offset) satisfies the ORDER BY with no temp sort.
+    if keep:
+        ts_floor = min(o["ts"] for o in keep.values())
+        spread_col = "p.spread_bps" if has_spread else "NULL"
+        for r in conn.execute(
+                f"SELECT p.observation_id AS oid, p.second_offset AS so, p.low_bps AS lo, "
+                f"p.close_bps AS cl, {spread_col} AS sp "
+                "FROM shadow_path_1s p JOIN shadow_excursion_observations o "
+                "ON o.observation_id = p.observation_id "
+                "WHERE o.data_quality='ok' AND o.signal_ts_ms >= ? "
+                "ORDER BY p.observation_id, p.second_offset", (ts_floor,)):
+            o = keep.get(r["oid"])
+            if o is None:
+                continue
+            o["sec"].append(int(r["so"]))
+            o["low"].append(float(r["lo"]) if r["lo"] is not None else 0.0)
+            o["close"].append(float(r["cl"]) if r["cl"] is not None else 0.0)
+            sp = r["sp"]
+            o["spread"].append(float(sp) if sp is not None else float("nan"))
+    conn.close()
+
+    coverage = {
+        "n_obs_ok": n_ok, "with_feats": with_feats, "n_admissible": n_admissible,
+        "n_loaded": len(keep), "truncated": n_admissible > len(keep),
+        "admission_frac": round((with_feats / n_ok), 3) if n_ok else 0.0,
+        "regimes": dict(sorted(regimes.items(), key=lambda kv: -kv[1])[:8]),
+    }
+    return list(keep.values()), has_spread, coverage
+
+
 def _sim(o, E, tif, scenario, exit_clock="A", hold_h=None):
     """Net P&L bps for one observation, or None (no fill within TIF)."""
-    path = o["path"]
-    if not path:
+    sec, low, close, spread = o["sec"], o["low"], o["close"], o["spread"]
+    n = len(sec)
+    if n == 0:
         return None
-    fill_sec = None
-    for (sec, low, close, spread) in path:
-        if sec > tif:
+    fill_i = None
+    for i in range(n):
+        if sec[i] > tif:
             break
         thresh = -E
         if scenario == "conservative":
-            thresh -= (spread if spread is not None else 0.0) * 0.5
-        if low <= thresh:
-            fill_sec = sec
+            sp = spread[i]
+            thresh -= (sp if sp == sp else 0.0) * 0.5   # sp != sp -> NaN (missing spread)
+        if low[i] <= thresh:
+            fill_i = i
             break
-    if fill_sec is None:
+    if fill_i is None:
         return None
-    last_sec = path[-1][0]
-    exit_sec = last_sec if exit_clock == "A" else min(fill_sec + (hold_h or 0), last_sec)
-    f_exit = next((c for (s, l, c, sp) in reversed(path) if s <= exit_sec), path[-1][2])
+    last_sec = sec[n - 1]
+    exit_sec = last_sec if exit_clock == "A" else min(sec[fill_i] + (hold_h or 0), last_sec)
+    f_exit = close[n - 1]
+    for j in range(n - 1, -1, -1):
+        if sec[j] <= exit_sec:
+            f_exit = close[j]
+            break
     return (f_exit + E) - MAKER_COST[scenario]
 
 
@@ -216,11 +272,9 @@ def main(argv):
     if len(argv) < 2:
         print("usage: maker_fill_model_v2.py <shadow_excursion.sqlite>", file=sys.stderr)
         return 2
-    obs, has_spread = _load(argv[1])
-    admissible = [o for o in obs if _admissible(o)]
-    with_feats = sum(1 for o in obs if o["feats"].get("strict_ev_allowed") is not None)
-    regimes = _tally(admissible)
-    admission_frac = (with_feats / len(obs)) if obs else 0.0
+    admissible, has_spread, cov = _load(argv[1])
+    regimes = cov["regimes"]
+    admission_frac = cov["admission_frac"]
     wf = {s: walk_forward(admissible, s, has_spread) for s in ("midpoint", "conservative")}
 
     # GO is taken on the CONSERVATIVE (executable) scenario ONLY, and hard-gated on
@@ -237,31 +291,29 @@ def main(argv):
               and _pf_ok
               and cons.get("max_symbol_profit_share", 1.0) <= GO_MAX_SYMBOL_SHARE)
     out = {
-        "n_obs_ok": len(obs), "n_admissible": len(admissible),
+        "n_obs_ok": cov["n_obs_ok"], "n_admissible": cov["n_admissible"],
+        "n_loaded_for_sim": cov["n_loaded"], "sim_truncated_to_recent": cov["truncated"],
+        "max_obs_cap": MAX_OBS,
         "has_spread_column": has_spread,
-        "obs_with_admission_features": with_feats,
-        "admission_feature_fraction": round(admission_frac, 3),
+        "obs_with_admission_features": cov["with_feats"],
+        "admission_feature_fraction": admission_frac,
         "regimes": regimes,
         "coverage_ok_for_GO": coverage_ok,
         "GO": go,
         "GO_basis": "conservative (executable) scenario, hard-gated on coverage",
         "note": ("PRELIMINARY. Enriched (spread+admission) rows accrue only after the "
-                 "M1.2/M1.3a deploy; legacy rows lack them and are kept but flagged. GO "
-                 "is locked off unless has_spread AND admission_fraction>=%.2f AND regimes>=%d "
+                 "M1.2/M1.3a deploy; legacy rows lack them and are kept but flagged. "
+                 "Paths are materialised for at most MFM2_MAX_OBS=%d most-recent "
+                 "admissible obs (memory bound on the shared live box; "
+                 "sim_truncated_to_recent flags when older obs were dropped). GO is "
+                 "locked off unless has_spread AND admission_fraction>=%.2f AND regimes>=%d "
                  "AND >=%d conservative OOS fills AND CI lower>0. 'midpoint' is a non-"
                  "executable ceiling; aggTrade (M1.3b) needed for a precise base scenario."
-                 % (GO_MIN_ADMISSION_FRAC, GO_MIN_REGIMES, GO_MIN_FILLS)),
+                 % (MAX_OBS, GO_MIN_ADMISSION_FRAC, GO_MIN_REGIMES, GO_MIN_FILLS)),
         "walk_forward": wf,
     }
     print(json.dumps(out, indent=2))
     return 0
-
-
-def _tally(rows):
-    d = {}
-    for o in rows:
-        d[o["regime"]] = d.get(o["regime"], 0) + 1
-    return dict(sorted(d.items(), key=lambda kv: -kv[1])[:8])
 
 
 if __name__ == "__main__":

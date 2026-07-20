@@ -6,6 +6,7 @@ a REAL block-bootstrap CI, exit-policy selection, and honest coverage gating.
 """
 import importlib.util
 import json
+import os
 import sqlite3
 import subprocess
 import sys
@@ -56,10 +57,24 @@ def _build(db, n_adm=260, n_blocked=80, with_spread=True, with_feats=True, rever
     c.commit(); c.close()
 
 
-def _run(db):
-    out = subprocess.run([sys.executable, str(SCRIPT), db], capture_output=True, text=True)
+def _run(db, env=None):
+    out = subprocess.run([sys.executable, str(SCRIPT), db], capture_output=True, text=True,
+                         env=({**os.environ, **env} if env else None))
     assert out.returncode == 0, out.stderr
     return json.loads(out.stdout)
+
+
+def test_sim_is_memory_bounded_but_coverage_is_whole(tmp_path):
+    # The loader must materialise paths for at most MFM2_MAX_OBS most-recent admissible
+    # obs (weeks of observe-mode = millions of 1s path rows would OOM the live box), yet
+    # coverage COUNTS must remain over ALL ok observations and truncation reported.
+    db = str(tmp_path / "big.sqlite"); _build(db, n_adm=300, n_blocked=50)
+    d = _run(db, env={"MFM2_MAX_OBS": "120"})
+    assert d["n_obs_ok"] == 350                    # counted over all ok obs
+    assert d["n_admissible"] == 300                # full admissible count, not capped
+    assert d["n_loaded_for_sim"] == 120            # sim set bounded to the cap
+    assert d["sim_truncated_to_recent"] is True    # truncation surfaced, never silent
+    assert sum(d["regimes"].values()) == 300       # regime tally spans all admissible
 
 
 def test_admissible_filter_uses_recorded_decision(tmp_path):
