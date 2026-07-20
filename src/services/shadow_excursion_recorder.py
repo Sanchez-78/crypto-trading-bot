@@ -231,12 +231,26 @@ class ShadowExcursionRecorder:
             self._conn.commit()
         return self._conn
 
-    def _data_quality(self, obs: _Observer) -> str:
+    def _data_quality(self, obs: _Observer, end_reason: str = "complete") -> str:
         # "ok" if we saw at least ~1 sample/second over the horizon, else "sparse".
         want = max(1, self.horizon_ms // self.second_ms)
+        # COVERAGE INTEGRITY (audit v6 §3.4, 2026-07-20): sample COUNT alone can
+        # pass even when the path never reached the END of the horizon — a symbol
+        # goes silent mid-horizon, or a shutdown flush_all() persists an observer
+        # that hasn't run its full window. That mislabels a truncated path "ok" and
+        # would contaminate the maker-fill (M1) dataset. Verify the last recorded
+        # 1s bucket actually reaches near the horizon end; flag truncation.
+        secs = [b["second_offset"] for b in obs.buckets]
+        if obs._cur is not None:
+            secs.append(obs._cur["second_offset"])
+        last_sec = max(secs) if secs else -1
+        want_last = self.horizon_ms // self.second_ms - 1
+        covered = want_last <= 0 or last_sec >= 0.9 * want_last
+        if not covered:
+            return "partial_shutdown" if end_reason == "shutdown" else "sparse"
         return "ok" if obs.sample_count >= want else "sparse"
 
-    def _persist(self, obs: _Observer, now_ms: int) -> None:
+    def _persist(self, obs: _Observer, now_ms: int, end_reason: str = "complete") -> None:
         rows = obs.path_rows()
         conn = self._db()
         with conn:  # single transaction
@@ -249,7 +263,7 @@ class ShadowExcursionRecorder:
                 (obs.observation_id, self.source, obs.symbol, obs.side, obs.regime,
                  obs.signal_ts_ms, obs.entry_ref_price, obs.horizon_ms,
                  obs.feature_schema_version, obs.features_json, 1,
-                 self._data_quality(obs), obs.sample_count, now_ms))
+                 self._data_quality(obs, end_reason), obs.sample_count, now_ms))
             conn.executemany(
                 """INSERT OR REPLACE INTO shadow_path_1s
                    (observation_id, second_offset, open_bps, high_bps, low_bps,
@@ -340,7 +354,9 @@ class ShadowExcursionRecorder:
         with self._lock:
             n = 0
             for oid, obs in list(self._active.items()):
-                self._persist(obs, now_ms)
+                # Shutdown path: these observers may not have run their full horizon,
+                # so tag them so _data_quality can flag truncated coverage.
+                self._persist(obs, now_ms, end_reason="shutdown")
                 n += 1
             self._active.clear()
             self._by_symbol.clear()
