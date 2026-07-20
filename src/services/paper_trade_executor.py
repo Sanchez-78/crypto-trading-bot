@@ -3883,11 +3883,28 @@ def _on_signal_created(signal: dict) -> None:
                 from src.services import shadow_excursion_recorder as _shadow
                 if _shadow.enabled():
                     _ts_ms = int(float(ts) * 1000)
+                    # M1.3 (audit v6 §3.5): capture the ADMISSION context so offline
+                    # analysis can reconstruct the *admissible-trade* subset (not just
+                    # raw signals) — the P0 decision, signal strength, and the exposure
+                    # state at signal time. Read-only snapshot; no trading effect.
+                    with _POSITION_LOCK:
+                        _open_total = len(_POSITIONS)
+                        _open_symbol = sum(1 for _pp in _POSITIONS.values()
+                                           if _pp.get("symbol") == symbol)
                     _shadow.record_signal(
                         observation_id=f"{symbol}_{action}_{_ts_ms}",
                         symbol=symbol, side=action, regime=regime,
                         signal_ts_ms=_ts_ms, entry_ref_price=float(price),
+                        feature_schema_version=2,
                         features={"p0_reason": decision.reason,
+                                  "strict_ev_allowed": bool(decision.strict_ev_allowed),
+                                  "is_blocked": bool(is_blocked),
+                                  "edge": signal.get("edge"),
+                                  "ev": signal.get("ev"),
+                                  "score": signal.get("score"),
+                                  "obi": signal.get("obi"),
+                                  "open_total": _open_total,
+                                  "open_symbol": _open_symbol,
                                   "source": signal.get("learning_source")})
                     signal["__paper_handled"] = True  # prevent RDE double-processing
                     log.info("[SHADOW_OBSERVE] %s %s price=%s ts=%s (data-collection only, NO position)",
