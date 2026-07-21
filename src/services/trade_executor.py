@@ -2293,13 +2293,30 @@ def handle_signal(signal):
     # ── V3: quality pre-filter on estimated TP/SL ─────────────────────────────
     atr_pct = atr / max(entry, 1e-9)
     tp_est, sl_est = compute_tp_sl(entry, signal["action"], atr_pct, sym, signal.get("regime", "RANGING"))
-    if not _has_min_edge(entry, tp_est, sl_est):
+
+    # ── DEV_FADE bypass (2026-07-10): validated countertrend maker strategy ──────
+    # The legacy entry gates are built for the trend-following/taker thesis and
+    # reject DEV_FADE 100%. Force wide TP/SL so the 900s timeout is the exit
+    # (hold-to-horizon = the edge; ATR-tight bands truncate the reversion), which
+    # also clears the cost-floor gates (min_edge/pre_cost/cost_guard: 80bps > 18bps).
+    # Non-TP trend gates (bad_rr, quiet_atr_fee, fw_score, force_quiet) are guarded
+    # below. Real safety gates (exposure_full, meta_hard_stop, failure_halt) still apply.
+    _is_dev_fade = signal.get("edge") == "DEV_FADE"
+    if _is_dev_fade:
+        _tpz = float(os.getenv("PAPER_TP_ZONE_BPS", "80")) / 10000.0
+        _slz = float(os.getenv("PAPER_SL_ZONE_BPS", "80")) / 10000.0
+        if signal["action"] == "BUY":
+            tp_est, sl_est = entry * (1 + _tpz), entry * (1 - _slz)
+        else:
+            tp_est, sl_est = entry * (1 - _tpz), entry * (1 + _slz)
+
+    if not _is_dev_fade and not _has_min_edge(entry, tp_est, sl_est):
         log.info(f"    portfolio gate: min_edge  sym={sym}  "
               f"tp={abs(tp_est-entry)/entry:.4f}  sl={abs(sl_est-entry)/entry:.4f}")
         _drop_and_route_to_training(signal, entry, "min_edge")
         return
     _sig_ev = signal.get("ev", 0.0)   # set by RDE evaluate_signal; 0.0 = conservative
-    if _reject_bad_rr(entry, tp_est, sl_est, ev=_sig_ev, atr_pct=atr_pct):
+    if not _is_dev_fade and _reject_bad_rr(entry, tp_est, sl_est, ev=_sig_ev, atr_pct=atr_pct):
         rr  = abs(tp_est - entry) / max(abs(sl_est - entry), 1e-9)
         log.info(f"    portfolio gate: bad_rr  sym={sym}  rr={rr:.2f}")
         _drop_and_route_to_training(signal, entry, "bad_rr")
@@ -2309,7 +2326,7 @@ def handle_signal(signal):
     # With FEE_RT=0.15%, ATR must exceed 0.375% or the fee alone eats the edge.
     # Not bootstrapped — this is a structural market condition, not a learning gate.
     # P1.1AD: Bypass for paper_train mode to allow training sample collection
-    if regime == "QUIET_RANGE":
+    if regime == "QUIET_RANGE" and not _is_dev_fade:
         _atr_pct = atr / max(entry, 1e-9)
         if _atr_pct < 2.5 * FEE_RT:
             # P1.1AD: Allow paper_train to bypass quiet_atr_fee for training samples
@@ -2393,7 +2410,7 @@ def handle_signal(signal):
             pass
 
     ws_raw = signal.get("ws", 0.5)
-    if not bootstrap_open and not pre_cost(ws_raw, FEE_RT):
+    if not bootstrap_open and not _is_dev_fade and not pre_cost(ws_raw, FEE_RT):
         log.info(f"    portfolio gate: pre_cost  sym={sym}  ws={ws_raw:.3f}")
         _drop_and_route_to_training(signal, entry, "pre_cost")
         return
@@ -2416,7 +2433,7 @@ def handle_signal(signal):
     from src.services.feature_weights import MIN_SCORE as _FW_MIN
     # V10.24 PAPER bypass: For paper trading, allow below fw_score to test more symbols
     is_paper = signal.get("learning_source", "").startswith("paper_")
-    if not bootstrap_open and not is_paper and _fw_score < _FW_MIN:
+    if not bootstrap_open and not is_paper and not _is_dev_fade and _fw_score < _FW_MIN:
         log.info(f"    portfolio gate: fw_score  sym={sym}  "
               f"score={_fw_score:.2f}<{_FW_MIN}  regime={reg}")
         _drop_and_route_to_training(signal, entry, "fw_score")
@@ -2745,7 +2762,7 @@ def handle_signal(signal):
     size *= guard.get_size_multiplier()
 
     edge = net_edge(ws_adj, size, ob, FEE_RT, sym)
-    if not cost_guard_bootstrap(edge):
+    if not _is_dev_fade and not cost_guard_bootstrap(edge):
         log.info(f"    portfolio gate: cost_guard  sym={sym}  "
               f"edge={edge:.4f}  mode={bootstrap_mode()}")
         _drop_and_route_to_training(signal, entry, "cost_guard")
