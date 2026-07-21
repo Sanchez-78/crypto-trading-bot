@@ -9,6 +9,11 @@ name: Hetzner Run Maker-Fill Model v2 (read-only)
 
 on:
   workflow_dispatch:
+  # Durable daily coverage read (read-only) so enrichment progress toward the §8 GO bar
+  # is tracked without a live session — result is uploaded as an artifact + printed to the
+  # job summary. Off-minute UTC to avoid the fleet's :00 stampede. GO stays hard-locked off.
+  schedule:
+    - cron: '17 6 * * *'
 
 jobs:
   run-model-v2:
