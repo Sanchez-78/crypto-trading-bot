@@ -18,21 +18,15 @@ from src.services.paper_adaptive_learning import (
 
 
 @pytest.fixture(autouse=True)
-def reset_learner_singleton():
+def reset_learner_singleton(tmp_path):
     """Reset the singleton learner before each test and use temp state file."""
     import src.services.paper_adaptive_learning as pal_mod
-    # Create temp directory for state file
-    tmpdir = tempfile.mkdtemp()
     original_state_file = pal_mod._STATE_FILE
-    pal_mod._STATE_FILE = os.path.join(tmpdir, "test_state.json")
+    pal_mod._STATE_FILE = str(tmp_path / "test_state.json")
     pal_mod._learner = None
     yield
-    # Cleanup
     pal_mod._STATE_FILE = original_state_file
     pal_mod._learner = None
-    # Clean up temp directory
-    import shutil
-    shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 class TestRollingMetricsTracking:
@@ -103,10 +97,10 @@ class TestRollingMetricsTracking:
             {"net_pnl_pct": -0.5, "outcome": "LOSS"},
             {"net_pnl_pct": -1.0, "outcome": "LOSS"},
         ]
-        for trade in trades:
+        for i, trade in enumerate(trades):
             t = {
                 **trade,
-                "trade_id": "t1",
+                "trade_id": f"t{i}",
                 "symbol": "BTC",
                 "regime": "TREND",
                 "side": "BUY",
@@ -438,6 +432,31 @@ class TestRealReadinessGating:
             assert learner.lifecycle == "REAL_READY"
             assert learner.ready_ts is not None
 
+    def test_readiness_blocks_excessive_qualification_drawdown(self):
+        learner = PaperAdaptiveLearning()
+        symbols = ["BTC", "ETH", "XRP"]
+
+        pnl_sequence = ([0.2] * 60) + ([-1.0] * 10) + ([1.0] * 30)
+        for i, pnl_pct in enumerate(pnl_sequence):
+            learner.record_close({
+                "trade_id": f"dd-{i}",
+                "net_pnl_pct": pnl_pct,
+                "outcome": "WIN" if pnl_pct > 0 else "LOSS",
+                "symbol": symbols[i % len(symbols)],
+                "regime": "TREND",
+                "side": "BUY",
+                "learning_source": "test",
+                "mfe_pct": max(pnl_pct, 0.0),
+                "mae_pct": min(pnl_pct, 0.0),
+            })
+
+        learner.operator_unlock = True
+        result = learner.check_real_readiness()
+
+        assert result["drawdown"] > 0.05
+        assert result["eligible"] is False
+        assert "drawdown=" in result["reason"]
+
 
 class TestPersistence:
     """Tests 16-18: State persistence and recovery."""
@@ -458,24 +477,19 @@ class TestPersistence:
         assert data["lifetime_n"] == 5
         assert data["lifetime_pf"] == 1.5
 
-    def test_17_load_state_restores_metrics(self):
+    def test_17_load_state_restores_metrics(self, tmp_path):
         """Test that _load_state() restores persisted metrics."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            state_file = os.path.join(tmpdir, "test_state.json")
-            # Create and save
-            learner1 = PaperAdaptiveLearning()
-            learner1._STATE_FILE = state_file
-            learner1.lifetime_n = 42
-            learner1.lifetime_pf = 1.5
-            learner1.lifecycle = "REAL_READY"
-            learner1._save_state()
-            # Load fresh
-            learner2 = PaperAdaptiveLearning()
-            learner2._STATE_FILE = state_file
-            learner2._load_state()
-            assert learner2.lifetime_n == 42
-            assert learner2.lifetime_pf == 1.5
-            assert learner2.lifecycle == "REAL_READY"
+        state_file = str(tmp_path / "persisted_state.json")
+        learner1 = PaperAdaptiveLearning(state_file=state_file)
+        learner1.lifetime_n = 42
+        learner1.lifetime_pf = 1.5
+        learner1.lifecycle = "REAL_READY"
+        learner1._save_state()
+
+        learner2 = PaperAdaptiveLearning(state_file=state_file)
+        assert learner2.lifetime_n == 42
+        assert learner2.lifetime_pf == 1.5
+        assert learner2.lifecycle == "REAL_READY"
 
     def test_18_singleton_get_learner(self):
         """Test that get_learner() returns singleton instance."""

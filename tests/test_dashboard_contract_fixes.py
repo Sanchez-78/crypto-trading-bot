@@ -37,6 +37,13 @@ ANDROID_CONTRACT_KEYS = (
 )
 
 
+def test_dashboard_pnl_formatter_preserves_negative_sign():
+    """The browser must render a loss as -$amount, not as an unsigned amount."""
+    html = dashboard_web.app.test_client().get("/").get_data(as_text=True)
+    assert "value > 0 ? '+' : value < 0 ? '-' : ''" in html
+    assert "value >= 0 ? '+' : ''" not in html
+
+
 def _hide_opt_cryptomaster(monkeypatch):
     """Make the dashboard use cwd-relative paths even if /opt/cryptomaster exists."""
     real_exists = os.path.exists
@@ -131,13 +138,16 @@ def test_save_closed_trade_persists_side_and_net_pnl_pct(cache_db):
         "entry_price": 1881.365, "exit_price": 1874.265,
         "pnl_usd": 0.001687, "net_pnl_pct": 0.3374, "win": 1,
         "exit_reason": "TP", "regime": "TREND",
+        "source": "rde_take", "tp_sl_profile": "0.8_1.5",
     })
     row = sqlite3.connect(str(cache_db)).execute(
-        "SELECT side, pnl_pct, win FROM closed_trades WHERE trade_id='t_short'"
+        "SELECT side, pnl_pct, win, source, tp_sl_profile "
+        "FROM closed_trades WHERE trade_id='t_short'"
     ).fetchone()
     assert row[0] == "SELL"
     assert row[1] == pytest.approx(0.3374)
     assert row[2] == 1
+    assert row[3:] == ("rde_take", "0.8_1.5")
 
 
 def test_save_closed_trade_side_fallbacks_and_pnl_pct_priority(cache_db):
@@ -185,6 +195,8 @@ def test_init_db_migrates_legacy_schema_without_side_column(tmp_path, monkeypatc
     cols = [c[1] for c in sqlite3.connect(str(db_path)).execute(
         "PRAGMA table_info(closed_trades)")]
     assert cols.count("side") == 1
+    assert cols.count("source") == 1
+    assert cols.count("tp_sl_profile") == 1
 
 
 # ---------------------------------------------------------------------------

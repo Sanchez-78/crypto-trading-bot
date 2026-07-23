@@ -662,9 +662,9 @@ HTML_TEMPLATE = r"""
             </div>
 
             <div class="metric-card">
-                <div class="metric-label">Last Update</div>
-                <div class="metric-value" id="update_status" style="font-size: 14px;">Loading...</div>
-                <div class="metric-change" id="refresh_rate">5s refresh</div>
+                <div class="metric-label">Trading Activity</div>
+                <div class="metric-value" id="activity_status" style="font-size: 18px;">Loading...</div>
+                <div class="metric-change" id="last_trade_age">Checking last close...</div>
             </div>
         </div>
 
@@ -1043,12 +1043,21 @@ HTML_TEMPLATE = r"""
 
         function formatValue(value, type) {
             if (type === 'pnl') {
-                const sign = value >= 0 ? '+' : '';
+                const sign = value > 0 ? '+' : value < 0 ? '-' : '';
                 return sign + '$' + Math.abs(value).toFixed(8);
             }
             if (type === 'pf') return value.toFixed(2) + 'x';
             if (type === 'pct') return value.toFixed(1) + '%';
             return value;
+        }
+
+        function formatAge(seconds) {
+            if (seconds === null || seconds === undefined) return 'No closed trade timestamp';
+            const s = Math.max(0, Number(seconds) || 0);
+            if (s < 60) return Math.floor(s) + 's ago';
+            if (s < 3600) return Math.floor(s / 60) + 'm ago';
+            if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+            return Math.floor(s / 86400) + 'd ' + Math.floor((s % 86400) / 3600) + 'h ago';
         }
 
         function getStatusClass(pf, wr) {
@@ -1077,7 +1086,15 @@ HTML_TEMPLATE = r"""
             document.getElementById('net_pnl').textContent = formatValue(data.net_pnl || 0, 'pnl');
             document.getElementById('net_pnl').className = 'metric-value ' + (data.net_pnl >= 0 ? 'positive' : 'negative');
             document.getElementById('open_positions').textContent = data.open_positions || 0;
-            document.getElementById('update_status').textContent = new Date().toLocaleTimeString();
+            const activity = data.trading_activity_status || 'unknown';
+            const activityEl = document.getElementById('activity_status');
+            activityEl.textContent = activity.toUpperCase();
+            activityEl.className = 'metric-value ' + (
+                activity === 'active' ? 'positive' :
+                activity === 'stalled' ? 'negative' : 'neutral'
+            );
+            document.getElementById('last_trade_age').textContent =
+                'Last close: ' + formatAge(data.last_trade_age_s);
 
             // Update status indicators
             document.getElementById('pf_status').textContent =

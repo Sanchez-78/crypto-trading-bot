@@ -113,6 +113,37 @@ def test_degraded_envelope_has_headline():
     d = rm._degraded_envelope(["x"], "2026-07-17T00:00:00.000Z")
     assert "headline" in d and d["headline"]["n"] == 0
     assert d["headline"]["profit_factor_default_basis"] == "pct_points"
+    assert d["trading_activity_status"] == "unknown"
+
+
+def test_activity_reports_stalled_from_last_close(monkeypatch):
+    monkeypatch.setenv("DASHBOARD_TRADING_STALL_AFTER_S", "3600")
+    activity = rm._activity_fields(
+        [{"exit_time": 1_700_000_000}], [], now_ts=1_700_007_201
+    )
+    assert activity["trading_activity_status"] == "stalled"
+    assert activity["trading_stalled"] is True
+    assert activity["learning_stalled"] is True
+    assert activity["last_trade_age_s"] == 7201
+    assert activity["last_trade_utc"] == "2023-11-14T22:13:20.000Z"
+
+
+def test_activity_is_active_with_open_position(monkeypatch):
+    monkeypatch.setenv("DASHBOARD_TRADING_STALL_AFTER_S", "3600")
+    activity = rm._activity_fields(
+        [{"exit_time": 1_700_000_000}], [{"trade_id": "open"}],
+        now_ts=1_700_007_201,
+    )
+    assert activity["trading_activity_status"] == "active"
+    assert activity["trading_activity_reason"] == "open_position"
+    assert activity["trading_stalled"] is False
+
+
+def test_activity_without_history_is_explicit():
+    activity = rm._activity_fields([], [], now_ts=1_700_000_000)
+    assert activity["trading_activity_status"] == "no_history"
+    assert activity["last_trade_utc"] is None
+    assert activity["last_trade_age_s"] is None
 
 
 def test_no_sources_degraded_valid(env):
@@ -218,7 +249,7 @@ def test_dual_pf_differs_with_variable_size(env):
 
 
 def test_browser_chart_uses_headline_not_lifetime_times_wr():
-    src = (REPO / "src/services/dashboard_web.py").read_text()
+    src = (REPO / "src/services/dashboard_web.py").read_text(encoding="utf-8")
     assert "totalTrades * (data.win_rate_pct" not in src   # buggy pattern gone
     assert "data.headline" in src
     assert "'Wins', 'Losses', 'Flat'" in src               # FLAT is its own slice
@@ -252,7 +283,7 @@ REPO = Path(__file__).resolve().parents[1]
 
 def test_no_learning_database_in_active_code():
     for f in ("src/services/dashboard_read_model.py", "src/services/dashboard_web.py"):
-        src = (REPO / f).read_text()
+        src = (REPO / f).read_text(encoding="utf-8")
         # allow the word in comments/docstrings that say it's NOT used
         code_lines = [ln for ln in src.splitlines()
                       if "learning_database.sqlite" in ln and "sqlite3.connect" in ln]
@@ -267,12 +298,14 @@ def _strip_module_docstring(src):
 
 
 def test_no_shellout_in_request_path():
-    src = (REPO / "src/services/dashboard_web.py").read_text()
+    src = (REPO / "src/services/dashboard_web.py").read_text(encoding="utf-8")
     assert "journalctl" not in src
     assert "os.system" not in src
     assert "import subprocess" not in src
     # In the read model, forbidden tokens may appear only in the module docstring.
-    body = _strip_module_docstring((REPO / "src/services/dashboard_read_model.py").read_text())
+    body = _strip_module_docstring(
+        (REPO / "src/services/dashboard_read_model.py").read_text(encoding="utf-8")
+    )
     for token in ("subprocess", "journalctl", "os.system", "learning_database"):
         assert token not in body, f"read model body must not reference {token}"
 

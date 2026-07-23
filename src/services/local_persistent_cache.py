@@ -84,6 +84,8 @@ def _init_db():
     # extreme-ordering timestamps, so an offline TP/SL counterfactual is honest
     # (the legacy `mfe`/`mae` columns have no explicit unit). Additive + idempotent.
     _f8_cols = (
+        ("source", "source TEXT"),
+        ("tp_sl_profile", "tp_sl_profile TEXT"),
         ("outcome", "outcome TEXT"),
         ("metrics_contract_version", "metrics_contract_version INTEGER"),
         ("mfe_gross_pct", "mfe_gross_pct REAL"),
@@ -190,7 +192,7 @@ def get_closed_trades(limit: int = 100) -> List[Dict]:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT trade_id, symbol, entry_ts, exit_ts, entry_price, exit_price,
-                       pnl_usd, pnl_pct, win, exit_reason, regime
+                       pnl_usd, pnl_pct, win, exit_reason, regime, source, tp_sl_profile
                 FROM closed_trades
                 ORDER BY exit_ts DESC
                 LIMIT ?
@@ -212,6 +214,8 @@ def get_closed_trades(limit: int = 100) -> List[Dict]:
                     "win": row[8],
                     "exit_reason": row[9],
                     "regime": row[10],
+                    "source": row[11],
+                    "tp_sl_profile": row[12],
                 })
 
             _log.debug(f"[LOCAL_CACHE] closed_trades: {len(trades)} records")
@@ -270,12 +274,12 @@ def save_closed_trade(trade: Dict[str, Any]):
             cursor.execute("""
                 INSERT OR REPLACE INTO closed_trades
                 (trade_id, symbol, side, entry_ts, exit_ts, entry_price, exit_price,
-                 pnl_usd, pnl_pct, win, exit_reason, regime, mfe, mae,
+                 pnl_usd, pnl_pct, win, exit_reason, regime, source, tp_sl_profile, mfe, mae,
                  outcome, metrics_contract_version,
                  mfe_gross_pct, mae_gross_pct, mfe_gross_bps, mae_gross_bps,
                  time_to_mfe_ms, time_to_mae_ms, excursion_policy_version,
                  synced_to_firebase)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
             """, (
                 trade.get("trade_id"),
                 trade.get("symbol"),
@@ -291,6 +295,8 @@ def save_closed_trade(trade: Dict[str, Any]):
                 1 if trade.get("win") else 0,
                 trade.get("exit_reason"),
                 trade.get("regime"),
+                trade.get("source") or trade.get("p0_source"),
+                trade.get("tp_sl_profile"),
                 trade.get("mfe"),
                 trade.get("mae"),
                 outcome,
@@ -366,7 +372,8 @@ def get_unsynced_trades(limit: int = 100) -> List[Dict]:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT trade_id, symbol, entry_ts, exit_ts, entry_price, exit_price,
-                       pnl_usd, pnl_pct, win, exit_reason, regime, mfe, mae, id
+                       pnl_usd, pnl_pct, win, exit_reason, regime, source, tp_sl_profile,
+                       mfe, mae, id
                 FROM closed_trades
                 WHERE synced_to_firebase = 0
                 ORDER BY exit_ts DESC
@@ -389,9 +396,11 @@ def get_unsynced_trades(limit: int = 100) -> List[Dict]:
                     "win": row[8],
                     "exit_reason": row[9],
                     "regime": row[10],
-                    "mfe": row[11],
-                    "mae": row[12],
-                    "_row_id": row[13],
+                    "source": row[11],
+                    "tp_sl_profile": row[12],
+                    "mfe": row[13],
+                    "mae": row[14],
+                    "_row_id": row[15],
                 })
 
             return trades

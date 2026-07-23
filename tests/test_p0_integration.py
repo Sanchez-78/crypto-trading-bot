@@ -8,6 +8,8 @@ Tests the COMPLETE flow:
 import pytest
 import sys
 import os
+import sqlite3
+from types import SimpleNamespace
 from unittest.mock import Mock, patch, MagicMock
 
 # Add src to path for imports
@@ -18,6 +20,78 @@ from src.services.p0_segment_ev_gate import (
     SegmentKey,
     SegmentStats,
 )
+
+
+def test_executor_p0_loader_uses_configured_local_cache(tmp_path, monkeypatch):
+    """The default gate history comes from local_persistent_cache.LOCAL_DB_PATH."""
+    from src.services import local_persistent_cache as lpc
+    from src.services import paper_trade_executor as pte
+
+    db_path = tmp_path / "configured-cache.sqlite"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("CREATE TABLE closed_trades (trade_id TEXT, symbol TEXT)")
+        conn.execute("INSERT INTO closed_trades VALUES (?, ?)", ("from_configured_db", "ETHUSDT"))
+
+    captured = {}
+
+    class FakeGate:
+        @staticmethod
+        def decide_segment_gate(**kwargs):
+            captured["closed_trades"] = kwargs["closed_trades"]
+            return SimpleNamespace(
+                stats=None,
+                strict_ev_allowed=False,
+                reason="no_segment_history",
+                readiness_eligible=False,
+            )
+
+    monkeypatch.setattr(lpc, "LOCAL_DB_PATH", str(db_path))
+    monkeypatch.setattr(pte, "P0SegmentEVGate", FakeGate)
+    pte._PAPER_ENTRY_BLOCKED_THROTTLE.clear()
+
+    pte._should_skip_segment_p0_strict_ev(
+        "ETHUSDT", "BUY", "BULL_TREND", "rde_take", "0.8_1.5"
+    )
+
+    assert captured["closed_trades"] == [
+        {"trade_id": "from_configured_db", "symbol": "ETHUSDT"}
+    ]
+
+
+def test_persisted_segment_history_can_unlock_strict_ev(tmp_path, monkeypatch):
+    from src.services import local_persistent_cache as lpc
+    from src.services import paper_trade_executor as pte
+
+    db_path = tmp_path / "segment-cache.sqlite"
+    monkeypatch.setattr(lpc, "LOCAL_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(lpc, "LOCAL_DB_PATH", str(db_path))
+    monkeypatch.setattr(lpc, "LOCAL_STATE_DIR", str(tmp_path / "state"))
+    lpc._init_db()
+
+    for i in range(30):
+        lpc.save_closed_trade({
+            "trade_id": f"eligible-{i}",
+            "symbol": "ETHUSDT",
+            "side": "BUY",
+            "regime": "BULL_TREND",
+            "source": "rde_take",
+            "tp_sl_profile": "0.8_1.5",
+            "pnl_usd": 0.01,
+            "net_pnl_pct": 0.1,
+            "outcome": "WIN",
+            "win": 1,
+            "exit_reason": "TP",
+            "exit_ts": float(i),
+        })
+
+    pte._PAPER_ENTRY_BLOCKED_THROTTLE.clear()
+    rejected, decision = pte._should_skip_segment_p0_strict_ev(
+        "ETHUSDT", "BUY", "BULL_TREND", "rde_take", "0.8_1.5"
+    )
+
+    assert rejected is False
+    assert decision["strict_ev_allowed"] is True
+    assert decision["stats"].n == 30
 
 
 class TestP0IntegrationFlow:

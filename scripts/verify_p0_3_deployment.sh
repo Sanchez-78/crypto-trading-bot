@@ -54,7 +54,8 @@ print('  ✅ paper_trade_executor API available')
 # Step 6: Check deployment files
 echo ""
 echo "[6/6] Checking deployment configuration..."
-if grep -q "TRADING_MODE=paper_live" .env.example && \
+if grep -q "TRADING_MODE=paper_train" .env.example && \
+   grep -q "PAPER_DATA_COLLECTION_ONLY=0" .env.example && \
    grep -q "ENABLE_REAL_ORDERS=false" .env.example && \
    grep -q "LIVE_TRADING_CONFIRMED=false" .env.example; then
     echo "  ✅ Safe defaults in .env.example"

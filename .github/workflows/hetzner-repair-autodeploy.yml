@@ -118,7 +118,7 @@ jobs:
             esac
           done
           if [ "$MODE" = "paper_live" ]; then
-            echo "  WARNING: TRADING_MODE=paper_live (paper-only mode; no real orders possible)."
+            echo "  WARNING: TRADING_MODE=paper_live is safe but disables the training sampler."
             echo "  This workflow does not change .env — continuing with repair."
           fi
           echo "  Safety gates OK (mode=${MODE:-unset})"

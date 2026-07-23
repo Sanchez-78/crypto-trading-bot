@@ -182,6 +182,7 @@ _MIN_ENTRY_CONFIDENCE = float(os.getenv("PAPER_MIN_ENTRY_CONFIDENCE", "0.50"))  
 _POSITIONS = {}  # position_id -> position_dict
 _POSITION_LOCK = __import__("threading").RLock()
 _STATE_FILE = "data/paper_open_positions.json"
+_ORPHAN_STATE_MTIME = None  # Reload persisted positions only when the file changes.
 
 # P1.1Q Phase 5: Deduplication — track closed trades in current session to prevent double updates
 _CLOSED_TRADES_THIS_SESSION = set()  # trade_id -> (learned, metrics_updated)
@@ -317,8 +318,9 @@ def _is_training_position(pos: dict) -> bool:
     Matches the is_training check at line ~208-211.
     """
     return (
-        pos.get("training_bucket") == "C_WEAK_EV_TRAIN"
+        bool(pos.get("training_bucket"))
         or pos.get("paper_source") == "training_sampler"
+        or pos.get("source") == "training_sampler"
         or _effective_paper_bucket(pos) == "B_RECOVERY_READY"
     )
 
@@ -417,15 +419,16 @@ def _should_skip_segment_p0_strict_ev(
     if closed_trades is None:
         try:
             import sqlite3
-            db_path = '/opt/cryptomaster/local_learning_storage/cache.sqlite'
-            conn = sqlite3.connect(db_path)
-            c = conn.cursor()
-            c.execute('SELECT * FROM closed_trades')
-            cols = [desc[0] for desc in c.description]
-            closed_trades = []
-            for row in c.fetchall():
-                closed_trades.append(dict(zip(cols, row)))
-            conn.close()
+            from src.services.local_persistent_cache import LOCAL_DB_PATH
+
+            with sqlite3.connect(LOCAL_DB_PATH, timeout=2) as conn:
+                c = conn.cursor()
+                c.execute('SELECT * FROM closed_trades')
+                cols = [desc[0] for desc in c.description]
+                closed_trades = [
+                    dict(zip(cols, row))
+                    for row in c.fetchall()
+                ]
         except Exception as e:
             log.warning(f"[P0_SEGMENT_GATE] Failed to load closed trades: {e}")
             closed_trades = []
@@ -1250,11 +1253,11 @@ def _check_training_sampler_caps(symbol: str, bucket: Optional[str]) -> Optional
     now = time.time()
     symbol_count = sum(
         1 for p in _POSITIONS.values()
-        if p["symbol"] == symbol and p.get("paper_source") == "training_sampler" and not _is_position_stale(p, now)
+        if p["symbol"] == symbol and _is_training_position(p) and not _is_position_stale(p, now)
     )
     bucket_count = sum(
         1 for p in _POSITIONS.values()
-        if p.get("training_bucket") == bucket and p.get("paper_source") == "training_sampler" and not _is_position_stale(p, now)
+        if p.get("training_bucket") == bucket and _is_training_position(p) and not _is_position_stale(p, now)
     )
 
     # Check symbol cap
@@ -1726,6 +1729,8 @@ def open_paper_position(
         "strict_ev": signal.get("strict_ev", True),  # P0 gate decision
         "readiness_eligible": signal.get("readiness_eligible", True),  # Readiness claim eligibility
         "learning_source": signal.get("learning_source", "strict_ev"),  # paper_evidence_collection or strict_ev
+        "source": source,  # Original P0 segment source, stable across evidence routing
+        "tp_sl_profile": tp_sl_profile,
         "segment_key": signal.get("segment_key", f"{symbol}_unknown"),  # For segment analytics
         "p0_gate_reason": signal.get("p0_gate_reason", None),  # Why P0 gate decided
         # P1.1AN: Calibration metadata
@@ -1794,6 +1799,18 @@ def open_paper_position(
         return {"status": "blocked", "reason": "p0_metadata_incomplete"}
 
     with _POSITION_LOCK:
+        # Re-check at commit time. Signal callbacks can overlap between the
+        # initial cap check and this insert, so the check+insert must be atomic.
+        if paper_source == "training_sampler":
+            commit_cap_check = _check_training_sampler_caps(symbol, training_bucket)
+            if commit_cap_check:
+                log.warning(
+                    "[PAPER_ENTRY_COMMIT_BLOCKED] symbol=%s bucket=%s reason=%s",
+                    symbol,
+                    training_bucket,
+                    commit_cap_check["reason"],
+                )
+                return commit_cap_check
         _POSITIONS[trade_id] = position
 
     log.warning(
@@ -2049,6 +2066,7 @@ def update_paper_positions(
     Returns:
         list of closed trade dicts
     """
+    global _ORPHAN_STATE_MTIME
     closed_trades = []
 
     # V10.18 DEBUG: Log call frequency
@@ -2066,11 +2084,22 @@ def update_paper_positions(
         # This handles bot restarts where positions persist in JSON but not in memory
         if not _POSITIONS and _STATE_FILE and os.path.exists(_STATE_FILE):
             try:
-                with open(_STATE_FILE, 'r') as f:
-                    orphaned = json.load(f)
+                state_mtime = os.path.getmtime(_STATE_FILE)
+                if state_mtime != _ORPHAN_STATE_MTIME:
+                    # A stable empty or malformed file must not be re-read and
+                    # re-logged on every tick. A subsequent write changes mtime.
+                    _ORPHAN_STATE_MTIME = state_mtime
+                    with open(_STATE_FILE, 'r') as f:
+                        orphaned = json.load(f)
+                    if not isinstance(orphaned, dict):
+                        raise ValueError("paper position state must be a JSON object")
                     for pos_id, pos_data in orphaned.items():
                         _POSITIONS[pos_id] = pos_data
-                    log.info(f"[V10.18_ORPHAN_LOAD] Loaded {len(orphaned)} positions from JSON")
+                    if orphaned:
+                        log.info(
+                            "[V10.18_ORPHAN_LOAD] Loaded %d positions from JSON",
+                            len(orphaned),
+                        )
             except Exception as e:
                 log.warning(f"[V10.18_ORPHAN_LOAD_ERROR] {e}")
 

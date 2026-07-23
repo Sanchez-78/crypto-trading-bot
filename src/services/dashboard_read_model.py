@@ -39,6 +39,7 @@ from src.core.trade_metrics_contract import (
 
 RECENT_WINDOW = 100
 COST_FLOOR_BPS = 18  # modeled paper round-trip cost (15 fee + 3 slippage)
+DEFAULT_TRADING_STALL_AFTER_S = 6 * 60 * 60
 
 
 # ── paths ─────────────────────────────────────────────────────────────────────
@@ -67,6 +68,55 @@ def _ts_iso(ts):
             timespec="milliseconds").replace("+00:00", "Z")
     except (TypeError, ValueError, OSError):
         return ""
+
+
+def _stall_after_s():
+    """Configured inactivity threshold, clamped to at least one minute."""
+    try:
+        value = int(os.getenv(
+            "DASHBOARD_TRADING_STALL_AFTER_S",
+            str(DEFAULT_TRADING_STALL_AFTER_S),
+        ))
+    except (TypeError, ValueError):
+        value = DEFAULT_TRADING_STALL_AFTER_S
+    return max(60, value)
+
+
+def _activity_fields(closed_trades, positions, now_ts=None):
+    """Describe real trading/learning activity, not HTTP response freshness."""
+    now_ts = time.time() if now_ts is None else float(now_ts)
+    exit_times = [
+        _f(t.get("exit_time"))
+        for t in closed_trades
+        if isinstance(t, dict) and _f(t.get("exit_time")) > 0
+    ]
+    last_trade_ts = max(exit_times) if exit_times else None
+    last_trade_age_s = (
+        max(0, int(now_ts - last_trade_ts))
+        if last_trade_ts is not None
+        else None
+    )
+    threshold_s = _stall_after_s()
+
+    if positions:
+        status, reason = "active", "open_position"
+    elif last_trade_age_s is None:
+        status, reason = "no_history", "no_closed_trade_timestamp"
+    elif last_trade_age_s > threshold_s:
+        status, reason = "stalled", "last_close_older_than_threshold"
+    else:
+        status, reason = "active", "recent_close"
+
+    stalled = status == "stalled"
+    return {
+        "trading_activity_status": status,
+        "trading_activity_reason": reason,
+        "trading_stalled": stalled,
+        "learning_stalled": stalled,
+        "last_trade_utc": _ts_iso(last_trade_ts) if last_trade_ts else None,
+        "last_trade_age_s": last_trade_age_s,
+        "trading_stall_after_s": threshold_s,
+    }
 
 
 # ── source loaders (each records an error code instead of raising) ────────────
@@ -381,6 +431,7 @@ def get_metrics() -> dict:
             exits["basis"] = "outcome"
 
         positions = _open_positions(errors)
+        activity = _activity_fields(closed_list, positions)
 
         return {
             "closed_trades": lifetime_n,
@@ -391,6 +442,7 @@ def get_metrics() -> dict:
             "open_positions": len(positions),
             "open_positions_list": positions,
             "closed_trades_list": closed_list,
+            **activity,
             # Headline (canonical, shared by /enhanced): PR3 outcome-based WR/PF.
             "profit_factor": headline["recent_profit_factor"],
             "win_rate_pct": headline["recent_win_rate_pct"],
@@ -498,6 +550,11 @@ def _degraded_envelope(errors, iso):
         "learning_status": "VYPNUTO", "recommendation": "ČEKAT",
         "session_closed_trades": 0, "lifetime_closed_trades": 0,
         "open_positions": 0, "open_positions_list": [], "closed_trades_list": [],
+        "trading_activity_status": "unknown",
+        "trading_activity_reason": "metrics_degraded",
+        "trading_stalled": False, "learning_stalled": False,
+        "last_trade_utc": None, "last_trade_age_s": None,
+        "trading_stall_after_s": DEFAULT_TRADING_STALL_AFTER_S,
         "profit_factor": 0.0, "win_rate_pct": 0.0, "win_rate_window": 0,
         "net_pnl": 0.0, "net_pnl_window": 0.0, "session_n": 0,
         # Scope tokens mirrored here so degraded responses keep the identical

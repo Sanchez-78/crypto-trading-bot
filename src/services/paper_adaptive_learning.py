@@ -10,6 +10,7 @@ State persisted as JSON; survives restarts.
 import json
 import os
 import logging
+import math
 import time
 from collections import deque
 from typing import Optional, Dict, List
@@ -37,7 +38,16 @@ except ImportError:
     record_learning_update = None
 
 # Persistent state file
-_STATE_FILE = "server_local_backups/paper_adaptive_learning_state.json"
+_DEFAULT_STATE_FILE = "server_local_backups/paper_adaptive_learning_state.json"
+_STATE_FILE = _DEFAULT_STATE_FILE
+
+try:
+    REAL_READY_MAX_DRAWDOWN = float(
+        os.getenv("PAPER_REAL_READY_MAX_DRAWDOWN", "0.05")
+    )
+except (TypeError, ValueError):
+    REAL_READY_MAX_DRAWDOWN = 0.05
+REAL_READY_MAX_DRAWDOWN = min(max(REAL_READY_MAX_DRAWDOWN, 0.0), 1.0)
 
 # Rolling window sizes
 ROLLING_SIZES = {
@@ -52,9 +62,18 @@ ROLLING_SIZES = {
 class PaperAdaptiveLearning:
     """Rolling metrics + policy adaptation engine."""
 
-    def __init__(self, state_file: Optional[str] = None):
+    def __init__(
+        self,
+        state_file: Optional[str] = None,
+        use_firebase: Optional[bool] = None,
+    ):
         # P1.1AP-O1A1: Allow test isolation via dependency injection
         self._state_file = state_file or _STATE_FILE
+        self._use_firebase = (
+            self._state_file == _DEFAULT_STATE_FILE
+            if use_firebase is None
+            else bool(use_firebase)
+        )
 
         self.lifetime_n = 0
         self.lifetime_pf = 1.0
@@ -252,7 +271,7 @@ class PaperAdaptiveLearning:
         data = None
 
         # Try Firebase first (PHASE 1: persistent learning state)
-        if _firebase_available and load_learning:
+        if self._use_firebase and _firebase_available and load_learning:
             try:
                 firebase_state = load_learning()
                 if firebase_state:
@@ -394,7 +413,7 @@ class PaperAdaptiveLearning:
         }
 
         # PHASE 1: Save to Firebase (primary, persistent)
-        if _firebase_available and save_learning:
+        if self._use_firebase and _firebase_available and save_learning:
             try:
                 save_learning(data)
             except Exception as e:
@@ -980,6 +999,7 @@ class PaperAdaptiveLearning:
         qual_recent_20 = list(self.qualification_window)[-20:] if self.qualification_window else []
         rolling20_pf = self._compute_rolling_pf(qual_recent_20) if qual_recent_20 else 1.0
         rolling20_exp = self._compute_expectancy([e[0] for e in qual_recent_20]) if qual_recent_20 else 0.0
+        drawdown = self._compute_max_drawdown(self.qualification_window)
 
         # Extract symbols from qualification_window only (post-epoch eligible trades)
         symbols = list(set(e[2].split(":")[0] for e in self.qualification_window))
@@ -1017,6 +1037,10 @@ class PaperAdaptiveLearning:
             qualification_net = sum(e[0] for e in self.qualification_window) / 100.0 if self.qualification_window else 0.0
             if qualification_net <= 0:
                 reasons.append(f"qualification_net_pnl={qualification_net:.6f}<=0")
+            if drawdown > REAL_READY_MAX_DRAWDOWN:
+                reasons.append(
+                    f"drawdown={drawdown:.4f}>{REAL_READY_MAX_DRAWDOWN:.4f}"
+                )
 
         # Gate 4: Rolling20 must remain healthy (recent behavior)
         # P1.1AP-O1A1: Only check rolling20 gates if we have 20+ post-epoch closes (meaningful recent window)
@@ -1039,10 +1063,11 @@ class PaperAdaptiveLearning:
             "[REAL_READINESS_CHECK] "
             "eligible=%s qualification_n=%d qualification_pf=%.3f "
             "qualification_expectancy=%.6f rolling20_pf=%.3f "
-            "rolling20_expectancy=%.6f symbols=%d max_segment_profit_share=%.2f "
+            "rolling20_expectancy=%.6f drawdown=%.4f symbols=%d "
+            "max_segment_profit_share=%.2f "
             "operator_unlock=%s %s",
             eligible, self.qualification_n, qualification_pf, qualification_exp,
-            rolling20_pf, rolling20_exp, len(symbols), max_segment_share,
+            rolling20_pf, rolling20_exp, drawdown, len(symbols), max_segment_share,
             self.operator_unlock,
             " ".join(reasons) if reasons else "reason=all_gates_pass"
         )
@@ -1064,11 +1089,33 @@ class PaperAdaptiveLearning:
             "rolling100_net_pnl": rolling100_net,
             "rolling20_pf": rolling20_pf,
             "rolling20_expectancy": rolling20_exp,
-            "drawdown": 0.0,  # TODO: compute from trade data
+            "drawdown": drawdown,
             "symbols": symbols,
             "max_segment_profit_share": max_segment_share,
             "reason": " ".join(reasons) if reasons else "all_gates_pass",
         }
+
+    @staticmethod
+    def _compute_max_drawdown(entries) -> float:
+        """Return compounded peak-to-trough drawdown as a fraction in [0, 1]."""
+        equity = 1.0
+        peak = 1.0
+        max_drawdown = 0.0
+
+        for entry in entries:
+            try:
+                pnl_pct = float(entry[0])
+            except (IndexError, TypeError, ValueError):
+                continue
+            if not math.isfinite(pnl_pct):
+                continue
+
+            equity *= max(0.0, 1.0 + pnl_pct / 100.0)
+            peak = max(peak, equity)
+            if peak > 0.0:
+                max_drawdown = max(max_drawdown, (peak - equity) / peak)
+
+        return min(max(max_drawdown, 0.0), 1.0)
 
     def get_paper_policy_snapshot(
         self,

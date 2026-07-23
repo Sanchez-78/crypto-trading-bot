@@ -359,6 +359,24 @@ class TestPaperExecutorBasics:
         assert closed_trades[0]["trade_id"] == trade_id
         assert closed_trades[0]["exit_reason"] == "TP"
 
+    def test_empty_orphan_state_is_read_once_until_file_changes(
+        self, clean_positions, tmp_path, monkeypatch
+    ):
+        """An empty persisted state must not be loaded on every market tick."""
+        import src.services.paper_trade_executor as pte
+
+        state_file = tmp_path / "paper_open_positions.json"
+        state_file.write_text("{}", encoding="utf-8")
+        monkeypatch.setattr(pte, "_STATE_FILE", str(state_file))
+        monkeypatch.setattr(pte, "_ORPHAN_STATE_MTIME", None)
+
+        with patch.object(pte.json, "load", wraps=pte.json.load) as load_state:
+            update_paper_positions({}, 1_700_000_000.0)
+            update_paper_positions({}, 1_700_000_001.0)
+
+        assert load_state.call_count == 1
+        assert pte._POSITIONS == {}
+
     def test_get_paper_open_positions_returns_current_list(self, clean_positions):
         """get_paper_open_positions returns list of open positions."""
         signal = {"symbol": "XRPUSDT", "action": "BUY", "ev": 0.050, "regime": "BULL_TREND"}
@@ -624,7 +642,6 @@ class TestP1N1AntiSpamDedupe:
         assert len(positions) == 1
         assert positions[0]["cost_edge_ok"] is False
 
-    @pytest.mark.skip(reason="Superseded by P0.3C evidence collection: open_paper_position rewrites paper_source to paper_evidence_collection when strict-EV is gated, so training-sampler caps are unreachable on this path. Needs rewrite against the sampler flow; cap bypass flagged 2026-07-14.")
     def test_max_open_per_symbol_blocks_second_open(self, clean_positions):
         """Training sampler caps prevent max_open_per_symbol violations."""
         import os
@@ -672,7 +689,47 @@ class TestP1N1AntiSpamDedupe:
         assert "max_open_per_symbol" in result2["reason"]
         assert len(get_paper_open_positions()) == 1
 
-    @pytest.mark.skip(reason="Superseded by P0.3C evidence collection: open_paper_position rewrites paper_source to paper_evidence_collection when strict-EV is gated, so training-sampler caps are unreachable on this path. Needs rewrite against the sampler flow; cap bypass flagged 2026-07-14.")
+    def test_training_cap_is_rechecked_atomically_at_commit(
+        self, clean_positions, monkeypatch
+    ):
+        """A concurrent opener discovered after validation must block the insert."""
+        import src.services.paper_trade_executor as executor
+
+        calls = []
+
+        def cap_check(symbol, bucket):
+            calls.append((symbol, bucket))
+            if len(calls) == 1:
+                return None
+            return {
+                "status": "blocked",
+                "reason": "training_sampler_max_open_per_symbol",
+                "detail": "concurrent position committed",
+            }
+
+        monkeypatch.setattr(executor, "_check_training_sampler_caps", cap_check)
+
+        result = executor.open_paper_position(
+            {
+                "symbol": "ADAUSDT",
+                "action": "BUY",
+                "ev": 0.050,
+                "regime": "BEAR_TREND",
+            },
+            price=0.1725,
+            ts=time.time(),
+            reason="TRAINING_SAMPLER:TEST_COMMIT_RACE",
+            extra={
+                "paper_source": "training_sampler",
+                "training_bucket": "C_WEAK_EV_TRAIN",
+            },
+        )
+
+        assert len(calls) == 2
+        assert result["status"] == "blocked"
+        assert result["reason"] == "training_sampler_max_open_per_symbol"
+        assert get_paper_open_positions() == []
+
     def test_max_open_per_bucket_blocks_after_cap(self, clean_positions):
         """Training sampler bucket cap prevents overfilling buckets."""
         import os
@@ -3224,7 +3281,6 @@ class TestP1AA1TimeoutCloseLoop(unittest.TestCase):
 
         reset_paper_positions()
 
-    @pytest.mark.skip(reason="Superseded by P0.3C evidence collection: open_paper_position rewrites paper_source to paper_evidence_collection when strict-EV is gated, so training-sampler caps are unreachable on this path. Needs rewrite against the sampler flow; cap bypass flagged 2026-07-14.")
     def test_closed_position_not_counted_in_per_symbol_cap(self):
         """P1.1AA Test 6: Closed position no longer blocks per-symbol training cap."""
         from src.services.paper_trade_executor import (
@@ -3266,7 +3322,6 @@ class TestP1AA1TimeoutCloseLoop(unittest.TestCase):
 
         reset_paper_positions()
 
-    @pytest.mark.skip(reason="Superseded by P0.3C evidence collection: open_paper_position rewrites paper_source to paper_evidence_collection when strict-EV is gated, so training-sampler caps are unreachable on this path. Needs rewrite against the sampler flow; cap bypass flagged 2026-07-14.")
     def test_closed_position_not_counted_in_bucket_cap(self):
         """P1.1AA Test 7: Closed position no longer blocks bucket cap."""
         from src.services.paper_trade_executor import (

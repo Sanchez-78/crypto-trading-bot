@@ -2071,7 +2071,13 @@ def main():
                             # V10.52 CRITICAL FIX: close_paper_position requires 4 args (was passing only 2)
                             entry_price = pos.get("entry_price", 0.0)
                             last_price = pos.get("last_price", entry_price)
-                            pos_id = pos.get("position_id", sym)
+                            pos_id = pos.get("trade_id") or pos.get("position_id")
+                            if not pos_id:
+                                logging.warning(
+                                    "[EXIT_TIMEOUT_SKIP] symbol=%s reason=missing_trade_id",
+                                    sym,
+                                )
+                                continue
                             close_paper_position(pos_id, last_price, now, "TIMEOUT")
                     except Exception as _pos_timeout_err:
                         logging.debug(f"Timeout close error {sym}: {_pos_timeout_err}")
