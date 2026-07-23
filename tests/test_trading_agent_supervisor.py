@@ -417,6 +417,7 @@ def test_dashboard_exposes_agent_state_and_marks_stale(tmp_path, monkeypatch):
     assert "Autonomous Paper Agents" in html
     assert 'id="agent_supervisor_status"' in html
     assert "paper_entry_quota_multiplier" in html
+    assert "data.agent_supervisor?.agents?.trading_health?.trading_status" in html
 
 
 def test_signal_warmup_survives_the_first_live_tick_boundary(monkeypatch):

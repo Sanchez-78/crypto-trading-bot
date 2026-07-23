@@ -1172,7 +1172,12 @@ HTML_TEMPLATE = r"""
             document.getElementById('net_pnl').textContent = formatValue(data.net_pnl || 0, 'pnl');
             document.getElementById('net_pnl').className = 'metric-value ' + (data.net_pnl >= 0 ? 'positive' : 'negative');
             document.getElementById('open_positions').textContent = data.open_positions || 0;
-            const activity = data.trading_activity_status || 'unknown';
+            // The specialist agent has the stricter, persisted stall detector.
+            // Prefer it so the legacy headline cannot contradict the agent card.
+            const activity =
+                data.agent_supervisor?.agents?.trading_health?.trading_status ||
+                data.trading_activity_status ||
+                'unknown';
             const activityEl = document.getElementById('activity_status');
             activityEl.textContent = activity.toUpperCase();
             activityEl.className = 'metric-value ' + (
