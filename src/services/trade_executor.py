@@ -2356,7 +2356,7 @@ def handle_signal(signal):
 
     ob = OrderBook.from_price(entry, spread_pct=_SPREAD_PCT)
 
-    sig_ts  = signal.get("timestamp", time.time())
+    sig_ts  = signal.get("timestamp", signal.get("ts", time.time()))
     vol_f   = signal.get("features", {}).get("vol", 0.0)
     tick_ms = max(100, min(500, int(atr / max(entry, 1e-9) * 100_000)))
     if not bootstrap_open and not valid(sig_ts, tick_ms, vol_f):
@@ -2380,7 +2380,12 @@ def handle_signal(signal):
         try:
             from src.services.learning_event import get_metrics as _drift_gm
             _lp  = _drift_gm().get("last_prices", {})
-            _cur = _lp.get(sym, 0.0)
+            _cur_raw = _lp.get(sym, 0.0)
+            # learning_event stores (current, previous); older snapshots may
+            # contain a scalar. Normalize both shapes before applying gates.
+            if isinstance(_cur_raw, (tuple, list)):
+                _cur_raw = _cur_raw[0] if _cur_raw else 0.0
+            _cur = float(_cur_raw or 0.0)
             if _cur > 0:
                 _drift = abs(_cur - entry) / entry
 
@@ -3072,16 +3077,12 @@ def on_price(data):
         _is_paper_mode_local = os.getenv("TRADING_MODE", "").strip().lower() in ("paper_live", "paper_train", "replay_train")
 
     if _is_paper_mode_local:
-        # Multi-symbol price cache: accumulate recent prices across ticks
-        # This allows TP/SL evaluation for ALL open positions, not just current symbol
-        if not hasattr(update_paper_positions, '_price_cache'):
-            update_paper_positions._price_cache = {}
-
-        # Update current symbol price (always fresh)
-        update_paper_positions._price_cache[data["symbol"]] = data["price"]
-
-        # Pass accumulated prices so all positions can check TP/SL
-        _closed_papers = update_paper_positions(update_paper_positions._price_cache, time.time())
+        # Evaluate only the symbol carried by this fresh tick. Accumulated
+        # prices previously made frozen symbols look fresh.
+        _closed_papers = update_paper_positions(
+            {data["symbol"]: data["price"]},
+            time.time(),
+        )
         if _closed_papers:
             # Update watchdog idle timer so paper trade activity resets the exploration escalation
             try:
@@ -3501,7 +3502,9 @@ def on_price(data):
         "result":        result,
         "exit_price":    curr,
         "close_reason":  reason,
-        "timestamp":     pos["signal"].get("timestamp", time.time()),  # entry time
+        "timestamp":     pos["signal"].get(
+            "timestamp", pos["signal"].get("ts", pos.get("open_ts", time.time()))
+        ),  # entry time
         "close_time":    time.time(),                                   # actual close time
         "duration_seconds": int(time.time() - pos["open_ts"]),          # V10.13g: hold duration
         "hold_seconds":  int(time.time() - pos["open_ts"]),  # V10.15l: Alias for SQLite

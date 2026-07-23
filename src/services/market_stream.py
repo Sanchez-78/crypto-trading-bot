@@ -46,6 +46,7 @@ _geo_blocked: bool = False
 
 # ── Price cache for paper position evaluation ──────────────────────────────────
 _symbol_prices: dict[str, float] = {}
+_symbol_price_timestamps: dict[str, float] = {}
 
 # ── Per-tick debug (OFF by default) ───────────────────────────────────────────
 # A raw per-tick log fires once per symbol per tick (~75+ lines/s) and floods
@@ -89,9 +90,23 @@ def _dispatch(sym: str, bid: float, ask: float, bid_qty: float = 0.0, ask_qty: f
 
     _maybe_tick_debug(sym, bid, ask, p, obi)
 
+    tick_ts = time.time()
     _symbol_prices[sym] = p
+    _symbol_price_timestamps[sym] = tick_ts
     from src.services.paper_trade_executor import update_paper_positions
-    update_paper_positions(_symbol_prices, time.time())
+    # Only this symbol is fresh. Replaying the accumulated cache used to
+    # refresh stale timestamps for unrelated symbols.
+    update_paper_positions({sym: p}, tick_ts)
+
+    # O(1) hook only; analysis and disk writes run in the supervisor thread.
+    try:
+        from src.services.trading_agent_supervisor import record_market_tick
+
+        record_market_tick(sym, p, tick_ts)
+    except Exception as exc:
+        log.debug(
+            "[TRADING_AGENT_TICK_HOOK_ERROR] symbol=%s error=%s", sym, exc
+        )
 
     track_price(sym, p)
     publish("price_tick", {"symbol": sym, "price": p, "obi": obi,
@@ -104,6 +119,21 @@ def _dispatch(sym: str, bid: float, ask: float, bid_qty: float = 0.0, ask_qty: f
                        "bid_qty": bid_qty, "ask_qty": ask_qty})
     except Exception as e:
         log.warning(f"signal_engine push failed: {e}")
+
+
+def get_price_feed_snapshot() -> dict:
+    """Return current prices with genuine per-symbol receive timestamps."""
+    now = time.time()
+    return {
+        "captured_at": now,
+        "prices": dict(_symbol_prices),
+        "price_timestamps": dict(_symbol_price_timestamps),
+        "price_age_s": {
+            symbol: max(0.0, now - ts)
+            for symbol, ts in _symbol_price_timestamps.items()
+        },
+        "geo_blocked": _geo_blocked,
+    }
 
 
 # ── WebSocket helpers ─────────────────────────────────────────────────────────

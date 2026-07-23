@@ -484,7 +484,7 @@ HTML_TEMPLATE = r"""
 
         .metrics-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
             gap: 20px;
             margin-bottom: 40px;
         }
@@ -526,6 +526,25 @@ HTML_TEMPLATE = r"""
         .positive { color: #00ff00; }
         .negative { color: #ff4444; }
         .neutral { color: #ffaa00; }
+
+        .agents-section {
+            margin-bottom: 40px;
+        }
+        .agents-section h2 {
+            color: #1e90ff;
+            font-size: 18px;
+            margin: 0 0 16px;
+        }
+        .agents-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 20px;
+        }
+        .agent-value {
+            font-size: 18px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
 
         .charts-section {
             display: grid;
@@ -667,6 +686,32 @@ HTML_TEMPLATE = r"""
                 <div class="metric-change" id="last_trade_age">Checking last close...</div>
             </div>
         </div>
+
+        <section class="agents-section">
+            <h2>Autonomous Paper Agents</h2>
+            <div class="agents-grid">
+                <div class="metric-card">
+                    <div class="metric-label">Supervisor</div>
+                    <div class="agent-value neutral" id="agent_supervisor_status">DISABLED</div>
+                    <div class="metric-change" id="agent_supervisor_detail">Waiting for state</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Trading Monitor</div>
+                    <div class="agent-value neutral" id="agent_trading_status">UNKNOWN</div>
+                    <div class="metric-change" id="agent_trading_detail">No observation</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Market State</div>
+                    <div class="agent-value neutral" id="agent_market_status">UNKNOWN</div>
+                    <div class="metric-change" id="agent_market_detail">No price snapshot</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Strategy Policy</div>
+                    <div class="agent-value neutral" id="agent_strategy_status">BASELINE</div>
+                    <div class="metric-change" id="agent_strategy_detail">Quota 100%</div>
+                </div>
+            </div>
+        </section>
 
         <!-- Charts Section -->
         <div class="charts-section">
@@ -1066,6 +1111,47 @@ HTML_TEMPLATE = r"""
             return 'negative';
         }
 
+        function updateAgentStatus(agentState) {
+            const state = agentState || {};
+            const supervisor = state.supervisor || {};
+            const agents = state.agents || {};
+            const trading = agents.trading_health || {};
+            const market = agents.market_state || {};
+            const policy = state.policy || {};
+
+            const paint = (id, status) => {
+                const el = document.getElementById(id);
+                const normalized = String(status || 'unknown').toLowerCase();
+                el.textContent = normalized.toUpperCase();
+                el.className = 'agent-value ' + (
+                    ['monitoring', 'healthy', 'active'].includes(normalized) ? 'positive' :
+                    ['critical', 'stalled', 'circuit_open', 'stale'].includes(normalized) ? 'negative' :
+                    'neutral'
+                );
+            };
+
+            paint('agent_supervisor_status', supervisor.status);
+            document.getElementById('agent_supervisor_detail').textContent =
+                (supervisor.mode || 'unknown') + ' · state age ' +
+                formatAge(state.state_age_s);
+            paint('agent_trading_status', trading.trading_status || trading.status);
+            document.getElementById('agent_trading_detail').textContent =
+                'Learning: ' + String(trading.learning_status || 'unknown') +
+                ' · last close ' + formatAge(trading.last_close_age_s);
+            paint('agent_market_status', market.status);
+            document.getElementById('agent_market_detail').textContent =
+                String(market.market_regime || 'unknown') + ' · fresh ' +
+                String(market.fresh_symbols || 0) + '/' +
+                String(market.expected_symbols || 0);
+
+            const quota = Number(policy.paper_entry_quota_multiplier ?? 1);
+            paint('agent_strategy_status', policy.pause_new_entries ? 'paused' : 'active');
+            document.getElementById('agent_strategy_detail').textContent =
+                'Quota ' + Math.round(quota * 100) + '% · r' +
+                String(policy.revision || 0) + ' · ' +
+                String(policy.reason || 'baseline');
+        }
+
         async function updateDashboard() {
             const data = await fetchMetrics();
             const learningData = await fetchLearningState();
@@ -1095,6 +1181,7 @@ HTML_TEMPLATE = r"""
             );
             document.getElementById('last_trade_age').textContent =
                 'Last close: ' + formatAge(data.last_trade_age_s);
+            updateAgentStatus(data.agent_supervisor);
 
             // Update status indicators
             document.getElementById('pf_status').textContent =

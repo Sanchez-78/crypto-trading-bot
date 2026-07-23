@@ -55,6 +55,59 @@ def _paths():
         os.path.join(base, "data/paper_open_positions.json"),
     )
 
+def _agent_state_path():
+    configured = os.getenv("TRADING_AGENT_STATE_FILE", "").strip()
+    if configured:
+        return configured
+    base = "/opt/cryptomaster" if os.path.exists("/opt/cryptomaster") else "."
+    return os.path.join(
+        base,
+        "server_local_backups/trading_agent_supervisor_state.json",
+    )
+
+
+def _load_agent_state():
+    """Load the optional supervisor artifact without degrading trade metrics."""
+    path = _agent_state_path()
+    disabled = {
+        "schema_version": 1,
+        "state_available": False,
+        "state_stale": False,
+        "state_age_s": None,
+        "supervisor": {
+            "status": "disabled",
+            "enabled": False,
+            "auto_apply": False,
+            "mode": "unknown",
+        },
+        "agents": {},
+        "policy": {
+            "revision": 0,
+            "paper_entry_quota_multiplier": 1.0,
+            "pause_new_entries": False,
+            "reason": "baseline",
+        },
+    }
+    try:
+        if not os.path.exists(path):
+            return disabled
+        with open(path, encoding="utf-8") as handle:
+            state = json.load(handle)
+        if not isinstance(state, dict):
+            raise ValueError("agent state must be a JSON object")
+        updated_at = _f(state.get("updated_at"))
+        age_s = max(0, int(time.time() - updated_at)) if updated_at else None
+        stale_after_s = max(120, int(os.getenv("TRADING_AGENT_DASHBOARD_STALE_AFTER_S", "180")))
+        state["state_available"] = True
+        state["state_age_s"] = age_s
+        state["state_stale"] = age_s is None or age_s > stale_after_s
+        if state["state_stale"]:
+            state.setdefault("supervisor", {})["status"] = "stale"
+        return state
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        disabled["state_error"] = "agent_state_unreadable"
+        return disabled
+
 
 def _now_iso():
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
@@ -432,6 +485,7 @@ def get_metrics() -> dict:
 
         positions = _open_positions(errors)
         activity = _activity_fields(closed_list, positions)
+        agent_state = _load_agent_state()
 
         return {
             "closed_trades": lifetime_n,
@@ -443,6 +497,7 @@ def get_metrics() -> dict:
             "open_positions_list": positions,
             "closed_trades_list": closed_list,
             **activity,
+            "agent_supervisor": agent_state,
             # Headline (canonical, shared by /enhanced): PR3 outcome-based WR/PF.
             "profit_factor": headline["recent_profit_factor"],
             "win_rate_pct": headline["recent_win_rate_pct"],
@@ -555,6 +610,23 @@ def _degraded_envelope(errors, iso):
         "trading_stalled": False, "learning_stalled": False,
         "last_trade_utc": None, "last_trade_age_s": None,
         "trading_stall_after_s": DEFAULT_TRADING_STALL_AFTER_S,
+        "agent_supervisor": {
+            "schema_version": 1,
+            "state_available": False,
+            "state_stale": True,
+            "state_age_s": None,
+            "supervisor": {
+                "status": "unknown",
+                "enabled": False,
+                "auto_apply": False,
+                "mode": "unknown",
+            },
+            "agents": {},
+            "policy": {
+                "revision": 0, "paper_entry_quota_multiplier": 1.0,
+                "pause_new_entries": False, "reason": "metrics_degraded",
+            },
+        },
         "profit_factor": 0.0, "win_rate_pct": 0.0, "win_rate_window": 0,
         "net_pnl": 0.0, "net_pnl_window": 0.0, "session_n": 0,
         # Scope tokens mirrored here so degraded responses keep the identical

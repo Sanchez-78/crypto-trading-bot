@@ -1825,6 +1825,21 @@ def main():
     except Exception as e:
         logging.warning(f"[STARTUP] Emergency health monitor failed to start: {e}")
 
+    # Deterministic supervisor + read-only specialist agents. Automatic policy
+    # application remains PAPER-only and can only reduce quota or pause entries.
+    try:
+        from src.services.trading_agent_supervisor import start_supervisor
+
+        _agent_supervisor_thread = start_supervisor()
+        logging.info(
+            "[STARTUP] Trading agent supervisor initialized active=%s",
+            bool(_agent_supervisor_thread),
+        )
+    except Exception as e:
+        logging.warning(
+            "[STARTUP] Trading agent supervisor failed to start: %s", e
+        )
+
     while True:
         time.sleep(10)
 
@@ -1946,13 +1961,19 @@ def main():
         # ────────────────────────────────────────────────────────────────────
         watchdog(now)
 
-        # V10.15k HOTFIX: Update paper positions (check exits, timeouts, TP/SL)
-        # Previously missing from main loop - caused trades to hold hours beyond max_hold_s
+        # Timeout scan is independent of ticks. TP/SL evaluation runs only on
+        # genuinely fresh per-symbol quotes; cached metrics must not refresh
+        # last_price_ts for a dead feed.
         try:
-            from src.services.paper_trade_executor import update_paper_positions
-            m = get_metrics()
-            lp = m.get("last_prices", {})
-            update_paper_positions(lp, now)
+            from src.services.paper_trade_executor import (
+                check_and_close_timeout_positions,
+            )
+
+            timeout_closes = check_and_close_timeout_positions(now)
+            if timeout_closes:
+                logging.info(
+                    "[PAPER_TIMEOUT_MAIN_LOOP] closed=%d", len(timeout_closes)
+                )
         except Exception as e:
             import logging
             logging.debug(f"[PAPER_UPDATE_ERROR] {e}")

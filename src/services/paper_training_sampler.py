@@ -1995,10 +1995,59 @@ def maybe_open_training_sample(
                 "max_hold_s": 0,
             }
 
+        # Only the deterministic supervisor may apply an automatic strategy
+        # policy. It can reduce entry quota or pause PAPER entries; failures
+        # degrade to the unchanged baseline.
+        supervisor_policy = {
+            "allowed": True,
+            "size_mult": size_mult,
+            "policy_revision": 0,
+            "reason": "agent_supervisor_unavailable",
+        }
+        try:
+            from src.services.trading_agent_supervisor import (
+                apply_policy_to_training_candidate,
+            )
+
+            supervisor_policy = apply_policy_to_training_candidate(
+                symbol=symbol,
+                bucket=bucket,
+                size_mult=size_mult,
+            )
+        except Exception as exc:
+            log.warning(
+                "[TRADING_AGENT_POLICY_ERROR] symbol=%s bucket=%s error=%s",
+                symbol,
+                bucket,
+                exc,
+            )
+
+        if not supervisor_policy.get("allowed", True):
+            return {
+                "allowed": False,
+                "bucket": bucket,
+                "reason": supervisor_policy.get(
+                    "reason", "agent_supervisor_pause"
+                ),
+                "size_mult": 0.0,
+                "side": side,
+                "side_inferred": side_inferred,
+                "max_hold_s": 0,
+                "agent_policy_revision": supervisor_policy.get(
+                    "policy_revision", 0
+                ),
+            }
+
         # AGGRESSIVE MODE: Skip all quality gates - allow all trades
         log.info(
-            "[PAPER_AGGRESSIVE_MODE] symbol=%s side=%s bucket=%s reason=%s allowed=TRUE (ALL GATES DISABLED)",
-            symbol, side, bucket, reason,
+            "[PAPER_AGGRESSIVE_MODE] symbol=%s side=%s bucket=%s reason=%s "
+            "allowed=TRUE agent_policy_revision=%s quota_multiplier=%s",
+            symbol,
+            side,
+            bucket,
+            reason,
+            supervisor_policy.get("policy_revision", 0),
+            supervisor_policy.get("entry_quota_multiplier", 1.0),
         )
 
         # All gates DISABLED; record entry metric
@@ -2019,6 +2068,12 @@ def maybe_open_training_sample(
             "max_hold_s": _MAX_HOLD_S,
             "tags": ["training_sampler", bucket.lower()],
             "admission_reason": f"aggressive_mode_{bucket}",
+            "agent_policy_revision": supervisor_policy.get(
+                "policy_revision", 0
+            ),
+            "agent_policy_reason": supervisor_policy.get(
+                "reason", "baseline"
+            ),
         }
 
         # P1.1AM: Log final acceptance of bypassed entries (DISABLED IN AGGRESSIVE MODE)

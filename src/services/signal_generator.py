@@ -1110,7 +1110,8 @@ def on_price(data):
         "symbol":     s,
         "action":     action,
         "price":      p,
-        "ts":         time.time(),  # Timestamp for position entry time
+        "ts":         call_ts,
+        "timestamp":  call_ts,  # Canonical timestamp used by executor freshness gates
         "confidence": confidence,   # raw penalised conf; RDE calibrates to win_prob
         "atr":        atr_v,
         "regime":     reg,
@@ -1179,6 +1180,19 @@ def warmup(symbols=None, candles=120):
     uses synthetic bootstrap data (flat prices) so signal generation can start immediately.
     This prevents INDICATORS_NOT_READY stalls when REST polling begins.
     """
+    global _first_run
+
+    # warmup() is the process-start reset boundary. Mark it complete here so the
+    # first live tick does not erase the candles that were just loaded.
+    prices.clear()
+    _macd_vals.clear()
+    _adx_hist.clear()
+    _rsi_hist.clear()
+    _rsi_full_hist.clear()
+    _obi_hist.clear()
+    _price_z_hist.clear()
+    _first_run = False
+
     if symbols is None:
         from src.services.portfolio_discovery import get_active_symbols
         symbols = get_active_symbols()
