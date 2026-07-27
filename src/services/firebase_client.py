@@ -895,12 +895,6 @@ def save_learning_archive_batch(events):
         collection = db.collection(col("learning_archive"))
         for event in safe_events:
             event_id = str(event["event_id"])
-            canonical_payload = json.dumps(
-                payload["payload"], sort_keys=True, separators=(",", ":"), default=str
-            )
-            payload["payload_sha256"] = hashlib.sha256(
-                canonical_payload.encode("utf-8")
-            ).hexdigest()
             payload = {
                 "schema_version": int(event.get("schema_version", 1)),
                 "event_id": event_id,
@@ -908,6 +902,12 @@ def save_learning_archive_batch(events):
                 "created_at": float(event.get("created_at", time.time())),
                 "payload": _sanitize_doc(event.get("payload") or {}),
             }
+            canonical_payload = json.dumps(
+                payload["payload"], sort_keys=True, separators=(",", ":"), default=str
+            )
+            payload["payload_sha256"] = hashlib.sha256(
+                canonical_payload.encode("utf-8")
+            ).hexdigest()
             batch.set(collection.document(event_id), payload, merge=False)
             confirmed.append(event_id)
         batch.commit()
