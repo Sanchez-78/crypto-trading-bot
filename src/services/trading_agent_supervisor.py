@@ -1147,8 +1147,11 @@ class TradingAgentSupervisor:
             "archive_flushed": 0,
             "paper_close_backfilled": 0,
         }
+        report = self._build_hourly_report(now)
+        result["report"] = report
         try:
             from src.services.learning_archive import (
+                archive_learning_event,
                 get_learning_archive,
                 flush_learning_archive,
             )
@@ -1184,6 +1187,15 @@ class TradingAgentSupervisor:
             flushed = flush_learning_archive(limit=200)
             result["archive_flushed"] = int(flushed.get("sent", 0) or 0)
             result["archive_status"] = archive.status()
+            report_bucket = int(now // 3600)
+            archived_report = archive_learning_event(
+                "hourly_supervisor_report",
+                report,
+                event_id=f"hourly_supervisor_report:{report_bucket}",
+                created_at=now,
+            )
+            if archived_report.get("accepted"):
+                flush_learning_archive(limit=200)
         except Exception as exc:
             result["status"] = "degraded"
             result["last_error"] = f"{type(exc).__name__}: {str(exc)[:300]}"
@@ -1191,6 +1203,7 @@ class TradingAgentSupervisor:
         result["completed_at"] = now
         result["completed_at_utc"] = _utc_iso(now)
         self._state["hourly_maintenance"] = result
+        self._state["hourly_report"] = report
         self._append_audit(
             {
                 "event": "hourly_maintenance",
@@ -1212,6 +1225,65 @@ class TradingAgentSupervisor:
             result["repairs"],
         )
         return result
+
+    def _build_hourly_report(self, now: float) -> dict:
+        """Create a human-readable, machine-stable change report."""
+        previous = self._state.get("hourly_report") or {}
+        current_policy = _validated_policy(self._state.get("policy"))
+        review = (self._state.get("agents") or {}).get("trade_review") or {}
+        trading = (self._state.get("agents") or {}).get("trading_health") or {}
+        learning_metrics = ((review.get("metrics") or {}).get("canonical") or {}).get("all") or {}
+        marker = Path("/opt/cryptomaster/reports/ready_bot_sha")
+        if not marker.exists():
+            marker = Path("reports/ready_bot_sha")
+        try:
+            code_sha = marker.read_text(encoding="utf-8").strip()
+        except OSError:
+            code_sha = os.getenv("GIT_SHA", "") or "unknown"
+
+        previous_code = str(previous.get("code", {}).get("sha") or "")
+        previous_strategy = previous.get("strategy") or {}
+        previous_learning = previous.get("learning") or {}
+        strategy_now = {
+            "revision": current_policy.get("revision", 0),
+            "quota_multiplier": current_policy.get("paper_entry_quota_multiplier", 1.0),
+            "pause_new_entries": current_policy.get("pause_new_entries", False),
+            "reason": current_policy.get("reason", "baseline"),
+        }
+        learning_now = {
+            "review_run_id": review.get("run_id"),
+            "evidence_sha256": (review.get("evidence") or {}).get("sha256"),
+            "canonical_n": review.get("window", {}).get("canonical_n", 0),
+            "exploration_n": review.get("window", {}).get("exploration_n", 0),
+            "data_quality_status": review.get("status"),
+            "learning_status": trading.get("learning_status"),
+            "canonical_profit_factor": learning_metrics.get("profit_factor", 0.0),
+            "canonical_win_rate": learning_metrics.get("win_rate", 0.0),
+        }
+        changes = []
+        if previous_code and previous_code != code_sha:
+            changes.append("code_version_changed")
+        if previous_strategy and previous_strategy != strategy_now:
+            changes.append("strategy_policy_changed")
+        if previous_learning and previous_learning != learning_now:
+            changes.append("learning_state_changed")
+        if not changes:
+            changes.append("no_changes")
+        return {
+            "generated_at": now,
+            "generated_at_utc": _utc_iso(now),
+            "changes": changes,
+            "code": {"sha": code_sha, "previous_sha": previous_code or None},
+            "strategy": strategy_now,
+            "previous_strategy": previous_strategy,
+            "learning": learning_now,
+            "previous_learning": previous_learning,
+            "summary": (
+                "Beze změny."
+                if changes == ["no_changes"]
+                else ", ".join(changes)
+            ),
+        }
 
     def run_cycle(self) -> dict:
         """Run one supervised cycle; failures degrade and open a circuit safely."""

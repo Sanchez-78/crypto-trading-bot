@@ -1172,9 +1172,11 @@ HTML_TEMPLATE = r"""
             };
 
             paint('agent_supervisor_status', supervisor.status);
+            const hourlyReport = state.hourly_report || {};
             document.getElementById('agent_supervisor_detail').textContent =
                 (supervisor.mode || 'unknown') + ' · state age ' +
-                formatAge(state.state_age_s);
+                formatAge(state.state_age_s) + ' · hourly: ' +
+                String(hourlyReport.summary || 'waiting');
             paint('agent_trading_status', trading.trading_status || trading.status);
             document.getElementById('agent_trading_detail').textContent =
                 'Learning: ' + String(trading.learning_status || 'unknown') +
