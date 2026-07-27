@@ -68,7 +68,9 @@ class PaperExplorationAgent:
             if max_entries_per_hour is None
             else int(max_entries_per_hour)
         )
-        self._max_entries_per_hour = min(max(configured_cap, 1), 6)
+        # Paper-only learning can sample frequently; keep a finite hourly cap
+        # so a bad market feed cannot create an unbounded position stream.
+        self._max_entries_per_hour = min(max(configured_cap, 1), 60)
         self._started_at = float(clock())
         self._entry_times: deque[float] = deque(maxlen=24)
         self._last_attempt_at = 0.0
