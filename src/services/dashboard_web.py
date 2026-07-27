@@ -1243,8 +1243,18 @@ HTML_TEMPLATE = r"""
                 ? 'Strategii automaticky nemění, protože část starších obchodů nemá ověřený původ.'
                 : 'Výsledky obchodů průběžně vyhodnocuje pro další učení.';
             summary.textContent = positionText + ' ' + marketText + ' ' + reviewText;
-            const reason = String(exploration.last_reason || 'čeká na rozhodnutí');
-            const learning = String(trading.learning_status || 'neznámý');
+            const reasonLabels = {
+                waiting_for_verified_drought: 'čeká na dostatečně dlouhé období bez signálu',
+                open_position_already_active: 'čeká, protože už drží pozici',
+                hourly_control_cap: 'dosáhl hodinového limitu vzorků',
+                least_sampled_symbol_side: 'vybírá nejméně otestovaný symbol/směr'
+            };
+            const rawReason = String(exploration.last_reason || '');
+            const reason = reasonLabels[rawReason] || rawReason || 'čeká na rozhodnutí';
+            const rawLearning = String(trading.learning_status || '');
+            const learning = rawLearning === 'stalled'
+                ? 'čeká na nový kanonický učící vzorek'
+                : rawLearning || 'neznámé';
             next.textContent = 'Učení: ' + learning +
                 ' · Exploration: ' + reason +
                 ' · Strategie: quota ' +
