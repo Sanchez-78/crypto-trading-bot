@@ -791,6 +791,8 @@ class TradingAgentSupervisor:
             "pending": {"key": "", "streak": 0, "evidence_sha": ""},
             "policy": _default_policy(),
             "audit": [],
+            "hourly_maintenance": {},
+            "hourly_report": {},
         }
 
     def _load_state(self) -> dict:
@@ -800,6 +802,10 @@ class TradingAgentSupervisor:
             return state
 
         state["policy"] = _validated_policy(loaded.get("policy"))
+        if isinstance(loaded.get("hourly_maintenance"), dict):
+            state["hourly_maintenance"] = loaded["hourly_maintenance"]
+        if isinstance(loaded.get("hourly_report"), dict):
+            state["hourly_report"] = loaded["hourly_report"]
         state["audit"] = (
             loaded.get("audit", [])[-MAX_AUDIT_RECORDS:]
             if isinstance(loaded.get("audit"), list)
