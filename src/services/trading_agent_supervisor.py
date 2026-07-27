@@ -1239,13 +1239,15 @@ class TradingAgentSupervisor:
         review = (self._state.get("agents") or {}).get("trade_review") or {}
         trading = (self._state.get("agents") or {}).get("trading_health") or {}
         learning_metrics = ((review.get("metrics") or {}).get("canonical") or {}).get("all") or {}
-        marker = Path("/opt/cryptomaster/reports/ready_bot_sha")
-        if not marker.exists():
-            marker = Path("reports/ready_bot_sha")
-        try:
-            code_sha = marker.read_text(encoding="utf-8").strip()
-        except OSError:
-            code_sha = os.getenv("GIT_SHA", "") or "unknown"
+        code_sha = os.getenv("GIT_SHA", "").strip()
+        if not code_sha:
+            marker = Path("/opt/cryptomaster/reports/ready_bot_sha")
+            if not marker.exists():
+                marker = Path("reports/ready_bot_sha")
+            try:
+                code_sha = marker.read_text(encoding="utf-8").strip()
+            except OSError:
+                code_sha = "unknown"
 
         previous_code = str(previous.get("code", {}).get("sha") or "")
         previous_strategy = previous.get("strategy") or {}
@@ -1261,6 +1263,7 @@ class TradingAgentSupervisor:
             "evidence_sha256": (review.get("evidence") or {}).get("sha256"),
             "canonical_n": review.get("window", {}).get("canonical_n", 0),
             "exploration_n": review.get("window", {}).get("exploration_n", 0),
+            "unknown_provenance_n": review.get("window", {}).get("unknown_provenance_n", 0),
             "data_quality_status": review.get("status"),
             "learning_status": trading.get("learning_status"),
             "canonical_profit_factor": learning_metrics.get("profit_factor", 0.0),
@@ -1275,6 +1278,16 @@ class TradingAgentSupervisor:
             changes.append("learning_state_changed")
         if not changes:
             changes.append("no_changes")
+        if changes == ["no_changes"]:
+            summary = "Beze změny."
+        else:
+            summary = ", ".join(changes)
+            if "learning_state_changed" in changes:
+                summary += (
+                    f"; exploration={learning_now['exploration_n']}, "
+                    f"canonical={learning_now['canonical_n']}, "
+                    f"unknown={learning_now['unknown_provenance_n']}"
+                )
         return {
             "generated_at": now,
             "generated_at_utc": _utc_iso(now),
@@ -1284,11 +1297,7 @@ class TradingAgentSupervisor:
             "previous_strategy": previous_strategy,
             "learning": learning_now,
             "previous_learning": previous_learning,
-            "summary": (
-                "Beze změny."
-                if changes == ["no_changes"]
-                else ", ".join(changes)
-            ),
+            "summary": summary,
         }
 
     def run_cycle(self) -> dict:
