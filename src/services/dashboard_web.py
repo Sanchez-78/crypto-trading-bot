@@ -739,6 +739,16 @@ HTML_TEMPLATE = r"""
             </div>
         </section>
 
+        <section class="stats-table" style="border-left: 3px solid #1e90ff;">
+            <h2 style="margin-top:0;">Co teď robot dělá?</h2>
+            <p id="plain_summary" style="font-size:15px; line-height:1.55; color:#e0e0e0; margin-bottom:8px;">
+                Načítám aktuální vysvětlení…
+            </p>
+            <p id="plain_next_step" style="font-size:13px; line-height:1.45; color:#9aa4b2; margin:0;">
+                Další krok se zobrazí po načtení stavu.
+            </p>
+        </section>
+
         <!-- Charts Section -->
         <div class="charts-section">
             <div class="chart-container">
@@ -1212,12 +1222,42 @@ HTML_TEMPLATE = r"""
                 ' / total ' + String(archive.total_events || 0);
         }
 
+        function updatePlainSummary(data) {
+            const summary = document.getElementById('plain_summary');
+            const next = document.getElementById('plain_next_step');
+            const agent = data.agent_supervisor || {};
+            const agents = agent.agents || {};
+            const market = agents.market_state || {};
+            const trading = agents.trading_health || {};
+            const review = agents.trade_review || {};
+            const exploration = agents.paper_exploration || {};
+            const policy = agent.policy || {};
+            const open = Number(data.open_positions || 0);
+            const marketText = market.status === 'healthy'
+                ? 'Tržní data jsou v pořádku.'
+                : 'Tržní data jsou dočasně nejistá nebo zastaralá.';
+            const positionText = open > 0
+                ? 'Robot právě drží ' + open + ' paper pozic a čeká na jejich uzavření.'
+                : 'Robot právě nemá otevřenou paper pozici.';
+            const reviewText = review.status === 'data_quality_blocked'
+                ? 'Strategii automaticky nemění, protože část starších obchodů nemá ověřený původ.'
+                : 'Výsledky obchodů průběžně vyhodnocuje pro další učení.';
+            summary.textContent = positionText + ' ' + marketText + ' ' + reviewText;
+            const reason = String(exploration.last_reason || 'čeká na rozhodnutí');
+            const learning = String(trading.learning_status || 'neznámý');
+            next.textContent = 'Učení: ' + learning +
+                ' · Exploration: ' + reason +
+                ' · Strategie: quota ' +
+                Math.round(Number(policy.paper_entry_quota_multiplier ?? 1) * 100) + ' %.';
+        }
+
         async function updateDashboard() {
             const data = await fetchMetrics();
             const learningData = await fetchLearningState();
             if (!data) return;
 
             lastData = data;
+            updatePlainSummary(data);
 
             // Update learning metrics
             if (learningData) {
