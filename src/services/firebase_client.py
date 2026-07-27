@@ -31,7 +31,7 @@ Switch: set PERF_MODE=True in this file; restart bot.
 import firebase_admin
 from firebase_admin import credentials, firestore
 import logging
-import os, json, base64, time, requests, threading
+import os, json, base64, time, requests, threading, hashlib
 
 _QUOTA_LOCK = threading.RLock()
 
@@ -611,6 +611,7 @@ def _slim_trade(trade):
     # Boolean edge features used by update_edge_stats / lm_update
     bool_feats = {k: bool(v) for k, v in feat.items() if isinstance(v, bool)}
     return {
+        "trade_id":      trade.get("trade_id") or trade.get("id"),
         "symbol":       trade.get("symbol"),
         "action":       trade.get("action"),
         "signal":       trade.get("action"),          # app uses 'signal' not 'action'
@@ -649,6 +650,38 @@ def _slim_trade(trade):
         # V10.13z: Explicit mode and trade_environment for app classification
         "mode":             trade.get("mode", "PAPER"),  # PAPER, LIVE, REPLAY
         "trade_environment": trade.get("trade_environment", "paper_train"),  # paper_train, paper_live, live_real, replay_train
+        # Preserve learning provenance; recovery must never infer eligibility.
+        "bucket":            trade.get("bucket"),
+        "training_bucket":   trade.get("training_bucket"),
+        "explore_bucket":    trade.get("explore_bucket"),
+        "paper_source":      trade.get("paper_source") or trade.get("source"),
+        "learning_source":   trade.get("learning_source"),
+        "readiness_eligible": bool(trade.get("readiness_eligible", False)),
+        "real_readiness_eligible": bool(
+            trade.get("real_readiness_eligible", False)
+        ),
+        "paper_learning_only": bool(trade.get("paper_learning_only", False)),
+        "learning_shadow_only": bool(
+            trade.get("learning_shadow_only", False)
+            or trade.get("shadow_only", False)
+        ),
+        "net_pnl_pct": round(
+            float(
+                trade.get("net_pnl_pct")
+                if trade.get("net_pnl_pct") is not None
+                else trade.get("pnl_pct", 0)
+            ),
+            8,
+        ),
+        "net_pnl_usd": round(
+            float(
+                trade.get("net_pnl_usd")
+                if trade.get("net_pnl_usd") is not None
+                else trade.get("pnl_usd", trade.get("profit", 0))
+            ),
+            8,
+        ),
+        "outcome": trade.get("outcome") or trade.get("result"),
     }
 
 
@@ -824,6 +857,152 @@ def save_batch(batch):
         else:
             print(f"⚠️  _RETRY_QUEUE full ({len(_RETRY_QUEUE)} >= {_MAX_RETRY_SIZE}) — dropping batch")
         return 0
+
+
+def save_learning_archive_batch(events):
+    """Synchronously commit idempotent learning events to Firestore.
+
+    This is intentionally separate from ``save_batch``: archive events retain
+    their complete schema, use deterministic document IDs, and are acknowledged
+    only after Firestore confirms the batch commit.
+    """
+    if db is None:
+        return []
+    skip, reason = should_skip_noncritical_write()
+    if skip:
+        logging.warning("[LEARNING_ARCHIVE_DEFER] reason=%s", reason)
+        return []
+
+    safe_events = [
+        event for event in list(events or [])[:200]
+        if isinstance(event, dict) and event.get("event_id")
+    ]
+    if not safe_events:
+        return []
+    allowed, current, limit_writes = _can_write(len(safe_events))
+    if not allowed:
+        logging.warning(
+            "[LEARNING_ARCHIVE_DEFER] quota=%s/%s requested=%s",
+            current,
+            limit_writes,
+            len(safe_events),
+        )
+        return []
+
+    try:
+        batch = db.batch()
+        confirmed = []
+        collection = db.collection(col("learning_archive"))
+        for event in safe_events:
+            event_id = str(event["event_id"])
+            canonical_payload = json.dumps(
+                payload["payload"], sort_keys=True, separators=(",", ":"), default=str
+            )
+            payload["payload_sha256"] = hashlib.sha256(
+                canonical_payload.encode("utf-8")
+            ).hexdigest()
+            payload = {
+                "schema_version": int(event.get("schema_version", 1)),
+                "event_id": event_id,
+                "event_type": str(event.get("event_type", "unknown")),
+                "created_at": float(event.get("created_at", time.time())),
+                "payload": _sanitize_doc(event.get("payload") or {}),
+            }
+            batch.set(collection.document(event_id), payload, merge=False)
+            confirmed.append(event_id)
+        batch.commit()
+        _record_write(len(confirmed))
+        logging.info(
+            "[LEARNING_ARCHIVE_COMMIT] events=%d",
+            len(confirmed),
+        )
+        return confirmed
+    except Exception as exc:
+        # Ambiguous timeouts may have committed remotely; count pessimistically.
+        _record_write(len(safe_events))
+        _handle_quota_error("save_learning_archive_batch", exc)
+        raise
+
+
+def save_paper_trade_record(record):
+    """Quota-gated idempotent compatibility projection for ``trades_paper``.
+
+    The durable learning archive remains authoritative; this projection exists
+    for legacy history/dashboard readers and never claims success before commit.
+    """
+    if db is None or not isinstance(record, dict):
+        return False
+    trade_id = str(record.get("trade_id") or "").strip()
+    if not trade_id or "/" in trade_id or trade_id in {".", ".."}:
+        return False
+    skip, reason = should_skip_noncritical_write()
+    if skip:
+        logging.warning("[PAPER_TRADE_PROJECTION_DEFER] reason=%s", reason)
+        return False
+    allowed, current, limit_writes = _can_write(1)
+    if not allowed:
+        logging.warning(
+            "[PAPER_TRADE_PROJECTION_DEFER] quota=%s/%s",
+            current,
+            limit_writes,
+        )
+        return False
+    try:
+        db.collection(col("trades_paper")).document(trade_id).set(
+            _sanitize_doc(record),
+            merge=False,
+        )
+        _record_write(1)
+        return True
+    except Exception as exc:
+        _record_write(1)
+        _handle_quota_error("save_paper_trade_record", exc)
+        logging.warning(
+            "[PAPER_TRADE_PROJECTION_ERROR] trade_id=%s err=%s",
+            trade_id,
+            safe_log_exception(exc),
+        )
+        return False
+
+
+def load_learning_archive(limit=50):
+    """Load a bounded newest-first archive slice for cold-start hydration."""
+    if db is None:
+        return []
+    limit = min(max(int(limit), 1), 200)
+    allowed, current, limit_reads = _can_read(limit)
+    if not allowed:
+        logging.warning(
+            "[LEARNING_ARCHIVE_HYDRATE_DEFER] quota=%s/%s requested=%s",
+            current,
+            limit_reads,
+            limit,
+        )
+        return []
+    try:
+        docs = list(
+            db.collection(col("learning_archive"))
+            .order_by("created_at", direction=firestore.Query.DESCENDING)
+            .limit(limit)
+            .stream()
+        )
+        _record_read(max(1, len(docs)), label="load_learning_archive")
+        result = []
+        for document in docs:
+            value = document.to_dict() or {}
+            result.append(
+                {
+                    "event_id": value.get("event_id") or document.id,
+                    "schema_version": value.get("schema_version", 1),
+                    "event_type": value.get("event_type", "unknown"),
+                    "created_at": value.get("created_at", 0),
+                    "payload": value.get("payload") or {},
+                }
+            )
+        return result
+    except Exception as exc:
+        _handle_quota_error("load_learning_archive", exc)
+        return []
 
 
 def save_trade(trade, result):

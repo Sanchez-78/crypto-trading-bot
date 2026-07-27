@@ -25,11 +25,14 @@ _firebase_sync_lock = threading.Lock()
 
 
 def _async_firebase_sync():
-    """Background thread to sync learning state to Firebase (best effort)."""
+    """Move the newest checkpoint into the durable archive outbox."""
     try:
-        from src.services.firebase_client import save_batch
+        from src.services.learning_archive import (
+            archive_learning_event,
+            flush_learning_archive,
+        )
     except ImportError:
-        log.warning("[LEARNING_FIREBASE] Firebase not available for async sync")
+        log.warning("[LEARNING_ARCHIVE] durable archive not available")
         return
 
     while True:
@@ -37,23 +40,33 @@ def _async_firebase_sync():
         with _firebase_sync_lock:
             if not _firebase_sync_queue:
                 continue
-
-            data = _firebase_sync_queue.pop(0)
-            try:
-                # Save learning state as a "document" in Firebase
-                batch = [{
-                    "collection": "learning_state",
-                    "doc_id": "regime_tp_strategy",
-                    "data": data,
-                    "timestamp": time.time()
-                }]
-                save_batch(batch)
-                log.info("[LEARNING_FIREBASE_SYNC] Async Firebase sync completed")
-            except Exception as e:
-                log.warning(f"[LEARNING_FIREBASE_SYNC_ERROR] {e}")
-                # Put it back in queue for retry
-                with _firebase_sync_lock:
-                    _firebase_sync_queue.insert(0, data)
+            data = _firebase_sync_queue[-1]
+        try:
+            appended = archive_learning_event(
+                "adaptive_learning_checkpoint",
+                data,
+            )
+            if not (
+                appended.get("accepted")
+                or appended.get("duplicate")
+            ):
+                log.warning(
+                    "[LEARNING_ARCHIVE_SYNC_REJECTED] reason=%s",
+                    appended.get("reason"),
+                )
+                continue
+            with _firebase_sync_lock:
+                if _firebase_sync_queue and _firebase_sync_queue[-1] is data:
+                    _firebase_sync_queue.clear()
+            flush_result = flush_learning_archive(limit=50)
+            log.info(
+                "[LEARNING_ARCHIVE_SYNC] checkpoint durable flush=%s pending=%s",
+                flush_result.get("flush"),
+                flush_result.get("pending_events"),
+            )
+        except Exception as e:
+            # The SQLite outbox retains an appended event across remote errors.
+            log.warning("[LEARNING_ARCHIVE_SYNC_ERROR] %s", e)
 
 
 def start_async_firebase_sync():
@@ -80,24 +93,25 @@ class FirebaseLearningPersistence:
         """
         try:
             os.makedirs(os.path.dirname(self.state_file), exist_ok=True)
+            data = dict(learning_obj or {})
+            data["timestamp"] = datetime.utcnow().isoformat()
+            data["schema_version"] = 2
 
-            # Prepare data in Firebase-compatible format
-            data = {
-                "timestamp": datetime.utcnow().isoformat(),
-                "schema_version": 1,
-                "lifetime_metrics": learning_obj.get("lifetime_metrics", {}),
-                "regime_tp_strategy": learning_obj.get("regime_tp_strategy", {}),
-                "rolling_windows": learning_obj.get("rolling_windows", {}),
-            }
-
-            # Save to local JSON (synchronous, guaranteed)
-            with open(self.state_file, 'w') as f:
+            # Atomic local checkpoint remains the fast startup source.
+            temp_file = (
+                f"{self.state_file}.{os.getpid()}.{threading.get_ident()}.tmp"
+            )
+            with open(temp_file, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(temp_file, self.state_file)
 
             self.last_save_ts = time.time()
 
-            # Queue for async Firebase sync (best effort, non-blocking)
+            # Bound memory to one superseding snapshot.
             with _firebase_sync_lock:
+                _firebase_sync_queue.clear()
                 _firebase_sync_queue.append(data)
 
             lifetime = learning_obj.get("lifetime_metrics", {})
@@ -110,20 +124,19 @@ class FirebaseLearningPersistence:
             return False
 
     def load_learning_state(self) -> Optional[Dict[str, Any]]:
-        """Load learning state from local JSON (fast, reliable)."""
+        """Load local checkpoint, then bounded archive/Firebase fallback."""
         try:
             if not os.path.exists(self.state_file):
-                log.info("[LEARNING_LOAD] No prior learning state found")
-                return None
+                return self._load_archive_checkpoint()
 
-            with open(self.state_file, 'r') as f:
+            with open(self.state_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
             # Validate age (< 24 hours)
             ts_str = data.get("timestamp", "")
             if ts_str and not self._is_recent(ts_str):
                 log.warning("[LEARNING_LOAD] State is stale (>24h)")
-                return None
+                return self._load_archive_checkpoint()
 
             # Validate min data (at least 20 trades)
             lifetime = data.get("lifetime_metrics", {})
@@ -137,6 +150,30 @@ class FirebaseLearningPersistence:
 
         except Exception as e:
             log.error(f"[LEARNING_LOAD_ERROR] {str(e)}")
+            return self._load_archive_checkpoint()
+
+    def _load_archive_checkpoint(self) -> Optional[Dict[str, Any]]:
+        try:
+            from src.services.learning_archive import get_learning_archive
+
+            archive = get_learning_archive()
+            archive.hydrate(limit=200)
+            rows = archive.recent("adaptive_learning_checkpoint", limit=1)
+            if not rows:
+                log.info("[LEARNING_LOAD] No archived checkpoint found")
+                return None
+            data = rows[0].get("payload") or {}
+            lifetime = data.get("lifetime_metrics", {})
+            if int(lifetime.get("trades_closed", 0) or 0) < 20:
+                log.info("[LEARNING_LOAD] Archived checkpoint has insufficient data")
+                return None
+            log.info(
+                "[LEARNING_LOAD] Restored archived checkpoint: %s trades",
+                lifetime.get("trades_closed", 0),
+            )
+            return data
+        except Exception as exc:
+            log.warning("[LEARNING_ARCHIVE_LOAD_ERROR] %s", exc)
             return None
 
     def validate_regime_tp_strategy(self, regime_tp: Dict) -> bool:

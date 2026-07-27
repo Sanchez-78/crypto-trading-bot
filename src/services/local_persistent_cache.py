@@ -95,6 +95,16 @@ def _init_db():
         ("time_to_mfe_ms", "time_to_mfe_ms INTEGER"),
         ("time_to_mae_ms", "time_to_mae_ms INTEGER"),
         ("excursion_policy_version", "excursion_policy_version INTEGER"),
+        ("bucket", "bucket TEXT"),
+        ("training_bucket", "training_bucket TEXT"),
+        ("explore_bucket", "explore_bucket TEXT"),
+        ("paper_source", "paper_source TEXT"),
+        ("learning_source", "learning_source TEXT"),
+        ("readiness_eligible", "readiness_eligible INTEGER"),
+        ("real_readiness_eligible", "real_readiness_eligible INTEGER"),
+        ("paper_learning_only", "paper_learning_only INTEGER"),
+        ("learning_shadow_only", "learning_shadow_only INTEGER"),
+        ("tags_json", "tags_json TEXT"),
     )
     for _col, _decl in _f8_cols:
         try:
@@ -192,9 +202,13 @@ def get_closed_trades(limit: int = 100) -> List[Dict]:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT trade_id, symbol, entry_ts, exit_ts, entry_price, exit_price,
-                       pnl_usd, pnl_pct, win, exit_reason, regime, source, tp_sl_profile
+                       pnl_usd, pnl_pct, win, exit_reason, regime, source, tp_sl_profile,
+                       side, outcome, bucket, training_bucket, explore_bucket,
+                       paper_source, learning_source, readiness_eligible,
+                       real_readiness_eligible, paper_learning_only,
+                       learning_shadow_only, tags_json
                 FROM closed_trades
-                ORDER BY exit_ts DESC
+                ORDER BY exit_ts DESC, trade_id DESC
                 LIMIT ?
             """, (limit,))
             rows = cursor.fetchall()
@@ -216,6 +230,22 @@ def get_closed_trades(limit: int = 100) -> List[Dict]:
                     "regime": row[10],
                     "source": row[11],
                     "tp_sl_profile": row[12],
+                    "side": row[13],
+                    "outcome": row[14],
+                    "bucket": row[15],
+                    "training_bucket": row[16],
+                    "explore_bucket": row[17],
+                    "paper_source": row[18],
+                    "learning_source": row[19],
+                    "readiness_eligible": (
+                        bool(row[20]) if row[20] is not None else None
+                    ),
+                    "real_readiness_eligible": (
+                        bool(row[21]) if row[21] is not None else None
+                    ),
+                    "paper_learning_only": bool(row[22]),
+                    "learning_shadow_only": bool(row[23]),
+                    "tags": json.loads(row[24]) if row[24] else [],
                 })
 
             _log.debug(f"[LOCAL_CACHE] closed_trades: {len(trades)} records")
@@ -310,6 +340,32 @@ def save_closed_trade(trade: Dict[str, Any]):
                 trade.get("time_to_mae_ms"),
                 trade.get("excursion_policy_version"),
             ))
+            # Additive provenance update keeps the legacy insert contract stable
+            # while making learning cohort classification recoverable.
+            cursor.execute(
+                """
+                UPDATE closed_trades
+                SET bucket = ?, training_bucket = ?, explore_bucket = ?,
+                    paper_source = ?, learning_source = ?,
+                    readiness_eligible = ?, real_readiness_eligible = ?,
+                    paper_learning_only = ?, learning_shadow_only = ?,
+                    tags_json = ?
+                WHERE trade_id = ?
+                """,
+                (
+                    trade.get("bucket"),
+                    trade.get("training_bucket"),
+                    trade.get("explore_bucket"),
+                    trade.get("paper_source") or trade.get("source"),
+                    trade.get("learning_source"),
+                    None if trade.get("readiness_eligible") is None else int(bool(trade.get("readiness_eligible"))),
+                    None if trade.get("real_readiness_eligible") is None else int(bool(trade.get("real_readiness_eligible"))),
+                    int(bool(trade.get("paper_learning_only", False))),
+                    int(bool(trade.get("learning_shadow_only", False) or trade.get("shadow_only", False))),
+                    json.dumps(trade.get("tags") or [], separators=(",", ":")),
+                    trade.get("trade_id"),
+                ),
+            )
             conn.commit()
             conn.close()
             _log.debug(f"[LOCAL_CACHE] saved trade: {trade.get('trade_id')}")
@@ -373,10 +429,13 @@ def get_unsynced_trades(limit: int = 100) -> List[Dict]:
             cursor.execute("""
                 SELECT trade_id, symbol, entry_ts, exit_ts, entry_price, exit_price,
                        pnl_usd, pnl_pct, win, exit_reason, regime, source, tp_sl_profile,
-                       mfe, mae, id
+                       mfe, mae, id, side, outcome, bucket, training_bucket,
+                       explore_bucket, paper_source, learning_source,
+                       readiness_eligible, real_readiness_eligible,
+                       paper_learning_only, learning_shadow_only
                 FROM closed_trades
                 WHERE synced_to_firebase = 0
-                ORDER BY exit_ts DESC
+                ORDER BY exit_ts ASC, trade_id ASC
                 LIMIT ?
             """, (limit,))
             rows = cursor.fetchall()
@@ -401,6 +460,17 @@ def get_unsynced_trades(limit: int = 100) -> List[Dict]:
                     "mfe": row[13],
                     "mae": row[14],
                     "_row_id": row[15],
+                    "side": row[16],
+                    "outcome": row[17],
+                    "bucket": row[18],
+                    "training_bucket": row[19],
+                    "explore_bucket": row[20],
+                    "paper_source": row[21],
+                    "learning_source": row[22],
+                    "readiness_eligible": bool(row[23]) if row[23] is not None else False,
+                    "real_readiness_eligible": bool(row[24]) if row[24] is not None else False,
+                    "paper_learning_only": bool(row[25]),
+                    "learning_shadow_only": bool(row[26]),
                 })
 
             return trades

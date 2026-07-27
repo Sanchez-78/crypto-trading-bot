@@ -40,16 +40,53 @@ def _learning(lifetime_n=250, pf=0.60, expectancy=-0.02):
 
 def _source(clock, learning=None):
     learning = learning or _learning()
+    calls = [0]
 
     def collect():
-        return {
-            "closed_trades": [
+        calls[0] += 1
+        pf = float(learning.get("rolling20_pf", 0.6))
+        expectancy = float(learning.get("rolling20_expectancy", -0.02))
+        # Build a full, provenance-complete 200-trade evidence window.  The
+        # last id changes only to model a genuinely new close between cycles.
+        if pf < 0.8 and expectancy < 0:
+            wins, losses = 60, 140
+            win_pnl = 0.10
+            loss_pnl = -0.0714285714
+        elif pf >= 1.05 and expectancy > 0:
+            wins, losses = 80, 120
+            win_pnl = 0.45
+            loss_pnl = -0.25
+        else:
+            wins, losses = 100, 100
+            win_pnl = 0.10
+            loss_pnl = -0.10
+        trades = []
+        for index in range(200):
+            is_win = (
+                ((index + 1) * wins) // 200
+                != (index * wins) // 200
+            )
+            pnl = win_pnl if is_win else loss_pnl
+            trades.append(
                 {
-                    "trade_id": "latest",
+                    "trade_id": f"trade-{index}-{calls[0] if index == 199 else 0}",
                     "symbol": "BTCUSDT",
-                    "exit_ts": clock() - 10,
+                    "side": "BUY",
+                    "entry_ts": clock() - 1000 + index,
+                    "exit_ts": clock() - 1000 + index,
+                    "entry_price": 100.0,
+                    "exit_price": 100.0 + pnl,
+                    "net_pnl_pct": pnl,
+                    "outcome": "WIN" if is_win else "LOSS",
+                    "metrics_contract_version": 1,
+                    "paper_source": "canonical_signal",
+                    "learning_source": "strict_ev",
+                    "readiness_eligible": True,
+                    "real_readiness_eligible": True,
                 }
-            ],
+            )
+        return {
+            "closed_trades": trades,
             "open_positions": [],
             "learning_snapshot": dict(learning),
         }

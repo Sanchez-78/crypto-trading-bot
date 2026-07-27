@@ -2038,27 +2038,62 @@ def maybe_open_training_sample(
                 ),
             }
 
-        # AGGRESSIVE MODE: Skip all quality gates - allow all trades
+        # Bounded aggressive mode: quality scoring is relaxed, but dedupe,
+        # rate, open-position and cooldown gates remain mandatory.
+        try:
+            from src.services.paper_trade_executor import get_paper_open_positions
+
+            open_positions = get_paper_open_positions()
+        except Exception:
+            open_positions = []
+        gate_result = _training_quality_gate(
+            symbol=symbol,
+            side=side,
+            bucket=bucket,
+            source_reject=reason,
+            cost_edge_ok=True,
+            open_positions=open_positions,
+        )
+        if not gate_result.get("allowed"):
+            return {
+                **gate_result,
+                "bucket": bucket,
+                "size_mult": 0.0,
+                "side": side,
+                "side_inferred": side_inferred,
+                "max_hold_s": 0,
+            }
+
+        is_control = bucket in {
+            "D_NEG_EV_CONTROL",
+            "E_NO_PATTERN_BASELINE",
+            "C_NEG_EV_PROBE",
+            "PAPER_STARVATION_DISCOVERY",
+        }
+        if is_control:
+            signal["strict_ev"] = False
+            signal["readiness_eligible"] = False
+            signal["real_readiness_eligible"] = False
+            signal["paper_learning_only"] = True
+            signal["learning_shadow_only"] = True
+            signal["learning_source"] = "paper_exploration_control"
+
         log.info(
-            "[PAPER_AGGRESSIVE_MODE] symbol=%s side=%s bucket=%s reason=%s "
-            "allowed=TRUE agent_policy_revision=%s quota_multiplier=%s",
+            "[PAPER_BOUNDED_AGGRESSIVE] symbol=%s side=%s bucket=%s reason=%s "
+            "allowed=TRUE control=%s agent_policy_revision=%s quota_multiplier=%s",
             symbol,
             side,
             bucket,
             reason,
+            is_control,
             supervisor_policy.get("policy_revision", 0),
             supervisor_policy.get("entry_quota_multiplier", 1.0),
         )
 
-        # All gates DISABLED; record entry metric
-        _training_metrics["entries_1h"].append(time.time())
-        _maybe_log_training_health()
-
-        # AGGRESSIVE MODE: Return allowed=True for all valid buckets
         return {
             "allowed": True,
             "bucket": bucket,
-            "reason": "aggressive_mode_all_gates_disabled",
+            "reason": "bounded_aggressive_admission",
             "size_mult": size_mult or 1.0,
             "side": side,
             "side_inferred": side_inferred,
@@ -2073,6 +2108,14 @@ def maybe_open_training_sample(
             ),
             "agent_policy_reason": supervisor_policy.get(
                 "reason", "baseline"
+            ),
+            "readiness_eligible": not is_control,
+            "real_readiness_eligible": not is_control,
+            "paper_learning_only": is_control,
+            "learning_shadow_only": is_control,
+            "learning_source": (
+                "paper_exploration_control" if is_control
+                else "paper_training_sampler"
             ),
         }
 
@@ -2302,6 +2345,7 @@ def commit_training_sampler_rate_slot(now: float = None) -> None:
 
     _entry_times_minute.append(now)
     _entry_times_hour.append(now)
+    _training_metrics["entries_1h"].append(now)
 
 
 def record_training_closed(

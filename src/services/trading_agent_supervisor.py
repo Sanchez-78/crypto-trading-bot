@@ -28,6 +28,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, Optional
 
+from src.services.paper_exploration_agent import PaperExplorationAgent
+from src.services.trade_review_agent import TradeReviewAgent
+
 log = logging.getLogger(__name__)
 
 SCHEMA_VERSION = 1
@@ -303,6 +306,30 @@ class MarketStateAgent:
         else:
             market_regime = "insufficient_history"
 
+        control_candidates = []
+        for symbol in fresh_symbols:
+            tick = latest.get(symbol)
+            points = histories.get(symbol, [])
+            if not tick or not points:
+                continue
+            first_price = _finite(points[0][1], 0.0)
+            last_price = _finite(tick[0], 0.0)
+            if first_price <= 0.0 or last_price <= 0.0:
+                continue
+            control_candidates.append(
+                {
+                    "symbol": symbol,
+                    "price": last_price,
+                    "price_ts": float(tick[1]),
+                    "price_age_s": ages.get(symbol),
+                    "move_bps": round(
+                        ((last_price / first_price) - 1.0) * 10_000.0,
+                        4,
+                    ),
+                    "samples": len(points),
+                }
+            )
+
         newest_tick_ts = max((tick[1] for tick in latest.values()), default=0.0)
         return {
             "agent": "market_state",
@@ -317,6 +344,10 @@ class MarketStateAgent:
             "market_regime": market_regime,
             "median_abs_return_bps": round(median_abs_return_bps, 4),
             "positive_breadth": round(positive_breadth, 4),
+            "control_candidates": sorted(
+                control_candidates,
+                key=lambda value: value["symbol"],
+            ),
             "last_tick_ts": newest_tick_ts or None,
             "last_tick_utc": _utc_iso(newest_tick_ts) if newest_tick_ts else None,
             "checked_at": now,
@@ -475,6 +506,7 @@ class StrategyTuningAgent:
         market: dict,
         current_policy: dict,
         now: float,
+        review: Optional[dict] = None,
     ) -> dict:
         current = _validated_policy(current_policy)
         target_multiplier = current["paper_entry_quota_multiplier"]
@@ -513,6 +545,31 @@ class StrategyTuningAgent:
         else:
             reason = "market_agent_warming_up"
 
+        review_recommendation = (
+            review.get("recommendation", {})
+            if isinstance(review, dict)
+            else {}
+        )
+        if (
+            isinstance(review, dict)
+            and not market.get("pause_recommended")
+            and market.get("status") in {"healthy", "degraded"}
+        ):
+            # Once the 200-trade reviewer is present it is authoritative for
+            # performance tuning.  A data-quality/insufficient-evidence HOLD
+            # must not fall through to the legacy rolling20 heuristic.
+            target_multiplier = current["paper_entry_quota_multiplier"]
+            urgency = "normal"
+            reason = "trade_review:" + str(
+                review_recommendation.get("code", "unavailable")
+            ).lower()
+            if (
+                review_recommendation.get("auto_applicable") is True
+                and review_recommendation.get("target_entry_quota_multiplier")
+                is not None
+            ):
+                target_multiplier = review_recommendation["target_entry_quota_multiplier"]
+
         target_multiplier = min(
             max(_finite(target_multiplier, 1.0), MIN_QUOTA_MULTIPLIER),
             MAX_QUOTA_MULTIPLIER,
@@ -540,6 +597,11 @@ class StrategyTuningAgent:
                 "market_regime": str(
                     market.get("market_regime", "unknown")
                 ),
+                "trade_review_run_id": (review or {}).get("run_id"),
+                "trade_review_code": review_recommendation.get("code"),
+                "trade_review_evidence_sha": (
+                    (review or {}).get("evidence", {}).get("sha256")
+                ),
             },
             "proposed_at": float(now),
             "proposed_at_utc": _utc_iso(now),
@@ -563,6 +625,8 @@ class TradingAgentSupervisor:
         market_agent: Optional[MarketStateAgent] = None,
         trading_agent: Optional[TradingHealthAgent] = None,
         tuning_agent: Optional[StrategyTuningAgent] = None,
+        review_agent: Optional[TradeReviewAgent] = None,
+        exploration_agent: Optional[PaperExplorationAgent] = None,
     ):
         self._clock = clock
         self._state_file = Path(state_file or _default_state_path())
@@ -599,6 +663,8 @@ class TradingAgentSupervisor:
         self.market_agent = market_agent or MarketStateAgent(clock=clock)
         self.trading_agent = trading_agent or TradingHealthAgent(clock=clock)
         self.tuning_agent = tuning_agent or StrategyTuningAgent()
+        self.review_agent = review_agent or TradeReviewAgent(clock=clock)
+        self.exploration_agent = exploration_agent or PaperExplorationAgent(clock=clock)
         self._lock = threading.RLock()
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
@@ -611,6 +677,14 @@ class TradingAgentSupervisor:
             previous_trading.get("lifetime_n"),
             previous_trading.get("last_learning_change_ts"),
         )
+        self.exploration_agent.restore(
+            self._state.get("agents", {}).get("paper_exploration", {})
+        )
+        try:
+            from src.services.learning_archive import get_learning_archive
+            get_learning_archive().hydrate(limit=50)
+        except Exception:
+            pass
 
     @staticmethod
     def _runtime_mode() -> str:
@@ -638,7 +712,7 @@ class TradingAgentSupervisor:
 
         learner = get_learner()
         return {
-            "closed_trades": get_closed_trades(limit=100),
+            "closed_trades": get_closed_trades(limit=200),
             "open_positions": get_paper_open_positions(),
             "learning_snapshot": learner.get_paper_policy_snapshot(),
         }
@@ -661,7 +735,7 @@ class TradingAgentSupervisor:
             },
             "agents": {},
             "proposal": {},
-            "pending": {"key": "", "streak": 0},
+            "pending": {"key": "", "streak": 0, "evidence_sha": ""},
             "policy": _default_policy(),
             "audit": [],
         }
@@ -686,6 +760,9 @@ class TradingAgentSupervisor:
                 "streak": max(
                     0, int(_finite(loaded["pending"].get("streak"), 0))
                 ),
+                "evidence_sha": str(
+                    loaded["pending"].get("evidence_sha", "")
+                )[:128],
             }
         previous_supervisor = loaded.get("supervisor", {})
         if isinstance(previous_supervisor, dict):
@@ -729,12 +806,27 @@ class TradingAgentSupervisor:
         self._state["policy"] = policy
 
         key = self._proposal_key(proposal)
-        pending = self._state.setdefault("pending", {"key": "", "streak": 0})
+        pending = self._state.setdefault(
+            "pending",
+            {"key": "", "streak": 0, "evidence_sha": ""},
+        )
+        evidence_sha = str(
+            proposal.get("evidence", {}).get("trade_review_evidence_sha")
+            or ""
+        )
         if pending.get("key") == key:
-            pending["streak"] = max(0, int(pending.get("streak", 0))) + 1
+            # Performance changes require a second, genuinely new close-set.
+            # Re-running the same trades can never manufacture confirmation.
+            if evidence_sha and evidence_sha != pending.get("evidence_sha"):
+                pending["streak"] = max(
+                    0,
+                    int(pending.get("streak", 0)),
+                ) + 1
+                pending["evidence_sha"] = evidence_sha
         else:
             pending["key"] = key
             pending["streak"] = 1
+            pending["evidence_sha"] = evidence_sha
 
         if mode not in PAPER_MODES:
             return "blocked_non_paper_mode"
@@ -854,10 +946,17 @@ class TradingAgentSupervisor:
             learning_snapshot=inputs.get("learning_snapshot"),
             now=now,
         )
+        review = self.review_agent.analyze(
+            inputs.get("closed_trades"),
+            current_policy=self._state.get("policy", {}),
+            learning_snapshot=inputs.get("learning_snapshot"),
+            now=now,
+        )
         proposal = self.tuning_agent.propose(
             trading=trading,
             market=market,
             current_policy=self._state.get("policy", {}),
+            review=review,
             now=now,
         )
 
@@ -886,6 +985,7 @@ class TradingAgentSupervisor:
         self._state["agents"] = {
             "trading_health": trading,
             "market_state": market,
+            "trade_review": review,
             "strategy_tuner": {
                 "agent": "strategy_tuner",
                 "status": "proposal_ready",
@@ -904,6 +1004,66 @@ class TradingAgentSupervisor:
             mode=mode,
             now=now,
         )
+        exploration = self.exploration_agent.consider(
+            market=market,
+            trading=trading,
+            review=review,
+            open_positions=inputs.get("open_positions"),
+            policy=self._state.get("policy", {}),
+            paper_safe=paper_safe,
+            now=now,
+        )
+        self._state["agents"]["paper_exploration"] = exploration
+
+        try:
+            from src.services.learning_archive import (
+                archive_learning_event,
+                flush_learning_archive,
+                get_learning_archive_status,
+            )
+
+            evidence_hash = str(
+                review.get("evidence", {}).get("sha256") or ""
+            )
+            if evidence_hash:
+                archive_learning_event(
+                    "trade_review_recommendation",
+                    {
+                        "run_id": review.get("run_id"),
+                        "window": review.get("window"),
+                        "data_quality": review.get("data_quality"),
+                        "metrics": review.get("metrics"),
+                        "recommendation": review.get("recommendation"),
+                        "advisories": review.get("advisories"),
+                        "evidence": review.get("evidence"),
+                    },
+                    event_id=f"trade_review_recommendation:{evidence_hash}",
+                    created_at=now,
+                )
+            checkpoint_bucket = int(now // 900)
+            archive_learning_event(
+                "agent_learning_checkpoint",
+                {
+                    "policy": self._state.get("policy"),
+                    "proposal": self._state.get("proposal"),
+                    "trade_review_run_id": review.get("run_id"),
+                    "exploration": exploration,
+                    "market_status": market.get("status"),
+                    "trading_status": trading.get("trading_status"),
+                },
+                event_id=f"agent_learning_checkpoint:{checkpoint_bucket}",
+                created_at=now,
+            )
+            flush_learning_archive(limit=50)
+            self._state["agents"]["firebase_archive"] = (
+                get_learning_archive_status()
+            )
+        except Exception as exc:
+            self._state["agents"]["firebase_archive"] = {
+                "agent": "firebase_archive",
+                "status": "degraded",
+                "last_error": f"{type(exc).__name__}: {str(exc)[:200]}",
+            }
         self._state["updated_at"] = now
         self._state["updated_at_utc"] = _utc_iso(now)
         return deepcopy(self._state)

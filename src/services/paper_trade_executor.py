@@ -41,13 +41,13 @@ def _is_truthy_env(value: Optional[str]) -> bool:
     return value.strip().lower() in ("1", "true", "yes", "on", "y", "t")
 
 
-def _enforce_paper_safe_mode() -> None:
+def _enforce_paper_safe_mode() -> bool:
     """P0.1 (audit 2026-07-16): fail-closed re-validation of trading-mode env.
 
     This module is the PAPER executor and must never run against a real-order
     configuration. If, after .env load, any live indicator is set
     (TRADING_MODE=live_real, or ENABLE_REAL_ORDERS / LIVE_TRADING_CONFIRMED truthy),
-    log CRITICAL and force the process back to paper-safe values in os.environ.
+    log CRITICAL and latch this executor closed without mutating os.environ.
 
     We deliberately do NOT raise: crashing the paper loop is worse than clamping.
     The invariant enforced is only that .env can never *silently promote* this
@@ -64,7 +64,7 @@ def _enforce_paper_safe_mode() -> None:
     )
     if live_indicated:
         log.critical(
-            "[PAPER_SAFETY_OVERRIDE] Live trading indicator detected in environment "
+            "[PAPER_SAFETY_LATCH] Live trading indicator detected in environment "
             "(TRADING_MODE=%r ENABLE_REAL_ORDERS=%r LIVE_TRADING_CONFIRMED=%r) — "
             "this is the PAPER executor; forcing paper-safe values. .env can never "
             "promote paper -> live.",
@@ -73,13 +73,12 @@ def _enforce_paper_safe_mode() -> None:
         # Use a VALID paper mode from runtime_mode.TradingMode (paper_live), not the
         # invalid literal "paper" — get_trading_mode() would coerce "paper" to the
         # default anyway, but keep the env self-consistent (audit re-check 2026-07-16).
-        os.environ["TRADING_MODE"] = "paper_live"
-        os.environ["ENABLE_REAL_ORDERS"] = "0"
-        os.environ["LIVE_TRADING_CONFIRMED"] = "0"
+        return True
+    return False
 
 
-# P0.1: enforce paper-safe precedence immediately at import, after .env is loaded.
-_enforce_paper_safe_mode()
+# Preserve original LIVE intent and latch this executor closed without mutation.
+_PAPER_EXECUTOR_IMPORT_SAFETY_BLOCKED = _enforce_paper_safe_mode()
 
 # V10.49 CRITICAL: Wire learning system into exit handler
 # Learning instance must be imported and available globally
@@ -174,6 +173,14 @@ _SYMBOL_CAPS = {
     "LTCUSDT": 5,      # Increase LTC from 3 to 5
     "LINKUSDT": 5,     # Increase LINK from 3 to 5
 }
+
+_PAPER_CONTROL_BUCKETS = frozenset({
+    "D_NEG_EV_CONTROL",
+    "E_NO_PATTERN",
+    "E_NO_PATTERN_BASELINE",
+    "C_NEG_EV_PROBE",
+    "PAPER_STARVATION_DISCOVERY",
+})
 
 # V10.26: Minimum confidence filter for entries (reject weak signals)
 _MIN_ENTRY_CONFIDENCE = float(os.getenv("PAPER_MIN_ENTRY_CONFIDENCE", "0.50"))  # Only open if w_sc >= 0.50
@@ -1325,6 +1332,26 @@ def open_paper_position(
         dict: {"trade_id": ..., "status": "opened", "symbol": ..., ...}
     """
     # OBSERVE / data-collection gate — AUTHORITATIVE CHOKE (2026-07-20).
+    current_mode = os.getenv("TRADING_MODE", "paper_live").strip().lower()
+    real_indicator = any(
+        _is_truthy_env(os.getenv(name))
+        for name in (
+            "ENABLE_REAL_ORDERS",
+            "LIVE_TRADING_CONFIRMED",
+            "REAL_TRADING_ENABLED",
+        )
+    )
+    if (
+        _PAPER_EXECUTOR_IMPORT_SAFETY_BLOCKED
+        or current_mode not in {"paper_live", "paper_train", "replay_train"}
+        or real_indicator
+    ):
+        return {
+            "status": "blocked",
+            "reason": "paper_executor_safety_latched",
+            "symbol": (signal or {}).get("symbol", "UNKNOWN"),
+        }
+
     # This is the single function that creates a paper position, so gating HERE
     # closes EVERY path — including the realtime_decision_engine and trade_executor
     # callers that reach open_paper_position() directly and bypass the upstream
@@ -1388,9 +1415,72 @@ def open_paper_position(
     bucket = training_bucket or explore_bucket  # Primary: training_bucket, fallback: explore_bucket
     paper_source = extra.get("paper_source") if extra else None
 
+    is_paper_control = (
+        bucket in _PAPER_CONTROL_BUCKETS
+        and paper_source in {
+            "training_sampler",
+            "exploration_reject",
+            "agent_exploration",
+            "paper_evidence_collection",
+        }
+    )
+    if is_paper_control:
+        real_flags_off = not any(
+            _is_truthy_env(os.getenv(name))
+            for name in (
+                "ENABLE_REAL_ORDERS",
+                "LIVE_TRADING_CONFIRMED",
+                "REAL_TRADING_ENABLED",
+            )
+        )
+        try:
+            from src.core.runtime_mode import is_paper_mode, live_trading_allowed
+
+            paper_safe = (
+                is_paper_mode()
+                and real_flags_off
+                and not live_trading_allowed()
+            )
+        except Exception:
+            paper_safe = (
+                "paper" in os.getenv("TRADING_MODE", "").strip().lower()
+                and real_flags_off
+            )
+        if not paper_safe:
+            return {
+                "status": "blocked",
+                "reason": "paper_control_requires_paper_safe_mode",
+            }
+        control_size = (extra or {}).get("final_size_usd")
+        control_hold_s = (extra or {}).get("max_hold_s")
+        try:
+            control_size = float(control_size)
+            control_hold_s = float(control_hold_s)
+        except (TypeError, ValueError):
+            return {
+                "status": "blocked",
+                "reason": "paper_control_requires_explicit_bounds",
+            }
+        if (
+            not 0.10 <= control_size <= 2.00
+            or not 1.0 <= control_hold_s <= 300.0
+        ):
+            return {
+                "status": "blocked",
+                "reason": "paper_control_bounds_exceeded",
+            }
+        extra["final_size_usd"] = control_size
+        extra["max_hold_s"] = control_hold_s
+        signal["strict_ev"] = False
+        signal["readiness_eligible"] = False
+        signal["real_readiness_eligible"] = False
+        signal["paper_learning_only"] = True
+        signal["learning_shadow_only"] = True
+        signal["learning_source"] = "paper_exploration_control"
+
     # PROFITABILITY FIX: Reject weak signals with low expected value (V10.26: apply to ALL entries)
     ev = float(signal.get("ev") or 0.0)
-    if ev < _MIN_EV_THRESHOLD:  # V10.26: Changed from "and bucket == C_WEAK_EV_TRAIN" to ALL trades
+    if ev < _MIN_EV_THRESHOLD and not is_paper_control:
         throttle_key = (symbol, bucket, "weak_ev_rejected")
         now_ts = time.time()
         last_log = _PAPER_ENTRY_BLOCKED_THROTTLE.get(throttle_key, 0.0)
@@ -1419,7 +1509,7 @@ def open_paper_position(
         tp_sl_profile=tp_sl_profile,
     )
 
-    if reject_p0:
+    if reject_p0 and not is_paper_control:
         # P0.3C: Strict EV blocked → Route to evidence collection if allowed
         can_admit_evidence, evidence_reason = _can_admit_paper_evidence_collection(symbol, regime)
 
@@ -1477,7 +1567,7 @@ def open_paper_position(
 
     # Optional: Old segment profitability gate (for backwards compatibility if needed)
     skip_segment, skip_reason = _should_skip_segment_by_profitability(symbol, regime, side_normalized)
-    if skip_segment:
+    if skip_segment and not is_paper_control:
         throttle_key = (symbol, "segment_gate", skip_reason)
         now_ts = time.time()
         last_log = _PAPER_ENTRY_BLOCKED_THROTTLE.get(throttle_key, 0.0)
@@ -1491,7 +1581,7 @@ def open_paper_position(
 
     # TIME-OF-DAY FILTERING: Skip poor hours
     skip_time, skip_time_reason = _should_skip_time_of_day()
-    if skip_time:
+    if skip_time and not is_paper_control:
         throttle_key = (symbol, "time_gate", skip_time_reason)
         now_ts = time.time()
         last_log = _PAPER_ENTRY_BLOCKED_THROTTLE.get(throttle_key, 0.0)
@@ -1728,6 +1818,12 @@ def open_paper_position(
         # P0.3D: Metadata for audit trail
         "strict_ev": signal.get("strict_ev", True),  # P0 gate decision
         "readiness_eligible": signal.get("readiness_eligible", True),  # Readiness claim eligibility
+        "real_readiness_eligible": signal.get(
+            "real_readiness_eligible",
+            signal.get("readiness_eligible", True),
+        ),
+        "paper_learning_only": bool(signal.get("paper_learning_only", False)),
+        "learning_shadow_only": bool(signal.get("learning_shadow_only", False)),
         "learning_source": signal.get("learning_source", "strict_ev"),  # paper_evidence_collection or strict_ev
         "source": source,  # Original P0 segment source, stable across evidence routing
         "tp_sl_profile": tp_sl_profile,
@@ -1801,6 +1897,37 @@ def open_paper_position(
     with _POSITION_LOCK:
         # Re-check at commit time. Signal callbacks can overlap between the
         # initial cap check and this insert, so the check+insert must be atomic.
+        commit_explore_cap = _check_exploration_exposure_caps(symbol, bucket)
+        if commit_explore_cap:
+            log.warning(
+                "[PAPER_ENTRY_COMMIT_BLOCKED] symbol=%s bucket=%s reason=%s",
+                symbol,
+                bucket,
+                commit_explore_cap["reason"],
+            )
+            return commit_explore_cap
+        commit_now = time.time()
+        alive_positions = [
+            candidate
+            for candidate in _POSITIONS.values()
+            if not _is_position_stale(candidate, commit_now)
+        ]
+        symbol_cap = _SYMBOL_CAPS.get(symbol, 999)
+        alive_for_symbol = sum(
+            1
+            for candidate in alive_positions
+            if candidate.get("symbol") == symbol
+        )
+        if alive_for_symbol >= symbol_cap:
+            return {
+                "status": "blocked",
+                "reason": "symbol_cap_exceeded",
+            }
+        if len(alive_positions) >= _MAX_OPEN:
+            return {
+                "status": "blocked",
+                "reason": "max_open_exceeded",
+            }
         if paper_source == "training_sampler":
             commit_cap_check = _check_training_sampler_caps(symbol, training_bucket)
             if commit_cap_check:
@@ -2315,6 +2442,14 @@ def _is_eligible_canonical_paper_learning_trade(pos: dict, pnl_data: dict, close
     if _is_d_neg_control_trade(closed_trade):
         return False, "d_neg_control_shadow_excluded"
 
+    if (
+        closed_trade.get("readiness_eligible") is False
+        or closed_trade.get("real_readiness_eligible") is False
+        or closed_trade.get("paper_learning_only") is True
+        or closed_trade.get("learning_shadow_only") is True
+    ):
+        return False, "paper_control_not_canonical"
+
     # Quarantined trades excluded
     if closed_trade.get("quarantined"):
         return False, "position_quarantined"
@@ -2542,10 +2677,16 @@ def _record_adaptive_learning_close(closed_trade: dict, pos: dict, pnl_data: dic
             "net_pnl_pct": _safe_float(closed_trade.get("net_pnl_pct"), 0.0),
             "outcome": closed_trade.get("outcome", "FLAT"),
             "learning_source": closed_trade.get("learning_source", "paper_training_sampler"),
+            "readiness_eligible": closed_trade.get("readiness_eligible", False),
+            "real_readiness_eligible": closed_trade.get("real_readiness_eligible", False),
+            "paper_learning_only": closed_trade.get("paper_learning_only", False),
+            "learning_shadow_only": closed_trade.get("learning_shadow_only", False),
+            "entry_ts": closed_trade.get("entry_ts", 0.0),
             "mfe_pct": mfe_pct,
             "mae_pct": mae_pct,
             "exit_reason": closed_trade.get("exit_reason", "UNKNOWN"),
             "training_bucket": pos.get("training_bucket", ""),
+            "explore_bucket": pos.get("explore_bucket", ""),
         }
 
         learner = get_learner()
@@ -3875,6 +4016,11 @@ def _init_paper_state_once() -> None:
 # so P0 gate was NEVER invoked and trades never opened.
 def _on_signal_created(signal: dict) -> None:
     """Handle signal_created event from signal_generator."""
+    # The trade_executor/RDE subscriber owns ordinary admission. Direct P0
+    # routing is opt-in because this early subscriber cannot know the later RDE
+    # decision and could otherwise open rejected signals.
+    if not _is_truthy_env(os.getenv("PAPER_P0_DIRECT_SIGNAL_ROUTER_ENABLED", "false")):
+        return
     if not signal or signal.get("action") == "HOLD":
         return
 

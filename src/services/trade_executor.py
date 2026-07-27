@@ -1650,9 +1650,14 @@ def _save_paper_trade_closed(closed_trade: dict) -> None:
             return
 
         # Prepare paper trade record for Firebase
+        stable_close_ts = (
+            closed_trade.get("exit_ts")
+            or closed_trade.get("timestamp")
+            or 0.0
+        )
         paper_record = {
             **closed_trade,
-            "timestamp": time.time(),
+            "timestamp": stable_close_ts,
             "mode": "paper_live",  # mark as paper for filtering
         }
 
@@ -1663,39 +1668,71 @@ def _save_paper_trade_closed(closed_trade: dict) -> None:
         except Exception as e:
             log.warning(f"[LOCAL_CACHE_SAVE_FAILED] {e}")
 
-        # Save to Firebase (paper trades in separate collection)
+        # Durable append-only learning archive. This is local and idempotent;
+        # Firebase delivery happens asynchronously outside the tick path.
         try:
-            from src.services.firebase_client import db, col
-            if db:
-                # Write to trades_paper collection (separate from live trades)
-                db.collection(col("trades_paper")).add(paper_record)
+            from src.services.learning_archive import archive_learning_event
 
-                # V10.22: Log [PAPER_EXIT] for dashboard to parse
-                log.info(
-                    f"[PAPER_EXIT] trade_id={closed_trade.get('trade_id')} symbol={closed_trade.get('symbol')} "
-                    f"entry={closed_trade.get('entry_price')} exit={closed_trade.get('exit_price')} "
-                    f"reason={closed_trade.get('exit_reason')} outcome={closed_trade.get('outcome')} "
-                    f"net_pnl_pct={closed_trade.get('net_pnl_pct', 0):.4f} net_pnl_usd={closed_trade.get('net_pnl_usd', 0):.8f}"
+            trade_id = str(closed_trade.get("trade_id") or "").strip()
+            archived = archive_learning_event(
+                "paper_trade_closed",
+                paper_record,
+                event_id=(
+                    f"paper_trade_closed:{trade_id}" if trade_id else None
+                ),
+                created_at=stable_close_ts or time.time(),
+            )
+            if not (
+                archived.get("accepted")
+                or archived.get("duplicate")
+            ):
+                log.error(
+                    "[LEARNING_ARCHIVE_APPEND_REJECTED] trade_id=%s reason=%s",
+                    trade_id or "MISSING",
+                    archived.get("reason"),
                 )
-
-                # P1.1AP-I2: Skip legacy LEARNING_UPDATE log for D_NEG shadow trades
-                # P1.1AP-J: Rename non-shadow log to [PAPER_TRADE_SAVED] to avoid confusion with canonical learning
-                if not _closed_trade_is_d_neg_shadow(closed_trade):
-                    bucket = closed_trade.get("bucket") or closed_trade.get('explore_bucket', 'A_STRICT_TAKE')
-                    log.warning(
-                        f"[PAPER_TRADE_SAVED] source=paper_closed_trade symbol={closed_trade.get('symbol')} "
-                        f"bucket={bucket} "
-                        f"outcome={closed_trade.get('outcome')} net_pnl_pct={closed_trade.get('net_pnl_pct', 0):.4f} ok=True"
-                    )
-                else:
-                    log.debug(
-                        "[PAPER_TRADE_SAVED_SHADOW] trade_id=%s symbol=%s bucket=%s reason=d_neg_ev_control_shadow_only",
-                        closed_trade.get("trade_id") or closed_trade.get("id") or "UNKNOWN",
-                        closed_trade.get("symbol"),
-                        closed_trade.get("bucket") or closed_trade.get('explore_bucket', 'A_STRICT_TAKE'),
-                    )
         except Exception as e:
-            log.warning(f"[LEARNING_WRITE_FAILED] source=paper {e}")
+            log.warning("[LEARNING_ARCHIVE_APPEND_FAILED] %s", e)
+
+        # Quota-gated compatibility projection; the archive above is authoritative.
+        projection_saved = False
+        try:
+            from src.services.firebase_client import save_paper_trade_record
+
+            projection_saved = save_paper_trade_record(paper_record)
+        except Exception as e:
+            log.warning("[LEARNING_WRITE_FAILED] source=paper err=%s", e)
+
+        log.info(
+            f"[PAPER_EXIT] trade_id={closed_trade.get('trade_id')} symbol={closed_trade.get('symbol')} "
+            f"entry={closed_trade.get('entry_price')} exit={closed_trade.get('exit_price')} "
+            f"reason={closed_trade.get('exit_reason')} outcome={closed_trade.get('outcome')} "
+            f"net_pnl_pct={closed_trade.get('net_pnl_pct', 0):.4f} net_pnl_usd={closed_trade.get('net_pnl_usd', 0):.8f}"
+        )
+        if projection_saved and not _closed_trade_is_d_neg_shadow(closed_trade):
+            bucket = closed_trade.get("bucket") or closed_trade.get(
+                "explore_bucket",
+                "A_STRICT_TAKE",
+            )
+            log.warning(
+                "[PAPER_TRADE_SAVED] source=paper_closed_trade symbol=%s "
+                "bucket=%s outcome=%s net_pnl_pct=%.4f ok=True",
+                closed_trade.get("symbol"),
+                bucket,
+                closed_trade.get("outcome"),
+                closed_trade.get("net_pnl_pct", 0),
+            )
+        elif projection_saved:
+            log.debug(
+                "[PAPER_TRADE_SAVED_SHADOW] trade_id=%s symbol=%s",
+                closed_trade.get("trade_id") or "UNKNOWN",
+                closed_trade.get("symbol"),
+            )
+        else:
+            log.warning(
+                "[PAPER_TRADE_ARCHIVED_ONLY] trade_id=%s projection_saved=False",
+                closed_trade.get("trade_id") or "MISSING",
+            )
 
         # Skip duplicate learning updates for training_sampler trades —
         # close_paper_position() already calls _safe_learning_update_for_paper_trade()
@@ -1806,6 +1843,14 @@ def _maybe_route_to_paper_training(signal: dict, current_price: float, reject_re
                     pass  # If dedup unavailable, continue anyway
 
                 # P1.1AP-N2: Build extra dict with recovery metadata if applicable
+                size_mult = max(
+                    0.0,
+                    float(result.get("size_mult", 0.0) or 0.0),
+                )
+                bounded_size_usd = min(
+                    100.0,
+                    max(0.10, float(os.getenv("PAPER_POSITION_SIZE_USD", "25")) * size_mult),
+                )
                 extra = {
                     "paper_source": "training_sampler",
                     "training_bucket": result.get("bucket", ""),
@@ -1821,11 +1866,17 @@ def _maybe_route_to_paper_training(signal: dict, current_price: float, reject_re
                     "required_move_pct": result.get("required_move_pct", 0.0),
                     "size_mult": result.get("size_mult", 0.0),
                     "max_hold_s": result.get("max_hold_s", 300),
+                    "final_size_usd": bounded_size_usd,
                     "features": signal.get("features", {}),
                     "regime": signal.get("regime", "RANGING"),
                     "score_at_entry": signal.get("score", 0.0),
                     "score_raw": trade_signal.get("score_raw", trade_signal.get("score", None)),
                     "score_final": trade_signal.get("score_final", trade_signal.get("score", None)),
+                    "readiness_eligible": result.get("readiness_eligible", True),
+                    "real_readiness_eligible": result.get("real_readiness_eligible", True),
+                    "paper_learning_only": result.get("paper_learning_only", False),
+                    "learning_shadow_only": result.get("learning_shadow_only", False),
+                    "learning_source": result.get("learning_source"),
                 }
 
                 # P1.1AP-N2: Add recovery admission metadata if applicable
@@ -2250,8 +2301,12 @@ def handle_signal(signal):
                                 sym, reason
                             )
                         else:
-                            _explored = True
-                            open_paper_position(
+                            bounded_explore_size = min(
+                                2.0,
+                                max(0.10, float(os.getenv("PAPER_POSITION_SIZE_USD", "25"))
+                                    * float(ov.get("size_mult", 0.0) or 0.0)),
+                            )
+                            explore_result = open_paper_position(
                                 signal,
                                 price=entry_price,
                                 ts=time.time(),
@@ -2264,17 +2319,25 @@ def handle_signal(signal):
                                     "size_mult": ov["size_mult"],
                                     "max_hold_s": ov["max_hold_s"],
                                     "tags": ov["tags"],
+                                    "final_size_usd": bounded_explore_size,
                                     "score_raw": signal.get("score_raw", signal.get("score", None)),
                                     "score_final": signal.get("score_final", signal.get("score", None)),
                                 },
                             )
-                            log.warning(
-                                "[PAPER_EXPLORE_ENTRY] bucket=%s symbol=%s side=%s original_decision=REJECT "
-                                "ev=%.4f score=%.3f price=%.8f reason=%s",
-                                ov["bucket"], sym, signal.get("action", "BUY"),
-                                signal.get("ev", 0.0), signal.get("score", 0.0),
-                                entry_price, ov["reason"]
-                            )
+                            _explored = explore_result.get("status") == "opened"
+                            if _explored:
+                                log.warning(
+                                    "[PAPER_EXPLORE_ENTRY] bucket=%s symbol=%s side=%s original_decision=REJECT "
+                                    "ev=%.4f score=%.3f price=%.8f reason=%s",
+                                    ov["bucket"], sym, signal.get("action", "BUY"),
+                                    signal.get("ev", 0.0), signal.get("score", 0.0),
+                                    entry_price, ov["reason"]
+                                )
+                            else:
+                                log.info(
+                                    "[PAPER_EXPLORE_BLOCKED] bucket=%s symbol=%s reason=%s",
+                                    ov["bucket"], sym, explore_result.get("reason"),
+                                )
             except ImportError:
                 pass  # Paper exploration not available
             except Exception as e:

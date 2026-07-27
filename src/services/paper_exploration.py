@@ -539,7 +539,7 @@ def paper_exploration_override(signal: dict, ctx: Optional[dict] = None) -> dict
                     "bucket": "D_NEG_EV_CONTROL",
                     "reason": "hourly_cap_exceeded",
                     "size_mult": 0.03,
-                    "max_hold_s": int(os.getenv("PAPER_MAX_POSITION_AGE_S", "600")),
+                    "max_hold_s": min(300, int(os.getenv("PAPER_MAX_POSITION_AGE_S", "300"))),
                     "tags": ["control"],
                 }
             _increment_skip_counter("entries")
@@ -549,7 +549,7 @@ def paper_exploration_override(signal: dict, ctx: Optional[dict] = None) -> dict
                 "bucket": "D_NEG_EV_CONTROL",
                 "reason": f"control_baseline ev={ev:.4f}",
                 "size_mult": 0.03,
-                "max_hold_s": int(os.getenv("PAPER_MAX_POSITION_AGE_S", "600")),
+                "max_hold_s": min(300, int(os.getenv("PAPER_MAX_POSITION_AGE_S", "300"))),
                 "tags": ["control", "baseline"],
             }
 
@@ -563,7 +563,7 @@ def paper_exploration_override(signal: dict, ctx: Optional[dict] = None) -> dict
                     "bucket": "E_NO_PATTERN",
                     "reason": "hourly_cap_exceeded",
                     "size_mult": 0.02,
-                    "max_hold_s": int(os.getenv("PAPER_MAX_POSITION_AGE_S", "600")),
+                    "max_hold_s": min(300, int(os.getenv("PAPER_MAX_POSITION_AGE_S", "300"))),
                     "tags": ["control"],
                 }
             _increment_skip_counter("entries")
@@ -573,7 +573,7 @@ def paper_exploration_override(signal: dict, ctx: Optional[dict] = None) -> dict
                 "bucket": "E_NO_PATTERN",
                 "reason": f"no_pattern_baseline",
                 "size_mult": 0.02,
-                "max_hold_s": int(os.getenv("PAPER_MAX_POSITION_AGE_S", "600")),
+                "max_hold_s": min(300, int(os.getenv("PAPER_MAX_POSITION_AGE_S", "300"))),
                 "tags": ["control", "pattern_baseline"],
             }
 
@@ -706,10 +706,24 @@ def maybe_open_paper_exploration_from_reject(
             return False
 
         # Open paper position with exploration metadata
-        from src.services.paper_trade_executor import open_paper_position, _POSITION_SIZE
+        from src.services.paper_trade_executor import (
+            open_paper_position,
+            _POSITION_SIZE_BASE,
+        )
 
-        base_size_usd = _POSITION_SIZE
+        base_size_usd = _POSITION_SIZE_BASE
         final_size_usd = base_size_usd * ov["size_mult"]
+        if ov["bucket"] in {
+            "D_NEG_EV_CONTROL",
+            "E_NO_PATTERN",
+            "E_NO_PATTERN_BASELINE",
+        }:
+            signal["strict_ev"] = False
+            signal["readiness_eligible"] = False
+            signal["real_readiness_eligible"] = False
+            signal["paper_learning_only"] = True
+            signal["learning_shadow_only"] = True
+            signal["learning_source"] = "paper_exploration_control"
 
         result = open_paper_position(
             signal,

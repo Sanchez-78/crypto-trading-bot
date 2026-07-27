@@ -710,6 +710,21 @@ HTML_TEMPLATE = r"""
                     <div class="agent-value neutral" id="agent_strategy_status">BASELINE</div>
                     <div class="metric-change" id="agent_strategy_detail">Quota 100%</div>
                 </div>
+                <div class="metric-card">
+                    <div class="metric-label">200-Trade Review</div>
+                    <div class="agent-value neutral" id="agent_review_status">COLLECTING</div>
+                    <div class="metric-change" id="agent_review_detail">Waiting for provenance</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Paper Exploration</div>
+                    <div class="agent-value neutral" id="agent_exploration_status">DISABLED</div>
+                    <div class="metric-change" id="agent_exploration_detail">No control sample</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Firebase Archive</div>
+                    <div class="agent-value neutral" id="agent_archive_status">UNKNOWN</div>
+                    <div class="metric-change" id="agent_archive_detail">Waiting for archive state</div>
+                </div>
             </div>
         </section>
 
@@ -1117,6 +1132,9 @@ HTML_TEMPLATE = r"""
             const agents = state.agents || {};
             const trading = agents.trading_health || {};
             const market = agents.market_state || {};
+            const review = agents.trade_review || {};
+            const exploration = agents.paper_exploration || {};
+            const archive = agents.firebase_archive || {};
             const policy = state.policy || {};
 
             const paint = (id, status) => {
@@ -1150,6 +1168,22 @@ HTML_TEMPLATE = r"""
                 'Quota ' + Math.round(quota * 100) + '% · r' +
                 String(policy.revision || 0) + ' · ' +
                 String(policy.reason || 'baseline');
+
+            paint('agent_review_status', review.status);
+            const reviewWindow = review.window || {};
+            const recommendation = review.recommendation || {};
+            document.getElementById('agent_review_detail').textContent =
+                String(recommendation.code || 'NO_REVIEW') + ' / canonical ' +
+                String(reviewWindow.canonical_n || 0) + '/' +
+                String(reviewWindow.requested_n || 200);
+            paint('agent_exploration_status', exploration.status);
+            document.getElementById('agent_exploration_detail').textContent =
+                'Samples 1h: ' + String(exploration.entries_last_hour || 0) +
+                ' / ' + String(exploration.last_reason || 'no decision');
+            paint('agent_archive_status', archive.status);
+            document.getElementById('agent_archive_detail').textContent =
+                'Pending ' + String(archive.pending_events || 0) +
+                ' / total ' + String(archive.total_events || 0);
         }
 
         async function updateDashboard() {
