@@ -286,6 +286,29 @@ def _session_aggregate(errors):
         conn.close()
 
 
+def _paper_learning_count(errors):
+    """Count shadow/control closes separately from canonical strategy closes."""
+    cache_path = _paths()[0]
+    if not cache_path or not os.path.exists(cache_path):
+        return 0
+    try:
+        conn = sqlite3.connect(f"file:{cache_path}?mode=ro", uri=True, timeout=2)
+        try:
+            return int(conn.execute(
+                "SELECT COUNT(*) FROM closed_trades "
+                "WHERE COALESCE(paper_learning_only,0)=1 "
+                "OR COALESCE(learning_shadow_only,0)=1"
+            ).fetchone()[0] or 0)
+        finally:
+            conn.close()
+    except sqlite3.OperationalError:
+        # Older cache schemas predate the learning-shadow columns.
+        return 0
+    except sqlite3.Error:
+        errors.append("paper_learning_count_unavailable")
+        return 0
+
+
 # ── canonical outcome per row ─────────────────────────────────────────────────
 
 def _row_outcome(row) -> TradeOutcome:
@@ -471,6 +494,7 @@ def get_metrics() -> dict:
         rows = _read_recent_rows(errors, RECENT_WINDOW)
         headline = _recent_headline(rows)
         session_n, session_net, exits = _session_aggregate(errors)
+        paper_learning_n = _paper_learning_count(errors)
 
         rolling = state.get("rolling100") or state.get("rolling50") or []
         closed_list = _closed_trades_list(rows) if rows else _closed_trades_from_rolling(rolling)
@@ -492,6 +516,8 @@ def get_metrics() -> dict:
             "total_trades": lifetime_n,
             **_android_status_fields(state),
             "session_closed_trades": session_n,
+            "canonical_closed_trades": lifetime_n,
+            "paper_learning_closes": paper_learning_n,
             "lifetime_closed_trades": lifetime_n,
             "open_positions": len(positions),
             "open_positions_list": positions,
