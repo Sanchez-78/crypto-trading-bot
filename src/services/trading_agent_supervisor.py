@@ -1137,6 +1137,8 @@ class TradingAgentSupervisor:
         result = {
             "agent": "hourly_maintenance",
             "status": "healthy",
+            "last_run_at": now,
+            "last_run_at_utc": _utc_iso(now),
             "started_at": now,
             "started_at_utc": _utc_iso(now),
             "interval_s": interval,
