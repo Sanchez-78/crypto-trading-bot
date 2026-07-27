@@ -157,7 +157,11 @@ class FirebaseLearningPersistence:
             from src.services.learning_archive import get_learning_archive
 
             archive = get_learning_archive()
-            archive.hydrate(limit=200)
+            hydrate_limit = min(
+                max(int(os.getenv("FIREBASE_LEARNING_ARCHIVE_HYDRATE_LIMIT", "2000")), 100),
+                5000,
+            )
+            archive.hydrate(limit=hydrate_limit)
             rows = archive.recent("adaptive_learning_checkpoint", limit=1)
             if not rows:
                 log.info("[LEARNING_LOAD] No archived checkpoint found")

@@ -682,7 +682,19 @@ class TradingAgentSupervisor:
         )
         try:
             from src.services.learning_archive import get_learning_archive
-            get_learning_archive().hydrate(limit=50)
+            archive_limit = _env_int(
+                "TRADING_AGENT_ARCHIVE_HYDRATE_LIMIT",
+                2000,
+                100,
+                5000,
+            )
+            hydrated = get_learning_archive().hydrate(limit=archive_limit)
+            if hydrated:
+                log.info(
+                    "[TRADING_AGENT_ARCHIVE_HYDRATE] loaded=%s limit=%s",
+                    hydrated,
+                    archive_limit,
+                )
         except Exception:
             pass
 
@@ -711,8 +723,49 @@ class TradingAgentSupervisor:
         from src.services.paper_trade_executor import get_paper_open_positions
 
         learner = get_learner()
+        local_trades = list(get_closed_trades(limit=200) or [])
+        # Firebase archive is hydrated into SQLite at startup.  Use it as a
+        # recovery/backfill source when the bounded local cache is incomplete;
+        # this keeps review/learning data rich without network I/O per tick.
+        merged_trades = {}
+        try:
+            from src.services.learning_archive import get_learning_archive
+
+            archive_limit = _env_int(
+                "TRADING_AGENT_ARCHIVE_TRADE_SOURCE_LIMIT",
+                2000,
+                200,
+                5000,
+            )
+            for event in get_learning_archive().recent(
+                "paper_trade_closed", limit=archive_limit
+            ):
+                payload = event.get("payload") or {}
+                trade_id = str(payload.get("trade_id") or "").strip()
+                if trade_id:
+                    merged_trades[trade_id] = payload
+        except Exception:
+            pass
+        for trade in local_trades:
+            trade_id = str(trade.get("trade_id") or trade.get("id") or "").strip()
+            if trade_id:
+                merged_trades[trade_id] = trade
+        def _trade_ts(item: dict) -> float:
+            try:
+                return float(
+                    item.get("exit_ts")
+                    or item.get("timestamp")
+                    or item.get("created_at")
+                    or 0
+                )
+            except (TypeError, ValueError):
+                return 0.0
+
+        closed_trades = sorted(
+            merged_trades.values(), key=_trade_ts, reverse=True
+        )[:archive_limit if "archive_limit" in locals() else 200]
         return {
-            "closed_trades": get_closed_trades(limit=200),
+            "closed_trades": closed_trades,
             "open_positions": get_paper_open_positions(),
             "learning_snapshot": learner.get_paper_policy_snapshot(),
         }

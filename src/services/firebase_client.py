@@ -965,11 +965,13 @@ def save_paper_trade_record(record):
         return False
 
 
-def load_learning_archive(limit=50):
+def load_learning_archive(limit=None):
     """Load a bounded newest-first archive slice for cold-start hydration."""
     if db is None:
         return []
-    limit = min(max(int(limit), 1), 200)
+    if limit is None:
+        limit = int(os.getenv("FIREBASE_LEARNING_ARCHIVE_HYDRATE_LIMIT", "2000"))
+    limit = min(max(int(limit), 1), 5000)
     allowed, current, limit_reads = _can_read(limit)
     if not allowed:
         logging.warning(

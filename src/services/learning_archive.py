@@ -23,6 +23,8 @@ log = logging.getLogger(__name__)
 SCHEMA_VERSION = 1
 MAX_EVENT_BYTES = 850_000
 DEFAULT_FLUSH_LIMIT = 50
+DEFAULT_HYDRATE_LIMIT = 2000
+MAX_HYDRATE_LIMIT = 5000
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -347,7 +349,7 @@ class LearningArchive:
     def hydrate(
         self,
         *,
-        limit: int = 50,
+        limit: int = DEFAULT_HYDRATE_LIMIT,
         loader: Optional[Callable[[int], list[dict]]] = None,
     ) -> int:
         """Bounded Firebase-to-local restore; never replaces local events."""
@@ -356,7 +358,10 @@ class LearningArchive:
                 from src.services.firebase_client import load_learning_archive
 
                 loader = load_learning_archive
-            events = loader(min(max(int(limit), 1), 200)) or []
+            # Startup/background hydration may restore substantially more than
+            # the dashboard's 200-trade review window, while remaining bounded
+            # against accidental quota or memory exhaustion.
+            events = loader(min(max(int(limit), 1), MAX_HYDRATE_LIMIT)) or []
         except Exception as exc:
             log.warning("[LEARNING_ARCHIVE_HYDRATE_ERROR] %s", exc)
             return 0
