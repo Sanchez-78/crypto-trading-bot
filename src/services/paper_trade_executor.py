@@ -1461,8 +1461,12 @@ def open_paper_position(
                 "status": "blocked",
                 "reason": "paper_control_requires_explicit_bounds",
             }
+        control_max_size = max(
+            2.0,
+            _safe_float(os.getenv("PAPER_CONTROL_MAX_SIZE_USD", "2.00"), 2.0),
+        )
         if (
-            not 0.10 <= control_size <= 2.00
+            not 0.10 <= control_size <= control_max_size
             or not 1.0 <= control_hold_s <= 300.0
         ):
             return {

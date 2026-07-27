@@ -286,7 +286,7 @@ class PaperExplorationAgent:
                 "TRADING_AGENT_EXPLORATION_SIZE_USD",
                 0.50,
                 0.10,
-                2.00,
+                100.00,
             ),
             "max_hold_s": 300,
             "side_inferred": True,
