@@ -1121,6 +1121,96 @@ class TradingAgentSupervisor:
         self._state["updated_at_utc"] = _utc_iso(now)
         return deepcopy(self._state)
 
+    def _run_hourly_maintenance(self, now: float) -> dict:
+        """Run bounded hourly health/repair work outside the market tick path."""
+        previous = self._state.get("hourly_maintenance") or {}
+        interval = _env_float(
+            "TRADING_AGENT_HOURLY_MAINTENANCE_INTERVAL_S",
+            3600.0,
+            3600.0,
+            86400.0,
+        )
+        last_run = _finite(previous.get("last_run_at"), 0.0)
+        if last_run and now - last_run < interval:
+            return previous
+
+        result = {
+            "agent": "hourly_maintenance",
+            "status": "healthy",
+            "started_at": now,
+            "started_at_utc": _utc_iso(now),
+            "interval_s": interval,
+            "repairs": [],
+            "archive_hydrated": 0,
+            "archive_flushed": 0,
+            "paper_close_backfilled": 0,
+        }
+        try:
+            from src.services.learning_archive import (
+                get_learning_archive,
+                flush_learning_archive,
+            )
+
+            archive = get_learning_archive()
+            hydrate_limit = _env_int(
+                "TRADING_AGENT_HOURLY_ARCHIVE_HYDRATE_LIMIT",
+                500,
+                100,
+                2000,
+            )
+            result["archive_hydrated"] = archive.hydrate(limit=hydrate_limit)
+
+            # Backfill timeout/control closes into the dashboard cache.  The
+            # operation is idempotent (trade_id is the cache key) and repairs
+            # historical close gaps without changing canonical learning policy.
+            try:
+                from src.services.local_persistent_cache import save_closed_trade
+
+                for event in archive.recent("paper_trade_closed", limit=2000):
+                    payload = event.get("payload") or {}
+                    if payload.get("trade_id"):
+                        save_closed_trade(payload)
+                        result["paper_close_backfilled"] += 1
+                if result["paper_close_backfilled"]:
+                    result["repairs"].append("paper_close_cache_backfill")
+            except Exception as exc:
+                result["status"] = "degraded"
+                result["repairs"].append(
+                    f"paper_close_backfill_error:{type(exc).__name__}"
+                )
+
+            flushed = flush_learning_archive(limit=200)
+            result["archive_flushed"] = int(flushed.get("sent", 0) or 0)
+            result["archive_status"] = archive.status()
+        except Exception as exc:
+            result["status"] = "degraded"
+            result["last_error"] = f"{type(exc).__name__}: {str(exc)[:300]}"
+
+        result["completed_at"] = now
+        result["completed_at_utc"] = _utc_iso(now)
+        self._state["hourly_maintenance"] = result
+        self._append_audit(
+            {
+                "event": "hourly_maintenance",
+                "at": now,
+                "at_utc": _utc_iso(now),
+                "status": result["status"],
+                "repairs": result["repairs"],
+                "archive_hydrated": result["archive_hydrated"],
+                "paper_close_backfilled": result["paper_close_backfilled"],
+            }
+        )
+        log.info(
+            "[TRADING_AGENT_HOURLY_MAINTENANCE] status=%s hydrated=%s "
+            "backfilled=%s flushed=%s repairs=%s",
+            result["status"],
+            result["archive_hydrated"],
+            result["paper_close_backfilled"],
+            result["archive_flushed"],
+            result["repairs"],
+        )
+        return result
+
     def run_cycle(self) -> dict:
         """Run one supervised cycle; failures degrade and open a circuit safely."""
         with self._lock:
@@ -1164,6 +1254,13 @@ class TradingAgentSupervisor:
                     supervisor_state["status"] == "circuit_open",
                     supervisor_state["last_error"],
                 )
+
+            try:
+                maintenance = self._run_hourly_maintenance(now)
+                result = deepcopy(result)
+                result["hourly_maintenance"] = deepcopy(maintenance)
+            except Exception as exc:
+                log.warning("[TRADING_AGENT_HOURLY_MAINTENANCE_ERROR] %s", exc)
 
             try:
                 _atomic_write_json(self._state_file, self._state)
