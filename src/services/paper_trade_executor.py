@@ -2135,6 +2135,8 @@ def check_and_close_timeout_positions(now: Optional[float] = None) -> List[dict]
                 "learning_skipped": True,
             }
 
+            _archive_paper_close({"trade_id": trade_id, **closed_trade})
+
             # P1.1AP-G: Emit [PAPER_EXIT] for observability (before quality exit log)
             canonical_bucket = pos.get("bucket") or pos.get("training_bucket") or pos.get("explore_bucket") or "A_STRICT_TAKE"
             log.warning(
@@ -2701,6 +2703,28 @@ def _record_adaptive_learning_close(closed_trade: dict, pos: dict, pnl_data: dic
         )
 
 
+def _archive_paper_close(closed_trade: dict) -> None:
+    """Durably archive every paper close, including timeout/no-price exits."""
+    try:
+        from src.services.learning_archive import archive_learning_event
+
+        trade_id = str(closed_trade.get("trade_id") or "").strip()
+        close_ts = closed_trade.get("exit_ts") or closed_trade.get("timestamp") or 0.0
+        result = archive_learning_event(
+            "paper_trade_closed",
+            {**closed_trade, "timestamp": close_ts, "mode": "paper_live"},
+            event_id=f"paper_trade_closed:{trade_id}" if trade_id else None,
+            created_at=close_ts or time.time(),
+        )
+        if not (result.get("accepted") or result.get("duplicate")):
+            log.error("[LEARNING_ARCHIVE_APPEND_REJECTED] trade_id=%s reason=%s",
+                      trade_id or "MISSING", result.get("reason"))
+    except Exception as exc:
+        # Archive failure must never prevent the paper position from closing.
+        log.warning("[LEARNING_ARCHIVE_APPEND_FAILED] trade_id=%s err=%s",
+                    closed_trade.get("trade_id", "MISSING"), exc)
+
+
 def close_paper_position(
     position_id: str,
     price: float,
@@ -2789,6 +2813,10 @@ def close_paper_position(
         "weighted_pnl": net_pnl_usd,
         "win": 1 if net_pnl_usd > 0 else 0,  # V10.22: For cache
     }
+
+    # Persist at the authoritative close boundary so timeout exits are also
+    # archived when the higher-level trade executor is not invoked.
+    _archive_paper_close(closed_trade)
 
     # Audit F8: attach the gross MFE/MAE excursion contract (explicit units +
     # extreme-ordering timestamps) so an offline TP/SL counterfactual is possible.
