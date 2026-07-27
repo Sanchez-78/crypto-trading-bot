@@ -266,6 +266,7 @@ def get_live_metrics_from_cache():
         # --- Per-session detail from cache.sqlite (may be empty after restart) ---
         session_n = 0
         session_net = 0.0
+        paper_learning_n = 0
         exits = {'tp': 0, 'sl': 0, 'scratch': 0, 'stagnation': 0, 'timeout': 0}
         closed_trades_list = []
         if os.path.exists(cache_path):
@@ -280,6 +281,14 @@ def get_live_metrics_from_cache():
                 ).fetchone() or (0, 0)
                 session_n = int(row[0] or 0)
                 session_net = float(row[1] or 0)
+                try:
+                    paper_learning_n = int(cur.execute(
+                        "SELECT COUNT(*) FROM closed_trades "
+                        "WHERE COALESCE(paper_learning_only,0)=1 "
+                        "OR COALESCE(learning_shadow_only,0)=1"
+                    ).fetchone()[0] or 0)
+                except sqlite3.OperationalError:
+                    paper_learning_n = 0
                 for reason, cnt in cur.execute(
                     "SELECT LOWER(COALESCE(exit_reason,'')), COUNT(*) "
                     "FROM closed_trades GROUP BY LOWER(COALESCE(exit_reason,''))"
@@ -406,6 +415,8 @@ def get_live_metrics_from_cache():
             'total_trades': lifetime_n,  # Android contract alias (M2)
             **_android_contract_fields(state),
             'session_closed_trades': session_n,
+            'canonical_closed_trades': lifetime_n,
+            'paper_learning_closes': paper_learning_n,
             'lifetime_closed_trades': lifetime_n,
             'open_positions': len(open_positions_list),
             'open_positions_list': open_positions_list,
@@ -651,7 +662,7 @@ HTML_TEMPLATE = r"""
         <!-- Metrics Grid -->
         <div class="metrics-grid">
             <div class="metric-card">
-                <div class="metric-label">Closed Trades</div>
+                <div class="metric-label">Canonical Closed Trades</div>
                 <div class="metric-value" id="closed_trades">0</div>
                 <div class="metric-change" id="closed_change">+0</div>
             </div>
@@ -809,6 +820,12 @@ HTML_TEMPLATE = r"""
         <!-- Learning Adjustment Process -->
         <div class="stats-table">
             <h3>🤖 Learning Adjustment Process</h3>
+            <p style="color:#9aa4b2; font-size:12px; margin:0 0 14px 0; line-height:1.5;">
+                ACTIVE znamená, že model průběžně vyhodnocuje uzavřené obchody.
+                BLEND je míra, jakou se naučené TP/SL promítá do nových paper vstupů.
+                ENTRY QUALITY je podíl ne-timeout obchodů v posledních 50 záznamech.
+                Exploration obchody jsou učící stíny a nezvyšují kanonické metriky strategie.
+            </p>
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px;">
                 <div style="background: rgba(15, 23, 41, 0.8); padding: 15px; border-radius: 8px;">
                     <div style="color: #888; font-size: 11px; margin-bottom: 5px;">LEARNING STATUS</div>
@@ -825,6 +842,10 @@ HTML_TEMPLATE = r"""
                 <div style="background: rgba(15, 23, 41, 0.8); padding: 15px; border-radius: 8px;">
                     <div style="color: #888; font-size: 11px; margin-bottom: 5px;">LIFETIME CLOSES</div>
                     <div id="lifetime_closes" style="font-size: 16px; font-weight: bold; color: #e0e0e0;">0</div>
+                </div>
+                <div style="background: rgba(15, 23, 41, 0.8); padding: 15px; border-radius: 8px;">
+                    <div style="color: #888; font-size: 11px; margin-bottom: 5px;">PAPER LEARNING CLOSES</div>
+                    <div id="paper_learning_closes" style="font-size: 16px; font-weight: bold; color: #ffaa00;">0</div>
                 </div>
             </div>
 
@@ -932,6 +953,8 @@ HTML_TEMPLATE = r"""
 
             document.getElementById('lifetime_closes').textContent =
                 data.lifetime_closes || 0;
+            document.getElementById('paper_learning_closes').textContent =
+                data.paper_learning_closes || 0;
 
             // Update regime TP strategy table
             const regimeBody = document.getElementById('regimeBody');
@@ -1433,12 +1456,29 @@ def learning_state():
                     "timestamp": trade[3] if len(trade) > 3 else None
                 })
 
+        paper_learning_closes = 0
+        try:
+            import sqlite3
+            cache_path = Path("/opt/cryptomaster/local_learning_storage/cache.sqlite")
+            if not cache_path.exists():
+                cache_path = Path("local_learning_storage/cache.sqlite")
+            conn = sqlite3.connect(f"file:{cache_path}?mode=ro", uri=True, timeout=2)
+            paper_learning_closes = int(conn.execute(
+                "SELECT COUNT(*) FROM closed_trades "
+                "WHERE COALESCE(paper_learning_only,0)=1 "
+                "OR COALESCE(learning_shadow_only,0)=1"
+            ).fetchone()[0] or 0)
+            conn.close()
+        except Exception:
+            pass
+
         return jsonify({
             "timestamp": int(time.time()),
             "learning_enabled": state.get("regime_tp_learning_enabled", False),
             "learning_blend": float(state.get("regime_tp_learning_blend", 0.0)),
             "lifecycle": state.get("lifecycle", "UNKNOWN"),
             "lifetime_closes": int(state.get("lifetime_n", 0)),
+            "paper_learning_closes": paper_learning_closes,
             "lifetime_pf": float(state.get("lifetime_pf", 1.0)),
             "lifetime_expectancy": float(state.get("lifetime_expectancy", 0.0)),
             "entry_quality_gate": {

@@ -2727,6 +2727,15 @@ def _archive_paper_close(closed_trade: dict) -> None:
         # Archive failure must never prevent the paper position from closing.
         log.warning("[LEARNING_ARCHIVE_APPEND_FAILED] trade_id=%s err=%s",
                     closed_trade.get("trade_id", "MISSING"), exc)
+    try:
+        # Timeout closes can bypass trade_executor.on_price.  Keep the
+        # dashboard's durable close sink in sync at this authoritative boundary.
+        from src.services.local_persistent_cache import save_closed_trade
+
+        save_closed_trade(closed_trade)
+    except Exception as exc:
+        log.warning("[LOCAL_CACHE_CLOSE_APPEND_FAILED] trade_id=%s err=%s",
+                    closed_trade.get("trade_id", "MISSING"), exc)
 
 
 def close_paper_position(
