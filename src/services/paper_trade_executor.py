@@ -1804,6 +1804,16 @@ def open_paper_position(
     position = {
         "trade_id": trade_id,
         "mode": "paper_live",
+        "provenance_version": 1,
+        "trade_environment": "paper",
+        "entry_reason": reason,
+        "strategy_id": (
+            signal.get("strategy_id")
+            or signal.get("learning_source")
+            or (extra.get("paper_source") if extra else None)
+            or source
+        ),
+        "entry_signal_id": signal.get("signal_id") or signal.get("id"),
         "symbol": symbol,
         "side": side,
         "side_raw": side_raw_stored,
