@@ -1200,7 +1200,8 @@ HTML_TEMPLATE = r"""
             document.getElementById('agent_review_detail').textContent =
                 String(recommendation.code || 'NO_REVIEW') + ' / canonical ' +
                 String(reviewWindow.canonical_n || 0) + '/' +
-                String(reviewWindow.requested_n || 200);
+                String(reviewWindow.requested_n || 200) + ' · unknown ' +
+                String(reviewWindow.unknown_provenance_n || 0);
             paint('agent_exploration_status', exploration.status);
             document.getElementById('agent_exploration_detail').textContent =
                 'Samples 1h: ' + String(exploration.entries_last_hour || 0) +
