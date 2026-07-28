@@ -384,6 +384,10 @@ def _closed_trades_list(rows, limit=30):
             "regime": r["regime"] or "UNKNOWN", "win": r["win"],
             "outcome": _row_outcome(r).value,
             "exit_time": int(xts) if xts else 0,
+            # Numeric aliases keep the API compatible with the dashboard
+            # table and older clients that consume Unix timestamps directly.
+            "entry_ts": float(ets) if ets else 0,
+            "exit_ts": float(xts) if xts else 0,
             "entry_timestamp": _ts_iso(ets), "exit_timestamp": _ts_iso(xts),
         })
     return out

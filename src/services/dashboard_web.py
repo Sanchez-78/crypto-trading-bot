@@ -1012,13 +1012,14 @@ HTML_TEMPLATE = r"""
 
                 // Handle both ISO timestamp strings and Unix timestamps
                 let timeStr = '—';
-                if (t.exit_ts) {
-                    if (typeof t.exit_ts === 'string') {
+                const rawExitTimestamp = t.exit_ts ?? t.exit_timestamp ?? t.exit_time;
+                if (rawExitTimestamp) {
+                    if (typeof rawExitTimestamp === 'string') {
                         // ISO timestamp
-                        timeStr = new Date(t.exit_ts).toLocaleString();
-                    } else if (typeof t.exit_ts === 'number') {
+                        timeStr = new Date(rawExitTimestamp).toLocaleString();
+                    } else if (typeof rawExitTimestamp === 'number') {
                         // Unix timestamp
-                        timeStr = new Date(t.exit_ts * (t.exit_ts < 100000000000 ? 1000 : 1)).toLocaleString();
+                        timeStr = new Date(rawExitTimestamp * (rawExitTimestamp < 100000000000 ? 1000 : 1)).toLocaleString();
                     }
                 }
 
