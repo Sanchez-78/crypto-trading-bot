@@ -269,6 +269,30 @@ def _can_write(count=1):
         allowed = (_QUOTA_WRITES + count) <= _QUOTA_MAX_WRITES
         return allowed, _QUOTA_WRITES, _QUOTA_MAX_WRITES
 
+
+def _reserve_write(count=1):
+    """Atomically reserve quota for a write before async work starts.
+
+    Async batch writers may overlap, so a check followed by a later increment
+    is racy and can overshoot the daily Firebase limit. Reservations are
+    intentionally pessimistic: a failed remote commit still consumes the
+    safety budget for this process and is retried from the durable outbox.
+    """
+    global _QUOTA_WRITES
+    _reset_quota_if_new_day()
+    count = max(0, int(count or 0))
+    with _QUOTA_LOCK:
+        if _QUOTA_WRITES + count > _QUOTA_MAX_WRITES:
+            return False, _QUOTA_WRITES, _QUOTA_MAX_WRITES
+        _QUOTA_WRITES += count
+        current = _QUOTA_WRITES
+    if current >= _QUOTA_MAX_WRITES * 0.9:
+        logging.warning(
+            "Firebase write quota reserved: %s/%s (%.1f%%)",
+            current, _QUOTA_MAX_WRITES, current / _QUOTA_MAX_WRITES * 100,
+        )
+    return True, current, _QUOTA_MAX_WRITES
+
 def _record_write(count=1):
     """Record write operation(s)."""
     global _QUOTA_WRITES
@@ -779,7 +803,8 @@ def _async_firebase_write(slimmed, batch_size):
         for item in slimmed:
             fb_batch.set(db.collection(col(trades_collection)).document(), item)
         fb_batch.commit()
-        _record_write(batch_size)
+        # Quota was reserved synchronously before this thread was started.
+        # Do not increment again here; overlapping workers must not overshoot.
     except Exception as e:
         if "429" in str(e) or "Quota" in str(e):
             _mark_quota_exhausted(str(e))
@@ -807,7 +832,7 @@ def save_batch(batch):
         slimmed  = [_slim_trade(t) for t in batch]
 
         # V10.14: Check write quota before committing
-        allowed, current, limit_writes = _can_write(len(slimmed))
+        allowed, current, limit_writes = _reserve_write(len(slimmed))
         if not allowed:
             import logging
             logging.warning(f"Write quota limit approaching ({current + len(slimmed)}/{limit_writes}) — queuing instead")
@@ -879,7 +904,7 @@ def save_learning_archive_batch(events):
     ]
     if not safe_events:
         return []
-    allowed, current, limit_writes = _can_write(len(safe_events))
+    allowed, current, limit_writes = _reserve_write(len(safe_events))
     if not allowed:
         logging.warning(
             "[LEARNING_ARCHIVE_DEFER] quota=%s/%s requested=%s",
@@ -911,15 +936,13 @@ def save_learning_archive_batch(events):
             batch.set(collection.document(event_id), payload, merge=False)
             confirmed.append(event_id)
         batch.commit()
-        _record_write(len(confirmed))
         logging.info(
             "[LEARNING_ARCHIVE_COMMIT] events=%d",
             len(confirmed),
         )
         return confirmed
     except Exception as exc:
-        # Ambiguous timeouts may have committed remotely; count pessimistically.
-        _record_write(len(safe_events))
+        # Reservations are pessimistic already; do not count the batch again.
         _handle_quota_error("save_learning_archive_batch", exc)
         raise
 
@@ -939,7 +962,7 @@ def save_paper_trade_record(record):
     if skip:
         logging.warning("[PAPER_TRADE_PROJECTION_DEFER] reason=%s", reason)
         return False
-    allowed, current, limit_writes = _can_write(1)
+    allowed, current, limit_writes = _reserve_write(1)
     if not allowed:
         logging.warning(
             "[PAPER_TRADE_PROJECTION_DEFER] quota=%s/%s",
@@ -952,10 +975,8 @@ def save_paper_trade_record(record):
             _sanitize_doc(record),
             merge=False,
         )
-        _record_write(1)
         return True
     except Exception as exc:
-        _record_write(1)
         _handle_quota_error("save_paper_trade_record", exc)
         logging.warning(
             "[PAPER_TRADE_PROJECTION_ERROR] trade_id=%s err=%s",
@@ -1036,6 +1057,15 @@ def increment_stats(n: int = 1, wins: int = 0, losses: int = 0, timeouts: int = 
     if timeouts > 0: _local_stats["timeouts"] += timeouts
 
     if db is None or (n <= 0 and wins <= 0 and losses <= 0 and timeouts <= 0):
+        return
+    # This is a separate Firestore write from the trade batch. Reserve it
+    # explicitly so the daily guard reflects the real number of operations.
+    allowed, current, limit_writes = _reserve_write(1)
+    if not allowed:
+        logging.warning(
+            "[STATS_WRITE_DEFER] Firebase quota=%s/%s; local counters retained",
+            current, limit_writes,
+        )
         return
     try:
         upd = {"updated_at": time.time()}
