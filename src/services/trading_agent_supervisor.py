@@ -441,6 +441,16 @@ class TradingHealthAgent:
         if self._last_lifetime_n is None or lifetime_n != self._last_lifetime_n:
             self._last_lifetime_n = lifetime_n
             self._last_learning_change_ts = now
+        # Exploration/training closes are intentionally excluded from the
+        # canonical lifetime counter, but they still produce learning data.
+        # Accept an explicit activity timestamp so the health card does not
+        # falsely report "stalled" while paper learning is progressing.
+        learning_activity_ts = _finite(
+            learning.get("last_learning_update_ts"),
+            0.0,
+        )
+        if 0.0 < learning_activity_ts <= now and learning_activity_ts > self._last_learning_change_ts:
+            self._last_learning_change_ts = learning_activity_ts
         learning_idle_s = max(0.0, now - self._last_learning_change_ts)
         if lifetime_n <= 0:
             learning_status = "no_history"
@@ -764,10 +774,15 @@ class TradingAgentSupervisor:
         closed_trades = sorted(
             merged_trades.values(), key=_trade_ts, reverse=True
         )[:archive_limit if "archive_limit" in locals() else 200]
+        learning_snapshot = dict(learner.get_paper_policy_snapshot() or {})
+        learning_snapshot["last_learning_update_ts"] = max(
+            (_trade_ts(trade) for trade in closed_trades),
+            default=0.0,
+        )
         return {
             "closed_trades": closed_trades,
             "open_positions": get_paper_open_positions(),
-            "learning_snapshot": learner.get_paper_policy_snapshot(),
+            "learning_snapshot": learning_snapshot,
         }
 
     def _blank_state(self) -> dict:
