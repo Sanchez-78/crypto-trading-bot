@@ -8,6 +8,7 @@ when the bot starts, ensuring metrics are accurate and dashboard shows data.
 
 import sqlite3
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, List, Dict, Any
@@ -19,13 +20,21 @@ def hydrate_trades_from_firebase():
     Called once at bot startup to initialize metrics.
     """
     try:
-        from src.services.firebase_client import db
+        from src.services.firebase_client import db, col, _can_read, _record_read
 
         print("[HYDRATION] Starting Firebase trade hydration...")
 
-        # Get all trades from Firebase
-        trades_ref = db.collection('trades')
-        docs = trades_ref.stream()
+        # Never stream the entire collection: a legacy collection can contain
+        # hundreds of thousands of documents and exhaust the daily read quota.
+        limit = min(max(int(os.getenv("FIREBASE_TRADE_HYDRATION_LIMIT", "500")), 1), 2000)
+        trading_mode = os.getenv("TRADING_MODE", "paper_live").lower()
+        collection_name = col("trades_paper" if "paper" in trading_mode else "trades")
+        allowed, current, quota_limit = _can_read(limit)
+        if not allowed:
+            print(f"[HYDRATION] Skipped: Firebase read quota {current}/{quota_limit}")
+            return 0
+        trades_ref = db.collection(collection_name)
+        docs = trades_ref.order_by("timestamp", direction="DESCENDING").limit(limit).stream()
 
         loaded_count = 0
         recent_trades = []
@@ -107,6 +116,8 @@ def hydrate_trades_from_firebase():
             except Exception as e:
                 print(f"[HYDRATION] Error loading trade: {e}")
                 continue
+
+        _record_read(max(1, loaded_count), label="hydrate_trades_from_firebase")
 
         conn.commit()
         conn.close()
