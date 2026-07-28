@@ -70,7 +70,10 @@ class PaperExplorationAgent:
         )
         # Paper-only learning can sample frequently; keep a finite hourly cap
         # so a bad market feed cannot create an unbounded position stream.
-        self._max_entries_per_hour = min(max(configured_cap, 1), 60)
+        # Paper-only exploration may run at a higher cadence to build a useful
+        # learning sample. Keep a finite hard ceiling so a bad feed cannot
+        # create an unbounded position stream or exhaust local resources.
+        self._max_entries_per_hour = min(max(configured_cap, 1), 240)
         self._started_at = float(clock())
         self._entry_times: deque[float] = deque(maxlen=24)
         self._last_attempt_at = 0.0
