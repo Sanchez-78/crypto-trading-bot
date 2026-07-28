@@ -54,7 +54,7 @@ class PaperExplorationAgent:
         self._drought_after_s = drought_after_s or _env_float(
             "TRADING_AGENT_EXPLORATION_DROUGHT_S",
             1800.0,
-            300.0,
+            120.0,
             21600.0,
         )
         self._cooldown_s = cooldown_s or _env_float(
