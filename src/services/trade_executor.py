@@ -3011,6 +3011,15 @@ def handle_signal(signal):
             # P1.1M: Include training metadata for strict TAKE in paper_train mode
             # V10.22 CRITICAL FIX: Pass computed TP/SL from trade_executor to paper_trade_executor
             # (Previously these were computed but discarded, causing paper positions to have 0 TP/SL)
+            # Canonical paper evidence must carry the same eligibility claims as
+            # a production-quality RDE TAKE.  Exploration/control and evidence
+            # collection cohorts remain explicitly non-canonical elsewhere.
+            signal["strict_ev"] = True
+            signal["readiness_eligible"] = True
+            signal["real_readiness_eligible"] = True
+            signal["paper_learning_only"] = False
+            signal["learning_shadow_only"] = False
+            signal["learning_source"] = "strict_ev"
             extra_meta = {
                 "paper_source": "strict_take",
                 "training_bucket": "A_STRICT_TAKE",
