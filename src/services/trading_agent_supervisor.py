@@ -1180,7 +1180,7 @@ class TradingAgentSupervisor:
             archive = get_learning_archive()
             hydrate_limit = _env_int(
                 "TRADING_AGENT_HOURLY_ARCHIVE_HYDRATE_LIMIT",
-                500,
+                100,
                 100,
                 2000,
             )
