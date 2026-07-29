@@ -4075,6 +4075,25 @@ def _on_signal_created(signal: dict) -> None:
     if not signal or signal.get("action") == "HOLD":
         return
 
+    # The direct router is a paper-only recovery path for installations where
+    # the normal RDE subscriber is not receiving signal_created events.  Never
+    # let it become an unqualified trade source: require paper mode and a
+    # positive EV signal, then stamp the same canonical eligibility metadata as
+    # the strict RDE path below.  Exploration/control entries keep their own
+    # non-canonical provenance and are not admitted here.
+    try:
+        from src.core.runtime_mode import is_paper_mode as _direct_is_paper_mode
+        if not _direct_is_paper_mode():
+            return
+    except Exception:
+        return
+    try:
+        _direct_min_ev = float(os.getenv("PAPER_DIRECT_CANONICAL_MIN_EV", "0.01"))
+        if float(signal.get("ev") or 0.0) < _direct_min_ev:
+            return
+    except (TypeError, ValueError):
+        return
+
     symbol = signal.get("symbol", "")
     action = signal.get("action", "HOLD")
 
@@ -4147,12 +4166,27 @@ def _on_signal_created(signal: dict) -> None:
                     return
 
             log.info("[SIGNAL_OPENING] %s %s price=%s ts=%s", symbol, action, price, ts)
+            signal.update({
+                "strict_ev": True,
+                "readiness_eligible": True,
+                "real_readiness_eligible": True,
+                "paper_learning_only": False,
+                "learning_shadow_only": False,
+                "learning_source": "strict_ev",
+            })
             open_paper_position(
                 signal=signal,
                 price=price,
                 ts=ts,
                 reason="P0_GATE",
-                extra={"p0_decision": decision.reason}
+                extra={
+                    "p0_decision": decision.reason,
+                    "paper_source": "strict_take",
+                    "training_bucket": "A_STRICT_TAKE",
+                    "original_decision": "TAKE",
+                    "cost_edge_ok": True,
+                    "expected_move_pct": float(signal.get("ev") or 0.0) * 100.0,
+                }
             )
             # Mark signal as handled by paper to prevent RDE double-processing
             signal["__paper_handled"] = True
