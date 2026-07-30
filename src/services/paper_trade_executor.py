@@ -1374,7 +1374,14 @@ def open_paper_position(
         sell_count = sum(1 for p in _POSITIONS.values() if p.get("side") == "SELL")
         total = buy_count + sell_count
 
-    if total >= 3:  # Enforce even with small samples
+    # Side balancing is useful for live-like paper validation, but it can
+    # starve the training cohort when the signal stream is one-sided (the
+    # common case during a regime). Keep it configurable and disable it for
+    # paper_train so valid canonical candidates can actually be observed.
+    side_balance_enabled = _is_truthy_env(
+        os.getenv("PAPER_SIDE_BALANCE_ENFORCEMENT", "true")
+    )
+    if side_balance_enabled and total >= 3:  # Enforce even with small samples
         buy_ratio = buy_count / max(total, 1)
         # Force 40/60 minimum for minority side
         if buy_ratio > 0.65 and side_raw == "BUY":
