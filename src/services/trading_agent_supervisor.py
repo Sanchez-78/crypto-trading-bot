@@ -690,6 +690,8 @@ class TradingAgentSupervisor:
         self.exploration_agent.restore(
             self._state.get("agents", {}).get("paper_exploration", {})
         )
+        if str(os.getenv("TRADING_AGENT_LEARNING_HISTORY_RESET", "false")).lower() in {"1", "true", "yes", "on"}:
+            return
         try:
             from src.services.learning_archive import get_learning_archive
             archive_limit = _env_int(
@@ -740,6 +742,9 @@ class TradingAgentSupervisor:
         merged_trades = {}
         try:
             from src.services.learning_archive import get_learning_archive
+
+            if str(os.getenv("TRADING_AGENT_LEARNING_HISTORY_RESET", "false")).lower() in {"1", "true", "yes", "on"}:
+                raise RuntimeError("learning_history_reset")
 
             archive_limit = _env_int(
                 "TRADING_AGENT_ARCHIVE_TRADE_SOURCE_LIMIT",
@@ -1178,6 +1183,14 @@ class TradingAgentSupervisor:
             )
 
             archive = get_learning_archive()
+            if str(os.getenv("TRADING_AGENT_LEARNING_HISTORY_RESET", "false")).lower() in {"1", "true", "yes", "on"}:
+                result["repairs"].append("learning_history_reset_active")
+                result["archive_status"] = archive.status()
+                result["completed_at"] = now
+                result["completed_at_utc"] = _utc_iso(now)
+                self._state["hourly_maintenance"] = result
+                self._state["hourly_report"] = report
+                return result
             hydrate_limit = _env_int(
                 "TRADING_AGENT_HOURLY_ARCHIVE_HYDRATE_LIMIT",
                 300,
