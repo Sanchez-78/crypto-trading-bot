@@ -2348,6 +2348,43 @@ def handle_signal(signal):
         return
 
     entry = signal["price"]
+
+    # Paper-only canonical recovery: accepted A_STRICT_TAKE candidates can be
+    # routed into training by legacy profitability gates. Keep this opt-in and
+    # strictly paper-scoped; control/exploration buckets never enter it.
+    _canonical_fast_path = (
+        is_paper_mode_local
+        and os.getenv("PAPER_CANONICAL_FAST_PATH", "false").strip().lower() == "true"
+        and str(bucket).strip().upper() == "A_STRICT_TAKE"
+        and float(signal.get("ev") or 0.0) >= float(os.getenv("PAPER_DIRECT_CANONICAL_MIN_EV", "0.01"))
+    )
+    if _canonical_fast_path:
+        signal.update({
+            "strict_ev": True,
+            "readiness_eligible": True,
+            "real_readiness_eligible": True,
+            "paper_learning_only": False,
+            "learning_shadow_only": False,
+            "learning_source": "strict_ev",
+        })
+        _canonical_result = open_paper_position(
+            signal, entry, time.time(), "RDE_TAKE",
+            extra={
+                "paper_source": "strict_take",
+                "training_bucket": "A_STRICT_TAKE",
+                "original_decision": "TAKE",
+                "cost_edge_ok": True,
+                "expected_move_pct": float(signal.get("ev") or 0.0) * 100.0,
+            },
+        )
+        if _canonical_result.get("status") == "opened":
+            log.warning("[PAPER_CANONICAL_OPEN] symbol=%s side=%s trade_id=%s ev=%.4f",
+                        sym, signal.get("action"), _canonical_result.get("trade_id"),
+                        float(signal.get("ev") or 0.0))
+        else:
+            log.info("[PAPER_CANONICAL_BLOCKED] symbol=%s reason=%s",
+                     sym, _canonical_result.get("reason", "unknown"))
+        return
     # ATR floor: micro-price coins (NOM $0.0027, KAT $0.012) can have ATR≈0
     # in absolute terms → TP=SL=entry → trade can only close on timeout.
     # Floor at 0.3% of entry ensures minimum meaningful TP/SL distance.
