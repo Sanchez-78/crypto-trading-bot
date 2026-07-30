@@ -2871,6 +2871,12 @@ def close_paper_position(
         # Mark trade as quarantined so downstream handlers (e.g., _save_paper_trade_closed) skip learning updates
         closed_trade["quarantined"] = True
         # Skip all quality/econ/learning logs and return early
+        # The position is nevertheless closed and must be removed from the
+        # active map.  Leaving it here causes every price tick to emit another
+        # TP_SL_HIT and permanently stalls learning (the close dedupe set only
+        # protects the close routine, not the exit evaluator).
+        with _POSITION_LOCK:
+            _POSITIONS.pop(position_id, None)
         _save_paper_state()
         return closed_trade
 
