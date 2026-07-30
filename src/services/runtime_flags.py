@@ -6,6 +6,7 @@ All flags are module-level variables with getter/setter functions.
 """
 
 import logging
+import os
 import time
 
 # ════════════════════════════════════════════════════════════════════════════════
@@ -39,9 +40,20 @@ def set_db_degraded_safe_mode(value: bool, reason: str = None):
         logging.info(f"[SAFE_MODE] DB_DEGRADED_SAFE_MODE = False (recovered)")
 
 
+def _paper_learning_mode() -> bool:
+    """Paper training may continue from local cache during Firebase outages."""
+    mode = os.getenv("TRADING_MODE", "").strip().lower()
+    paper = mode in {"paper_train", "paper_live", "replay_train"}
+    real_flags = any(
+        os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
+        for name in ("ENABLE_REAL_ORDERS", "LIVE_TRADING_CONFIRMED", "REAL_TRADING_ENABLED")
+    )
+    return paper and not real_flags
+
+
 def is_db_degraded_safe_mode() -> bool:
-    """Check if safe mode is currently active."""
-    return _DB_DEGRADED_SAFE_MODE
+    """Check live safe mode; paper training continues from local state."""
+    return _DB_DEGRADED_SAFE_MODE and not _paper_learning_mode()
 
 
 def get_db_degraded_reason() -> str:
@@ -58,7 +70,7 @@ def should_skip_entry(symbol: str) -> tuple[bool, str]:
     """
     global _DB_DEGRADED_LAST_SKIP_LOG
 
-    if not _DB_DEGRADED_SAFE_MODE:
+    if not _DB_DEGRADED_SAFE_MODE or _paper_learning_mode():
         return False, ""
 
     now = time.time()
