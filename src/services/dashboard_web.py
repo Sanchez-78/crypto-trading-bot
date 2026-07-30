@@ -73,7 +73,8 @@ def _android_contract_fields(state=None):
         and any(isinstance(x, (int, float)) and x > 1e9 and x >= midnight for x in e)
     )
     lifetime_n = int(state.get('lifetime_n', 0) or 0)
-    if state.get('regime_tp_learning_enabled'):
+    # paper_train is active learning even with an empty freshly-reset cohort.
+    if state.get('regime_tp_learning_enabled') or os.getenv('TRADING_MODE', '').lower() == 'paper_train':
         learning_status = 'UČENÍ'
     elif lifetime_n > 0:
         learning_status = 'PŘIPRAVEN'
