@@ -170,6 +170,38 @@ class TestPaperExecutorBasics:
         result = open_paper_position(signal, None, time.time(), "RDE_TAKE")
         assert result["status"] == "blocked"
 
+    def test_strict_canonical_burst_is_deduplicated(self, clean_positions):
+        """Overlapping callbacks for one strict decision open only one cohort row."""
+        ts = time.time()
+        signal = {
+            "symbol": "ETHUSDT",
+            "action": "BUY",
+            "ev": 0.03,
+            "score": 0.321,
+            "regime": "BULL_TREND",
+            "bucket": "A_STRICT_TAKE",
+            "training_bucket": "A_STRICT_TAKE",
+            "strict_ev": True,
+            "readiness_eligible": True,
+            "real_readiness_eligible": True,
+            "paper_learning_only": False,
+            "learning_shadow_only": False,
+            "learning_source": "strict_ev",
+        }
+        extra = {
+            "paper_source": "strict_take",
+            "training_bucket": "A_STRICT_TAKE",
+        }
+
+        first = open_paper_position(signal, 1883.0, ts, "RDE_TAKE", extra)
+        second = open_paper_position(signal, 1883.1, ts + 1, "RDE_TAKE", extra)
+
+        assert first["status"] == "opened"
+        assert second == {
+            "status": "blocked",
+            "reason": "duplicate_canonical_burst",
+        }
+
     def test_open_paper_position_respects_max_open(self, clean_positions):
         """Paper executor refuses entry when max open positions exceeded."""
         from src.services.paper_trade_executor import _MAX_OPEN

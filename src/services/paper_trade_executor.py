@@ -1958,6 +1958,44 @@ def open_paper_position(
             for candidate in _POSITIONS.values()
             if not _is_position_stale(candidate, commit_now)
         ]
+        # One strict RDE decision can be delivered by several overlapping
+        # callbacks.  Without a signal id, the safest discriminator is a short
+        # atomic symbol/side cohort window.  This prevents ten near-identical
+        # canonical positions from one market observation while still allowing
+        # later independent decisions and all bounded control cohorts.
+        if explicit_canonical:
+            canonical_burst_window_s = _safe_float(
+                os.getenv("PAPER_CANONICAL_BURST_DEDUPE_S", "5.0"),
+                5.0,
+            )
+            canonical_burst_window_s = min(
+                max(canonical_burst_window_s, 0.1),
+                60.0,
+            )
+            duplicate = next((
+                candidate
+                for candidate in alive_positions
+                if candidate.get("symbol") == symbol
+                and candidate.get("side") == side
+                and candidate.get("strict_ev") is True
+                and candidate.get("readiness_eligible") is True
+                and 0.0 <= commit_now - _safe_float(
+                    candidate.get("entry_ts"), 0.0
+                ) < canonical_burst_window_s
+            ), None)
+            if duplicate is not None:
+                log.warning(
+                    "[PAPER_ENTRY_COMMIT_BLOCKED] symbol=%s side=%s "
+                    "reason=duplicate_canonical_burst existing_trade_id=%s window_s=%.1f",
+                    symbol,
+                    side,
+                    duplicate.get("trade_id", "unknown"),
+                    canonical_burst_window_s,
+                )
+                return {
+                    "status": "blocked",
+                    "reason": "duplicate_canonical_burst",
+                }
         symbol_cap = _SYMBOL_CAPS.get(symbol, 999)
         alive_for_symbol = sum(
             1
@@ -2996,12 +3034,22 @@ def close_paper_position(
     # for all gated (cold-state) admits, which orphaned these hooks. Widen to both labels.
     # NOTE: strict-EV "normal_rde_take" / "paper_adaptive_recovery" closes are still NOT
     # covered here — revisit when segments graduate to strict EV (see review follow-up).
-    if pos.get("paper_source") in ("training_sampler", "paper_evidence_collection"):
+    canonical_learning_candidate = (
+        pos.get("paper_source") in ("training_sampler", "paper_evidence_collection")
+        or (
+            pos.get("strict_ev") is True
+            and pos.get("readiness_eligible") is True
+            and pos.get("real_readiness_eligible") is True
+            and pos.get("paper_learning_only") is not True
+            and pos.get("learning_shadow_only") is not True
+        )
+    )
+    if canonical_learning_candidate:
         _safe_learning_update_for_paper_trade(pos, pnl_data)
 
     # P1.1AP-N: Record canonical close for adaptive learning (rolling metrics + policy adaptation)
     # P1.1AP-N1: Use authoritative eligibility predicate to exclude D_NEG and other ineligible rows
-    if pos.get("paper_source") in ("training_sampler", "paper_evidence_collection"):
+    if canonical_learning_candidate:
         eligible, skip_reason = _is_eligible_canonical_paper_learning_trade(pos, pnl_data, closed_trade)
         if eligible:
             _record_adaptive_learning_close(closed_trade, pos, pnl_data)

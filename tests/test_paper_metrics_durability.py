@@ -62,3 +62,20 @@ def test_close_is_excursion_enriched_before_authoritative_archive():
     assert close_body.index("closed_trade.update(compute_excursion") < close_body.index(
         "_archive_paper_close(closed_trade)"
     )
+
+
+def test_strict_canonical_close_reaches_adaptive_learning_hook():
+    source = Path("src/services/paper_trade_executor.py").read_text(
+        encoding="utf-8"
+    )
+    close_body = source.split("def close_paper_position(", 1)[1].split(
+        "def get_paper_open_positions", 1
+    )[0]
+
+    candidate = close_body.index("canonical_learning_candidate =")
+    strict = close_body.index('pos.get("strict_ev") is True', candidate)
+    recorder = close_body.index(
+        "_record_adaptive_learning_close(closed_trade, pos, pnl_data)",
+        strict,
+    )
+    assert candidate < strict < recorder
