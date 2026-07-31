@@ -1478,13 +1478,39 @@ def learning_state():
 
         learning_state_file = Path("server_local_backups/paper_adaptive_learning_state.json")
 
+        paper_learning_closes = 0
+        try:
+            import sqlite3
+            cache_path = Path("/opt/cryptomaster/local_learning_storage/cache.sqlite")
+            if not cache_path.exists():
+                cache_path = Path("local_learning_storage/cache.sqlite")
+            conn = sqlite3.connect(f"file:{cache_path}?mode=ro", uri=True, timeout=2)
+            paper_learning_closes = int(conn.execute(
+                "SELECT COUNT(*) FROM closed_trades "
+                "WHERE COALESCE(paper_learning_only,0)=1 "
+                "OR COALESCE(learning_shadow_only,0)=1"
+            ).fetchone()[0] or 0)
+            conn.close()
+        except Exception:
+            pass
+
         if not learning_state_file.exists():
+            paper_training_active = os.getenv("TRADING_MODE", "").lower() in {
+                "paper_train", "paper_live"
+            }
             return jsonify({
-                "learning_enabled": False,
-                "status": "no_learning_state_file",
+                "timestamp": int(time.time()),
+                "learning_enabled": paper_training_active,
+                "status": "collecting" if paper_training_active else "no_learning_state_file",
+                "lifecycle": "COLLECTING" if paper_training_active else "NOT_INITIALIZED",
                 "regime_tp_strategy": {},
                 "lifetime_closes": 0,
-                "message": "Learning system not yet initialized"
+                "paper_learning_closes": paper_learning_closes,
+                "message": (
+                    "Paper evidence collection active; canonical learner awaits eligible closes"
+                    if paper_training_active
+                    else "Learning system not yet initialized"
+                ),
             }), 200
 
         with open(learning_state_file, 'r') as f:
@@ -1510,22 +1536,6 @@ def learning_state():
                     "symbol_regime": trade[2] if len(trade) > 2 else "UNKNOWN",
                     "timestamp": trade[3] if len(trade) > 3 else None
                 })
-
-        paper_learning_closes = 0
-        try:
-            import sqlite3
-            cache_path = Path("/opt/cryptomaster/local_learning_storage/cache.sqlite")
-            if not cache_path.exists():
-                cache_path = Path("local_learning_storage/cache.sqlite")
-            conn = sqlite3.connect(f"file:{cache_path}?mode=ro", uri=True, timeout=2)
-            paper_learning_closes = int(conn.execute(
-                "SELECT COUNT(*) FROM closed_trades "
-                "WHERE COALESCE(paper_learning_only,0)=1 "
-                "OR COALESCE(learning_shadow_only,0)=1"
-            ).fetchone()[0] or 0)
-            conn.close()
-        except Exception:
-            pass
 
         return jsonify({
             "timestamp": int(time.time()),

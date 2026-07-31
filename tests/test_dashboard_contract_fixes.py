@@ -140,6 +140,35 @@ def test_learning_state_endpoint_degrades_to_200_on_malformed_json(tmp_path, mon
     assert data["lifetime_closes"] == 0
 
 
+def test_learning_state_reports_collecting_before_first_canonical_close(
+        tmp_path, monkeypatch):
+    cache_dir = tmp_path / "local_learning_storage"
+    cache_dir.mkdir()
+    conn = sqlite3.connect(str(cache_dir / "cache.sqlite"))
+    conn.execute(
+        "CREATE TABLE closed_trades ("
+        "paper_learning_only INTEGER, learning_shadow_only INTEGER)"
+    )
+    conn.executemany(
+        "INSERT INTO closed_trades VALUES (?,?)",
+        [(1, 0), (0, 1), (0, 0)],
+    )
+    conn.commit()
+    conn.close()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("TRADING_MODE", "paper_train")
+
+    data = dashboard_web.app.test_client().get(
+        "/api/dashboard/learning-state"
+    ).get_json()
+
+    assert data["status"] == "collecting"
+    assert data["learning_enabled"] is True
+    assert data["lifecycle"] == "COLLECTING"
+    assert data["paper_learning_closes"] == 2
+    assert data["lifetime_closes"] == 0
+
+
 # ---------------------------------------------------------------------------
 # 2. side / net_pnl_pct persistence (Fix 8a)
 # ---------------------------------------------------------------------------
