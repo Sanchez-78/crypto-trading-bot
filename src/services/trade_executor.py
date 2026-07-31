@@ -2352,13 +2352,27 @@ def handle_signal(signal):
     # Paper-only canonical recovery: accepted A_STRICT_TAKE candidates can be
     # routed into training by legacy profitability gates. Keep this opt-in and
     # strictly paper-scoped; control/exploration buckets never enter it.
+    # Some signal producers omit the bucket or label a high-quality strict
+    # candidate as C_WEAK_EV_TRAIN. In paper_train, retain canonical evidence
+    # for an unambiguous high-EV/high-confidence signal instead of dropping it
+    # into the exploratory sampler (which was causing zero entries for hours).
+    try:
+        _ev_value = float(signal.get("ev") or 0.0)
+        _confidence_value = float(signal.get("confidence") or signal.get("p") or 0.0)
+    except (TypeError, ValueError):
+        _ev_value, _confidence_value = 0.0, 0.0
+    _high_quality_paper_candidate = (
+        _ev_value >= max(0.03, float(os.getenv("PAPER_DIRECT_CANONICAL_MIN_EV", "0.02")))
+        and _confidence_value >= 0.75
+    )
     _canonical_fast_path = (
         is_paper_mode_local
         and os.getenv("PAPER_CANONICAL_FAST_PATH", "false").strip().lower() == "true"
-        and str(bucket).strip().upper() == "A_STRICT_TAKE"
-        and float(signal.get("ev") or 0.0) >= float(os.getenv("PAPER_DIRECT_CANONICAL_MIN_EV", "0.01"))
+        and (str(bucket).strip().upper() == "A_STRICT_TAKE" or _high_quality_paper_candidate)
+        and _ev_value >= float(os.getenv("PAPER_DIRECT_CANONICAL_MIN_EV", "0.01"))
     )
     if _canonical_fast_path:
+        signal["bucket"] = "A_STRICT_TAKE"
         signal.update({
             "strict_ev": True,
             "readiness_eligible": True,
