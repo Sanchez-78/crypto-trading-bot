@@ -1512,13 +1512,33 @@ def open_paper_position(
     tp_sl_profile = extra.get("tp_sl_profile", "unknown") if extra else "unknown"
     source = paper_source or "rde_take"
 
-    reject_p0, p0_decision = _should_skip_segment_p0_strict_ev(
-        symbol=symbol,
-        side=side_normalized,
-        regime=regime,
-        source=source,
-        tp_sl_profile=tp_sl_profile,
+    # A caller that has already passed the strict paper admission path carries
+    # an explicit canonical contract. Do not run it through the legacy P0
+    # evidence fallback again: that fallback was relabelling A_STRICT_TAKE as
+    # paper_evidence_collection/readiness=false, leaving canonical_n at zero.
+    explicit_canonical = (
+        is_paper_mode_local
+        and str(signal.get("bucket") or signal.get("training_bucket") or "").upper() == "A_STRICT_TAKE"
+        and signal.get("strict_ev") is True
+        and signal.get("readiness_eligible") is True
+        and signal.get("real_readiness_eligible") is True
+        and signal.get("paper_learning_only") is not True
+        and signal.get("learning_shadow_only") is not True
     )
+    if explicit_canonical:
+        reject_p0, p0_decision = False, {
+            "strict_ev_allowed": True,
+            "reason": "explicit_canonical_paper_admission",
+            "readiness_eligible": True,
+        }
+    else:
+        reject_p0, p0_decision = _should_skip_segment_p0_strict_ev(
+            symbol=symbol,
+            side=side_normalized,
+            regime=regime,
+            source=source,
+            tp_sl_profile=tp_sl_profile,
+        )
 
     if reject_p0 and not is_paper_control:
         # P0.3C: Strict EV blocked → Route to evidence collection if allowed
