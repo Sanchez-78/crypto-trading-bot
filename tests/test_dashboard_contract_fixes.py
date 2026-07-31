@@ -169,6 +169,22 @@ def test_learning_state_reports_collecting_before_first_canonical_close(
     assert data["lifetime_closes"] == 0
 
 
+def test_learning_state_separates_active_collection_from_regime_tp_blend(
+        tmp_path, monkeypatch):
+    _write_learning_state(tmp_path, lifetime_n=1, learning_enabled=False)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("TRADING_MODE", "paper_train")
+
+    data = dashboard_web.app.test_client().get(
+        "/api/dashboard/learning-state"
+    ).get_json()
+
+    assert data["status"] == "active"
+    assert data["learning_enabled"] is True
+    assert data["regime_tp_learning_enabled"] is False
+    assert data["lifetime_closes"] == 1
+
+
 # ---------------------------------------------------------------------------
 # 2. side / net_pnl_pct persistence (Fix 8a)
 # ---------------------------------------------------------------------------

@@ -1519,6 +1519,12 @@ def learning_state():
         regime_tp_strategy = state.get("regime_tp_strategy", {})
         rolling20 = state.get("rolling20", [])
         rolling50 = state.get("rolling50", [])
+        regime_tp_learning_enabled = bool(
+            state.get("regime_tp_learning_enabled", False)
+        )
+        paper_training_active = os.getenv("TRADING_MODE", "").lower() in {
+            "paper_train", "paper_live"
+        }
 
         non_timeout_count_50 = sum(
             1 for trade in rolling50
@@ -1539,7 +1545,12 @@ def learning_state():
 
         return jsonify({
             "timestamp": int(time.time()),
-            "learning_enabled": state.get("regime_tp_learning_enabled", False),
+            # Evidence collection and canonical rolling learning are active in
+            # paper_train before the optional regime-TP blend graduates. Keep
+            # the latter as a separate field instead of reporting all learning
+            # as disabled during bootstrap.
+            "learning_enabled": paper_training_active or regime_tp_learning_enabled,
+            "regime_tp_learning_enabled": regime_tp_learning_enabled,
             "learning_blend": float(state.get("regime_tp_learning_blend", 0.0)),
             "lifecycle": state.get("lifecycle", "UNKNOWN"),
             "lifetime_closes": int(state.get("lifetime_n", 0)),
