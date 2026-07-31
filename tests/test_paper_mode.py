@@ -5233,6 +5233,34 @@ class TestP1_1AN_PaperTrainingGeometryCalibration:
         # Sanity: a 0.35% TP on a 100.0 entry is 100.35, not ~100.0004 (the old bug).
         assert result["tp"] > 100.1, f"TP {result['tp']} collapsed (unit bug regression)"
 
+    def test_explicit_paper_tp_zone_is_not_widened_by_expected_move(
+            self, clean_positions, monkeypatch):
+        from src.services.paper_trade_executor import calibrate_paper_training_geometry
+
+        monkeypatch.setenv("PAPER_TP_ZONE_BPS", "12")
+        monkeypatch.setenv("PAPER_SL_ZONE_BPS", "10")
+        monkeypatch.setenv("PAPER_MIN_TP_BPS", "8")
+        normalized = {
+            "tp": 100.12, "sl": 99.90,
+            "tp_pct": 0.12, "sl_pct": 0.10, "rr": 1.2,
+            "repaired": False, "repair_reason": None,
+        }
+
+        result = calibrate_paper_training_geometry(
+            mode="paper_live",
+            source="strict_take",
+            training_bucket="A_STRICT_TAKE",
+            side="BUY",
+            entry=100.0,
+            tp_sl=normalized,
+            expected_move_pct=4.0,
+        )
+
+        assert result["tp_pct"] == pytest.approx(0.12)
+        assert result["sl_pct"] == pytest.approx(0.10)
+        assert result["tp"] == pytest.approx(100.12)
+        assert result["sl"] == pytest.approx(99.90)
+
     def test_calibration_not_applied_non_training_source(self, clean_positions):
         """Test: Calibration does not apply to non-training_sampler sources."""
         from src.services.paper_trade_executor import calibrate_paper_training_geometry

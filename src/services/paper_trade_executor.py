@@ -3227,6 +3227,7 @@ def calibrate_paper_training_geometry(
 
     # V10.21: Calibrate TP for paper trading
     # For paper_live: respect configured PAPER_TP_ZONE_BPS, don't override with hardcoded floor
+    explicit_tp_zone = bool(os.getenv("PAPER_TP_ZONE_BPS"))
     if mode == "paper_live":
         tp_zone_bps = int(os.getenv("PAPER_TP_ZONE_BPS", "60"))  # V10.47: Reachable floor 60 bps (0.60%) — matches open_paper_position logic
         # V10.29 ROOT-CAUSE FIX: bps -> PERCENT (not fraction). Downstream computes
@@ -3250,7 +3251,13 @@ def calibrate_paper_training_geometry(
     # V10.27 SENIOR FIX: Calibrate TP/SL to ACTUAL market volatility (expected_move_pct)
     # Root cause: 80/50 bps targets unreachable in 600s flat market (price only moves 1-7 bps)
     # Solution: Shrink targets proportional to observed volatility
-    if expected_move_pct > 0.15:
+    if explicit_tp_zone:
+        # An operator-set paper profile is authoritative.  Previously a large
+        # expected_move widened an explicitly configured 12 bps TP all the way
+        # to the 1.5% cap while diagnostics still reported 12 bps at entry,
+        # producing avoidable canonical TIMEOUT exits.
+        tp_target_pct = tp_floor_pct
+    elif expected_move_pct > 0.15:
         # Market has real volatility - can afford wider targets
         tp_target_pct = min(expected_move_pct * 0.75, tp_cap_pct)  # 75% of observed move
     else:
