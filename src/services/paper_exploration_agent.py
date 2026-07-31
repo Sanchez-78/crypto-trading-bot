@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import math
+import logging
 import os
 import time
 from collections import Counter, deque
 from typing import Any, Callable, Optional
+
+log = logging.getLogger(__name__)
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -321,6 +324,12 @@ class PaperExplorationAgent:
             )
         except Exception as exc:
             self._last_reason = f"open_error:{type(exc).__name__}"
+            log.exception(
+                "[PAPER_EXPLORATION_OPEN_ERROR] symbol=%s side=%s error=%s",
+                symbol,
+                side,
+                exc,
+            )
             return self._snapshot(status="degraded", now=now)
 
         if result.get("status") != "opened":

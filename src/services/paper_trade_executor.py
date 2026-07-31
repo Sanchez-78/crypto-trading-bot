@@ -1516,8 +1516,13 @@ def open_paper_position(
     # an explicit canonical contract. Do not run it through the legacy P0
     # evidence fallback again: that fallback was relabelling A_STRICT_TAKE as
     # paper_evidence_collection/readiness=false, leaving canonical_n at zero.
+    paper_mode_local = os.getenv("TRADING_MODE", "").strip().lower() in {
+        "paper_live",
+        "paper_train",
+        "replay_train",
+    }
     explicit_canonical = (
-        is_paper_mode_local
+        paper_mode_local
         and str(signal.get("bucket") or signal.get("training_bucket") or "").upper() == "A_STRICT_TAKE"
         and signal.get("strict_ev") is True
         and signal.get("readiness_eligible") is True

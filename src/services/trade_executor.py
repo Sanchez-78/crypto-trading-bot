@@ -213,6 +213,7 @@ _PIPELINE_CYCLE = {
 _PIPELINE_LOCK = threading.RLock()
 _PIPELINE_SUMMARY_INTERVAL = 60.0  # seconds
 _PIPELINE_LAST_SUMMARY_TS = [0.0]
+_PIPELINE_STARTED_AT = time.time()
 _PIPELINE_STALL_THRESHOLD_S = 600.0  # 10 minutes without new entries
 
 FEE_RT      = 0.0015    # 0.15% round-trip (Binance taker 0.075%×2)
@@ -2069,7 +2070,7 @@ def _pipeline_emit_summary() -> None:
 
     # Check for stall: no entries for >10 min but signals exist
     if cycle["raw_signals"] > 0 and cycle["paper_entries"] == 0:
-        if now - _PIPELINE_LAST_SUMMARY_TS[0] > _PIPELINE_STALL_THRESHOLD_S:
+        if now - _PIPELINE_STARTED_AT > _PIPELINE_STALL_THRESHOLD_S:
             log.error(
                 "[ENTRY_PIPELINE_STALL] no_paper_entries_for=%.0fs raw_signals=%d "
                 "top_reject_reasons=[%s]",
