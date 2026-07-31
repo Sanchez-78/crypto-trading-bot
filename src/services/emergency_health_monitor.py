@@ -164,7 +164,10 @@ def detect_dashboard_zero(last_logs: List[str], current_time: float) -> Tuple[bo
 
     Returns: (is_zero, reason)
     """
-    for log_line in last_logs[-50:]:
+    # The producer emits this line every ~30 seconds while the trading process
+    # can emit hundreds of other lines in between.  Restricting the scan to 50
+    # lines caused false "stale" alarms despite metrics flowing normally.
+    for log_line in reversed(last_logs[-500:]):
         if "[V5_BRIDGE_DASHBOARD_METRICS]" in log_line:
             metrics = {}
             try:
@@ -174,6 +177,8 @@ def detect_dashboard_zero(last_logs: List[str], current_time: float) -> Tuple[bo
                     metrics["exits_1h"] = int(log_line.split("paper_exits_1h=")[1].split()[0])
                 if "learning_updates=" in log_line:
                     metrics["learning_updates"] = int(log_line.split("learning_updates=")[1].split()[0])
+                if "open=" in log_line:
+                    metrics["open_positions"] = int(log_line.split("open=")[1].split()[0])
             except:
                 pass
 
@@ -184,6 +189,8 @@ def detect_dashboard_zero(last_logs: List[str], current_time: float) -> Tuple[bo
             all_zero = all(v == 0 for k, v in metrics.items() if k != "timestamp")
             if all_zero and len(metrics) > 0:
                 return True, f"Dashboard all-zero: {metrics}"
+
+            return False, "Dashboard metrics flowing"
 
     # Check if metrics haven't updated for too long
     time_since_update = current_time - _monitor_state["last_dashboard_metrics"].get("timestamp", current_time)
@@ -204,7 +211,7 @@ def detect_entry_stall(last_logs: List[str], current_time: float) -> Tuple[bool,
     for log_line in last_logs[-200:]:
         if "candidate_ev=" in log_line and ("positive_ev" in log_line or float(log_line.split("candidate_ev=")[1].split()[0]) > 0):
             has_ev_candidates = True
-        if "PAPER_ENTRY\|admission_reason=paper_learning" in log_line:
+        if "PAPER_ENTRY|admission_reason=paper_learning" in log_line:
             has_entries = True
             _monitor_state["last_entry_rate"] = current_time
             _monitor_state["entry_stall_count"] = 0

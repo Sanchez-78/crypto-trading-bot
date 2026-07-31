@@ -5,11 +5,66 @@ Provides data for dashboard and diagnostic logging.
 """
 
 import logging
+import os
+import sqlite3
 import time
 from typing import Dict, Any, Optional
 from collections import deque
 
 log = logging.getLogger(__name__)
+
+
+def _cache_db_path() -> str:
+    base = "/opt/cryptomaster" if os.path.exists("/opt/cryptomaster") else "."
+    return os.path.join(base, "local_learning_storage", "cache.sqlite")
+
+
+def _durable_hour_metrics(now: float) -> Dict[str, Any]:
+    """Read restart-durable one-hour event counts from the close ledger.
+
+    The in-memory deques remain useful for immediate events, but they cannot be
+    the dashboard/Firebase source of truth because a service restart clears
+    them.  Every paper close is already persisted in this SQLite ledger.
+    """
+    path = _cache_db_path()
+    if not os.path.exists(path):
+        return {}
+    cutoff = now - 3600.0
+    try:
+        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=2)
+        try:
+            cols = {
+                row[1] for row in conn.execute("PRAGMA table_info(closed_trades)")
+            }
+            learning_predicate = (
+                "COALESCE(learning_source,'') <> ''"
+                if "learning_source" in cols
+                else "1=1"
+            )
+            row = conn.execute(
+                "SELECT "
+                "SUM(CASE WHEN entry_ts >= ? THEN 1 ELSE 0 END), "
+                "SUM(CASE WHEN exit_ts >= ? THEN 1 ELSE 0 END), "
+                f"SUM(CASE WHEN exit_ts >= ? AND {learning_predicate} "
+                "THEN 1 ELSE 0 END), "
+                "MAX(entry_ts), MAX(exit_ts), "
+                f"MAX(CASE WHEN {learning_predicate} THEN exit_ts END) "
+                "FROM closed_trades",
+                (cutoff, cutoff, cutoff),
+            ).fetchone() or (0, 0, 0, None, None, None)
+        finally:
+            conn.close()
+        return {
+            "paper_entries_1h": int(row[0] or 0),
+            "paper_exits_1h": int(row[1] or 0),
+            "paper_learning_updates_1h": int(row[2] or 0),
+            "last_paper_entry_ts": row[3],
+            "last_paper_exit_ts": row[4],
+            "last_learning_update_ts": row[5],
+        }
+    except sqlite3.Error as exc:
+        log.warning("[PAPER_METRICS_DURABLE_READ_FAILED] %s", exc)
+        return {}
 
 
 class PaperTrainingMetrics:
@@ -91,10 +146,39 @@ class PaperTrainingMetrics:
             accepted_1h = sum(1 for ts in self._starvation_accepted_1h if ts > cutoff)
             rejected_1h = sum(1 for ts in self._starvation_rejected_1h if ts > cutoff)
 
+            durable = _durable_hour_metrics(now)
+            entries_1h = max(entries_1h, durable.get("paper_entries_1h", 0))
+            exits_1h = max(exits_1h, durable.get("paper_exits_1h", 0))
+            learning_1h = max(
+                learning_1h,
+                durable.get("paper_learning_updates_1h", 0),
+            )
+
             # Age of last events (seconds)
-            last_entry_age = (now - self._last_paper_entry_ts) if self._last_paper_entry_ts else None
-            last_exit_age = (now - self._last_paper_exit_ts) if self._last_paper_exit_ts else None
-            last_learning_age = (now - self._last_learning_update_ts) if self._last_learning_update_ts else None
+            last_entry_ts = max(
+                filter(None, (
+                    self._last_paper_entry_ts,
+                    durable.get("last_paper_entry_ts"),
+                )),
+                default=None,
+            )
+            last_exit_ts = max(
+                filter(None, (
+                    self._last_paper_exit_ts,
+                    durable.get("last_paper_exit_ts"),
+                )),
+                default=None,
+            )
+            last_learning_ts = max(
+                filter(None, (
+                    self._last_learning_update_ts,
+                    durable.get("last_learning_update_ts"),
+                )),
+                default=None,
+            )
+            last_entry_age = (now - last_entry_ts) if last_entry_ts else None
+            last_exit_age = (now - last_exit_ts) if last_exit_ts else None
+            last_learning_age = (now - last_learning_ts) if last_learning_ts else None
 
             return {
                 "open_positions": open_positions_count,
