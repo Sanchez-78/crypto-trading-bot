@@ -107,6 +107,24 @@ def test_active_learner_headline_excludes_shadow_and_old_rows(env):
     assert d["session_net_pnl"] == pytest.approx(12.8)
 
 
+def test_readiness_does_not_treat_inconclusive_pf_as_edge(monkeypatch):
+    import src.services.dashboard_read_model as drm
+    import src.services.readiness_monitor as readiness
+
+    monkeypatch.setattr(drm, "get_metrics", lambda: {
+        "open_positions": 0,
+        "headline": {
+            "n": 1,
+            "win_rate_pct": 0.0,
+            "profit_factor_pct_basis": 999.0,
+            "profit_factor_available": False,
+            "net_pnl_usd": 0.01,
+        },
+    })
+
+    assert readiness.get_current_metrics()["profit_factor"] == 0.0
+
+
 # ── 2. legacy cache without side ──────────────────────────────────────────────
 
 def test_legacy_cache_no_side(env):

@@ -41,13 +41,15 @@ def get_current_metrics():
         if closed_count == 0:
             return None
 
+        profit_factor = float(headline.get("profit_factor_pct_basis") or 0.0)
+        if headline.get("profit_factor_available") is False:
+            profit_factor = 0.0
+
         return {
             "closed_trades": closed_count,
             "open_positions": open_count,
             "win_rate_pct": float(headline.get("win_rate_pct") or 0.0),
-            "profit_factor": float(
-                headline.get("profit_factor_pct_basis") or 0.0
-            ),
+            "profit_factor": profit_factor,
             "net_pnl": float(headline.get("net_pnl_usd") or 0.0),
         }
     except Exception as e:
