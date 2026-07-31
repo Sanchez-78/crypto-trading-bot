@@ -100,6 +100,8 @@ def test_active_learner_headline_excludes_shadow_and_old_rows(env):
     assert d["headline"]["cohort"] == "canonical_learning"
     assert d["headline"]["n"] == 1
     assert d["headline"]["losses"] == 1
+    assert d["headline"]["profit_factor_available"] is False
+    assert d["profit_factor"] == 0.0
     assert d["win_rate_pct"] == 0.0
     assert d["net_pnl_window"] == pytest.approx(-0.2)
     assert d["session_net_pnl"] == pytest.approx(12.8)

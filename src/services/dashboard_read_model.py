@@ -379,17 +379,22 @@ def _recent_headline(rows):
     outcomes = [_row_outcome(r) for r in rows]
     net_pct = [r.get("pnl_pct", 0.0) for r in rows]
     net_usd_vals = [r.get("pnl_usd", 0.0) for r in rows]
-    pf_pct = round(compute_profit_factor(net_pct), 3)
-    pf_usd = round(compute_profit_factor(net_usd_vals), 3)
     wins = sum(1 for o in outcomes if o is TradeOutcome.WIN)
     losses = sum(1 for o in outcomes if o is TradeOutcome.LOSS)
     flats = sum(1 for o in outcomes if o is TradeOutcome.FLAT)
+    # A one-sided or all-FLAT sample has no denominator for a meaningful PF.
+    # The generic calculator deliberately returns a capped infinity (999), but
+    # that is useful for arithmetic pipelines, not for a human-facing card.
+    pf_available = wins > 0 and losses > 0
+    pf_pct = round(compute_profit_factor(net_pct), 3)
+    pf_usd = round(compute_profit_factor(net_usd_vals), 3)
     return {
         "recent_window_n": len(rows),
         "recent_win_rate_pct": round(compute_win_rate(outcomes) * 100.0, 2),
         "recent_profit_factor": pf_pct,                     # default = pct basis
         "recent_profit_factor_pct_basis": pf_pct,
         "recent_profit_factor_usd_basis": pf_usd,
+        "profit_factor_available": pf_available,
         "profit_factor_default_basis": "pct_points",
         "recent_net_pnl_usd": round(sum(net_usd_vals), 6),
         "recent_net_pnl_pct": round(sum(net_pct), 4),
@@ -557,6 +562,9 @@ def get_metrics() -> dict:
             if headline_cohort == "canonical_learning"
             else f"recent_{headline['recent_window_n']}"
         )
+        display_profit_factor = headline["recent_profit_factor"]
+        if headline_cohort == "canonical_learning" and not headline["profit_factor_available"]:
+            display_profit_factor = 0.0
         session_n, session_net, exits = _session_aggregate(errors)
         paper_learning_n = _paper_learning_count(errors)
 
@@ -589,7 +597,7 @@ def get_metrics() -> dict:
             **activity,
             "agent_supervisor": agent_state,
             # Headline (canonical, shared by /enhanced): PR3 outcome-based WR/PF.
-            "profit_factor": headline["recent_profit_factor"],
+            "profit_factor": display_profit_factor,
             "win_rate_pct": headline["recent_win_rate_pct"],
             "win_rate_window": headline["recent_window_n"],
             "net_pnl": round(session_net, 6),
@@ -617,6 +625,7 @@ def get_metrics() -> dict:
                 "win_rate_pct": headline["recent_win_rate_pct"],
                 "profit_factor_pct_basis": headline["recent_profit_factor_pct_basis"],
                 "profit_factor_usd_basis": headline["recent_profit_factor_usd_basis"],
+                "profit_factor_available": headline["profit_factor_available"],
                 "profit_factor_default_basis": "pct_points",
                 "net_pnl_pct": headline["recent_net_pnl_pct"],
                 "net_pnl_usd": headline["recent_net_pnl_usd"],
@@ -733,6 +742,7 @@ def _degraded_envelope(errors, iso):
             "cohort": "none",
             "wins": 0, "losses": 0, "flats": 0, "win_rate_pct": 0.0,
             "profit_factor_pct_basis": 0.0, "profit_factor_usd_basis": 0.0,
+            "profit_factor_available": False,
             "profit_factor_default_basis": "pct_points",
             "net_pnl_pct": 0.0, "net_pnl_usd": 0.0,
             "source": "degraded", "generated_at": iso,

@@ -1278,8 +1278,12 @@ HTML_TEMPLATE = r"""
 
             // Update metrics
             document.getElementById('closed_trades').textContent = data.closed_trades || 0;
-            document.getElementById('profit_factor').textContent = formatValue(data.profit_factor || 0, 'pf');
-            document.getElementById('profit_factor').className = 'metric-value ' + getStatusClass(data.profit_factor || 0, data.win_rate_pct || 0);
+            const pfAvailable = data.headline?.profit_factor_available !== false;
+            document.getElementById('profit_factor').textContent =
+                pfAvailable ? formatValue(data.profit_factor || 0, 'pf') : '—';
+            document.getElementById('profit_factor').className = 'metric-value ' + (
+                pfAvailable ? getStatusClass(data.profit_factor || 0, data.win_rate_pct || 0) : 'neutral'
+            );
             document.getElementById('win_rate').textContent = formatValue(data.win_rate_pct || 0, 'pct');
             const canonicalNetPnl = Number(data.net_pnl_window ?? data.net_pnl ?? 0);
             document.getElementById('net_pnl').textContent = formatValue(canonicalNetPnl, 'pnl');
@@ -1320,12 +1324,14 @@ HTML_TEMPLATE = r"""
 
             // Update stats table
             document.getElementById('stat_closed').textContent = data.closed_trades || 0;
-            document.getElementById('stat_pf').textContent = formatValue(data.profit_factor || 0, 'pf');
+            document.getElementById('stat_pf').textContent =
+                pfAvailable ? formatValue(data.profit_factor || 0, 'pf') : '—';
             document.getElementById('stat_wr').textContent = formatValue(data.win_rate_pct || 0, 'pct');
             document.getElementById('stat_pnl').textContent = formatValue(canonicalNetPnl, 'pnl');
 
             // Update status text
             document.getElementById('stat_pf_status').textContent =
+                !pfAvailable ? '• Need wins + losses' :
                 data.profit_factor >= 1.05 ? '✓ Edge detected' :
                 data.profit_factor >= 1.0 ? '• Near edge' :
                 '✗ No edge yet';
