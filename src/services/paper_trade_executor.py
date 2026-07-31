@@ -3212,9 +3212,14 @@ def calibrate_paper_training_geometry(
     # This prevents calibration logic from overriding the TP floor change deployed in trade_executor.py
     try:
         from src.services.trade_executor import MIN_TP_PCT
-        min_tp_pct = MIN_TP_PCT * 100.0  # Convert fraction to percent
+        default_min_tp_bps = max(1, int(round(MIN_TP_PCT * 10000.0)))
+        configured_min_tp_bps = max(
+            1,
+            int(os.getenv("PAPER_MIN_TP_BPS", str(default_min_tp_bps))),
+        )
+        min_tp_pct = configured_min_tp_bps / 100.0
         tp_floor_pct = max(tp_floor_pct, min_tp_pct)
-    except (ImportError, AttributeError):
+    except (ImportError, AttributeError, TypeError, ValueError):
         pass  # Fallback to configured tp_floor_pct if import fails
 
     # V10.27: CRITICAL - always use calibrated TP, not max(original, calibrated)
