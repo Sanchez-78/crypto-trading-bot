@@ -18,50 +18,37 @@ _should_stop = False
 
 
 def get_current_metrics():
-    """Collect current trading metrics from available sources."""
-    try:
-        from src.services.paper_trade_executor import (
-            _POSITIONS, _closed_trades_today, evaluate_paper_tp_sl_exits
-        )
+    """Collect readiness metrics from the authoritative dashboard read model.
 
-        # Count positions
-        closed_count = len(_closed_trades_today) if hasattr(_closed_trades_today, '__len__') else 0
-        open_count = len(_POSITIONS) if hasattr(_POSITIONS, '__len__') else 0
+    The executor used to expose an in-memory ``_closed_trades_today`` list.
+    That private symbol was removed when closed trades became durable in
+    ``cache.sqlite``.  Importing it here made the dashboard readiness loop fail
+    once per minute and also made metrics process-local.  Reuse the same
+    snapshot as the dashboard so both processes report one durable definition.
+    """
+    try:
+        from src.services.dashboard_read_model import get_metrics
+
+        snapshot = get_metrics()
+        headline = snapshot.get("headline") or {}
+        closed_count = int(
+            headline.get("n")
+            or snapshot.get("session_closed_trades")
+            or 0
+        )
+        open_count = int(snapshot.get("open_positions") or 0)
 
         if closed_count == 0:
             return None
 
-        # Calculate WR and P&L from closed trades
-        wins = 0
-        total_pnl = 0.0
-
-        for trade in _closed_trades_today:
-            pnl = trade.get("pnl_usd", 0.0)
-            total_pnl += pnl
-            if pnl > 0:
-                wins += 1
-
-        wr_pct = (wins / closed_count * 100) if closed_count > 0 else 0.0
-
-        # Calculate profit factor
-        winning_trades_sum = 0.0
-        losing_trades_sum = 0.0
-
-        for trade in _closed_trades_today:
-            pnl = trade.get("pnl_usd", 0.0)
-            if pnl > 0:
-                winning_trades_sum += pnl
-            else:
-                losing_trades_sum += abs(pnl)
-
-        pf = winning_trades_sum / losing_trades_sum if losing_trades_sum > 0 else 0.0
-
         return {
             "closed_trades": closed_count,
             "open_positions": open_count,
-            "win_rate_pct": wr_pct,
-            "profit_factor": pf,
-            "net_pnl": total_pnl,
+            "win_rate_pct": float(headline.get("win_rate_pct") or 0.0),
+            "profit_factor": float(
+                headline.get("profit_factor_pct_basis") or 0.0
+            ),
+            "net_pnl": float(headline.get("net_pnl_usd") or 0.0),
         }
     except Exception as e:
         log.error(f"[METRICS_COLLECTION_ERROR] {e}")

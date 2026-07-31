@@ -100,6 +100,30 @@ def test_readiness_endpoints_degrade_to_200(monkeypatch):
     assert resp.get_json()["status"] == "degraded"
 
 
+def test_readiness_metrics_use_authoritative_dashboard_snapshot(monkeypatch):
+    import src.services.dashboard_read_model as drm
+    import src.services.readiness_monitor as rm
+
+    monkeypatch.setattr(drm, "get_metrics", lambda: {
+        "session_closed_trades": 17,
+        "open_positions": 2,
+        "headline": {
+            "n": 11,
+            "win_rate_pct": 45.45,
+            "profit_factor_pct_basis": 1.23,
+            "net_pnl_usd": 4.56,
+        },
+    })
+
+    assert rm.get_current_metrics() == {
+        "closed_trades": 11,
+        "open_positions": 2,
+        "win_rate_pct": 45.45,
+        "profit_factor": 1.23,
+        "net_pnl": 4.56,
+    }
+
+
 def test_learning_state_endpoint_degrades_to_200_on_malformed_json(tmp_path, monkeypatch):
     state_dir = tmp_path / "server_local_backups"
     state_dir.mkdir()
