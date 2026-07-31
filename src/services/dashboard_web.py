@@ -669,19 +669,19 @@ HTML_TEMPLATE = r"""
             </div>
 
             <div class="metric-card">
-                <div class="metric-label">Profit Factor</div>
+                <div class="metric-label">Profit Factor (Canonical)</div>
                 <div class="metric-value" id="profit_factor">0.00x</div>
                 <div class="metric-change" id="pf_status">—</div>
             </div>
 
             <div class="metric-card">
-                <div class="metric-label">Win Rate</div>
+                <div class="metric-label">Win Rate (Canonical)</div>
                 <div class="metric-value" id="win_rate">0.0%</div>
                 <div class="metric-change" id="wr_status">—</div>
             </div>
 
             <div class="metric-card">
-                <div class="metric-label">Net P&L</div>
+                <div class="metric-label">Net P&amp;L (Canonical Window)</div>
                 <div class="metric-value" id="net_pnl">$0.00</div>
                 <div class="metric-change" id="pnl_status">—</div>
             </div>
@@ -1281,8 +1281,9 @@ HTML_TEMPLATE = r"""
             document.getElementById('profit_factor').textContent = formatValue(data.profit_factor || 0, 'pf');
             document.getElementById('profit_factor').className = 'metric-value ' + getStatusClass(data.profit_factor || 0, data.win_rate_pct || 0);
             document.getElementById('win_rate').textContent = formatValue(data.win_rate_pct || 0, 'pct');
-            document.getElementById('net_pnl').textContent = formatValue(data.net_pnl || 0, 'pnl');
-            document.getElementById('net_pnl').className = 'metric-value ' + (data.net_pnl >= 0 ? 'positive' : 'negative');
+            const canonicalNetPnl = Number(data.net_pnl_window ?? data.net_pnl ?? 0);
+            document.getElementById('net_pnl').textContent = formatValue(canonicalNetPnl, 'pnl');
+            document.getElementById('net_pnl').className = 'metric-value ' + (canonicalNetPnl >= 0 ? 'positive' : 'negative');
             document.getElementById('open_positions').textContent = data.open_positions || 0;
             // The specialist agent has the stricter, persisted stall detector.
             // Prefer it so the legacy headline cannot contradict the agent card.
@@ -1313,15 +1314,15 @@ HTML_TEMPLATE = r"""
                 '✗ Below avg';
 
             document.getElementById('pnl_status').textContent =
-                data.net_pnl > 0 ? '✓ Positive' :
-                data.net_pnl === 0 ? '• Break-even' :
+                canonicalNetPnl > 0 ? '✓ Positive' :
+                canonicalNetPnl === 0 ? '• Break-even' :
                 '✗ Negative';
 
             // Update stats table
             document.getElementById('stat_closed').textContent = data.closed_trades || 0;
             document.getElementById('stat_pf').textContent = formatValue(data.profit_factor || 0, 'pf');
             document.getElementById('stat_wr').textContent = formatValue(data.win_rate_pct || 0, 'pct');
-            document.getElementById('stat_pnl').textContent = formatValue(data.net_pnl || 0, 'pnl');
+            document.getElementById('stat_pnl').textContent = formatValue(canonicalNetPnl, 'pnl');
 
             // Update status text
             document.getElementById('stat_pf_status').textContent =

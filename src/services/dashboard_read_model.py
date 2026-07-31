@@ -241,6 +241,50 @@ def _read_recent_rows(errors, limit=RECENT_WINDOW):
     return out
 
 
+def _read_recent_canonical_rows(limit=RECENT_WINDOW):
+    """Newest strict, readiness-eligible closes from the modern cache schema.
+
+    ``None`` means the cache predates provenance columns, so callers may retain
+    the legacy all-row behaviour.  An empty list on a modern schema is
+    authoritative: shadow/control rows must never become headline evidence.
+    """
+    cache_path = _paths()[0]
+    if not cache_path or not os.path.exists(cache_path) or int(limit) <= 0:
+        return []
+    query = (
+        "SELECT trade_id, symbol, entry_price, exit_price, pnl_usd, pnl_pct, "
+        "exit_reason, entry_ts, exit_ts, regime, win, side, outcome "
+        "FROM closed_trades "
+        "WHERE readiness_eligible=1 AND real_readiness_eligible=1 "
+        "AND COALESCE(paper_learning_only,0)=0 "
+        "AND COALESCE(learning_shadow_only,0)=0 "
+        "ORDER BY exit_ts DESC LIMIT ?"
+    )
+    try:
+        conn = sqlite3.connect(f"file:{cache_path}?mode=ro", uri=True, timeout=2)
+    except sqlite3.Error:
+        return []
+    try:
+        try:
+            rows = list(conn.execute(query, (int(limit),)))
+        except sqlite3.OperationalError:
+            return None
+    finally:
+        conn.close()
+
+    out = []
+    for r in rows:
+        tid, sym, ep, xp, pu, pp, reason, ets, xts, regime, win, side, outcome = r
+        out.append({
+            "trade_id": tid, "symbol": sym,
+            "entry_price": _f(ep), "exit_price": _f(xp),
+            "pnl_usd": _f(pu), "pnl_pct": _f(pp), "pnl_pct_null": pp is None,
+            "exit_reason": reason, "entry_ts": _f(ets), "exit_ts": _f(xts),
+            "regime": regime, "win": int(win or 0), "side": side, "outcome": outcome,
+        })
+    return out
+
+
 def _f(x):
     try:
         return float(x)
@@ -498,7 +542,21 @@ def get_metrics() -> dict:
         lifetime_exp = state.get("lifetime_expectancy", 0.0)
 
         rows = _read_recent_rows(errors, RECENT_WINDOW)
-        headline = _recent_headline(rows)
+        headline_rows = rows
+        headline_cohort = "all"
+        headline_source = "cache.sqlite:closed_trades"
+        if lifetime_n > 0:
+            canonical_rows = _read_recent_canonical_rows(min(lifetime_n, RECENT_WINDOW))
+            if canonical_rows is not None:
+                headline_rows = canonical_rows
+                headline_cohort = "canonical_learning"
+                headline_source = "cache.sqlite:canonical_closed_trades"
+        headline = _recent_headline(headline_rows)
+        headline_scope = (
+            f"canonical_recent_{headline['recent_window_n']}"
+            if headline_cohort == "canonical_learning"
+            else f"recent_{headline['recent_window_n']}"
+        )
         session_n, session_net, exits = _session_aggregate(errors)
         paper_learning_n = _paper_learning_count(errors)
 
@@ -536,20 +594,22 @@ def get_metrics() -> dict:
             "win_rate_window": headline["recent_window_n"],
             "net_pnl": round(session_net, 6),
             "net_pnl_window": headline["recent_net_pnl_usd"],
+            "session_net_pnl": round(session_net, 6),
             # Additive scope tokens (audit 2026-07-19): make the flat top-level
             # trio self-documenting so a client never mis-reads the LIFETIME count
             # (closed_trades) as if WR/PF (a RECENT window) were over all of it.
             # Machine tokens like data_source — not user-facing, no translation.
             "closed_trades_scope": "lifetime",
-            "win_rate_scope": f"recent_{headline['recent_window_n']}",
+            "win_rate_scope": headline_scope,
             "profit_factor_window": headline["recent_window_n"],
-            "profit_factor_scope": f"recent_{headline['recent_window_n']}",
+            "profit_factor_scope": headline_scope,
             # Audit F6: ONE explicit single-window headline object the frontend
             # must consume (never mix lifetime_n * recent WR; FLAT is its own
             # bucket, not a loss). All fields are from the SAME recent window.
             "headline": {
                 "schema_version": 1,
-                "window": f"recent_{headline['recent_window_n']}",
+                "window": headline_scope,
+                "cohort": headline_cohort,
                 "n": headline["recent_window_n"],
                 "wins": headline["wins"],
                 "losses": headline["losses"],
@@ -560,11 +620,12 @@ def get_metrics() -> dict:
                 "profit_factor_default_basis": "pct_points",
                 "net_pnl_pct": headline["recent_net_pnl_pct"],
                 "net_pnl_usd": headline["recent_net_pnl_usd"],
-                "source": "cache.sqlite:closed_trades",
+                "source": headline_source,
                 "generated_at": iso,
             },
             # Explicit windows + metadata (audit 8.4).
-            "recent": {**headline, "source": "cache.sqlite:closed_trades",
+            "recent": {**headline, "source": headline_source,
+                       "cohort": headline_cohort,
                        "unit": "pct_points+usd", "generated_at": iso},
             "lifetime": {"lifetime_n": lifetime_n, "lifetime_profit_factor": lifetime_pf,
                          "lifetime_expectancy": lifetime_exp,
@@ -660,7 +721,8 @@ def _degraded_envelope(errors, iso):
             },
         },
         "profit_factor": 0.0, "win_rate_pct": 0.0, "win_rate_window": 0,
-        "net_pnl": 0.0, "net_pnl_window": 0.0, "session_n": 0,
+        "net_pnl": 0.0, "net_pnl_window": 0.0, "session_net_pnl": 0.0,
+        "session_n": 0,
         # Scope tokens mirrored here so degraded responses keep the identical
         # key set (module invariant: get_metrics() and _degraded_envelope() agree).
         "closed_trades_scope": "lifetime", "win_rate_scope": "recent_0",
@@ -668,6 +730,7 @@ def _degraded_envelope(errors, iso):
         # F6: zeroed headline so the shape is consistent even when degraded.
         "headline": {
             "schema_version": 1, "window": "recent_0", "n": 0,
+            "cohort": "none",
             "wins": 0, "losses": 0, "flats": 0, "win_rate_pct": 0.0,
             "profit_factor_pct_basis": 0.0, "profit_factor_usd_basis": 0.0,
             "profit_factor_default_basis": "pct_points",

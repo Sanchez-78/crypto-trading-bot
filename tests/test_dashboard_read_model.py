@@ -73,6 +73,38 @@ def test_modern_cache_headline(env):
     assert d["win_rate_window"] == 3
 
 
+def test_active_learner_headline_excludes_shadow_and_old_rows(env):
+    _make_cache(env["cache"], [
+        _row("old-win", "BUY", 5.0, 5.0, "WIN", ts=1_700_000_000),
+        _row("canonical", "BUY", -0.2, -0.2, "LOSS", ts=1_700_000_100),
+        _row("shadow", "BUY", 8.0, 8.0, "WIN", ts=1_700_000_200),
+    ])
+    conn = sqlite3.connect(str(env["cache"]))
+    for name in ("readiness_eligible", "real_readiness_eligible",
+                 "paper_learning_only", "learning_shadow_only"):
+        conn.execute(f"ALTER TABLE closed_trades ADD COLUMN {name} INTEGER")
+    conn.execute(
+        "UPDATE closed_trades SET readiness_eligible=1, real_readiness_eligible=1, "
+        "paper_learning_only=0, learning_shadow_only=0 WHERE trade_id='canonical'"
+    )
+    conn.execute(
+        "UPDATE closed_trades SET readiness_eligible=0, real_readiness_eligible=0, "
+        "paper_learning_only=1, learning_shadow_only=1 WHERE trade_id='shadow'"
+    )
+    conn.commit()
+    conn.close()
+    env["state"].write_text(json.dumps({"lifetime_n": 1}))
+
+    d = rm.get_metrics()
+
+    assert d["headline"]["cohort"] == "canonical_learning"
+    assert d["headline"]["n"] == 1
+    assert d["headline"]["losses"] == 1
+    assert d["win_rate_pct"] == 0.0
+    assert d["net_pnl_window"] == pytest.approx(-0.2)
+    assert d["session_net_pnl"] == pytest.approx(12.8)
+
+
 # ── 2. legacy cache without side ──────────────────────────────────────────────
 
 def test_legacy_cache_no_side(env):
