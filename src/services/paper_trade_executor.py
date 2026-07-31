@@ -2869,10 +2869,6 @@ def close_paper_position(
         "win": 1 if net_pnl_usd > 0 else 0,  # V10.22: For cache
     }
 
-    # Persist at the authoritative close boundary so timeout exits are also
-    # archived when the higher-level trade executor is not invoked.
-    _archive_paper_close(closed_trade)
-
     # Audit F8: attach the gross MFE/MAE excursion contract (explicit units +
     # extreme-ordering timestamps) so an offline TP/SL counterfactual is possible.
     # Observability only — no exit/cost/strategy effect.
@@ -2886,6 +2882,11 @@ def close_paper_position(
         ))
     except Exception:
         pass
+
+    # Persist only after excursion enrichment. Timeout exits can bypass the
+    # higher-level trade executor, so this authoritative write must contain the
+    # same MFE/MAE evidence used for TP/SL learning and counterfactual audits.
+    _archive_paper_close(closed_trade)
 
     # P1.1AP-E: Stale position quarantine — check BEFORE all quality/econ/learning logs
     is_stale, stale_reason = _is_stale_paper_position(pnl_data, pos["entry_price"], price, pos)

@@ -1,4 +1,5 @@
 import sqlite3
+from pathlib import Path
 
 from src.services import emergency_health_monitor as ehm
 from src.services import paper_training_metrics as ptm
@@ -48,3 +49,16 @@ def test_dashboard_monitor_scans_full_window_and_counts_open_positions():
     assert reason == "Dashboard metrics flowing"
     assert ehm._monitor_state["last_dashboard_metrics"]["open_positions"] == 1
     assert ehm._monitor_state["last_dashboard_metrics"]["timestamp"] == now
+
+
+def test_close_is_excursion_enriched_before_authoritative_archive():
+    source = Path("src/services/paper_trade_executor.py").read_text(
+        encoding="utf-8"
+    )
+    close_body = source.split("def close_paper_position(", 1)[1].split(
+        "def get_paper_open_positions", 1
+    )[0]
+
+    assert close_body.index("closed_trade.update(compute_excursion") < close_body.index(
+        "_archive_paper_close(closed_trade)"
+    )
