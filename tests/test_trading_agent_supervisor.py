@@ -189,6 +189,30 @@ def test_strategy_tuner_requires_durable_and_recent_evidence(monkeypatch):
     assert proposal["target_entry_quota_multiplier"] == 1.0
 
 
+def test_strategy_tuner_does_not_apply_unconfirmed_symbol_quota():
+    tuner = agents.StrategyTuningAgent(min_samples=20)
+    proposal = tuner.propose(
+        trading=_learning(),
+        market={"status": "healthy", "pause_recommended": False},
+        current_policy=agents._default_policy(),
+        now=1_700_000_000,
+        review={
+            "recommendation": {
+                "code": "INSUFFICIENT_EVIDENCE",
+                "auto_applicable": False,
+            },
+            "symbol_policy": {
+                "code": "HOLD_CANONICAL_SYMBOL_QUOTAS",
+                "auto_applicable": False,
+                "target_canonical_quota_multipliers": {"ADAUSDT": 0.25},
+            },
+            "evidence": {"sha256": "not-enough-data"},
+        },
+    )
+
+    assert proposal["target_canonical_symbol_quota_multipliers"] == {}
+
+
 def test_supervisor_applies_only_after_repeated_confirmation(tmp_path):
     clock = FakeClock()
     supervisor = _supervisor(tmp_path, clock)
@@ -201,6 +225,9 @@ def test_supervisor_applies_only_after_repeated_confirmation(tmp_path):
     assert second["proposal"]["decision"] == "applied"
     assert second["policy"]["revision"] == 1
     assert second["policy"]["paper_entry_quota_multiplier"] == 0.75
+    assert second["policy"]["canonical_symbol_quota_multipliers"] == {
+        "BTCUSDT": 0.25,
+    }
     assert second["policy"]["pause_new_entries"] is False
     assert second["audit"][-1]["event"] == "policy_applied"
 
@@ -299,6 +326,7 @@ def test_policy_cooldown_and_new_trade_evidence_gate_recovery(tmp_path):
     recovered = supervisor.run_cycle()
     assert recovered["proposal"]["decision"] == "applied"
     assert recovered["policy"]["paper_entry_quota_multiplier"] == 1.0
+    assert recovered["policy"]["canonical_symbol_quota_multipliers"] == {}
 
 
 def test_circuit_breaker_opens_after_three_collection_failures(tmp_path):
@@ -359,6 +387,62 @@ def test_candidate_pause_and_quota_never_change_position_size(monkeypatch):
     accepted = [result for result in results if result["allowed"]]
     assert 140 <= len(accepted) <= 260
     assert all(result["size_mult"] == 0.08 for result in accepted)
+
+
+def test_canonical_symbol_quota_preserves_a_bounded_learning_sample(monkeypatch):
+    class FakeSupervisor:
+        @staticmethod
+        def get_effective_policy():
+            return {
+                **agents._default_policy(),
+                "revision": 4,
+                "canonical_symbol_quota_multipliers": {"ADAUSDT": 0.25},
+                "reason": "trade_review:global_quota_075+symbol_quota",
+            }
+
+    monkeypatch.setattr(agents, "_supervisor", FakeSupervisor())
+    monkeypatch.setattr(agents, "_canonical_candidate_sequence", 0)
+
+    ada = [
+        agents.apply_policy_to_canonical_candidate(symbol="ADAUSDT")
+        for _ in range(400)
+    ]
+    eth = [
+        agents.apply_policy_to_canonical_candidate(symbol="ETHUSDT")
+        for _ in range(20)
+    ]
+
+    accepted = [result for result in ada if result["allowed"]]
+    assert 70 <= len(accepted) <= 130
+    assert all(
+        result["canonical_symbol_quota_multiplier"] == 0.25
+        for result in ada
+    )
+    assert all(result["allowed"] for result in eth)
+    assert all(
+        result["canonical_symbol_quota_multiplier"] == 1.0
+        for result in eth
+    )
+
+
+def test_canonical_policy_honors_supervisor_pause(monkeypatch):
+    class FakeSupervisor:
+        @staticmethod
+        def get_effective_policy():
+            return {
+                **agents._default_policy(),
+                "revision": 8,
+                "pause_new_entries": True,
+                "reason": "market_price_feed_critical",
+            }
+
+    monkeypatch.setattr(agents, "_supervisor", FakeSupervisor())
+
+    result = agents.apply_policy_to_canonical_candidate(symbol="ETHUSDT")
+
+    assert result["allowed"] is False
+    assert result["canonical_symbol_quota_multiplier"] == 0.0
+    assert result["reason"] == "agent_supervisor_pause:market_price_feed_critical"
 
 
 def test_market_stream_dispatch_updates_only_current_symbol(monkeypatch):

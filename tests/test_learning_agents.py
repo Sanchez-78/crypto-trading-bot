@@ -139,6 +139,62 @@ def test_trade_review_critical_recent_and_weak_previous_recommends_050():
     assert report["recommendation"]["target_entry_quota_multiplier"] == 0.50
 
 
+def test_trade_review_reduces_only_stably_weak_canonical_symbol():
+    strong = [
+        _trade(index, 0.20, symbol="ETHUSDT")
+        for index in range(140)
+    ]
+    weak = [
+        _trade(
+            140 + index,
+            0.10 if index % 2 else -0.20,
+            symbol="ADAUSDT",
+        )
+        for index in range(60)
+    ]
+
+    report = _review(strong + weak)
+
+    assert report["symbol_policy"] == {
+        "code": "APPLY_CANONICAL_SYMBOL_QUOTAS",
+        "auto_applicable": True,
+        "current_canonical_quota_multipliers": {},
+        "target_canonical_quota_multipliers": {"ADAUSDT": 0.25},
+        "minimum_evidence_per_symbol": 60,
+    }
+    advisory = next(
+        item
+        for item in report["advisories"]
+        if item["code"] == "CANONICAL_SYMBOL_QUOTA_REDUCE"
+    )
+    assert advisory["symbol"] == "ADAUSDT"
+    assert advisory["previous30"]["profit_factor"] == 0.5
+    assert advisory["recent30"]["profit_factor"] == 0.5
+
+
+def test_trade_review_does_not_reduce_symbol_after_one_weak_window():
+    other = [
+        _trade(index, 0.20, symbol="ETHUSDT")
+        for index in range(140)
+    ]
+    recovering = [
+        _trade(140 + index, 0.20, symbol="ADAUSDT")
+        for index in range(30)
+    ] + [
+        _trade(
+            170 + index,
+            0.10 if index % 2 else -0.20,
+            symbol="ADAUSDT",
+        )
+        for index in range(30)
+    ]
+
+    report = _review(other + recovering)
+
+    assert report["symbol_policy"]["auto_applicable"] is False
+    assert report["symbol_policy"]["target_canonical_quota_multipliers"] == {}
+
+
 def test_exploration_outcomes_never_drive_canonical_recommendation():
     canonical = [_trade(i, 0.10) for i in range(150)]
     exploration = [

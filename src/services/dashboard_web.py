@@ -1203,20 +1203,31 @@ HTML_TEMPLATE = r"""
                 String(market.expected_symbols || 0);
 
             const quota = Number(policy.paper_entry_quota_multiplier ?? 1);
+            const canonicalSymbolQuotas = policy.canonical_symbol_quota_multipliers || {};
+            const canonicalQuotaText = Object.entries(canonicalSymbolQuotas)
+                .map(([symbol, value]) => symbol + ' canonical ' + Math.round(Number(value) * 100) + '%')
+                .join(', ');
             paint('agent_strategy_status', policy.pause_new_entries ? 'paused' : 'active');
             document.getElementById('agent_strategy_detail').textContent =
                 'Quota ' + Math.round(quota * 100) + '% · r' +
                 String(policy.revision || 0) + ' · ' +
-                String(policy.reason || 'baseline');
+                String(policy.reason || 'baseline') +
+                (canonicalQuotaText ? ' · ' + canonicalQuotaText : '');
 
             paint('agent_review_status', review.status);
             const reviewWindow = review.window || {};
             const recommendation = review.recommendation || {};
+            const symbolPolicy = review.symbol_policy || {};
+            const targetSymbols = symbolPolicy.target_canonical_quota_multipliers || {};
+            const targetSymbolText = Object.entries(targetSymbols)
+                .map(([symbol, value]) => symbol + ' ' + Math.round(Number(value) * 100) + '%')
+                .join(', ');
             document.getElementById('agent_review_detail').textContent =
                 String(recommendation.code || 'NO_REVIEW') + ' / canonical ' +
                 String(reviewWindow.canonical_n || 0) + '/' +
                 String(reviewWindow.requested_n || 200) + ' · unknown ' +
-                String(reviewWindow.unknown_provenance_n || 0);
+                String(reviewWindow.unknown_provenance_n || 0) +
+                (targetSymbolText ? ' · symbol quota ' + targetSymbolText : '');
             paint('agent_exploration_status', exploration.status);
             document.getElementById('agent_exploration_detail').textContent =
                 'Samples 1h: ' + String(exploration.entries_last_hour || 0) +
@@ -1254,6 +1265,7 @@ HTML_TEMPLATE = r"""
             const review = agents.trade_review || {};
             const exploration = agents.paper_exploration || {};
             const policy = agent.policy || {};
+            const canonicalSymbolQuotas = policy.canonical_symbol_quota_multipliers || {};
             const open = Number(data.open_positions || 0);
             const marketText = market.status === 'healthy'
                 ? 'Tržní data jsou v pořádku.'
@@ -1280,7 +1292,12 @@ HTML_TEMPLATE = r"""
             next.textContent = 'Učení: ' + learning +
                 ' · Exploration: ' + reason +
                 ' · Strategie: quota ' +
-                Math.round(Number(policy.paper_entry_quota_multiplier ?? 1) * 100) + ' %.';
+                Math.round(Number(policy.paper_entry_quota_multiplier ?? 1) * 100) + ' %' +
+                (Object.keys(canonicalSymbolQuotas).length
+                    ? ' · omezený canonical vzorek: ' + Object.entries(canonicalSymbolQuotas)
+                        .map(([symbol, value]) => symbol + ' ' + Math.round(Number(value) * 100) + '%')
+                        .join(', ')
+                    : '') + '.';
         }
 
         async function updateDashboard() {

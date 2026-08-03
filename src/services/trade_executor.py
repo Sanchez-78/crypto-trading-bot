@@ -2408,6 +2408,45 @@ def handle_signal(signal):
                 signal.get("regime"),
             )
             return
+        try:
+            from src.services.trading_agent_supervisor import (
+                apply_policy_to_canonical_candidate,
+            )
+
+            _canonical_policy = apply_policy_to_canonical_candidate(symbol=sym)
+        except Exception as exc:
+            # The supervisor is a bounded PAPER optimizer.  Its unavailability
+            # must not silently stop an otherwise-authoritative RDE TAKE.
+            log.warning(
+                "[PAPER_CANONICAL_POLICY_ERROR] symbol=%s error=%s",
+                sym,
+                str(exc)[:200],
+            )
+            _canonical_policy = {"allowed": True}
+        if not _canonical_policy.get("allowed", True):
+            _canonical_quota = float(
+                _canonical_policy.get(
+                    "canonical_symbol_quota_multiplier", 0.0
+                )
+                or 0.0
+            )
+            _canonical_reason = str(
+                _canonical_policy.get("reason") or "canonical_policy"
+            )
+            log.info(
+                "[PAPER_CANONICAL_BLOCKED] symbol=%s reason=%s "
+                "canonical_quota=%.2f policy_revision=%s route=exploration",
+                sym,
+                _canonical_reason,
+                _canonical_quota,
+                _canonical_policy.get("policy_revision", 0),
+            )
+            _drop_and_route_to_training(
+                signal,
+                entry,
+                f"canonical_policy:{_canonical_reason}",
+            )
+            return
         signal["bucket"] = "A_STRICT_TAKE"
         signal.update({
             "strict_ev": True,

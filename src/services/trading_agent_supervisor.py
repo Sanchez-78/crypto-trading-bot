@@ -7,9 +7,11 @@ The runtime topology is intentionally deterministic:
 * StrategyTuningAgent proposes a bounded PAPER policy.
 * TradingAgentSupervisor is the only component allowed to apply a proposal.
 
-No component edits ``.env`` or enables real orders.  The only automatic policy
-controls are a PAPER entry pause and an entry-quota multiplier clamped to
-``0.50..1.00``.
+No component edits ``.env`` or enables real orders.  Automatic policy controls
+are limited to a PAPER entry pause, a global exploration quota clamped to
+``0.50..1.00``, and per-symbol canonical sampling quotas clamped to
+``0.10..1.00``.  Reduced canonical candidates remain eligible for the separate
+exploration cohort so learning coverage is preserved.
 """
 
 from __future__ import annotations
@@ -38,6 +40,7 @@ PAPER_MODES = frozenset({"paper_live", "paper_train", "replay_train"})
 MIN_QUOTA_MULTIPLIER = 0.50
 MAX_QUOTA_MULTIPLIER = 1.00
 MAX_QUOTA_STEP = 0.25
+MIN_CANONICAL_SYMBOL_QUOTA = 0.10
 MAX_AUDIT_RECORDS = 50
 DEPLOYMENT_MANIFEST_PATHS = (
     Path("/opt/cryptomaster/reports/deployed_overlay_manifest.json"),
@@ -144,6 +147,7 @@ def _default_policy() -> dict:
     return {
         "revision": 0,
         "paper_entry_quota_multiplier": 1.0,
+        "canonical_symbol_quota_multipliers": {},
         "pause_new_entries": False,
         "reason": "baseline",
         "applied_at": 0.0,
@@ -159,12 +163,26 @@ def _validated_policy(raw: Any) -> dict:
         return baseline
 
     multiplier = _finite(raw.get("paper_entry_quota_multiplier"), 1.0)
+    raw_symbol_quotas = raw.get("canonical_symbol_quota_multipliers", {})
+    symbol_quotas = {}
+    if isinstance(raw_symbol_quotas, dict):
+        for raw_symbol, raw_quota in raw_symbol_quotas.items():
+            symbol = str(raw_symbol or "").strip().upper()
+            quota = _finite(raw_quota, 1.0)
+            if symbol and quota < 1.0:
+                symbol_quotas[symbol] = min(
+                    max(quota, MIN_CANONICAL_SYMBOL_QUOTA),
+                    1.0,
+                )
     baseline.update(
         {
             "revision": max(0, int(_finite(raw.get("revision"), 0))),
             "paper_entry_quota_multiplier": min(
                 max(multiplier, MIN_QUOTA_MULTIPLIER),
                 MAX_QUOTA_MULTIPLIER,
+            ),
+            "canonical_symbol_quota_multipliers": dict(
+                sorted(symbol_quotas.items())
             ),
             "pause_new_entries": bool(raw.get("pause_new_entries", False)),
             "reason": str(raw.get("reason", "restored"))[:240],
@@ -564,6 +582,9 @@ class StrategyTuningAgent:
     ) -> dict:
         current = _validated_policy(current_policy)
         target_multiplier = current["paper_entry_quota_multiplier"]
+        target_symbol_quotas = dict(
+            current["canonical_symbol_quota_multipliers"]
+        )
         pause = current["pause_new_entries"]
         reason = "hold_current_policy"
         urgency = "normal"
@@ -604,6 +625,11 @@ class StrategyTuningAgent:
             if isinstance(review, dict)
             else {}
         )
+        review_symbol_policy = (
+            review.get("symbol_policy", {})
+            if isinstance(review, dict)
+            else {}
+        )
         if (
             isinstance(review, dict)
             and not market.get("pause_recommended")
@@ -623,6 +649,20 @@ class StrategyTuningAgent:
                 is not None
             ):
                 target_multiplier = review_recommendation["target_entry_quota_multiplier"]
+            raw_symbol_target = review_symbol_policy.get(
+                "target_canonical_quota_multipliers"
+            )
+            if (
+                review_symbol_policy.get("auto_applicable") is True
+                and isinstance(raw_symbol_target, dict)
+            ):
+                target_symbol_quotas = _validated_policy(
+                    {"canonical_symbol_quota_multipliers": raw_symbol_target}
+                )["canonical_symbol_quota_multipliers"]
+                if target_symbol_quotas != current[
+                    "canonical_symbol_quota_multipliers"
+                ]:
+                    reason += "+symbol_quota"
 
         target_multiplier = min(
             max(_finite(target_multiplier, 1.0), MIN_QUOTA_MULTIPLIER),
@@ -631,6 +671,7 @@ class StrategyTuningAgent:
         return {
             "agent": "strategy_tuner",
             "target_entry_quota_multiplier": target_multiplier,
+            "target_canonical_symbol_quota_multipliers": target_symbol_quotas,
             "pause_new_entries": bool(pause),
             "reason": reason,
             "urgency": urgency,
@@ -653,6 +694,9 @@ class StrategyTuningAgent:
                 ),
                 "trade_review_run_id": (review or {}).get("run_id"),
                 "trade_review_code": review_recommendation.get("code"),
+                "trade_review_symbol_policy_code": review_symbol_policy.get(
+                    "code"
+                ),
                 "trade_review_evidence_sha": (
                     (review or {}).get("evidence", {}).get("sha256")
                 ),
@@ -909,6 +953,9 @@ class TradingAgentSupervisor:
                 "target": proposal.get("target_entry_quota_multiplier"),
                 "pause": proposal.get("pause_new_entries"),
                 "reason": proposal.get("reason"),
+                "symbol_quotas": proposal.get(
+                    "target_canonical_symbol_quota_multipliers", {}
+                ),
             },
             sort_keys=True,
             separators=(",", ":"),
@@ -976,6 +1023,14 @@ class TradingAgentSupervisor:
             MAX_QUOTA_MULTIPLIER,
         )
         pause = bool(proposal.get("pause_new_entries", False))
+        target_symbol_quotas = _validated_policy(
+            {
+                "canonical_symbol_quota_multipliers": proposal.get(
+                    "target_canonical_symbol_quota_multipliers",
+                    policy["canonical_symbol_quota_multipliers"],
+                )
+            }
+        )["canonical_symbol_quota_multipliers"]
         current_pause = bool(policy["pause_new_entries"])
         critical_pause = (
             pause
@@ -994,7 +1049,11 @@ class TradingAgentSupervisor:
             abs_tol=1e-9,
         )
         pause_changed = pause != current_pause
-        if not size_changed and not pause_changed:
+        symbol_quotas_changed = (
+            target_symbol_quotas
+            != policy["canonical_symbol_quota_multipliers"]
+        )
+        if not size_changed and not pause_changed and not symbol_quotas_changed:
             return "no_change"
 
         if not critical_pause and now < policy["cooldown_until"]:
@@ -1004,9 +1063,11 @@ class TradingAgentSupervisor:
         lifetime_n = max(0, int(_finite(evidence.get("lifetime_n"), 0)))
         new_trades = lifetime_n - int(policy["evidence_lifetime_n"])
         if (
-            size_changed
+            (
+                (size_changed and target != MIN_QUOTA_MULTIPLIER)
+                or symbol_quotas_changed
+            )
             and policy["revision"] > 0
-            and target != MIN_QUOTA_MULTIPLIER
             and new_trades < self._min_new_trades
         ):
             return "awaiting_new_trade_evidence"
@@ -1025,6 +1086,7 @@ class TradingAgentSupervisor:
         applied = {
             "revision": policy["revision"] + 1,
             "paper_entry_quota_multiplier": bounded_target,
+            "canonical_symbol_quota_multipliers": target_symbol_quotas,
             "pause_new_entries": pause,
             "reason": str(proposal.get("reason", "bounded_adjustment"))[:240],
             "applied_at": now,
@@ -1047,10 +1109,12 @@ class TradingAgentSupervisor:
         pending["streak"] = 0
         log.warning(
             "[TRADING_AGENT_POLICY_APPLIED] revision=%d mode=%s "
-            "entry_quota_multiplier=%.2f pause_new_entries=%s reason=%s",
+            "entry_quota_multiplier=%.2f canonical_symbol_quotas=%s "
+            "pause_new_entries=%s reason=%s",
             applied["revision"],
             mode,
             applied["paper_entry_quota_multiplier"],
+            applied["canonical_symbol_quota_multipliers"],
             applied["pause_new_entries"],
             applied["reason"],
         )
@@ -1116,6 +1180,9 @@ class TradingAgentSupervisor:
                 "last_reason": proposal["reason"],
                 "last_target_entry_quota_multiplier": proposal[
                     "target_entry_quota_multiplier"
+                ],
+                "last_target_canonical_symbol_quota_multipliers": proposal[
+                    "target_canonical_symbol_quota_multipliers"
                 ],
                 "last_pause_new_entries": proposal["pause_new_entries"],
                 "checked_at": now,
@@ -1329,6 +1396,9 @@ class TradingAgentSupervisor:
         strategy_now = {
             "revision": current_policy.get("revision", 0),
             "quota_multiplier": current_policy.get("paper_entry_quota_multiplier", 1.0),
+            "canonical_symbol_quota_multipliers": current_policy.get(
+                "canonical_symbol_quota_multipliers", {}
+            ),
             "pause_new_entries": current_policy.get("pause_new_entries", False),
             "reason": current_policy.get("reason", "baseline"),
         }
@@ -1509,6 +1579,7 @@ class TradingAgentSupervisor:
 _supervisor: Optional[TradingAgentSupervisor] = None
 _supervisor_lock = threading.Lock()
 _candidate_sequence = 0
+_canonical_candidate_sequence = 0
 _candidate_sequence_lock = threading.Lock()
 
 
@@ -1540,6 +1611,58 @@ def record_market_tick(
 
 def get_supervisor_status() -> dict:
     return get_supervisor().get_status()
+
+
+def apply_policy_to_canonical_candidate(*, symbol: str) -> dict:
+    """Apply pause and per-symbol sampling to a canonical PAPER candidate.
+
+    A sampled-out candidate is not discarded by this function.  The executor
+    routes it into the non-canonical exploration sampler so it can still teach
+    the system without contaminating readiness metrics.
+    """
+    global _canonical_candidate_sequence
+    symbol_norm = str(symbol or "").strip().upper()
+    policy = get_supervisor().get_effective_policy()
+    if policy["pause_new_entries"]:
+        return {
+            "allowed": False,
+            "reason": f"agent_supervisor_pause:{policy['reason']}",
+            "policy_revision": policy["revision"],
+            "canonical_symbol_quota_multiplier": 0.0,
+            "symbol": symbol_norm,
+        }
+
+    quota = _finite(
+        policy["canonical_symbol_quota_multipliers"].get(symbol_norm, 1.0),
+        1.0,
+    )
+    quota = min(max(quota, MIN_CANONICAL_SYMBOL_QUOTA), 1.0)
+    if quota < 1.0:
+        with _candidate_sequence_lock:
+            _canonical_candidate_sequence += 1
+            sequence = _canonical_candidate_sequence
+        fingerprint = hashlib.sha256(
+            f"canonical|{policy['revision']}|{sequence}|{symbol_norm}".encode(
+                "utf-8"
+            )
+        ).digest()
+        sample = int.from_bytes(fingerprint[:8], "big") / float(2**64)
+        if sample >= quota:
+            return {
+                "allowed": False,
+                "reason": "agent_supervisor_canonical_symbol_quota",
+                "policy_revision": policy["revision"],
+                "canonical_symbol_quota_multiplier": quota,
+                "symbol": symbol_norm,
+            }
+
+    return {
+        "allowed": True,
+        "reason": f"agent_supervisor_policy:{policy['reason']}",
+        "policy_revision": policy["revision"],
+        "canonical_symbol_quota_multiplier": quota,
+        "symbol": symbol_norm,
+    }
 
 
 def apply_policy_to_training_candidate(

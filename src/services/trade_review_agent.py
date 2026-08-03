@@ -14,6 +14,8 @@ from src.core.trade_metrics_contract import classify_outcome
 
 SCHEMA_VERSION = "trade_review_report_v1"
 WINDOW_SIZE = 200
+SYMBOL_POLICY_HALF_WINDOW = 30
+DEGRADED_CANONICAL_SYMBOL_QUOTA = 0.25
 CONTROL_BUCKETS = frozenset(
     {
         "D_NEG_EV_CONTROL",
@@ -396,6 +398,99 @@ class TradeReviewAgent:
             )
         )
 
+        raw_current_symbol_quotas = policy.get(
+            "canonical_symbol_quota_multipliers", {}
+        )
+        current_symbol_quotas = {}
+        if isinstance(raw_current_symbol_quotas, dict):
+            for raw_symbol, raw_quota in raw_current_symbol_quotas.items():
+                symbol = str(raw_symbol or "").strip().upper()
+                quota = _finite(raw_quota, 1.0)
+                if symbol and quota is not None and quota < 1.0:
+                    current_symbol_quotas[symbol] = min(max(quota, 0.10), 1.0)
+        target_symbol_quotas = dict(current_symbol_quotas)
+        symbol_groups: dict[str, list[dict]] = defaultdict(list)
+        for trade in canonical:
+            symbol_groups[str(trade.get("symbol") or "UNKNOWN").upper()].append(
+                trade
+            )
+        symbol_advisories = []
+        for symbol, values in sorted(symbol_groups.items()):
+            required = SYMBOL_POLICY_HALF_WINDOW * 2
+            if len(values) < required:
+                continue
+            evidence = values[-required:]
+            previous = _metric_block(evidence[:SYMBOL_POLICY_HALF_WINDOW])
+            recent = _metric_block(evidence[SYMBOL_POLICY_HALF_WINDOW:])
+            combined = _metric_block(evidence)
+            previous_weak = (
+                previous["profit_factor"] < 0.80
+                or previous["expectancy_pct_points"] < 0.0
+            )
+            recent_weak = (
+                recent["profit_factor"] < 0.80
+                or recent["expectancy_pct_points"] < 0.0
+            )
+            stable_degradation = (
+                previous_weak
+                and recent_weak
+                and combined["profit_factor"] < 0.70
+                and combined["expectancy_pct_points"] < 0.0
+            )
+            stable_recovery = (
+                previous["profit_factor"] >= 1.05
+                and recent["profit_factor"] >= 1.05
+                and previous["expectancy_pct_points"] > 0.0
+                and recent["expectancy_pct_points"] > 0.0
+            )
+            if stable_degradation:
+                target_symbol_quotas[symbol] = DEGRADED_CANONICAL_SYMBOL_QUOTA
+                symbol_advisories.append(
+                    {
+                        "code": "CANONICAL_SYMBOL_QUOTA_REDUCE",
+                        "auto_applicable": sufficient,
+                        "symbol": symbol,
+                        "target_quota_multiplier":
+                            DEGRADED_CANONICAL_SYMBOL_QUOTA,
+                        "previous30": previous,
+                        "recent30": recent,
+                        "combined60": combined,
+                        "reason_codes": ["two_symbol_windows_negative_edge"],
+                    }
+                )
+            elif symbol in current_symbol_quotas and stable_recovery:
+                target_symbol_quotas.pop(symbol, None)
+                symbol_advisories.append(
+                    {
+                        "code": "CANONICAL_SYMBOL_QUOTA_RESTORE",
+                        "auto_applicable": sufficient,
+                        "symbol": symbol,
+                        "target_quota_multiplier": 1.0,
+                        "previous30": previous,
+                        "recent30": recent,
+                        "combined60": combined,
+                        "reason_codes": ["two_symbol_windows_edge_recovery"],
+                    }
+                )
+        symbol_policy_changed = (
+            sufficient and target_symbol_quotas != current_symbol_quotas
+        )
+        symbol_policy = {
+            "code": (
+                "APPLY_CANONICAL_SYMBOL_QUOTAS"
+                if symbol_policy_changed
+                else "HOLD_CANONICAL_SYMBOL_QUOTAS"
+            ),
+            "auto_applicable": symbol_policy_changed,
+            "current_canonical_quota_multipliers": dict(
+                sorted(current_symbol_quotas.items())
+            ),
+            "target_canonical_quota_multipliers": dict(
+                sorted(target_symbol_quotas.items())
+            ),
+            "minimum_evidence_per_symbol": SYMBOL_POLICY_HALF_WINDOW * 2,
+        }
+
         exploration_coverage = Counter(
             f"{trade.get('symbol', 'UNKNOWN')}:{trade.get('side', 'UNKNOWN')}"
             for trade in exploration
@@ -436,6 +531,7 @@ class TradeReviewAgent:
                 },
             },
             "recommendation": recommendation,
+            "symbol_policy": symbol_policy,
             "advisories": [
                 {
                     "code": "SEGMENT_RISK_REVIEW",
@@ -443,7 +539,7 @@ class TradeReviewAgent:
                     **segment,
                 }
                 for segment in risky_segments[:3]
-            ],
+            ] + symbol_advisories,
             "evidence": {
                 "sha256": evidence_hash,
                 "metrics_contract_version": 1,
