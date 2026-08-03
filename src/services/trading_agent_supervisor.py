@@ -659,10 +659,8 @@ class StrategyTuningAgent:
                 target_symbol_quotas = _validated_policy(
                     {"canonical_symbol_quota_multipliers": raw_symbol_target}
                 )["canonical_symbol_quota_multipliers"]
-                if target_symbol_quotas != current[
-                    "canonical_symbol_quota_multipliers"
-                ]:
-                    reason += "+symbol_quota"
+            if target_symbol_quotas:
+                reason += "+symbol_quota"
 
         target_multiplier = min(
             max(_finite(target_multiplier, 1.0), MIN_QUOTA_MULTIPLIER),

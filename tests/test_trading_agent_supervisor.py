@@ -213,6 +213,38 @@ def test_strategy_tuner_does_not_apply_unconfirmed_symbol_quota():
     assert proposal["target_canonical_symbol_quota_multipliers"] == {}
 
 
+def test_strategy_tuner_keeps_active_symbol_quota_reason_stable():
+    tuner = agents.StrategyTuningAgent(min_samples=20)
+    current = {
+        **agents._default_policy(),
+        "canonical_symbol_quota_multipliers": {"ADAUSDT": 0.25},
+    }
+    proposal = tuner.propose(
+        trading=_learning(),
+        market={"status": "healthy", "pause_recommended": False},
+        current_policy=current,
+        now=1_700_000_000,
+        review={
+            "recommendation": {
+                "code": "GLOBAL_QUOTA_075",
+                "auto_applicable": True,
+                "target_entry_quota_multiplier": 0.75,
+            },
+            "symbol_policy": {
+                "code": "HOLD_CANONICAL_SYMBOL_QUOTAS",
+                "auto_applicable": False,
+                "target_canonical_quota_multipliers": {"ADAUSDT": 0.25},
+            },
+            "evidence": {"sha256": "new-close-set"},
+        },
+    )
+
+    assert proposal["reason"] == "trade_review:global_quota_075+symbol_quota"
+    assert proposal["target_canonical_symbol_quota_multipliers"] == {
+        "ADAUSDT": 0.25
+    }
+
+
 def test_supervisor_applies_only_after_repeated_confirmation(tmp_path):
     clock = FakeClock()
     supervisor = _supervisor(tmp_path, clock)
