@@ -188,6 +188,10 @@ _MIN_ENTRY_CONFIDENCE = float(os.getenv("PAPER_MIN_ENTRY_CONFIDENCE", "0.50"))  
 # State
 _POSITIONS = {}  # position_id -> position_dict
 _POSITION_LOCK = __import__("threading").RLock()
+# Last accepted strict/canonical admission per symbol and side.  Keeping this
+# independently from _POSITIONS prevents a fast TP/SL close from immediately
+# admitting another row from the same still-active market observation.
+_RECENT_CANONICAL_ADMISSIONS = {}  # (symbol, side) -> admission timestamp
 _STATE_FILE = "data/paper_open_positions.json"
 _ORPHAN_STATE_MTIME = None  # Reload persisted positions only when the file changes.
 
@@ -1805,7 +1809,23 @@ def open_paper_position(
         sl_price = sl_price_env
         tp_sl = normalize_paper_tp_sl(side, price, tp_price_env, sl_price_env)
         if tp_sl:
-            log.info(f"[PAPER_TP_SL_ENV_OVERRIDE] symbol={symbol} tp_bps={tp_zone_bps} sl_bps={sl_zone_bps} tp={tp_price:.8f} sl={sl_price:.8f}")
+            override_log_key = (symbol, side, "tp_sl_env_override")
+            override_log_now = time.time()
+            last_override_log = _PAPER_ENTRY_BLOCKED_THROTTLE.get(
+                override_log_key, 0.0
+            )
+            if override_log_now - last_override_log >= _PAPER_ENTRY_BLOCKED_TTL:
+                log.info(
+                    "[PAPER_TP_SL_ENV_OVERRIDE] symbol=%s side=%s "
+                    "tp_bps=%s sl_bps=%s tp=%.8f sl=%.8f",
+                    symbol,
+                    side,
+                    tp_zone_bps,
+                    sl_zone_bps,
+                    tp_price,
+                    sl_price,
+                )
+                _PAPER_ENTRY_BLOCKED_THROTTLE[override_log_key] = override_log_now
 
     # Fallback: compute locally with responsive percentages (if neither executor nor env override worked)
     tp_pct = tp_pct_env if os.getenv("PAPER_TP_ZONE_BPS") else (1.004 if side == "BUY" else 0.996)
@@ -1989,12 +2009,16 @@ def open_paper_position(
         # later independent decisions and all bounded control cohorts.
         if explicit_canonical:
             canonical_burst_window_s = _safe_float(
-                os.getenv("PAPER_CANONICAL_BURST_DEDUPE_S", "5.0"),
-                5.0,
+                os.getenv("PAPER_CANONICAL_BURST_DEDUPE_S", "60.0"),
+                60.0,
             )
             canonical_burst_window_s = min(
                 max(canonical_burst_window_s, 0.1),
                 60.0,
+            )
+            admission_key = (symbol, side)
+            last_admission_ts = _safe_float(
+                _RECENT_CANONICAL_ADMISSIONS.get(admission_key), 0.0
             )
             duplicate = next((
                 candidate
@@ -2007,15 +2031,25 @@ def open_paper_position(
                     candidate.get("entry_ts"), 0.0
                 ) < canonical_burst_window_s
             ), None)
-            if duplicate is not None:
-                log.warning(
-                    "[PAPER_ENTRY_COMMIT_BLOCKED] symbol=%s side=%s "
-                    "reason=duplicate_canonical_burst existing_trade_id=%s window_s=%.1f",
-                    symbol,
-                    side,
-                    duplicate.get("trade_id", "unknown"),
-                    canonical_burst_window_s,
-                )
+            recent_admission = (
+                last_admission_ts > 0.0
+                and 0.0 <= commit_now - last_admission_ts
+                    < canonical_burst_window_s
+            )
+            if duplicate is not None or recent_admission:
+                throttle_key = (symbol, side, "duplicate_canonical_burst")
+                last_log = _PAPER_ENTRY_BLOCKED_THROTTLE.get(throttle_key, 0.0)
+                if commit_now - last_log >= _PAPER_ENTRY_BLOCKED_TTL:
+                    log.info(
+                        "[PAPER_ENTRY_COMMIT_BLOCKED] symbol=%s side=%s "
+                        "reason=duplicate_canonical_burst existing_trade_id=%s window_s=%.1f",
+                        symbol,
+                        side,
+                        duplicate.get("trade_id", "recently_closed")
+                            if duplicate is not None else "recently_closed",
+                        canonical_burst_window_s,
+                    )
+                    _PAPER_ENTRY_BLOCKED_THROTTLE[throttle_key] = commit_now
                 return {
                     "status": "blocked",
                     "reason": "duplicate_canonical_burst",
@@ -2082,6 +2116,8 @@ def open_paper_position(
                 )
                 return commit_cap_check
         _POSITIONS[trade_id] = position
+        if explicit_canonical:
+            _RECENT_CANONICAL_ADMISSIONS[(symbol, side)] = commit_now
 
     log.warning(
         "[PAPER_ENTRY] symbol=%s side=%s price=%.8f size_usd=%.2f ev=%.4f score=%.3f reason=%s",
@@ -3400,6 +3436,7 @@ def reset_paper_positions():
     """Reset all open positions (for testing)."""
     with _POSITION_LOCK:
         _POSITIONS.clear()
+        _RECENT_CANONICAL_ADMISSIONS.clear()
 
 
 def normalize_paper_tp_sl(side: str, entry: float, tp: float, sl: float) -> dict:

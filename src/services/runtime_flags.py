@@ -163,6 +163,13 @@ def get_dashboard_status() -> dict:
     - entries: "blocked" if safe mode, else normal
     - reason: degradation reason if safe mode
     """
+    if _DB_DEGRADED_SAFE_MODE and _paper_learning_mode():
+        return {
+            "state": "PAPER_TRAIN_LOCAL_ARCHIVE",
+            "entries": "paper_enabled",
+            "reason": _DB_DEGRADED_REASON or "unknown",
+            "note": "paper trading continues; Firebase sync is queued locally",
+        }
     if _DB_DEGRADED_SAFE_MODE:
         return {
             "state": "SAFE_MODE_FIREBASE_DEGRADED",

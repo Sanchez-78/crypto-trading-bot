@@ -170,8 +170,11 @@ class TestPaperExecutorBasics:
         result = open_paper_position(signal, None, time.time(), "RDE_TAKE")
         assert result["status"] == "blocked"
 
-    def test_strict_canonical_burst_is_deduplicated(self, clean_positions):
+    def test_strict_canonical_burst_is_deduplicated(
+        self, clean_positions, monkeypatch
+    ):
         """Overlapping callbacks for one strict decision open only one cohort row."""
+        monkeypatch.setenv("TRADING_MODE", "paper_train")
         ts = time.time()
         signal = {
             "symbol": "ETHUSDT",
@@ -193,10 +196,60 @@ class TestPaperExecutorBasics:
             "training_bucket": "A_STRICT_TAKE",
         }
 
-        first = open_paper_position(signal, 1883.0, ts, "RDE_TAKE", extra)
-        second = open_paper_position(signal, 1883.1, ts + 1, "RDE_TAKE", extra)
+        with _allow_strict_ev():
+            first = open_paper_position(signal, 1883.0, ts, "RDE_TAKE", extra)
+            second = open_paper_position(
+                signal, 1883.1, ts + 1, "RDE_TAKE", extra
+            )
 
         assert first["status"] == "opened"
+        assert second == {
+            "status": "blocked",
+            "reason": "duplicate_canonical_burst",
+        }
+
+    def test_strict_canonical_cooldown_survives_fast_close(
+        self, clean_positions, monkeypatch
+    ):
+        """A fast close must not turn one market observation into many rows."""
+        from src.services import paper_trade_executor as pte
+
+        monkeypatch.setenv("TRADING_MODE", "paper_train")
+        monkeypatch.setenv("PAPER_CANONICAL_BURST_DEDUPE_S", "60")
+        signal = {
+            "symbol": "ETHUSDT",
+            "action": "BUY",
+            "ev": 0.03,
+            "score": 0.321,
+            "regime": "BULL_TREND",
+            "bucket": "A_STRICT_TAKE",
+            "training_bucket": "A_STRICT_TAKE",
+            "strict_ev": True,
+            "readiness_eligible": True,
+            "real_readiness_eligible": True,
+            "paper_learning_only": False,
+            "learning_shadow_only": False,
+            "learning_source": "strict_ev",
+        }
+        extra = {
+            "paper_source": "strict_take",
+            "training_bucket": "A_STRICT_TAKE",
+        }
+
+        with _allow_strict_ev():
+            first = open_paper_position(
+                signal, 1883.0, time.time(), "RDE_TAKE", extra
+            )
+        assert first["status"] == "opened"
+
+        # Model a successful fast close without resetting admission history.
+        with pte._POSITION_LOCK:
+            pte._POSITIONS.pop(first["trade_id"], None)
+
+        with _allow_strict_ev():
+            second = open_paper_position(
+                signal, 1883.2, time.time() + 1, "RDE_TAKE", extra
+            )
         assert second == {
             "status": "blocked",
             "reason": "duplicate_canonical_burst",
