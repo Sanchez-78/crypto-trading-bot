@@ -140,7 +140,15 @@ class P0SegmentEVGate:
                 trade.get("regime") == key.regime and
                 trade.get("source") == key.source and
                 trade.get("tp_sl_profile") == key.tp_sl_profile):
-                segment_trades.append(trade)
+                # Legacy rows can have NULL/string/non-finite P&L. They carry no
+                # usable EV evidence and must not crash or count toward n.
+                try:
+                    pnl = float(trade.get("pnl_usd"))
+                except (TypeError, ValueError):
+                    continue
+                if not math.isfinite(pnl):
+                    continue
+                segment_trades.append((trade, pnl))
 
         n = len(segment_trades)
         if n == 0:
@@ -154,8 +162,7 @@ class P0SegmentEVGate:
         net_pnl = 0.0
         timeout_count = 0
 
-        for trade in segment_trades:
-            pnl = trade.get("pnl_usd", 0.0)
+        for trade, pnl in segment_trades:
             net_pnl += pnl
 
             if pnl > 0:

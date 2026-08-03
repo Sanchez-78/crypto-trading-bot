@@ -75,6 +75,44 @@ class TestPaperStateWrapperSchema:
             paper_trade_executor._STATE_FILE = original_file
             os.unlink(temp_file)
 
+    def test_already_closed_position_is_removed_from_open_state(self, monkeypatch):
+        """Durable close ledger wins over a stale JSON open-position record."""
+        from src.services import local_persistent_cache, paper_trade_executor
+
+        trade_id = "paper_already_closed"
+        valid_position = {
+            "trade_id": trade_id,
+            "symbol": "ETHUSDT",
+            "side": "BUY",
+            "entry_price": 2000.0,
+            "entry_ts": time.time() - 10.0,
+            "size_usd": 100.0,
+            "max_hold_s": 300.0,
+        }
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump({"positions": {trade_id: valid_position}}, f)
+            temp_file = f.name
+
+        original_file = paper_trade_executor._STATE_FILE
+        try:
+            monkeypatch.setattr(
+                local_persistent_cache,
+                "closed_trade_exists",
+                lambda candidate: candidate == trade_id,
+            )
+            paper_trade_executor._STATE_FILE = temp_file
+            paper_trade_executor._POSITIONS.clear()
+
+            paper_trade_executor._load_paper_state()
+
+            assert trade_id not in paper_trade_executor._POSITIONS
+            persisted = json.loads(Path(temp_file).read_text(encoding="utf-8"))
+            assert trade_id not in persisted.get("positions", {})
+        finally:
+            paper_trade_executor._STATE_FILE = original_file
+            paper_trade_executor._POSITIONS.clear()
+            os.unlink(temp_file)
+
     def test_legacy_format_still_works(self):
         """Legacy format {"trade1": position} still loads correctly."""
         from src.services import paper_trade_executor

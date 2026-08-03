@@ -122,6 +122,22 @@ class TestSegmentStatsComputation:
         assert abs(stats.avg_pnl_usd - (0.002 / 3)) < 1e-9
         assert abs(stats.profit_factor - 3.0) < 0.01
 
+    def test_compute_segment_stats_ignores_invalid_legacy_pnl(self):
+        """NULL and non-finite legacy rows are not learning evidence."""
+        key = SegmentKey("ETHUSDT", "BUY", "BULL_TREND", "test", "1.0_2.0")
+        trades = [
+            {"symbol": "ETHUSDT", "side": "BUY", "regime": "BULL_TREND", "source": "test", "tp_sl_profile": "1.0_2.0", "pnl_usd": None},
+            {"symbol": "ETHUSDT", "side": "BUY", "regime": "BULL_TREND", "source": "test", "tp_sl_profile": "1.0_2.0", "pnl_usd": "nan"},
+            {"symbol": "ETHUSDT", "side": "BUY", "regime": "BULL_TREND", "source": "test", "tp_sl_profile": "1.0_2.0", "pnl_usd": "0.25"},
+        ]
+
+        stats = P0SegmentEVGate.compute_segment_stats(trades, key)
+
+        assert stats is not None
+        assert stats.n == 1
+        assert stats.wins == 1
+        assert stats.net_pnl_usd == 0.25
+
     def test_compute_segment_stats_timeout_rate(self):
         """Test timeout rate computation."""
         trades = [

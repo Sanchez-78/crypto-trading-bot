@@ -97,6 +97,7 @@ _QUOTA_READS = 0 if _is_new_day else 0    # Reset if crossed midnight
 _QUOTA_WRITES = 0 if _is_new_day else 0   # Reset if crossed midnight
 _QUOTA_MAX_READS = int(os.getenv("FIREBASE_QUOTA_MAX_READS", "50000"))   # Daily limit: 50,000 reads = real Firebase free-tier ceiling (was 40,000; raised to real max 2026-07-10). Blaze (paid) needed to exceed.
 _QUOTA_MAX_WRITES = int(os.getenv("FIREBASE_QUOTA_MAX_WRITES", "20000"))  # Daily limit: 20,000 writes = real Firebase free-tier ceiling (was 15,000; raised to real max 2026-07-10). Blaze (paid) needed to exceed.
+_WRITE_ATTRIBUTION: dict = {}
 
 # EMERGENCY (2026-04-25): Firebase degradation tracking — safe mode on 429/unavailable
 _FIREBASE_READ_DEGRADED = False
@@ -115,6 +116,16 @@ BOT2_METRICS_TTL = 300   # bot2 flushes metrics every 5 minutes
 PUSH_TOKEN_TTL   = 3600  # mobile push token is slow-moving
 AUDITOR_STATE_TTL = 300  # V10.22 FIX: Cache auditor state for 5min (was reading 5500x/hour!)
 
+def _quota_boundary_utc(now_utc):
+    """Return the most recent 07:00 UTC Firebase quota boundary."""
+    from datetime import timedelta
+
+    boundary = now_utc.replace(hour=7, minute=0, second=0, microsecond=0)
+    if now_utc < boundary:
+        boundary -= timedelta(days=1)
+    return boundary
+
+
 def _reset_quota_if_new_day():
     """Reset counters when we cross 07:00 UTC (Firebase daily reset time).
 
@@ -127,23 +138,18 @@ def _reset_quota_if_new_day():
     now_utc = datetime.now(timezone.utc)
     last_reset_utc = datetime.fromtimestamp(_QUOTA_WINDOW_START, tz=timezone.utc)
 
-    # 07:00 UTC is the reset time
-    today_reset_time_utc = now_utc.replace(hour=7, minute=0, second=0, microsecond=0)
-
-    # Check if we need to reset:
-    # 1. Different calendar day → definitely reset
-    # 2. Same day BUT we're past 07:00 UTC AND last reset was before 07:00 UTC today → reset (happens after service restart)
-    should_reset = (
-        now_utc.date() > last_reset_utc.date() or
-        (now_utc.date() == last_reset_utc.date() and now_utc > today_reset_time_utc and last_reset_utc < today_reset_time_utc)
-    )
+    current_boundary_utc = _quota_boundary_utc(now_utc)
+    # Comparing calendar dates caused an extra reset at 00:00 UTC, seven hours
+    # before Firestore.  Reset exactly once when the real 07:00 boundary moves.
+    should_reset = last_reset_utc < current_boundary_utc
 
     if should_reset:
         with _QUOTA_LOCK:
-            _QUOTA_WINDOW_START = today_reset_time_utc.timestamp()
+            _QUOTA_WINDOW_START = current_boundary_utc.timestamp()
             _QUOTA_READS = 0
             _QUOTA_WRITES = 0
             _READ_ATTRIBUTION.clear()
+            _WRITE_ATTRIBUTION.clear()
         import logging
         logging.warning(f"[QUOTA_RESET] Firebase quota reset to {_QUOTA_MAX_READS:,} reads, {_QUOTA_MAX_WRITES:,} writes (passed 07:00 UTC)")
         # A quota_429 degradation is caused by quota exhaustion, which this
@@ -160,7 +166,7 @@ def _reset_quota_if_new_day():
             logging.warning("[QUOTA_DEBUG] Quota high: %d/%d reads (%.1f%%). Not resetting (conditions: now.date=%s last.date=%s now>reset_time=%s last<reset_time=%s)",
                           _QUOTA_READS, _QUOTA_MAX_READS, quota_reads_pct,
                           now_utc.date(), last_reset_utc.date(),
-                          now_utc > today_reset_time_utc, last_reset_utc < today_reset_time_utc)
+                          now_utc >= current_boundary_utc, last_reset_utc < current_boundary_utc)
 
 def refresh_quota_window_on_startup():
     """
@@ -270,7 +276,7 @@ def _can_write(count=1):
         return allowed, _QUOTA_WRITES, _QUOTA_MAX_WRITES
 
 
-def _reserve_write(count=1):
+def _reserve_write(count=1, label="unlabeled"):
     """Atomically reserve quota for a write before async work starts.
 
     Async batch writers may overlap, so a check followed by a later increment
@@ -285,6 +291,7 @@ def _reserve_write(count=1):
         if _QUOTA_WRITES + count > _QUOTA_MAX_WRITES:
             return False, _QUOTA_WRITES, _QUOTA_MAX_WRITES
         _QUOTA_WRITES += count
+        _WRITE_ATTRIBUTION[label] = _WRITE_ATTRIBUTION.get(label, 0) + count
         current = _QUOTA_WRITES
     if current >= _QUOTA_MAX_WRITES * 0.9:
         logging.warning(
@@ -293,8 +300,31 @@ def _reserve_write(count=1):
         )
     return True, current, _QUOTA_MAX_WRITES
 
+
+def _reserve_noncritical_write(label, count=1):
+    """Reserve cosmetic/replaceable writes without consuming archive headroom."""
+    global _QUOTA_WRITES
+    _reset_quota_if_new_day()
+    count = max(0, int(count or 0))
+    try:
+        fraction = float(os.getenv("FIREBASE_NONCRITICAL_WRITE_FRACTION", "0.60"))
+    except (TypeError, ValueError):
+        fraction = 0.60
+    fraction = min(max(fraction, 0.05), 0.90)
+    soft_limit = max(1, int(_QUOTA_MAX_WRITES * fraction))
+    now = time.time()
+    if _FIREBASE_WRITE_DEGRADED and now < _FIREBASE_DEGRADED_UNTIL:
+        return False, _QUOTA_WRITES, soft_limit
+    with _QUOTA_LOCK:
+        if _QUOTA_WRITES + count > soft_limit:
+            return False, _QUOTA_WRITES, soft_limit
+        _QUOTA_WRITES += count
+        _WRITE_ATTRIBUTION[label] = _WRITE_ATTRIBUTION.get(label, 0) + count
+        current = _QUOTA_WRITES
+    return True, current, soft_limit
+
 def _record_write(count=1):
-    """Record write operation(s)."""
+    """Legacy post-write accounting; new writers must reserve before I/O."""
     global _QUOTA_WRITES
     with _QUOTA_LOCK:
         _QUOTA_WRITES += count
@@ -313,6 +343,7 @@ def get_quota_status():
             "writes": _QUOTA_WRITES,
             "writes_limit": _QUOTA_MAX_WRITES,
             "writes_pct": f"{_QUOTA_WRITES/_QUOTA_MAX_WRITES*100:.1f}%",
+            "write_attribution": dict(_WRITE_ATTRIBUTION),
         }
 
 def audit_quota_integrity():
@@ -832,7 +863,7 @@ def save_batch(batch):
         slimmed  = [_slim_trade(t) for t in batch]
 
         # V10.14: Check write quota before committing
-        allowed, current, limit_writes = _reserve_write(len(slimmed))
+        allowed, current, limit_writes = _reserve_write(len(slimmed), "trade_batch")
         if not allowed:
             import logging
             logging.warning(f"Write quota limit approaching ({current + len(slimmed)}/{limit_writes}) — queuing instead")
@@ -893,18 +924,15 @@ def save_learning_archive_batch(events):
     """
     if db is None:
         return []
-    skip, reason = should_skip_noncritical_write()
-    if skip:
-        logging.warning("[LEARNING_ARCHIVE_DEFER] reason=%s", reason)
-        return []
-
     safe_events = [
         event for event in list(events or [])[:200]
         if isinstance(event, dict) and event.get("event_id")
     ]
     if not safe_events:
         return []
-    allowed, current, limit_writes = _reserve_write(len(safe_events))
+    allowed, current, limit_writes = _reserve_write(
+        len(safe_events), "learning_archive"
+    )
     if not allowed:
         logging.warning(
             "[LEARNING_ARCHIVE_DEFER] quota=%s/%s requested=%s",
@@ -962,7 +990,9 @@ def save_paper_trade_record(record):
     if skip:
         logging.warning("[PAPER_TRADE_PROJECTION_DEFER] reason=%s", reason)
         return False
-    allowed, current, limit_writes = _reserve_write(1)
+    allowed, current, limit_writes = _reserve_noncritical_write(
+        "paper_trade_projection", 1
+    )
     if not allowed:
         logging.warning(
             "[PAPER_TRADE_PROJECTION_DEFER] quota=%s/%s",
@@ -1060,7 +1090,7 @@ def increment_stats(n: int = 1, wins: int = 0, losses: int = 0, timeouts: int = 
         return
     # This is a separate Firestore write from the trade batch. Reserve it
     # explicitly so the daily guard reflects the real number of operations.
-    allowed, current, limit_writes = _reserve_write(1)
+    allowed, current, limit_writes = _reserve_write(1, "atomic_stats")
     if not allowed:
         logging.warning(
             "[STATS_WRITE_DEFER] Firebase quota=%s/%s; local counters retained",
@@ -1205,6 +1235,10 @@ def save_app_metrics_snapshot(snapshot: dict, *, force: bool = False) -> bool:
             return False
 
         reason = "force" if force else ("heartbeat" if heartbeat_due else "changed")
+        allowed, _, _ = _reserve_noncritical_write("app_metrics", 1)
+        if not allowed:
+            _log.debug("[APP_METRICS_SKIP] reason=write_budget")
+            return False
         db.document(_APP_METRICS_DOC).set(snapshot)
 
         _LAST_APP_METRICS_WRITE_TS = now
@@ -1358,6 +1392,9 @@ def save_dashboard_snapshot(snapshot: dict, *, force: bool = False) -> tuple:
         if not force and new_hash == _LAST_DASHBOARD_SNAPSHOT_SEMANTIC_HASH and not heartbeat_due:
             return (False, "NO_CHANGE")
 
+        allowed, _, _ = _reserve_noncritical_write("dashboard_snapshot", 1)
+        if not allowed:
+            return (False, "FIREBASE_WRITE_BUDGET")
         db.document(_DASHBOARD_SNAPSHOT_DOC).set(snapshot)
 
         _LAST_DASHBOARD_SNAPSHOT_WRITE_TS = now
@@ -1477,6 +1514,9 @@ def save_signal_summary(snapshot: dict, *, force: bool = False) -> bool:
         if not force and new_hash == _LAST_SIGNAL_SUMMARY_SEMANTIC_HASH and not heartbeat_due:
             return False
 
+        allowed, _, _ = _reserve_noncritical_write("signal_summary", 1)
+        if not allowed:
+            return False
         db.document(_SIGNAL_SUMMARY_DOC).set(snapshot)
 
         _LAST_SIGNAL_SUMMARY_WRITE_TS = now
@@ -1546,6 +1586,9 @@ def save_model_state(state: dict) -> None:
     """
     if db is None:
         return
+    allowed, _, _ = _reserve_write(1, "model_state")
+    if not allowed:
+        return
     try:
         db.document(_MODEL_STATE_DOC).set({**state, "saved_at": time.time()})
     except Exception as e:
@@ -1597,6 +1640,9 @@ def delete_trade(doc_id):
     """
     if db is None:
         return
+    allowed, _, _ = _reserve_noncritical_write("delete_old_trade", 1)
+    if not allowed:
+        return
     try:
         import os as _os_del_mode
         trading_mode = _os_del_mode.getenv("TRADING_MODE", "paper_live").lower()
@@ -1611,6 +1657,9 @@ def save_compressed(data):
     """Save a compressed trade summary (auto_cleaner.py)."""
     if db is None:
         return
+    allowed, _, _ = _reserve_noncritical_write("compressed_trade", 1)
+    if not allowed:
+        return
     try:
         db.collection(col("trades_compressed")).add(data)
     except Exception as e:
@@ -1623,9 +1672,11 @@ def save_signal(signal):
     """Save a signal document, return its doc ID."""
     if db is None:
         return None
+    allowed, _, _ = _reserve_noncritical_write("signal", 1)
+    if not allowed:
+        return None
     try:
         _, ref = db.collection(col("signals")).add(signal)
-        _record_write(1)
         # Invalidate signals cache so next load picks it up
         _SIGNALS_CACHE["ts"] = 0
         return ref.id
@@ -1675,9 +1726,11 @@ def save_weights(data):
     """Persist model weights and update local cache."""
     if db is None:
         return
+    allowed, _, _ = _reserve_write(1, "weights")
+    if not allowed:
+        return
     try:
         db.collection(col("weights")).document("model").set(data, merge=True)
-        _record_write(1)
         _cache_set(_WEIGHTS_CACHE, data)
     except Exception as e:
         print(f"❌ save_weights: {e}")
@@ -1696,11 +1749,13 @@ def save_portfolio(data):
     now = time.time()
     if now - _last_portfolio_save < PORTFOLIO_THROTTLE:
         return  # skip – too frequent
+    allowed, _, _ = _reserve_noncritical_write("portfolio", 1)
+    if not allowed:
+        return
     try:
         db.collection(col("portfolio")).document("state").set(
             {**data, "updated_at": now}, merge=True
         )
-        _record_write(1)
         _last_portfolio_save = now
     except Exception as e:
         print(f"❌ save_portfolio: {e}")
@@ -1724,11 +1779,13 @@ def save_metrics(data):
     should_skip, _ = should_skip_noncritical_write()
     if should_skip:
         return
+    allowed, _, _ = _reserve_noncritical_write("run_metrics", 1)
+    if not allowed:
+        return
     try:
         db.collection(col("metrics")).document("run_status").set(
             {**data, "timestamp": time.time()}, merge=True
         )
-        _record_write(1)
     except Exception as e:
         print(f"❌ save_metrics: {e}")
 
@@ -1748,6 +1805,9 @@ def save_last_trade(trade):
         return
 
     def _write():
+        allowed, _, _ = _reserve_noncritical_write("last_trade", 1)
+        if not allowed:
+            return
         try:
             db.collection(col("metrics")).document("last_trade").set({
                 "symbol":     trade.get("symbol"),
@@ -1763,7 +1823,6 @@ def save_last_trade(trade):
                 "reason":     trade.get("close_reason", ""),
                 "timestamp":  trade.get("close_time", trade.get("timestamp", time.time())),
             }, merge=False)
-            _record_write(1)
 
             pnl_pct = round(float(trade.get("profit", 0) * 100), 2)
             sym = trade.get("symbol", "")
@@ -1867,6 +1926,9 @@ def save_metrics_full(metrics, open_positions=None, execution=None, monitor=None
     # Skip non-critical write if Firebase degraded
     should_skip, _ = should_skip_noncritical_write()
     if should_skip:
+        return
+    allowed, _, _ = _reserve_noncritical_write("metrics_full", 1)
+    if not allowed:
         return
     try:
         # FIX: authority = max(in-memory METRICS, synchronously-updated _local_stats).
@@ -2067,7 +2129,6 @@ def save_metrics_full(metrics, open_positions=None, execution=None, monitor=None
         }
         data = _sanitize_doc(data)
         db.collection(col("metrics")).document("latest").set(data, merge=False)
-        _record_write(1)
         _cache_set(_METRICS_CACHE, data)
     except Exception as e:
         print(f"❌ save_metrics_full: {e}")
@@ -2079,11 +2140,13 @@ def save_auditor_state(data):
     """Persist auditor state (min_conf, pos_size_mult) across restarts."""
     if db is None:
         return
+    allowed, _, _ = _reserve_noncritical_write("auditor_state", 1)
+    if not allowed:
+        return
     try:
         db.collection(col("metrics")).document("auditor").set(
             {**data, "saved_at": time.time()}, merge=False
         )
-        _record_write(1)
     except Exception as e:
         print(f"❌ save_auditor_state: {e}")
 
@@ -2155,10 +2218,12 @@ def save_bot2_advice(advice: dict) -> None:
     """
     if db is None:
         return
+    allowed, _, _ = _reserve_noncritical_write("bot2_advice", 1)
+    if not allowed:
+        return
     try:
         payload = {**advice, "timestamp": time.time()}
         db.document(_ADVICE_DOC).set(payload)
-        _record_write(1)
         _cache_set(_ADVICE_CACHE, payload)
     except Exception as e:
         print(f"⚠️  save_bot2_advice: {e}")

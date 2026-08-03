@@ -23,7 +23,7 @@ except ImportError:
         with open(_env_path) as f:
             for line in f:
                 line = line.strip()
-                if line and not line.startswith('#'):
+                if line and not line.startswith('#') and '=' in line:
                     k, v = line.split('=', 1)
                     if k not in os.environ:  # P0.1: do not override existing systemd env
                         os.environ[k] = v
@@ -194,6 +194,7 @@ _ORPHAN_STATE_MTIME = None  # Reload persisted positions only when the file chan
 # P1.1Q Phase 5: Deduplication — track closed trades in current session to prevent double updates
 _CLOSED_TRADES_THIS_SESSION = set()  # trade_id -> (learned, metrics_updated)
 _CLOSED_TRADES_LOCK = __import__("threading").RLock()
+_PAPER_CLOSE_IN_PROGRESS = set()  # trade_ids currently crossing the close boundary
 
 # P1.1Y: Throttle PAPER_ENTRY_BLOCKED spam (max once per symbol/bucket/reason per 60s)
 _PAPER_ENTRY_BLOCKED_THROTTLE = {}  # (symbol, bucket, reason) -> last_log_ts
@@ -800,6 +801,29 @@ def _load_paper_state() -> None:
 
         positions_data = validated_positions
 
+        # A crash between durable close persistence and JSON state removal can
+        # leave one trade in both ledgers.  The close ledger is authoritative;
+        # never re-close or re-learn such a position after restart.
+        already_closed_count = 0
+        try:
+            from src.services.local_persistent_cache import closed_trade_exists
+
+            for trade_id in list(positions_data):
+                if closed_trade_exists(trade_id):
+                    positions_data.pop(trade_id, None)
+                    already_closed_count += 1
+                    log.warning(
+                        "[PAPER_STATE_DROP_ALREADY_CLOSED] trade_id=%s source=%s",
+                        trade_id,
+                        _STATE_FILE,
+                    )
+        except Exception as exc:
+            log.warning(
+                "[PAPER_STATE_CLOSED_CHECK_ERROR] source=%s err=%s",
+                _STATE_FILE,
+                str(exc),
+            )
+
         # P1.1Z: Normalize training positions to fix legacy timeout values
         normalized_count = 0
         for trade_id, pos in positions_data.items():
@@ -873,7 +897,7 @@ def _load_paper_state() -> None:
             log.exception("[PAPER_STATE_RECONCILE_ERROR] source=%s err=%s", _STATE_FILE, str(e))
 
         # If we did a list->dict conversion, save back in canonical format
-        if list_to_dict_count > 0:
+        if list_to_dict_count > 0 or already_closed_count > 0:
             _save_paper_state()
 
     except json.JSONDecodeError as e:
@@ -1996,6 +2020,41 @@ def open_paper_position(
                     "status": "blocked",
                     "reason": "duplicate_canonical_burst",
                 }
+        else:
+            # Shadow/control callbacks can overlap too.  Treat only a
+            # near-identical price from the same source and cohort as the same
+            # observation; later or materially different samples remain valid.
+            burst_window_s = min(max(_safe_float(
+                os.getenv("PAPER_ENTRY_BURST_DEDUPE_S", "5.0"), 5.0
+            ), 0.1), 60.0)
+            burst_price_bps = min(max(_safe_float(
+                os.getenv("PAPER_ENTRY_BURST_PRICE_BPS", "1.0"), 1.0
+            ), 0.0), 25.0)
+            new_cohort = training_bucket or bucket
+            duplicate = next((
+                candidate
+                for candidate in alive_positions
+                if candidate.get("symbol") == symbol
+                and candidate.get("side") == side
+                and candidate.get("paper_source") == paper_source
+                and (candidate.get("training_bucket") or candidate.get("bucket")) == new_cohort
+                and 0.0 <= commit_now - _safe_float(candidate.get("entry_ts"), 0.0) < burst_window_s
+                and abs(_safe_float(candidate.get("entry_price"), 0.0) - price)
+                    / max(abs(price), 1e-12) * 10000.0 <= burst_price_bps
+            ), None)
+            if duplicate is not None:
+                log.warning(
+                    "[PAPER_ENTRY_COMMIT_BLOCKED] symbol=%s side=%s "
+                    "reason=duplicate_paper_burst existing_trade_id=%s window_s=%.1f",
+                    symbol,
+                    side,
+                    duplicate.get("trade_id", "unknown"),
+                    burst_window_s,
+                )
+                return {
+                    "status": "blocked",
+                    "reason": "duplicate_paper_burst",
+                }
         symbol_cap = _SYMBOL_CAPS.get(symbol, 999)
         alive_for_symbol = sum(
             1
@@ -2824,6 +2883,51 @@ def close_paper_position(
     ts: float,
     reason: str,
 ) -> Optional[dict]:
+    """Idempotent, retry-safe guard around the authoritative close pipeline."""
+    if not price or price <= 0:
+        log.error("[PAPER_EXIT_BLOCKED] trade_id=%s reason=invalid_price", position_id)
+        return None
+
+    with _POSITION_LOCK:
+        is_active = position_id in _POSITIONS
+    with _CLOSED_TRADES_LOCK:
+        if position_id in _CLOSED_TRADES_THIS_SESSION:
+            if not is_active:
+                log.debug(
+                    "[PAPER_CLOSE_DEDUPE] trade_id=%s already processed, skipping",
+                    position_id,
+                )
+                return None
+            # Heal legacy state produced by the old eager marker: active state
+            # means the earlier close never crossed the removal boundary.
+            _CLOSED_TRADES_THIS_SESSION.discard(position_id)
+            log.warning(
+                "[PAPER_CLOSE_RECOVERY] trade_id=%s reason=completed_marker_still_active",
+                position_id,
+            )
+        if position_id in _PAPER_CLOSE_IN_PROGRESS:
+            log.debug("[PAPER_CLOSE_DEDUPE] trade_id=%s close_in_progress", position_id)
+            return None
+        _PAPER_CLOSE_IN_PROGRESS.add(position_id)
+
+    try:
+        closed_trade = _close_paper_position_impl(position_id, price, ts, reason)
+    finally:
+        with _CLOSED_TRADES_LOCK:
+            _PAPER_CLOSE_IN_PROGRESS.discard(position_id)
+
+    if closed_trade is not None:
+        with _CLOSED_TRADES_LOCK:
+            _CLOSED_TRADES_THIS_SESSION.add(position_id)
+    return closed_trade
+
+
+def _close_paper_position_impl(
+    position_id: str,
+    price: float,
+    ts: float,
+    reason: str,
+) -> Optional[dict]:
     """Close a paper position and produce closed trade dict.
 
     Args:
@@ -2835,29 +2939,12 @@ def close_paper_position(
     Returns:
         dict: Closed trade with all canonical fields, or None if not found
     """
-    if not price or price <= 0:
-        log.error("[PAPER_EXIT_BLOCKED] trade_id=%s reason=invalid_price", position_id)
-        return None
-
-    # P0 FIX #2: Dedup check FIRST (before any processing)
-    # Must check BEFORE accessing position to fail fast on duplicate close attempts
-    with _CLOSED_TRADES_LOCK:
-        if position_id in _CLOSED_TRADES_THIS_SESSION:
-            log.debug(f"[PAPER_CLOSE_DEDUPE] trade_id={position_id} already processed, skipping")
-            return None
-        # Mark as being processed (added back to set after position read succeeds)
-
     # P0 FIX #1: Do NOT pop position yet - read-only access first
     # Position removal must happen AFTER all processing succeeds to prevent loss on exception
     with _POSITION_LOCK:
         if position_id not in _POSITIONS:
             return None
         pos = _POSITIONS[position_id]  # Read-only, do not pop yet
-
-    # V10.26 FIX: Mark as closed IMMEDIATELY after position read to prevent race conditions
-    # This prevents concurrent close_paper_position calls from processing same position twice
-    with _CLOSED_TRADES_LOCK:
-        _CLOSED_TRADES_THIS_SESSION.add(position_id)
 
     log.info(
         "[PAPER_CLOSE_PATH] trade_id=%s symbol=%s reason=%s",

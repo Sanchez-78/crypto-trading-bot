@@ -254,6 +254,30 @@ def get_closed_trades(limit: int = 100) -> List[Dict]:
             _log.warning(f"[LOCAL_CACHE] closed_trades read error: {e}")
             return []
 
+
+def closed_trade_exists(trade_id: str) -> bool:
+    """Return whether ``trade_id`` is already in the durable close ledger.
+
+    Startup reconciliation uses this narrow lookup to avoid resurrecting a
+    position from JSON after its authoritative close was already committed.
+    """
+    if not trade_id:
+        return False
+    with _lock:
+        try:
+            conn = sqlite3.connect(LOCAL_DB_PATH, timeout=2)
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT 1 FROM closed_trades WHERE trade_id = ? LIMIT 1",
+                (str(trade_id),),
+            )
+            exists = cursor.fetchone() is not None
+            conn.close()
+            return exists
+        except Exception as e:
+            _log.warning(f"[LOCAL_CACHE] closed_trade_exists read error: {e}")
+            return False
+
 def get_learning_metrics() -> Optional[Dict]:
     """Get latest learning metrics from local disk."""
     with _lock:

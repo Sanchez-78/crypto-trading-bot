@@ -1,4 +1,5 @@
 import time
+from datetime import datetime, timezone
 
 from src.services import firebase_client as fc
 
@@ -79,11 +80,24 @@ class FakeCollection:
         return FakeQuery(self.docs).limit(count)
 
 
+class FakeBatch:
+    def __init__(self):
+        self.set_calls = []
+        self.commit_calls = 0
+
+    def set(self, ref, payload, merge=False):
+        self.set_calls.append((ref, dict(payload), merge))
+
+    def commit(self):
+        self.commit_calls += 1
+
+
 class FakeDB:
     def __init__(self, collections=None, document_paths=None):
         self.collections = dict(collections or {})
         self.document_paths = dict(document_paths or {})
         self.collection_calls = []
+        self.last_batch = None
 
     def collection(self, name):
         self.collection_calls.append(name)
@@ -96,12 +110,21 @@ class FakeDB:
             self.document_paths[path] = FakeDocRef()
         return self.document_paths[path]
 
+    def batch(self):
+        self.last_batch = FakeBatch()
+        return self.last_batch
+
 
 def _reset_firebase_state(fake_db):
     fc.db = fake_db
     fc._QUOTA_WINDOW_START = time.time()
     fc._QUOTA_READS = 0
     fc._QUOTA_WRITES = 0
+    fc._WRITE_ATTRIBUTION.clear()
+    fc._FIREBASE_WRITE_DEGRADED = False
+    fc._FIREBASE_READ_DEGRADED = False
+    fc._FIREBASE_DEGRADED_UNTIL = 0
+    fc._FIREBASE_DEGRADED_REASON = None
     fc._LAST_RECON_TS = 0
     for cache in (
         fc._HISTORY_CACHE,
@@ -158,7 +181,7 @@ def test_load_bot2_metrics_uses_cache():
     assert fc.get_quota_status()["reads"] == 1
 
 
-def test_load_history_counts_documents_and_caches_by_limit():
+def test_load_history_counts_documents_and_caches_by_limit(monkeypatch):
     docs = [
         FakeSnapshot({"timestamp": 5, "symbol": "BTCUSDT"}, "a"),
         FakeSnapshot({"timestamp": 4, "symbol": "ETHUSDT"}, "b"),
@@ -168,6 +191,7 @@ def test_load_history_counts_documents_and_caches_by_limit():
     ]
     fake_db = FakeDB(collections={"trades": FakeCollection(docs=docs)})
     _reset_firebase_state(fake_db)
+    monkeypatch.setattr(fc, "_CACHE_ENABLED", False)
 
     history = fc.load_history(limit=5)
     assert len(history) == 5
@@ -234,3 +258,53 @@ def test_record_read_attributes_by_label():
     assert fc._READ_ATTRIBUTION["load_history"] == 5
     assert fc._READ_ATTRIBUTION["load_commands_since"] == 1
     assert fc.get_quota_status()["reads"] == 6
+
+
+def test_quota_boundary_is_exactly_0700_utc():
+    before = datetime(2026, 8, 3, 6, 59, tzinfo=timezone.utc)
+    after = datetime(2026, 8, 3, 7, 1, tzinfo=timezone.utc)
+
+    assert fc._quota_boundary_utc(before) == datetime(
+        2026, 8, 2, 7, 0, tzinfo=timezone.utc
+    )
+    assert fc._quota_boundary_utc(after) == datetime(
+        2026, 8, 3, 7, 0, tzinfo=timezone.utc
+    )
+
+
+def test_noncritical_writes_preserve_archive_headroom(monkeypatch):
+    _reset_firebase_state(FakeDB())
+    monkeypatch.setenv("FIREBASE_NONCRITICAL_WRITE_FRACTION", "0.60")
+    soft_limit = int(fc._QUOTA_MAX_WRITES * 0.60)
+    monkeypatch.setattr(fc, "_QUOTA_WRITES", soft_limit)
+
+    allowed, current, returned_limit = fc._reserve_noncritical_write("dashboard", 1)
+
+    assert allowed is False
+    assert current == soft_limit
+    assert returned_limit == soft_limit
+    allowed, current, _ = fc._reserve_write(1, "learning_archive")
+    assert allowed is True
+    assert current == soft_limit + 1
+    assert fc.get_quota_status()["write_attribution"]["learning_archive"] == 1
+
+
+def test_learning_archive_commits_above_noncritical_ceiling(monkeypatch):
+    fake_db = FakeDB()
+    _reset_firebase_state(fake_db)
+    monkeypatch.setenv("FIREBASE_NONCRITICAL_WRITE_FRACTION", "0.60")
+    monkeypatch.setattr(
+        fc, "_QUOTA_WRITES", int(fc._QUOTA_MAX_WRITES * 0.60)
+    )
+    event = {
+        "event_id": "paper_trade_closed:test",
+        "event_type": "paper_trade_closed",
+        "created_at": 123.0,
+        "payload": {"trade_id": "test"},
+    }
+
+    confirmed = fc.save_learning_archive_batch([event])
+
+    assert confirmed == [event["event_id"]]
+    assert fake_db.last_batch.commit_calls == 1
+    assert fc.get_quota_status()["write_attribution"]["learning_archive"] == 1

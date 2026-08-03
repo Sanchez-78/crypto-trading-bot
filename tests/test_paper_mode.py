@@ -202,6 +202,84 @@ class TestPaperExecutorBasics:
             "reason": "duplicate_canonical_burst",
         }
 
+    def test_control_shadow_burst_is_deduplicated(self, clean_positions, monkeypatch):
+        """Correlated D_NEG callbacks must not count as independent evidence."""
+        from src.core import runtime_mode
+
+        monkeypatch.setattr(runtime_mode, "PAPER_TRAIN_MAX_OPEN_PER_SYMBOL", 10)
+        monkeypatch.setattr(runtime_mode, "PAPER_TRAIN_MAX_OPEN_PER_BUCKET", 10)
+        ts = time.time()
+        signal = {
+            "symbol": "ADAUSDT",
+            "action": "BUY",
+            "ev": -0.02,
+            "score": 0.10,
+            "regime": "RANGING",
+            "bucket": "D_NEG_EV_CONTROL",
+            "training_bucket": "D_NEG_EV_CONTROL",
+            "strict_ev": False,
+            "readiness_eligible": False,
+            "real_readiness_eligible": False,
+            "paper_learning_only": True,
+            "learning_shadow_only": True,
+            "learning_source": "paper_exploration_control",
+        }
+        extra = {
+            "paper_source": "training_sampler",
+            "training_bucket": "D_NEG_EV_CONTROL",
+            "final_size_usd": 2.0,
+            "max_hold_s": 300.0,
+        }
+
+        first = open_paper_position(signal, 0.43210, ts, "TRAINING_SAMPLE", extra)
+        second = open_paper_position(signal, 0.43210, ts + 0.1, "TRAINING_SAMPLE", extra)
+
+        assert first["status"] == "opened"
+        assert second == {"status": "blocked", "reason": "duplicate_paper_burst"}
+
+    def test_close_recovers_legacy_completed_marker(self, clean_positions, monkeypatch):
+        """An eager legacy marker may not strand an otherwise active position."""
+        from src.services import paper_trade_executor as pte
+
+        trade_id = "legacy_zombie"
+        pte._POSITIONS[trade_id] = {"trade_id": trade_id}
+        pte._CLOSED_TRADES_THIS_SESSION.add(trade_id)
+        monkeypatch.setattr(
+            pte,
+            "_close_paper_position_impl",
+            lambda *args: {"trade_id": trade_id},
+        )
+
+        result = pte.close_paper_position(trade_id, 100.0, time.time(), "TIMEOUT")
+
+        assert result == {"trade_id": trade_id}
+        assert trade_id in pte._CLOSED_TRADES_THIS_SESSION
+        assert trade_id not in pte._PAPER_CLOSE_IN_PROGRESS
+
+    def test_close_guard_releases_after_exception(self, clean_positions, monkeypatch):
+        """A failed close is immediately retryable instead of becoming a zombie."""
+        from src.services import paper_trade_executor as pte
+
+        trade_id = "retryable_close"
+        pte._POSITIONS[trade_id] = {"trade_id": trade_id}
+        calls = []
+
+        def flaky_close(*args):
+            calls.append(args)
+            if len(calls) == 1:
+                raise RuntimeError("simulated close failure")
+            return {"trade_id": trade_id}
+
+        monkeypatch.setattr(pte, "_close_paper_position_impl", flaky_close)
+        with pytest.raises(RuntimeError, match="simulated close failure"):
+            pte.close_paper_position(trade_id, 100.0, time.time(), "TIMEOUT")
+        assert trade_id not in pte._PAPER_CLOSE_IN_PROGRESS
+
+        assert pte.close_paper_position(
+            trade_id, 100.0, time.time(), "TIMEOUT"
+        ) == {"trade_id": trade_id}
+        assert len(calls) == 2
+
     def test_open_paper_position_respects_max_open(self, clean_positions):
         """Paper executor refuses entry when max open positions exceeded."""
         from src.services.paper_trade_executor import _MAX_OPEN
