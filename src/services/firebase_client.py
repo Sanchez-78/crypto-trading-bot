@@ -340,6 +340,7 @@ def get_quota_status():
             "reads": _QUOTA_READS,
             "reads_limit": _QUOTA_MAX_READS,
             "reads_pct": f"{_QUOTA_READS/_QUOTA_MAX_READS*100:.1f}%",
+            "read_attribution": dict(_READ_ATTRIBUTION),
             "writes": _QUOTA_WRITES,
             "writes_limit": _QUOTA_MAX_WRITES,
             "writes_pct": f"{_QUOTA_WRITES/_QUOTA_MAX_WRITES*100:.1f}%",

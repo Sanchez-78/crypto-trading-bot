@@ -1219,9 +1219,23 @@ HTML_TEMPLATE = r"""
                 'Samples 1h: ' + String(exploration.entries_last_hour || 0) +
                 ' / ' + String(exploration.last_reason || 'no decision');
             paint('agent_archive_status', archive.status);
+            const firebaseQuota = archive.quota || {};
+            const readCount = Number(firebaseQuota.reads || 0);
+            const readLimit = Number(firebaseQuota.reads_limit || 0);
+            const attribution = firebaseQuota.read_attribution || {};
+            const topReadSource = Object.entries(attribution)
+                .sort((a, b) => Number(b[1] || 0) - Number(a[1] || 0))[0];
+            const quotaText = readLimit > 0
+                ? ' · reads ' + readCount + '/' + readLimit +
+                  ' (' + (100 * readCount / readLimit).toFixed(1) + '%)'
+                : '';
+            const sourceText = topReadSource
+                ? ' · top ' + String(topReadSource[0]) + ':' + String(topReadSource[1])
+                : '';
             document.getElementById('agent_archive_detail').textContent =
                 'Pending ' + String(archive.pending_events || 0) +
-                ' / total ' + String(archive.total_events || 0);
+                ' / total ' + String(archive.total_events || 0) +
+                quotaText + sourceText;
         }
 
         function updatePlainSummary(data) {

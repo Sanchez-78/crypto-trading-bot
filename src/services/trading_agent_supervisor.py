@@ -1134,9 +1134,16 @@ class TradingAgentSupervisor:
                 created_at=now,
             )
             flush_learning_archive(limit=50)
-            self._state["agents"]["firebase_archive"] = (
-                get_learning_archive_status()
-            )
+            archive_status = get_learning_archive_status()
+            try:
+                from src.services.firebase_client import get_quota_status
+
+                archive_status["quota"] = get_quota_status()
+            except Exception:
+                # Archive health remains useful even when the optional
+                # in-process quota telemetry cannot be collected.
+                pass
+            self._state["agents"]["firebase_archive"] = archive_status
         except Exception as exc:
             self._state["agents"]["firebase_archive"] = {
                 "agent": "firebase_archive",

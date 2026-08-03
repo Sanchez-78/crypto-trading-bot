@@ -5,10 +5,10 @@ Subscribes to Redis channel "audits", receives rejection/alert events,
 and persists them to Firestore collection "audits" for real-time 
 visibility in the React Native app.
 
-Throttling: 
+Throttling:
   - Max 1 write per second per reason to avoid db hammering.
   - Buffers events for up to 3 seconds, then batch-commits.
-  - Keeps only the last 50 audits total (circular buffer logic).
+  - Uses 50 deterministic document slots (zero-read circular buffer).
 """
 
 import asyncio
@@ -32,6 +32,12 @@ class AuditWorker:
         self._last_write_ts: dict[str, float] = {}
         self._buffer: list[dict] = []
         self._flush_task: Optional[asyncio.Task] = None
+        # A Firestore ``offset(50).limit(20)`` cleanup used to run after every
+        # batch. Firestore bills the skipped documents too, amplifying a single
+        # audit flush into as many as 70 reads. Fixed slots keep the collection
+        # bounded for current readers without any cleanup query. A time-derived
+        # starting point also spreads overwrites after a process restart.
+        self._ring_cursor = int(time.time() * 1000) % MAX_AUDITS
 
     async def _get_redis(self) -> Optional[Any]:
         if self._redis is None:
@@ -151,27 +157,35 @@ class AuditWorker:
     def _sync_batch_write(self, db: Any, items: list[dict]) -> None:
         """Sync Firestore batch write — runs in executor thread."""
         try:
+            from src.services.firebase_client import _reserve_noncritical_write
+
+            items = list(items or [])[-MAX_AUDITS:]
+            if not items:
+                return
+            allowed, current, limit = _reserve_noncritical_write(
+                "audit_ring", len(items)
+            )
+            if not allowed:
+                log.warning(
+                    "Audit batch skipped: Firebase noncritical write budget "
+                    "exhausted (%d/%d, requested=%d)",
+                    current,
+                    limit,
+                    len(items),
+                )
+                return
+
             batch = db.batch()
             for data in items:
-                ref = db.collection("audits").document()
-                batch.set(ref, data)
+                slot = self._ring_cursor % MAX_AUDITS
+                self._ring_cursor += 1
+                ref = db.collection("audits").document(
+                    f"slot_{slot:02d}"
+                )
+                batch.set(ref, {**data, "ring_slot": slot})
             batch.commit()
-            
+
             log.debug("Audit batch committed: %d events", len(items))
-            
-            # Cleanup: delete oldest if > MAX_AUDITS
-            try:
-                snap = db.collection("audits").order_by(
-                    "timestamp", direction="DESCENDING"
-                ).offset(MAX_AUDITS).limit(20).get()
-                if snap:
-                    del_batch = db.batch()
-                    for doc in snap:
-                        del_batch.delete(doc.reference)
-                    del_batch.commit()
-            except Exception:
-                pass  # cleanup failure is non-critical
-                
         except Exception as exc:
             log.debug("_sync_batch_write error: %s", exc)
 

@@ -260,6 +260,10 @@ def test_record_read_attributes_by_label():
     assert fc._READ_ATTRIBUTION["load_history"] == 5
     assert fc._READ_ATTRIBUTION["load_commands_since"] == 1
     assert fc.get_quota_status()["reads"] == 6
+    assert fc.get_quota_status()["read_attribution"] == {
+        "load_history": 5,
+        "load_commands_since": 1,
+    }
 
 
 def test_quota_boundary_is_exactly_0700_utc():
