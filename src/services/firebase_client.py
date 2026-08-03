@@ -1049,7 +1049,9 @@ def load_learning_archive(limit=None):
                     "schema_version": value.get("schema_version", 1),
                     "event_type": value.get("event_type", "unknown"),
                     "created_at": value.get("created_at", 0),
-                    "payload": value.get("payload") or {},
+                    "payload": _restore_firestore_doc(
+                        value.get("payload") or {}
+                    ),
                 }
             )
         return result
@@ -1892,11 +1894,17 @@ def _build_open_positions(positions):
     return out
 
 
-def _sanitize_doc(obj):
+_FIRESTORE_NESTED_ARRAY_KEY = "cm_array_items_v1"
+
+
+def _sanitize_doc(obj, *, _inside_array=False):
     """
-    Recursively strip Firestore-illegal dict keys before .set().
+    Recursively make a value safe for Firestore before .set().
+
     Firestore rejects: None keys, empty-string keys, and keys containing '.'.
-    Drops the offending key (with a fallback rename for '.' cases).
+    It also rejects an array directly containing another array. Nested arrays
+    are wrapped in a one-field map and restored by ``_restore_firestore_doc``
+    during hydration, so the logical payload remains lossless.
     """
     if isinstance(obj, dict):
         clean = {}
@@ -1904,10 +1912,32 @@ def _sanitize_doc(obj):
             if not isinstance(k, str) or not k:
                 continue   # drop None / non-string / empty keys
             safe_k = k.replace(".", "_")   # dots create phantom sub-paths
-            clean[safe_k] = _sanitize_doc(v)
+            # A map breaks direct array nesting, so values start a fresh
+            # Firestore container context.
+            clean[safe_k] = _sanitize_doc(v, _inside_array=False)
         return clean
     if isinstance(obj, list):
-        return [_sanitize_doc(i) for i in obj]
+        clean = [_sanitize_doc(i, _inside_array=True) for i in obj]
+        if _inside_array:
+            return {_FIRESTORE_NESTED_ARRAY_KEY: clean}
+        return clean
+    return obj
+
+
+def _restore_firestore_doc(obj):
+    """Reverse the lossless nested-array wrapper used by ``_sanitize_doc``."""
+    if isinstance(obj, dict):
+        if (
+            set(obj) == {_FIRESTORE_NESTED_ARRAY_KEY}
+            and isinstance(obj.get(_FIRESTORE_NESTED_ARRAY_KEY), list)
+        ):
+            return [
+                _restore_firestore_doc(item)
+                for item in obj[_FIRESTORE_NESTED_ARRAY_KEY]
+            ]
+        return {key: _restore_firestore_doc(value) for key, value in obj.items()}
+    if isinstance(obj, list):
+        return [_restore_firestore_doc(item) for item in obj]
     return obj
 
 

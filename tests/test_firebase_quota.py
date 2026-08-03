@@ -189,7 +189,9 @@ def test_load_history_counts_documents_and_caches_by_limit(monkeypatch):
         FakeSnapshot({"timestamp": 2, "symbol": "XRPUSDT"}, "d"),
         FakeSnapshot({"timestamp": 1, "symbol": "BNBUSDT"}, "e"),
     ]
-    fake_db = FakeDB(collections={"trades": FakeCollection(docs=docs)})
+    # The default runtime mode is paper_live, so load_history intentionally
+    # reads the isolated paper collection.
+    fake_db = FakeDB(collections={"trades_paper": FakeCollection(docs=docs)})
     _reset_firebase_state(fake_db)
     monkeypatch.setattr(fc, "_CACHE_ENABLED", False)
 
@@ -308,3 +310,27 @@ def test_learning_archive_commits_above_noncritical_ceiling(monkeypatch):
     assert confirmed == [event["event_id"]]
     assert fake_db.last_batch.commit_calls == 1
     assert fc.get_quota_status()["write_attribution"]["learning_archive"] == 1
+
+
+def test_learning_archive_encodes_nested_arrays_losslessly():
+    """Firestore forbids arrays that directly contain other arrays."""
+    fake_db = FakeDB()
+    _reset_firebase_state(fake_db)
+    qualification_window = [
+        [-0.14, "LOSS", "ETHUSDT:BEAR_TREND:BUY", 123.0, "paper_1"],
+        [0.10, "WIN", "ETHUSDT:BULL_TREND:BUY", 124.0, "paper_2"],
+    ]
+    event = {
+        "event_id": "adaptive:test",
+        "event_type": "adaptive_learning_checkpoint",
+        "created_at": 125.0,
+        "payload": {"qualification_window": qualification_window},
+    }
+
+    assert fc.save_learning_archive_batch([event]) == ["adaptive:test"]
+    stored = fake_db.last_batch.set_calls[0][1]["payload"]
+    encoded_window = stored["qualification_window"]
+
+    assert all(isinstance(item, dict) for item in encoded_window)
+    assert not any(isinstance(item, list) for item in encoded_window)
+    assert fc._restore_firestore_doc(stored) == event["payload"]
