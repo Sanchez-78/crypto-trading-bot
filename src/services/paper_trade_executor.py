@@ -4298,6 +4298,13 @@ def _on_signal_created(signal: dict) -> None:
     if not signal or signal.get("action") == "HOLD":
         return
 
+    # signal_created carries both RDE takes and rejects for observability. The
+    # opt-in direct recovery router may execute only an authoritative RDE TAKE;
+    # otherwise enabling it would silently re-admit rejected signals.
+    from src.services.signal_admission_contract import has_authoritative_rde_take
+    if not has_authoritative_rde_take(signal):
+        return
+
     # The direct router is a paper-only recovery path for installations where
     # the normal RDE subscriber is not receiving signal_created events.  Never
     # let it become an unqualified trade source: require paper mode and a

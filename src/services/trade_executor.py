@@ -2099,6 +2099,22 @@ def handle_signal(signal):
     score = signal.get("score_raw", signal.get("score_final", signal.get("score", 0.0)))
     _pipeline_record_signal(sym, side, regime, ev, p, score)
 
+    # signal_created is also an observability stream, so an explicit RDE reject
+    # must never be re-admitted by the executor's independent bootstrap gates.
+    # Signals from older/direct callers without the marker retain the legacy path.
+    from src.services.signal_admission_contract import is_explicit_rde_reject
+    if is_explicit_rde_reject(signal):
+        bucket = signal.get("bucket", "UNKNOWN")
+        _pipeline_record_rde_candidate(sym, bucket, False, "rde_rejected")
+        log.info(
+            "[RDE_REJECT_EXECUTION_SKIP] symbol=%s side=%s regime=%s bucket=%s",
+            sym,
+            side,
+            regime,
+            bucket,
+        )
+        return
+
     # P1.1X: Paper mode check — use is_paper_mode() from runtime_mode
     # CRITICAL: This must be computed early to route paper signals BEFORE live_trading_allowed() check
     try:
@@ -2366,13 +2382,32 @@ def handle_signal(signal):
         _ev_value >= max(0.03, float(os.getenv("PAPER_DIRECT_CANONICAL_MIN_EV", "0.02")))
         and _confidence_value >= 0.75
     )
+    from src.services.signal_admission_contract import (
+        has_authoritative_rde_take,
+        is_regime_aligned,
+    )
     _canonical_fast_path = (
         is_paper_mode_local
         and os.getenv("PAPER_CANONICAL_FAST_PATH", "false").strip().lower() == "true"
+        and has_authoritative_rde_take(signal)
         and (str(bucket).strip().upper() == "A_STRICT_TAKE" or _high_quality_paper_candidate)
         and _ev_value >= float(os.getenv("PAPER_DIRECT_CANONICAL_MIN_EV", "0.01"))
     )
     if _canonical_fast_path:
+        _alignment_required = os.getenv(
+            "PAPER_CANONICAL_REQUIRE_REGIME_ALIGNMENT", "true"
+        ).strip().lower() in ("true", "1", "yes", "on")
+        if _alignment_required and not is_regime_aligned(
+            signal.get("action", ""), signal.get("regime", "")
+        ):
+            log.info(
+                "[PAPER_CANONICAL_BLOCKED] symbol=%s side=%s regime=%s "
+                "reason=counter_regime",
+                sym,
+                signal.get("action"),
+                signal.get("regime"),
+            )
+            return
         signal["bucket"] = "A_STRICT_TAKE"
         signal.update({
             "strict_ev": True,

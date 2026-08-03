@@ -448,38 +448,19 @@ def _get_scored_edge(hist, e50, e200, breakout_up, breakout_down, mom5, reg, reg
     # CYCLE 28 FIX: Enforce regime/direction alignment. Higher score alone doesn't guarantee
     # correct direction. In BULL_TREND, only allow BUY. In BEAR_TREND, only allow SELL.
     # RANGING allows both (pick higher score).
-    candidate_buy  = buy_sc >= SCORE_MIN
-    candidate_sell = sell_sc >= SCORE_MIN
-
-    # Regime-aware filtering with soft preference (not hard blocking)
-    # CYCLE 28B: Prefer regime-aligned direction but allow opposite if score spread < 1.0
-    score_spread = abs(buy_sc - sell_sc)
-
-    if reg == "BULL_TREND":
-        if candidate_buy and (buy_sc >= sell_sc or score_spread < 1.0):
-            action, base_score, features = "BUY", buy_sc, buy_f
-        elif candidate_sell and score_spread < 1.0:  # Allow SELL if very close
-            action, base_score, features = "SELL", sell_sc, sell_f
-        else:
-            action = None
-    elif reg == "BEAR_TREND":
-        if candidate_sell and (sell_sc >= buy_sc or score_spread < 1.0):
-            action, base_score, features = "SELL", sell_sc, sell_f
-        elif candidate_buy and score_spread < 1.0:  # Allow BUY if very close
-            action, base_score, features = "BUY", buy_sc, buy_f
-        else:
-            action = None
-    else:  # RANGING, QUIET_RANGE, HIGH_VOL
-        if buy_sc >= sell_sc and candidate_buy:
-            action, base_score, features = "BUY",  buy_sc,  buy_f
-        elif sell_sc > buy_sc and candidate_sell:
-            action, base_score, features = "SELL", sell_sc, sell_f
-        elif candidate_buy:
-            action, base_score, features = "BUY",  buy_sc,  buy_f
-        elif candidate_sell:
-            action, base_score, features = "SELL", sell_sc, sell_f
-        else:
-            action = None
+    # Regime-aware candidate selection. A directional regime is a thesis, not
+    # merely a soft preference: counter-regime candidates polluted the canonical
+    # cohort. Neutral regimes may still choose either side, while the forced
+    # exploration fallback below also stays aligned.
+    from src.services.signal_admission_contract import select_regime_aligned_candidate
+    action, base_score, features = select_regime_aligned_candidate(
+        regime=reg,
+        buy_score=buy_sc,
+        buy_features=buy_f,
+        sell_score=sell_sc,
+        sell_features=sell_f,
+        minimum_score=SCORE_MIN,
+    )
 
     # 2026-07-08: env-gated MEAN-REVERSION test (PAPER_INVERT_SIGNAL). The bot's
     # ~27% overall WR (trend-following BUY 7% / SELL 76% in a falling window)
@@ -1160,6 +1141,12 @@ def on_price(data):
 
     from src.services.realtime_decision_engine import evaluate_signal
     result = evaluate_signal(signal)
+
+    # signal_created intentionally remains an observability event containing
+    # both accepted and rejected evaluations. Stamp the outcome so execution
+    # subscribers never infer RDE acceptance from mutable EV/bucket data.
+    from src.services.signal_admission_contract import stamp_rde_outcome
+    stamp_rde_outcome(signal, result)
 
     # Always publish signal for subscriber routing (P0 gate handler)
     publish("signal_created", signal)

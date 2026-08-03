@@ -288,6 +288,10 @@ class SignalEngine:
         """
         if not self._running:
             return
+        # Rejected evaluations stay on the local event bus for monitoring, but
+        # must not be forwarded to Redis as executable TradeSignal objects.
+        if sig_dict.get("rde_accepted") is False:
+            return
         if _loop is not None and _loop.is_running():
             try:
                 _loop.call_soon_threadsafe(self._queue.put_nowait, sig_dict)

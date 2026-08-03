@@ -198,6 +198,22 @@ class TestSignalCreatedIngestion(unittest.TestCase):
         loop.close()
         se._loop = None
 
+    def test_on_signal_created_does_not_forward_explicit_rde_reject(self):
+        """RDE rejects remain observable locally but cannot reach Redis execution."""
+        loop = asyncio.new_event_loop()
+        engine = se.SignalEngine()
+        engine._running = True
+        se._loop = loop
+        sig_dict = _make_sig_dict(rde_accepted=False, rde_decision="REJECT")
+
+        with patch.object(loop, "is_running", MagicMock(return_value=True)), \
+             patch.object(loop, "call_soon_threadsafe") as mock_ts:
+            engine._on_signal_created(sig_dict)
+            mock_ts.assert_not_called()
+
+        loop.close()
+        se._loop = None
+
 
 # ── Test 3: no double on_price invocation ─────────────────────────────────────
 
