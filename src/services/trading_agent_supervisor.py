@@ -1035,11 +1035,6 @@ class TradingAgentSupervisor:
             and proposal.get("urgency") == "critical"
             and not current_pause
         )
-
-        required_streak = 1 if critical_pause else (3 if current_pause and not pause else 2)
-        if pending["streak"] < required_streak:
-            return "awaiting_confirmation"
-
         size_changed = not math.isclose(
             target,
             policy["paper_entry_quota_multiplier"],
@@ -1053,6 +1048,10 @@ class TradingAgentSupervisor:
         )
         if not size_changed and not pause_changed and not symbol_quotas_changed:
             return "no_change"
+
+        required_streak = 1 if critical_pause else (3 if current_pause and not pause else 2)
+        if pending["streak"] < required_streak:
+            return "awaiting_confirmation"
 
         if not critical_pause and now < policy["cooldown_until"]:
             return "blocked_policy_cooldown"

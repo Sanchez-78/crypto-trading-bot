@@ -267,6 +267,35 @@ def test_supervisor_applies_only_after_repeated_confirmation(tmp_path):
     assert persisted["policy"]["revision"] == 1
 
 
+def test_unchanged_policy_does_not_show_false_confirmation_wait(tmp_path):
+    clock = FakeClock()
+    supervisor = _supervisor(tmp_path, clock)
+    supervisor._state["policy"] = {
+        **agents._default_policy(),
+        "revision": 2,
+        "paper_entry_quota_multiplier": 0.75,
+        "canonical_symbol_quota_multipliers": {"ADAUSDT": 0.25},
+        "reason": "already_applied",
+    }
+    proposal = {
+        "target_entry_quota_multiplier": 0.75,
+        "target_canonical_symbol_quota_multipliers": {"ADAUSDT": 0.25},
+        "pause_new_entries": False,
+        "reason": "same_targets_new_label",
+        "urgency": "normal",
+        "evidence": {"trade_review_evidence_sha": "new-label-same-target"},
+    }
+
+    decision = supervisor._consider_proposal(
+        proposal=proposal,
+        mode="paper_train",
+        now=clock(),
+    )
+
+    assert decision == "no_change"
+    assert supervisor._state["policy"]["revision"] == 2
+
+
 def test_stale_market_pause_is_immediate_and_persisted(tmp_path):
     clock = FakeClock()
     market = agents.MarketStateAgent(
