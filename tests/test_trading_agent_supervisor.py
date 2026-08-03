@@ -455,6 +455,30 @@ def test_dashboard_exposes_agent_state_and_marks_stale(tmp_path, monkeypatch):
     assert 'id="agent_supervisor_status"' in html
     assert "paper_entry_quota_multiplier" in html
     assert "data.agent_supervisor?.agents?.trading_health?.trading_status" in html
+    assert "reads_hour_limit" in html
+    assert "deployedCode.sha" in html
+
+
+def test_deployed_code_identity_prefers_overlay_manifest(tmp_path, monkeypatch):
+    manifest = tmp_path / "deployed_overlay_manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "git_base_sha": "base123",
+                "overlay_source_sha": "overlay456",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(agents, "DEPLOYMENT_MANIFEST_PATHS", (manifest,))
+    monkeypatch.setattr(agents, "READY_SHA_PATHS", (tmp_path / "missing",))
+    monkeypatch.setenv("GIT_SHA", "environment789")
+
+    assert agents._deployed_code_identity() == {
+        "sha": "overlay456",
+        "base_sha": "base123",
+        "source": "deployed_overlay_manifest",
+    }
 
 
 def test_signal_warmup_survives_the_first_live_tick_boundary(monkeypatch):

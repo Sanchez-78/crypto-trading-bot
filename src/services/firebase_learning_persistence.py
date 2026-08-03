@@ -158,7 +158,7 @@ class FirebaseLearningPersistence:
 
             archive = get_learning_archive()
             hydrate_limit = min(
-                max(int(os.getenv("FIREBASE_LEARNING_ARCHIVE_HYDRATE_LIMIT", "2000")), 100),
+                max(int(os.getenv("FIREBASE_LEARNING_ARCHIVE_HYDRATE_LIMIT", "300")), 100),
                 5000,
             )
             archive.hydrate(limit=hydrate_limit)

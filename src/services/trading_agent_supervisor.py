@@ -39,6 +39,14 @@ MIN_QUOTA_MULTIPLIER = 0.50
 MAX_QUOTA_MULTIPLIER = 1.00
 MAX_QUOTA_STEP = 0.25
 MAX_AUDIT_RECORDS = 50
+DEPLOYMENT_MANIFEST_PATHS = (
+    Path("/opt/cryptomaster/reports/deployed_overlay_manifest.json"),
+    Path("reports/deployed_overlay_manifest.json"),
+)
+READY_SHA_PATHS = (
+    Path("/opt/cryptomaster/reports/ready_bot_sha"),
+    Path("reports/ready_bot_sha"),
+)
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -85,6 +93,42 @@ def _utc_iso(ts: float) -> str:
         .isoformat(timespec="milliseconds")
         .replace("+00:00", "Z")
     )
+
+
+def _deployed_code_identity() -> dict:
+    """Resolve the running overlay commit from the deployment audit trail."""
+    for manifest_path in DEPLOYMENT_MANIFEST_PATHS:
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            continue
+        except (OSError, ValueError, TypeError) as exc:
+            log.warning(
+                "[DEPLOYMENT_IDENTITY_INVALID] path=%s error=%s",
+                manifest_path,
+                str(exc)[:200],
+            )
+            continue
+        overlay_sha = str(manifest.get("overlay_source_sha") or "").strip()
+        if overlay_sha:
+            return {
+                "sha": overlay_sha,
+                "base_sha": str(manifest.get("git_base_sha") or "").strip() or None,
+                "source": "deployed_overlay_manifest",
+            }
+
+    environment_sha = os.getenv("GIT_SHA", "").strip()
+    if environment_sha:
+        return {"sha": environment_sha, "base_sha": None, "source": "environment"}
+
+    for marker_path in READY_SHA_PATHS:
+        try:
+            marker_sha = marker_path.read_text(encoding="utf-8").strip()
+        except OSError:
+            continue
+        if marker_sha:
+            return {"sha": marker_sha, "base_sha": None, "source": "legacy_marker"}
+    return {"sha": "unknown", "base_sha": None, "source": "unavailable"}
 
 
 def _default_state_path() -> Path:
@@ -696,7 +740,7 @@ class TradingAgentSupervisor:
             from src.services.learning_archive import get_learning_archive
             archive_limit = _env_int(
                 "TRADING_AGENT_ARCHIVE_HYDRATE_LIMIT",
-                2000,
+                300,
                 100,
                 5000,
             )
@@ -796,6 +840,7 @@ class TradingAgentSupervisor:
             "schema_version": SCHEMA_VERSION,
             "updated_at": now,
             "updated_at_utc": _utc_iso(now),
+            "deployment": _deployed_code_identity(),
             "supervisor": {
                 "status": "disabled" if not self.enabled else "starting",
                 "enabled": self.enabled,
@@ -1150,6 +1195,7 @@ class TradingAgentSupervisor:
                 "status": "degraded",
                 "last_error": f"{type(exc).__name__}: {str(exc)[:200]}",
             }
+        self._state["deployment"] = _deployed_code_identity()
         self._state["updated_at"] = now
         self._state["updated_at_utc"] = _utc_iso(now)
         return deepcopy(self._state)
@@ -1274,15 +1320,8 @@ class TradingAgentSupervisor:
         review = (self._state.get("agents") or {}).get("trade_review") or {}
         trading = (self._state.get("agents") or {}).get("trading_health") or {}
         learning_metrics = ((review.get("metrics") or {}).get("canonical") or {}).get("all") or {}
-        code_sha = os.getenv("GIT_SHA", "").strip()
-        if not code_sha:
-            marker = Path("/opt/cryptomaster/reports/ready_bot_sha")
-            if not marker.exists():
-                marker = Path("reports/ready_bot_sha")
-            try:
-                code_sha = marker.read_text(encoding="utf-8").strip()
-            except OSError:
-                code_sha = "unknown"
+        code_identity = _deployed_code_identity()
+        code_sha = code_identity["sha"]
 
         previous_code = str(previous.get("code", {}).get("sha") or "")
         previous_strategy = previous.get("strategy") or {}
@@ -1327,7 +1366,10 @@ class TradingAgentSupervisor:
             "generated_at": now,
             "generated_at_utc": _utc_iso(now),
             "changes": changes,
-            "code": {"sha": code_sha, "previous_sha": previous_code or None},
+            "code": {
+                **code_identity,
+                "previous_sha": previous_code or None,
+            },
             "strategy": strategy_now,
             "previous_strategy": previous_strategy,
             "learning": learning_now,

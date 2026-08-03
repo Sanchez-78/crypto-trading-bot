@@ -1185,10 +1185,13 @@ HTML_TEMPLATE = r"""
 
             paint('agent_supervisor_status', supervisor.status);
             const hourlyReport = state.hourly_report || {};
+            const deployedCode = state.deployment || hourlyReport.code || {};
+            const deployedSha = String(deployedCode.sha || 'unknown');
             document.getElementById('agent_supervisor_detail').textContent =
                 (supervisor.mode || 'unknown') + ' · state age ' +
                 formatAge(state.state_age_s) + ' · hourly: ' +
-                String(hourlyReport.summary || 'waiting');
+                String(hourlyReport.summary || 'waiting') + ' · code ' +
+                (deployedSha === 'unknown' ? deployedSha : deployedSha.slice(0, 8));
             paint('agent_trading_status', trading.trading_status || trading.status);
             document.getElementById('agent_trading_detail').textContent =
                 'Learning: ' + String(trading.learning_status || 'unknown') +
@@ -1220,14 +1223,17 @@ HTML_TEMPLATE = r"""
                 ' / ' + String(exploration.last_reason || 'no decision');
             paint('agent_archive_status', archive.status);
             const firebaseQuota = archive.quota || {};
-            const readCount = Number(firebaseQuota.reads || 0);
-            const readLimit = Number(firebaseQuota.reads_limit || 0);
-            const attribution = firebaseQuota.read_attribution || {};
+            const readCount = Number(firebaseQuota.reads_hour || 0);
+            const readLimit = Number(firebaseQuota.reads_hour_limit || 0);
+            const dailyReadCount = Number(firebaseQuota.reads || 0);
+            const dailyReadLimit = Number(firebaseQuota.reads_limit || 0);
+            const attribution = firebaseQuota.read_hour_attribution || {};
             const topReadSource = Object.entries(attribution)
                 .sort((a, b) => Number(b[1] || 0) - Number(a[1] || 0))[0];
             const quotaText = readLimit > 0
-                ? ' · reads ' + readCount + '/' + readLimit +
-                  ' (' + (100 * readCount / readLimit).toFixed(1) + '%)'
+                ? ' · reads/hour ' + readCount + '/' + readLimit +
+                  ' (' + (100 * readCount / readLimit).toFixed(1) + '%)' +
+                  ' · day ' + dailyReadCount + '/' + dailyReadLimit
                 : '';
             const sourceText = topReadSource
                 ? ' · top ' + String(topReadSource[0]) + ':' + String(topReadSource[1])

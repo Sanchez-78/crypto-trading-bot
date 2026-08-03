@@ -119,7 +119,12 @@ def _reset_firebase_state(fake_db):
     fc.db = fake_db
     fc._QUOTA_WINDOW_START = time.time()
     fc._QUOTA_READS = 0
+    fc._QUOTA_HOURLY_WINDOW_START = int(time.time() // 3600) * 3600
+    fc._QUOTA_HOURLY_READS = 0
+    fc._QUOTA_HOURLY_BLOCKS = 0
     fc._QUOTA_WRITES = 0
+    fc._READ_ATTRIBUTION.clear()
+    fc._HOURLY_READ_ATTRIBUTION.clear()
     fc._WRITE_ATTRIBUTION.clear()
     fc._FIREBASE_WRITE_DEGRADED = False
     fc._FIREBASE_READ_DEGRADED = False
@@ -263,6 +268,73 @@ def test_record_read_attributes_by_label():
     assert fc.get_quota_status()["read_attribution"] == {
         "load_history": 5,
         "load_commands_since": 1,
+    }
+
+
+def test_hourly_read_budget_blocks_before_firestore_io(monkeypatch):
+    runtime_ref = FakeDocRef({"max_risk": 0.02})
+    fake_db = FakeDB(
+        collections={
+            "config": FakeCollection(named_docs={"runtime": runtime_ref})
+        }
+    )
+    _reset_firebase_state(fake_db)
+    monkeypatch.setattr(fc, "_QUOTA_MAX_READS_PER_HOUR", 1)
+
+    assert fc.load_config()["max_risk"] == 0.02
+    fc._CONFIG_CACHE["ts"] = 0
+    fc._CONFIG_CACHE["data"] = None
+    assert fc.load_config() == {}
+
+    status = fc.get_quota_status()
+    assert runtime_ref.get_calls == 1
+    assert status["reads_hour"] == 1
+    assert status["reads_hour_limit"] == 1
+    assert status["reads_hour_blocked"] == 1
+    assert status["read_hour_attribution"] == {"load_config": 1}
+
+
+def test_hourly_read_budget_resets_on_next_utc_hour(monkeypatch):
+    _reset_firebase_state(FakeDB(collections={}))
+    monkeypatch.setattr(fc, "_QUOTA_MAX_READS_PER_HOUR", 3)
+    fc._record_read(3, label="hydrate")
+    previous_boundary = fc._QUOTA_HOURLY_WINDOW_START
+
+    assert fc._can_read(1)[0] is False
+    fc._reset_quota_if_new_hour(previous_boundary + 3600)
+
+    assert fc._can_read(1)[0] is True
+    status = fc.get_quota_status()
+    assert status["reads_hour"] == 0
+    assert status["reads"] == 3
+    assert status["read_hour_attribution"] == {}
+
+
+def test_legacy_document_and_query_reads_are_accounted(monkeypatch):
+    old_trades = [
+        FakeSnapshot({"timestamp": 1, "result": "WIN"}, "old-1"),
+        FakeSnapshot({"timestamp": 2, "result": "LOSS"}, "old-2"),
+    ]
+    fake_db = FakeDB(
+        collections={"trades_paper": FakeCollection(docs=old_trades)},
+        document_paths={
+            fc._STATS_DOC: FakeDocRef({"total_trades": 2}),
+            fc._MODEL_STATE_DOC: FakeDocRef({"revision": 7}),
+        },
+    )
+    _reset_firebase_state(fake_db)
+    monkeypatch.setenv("TRADING_MODE", "paper_train")
+
+    assert fc.load_stats()["trades"] == 2
+    assert fc.load_model_state()["revision"] == 7
+    assert len(fc.load_old_trades(limit=2)) == 2
+
+    status = fc.get_quota_status()
+    assert status["reads_hour"] == 4
+    assert status["read_hour_attribution"] == {
+        "load_stats": 1,
+        "load_model_state": 1,
+        "load_old_trades": 2,
     }
 
 

@@ -97,7 +97,14 @@ _QUOTA_READS = 0 if _is_new_day else 0    # Reset if crossed midnight
 _QUOTA_WRITES = 0 if _is_new_day else 0   # Reset if crossed midnight
 _QUOTA_MAX_READS = int(os.getenv("FIREBASE_QUOTA_MAX_READS", "50000"))   # Daily limit: 50,000 reads = real Firebase free-tier ceiling (was 40,000; raised to real max 2026-07-10). Blaze (paid) needed to exceed.
 _QUOTA_MAX_WRITES = int(os.getenv("FIREBASE_QUOTA_MAX_WRITES", "20000"))  # Daily limit: 20,000 writes = real Firebase free-tier ceiling (was 15,000; raised to real max 2026-07-10). Blaze (paid) needed to exceed.
+_QUOTA_MAX_READS_PER_HOUR = max(
+    1, int(os.getenv("FIREBASE_QUOTA_MAX_READS_PER_HOUR", "600"))
+)
+_QUOTA_HOURLY_WINDOW_START = int(time.time() // 3600) * 3600
+_QUOTA_HOURLY_READS = 0
+_QUOTA_HOURLY_BLOCKS = 0
 _WRITE_ATTRIBUTION: dict = {}
+_HOURLY_READ_ATTRIBUTION: dict = {}
 
 # EMERGENCY (2026-04-25): Firebase degradation tracking — safe mode on 429/unavailable
 _FIREBASE_READ_DEGRADED = False
@@ -168,6 +175,26 @@ def _reset_quota_if_new_day():
                           now_utc.date(), last_reset_utc.date(),
                           now_utc >= current_boundary_utc, last_reset_utc < current_boundary_utc)
 
+
+def _reset_quota_if_new_hour(now_ts=None):
+    """Reset the process read budget at each UTC clock-hour boundary."""
+    global _QUOTA_HOURLY_WINDOW_START, _QUOTA_HOURLY_READS
+    global _QUOTA_HOURLY_BLOCKS
+
+    current_ts = time.time() if now_ts is None else float(now_ts)
+    current_boundary = int(current_ts // 3600) * 3600
+    with _QUOTA_LOCK:
+        if current_boundary == _QUOTA_HOURLY_WINDOW_START:
+            return
+        _QUOTA_HOURLY_WINDOW_START = current_boundary
+        _QUOTA_HOURLY_READS = 0
+        _QUOTA_HOURLY_BLOCKS = 0
+        _HOURLY_READ_ATTRIBUTION.clear()
+    logging.info(
+        "[QUOTA_HOURLY_RESET] Firebase hourly read budget reset to %d",
+        _QUOTA_MAX_READS_PER_HOUR,
+    )
+
 def refresh_quota_window_on_startup():
     """
     HOTFIX (2026-04-25): Refresh local quota window at startup.
@@ -198,8 +225,14 @@ def _get_quota_severity(reads_pct: float, writes_pct: float) -> str:
         return "INFO"
 
 def _can_read(count=1):
-    """Check if read quota available. Returns (allowed, current_usage, limit)."""
+    """Check both daily and hourly read budgets before issuing Firestore I/O."""
+    global _QUOTA_HOURLY_BLOCKS
     _reset_quota_if_new_day()
+    _reset_quota_if_new_hour()
+    try:
+        count = max(0, int(count or 0))
+    except (TypeError, ValueError):
+        count = 1
     # V10.22 HARDENING: Strict quota gate at 50% (15k) to ensure safety margin
     # This prevents hitting the hard limit of 30k
     with _QUOTA_LOCK:
@@ -221,6 +254,19 @@ def _can_read(count=1):
             )
             return False, _QUOTA_READS, _QUOTA_MAX_READS
 
+        if _QUOTA_HOURLY_READS + count > _QUOTA_MAX_READS_PER_HOUR:
+            _QUOTA_HOURLY_BLOCKS += 1
+            if _QUOTA_HOURLY_BLOCKS == 1 or _QUOTA_HOURLY_BLOCKS % 50 == 0:
+                logging.warning(
+                    "[QUOTA_HOURLY_GATE] Blocking read: %d/%d this hour "
+                    "(requested=%d blocked=%d)",
+                    _QUOTA_HOURLY_READS,
+                    _QUOTA_MAX_READS_PER_HOUR,
+                    count,
+                    _QUOTA_HOURLY_BLOCKS,
+                )
+            return False, _QUOTA_HOURLY_READS, _QUOTA_MAX_READS_PER_HOUR
+
         allowed = (_QUOTA_READS + count) <= _QUOTA_MAX_READS
         return allowed, _QUOTA_READS, _QUOTA_MAX_READS
 
@@ -233,10 +279,19 @@ _LAST_ATTRIBUTION_LOG_TS = 0.0
 
 def _record_read(count=1, label="unlabeled"):
     """Record read operation(s), attributed to the calling context."""
-    global _QUOTA_READS, _LAST_ATTRIBUTION_LOG_TS
+    global _QUOTA_READS, _QUOTA_HOURLY_READS, _LAST_ATTRIBUTION_LOG_TS
+    _reset_quota_if_new_hour()
+    try:
+        count = max(0, int(count or 0))
+    except (TypeError, ValueError):
+        count = 1
     with _QUOTA_LOCK:
         _QUOTA_READS += count
+        _QUOTA_HOURLY_READS += count
         _READ_ATTRIBUTION[label] = _READ_ATTRIBUTION.get(label, 0) + count
+        _HOURLY_READ_ATTRIBUTION[label] = (
+            _HOURLY_READ_ATTRIBUTION.get(label, 0) + count
+        )
         reads_pct = _QUOTA_READS/_QUOTA_MAX_READS*100
     now_ts = time.time()
     if now_ts - _LAST_ATTRIBUTION_LOG_TS >= _ATTRIBUTION_LOG_INTERVAL_S:
@@ -335,12 +390,21 @@ def _record_write(count=1):
 def get_quota_status():
     """Return current quota usage as dict for monitoring."""
     _reset_quota_if_new_day()
+    _reset_quota_if_new_hour()
     with _QUOTA_LOCK:
         return {
             "reads": _QUOTA_READS,
             "reads_limit": _QUOTA_MAX_READS,
             "reads_pct": f"{_QUOTA_READS/_QUOTA_MAX_READS*100:.1f}%",
             "read_attribution": dict(_READ_ATTRIBUTION),
+            "reads_hour": _QUOTA_HOURLY_READS,
+            "reads_hour_limit": _QUOTA_MAX_READS_PER_HOUR,
+            "reads_hour_pct": (
+                f"{_QUOTA_HOURLY_READS/_QUOTA_MAX_READS_PER_HOUR*100:.1f}%"
+            ),
+            "read_hour_attribution": dict(_HOURLY_READ_ATTRIBUTION),
+            "read_hour_window_started_at": _QUOTA_HOURLY_WINDOW_START,
+            "reads_hour_blocked": _QUOTA_HOURLY_BLOCKS,
             "writes": _QUOTA_WRITES,
             "writes_limit": _QUOTA_MAX_WRITES,
             "writes_pct": f"{_QUOTA_WRITES/_QUOTA_MAX_WRITES*100:.1f}%",
@@ -607,8 +671,11 @@ def _load_mandatory_knowledge():
 
         # 2. Load calibration state (W/L per segment)
         try:
-            cal_doc = db.collection(col("calibration")).document("state").get()
-            if cal_doc.exists:
+            calibration = _read_doc_dict(
+                db.collection(col("calibration")).document("state"),
+                label="mandatory_calibration",
+            )
+            if calibration:
                 loaded_knowledge["calibration"] = True
                 print(f"[KNOWLEDGE_LOAD] Loaded calibration state")
             else:
@@ -618,8 +685,11 @@ def _load_mandatory_knowledge():
 
         # 3. Load entry gate weights
         try:
-            weights_doc = db.collection(col("weights")).document("entry_gates").get()
-            if weights_doc.exists:
+            weights = _read_doc_dict(
+                db.collection(col("weights")).document("entry_gates"),
+                label="mandatory_entry_weights",
+            )
+            if weights:
                 loaded_knowledge["weights"] = True
                 print(f"[KNOWLEDGE_LOAD] Loaded entry gate weights")
             else:
@@ -629,8 +699,11 @@ def _load_mandatory_knowledge():
 
         # 4. Load running metrics
         try:
-            metrics_doc = db.collection(col("metrics")).document("current").get()
-            if metrics_doc.exists:
+            metrics = _read_doc_dict(
+                db.collection(col("metrics")).document("current"),
+                label="mandatory_running_metrics",
+            )
+            if metrics:
                 loaded_knowledge["metrics"] = True
                 print(f"[KNOWLEDGE_LOAD] Loaded running metrics")
             else:
@@ -1022,7 +1095,7 @@ def load_learning_archive(limit=None):
     if db is None:
         return []
     if limit is None:
-        limit = int(os.getenv("FIREBASE_LEARNING_ARCHIVE_HYDRATE_LIMIT", "2000"))
+        limit = int(os.getenv("FIREBASE_LEARNING_ARCHIVE_HYDRATE_LIMIT", "300"))
     limit = min(max(int(limit), 1), 5000)
     allowed, current, limit_reads = _can_read(limit)
     if not allowed:
@@ -1118,9 +1191,11 @@ def load_stats() -> dict:
     if db is None:
         return {}
     try:
-        doc = db.document(_STATS_DOC).get()
-        if doc.exists:
-            d = doc.to_dict()
+        d = _read_doc_dict(
+            db.document(_STATS_DOC),
+            label="load_stats",
+        )
+        if d:
             result = {
                 "trades":   int(d.get("total_trades",   0)),
                 "wins":     int(d.get("total_wins",     0)),
@@ -1602,12 +1677,10 @@ def load_model_state() -> dict:
     """Return persisted model state dict, or {} if not available."""
     if db is None:
         return {}
-    try:
-        doc = db.document(_MODEL_STATE_DOC).get()
-        return doc.to_dict() if doc.exists else {}
-    except Exception as e:
-        print(f"⚠️  load_model_state: {e}")
-        return {}
+    return _read_doc_dict(
+        db.document(_MODEL_STATE_DOC),
+        label="load_model_state",
+    )
 
 
 def load_old_trades(limit=200):
@@ -1620,16 +1693,30 @@ def load_old_trades(limit=200):
     if db is None:
         return []
     try:
+        limit = min(max(int(limit), 1), 5000)
+    except (TypeError, ValueError):
+        limit = 200
+    allowed, current, limit_reads = _can_read(limit)
+    if not allowed:
+        logging.warning(
+            "[OLD_TRADES_READ_DEFER] quota=%s/%s requested=%s",
+            current,
+            limit_reads,
+            limit,
+        )
+        return []
+    try:
         import os as _os_load_old
         trading_mode = _os_load_old.getenv("TRADING_MODE", "paper_live").lower()
         trades_collection = "trades_paper" if "paper" in trading_mode else "trades"
 
-        docs = (
+        docs = list(
             db.collection(col(trades_collection))
             .order_by("timestamp", direction=firestore.Query.ASCENDING)
             .limit(limit)
             .stream()
         )
+        _record_read(max(1, len(docs)), label="load_old_trades")
         return [{**d.to_dict(), "id": d.id} for d in docs]
     except Exception as e:
         print(f"❌ load_old_trades: {e}")
@@ -2371,10 +2458,19 @@ def probe_quota_recovered() -> bool:
         _log_probe.warning("[RECOVERY_PROBE] Firebase not initialized, skipping probe")
         return False
 
+    _reset_quota_if_new_hour(now)
+    with _QUOTA_LOCK:
+        if _QUOTA_HOURLY_READS + 1 > _QUOTA_MAX_READS_PER_HOUR:
+            _log_probe.warning(
+                "[RECOVERY_PROBE] Skipping probe: hourly read budget exhausted"
+            )
+            return False
+
     try:
         # Minimal read: fetch runtime config (tiny doc)
         # This tests read access without scanning trades/signals
         config_doc = db.collection(col("config")).document("runtime").get()
+        _record_read(1, label="recovery_probe")
 
         # Success: Firebase is responding — clear degradation flags so writes resume
         _clear_firebase_degradation()
