@@ -258,7 +258,7 @@ def test_supervisor_applies_only_after_repeated_confirmation(tmp_path):
     assert second["policy"]["revision"] == 1
     assert second["policy"]["paper_entry_quota_multiplier"] == 0.75
     assert second["policy"]["canonical_symbol_quota_multipliers"] == {
-        "BTCUSDT": 0.25,
+        "BTCUSDT": 0.10,
     }
     assert second["policy"]["pause_new_entries"] is False
     assert second["audit"][-1]["event"] == "policy_applied"

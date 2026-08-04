@@ -1225,7 +1225,10 @@ HTML_TEMPLATE = r"""
             document.getElementById('agent_review_detail').textContent =
                 String(recommendation.code || 'NO_REVIEW') + ' / canonical ' +
                 String(reviewWindow.canonical_n || 0) + '/' +
-                String(reviewWindow.requested_n || 200) + ' · unknown ' +
+                String(reviewWindow.requested_n || 200) + ' · scanned ' +
+                String(reviewWindow.raw_n || 0) + ' · exploration ' +
+                String(reviewWindow.scanned_exploration_n ?? reviewWindow.exploration_n ?? 0) +
+                ' · unknown ' +
                 String(reviewWindow.unknown_provenance_n || 0) +
                 (targetSymbolText ? ' · symbol quota ' + targetSymbolText : '');
             paint('agent_exploration_status', exploration.status);

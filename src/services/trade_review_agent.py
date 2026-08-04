@@ -1,4 +1,4 @@
-"""Deterministic review agent for the latest 200 closed PAPER trades."""
+"""Deterministic cohort-aware review agent for recent PAPER trades."""
 
 from __future__ import annotations
 
@@ -14,8 +14,9 @@ from src.core.trade_metrics_contract import classify_outcome
 
 SCHEMA_VERSION = "trade_review_report_v1"
 WINDOW_SIZE = 200
+SCAN_SIZE = 400
 SYMBOL_POLICY_HALF_WINDOW = 30
-DEGRADED_CANONICAL_SYMBOL_QUOTA = 0.25
+DEGRADED_CANONICAL_SYMBOL_QUOTA = 0.10
 CONTROL_BUCKETS = frozenset(
     {
         "D_NEG_EV_CONTROL",
@@ -103,9 +104,14 @@ class TradeReviewAgent:
         *,
         clock: Callable[[], float] = time.time,
         window_size: int = WINDOW_SIZE,
+        scan_size: int = SCAN_SIZE,
     ):
         self._clock = clock
         self._window_size = min(max(int(window_size), 20), WINDOW_SIZE)
+        self._scan_size = min(
+            max(int(scan_size), self._window_size),
+            SCAN_SIZE,
+        )
 
     @staticmethod
     def _normalise_trade(raw: Any) -> tuple[str, Optional[dict]]:
@@ -218,13 +224,18 @@ class TradeReviewAgent:
             ),
             reverse=True,
         )
-        selected = raw_list[: self._window_size]
+        # Exploration trades are intentionally high-volume and must not evict
+        # canonical evidence from the strategy feedback loop. Scan a bounded
+        # local-only source, then build equally bounded cohort windows. This
+        # preserves fresh experimental coverage without letting it starve the
+        # canonical two-window checks that are allowed to tune policy.
+        scanned = raw_list[: self._scan_size]
 
         seen: set[str] = set()
         cohorts: dict[str, list[dict]] = defaultdict(list)
         excluded = Counter()
         normalized = []
-        for raw in selected:
+        for raw in scanned:
             cohort, trade = self._normalise_trade(raw)
             if trade is None:
                 excluded[cohort] += 1
@@ -236,11 +247,15 @@ class TradeReviewAgent:
             normalized.append(trade)
             cohorts[cohort].append(trade)
 
-        canonical = sorted(cohorts["canonical"], key=lambda trade: trade["_exit_ts"])
+        scanned_canonical_n = len(cohorts["canonical"])
+        scanned_exploration_n = len(cohorts["exploration"])
+        canonical = sorted(
+            cohorts["canonical"], key=lambda trade: trade["_exit_ts"]
+        )[-self._window_size:]
         exploration = sorted(
             cohorts["exploration"],
             key=lambda trade: trade["_exit_ts"],
-        )
+        )[-self._window_size:]
         unknown = cohorts["unknown_provenance"]
         recent50 = canonical[-50:]
         previous50 = canonical[-100:-50]
@@ -270,8 +285,8 @@ class TradeReviewAgent:
         previous_metrics = _metric_block(previous50)
         exploration_metrics = _metric_block(exploration)
 
-        unknown_ratio = len(unknown) / max(1, len(selected))
-        schema_valid_ratio = len(normalized) / max(1, len(selected))
+        unknown_ratio = len(unknown) / max(1, len(scanned))
+        schema_valid_ratio = len(normalized) / max(1, len(scanned))
         data_blocked = bool(
             excluded
             or schema_valid_ratio < 0.95
@@ -285,7 +300,7 @@ class TradeReviewAgent:
             or 0
         )
         sufficient = (
-            len(selected) >= self._window_size
+            len(scanned) >= self._window_size
             and len(canonical) >= 100
             and len(recent50) == 50
             and len(previous50) == 50
@@ -315,7 +330,7 @@ class TradeReviewAgent:
                 {
                     "code": "INSUFFICIENT_EVIDENCE",
                     "reason_codes": [
-                        "need_200_raw_100_canonical_two_50_windows",
+                        "need_bounded_scan_100_canonical_two_50_windows",
                     ],
                 }
             )
@@ -507,9 +522,12 @@ class TradeReviewAgent:
             "checked_at": now,
             "window": {
                 "requested_n": self._window_size,
-                "raw_n": len(selected),
+                "scan_limit_n": self._scan_size,
+                "raw_n": len(scanned),
                 "canonical_n": len(canonical),
                 "exploration_n": len(exploration),
+                "scanned_canonical_n": scanned_canonical_n,
+                "scanned_exploration_n": scanned_exploration_n,
                 "unknown_provenance_n": len(unknown),
             },
             "data_quality": {

@@ -159,7 +159,7 @@ def test_trade_review_reduces_only_stably_weak_canonical_symbol():
         "code": "APPLY_CANONICAL_SYMBOL_QUOTAS",
         "auto_applicable": True,
         "current_canonical_quota_multipliers": {},
-        "target_canonical_quota_multipliers": {"ADAUSDT": 0.25},
+        "target_canonical_quota_multipliers": {"ADAUSDT": 0.10},
         "minimum_evidence_per_symbol": 60,
     }
     advisory = next(
@@ -215,6 +215,39 @@ def test_exploration_outcomes_never_drive_canonical_recommendation():
     assert report["window"]["exploration_n"] == 50
     assert report["metrics"]["exploration"]["all"]["profit_factor"] == 999.0
     assert report["recommendation"]["auto_applicable"] is False
+
+
+def test_exploration_volume_does_not_starve_canonical_review_window():
+    pnl = [0.10] * 100 + [0.10, -0.15] * 50
+    canonical = [_trade(i, value) for i, value in enumerate(pnl)]
+    exploration = [
+        _trade(
+            1000 + index,
+            1.0,
+            bucket="D_NEG_EV_CONTROL",
+            training_bucket="D_NEG_EV_CONTROL",
+            readiness_eligible=False,
+            real_readiness_eligible=False,
+            paper_learning_only=True,
+            learning_shadow_only=True,
+        )
+        for index in range(200)
+    ]
+
+    report = _review(canonical + exploration)
+
+    assert report["status"] == "ready"
+    assert report["window"] == {
+        "requested_n": 200,
+        "scan_limit_n": 400,
+        "raw_n": 400,
+        "canonical_n": 200,
+        "exploration_n": 200,
+        "scanned_canonical_n": 200,
+        "scanned_exploration_n": 200,
+        "unknown_provenance_n": 0,
+    }
+    assert report["recommendation"]["code"] == "GLOBAL_QUOTA_075"
 
 
 def test_unknown_legacy_provenance_blocks_strategy_change():

@@ -821,7 +821,13 @@ class TradingAgentSupervisor:
         from src.services.paper_trade_executor import get_paper_open_positions
 
         learner = get_learner()
-        local_trades = list(get_closed_trades(limit=200) or [])
+        source_limit = _env_int(
+            "TRADING_AGENT_TRADE_REVIEW_SOURCE_LIMIT",
+            400,
+            200,
+            2000,
+        )
+        local_trades = list(get_closed_trades(limit=source_limit) or [])
         # Firebase archive is hydrated into SQLite at startup.  Use it as a
         # recovery/backfill source when the bounded local cache is incomplete;
         # this keeps review/learning data rich without network I/O per tick.
@@ -862,9 +868,13 @@ class TradingAgentSupervisor:
             except (TypeError, ValueError):
                 return 0.0
 
+        result_limit = max(
+            source_limit,
+            archive_limit if "archive_limit" in locals() else source_limit,
+        )
         closed_trades = sorted(
             merged_trades.values(), key=_trade_ts, reverse=True
-        )[:archive_limit if "archive_limit" in locals() else 200]
+        )[:result_limit]
         learning_snapshot = dict(learner.get_paper_policy_snapshot() or {})
         learning_snapshot["last_learning_update_ts"] = max(
             (_trade_ts(trade) for trade in closed_trades),
