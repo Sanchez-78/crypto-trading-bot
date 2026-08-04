@@ -10,8 +10,8 @@ The runtime topology is intentionally deterministic:
 No component edits ``.env`` or enables real orders.  Automatic policy controls
 are limited to a PAPER entry pause, a global exploration quota clamped to
 ``0.50..1.00``, and per-symbol canonical sampling quotas clamped to
-``0.10..1.00``.  Reduced canonical candidates remain eligible for the separate
-exploration cohort so learning coverage is preserved.
+``0.00..1.00``.  Quarantined canonical candidates remain eligible for the
+separate exploration cohort so learning coverage is preserved.
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ PAPER_MODES = frozenset({"paper_live", "paper_train", "replay_train"})
 MIN_QUOTA_MULTIPLIER = 0.50
 MAX_QUOTA_MULTIPLIER = 1.00
 MAX_QUOTA_STEP = 0.25
-MIN_CANONICAL_SYMBOL_QUOTA = 0.10
+MIN_CANONICAL_SYMBOL_QUOTA = 0.00
 MAX_AUDIT_RECORDS = 50
 DEPLOYMENT_MANIFEST_PATHS = (
     Path("/opt/cryptomaster/reports/deployed_overlay_manifest.json"),

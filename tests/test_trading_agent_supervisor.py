@@ -258,7 +258,7 @@ def test_supervisor_applies_only_after_repeated_confirmation(tmp_path):
     assert second["policy"]["revision"] == 1
     assert second["policy"]["paper_entry_quota_multiplier"] == 0.75
     assert second["policy"]["canonical_symbol_quota_multipliers"] == {
-        "BTCUSDT": 0.10,
+        "BTCUSDT": 0.00,
     }
     assert second["policy"]["pause_new_entries"] is False
     assert second["audit"][-1]["event"] == "policy_applied"
@@ -453,7 +453,9 @@ def test_policy_cooldown_and_new_trade_evidence_gate_recovery(tmp_path):
     recovered = supervisor.run_cycle()
     assert recovered["proposal"]["decision"] == "applied"
     assert recovered["policy"]["paper_entry_quota_multiplier"] == 1.0
-    assert recovered["policy"]["canonical_symbol_quota_multipliers"] == {}
+    assert recovered["policy"]["canonical_symbol_quota_multipliers"] == {
+        "BTCUSDT": 0.0,
+    }
 
 
 def test_circuit_breaker_opens_after_three_collection_failures(tmp_path):
@@ -549,6 +551,36 @@ def test_canonical_symbol_quota_preserves_a_bounded_learning_sample(monkeypatch)
     assert all(
         result["canonical_symbol_quota_multiplier"] == 1.0
         for result in eth
+    )
+
+
+def test_zero_canonical_symbol_quota_quarantines_every_candidate(monkeypatch):
+    class FakeSupervisor:
+        @staticmethod
+        def get_effective_policy():
+            return {
+                **agents._default_policy(),
+                "revision": 5,
+                "canonical_symbol_quota_multipliers": {"ADAUSDT": 0.0},
+                "reason": "symbol_quarantine",
+            }
+
+    monkeypatch.setattr(agents, "_supervisor", FakeSupervisor())
+    monkeypatch.setattr(agents, "_canonical_candidate_sequence", 0)
+
+    results = [
+        agents.apply_policy_to_canonical_candidate(symbol="ADAUSDT")
+        for _ in range(100)
+    ]
+
+    assert all(result["allowed"] is False for result in results)
+    assert all(
+        result["canonical_symbol_quota_multiplier"] == 0.0
+        for result in results
+    )
+    assert all(
+        result["reason"] == "agent_supervisor_canonical_symbol_quota"
+        for result in results
     )
 
 

@@ -159,7 +159,7 @@ def test_trade_review_reduces_only_stably_weak_canonical_symbol():
         "code": "APPLY_CANONICAL_SYMBOL_QUOTAS",
         "auto_applicable": True,
         "current_canonical_quota_multipliers": {},
-        "target_canonical_quota_multipliers": {"ADAUSDT": 0.10},
+        "target_canonical_quota_multipliers": {"ADAUSDT": 0.00},
         "minimum_evidence_per_symbol": 60,
     }
     advisory = next(
@@ -215,6 +215,96 @@ def test_exploration_outcomes_never_drive_canonical_recommendation():
     assert report["window"]["exploration_n"] == 50
     assert report["metrics"]["exploration"]["all"]["profit_factor"] == 999.0
     assert report["recommendation"]["auto_applicable"] is False
+
+
+def test_quarantined_symbol_requires_two_strong_canonical_shadow_windows():
+    canonical = [
+        _trade(index, 0.20, symbol="ETHUSDT")
+        for index in range(140)
+    ] + [
+        _trade(
+            140 + index,
+            0.10 if index % 2 else -0.20,
+            symbol="ADAUSDT",
+        )
+        for index in range(60)
+    ]
+    shadow = [
+        _trade(
+            1000 + index,
+            0.30 if index % 2 else -0.10,
+            symbol="ADAUSDT",
+            exit_ts=1_700_100_000 + index,
+            bucket="C_WEAK_EV_TRAIN",
+            training_bucket="C_WEAK_EV_TRAIN",
+            readiness_eligible=False,
+            real_readiness_eligible=False,
+            paper_learning_only=True,
+            learning_shadow_only=True,
+            tags=["canonical_policy_shadow", "canonical_policy_revision:4"],
+        )
+        for index in range(60)
+    ]
+
+    report = TradeReviewAgent().analyze(
+        canonical + shadow,
+        current_policy={
+            "revision": 4,
+            "applied_at": 1_700_099_000,
+            "paper_entry_quota_multiplier": 0.75,
+            "canonical_symbol_quota_multipliers": {"ADAUSDT": 0.0},
+        },
+        learning_snapshot={"lifetime_n": 1000},
+        now=1_800_000_000,
+    )
+
+    assert report["symbol_policy"]["auto_applicable"] is True
+    assert report["symbol_policy"]["target_canonical_quota_multipliers"] == {
+        "ADAUSDT": 0.10,
+    }
+    advisory = next(
+        item
+        for item in report["advisories"]
+        if item["code"] == "CANONICAL_SYMBOL_RECOVERY_PROBE"
+    )
+    assert advisory["shadow_previous30"]["profit_factor"] == 3.0
+    assert advisory["shadow_recent30"]["profit_factor"] == 3.0
+
+
+def test_generic_exploration_cannot_restore_quarantined_symbol():
+    canonical = [_trade(index, 0.20) for index in range(200)]
+    exploration = [
+        _trade(
+            1000 + index,
+            0.30,
+            symbol="ADAUSDT",
+            exit_ts=1_700_100_000 + index,
+            bucket="D_NEG_EV_CONTROL",
+            training_bucket="D_NEG_EV_CONTROL",
+            readiness_eligible=False,
+            real_readiness_eligible=False,
+            paper_learning_only=True,
+            learning_shadow_only=True,
+        )
+        for index in range(60)
+    ]
+
+    report = TradeReviewAgent().analyze(
+        canonical + exploration,
+        current_policy={
+            "revision": 4,
+            "applied_at": 1_700_099_000,
+            "paper_entry_quota_multiplier": 0.75,
+            "canonical_symbol_quota_multipliers": {"ADAUSDT": 0.0},
+        },
+        learning_snapshot={"lifetime_n": 1000},
+        now=1_800_000_000,
+    )
+
+    assert report["symbol_policy"]["auto_applicable"] is False
+    assert report["symbol_policy"]["target_canonical_quota_multipliers"] == {
+        "ADAUSDT": 0.0,
+    }
 
 
 def test_exploration_volume_does_not_starve_canonical_review_window():

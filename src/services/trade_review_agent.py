@@ -17,7 +17,8 @@ WINDOW_SIZE = 200
 SCAN_SIZE = 400
 SYMBOL_POLICY_HALF_WINDOW = 30
 POST_POLICY_MIN_CANONICAL = 20
-DEGRADED_CANONICAL_SYMBOL_QUOTA = 0.10
+DEGRADED_CANONICAL_SYMBOL_QUOTA = 0.00
+CANONICAL_SHADOW_RECOVERY_QUOTA = 0.10
 CONTROL_BUCKETS = frozenset(
     {
         "D_NEG_EV_CONTROL",
@@ -475,16 +476,89 @@ class TradeReviewAgent:
                 symbol = str(raw_symbol or "").strip().upper()
                 quota = _finite(raw_quota, 1.0)
                 if symbol and quota is not None and quota < 1.0:
-                    current_symbol_quotas[symbol] = min(max(quota, 0.10), 1.0)
+                    current_symbol_quotas[symbol] = min(max(quota, 0.00), 1.0)
         target_symbol_quotas = dict(current_symbol_quotas)
         symbol_groups: dict[str, list[dict]] = defaultdict(list)
         for trade in canonical:
             symbol_groups[str(trade.get("symbol") or "UNKNOWN").upper()].append(
                 trade
             )
+        canonical_shadow_groups: dict[str, list[dict]] = defaultdict(list)
+        for trade in exploration:
+            tags = {
+                str(tag).strip().lower()
+                for tag in (trade.get("tags") or [])
+            }
+            if "canonical_policy_shadow" in tags:
+                canonical_shadow_groups[
+                    str(trade.get("symbol") or "UNKNOWN").upper()
+                ].append(trade)
         symbol_advisories = []
-        for symbol, values in sorted(symbol_groups.items()):
+        reviewed_symbols = set(symbol_groups) | set(current_symbol_quotas)
+        for symbol in sorted(reviewed_symbols):
             required = SYMBOL_POLICY_HALF_WINDOW * 2
+            current_quota = current_symbol_quotas.get(symbol, 1.0)
+            shadow_values = canonical_shadow_groups.get(symbol, [])
+
+            # A fully quarantined symbol may only re-enter canonical as a
+            # bounded 10% probe.  The evidence must be made of candidates that
+            # passed canonical admission and were routed to exploration solely
+            # by this policy, all collected after the quarantine started.
+            if current_quota <= 0.0:
+                recovery_values = [
+                    trade
+                    for trade in shadow_values
+                    if policy_applied_at > 0.0
+                    and trade["_exit_ts"] >= policy_applied_at
+                ]
+                if len(recovery_values) >= required:
+                    recovery_evidence = recovery_values[-required:]
+                    shadow_previous = _metric_block(
+                        recovery_evidence[:SYMBOL_POLICY_HALF_WINDOW]
+                    )
+                    shadow_recent = _metric_block(
+                        recovery_evidence[SYMBOL_POLICY_HALF_WINDOW:]
+                    )
+                    shadow_combined = _metric_block(recovery_evidence)
+                    stable_shadow_recovery = (
+                        shadow_previous["profit_factor"] >= 1.20
+                        and shadow_recent["profit_factor"] >= 1.20
+                        and shadow_combined["profit_factor"] >= 1.20
+                        and shadow_previous["expectancy_pct_points"] > 0.0
+                        and shadow_recent["expectancy_pct_points"] > 0.0
+                    )
+                    if stable_shadow_recovery:
+                        target_symbol_quotas[symbol] = (
+                            CANONICAL_SHADOW_RECOVERY_QUOTA
+                        )
+                        symbol_advisories.append(
+                            {
+                                "code": "CANONICAL_SYMBOL_RECOVERY_PROBE",
+                                "auto_applicable": sufficient,
+                                "symbol": symbol,
+                                "target_quota_multiplier":
+                                    CANONICAL_SHADOW_RECOVERY_QUOTA,
+                                "shadow_previous30": shadow_previous,
+                                "shadow_recent30": shadow_recent,
+                                "shadow_combined60": shadow_combined,
+                                "reason_codes": [
+                                    "two_canonical_shadow_windows_positive_edge"
+                                ],
+                            }
+                        )
+                continue
+
+            values = symbol_groups.get(symbol, [])
+            # Once a shadow-backed recovery probe is active, stale canonical
+            # history must not immediately undo it.  Gather two fresh canonical
+            # windows after the probe before either restoring or quarantining.
+            if current_quota < 1.0 and len(shadow_values) >= required:
+                values = [
+                    trade
+                    for trade in values
+                    if policy_applied_at > 0.0
+                    and trade["_exit_ts"] >= policy_applied_at
+                ]
             if len(values) < required:
                 continue
             evidence = values[-required:]

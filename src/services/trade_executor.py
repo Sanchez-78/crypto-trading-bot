@@ -1878,6 +1878,10 @@ def _maybe_route_to_paper_training(signal: dict, current_price: float, reject_re
                     "paper_learning_only": result.get("paper_learning_only", False),
                     "learning_shadow_only": result.get("learning_shadow_only", False),
                     "learning_source": result.get("learning_source"),
+                    "tags": list(dict.fromkeys(
+                        list(signal.get("tags") or [])
+                        + list(result.get("tags") or [])
+                    )),
                 }
 
                 # P1.1AP-N2: Add recovery admission metadata if applicable
@@ -2441,8 +2445,18 @@ def handle_signal(signal):
                 _canonical_quota,
                 _canonical_policy.get("policy_revision", 0),
             )
+            _shadow_signal = dict(signal)
+            _shadow_tags = list(_shadow_signal.get("tags") or [])
+            _shadow_tags.extend(
+                [
+                    "canonical_policy_shadow",
+                    "canonical_policy_revision:%s"
+                    % _canonical_policy.get("policy_revision", 0),
+                ]
+            )
+            _shadow_signal["tags"] = list(dict.fromkeys(_shadow_tags))
             _drop_and_route_to_training(
-                signal,
+                _shadow_signal,
                 entry,
                 f"canonical_policy:{_canonical_reason}",
             )
