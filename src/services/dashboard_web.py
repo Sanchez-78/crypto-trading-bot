@@ -1216,6 +1216,8 @@ HTML_TEMPLATE = r"""
 
             paint('agent_review_status', review.status);
             const reviewWindow = review.window || {};
+            const postPolicy = review.post_policy || {};
+            const postPolicyCanonical = postPolicy.canonical || {};
             const recommendation = review.recommendation || {};
             const symbolPolicy = review.symbol_policy || {};
             const targetSymbols = symbolPolicy.target_canonical_quota_multipliers || {};
@@ -1230,6 +1232,9 @@ HTML_TEMPLATE = r"""
                 String(reviewWindow.scanned_exploration_n ?? reviewWindow.exploration_n ?? 0) +
                 ' · unknown ' +
                 String(reviewWindow.unknown_provenance_n || 0) +
+                ' · after policy ' + String(postPolicyCanonical.n || 0) + '/' +
+                String(postPolicy.minimum_canonical_n || 20) + ' ' +
+                String(postPolicy.status || 'waiting') +
                 (targetSymbolText ? ' · symbol quota ' + targetSymbolText : '');
             paint('agent_exploration_status', exploration.status);
             document.getElementById('agent_exploration_detail').textContent =

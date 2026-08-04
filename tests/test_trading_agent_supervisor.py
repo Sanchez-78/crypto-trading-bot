@@ -267,6 +267,72 @@ def test_supervisor_applies_only_after_repeated_confirmation(tmp_path):
     assert persisted["policy"]["revision"] == 1
 
 
+def test_hourly_report_exposes_post_policy_monitoring(tmp_path):
+    clock = FakeClock()
+    supervisor = _supervisor(tmp_path, clock)
+    supervisor._state["policy"] = {
+        **agents._default_policy(),
+        "revision": 3,
+        "paper_entry_quota_multiplier": 0.75,
+        "canonical_symbol_quota_multipliers": {"ADAUSDT": 0.10},
+        "applied_at": clock() - 200,
+        "applied_at_utc": "2023-11-14T22:10:00Z",
+        "reason": "trade_review:global_quota_075+symbol_quota",
+    }
+
+    state = supervisor.run_cycle()
+    report = state["hourly_maintenance"]["report"]
+
+    assert report["monitoring"]["post_policy_status"] == "collecting"
+    assert report["monitoring"]["post_policy_next_action"] == (
+        "collect_more_canonical_evidence"
+    )
+    assert report["monitoring"]["post_policy_minimum_canonical_n"] == 20
+    assert report["monitoring"]["trading_status"] == "active"
+    assert "post_policy=collecting" in report["summary"]
+
+
+def test_history_reset_still_archives_new_hourly_report(
+    tmp_path, monkeypatch
+):
+    from src.services import learning_archive
+
+    events = []
+
+    class FakeArchive:
+        @staticmethod
+        def status():
+            return {"status": "healthy", "pending_events": 0}
+
+    def archive_event(event_type, payload, **kwargs):
+        events.append((event_type, payload))
+        return {"accepted": True}
+
+    monkeypatch.setenv("TRADING_AGENT_LEARNING_HISTORY_RESET", "true")
+    monkeypatch.setattr(learning_archive, "get_learning_archive", FakeArchive)
+    monkeypatch.setattr(learning_archive, "archive_learning_event", archive_event)
+    monkeypatch.setattr(
+        learning_archive,
+        "flush_learning_archive",
+        lambda limit: {"sent": 1},
+    )
+    monkeypatch.setattr(
+        learning_archive,
+        "get_learning_archive_status",
+        lambda: {"status": "healthy"},
+    )
+
+    state = _supervisor(tmp_path, FakeClock()).run_cycle()
+
+    assert "learning_history_reset_active" in state[
+        "hourly_maintenance"
+    ]["repairs"]
+    assert any(
+        event_type == "hourly_supervisor_report"
+        for event_type, _payload in events
+    )
+
+
 def test_unchanged_policy_does_not_show_false_confirmation_wait(tmp_path):
     clock = FakeClock()
     supervisor = _supervisor(tmp_path, clock)

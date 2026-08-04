@@ -250,6 +250,49 @@ def test_exploration_volume_does_not_starve_canonical_review_window():
     assert report["recommendation"]["code"] == "GLOBAL_QUOTA_075"
 
 
+def test_trade_review_separates_post_policy_evidence():
+    trades = [_trade(index, 0.10) for index in range(180)] + [
+        _trade(index, -0.20) for index in range(180, 200)
+    ]
+    applied_at = trades[180]["exit_ts"]
+
+    report = TradeReviewAgent().analyze(
+        trades,
+        current_policy={
+            "revision": 3,
+            "applied_at": applied_at,
+            "paper_entry_quota_multiplier": 0.75,
+        },
+        learning_snapshot={"lifetime_n": 1000},
+        now=1_800_000_000,
+    )
+
+    assert report["post_policy"]["status"] == "review_required"
+    assert report["post_policy"]["next_action"] == "review_post_policy_edge"
+    assert report["post_policy"]["canonical"]["n"] == 20
+    assert report["post_policy"]["canonical"]["net_pnl_pct_points"] == -4.0
+
+
+def test_trade_review_waits_for_minimum_post_policy_sample():
+    trades = [_trade(index, 0.10) for index in range(181)] + [
+        _trade(index, -0.20) for index in range(181, 200)
+    ]
+
+    report = TradeReviewAgent().analyze(
+        trades,
+        current_policy={
+            "revision": 3,
+            "applied_at": trades[181]["exit_ts"],
+        },
+        learning_snapshot={"lifetime_n": 1000},
+        now=1_800_000_000,
+    )
+
+    assert report["post_policy"]["status"] == "collecting"
+    assert report["post_policy"]["canonical"]["n"] == 19
+    assert report["post_policy"]["minimum_canonical_n"] == 20
+
+
 def test_unknown_legacy_provenance_blocks_strategy_change():
     trades = []
     for index in range(200):

@@ -1231,6 +1231,7 @@ class TradingAgentSupervisor:
                         "window": review.get("window"),
                         "data_quality": review.get("data_quality"),
                         "metrics": review.get("metrics"),
+                        "post_policy": review.get("post_policy"),
                         "recommendation": review.get("recommendation"),
                         "advisories": review.get("advisories"),
                         "evidence": review.get("evidence"),
@@ -1310,44 +1311,41 @@ class TradingAgentSupervisor:
             )
 
             archive = get_learning_archive()
-            if str(os.getenv("TRADING_AGENT_LEARNING_HISTORY_RESET", "false")).lower() in {"1", "true", "yes", "on"}:
+            history_reset = str(
+                os.getenv("TRADING_AGENT_LEARNING_HISTORY_RESET", "false")
+            ).lower() in {"1", "true", "yes", "on"}
+            if history_reset:
                 result["repairs"].append("learning_history_reset_active")
-                result["archive_status"] = archive.status()
-                result["completed_at"] = now
-                result["completed_at_utc"] = _utc_iso(now)
-                self._state["hourly_maintenance"] = result
-                self._state["hourly_report"] = report
-                return result
-            hydrate_limit = _env_int(
-                "TRADING_AGENT_HOURLY_ARCHIVE_HYDRATE_LIMIT",
-                300,
-                100,
-                2000,
-            )
-            result["archive_hydrated"] = archive.hydrate(limit=hydrate_limit)
-
-            # Backfill timeout/control closes into the dashboard cache.  The
-            # operation is idempotent (trade_id is the cache key) and repairs
-            # historical close gaps without changing canonical learning policy.
-            try:
-                from src.services.local_persistent_cache import save_closed_trade
-
-                for event in archive.recent("paper_trade_closed", limit=2000):
-                    payload = event.get("payload") or {}
-                    if payload.get("trade_id"):
-                        save_closed_trade(payload)
-                        result["paper_close_backfilled"] += 1
-                if result["paper_close_backfilled"]:
-                    result["repairs"].append("paper_close_cache_backfill")
-            except Exception as exc:
-                result["status"] = "degraded"
-                result["repairs"].append(
-                    f"paper_close_backfill_error:{type(exc).__name__}"
+            else:
+                hydrate_limit = _env_int(
+                    "TRADING_AGENT_HOURLY_ARCHIVE_HYDRATE_LIMIT",
+                    300,
+                    100,
+                    2000,
                 )
+                result["archive_hydrated"] = archive.hydrate(limit=hydrate_limit)
+
+                # Backfill timeout/control closes into the dashboard cache.
+                # The operation is idempotent (trade_id is the cache key) and
+                # repairs historical gaps without changing learning policy.
+                try:
+                    from src.services.local_persistent_cache import save_closed_trade
+
+                    for event in archive.recent("paper_trade_closed", limit=2000):
+                        payload = event.get("payload") or {}
+                        if payload.get("trade_id"):
+                            save_closed_trade(payload)
+                            result["paper_close_backfilled"] += 1
+                    if result["paper_close_backfilled"]:
+                        result["repairs"].append("paper_close_cache_backfill")
+                except Exception as exc:
+                    result["status"] = "degraded"
+                    result["repairs"].append(
+                        f"paper_close_backfill_error:{type(exc).__name__}"
+                    )
 
             flushed = flush_learning_archive(limit=200)
             result["archive_flushed"] = int(flushed.get("sent", 0) or 0)
-            result["archive_status"] = archive.status()
             report_bucket = int(now // 3600)
             archived_report = archive_learning_event(
                 "hourly_supervisor_report",
@@ -1356,7 +1354,11 @@ class TradingAgentSupervisor:
                 created_at=now,
             )
             if archived_report.get("accepted"):
-                flush_learning_archive(limit=200)
+                report_flush = flush_learning_archive(limit=200)
+                result["archive_flushed"] += int(
+                    report_flush.get("sent", 0) or 0
+                )
+            result["archive_status"] = archive.status()
         except Exception as exc:
             result["status"] = "degraded"
             result["last_error"] = f"{type(exc).__name__}: {str(exc)[:300]}"
@@ -1393,13 +1395,18 @@ class TradingAgentSupervisor:
         current_policy = _validated_policy(self._state.get("policy"))
         review = (self._state.get("agents") or {}).get("trade_review") or {}
         trading = (self._state.get("agents") or {}).get("trading_health") or {}
+        archive = (self._state.get("agents") or {}).get("firebase_archive") or {}
         learning_metrics = ((review.get("metrics") or {}).get("canonical") or {}).get("all") or {}
+        recent_metrics = ((review.get("metrics") or {}).get("canonical") or {}).get("recent50") or {}
+        post_policy = review.get("post_policy") or {}
+        firebase_quota = archive.get("quota") or {}
         code_identity = _deployed_code_identity()
         code_sha = code_identity["sha"]
 
         previous_code = str(previous.get("code", {}).get("sha") or "")
         previous_strategy = previous.get("strategy") or {}
         previous_learning = previous.get("learning") or {}
+        previous_monitoring = previous.get("monitoring") or {}
         strategy_now = {
             "revision": current_policy.get("revision", 0),
             "quota_multiplier": current_policy.get("paper_entry_quota_multiplier", 1.0),
@@ -1419,6 +1426,46 @@ class TradingAgentSupervisor:
             "learning_status": trading.get("learning_status"),
             "canonical_profit_factor": learning_metrics.get("profit_factor", 0.0),
             "canonical_win_rate": learning_metrics.get("win_rate", 0.0),
+            "canonical_expectancy_pct_points": learning_metrics.get(
+                "expectancy_pct_points", 0.0
+            ),
+            "canonical_net_pnl_pct_points": learning_metrics.get(
+                "net_pnl_pct_points", 0.0
+            ),
+            "recent50_profit_factor": recent_metrics.get("profit_factor", 0.0),
+            "recent50_win_rate": recent_metrics.get("win_rate", 0.0),
+        }
+        monitoring_now = {
+            "post_policy_status": post_policy.get("status", "unavailable"),
+            "post_policy_next_action": post_policy.get(
+                "next_action", "await_review"
+            ),
+            "post_policy_canonical_n": (
+                post_policy.get("canonical") or {}
+            ).get("n", 0),
+            "post_policy_minimum_canonical_n": post_policy.get(
+                "minimum_canonical_n", 20
+            ),
+            "post_policy_canonical_profit_factor": (
+                post_policy.get("canonical") or {}
+            ).get("profit_factor", 0.0),
+            "post_policy_canonical_win_rate": (
+                post_policy.get("canonical") or {}
+            ).get("win_rate", 0.0),
+            "post_policy_canonical_net_pnl_pct_points": (
+                post_policy.get("canonical") or {}
+            ).get("net_pnl_pct_points", 0.0),
+            "trading_status": trading.get("trading_status", "unknown"),
+            "learning_status": trading.get("learning_status", "unknown"),
+            "open_positions": trading.get("open_positions", 0),
+            "last_close_age_s": trading.get("last_close_age_s"),
+            "firebase_reads_hour": firebase_quota.get("reads_hour", 0),
+            "firebase_reads_hour_limit": firebase_quota.get(
+                "reads_hour_limit", 0
+            ),
+            "firebase_reads_hour_blocked": firebase_quota.get(
+                "reads_hour_blocked", 0
+            ),
         }
         changes = []
         if previous_code and previous_code != code_sha:
@@ -1427,10 +1474,27 @@ class TradingAgentSupervisor:
             changes.append("strategy_policy_changed")
         if previous_learning and previous_learning != learning_now:
             changes.append("learning_state_changed")
+        monitoring_status_keys = (
+            "post_policy_status",
+            "post_policy_next_action",
+            "trading_status",
+            "learning_status",
+            "firebase_reads_hour_blocked",
+        )
+        if previous_monitoring and any(
+            previous_monitoring.get(key) != monitoring_now.get(key)
+            for key in monitoring_status_keys
+        ):
+            changes.append("monitoring_state_changed")
         if not changes:
             changes.append("no_changes")
+        post_policy_summary = (
+            f"post_policy={monitoring_now['post_policy_status']} "
+            f"({monitoring_now['post_policy_canonical_n']}/"
+            f"{monitoring_now['post_policy_minimum_canonical_n']})"
+        )
         if changes == ["no_changes"]:
-            summary = "Beze změny."
+            summary = f"Beze změny; {post_policy_summary}."
         else:
             summary = ", ".join(changes)
             if "learning_state_changed" in changes:
@@ -1439,6 +1503,7 @@ class TradingAgentSupervisor:
                     f"canonical={learning_now['canonical_n']}, "
                     f"unknown={learning_now['unknown_provenance_n']}"
                 )
+            summary += f"; {post_policy_summary}"
         return {
             "generated_at": now,
             "generated_at_utc": _utc_iso(now),
@@ -1451,6 +1516,8 @@ class TradingAgentSupervisor:
             "previous_strategy": previous_strategy,
             "learning": learning_now,
             "previous_learning": previous_learning,
+            "monitoring": monitoring_now,
+            "previous_monitoring": previous_monitoring,
             "summary": summary,
         }
 

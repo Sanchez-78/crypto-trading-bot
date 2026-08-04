@@ -16,6 +16,7 @@ SCHEMA_VERSION = "trade_review_report_v1"
 WINDOW_SIZE = 200
 SCAN_SIZE = 400
 SYMBOL_POLICY_HALF_WINDOW = 30
+POST_POLICY_MIN_CANONICAL = 20
 DEGRADED_CANONICAL_SYMBOL_QUOTA = 0.10
 CONTROL_BUCKETS = frozenset(
     {
@@ -285,6 +286,58 @@ class TradeReviewAgent:
         previous_metrics = _metric_block(previous50)
         exploration_metrics = _metric_block(exploration)
 
+        policy_revision = max(0, int(_finite(policy.get("revision"), 0.0) or 0))
+        policy_applied_at = _finite(policy.get("applied_at"), 0.0) or 0.0
+        post_policy_canonical = [
+            trade
+            for trade in canonical
+            if policy_applied_at > 0.0 and trade["_exit_ts"] >= policy_applied_at
+        ]
+        post_policy_exploration = [
+            trade
+            for trade in exploration
+            if policy_applied_at > 0.0 and trade["_exit_ts"] >= policy_applied_at
+        ]
+        post_policy_canonical_metrics = _metric_block(post_policy_canonical)
+        post_policy_exploration_metrics = _metric_block(post_policy_exploration)
+        post_policy_symbol_groups: dict[str, list[dict]] = defaultdict(list)
+        for trade in post_policy_canonical:
+            post_policy_symbol_groups[
+                str(trade.get("symbol") or "UNKNOWN").upper()
+            ].append(trade)
+        if policy_revision <= 0 or policy_applied_at <= 0.0:
+            post_policy_status = "baseline"
+            post_policy_next_action = "await_first_policy_change"
+        elif len(post_policy_canonical) < POST_POLICY_MIN_CANONICAL:
+            post_policy_status = "collecting"
+            post_policy_next_action = "collect_more_canonical_evidence"
+        elif (
+            post_policy_canonical_metrics["profit_factor"] < 0.80
+            or post_policy_canonical_metrics["expectancy_pct_points"] < 0.0
+        ):
+            post_policy_status = "review_required"
+            post_policy_next_action = "review_post_policy_edge"
+        else:
+            post_policy_status = "healthy"
+            post_policy_next_action = "hold_policy"
+        post_policy = {
+            "policy_revision": policy_revision,
+            "applied_at": policy_applied_at or None,
+            "status": post_policy_status,
+            "next_action": post_policy_next_action,
+            "minimum_canonical_n": POST_POLICY_MIN_CANONICAL,
+            "bounded_by_review_scan": True,
+            "canonical": post_policy_canonical_metrics,
+            "exploration": {
+                "descriptive_only": True,
+                **post_policy_exploration_metrics,
+            },
+            "canonical_by_symbol": {
+                symbol: _metric_block(values)
+                for symbol, values in sorted(post_policy_symbol_groups.items())
+            },
+        }
+
         unknown_ratio = len(unknown) / max(1, len(scanned))
         schema_valid_ratio = len(normalized) / max(1, len(scanned))
         data_blocked = bool(
@@ -548,6 +601,7 @@ class TradeReviewAgent:
                     "coverage": dict(sorted(exploration_coverage.items())),
                 },
             },
+            "post_policy": post_policy,
             "recommendation": recommendation,
             "symbol_policy": symbol_policy,
             "advisories": [
