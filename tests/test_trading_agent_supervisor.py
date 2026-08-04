@@ -458,6 +458,51 @@ def test_policy_cooldown_and_new_trade_evidence_gate_recovery(tmp_path):
     }
 
 
+def test_symbol_quota_reduction_does_not_wait_for_new_trade_evidence(
+    tmp_path,
+):
+    clock = FakeClock()
+    supervisor = _supervisor(tmp_path, clock)
+    supervisor._state["policy"] = {
+        **agents._default_policy(),
+        "revision": 3,
+        "paper_entry_quota_multiplier": 0.75,
+        "canonical_symbol_quota_multipliers": {"ADAUSDT": 0.10},
+        "evidence_lifetime_n": 390,
+    }
+    proposal = {
+        "target_entry_quota_multiplier": 0.75,
+        "target_canonical_symbol_quota_multipliers": {"ADAUSDT": 0.0},
+        "pause_new_entries": False,
+        "reason": "stable_symbol_degradation",
+        "urgency": "normal",
+        "evidence": {
+            "lifetime_n": 396,
+            "trade_review_evidence_sha": "same-stable-close-set",
+        },
+    }
+
+    first = supervisor._consider_proposal(
+        proposal=proposal,
+        mode="paper_train",
+        now=clock(),
+    )
+    proposal["evidence"]["trade_review_evidence_sha"] = (
+        "next-stable-close-set"
+    )
+    second = supervisor._consider_proposal(
+        proposal=proposal,
+        mode="paper_train",
+        now=clock(),
+    )
+
+    assert first == "awaiting_confirmation"
+    assert second == "applied"
+    assert supervisor._state["policy"][
+        "canonical_symbol_quota_multipliers"
+    ] == {"ADAUSDT": 0.0}
+
+
 def test_circuit_breaker_opens_after_three_collection_failures(tmp_path):
     clock = FakeClock()
 

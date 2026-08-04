@@ -1056,6 +1056,14 @@ class TradingAgentSupervisor:
             target_symbol_quotas
             != policy["canonical_symbol_quota_multipliers"]
         )
+        all_quota_symbols = set(target_symbol_quotas) | set(
+            policy["canonical_symbol_quota_multipliers"]
+        )
+        symbol_quota_relaxed = any(
+            target_symbol_quotas.get(symbol, 1.0)
+            > policy["canonical_symbol_quota_multipliers"].get(symbol, 1.0)
+            for symbol in all_quota_symbols
+        )
         if not size_changed and not pause_changed and not symbol_quotas_changed:
             return "no_change"
 
@@ -1072,7 +1080,7 @@ class TradingAgentSupervisor:
         if (
             (
                 (size_changed and target != MIN_QUOTA_MULTIPLIER)
-                or symbol_quotas_changed
+                or symbol_quota_relaxed
             )
             and policy["revision"] > 0
             and new_trades < self._min_new_trades
