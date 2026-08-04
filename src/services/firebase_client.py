@@ -1337,6 +1337,51 @@ def save_app_metrics_snapshot(snapshot: dict, *, force: bool = False) -> bool:
         return False
 
 
+def _load_snapshot_history(limit: int = 500) -> list:
+    """Return bounded local close history for Firestore projections.
+
+    Snapshot publishers run frequently and do not need a second authoritative
+    Firestore scan: every PAPER close is committed to the durable local ledger
+    before projection. Firebase remains a cold-start fallback when that ledger
+    is genuinely empty.
+    """
+    requested = min(max(int(limit), 1), 500)
+    try:
+        from src.services.local_persistent_cache import get_closed_trades
+
+        local_trades = list(get_closed_trades(limit=requested) or [])
+        if local_trades:
+            logging.debug(
+                "[SNAPSHOT_HISTORY_LOCAL] trades=%s requested=%s",
+                len(local_trades),
+                requested,
+            )
+            return local_trades[:requested]
+    except Exception as exc:
+        logging.warning(
+            "[SNAPSHOT_HISTORY_LOCAL_ERROR] %s",
+            safe_log_exception(exc),
+        )
+
+    try:
+        configured_fallback = int(
+            os.getenv("FIREBASE_SNAPSHOT_HISTORY_FALLBACK_LIMIT", "100")
+        )
+    except (TypeError, ValueError):
+        configured_fallback = 100
+    fallback_limit = min(
+        max(configured_fallback, 20),
+        300,
+        requested,
+    )
+    logging.warning(
+        "[SNAPSHOT_HISTORY_FIREBASE_FALLBACK] requested=%s bounded=%s",
+        requested,
+        fallback_limit,
+    )
+    return list(load_history(limit=fallback_limit) or [])
+
+
 def publish_app_metrics_snapshot(force: bool = False, recent_trades: list | None = None) -> None:
     """Build and publish app_metrics/latest snapshot to Firestore.
 
@@ -1347,7 +1392,7 @@ def publish_app_metrics_snapshot(force: bool = False, recent_trades: list | None
     _log = _log_pub.getLogger(__name__)
     try:
         if recent_trades is None:
-            recent_trades = load_history(limit=500)
+            recent_trades = _load_snapshot_history(limit=500)
 
         all_time_stats = load_stats_cached(ttl_s=300)
 
@@ -1501,7 +1546,7 @@ def publish_dashboard_snapshot(force: bool = False) -> None:
         import time as _t_dbs
         _ts_start = _t_dbs.time()
 
-        recent_trades = load_history(limit=500)
+        recent_trades = _load_snapshot_history(limit=500)
         all_time_stats = load_stats_cached(ttl_s=300)
 
         try:
