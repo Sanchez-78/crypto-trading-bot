@@ -20,8 +20,34 @@ import pytest
 import time
 import json
 import os
+import tempfile
+import shutil
 from unittest.mock import patch, MagicMock
 from src.services import paper_adaptive_learning as pal
+
+
+@pytest.fixture(autouse=True)
+def _isolate_paper_adaptive_learning_state():
+    """P0-FIX (2026-08-05): this module previously constructed
+    PaperAdaptiveLearning() with no isolation at all (no temp state_file,
+    Firebase path left enabled) — it only "worked" because a schema-drop bug
+    in firebase_learning_persistence.save_learning_state() always reset
+    qualification_n/segment_weights to empty regardless of what was
+    persisted, giving every test an accidental clean slate. Now that the bug
+    is fixed (see _workspace/03_forensics_learning_persistence.md), give
+    these tests real isolation instead of relying on that side effect.
+    """
+    tmpdir = tempfile.mkdtemp()
+    original_state_file = pal._STATE_FILE
+    original_firebase_available = pal._firebase_available
+    pal._STATE_FILE = os.path.join(tmpdir, "test_phase4b_r2_state.json")
+    pal._firebase_available = False
+    pal._learner = None
+    yield
+    pal._STATE_FILE = original_state_file
+    pal._firebase_available = original_firebase_available
+    pal._learner = None
+    shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 class TestQualificationIsolation:

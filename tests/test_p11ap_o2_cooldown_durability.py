@@ -12,6 +12,7 @@ import json
 import os
 import tempfile
 import logging
+import pytest
 from unittest.mock import patch, MagicMock
 from collections import deque
 import sys
@@ -21,6 +22,26 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from src.services import paper_training_sampler, paper_adaptive_learning
 
 log = logging.getLogger(__name__)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_singleton_and_firebase_path():
+    """P0-FIX (2026-08-05): several tests in this module construct their own
+    isolated PaperAdaptiveLearning(state_file=...) instance directly, but
+    then exercise code (e.g. paper_training_sampler._restore_and_bootstrap_cooldowns)
+    that internally calls paper_adaptive_learning.get_learner() — the module
+    SINGLETON, a different object. Reset the singleton and disable the
+    Firebase-backed persistence path per test so get_learner() can't pick up
+    leftover/cross-test state via that separate, un-isolated backing file
+    (server_local_backups/learning_state_phase1.json). See
+    _workspace/03_forensics_learning_persistence.md.
+    """
+    original_firebase_available = paper_adaptive_learning._firebase_available
+    paper_adaptive_learning._firebase_available = False
+    paper_adaptive_learning._learner = None
+    yield
+    paper_adaptive_learning._firebase_available = original_firebase_available
+    paper_adaptive_learning._learner = None
 
 
 class TestCooldownPersistence(unittest.TestCase):
@@ -290,11 +311,19 @@ class TestCooldownRestoreAndExpiry(unittest.TestCase):
         learner.paper_admission_controls = controls
         learner.save_state_sync()
 
-        paper_training_sampler._restore_and_bootstrap_cooldowns()
+        # P0-FIX (2026-08-05): this test was missing the get_learner() patch its
+        # sibling test_restore_unexpired_cooldown uses just above. Without it,
+        # _restore_and_bootstrap_cooldowns() operates on the real module
+        # singleton (a different, empty instance) instead of `learner` — it
+        # was masked before by the firebase_learning_persistence schema-drop
+        # bug (see _workspace/03_forensics_learning_persistence.md), which
+        # made the singleton's state irrelevant either way.
+        with patch('src.services.paper_adaptive_learning.get_learner', return_value=learner):
+            paper_training_sampler._restore_and_bootstrap_cooldowns()
 
-        # After restoration, check that expired cooldown is detected
-        is_in_cooldown = paper_training_sampler._is_discovery_bucket_in_cooldown()
-        assert not is_in_cooldown, "Expired cooldown should not be active"
+            # After restoration, check that expired cooldown is detected
+            is_in_cooldown = paper_training_sampler._is_discovery_bucket_in_cooldown()
+            assert not is_in_cooldown, "Expired cooldown should not be active"
 
 
 class TestAdmissionGateEnforcement(unittest.TestCase):
