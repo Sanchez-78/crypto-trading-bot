@@ -664,6 +664,80 @@ def test_exploration_agent_cools_stale_positive_segment_with_weak_recent_tail():
     assert candidate["symbol"] == "ETHUSDT"
 
 
+def test_exploration_agent_prefers_unknown_over_proven_negative_segment():
+    candidate, reason = PaperExplorationAgent._pick_candidate(
+        [
+            {"symbol": "ETHUSDT", "price": 3000.0, "move_bps": -2.0},
+            {"symbol": "ADAUSDT", "price": 0.75, "move_bps": -2.0},
+        ],
+        {
+            "metrics": {
+                "exploration": {
+                    "coverage": {"ETHUSDT:BUY": 0, "ADAUSDT:BUY": 100},
+                    "segments": {
+                        "ETHUSDT:BROAD_DOWNTREND:BUY": {
+                            "n": 28,
+                            "profit_factor": 0.27,
+                            "expectancy_pct_points": -0.047,
+                            "recent5": {
+                                "n": 5,
+                                "profit_factor": 0.0,
+                                "expectancy_pct_points": -0.10,
+                            },
+                        }
+                    },
+                }
+            }
+        },
+        "BROAD_DOWNTREND",
+    )
+
+    assert reason == "least_sampled_symbol_side"
+    assert candidate["symbol"] == "ADAUSDT"
+
+
+def test_exploration_agent_uses_least_bad_segment_only_as_last_resort():
+    candidate, reason = PaperExplorationAgent._pick_candidate(
+        [
+            {"symbol": "ETHUSDT", "price": 3000.0, "move_bps": -2.0},
+            {"symbol": "SOLUSDT", "price": 80.0, "move_bps": -2.0},
+        ],
+        {
+            "metrics": {
+                "exploration": {
+                    "coverage": {"ETHUSDT:BUY": 0, "SOLUSDT:BUY": 100},
+                    "segments": {
+                        "ETHUSDT:BROAD_DOWNTREND:BUY": {
+                            "n": 28,
+                            "profit_factor": 0.27,
+                            "expectancy_pct_points": -0.047,
+                            "recent5": {
+                                "n": 5,
+                                "profit_factor": 0.0,
+                                "expectancy_pct_points": -0.10,
+                            },
+                        },
+                        "SOLUSDT:BROAD_DOWNTREND:BUY": {
+                            "n": 32,
+                            "profit_factor": 1.47,
+                            "expectancy_pct_points": 0.013,
+                            "recent5": {
+                                "n": 5,
+                                "profit_factor": 0.34,
+                                "expectancy_pct_points": -0.032,
+                            },
+                        },
+                    },
+                }
+            }
+        },
+        "BROAD_DOWNTREND",
+    )
+
+    assert reason == "negative_segment_control_last_resort"
+    assert candidate["symbol"] == "SOLUSDT"
+
+
 def test_exploration_agent_enforces_cooldown_after_success():
     clock = Clock()
     agent = PaperExplorationAgent(
@@ -704,3 +778,4 @@ def test_dashboard_contains_review_exploration_and_archive_cards():
     assert 'id="agent_exploration_status"' in html
     assert 'id="agent_archive_status"' in html
     assert "reasonLabels.positive_segment_retest" in html
+    assert "reasonLabels.negative_segment_control_last_resort" in html

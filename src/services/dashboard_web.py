@@ -1293,6 +1293,8 @@ HTML_TEMPLATE = r"""
             };
             reasonLabels.positive_segment_retest =
                 'znovu overuje drive ziskovy segment';
+            reasonLabels.negative_segment_control_last_resort =
+                'posledni kontrolni pokus ve znamem slabem segmentu';
             const rawReason = String(exploration.last_reason || '');
             const reason = reasonLabels[rawReason] || rawReason || 'čeká na rozhodnutí';
             const rawLearning = String(trading.learning_status || '');

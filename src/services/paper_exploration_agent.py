@@ -207,10 +207,23 @@ class PaperExplorationAgent:
                 and recent_n >= 5
                 and recent_expectancy > 0.0
             )
+            cooled_or_negative_segment = (
+                segment_n >= minimum_segment_n
+                and (
+                    segment_pf < 0.80
+                    or segment_expectancy <= 0.0
+                    or (recent_n >= 5 and recent_expectancy <= 0.0)
+                )
+            )
+            segment_priority = (
+                0
+                if positive_segment
+                else (2 if cooled_or_negative_segment else 1)
+            )
             ranked.append(
                 (
-                    0 if positive_segment else 1,
-                    -segment_pf if positive_segment else 0.0,
+                    segment_priority,
+                    -segment_pf if segment_priority != 1 else 0.0,
                     count,
                     -abs(move_bps),
                     symbol,
@@ -229,7 +242,11 @@ class PaperExplorationAgent:
         return selected, (
             "positive_segment_retest"
             if priority == 0
-            else "least_sampled_symbol_side"
+            else (
+                "negative_segment_control_last_resort"
+                if priority == 2
+                else "least_sampled_symbol_side"
+            )
         )
 
     def consider(
