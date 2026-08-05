@@ -34,6 +34,14 @@ def _env_float(
     return min(max(value, minimum), maximum)
 
 
+def _finite_metric(value: Any, default: float = 0.0) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if math.isfinite(parsed) else default
+
+
 class PaperExplorationAgent:
     """Chooses and opens a tiny diagnostic control trade, never a live order."""
 
@@ -135,6 +143,7 @@ class PaperExplorationAgent:
     def _pick_candidate(
         candidates: list[dict],
         review: dict,
+        market_regime: str = "UNKNOWN",
     ) -> tuple[Optional[dict], str]:
         coverage = (
             review.get("metrics", {})
@@ -142,13 +151,31 @@ class PaperExplorationAgent:
             .get("coverage", {})
         )
         coverage = coverage if isinstance(coverage, dict) else {}
+        segments = (
+            review.get("metrics", {})
+            .get("exploration", {})
+            .get("segments", {})
+        )
+        segments = segments if isinstance(segments, dict) else {}
+        minimum_segment_n = int(
+            _env_float(
+                "TRADING_AGENT_POSITIVE_SEGMENT_MIN_N",
+                20.0,
+                20.0,
+                200.0,
+            )
+        )
+        minimum_segment_pf = _env_float(
+            "TRADING_AGENT_POSITIVE_SEGMENT_MIN_PF", 1.25, 1.05, 5.0
+        )
+        regime_norm = str(market_regime or "UNKNOWN").strip().upper()
         side_counts = Counter()
         for key, value in coverage.items():
             side = str(key).rsplit(":", 1)[-1].upper()
             side_counts[side] += int(value or 0)
 
         ranked = []
-        for candidate in candidates:
+        for candidate_index, candidate in enumerate(candidates):
             symbol = str(candidate.get("symbol") or "").upper()
             price = candidate.get("price")
             move_bps = float(candidate.get("move_bps") or 0.0)
@@ -159,13 +186,43 @@ class PaperExplorationAgent:
             else:
                 side = "BUY" if side_counts["BUY"] <= side_counts["SELL"] else "SELL"
             count = int(coverage.get(f"{symbol}:{side}", 0) or 0)
-            ranked.append((count, -abs(move_bps), symbol, side, candidate))
+            segment_key = f"{symbol}:{regime_norm}:{side}"
+            segment = segments.get(segment_key, {})
+            segment = segment if isinstance(segment, dict) else {}
+            segment_n = int(_finite_metric(segment.get("n"), 0.0))
+            segment_pf = _finite_metric(segment.get("profit_factor"), 0.0)
+            segment_expectancy = _finite_metric(
+                segment.get("expectancy_pct_points"), 0.0
+            )
+            positive_segment = (
+                segment_n >= minimum_segment_n
+                and segment_pf >= minimum_segment_pf
+                and segment_expectancy > 0.0
+            )
+            ranked.append(
+                (
+                    0 if positive_segment else 1,
+                    -segment_pf if positive_segment else 0.0,
+                    count,
+                    -abs(move_bps),
+                    symbol,
+                    candidate_index,
+                    side,
+                    candidate,
+                    segment_key,
+                )
+            )
         if not ranked:
             return None, "no_valid_control_candidate"
-        _, _, _, side, selected = min(ranked)
+        priority, _, _, _, _, _, side, selected, segment_key = min(ranked)
         selected = dict(selected)
         selected["side"] = side
-        return selected, "least_sampled_symbol_side"
+        selected["segment_key"] = segment_key
+        return selected, (
+            "positive_segment_retest"
+            if priority == 0
+            else "least_sampled_symbol_side"
+        )
 
     def consider(
         self,
@@ -233,7 +290,11 @@ class PaperExplorationAgent:
                 for position in positions
             )
         ]
-        candidate, selection_reason = self._pick_candidate(candidates, review)
+        candidate, selection_reason = self._pick_candidate(
+            candidates,
+            review,
+            str(market.get("market_regime") or "UNKNOWN"),
+        )
         if not candidate:
             self._last_reason = selection_reason
             return self._snapshot(status="observing", now=now)
@@ -281,6 +342,7 @@ class PaperExplorationAgent:
             "features": {
                 "control_move_bps": candidate.get("move_bps", 0.0),
                 "control_selection": selection_reason,
+                "control_segment_key": candidate.get("segment_key"),
             },
         }
         extra = {
@@ -357,6 +419,7 @@ class PaperExplorationAgent:
                     "bucket": "D_NEG_EV_CONTROL",
                     "readiness_eligible": False,
                     "selection_reason": selection_reason,
+                    "segment_key": candidate.get("segment_key"),
                 },
                 event_id=f"paper_exploration_opened:{self._last_trade_id}",
                 created_at=open_now,

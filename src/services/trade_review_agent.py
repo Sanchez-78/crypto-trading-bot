@@ -637,6 +637,21 @@ class TradeReviewAgent:
             f"{trade.get('symbol', 'UNKNOWN')}:{trade.get('side', 'UNKNOWN')}"
             for trade in exploration
         )
+        exploration_segment_groups: dict[str, list[dict]] = defaultdict(list)
+        for trade in exploration:
+            segment_key = ":".join(
+                [
+                    str(trade.get("symbol") or "UNKNOWN").upper(),
+                    str(trade.get("regime") or "UNKNOWN").upper(),
+                    str(trade.get("side") or "UNKNOWN").upper(),
+                ]
+            )
+            exploration_segment_groups[segment_key].append(trade)
+        exploration_segments = {
+            key: _metric_block(values[-50:])
+            for key, values in sorted(exploration_segment_groups.items())
+            if len(values) >= 10
+        }
         report = {
             "schema_version": SCHEMA_VERSION,
             "agent": "trade_review",
@@ -673,6 +688,7 @@ class TradeReviewAgent:
                     "descriptive_only": True,
                     "all": exploration_metrics,
                     "coverage": dict(sorted(exploration_coverage.items())),
+                    "segments": exploration_segments,
                 },
             },
             "post_policy": post_policy,

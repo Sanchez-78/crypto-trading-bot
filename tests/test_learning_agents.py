@@ -340,6 +340,34 @@ def test_exploration_volume_does_not_starve_canonical_review_window():
     assert report["recommendation"]["code"] == "GLOBAL_QUOTA_075"
 
 
+def test_trade_review_exposes_bounded_exploration_segment_metrics():
+    canonical = [_trade(index, 0.20) for index in range(180)]
+    exploration = [
+        _trade(
+            1000 + index,
+            0.20 if index % 2 else -0.05,
+            symbol="SOLUSDT",
+            side="BUY",
+            regime="BROAD_DOWNTREND",
+            readiness_eligible=False,
+            real_readiness_eligible=False,
+            paper_learning_only=True,
+            learning_shadow_only=True,
+            training_bucket="D_NEG_EV_CONTROL",
+        )
+        for index in range(20)
+    ]
+
+    report = _review(canonical + exploration)
+    segment = report["metrics"]["exploration"]["segments"][
+        "SOLUSDT:BROAD_DOWNTREND:BUY"
+    ]
+
+    assert segment["n"] == 20
+    assert segment["profit_factor"] == 4.0
+    assert segment["expectancy_pct_points"] > 0.0
+
+
 def test_trade_review_separates_post_policy_evidence():
     trades = [_trade(index, 0.10) for index in range(180)] + [
         _trade(index, -0.20) for index in range(180, 200)
@@ -505,6 +533,97 @@ def test_exploration_agent_requires_healthy_market_and_paper_safety():
     assert calls == []
 
 
+def test_exploration_agent_retests_proven_positive_segment_before_coverage():
+    clock = Clock()
+    calls = []
+    agent = PaperExplorationAgent(
+        clock=clock,
+        opener=lambda **kwargs: calls.append(kwargs) or {
+            "status": "opened",
+            "trade_id": "positive-segment-retest",
+        },
+        enabled=True,
+        drought_after_s=300,
+        cooldown_s=600,
+    )
+    clock.advance(301)
+
+    state = agent.consider(
+        market={
+            "status": "healthy",
+            "market_regime": "broad_downtrend",
+            "control_candidates": [
+                {
+                    "symbol": "ETHUSDT",
+                    "price": 3000.0,
+                    "price_ts": clock(),
+                    "move_bps": -2.0,
+                },
+                {
+                    "symbol": "SOLUSDT",
+                    "price": 80.0,
+                    "price_ts": clock(),
+                    "move_bps": -2.0,
+                },
+            ],
+        },
+        trading={"last_close_age_s": 500},
+        review={
+            "metrics": {
+                "exploration": {
+                    "coverage": {"ETHUSDT:BUY": 0, "SOLUSDT:BUY": 100},
+                    "segments": {
+                        "SOLUSDT:BROAD_DOWNTREND:BUY": {
+                            "n": 28,
+                            "profit_factor": 1.73,
+                            "expectancy_pct_points": 0.019,
+                        }
+                    },
+                }
+            }
+        },
+        open_positions=[],
+        policy={"pause_new_entries": False},
+        paper_safe=True,
+        now=clock(),
+    )
+
+    assert state["status"] == "opened"
+    assert state["last_reason"] == "positive_segment_retest"
+    assert calls[0]["signal"]["symbol"] == "SOLUSDT"
+    assert calls[0]["signal"]["action"] == "BUY"
+    assert calls[0]["signal"]["features"]["control_segment_key"] == (
+        "SOLUSDT:BROAD_DOWNTREND:BUY"
+    )
+
+
+def test_exploration_agent_does_not_exploit_insufficient_segment():
+    candidate, reason = PaperExplorationAgent._pick_candidate(
+        [
+            {"symbol": "ETHUSDT", "price": 3000.0, "move_bps": -2.0},
+            {"symbol": "SOLUSDT", "price": 80.0, "move_bps": -2.0},
+        ],
+        {
+            "metrics": {
+                "exploration": {
+                    "coverage": {"ETHUSDT:BUY": 0, "SOLUSDT:BUY": 100},
+                    "segments": {
+                        "SOLUSDT:BROAD_DOWNTREND:BUY": {
+                            "n": 19,
+                            "profit_factor": 2.0,
+                            "expectancy_pct_points": 0.05,
+                        }
+                    },
+                }
+            }
+        },
+        "BROAD_DOWNTREND",
+    )
+
+    assert reason == "least_sampled_symbol_side"
+    assert candidate["symbol"] == "ETHUSDT"
+
+
 def test_exploration_agent_enforces_cooldown_after_success():
     clock = Clock()
     agent = PaperExplorationAgent(
@@ -544,3 +663,4 @@ def test_dashboard_contains_review_exploration_and_archive_cards():
     assert 'id="agent_review_status"' in html
     assert 'id="agent_exploration_status"' in html
     assert 'id="agent_archive_status"' in html
+    assert "reasonLabels.positive_segment_retest" in html

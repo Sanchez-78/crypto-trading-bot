@@ -1291,6 +1291,8 @@ HTML_TEMPLATE = r"""
                 hourly_control_cap: 'dosáhl hodinového limitu vzorků',
                 least_sampled_symbol_side: 'vybírá nejméně otestovaný symbol/směr'
             };
+            reasonLabels.positive_segment_retest =
+                'znovu overuje drive ziskovy segment';
             const rawReason = String(exploration.last_reason || '');
             const reason = reasonLabels[rawReason] || rawReason || 'čeká na rozhodnutí';
             const rawLearning = String(trading.learning_status || '');
