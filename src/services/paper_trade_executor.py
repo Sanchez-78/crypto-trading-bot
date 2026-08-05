@@ -195,6 +195,18 @@ _RECENT_CANONICAL_ADMISSIONS = {}  # (symbol, side) -> admission timestamp
 _STATE_FILE = "data/paper_open_positions.json"
 _ORPHAN_STATE_MTIME = None  # Reload persisted positions only when the file changes.
 
+# P0-FIX (2026-08-05): Single source of truth for the TP/SL fallback bps.
+# Previously _normalize_position_for_loading() (legacy/corrupted-state
+# rehydration path) and the open-flow fallback in open_paper_position()
+# hardcoded independent literals (35/30 vs 50/40) that drifted apart when
+# V10.55 retuned the open-flow default without updating the rehydration
+# one — same bug class as the Cycle 24 "Default Mismatch" regression
+# (WR 57.1% -> 0%, see project memory). Both call sites now read these
+# module-level constants so they cannot silently diverge again.
+# See _workspace/02_forensics.md for the evidence trail.
+_DEFAULT_TP_ZONE_BPS = int(os.getenv("PAPER_TP_ZONE_BPS", "50"))
+_DEFAULT_SL_ZONE_BPS = int(os.getenv("PAPER_SL_ZONE_BPS", "40"))
+
 # P1.1Q Phase 5: Deduplication — track closed trades in current session to prevent double updates
 _CLOSED_TRADES_THIS_SESSION = set()  # trade_id -> (learned, metrics_updated)
 _CLOSED_TRADES_LOCK = __import__("threading").RLock()
@@ -669,19 +681,19 @@ def _normalize_position_for_loading(pos: dict) -> dict:
     # FIX: Load positions from JSON lack tp/sl fields (None), causing gate: if pos.get("tp") and pos["tp"] > 0 and pos.get("sl") and pos["sl"] > 0 to fail
     # This skips entire TP/SL block → ALL positions timeout. Add safe defaults.
     if "tp" not in pos or pos.get("tp") is None or pos.get("tp") == 0:
-        # Calculate TP default from entry_price + tp_zone_bps (35 bps default)
+        # P0-FIX: use the shared default (was a hardcoded, drifted "35" literal)
         entry_price = pos.get("entry_price", 0.0)
         side = pos.get("side", "BUY")
-        tp_zone_bps = int(os.getenv("PAPER_TP_ZONE_BPS", "35"))
+        tp_zone_bps = _DEFAULT_TP_ZONE_BPS
         tp_pct = 1.0 + tp_zone_bps / 10000 if side == "BUY" else 1.0 - tp_zone_bps / 10000
         pos["tp"] = entry_price * tp_pct if entry_price > 0 else 0.0
         log.warning(f"[TP_DEFAULT] {pos.get('symbol', 'UNKNOWN')} side={side} entry={entry_price:.8f} tp_zone_bps={tp_zone_bps} → tp={pos['tp']:.8f}")
 
     if "sl" not in pos or pos.get("sl") is None or pos.get("sl") == 0:
-        # Calculate SL default from entry_price - sl_zone_bps (30 bps default)
+        # P0-FIX: use the shared default (was a hardcoded, drifted "30" literal)
         entry_price = pos.get("entry_price", 0.0)
         side = pos.get("side", "BUY")
-        sl_zone_bps = int(os.getenv("PAPER_SL_ZONE_BPS", "30"))
+        sl_zone_bps = _DEFAULT_SL_ZONE_BPS
         sl_pct = 1.0 - sl_zone_bps / 10000 if side == "BUY" else 1.0 + sl_zone_bps / 10000
         pos["sl"] = entry_price * sl_pct if entry_price > 0 else 0.0
         log.warning(f"[SL_DEFAULT] {pos.get('symbol', 'UNKNOWN')} side={side} entry={entry_price:.8f} sl_zone_bps={sl_zone_bps} → sl={pos['sl']:.8f}")
@@ -1773,14 +1785,14 @@ def open_paper_position(
         # V10.55 CYCLE 52+ FIX: Increase baseline TP to 50bps (was 35bps, too aggressive)
         # Evidence: 39.83% WR with 0.18-0.36% learned TP exiting at losses
         # Solution: Wider TP bands allow market to move more before exit → more profits
-        tp_zone_bps_static = int(os.getenv("PAPER_TP_ZONE_BPS", "50"))  # 0.50% = baseline for wider targets
+        tp_zone_bps_static = int(os.getenv("PAPER_TP_ZONE_BPS", str(_DEFAULT_TP_ZONE_BPS)))  # P0-FIX: shared default
         if atr_v > 0 and price:
             atr_pct = atr_v / price
             dynamic_tp_bps = max(40, int(atr_pct * 10000 * 0.8))  # ATR floor raised to 40bps, multiplier 0.8
             tp_zone_bps = min(dynamic_tp_bps, 100)  # Cap at 1.0% to avoid runaway
         else:
             tp_zone_bps = tp_zone_bps_static
-    sl_zone_bps = int(os.getenv("PAPER_SL_ZONE_BPS", "40"))  # Increased from 30bps to 40bps for breathing room
+    sl_zone_bps = int(os.getenv("PAPER_SL_ZONE_BPS", str(_DEFAULT_SL_ZONE_BPS)))  # P0-FIX: shared default
     tp_pct_env = 1.0 + tp_zone_bps / 10000 if side == "BUY" else 1.0 - tp_zone_bps / 10000
     sl_pct_env = 1.0 - sl_zone_bps / 10000 if side == "BUY" else 1.0 + sl_zone_bps / 10000
     tp_price_env = price * tp_pct_env

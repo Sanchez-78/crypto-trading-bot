@@ -19,7 +19,7 @@ The "Sensors" and "Brain" of the bot.
 The "Drivers" that commit capital.
 - **[realtime_decision_engine.py](file:///c:/Projects/CryptoMaster_srv/src/services/realtime_decision_engine.py)**: Applies Bayesian calibration and win-rate gating to raw signals.
 - **[trade_executor.py](file:///c:/Projects/CryptoMaster_srv/src/services/trade_executor.py)**: Manages the lifecycle of a position (Open -> SL/TP/Timeout -> Close).
-- **[execution_engine.py](file:///c:/Projects/CryptoMaster_srv/src/services/execution_engine.py)**: Low-level order placement and reconciliation.
+- **[execution_engine.py](file:///c:/Projects/CryptoMaster_srv/src/services/execution_engine.py)**: Low-level order placement and reconciliation. **Not on the live paper-trading import path** (bot2/main.py never imports it) — it is the sole, deliberately-isolated location of real-order (`/api/v3/order`) code, kept out of the running system as a REAL-trading safety boundary. Guarded by `tests/test_execution_engine_no_real_order.py`, which asserts no other file contains a real order call. Do not delete or "clean up" as dead code — see `_workspace/02_forensics.md`.
 
 ## 4. Risk & Protection
 Safety layers to prevent catastrophic loss.
