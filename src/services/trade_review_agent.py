@@ -647,11 +647,13 @@ class TradeReviewAgent:
                 ]
             )
             exploration_segment_groups[segment_key].append(trade)
-        exploration_segments = {
-            key: _metric_block(values[-50:])
-            for key, values in sorted(exploration_segment_groups.items())
-            if len(values) >= 10
-        }
+        exploration_segments = {}
+        for key, values in sorted(exploration_segment_groups.items()):
+            if len(values) < 10:
+                continue
+            metrics = _metric_block(values[-50:])
+            metrics["recent5"] = _metric_block(values[-5:])
+            exploration_segments[key] = metrics
         report = {
             "schema_version": SCHEMA_VERSION,
             "agent": "trade_review",

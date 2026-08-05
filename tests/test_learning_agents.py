@@ -366,6 +366,9 @@ def test_trade_review_exposes_bounded_exploration_segment_metrics():
     assert segment["n"] == 20
     assert segment["profit_factor"] == 4.0
     assert segment["expectancy_pct_points"] > 0.0
+    assert segment["recent5"]["n"] == 5
+    assert segment["recent5"]["profit_factor"] == 6.0
+    assert segment["recent5"]["expectancy_pct_points"] > 0.0
 
 
 def test_trade_review_separates_post_policy_evidence():
@@ -577,6 +580,11 @@ def test_exploration_agent_retests_proven_positive_segment_before_coverage():
                             "n": 28,
                             "profit_factor": 1.73,
                             "expectancy_pct_points": 0.019,
+                            "recent5": {
+                                "n": 5,
+                                "profit_factor": 1.4,
+                                "expectancy_pct_points": 0.01,
+                            },
                         }
                     },
                 }
@@ -612,6 +620,38 @@ def test_exploration_agent_does_not_exploit_insufficient_segment():
                             "n": 19,
                             "profit_factor": 2.0,
                             "expectancy_pct_points": 0.05,
+                        }
+                    },
+                }
+            }
+        },
+        "BROAD_DOWNTREND",
+    )
+
+    assert reason == "least_sampled_symbol_side"
+    assert candidate["symbol"] == "ETHUSDT"
+
+
+def test_exploration_agent_cools_stale_positive_segment_with_weak_recent_tail():
+    candidate, reason = PaperExplorationAgent._pick_candidate(
+        [
+            {"symbol": "ETHUSDT", "price": 3000.0, "move_bps": -2.0},
+            {"symbol": "SOLUSDT", "price": 80.0, "move_bps": -2.0},
+        ],
+        {
+            "metrics": {
+                "exploration": {
+                    "coverage": {"ETHUSDT:BUY": 0, "SOLUSDT:BUY": 100},
+                    "segments": {
+                        "SOLUSDT:BROAD_DOWNTREND:BUY": {
+                            "n": 31,
+                            "profit_factor": 1.51,
+                            "expectancy_pct_points": 0.014,
+                            "recent5": {
+                                "n": 5,
+                                "profit_factor": 0.29,
+                                "expectancy_pct_points": -0.0399,
+                            },
                         }
                     },
                 }

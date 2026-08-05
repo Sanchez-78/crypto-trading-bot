@@ -194,10 +194,18 @@ class PaperExplorationAgent:
             segment_expectancy = _finite_metric(
                 segment.get("expectancy_pct_points"), 0.0
             )
+            recent = segment.get("recent5", {})
+            recent = recent if isinstance(recent, dict) else {}
+            recent_n = int(_finite_metric(recent.get("n"), 0.0))
+            recent_expectancy = _finite_metric(
+                recent.get("expectancy_pct_points"), 0.0
+            )
             positive_segment = (
                 segment_n >= minimum_segment_n
                 and segment_pf >= minimum_segment_pf
                 and segment_expectancy > 0.0
+                and recent_n >= 5
+                and recent_expectancy > 0.0
             )
             ranked.append(
                 (
