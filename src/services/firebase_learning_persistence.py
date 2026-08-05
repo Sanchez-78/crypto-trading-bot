@@ -81,13 +81,28 @@ class FirebaseLearningPersistence:
         try:
             os.makedirs(os.path.dirname(self.state_file), exist_ok=True)
 
-            # Prepare data in Firebase-compatible format
+            # P0-FIX (2026-08-05): persist the FULL learning_obj, not a 3-field
+            # allowlist. The previous version silently dropped segment_weights,
+            # qualification_window, qualification_n, qualification_started_at,
+            # operator_unlock, paper_admission_controls, and recorded_trade_ids
+            # on every save. Since _load_state() in paper_adaptive_learning.py
+            # tries this Firebase-backed path FIRST on every process restart,
+            # those fields were silently reset to their class defaults (0,
+            # empty, False, {}) on every restart — even though the caller's
+            # own local JSON copy (a separate file) had the real values.
+            # segment_weights/paper_admission_controls are the actual mechanism
+            # of automatic strategy adjustment (segment up/down-weighting,
+            # cooldowns/quarantines); losing them on every restart meant
+            # previously-learned "avoid this losing segment" decisions were
+            # silently undone each time the service restarted.
+            # See _workspace/03_forensics_learning_persistence.md for the
+            # full evidence trail. This module deliberately no longer knows
+            # the caller's specific field names — whatever is saved is what
+            # comes back, so a future field addition can't silently drop again.
             data = {
+                **learning_obj,
                 "timestamp": datetime.utcnow().isoformat(),
                 "schema_version": 1,
-                "lifetime_metrics": learning_obj.get("lifetime_metrics", {}),
-                "regime_tp_strategy": learning_obj.get("regime_tp_strategy", {}),
-                "rolling_windows": learning_obj.get("rolling_windows", {}),
             }
 
             # Save to local JSON (synchronous, guaranteed)

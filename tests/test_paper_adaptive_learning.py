@@ -19,16 +19,34 @@ from src.services.paper_adaptive_learning import (
 
 @pytest.fixture(autouse=True)
 def reset_learner_singleton():
-    """Reset the singleton learner before each test and use temp state file."""
+    """Reset the singleton learner before each test and use temp state file.
+
+    P0-FIX (2026-08-05): also disable the Firebase-backed persistence path
+    (_firebase_available) for the duration of these tests. It was previously
+    inert here as an unintended side effect of a schema-drop bug in
+    firebase_learning_persistence.save_learning_state() (see
+    _workspace/03_forensics_learning_persistence.md) — that bug always
+    returned qualification_n=0/segment_weights={} regardless of what was on
+    disk, which accidentally made these tests immune to state leaking from
+    firebase_learning_persistence's own separate, un-isolated backing file
+    (server_local_backups/learning_state_phase1.json). Now that the bug is
+    fixed, PaperAdaptiveLearning() constructed without an explicit
+    state_file would otherwise pick up real state from that other file
+    across test runs. Forcing local-JSON-only mode keeps these tests scoped
+    to the temp _STATE_FILE above, same isolation guarantee as before.
+    """
     import src.services.paper_adaptive_learning as pal_mod
     # Create temp directory for state file
     tmpdir = tempfile.mkdtemp()
     original_state_file = pal_mod._STATE_FILE
+    original_firebase_available = pal_mod._firebase_available
     pal_mod._STATE_FILE = os.path.join(tmpdir, "test_state.json")
+    pal_mod._firebase_available = False
     pal_mod._learner = None
     yield
     # Cleanup
     pal_mod._STATE_FILE = original_state_file
+    pal_mod._firebase_available = original_firebase_available
     pal_mod._learner = None
     # Clean up temp directory
     import shutil

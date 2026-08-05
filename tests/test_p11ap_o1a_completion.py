@@ -25,14 +25,23 @@ from src.services.paper_training_sampler import (
 
 @pytest.fixture(autouse=True)
 def reset_learner_singleton_and_temp_state():
-    """Reset learner singleton and use temp state file for all tests in this module."""
+    """Reset learner singleton and use temp state file for all tests in this module.
+
+    P0-FIX (2026-08-05): also disable the Firebase-backed persistence path
+    for the duration of these tests — see the matching comment in
+    tests/test_paper_adaptive_learning.py and
+    _workspace/03_forensics_learning_persistence.md for why.
+    """
     import src.services.paper_adaptive_learning as pal_mod
     tmpdir = tempfile.mkdtemp()
     original_state_file = pal_mod._STATE_FILE
+    original_firebase_available = pal_mod._firebase_available
     pal_mod._STATE_FILE = os.path.join(tmpdir, "test_o1a_state.json")
+    pal_mod._firebase_available = False
     pal_mod._learner = None
     yield
     pal_mod._STATE_FILE = original_state_file
+    pal_mod._firebase_available = original_firebase_available
     pal_mod._learner = None
     shutil.rmtree(tmpdir, ignore_errors=True)
 
