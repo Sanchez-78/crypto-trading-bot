@@ -2005,6 +2005,33 @@ def maybe_open_training_sample(
         _training_metrics["entries_1h"].append(time.time())
         _maybe_log_training_health()
 
+        # P0-FIX (2026-08-06): fold the adaptive segment weight into size_mult
+        # BEFORE the unconditional aggressive-mode return below. Evidence
+        # (_workspace/10_wr_low_intake.md): the learner correctly computes and
+        # persists segment_weights (e.g. a known-bad segment gets downweighted
+        # live), but this function's unconditional early return at the end of
+        # this block made the weight-application code that used to run after
+        # it (further down, now dead) unreachable -- learned weights never
+        # affected sizing on this path. This does NOT reinstate the other
+        # gates commit bc96cbb removed (duplicate/cost_edge/idle/position-cap
+        # checks) -- those were independently confirmed to be either
+        # redundant with downstream checks or intentionally absent by design
+        # for this "training sample on a rejected candidate" path. allowed
+        # stays True for everything, same as before; only size_mult changes.
+        try:
+            _policy = _apply_adaptive_policy_to_paper_candidate(
+                symbol=symbol,
+                regime=signal.get("regime", "UNKNOWN") if signal else "UNKNOWN",
+                side=side,
+                ev=float(signal.get("ev", 0.0)) if signal else 0.0,
+                candidate_bucket=bucket,
+            )
+            _weight_mult = _policy.get("weight_mult", 1.0)
+            if _weight_mult != 1.0:
+                size_mult = (size_mult or 1.0) * _weight_mult
+        except Exception as e:
+            log.warning("[PAPER_ADAPTIVE_POLICY_APPLY_ERROR] symbol=%s bucket=%s err=%s", symbol, bucket, e)
+
         # AGGRESSIVE MODE: Return allowed=True for all valid buckets
         return {
             "allowed": True,

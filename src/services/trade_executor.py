@@ -1828,6 +1828,42 @@ def _maybe_route_to_paper_training(signal: dict, current_price: float, reject_re
                     "score_final": trade_signal.get("score_final", trade_signal.get("score", None)),
                 }
 
+                # P0-FIX (2026-08-06): wire size_mult into an actual dollar size.
+                # Evidence (_workspace/10_wr_low_intake.md): result["size_mult"]
+                # already reflects the learned segment weight (see the paired
+                # fix in paper_training_sampler.py), but open_paper_position()
+                # only honors a size adjustment via extra["final_size_usd"] --
+                # size_mult alone was stored as inert metadata (mirrors the
+                # working pattern already used by the exploration path at
+                # paper_exploration.py:712). Without this, the sampler-path fix
+                # above would be a no-op: the learned weight would be computed
+                # correctly but never change the dollar amount risked.
+                #
+                # IMPORTANT (paper-learning-agent review, 2026-08-06): this also
+                # activates the training bucket's own BASE size fraction, which
+                # was equally dead code -- _get_training_bucket() returns a
+                # small probe fraction per bucket (e.g. 0.01-0.08 for
+                # C_NEG_EV_PROBE/C_WEAK_EV_TRAIN/PAPER_STARVATION_DISCOVERY,
+                # by design: these are meant to be small training/exploration
+                # probes, not full-size bets), which was ALSO never applied
+                # before this fix. So the effective size change here is
+                # (bucket_base_fraction * segment_weight), not segment_weight
+                # alone -- expect training-sample position sizes to shrink by
+                # roughly 12-95x from what they were pre-fix. This is the
+                # designed behavior for this admission path finally taking
+                # effect, not a new bug -- do not mistake the resulting drop
+                # in per-trade dollar P&L magnitude for a regression when
+                # reviewing post-deploy metrics. Segment health should be read
+                # from WR/PF/expectancy (computed on net_pnl_pct, size-
+                # invariant), not from absolute dollar sums, going forward.
+                _sampler_size_mult = result.get("size_mult", 0.0)
+                if _sampler_size_mult and _sampler_size_mult != 1.0:
+                    try:
+                        from src.services.paper_trade_executor import _calculate_dynamic_position_size
+                        extra["final_size_usd"] = _calculate_dynamic_position_size(trade_signal) * _sampler_size_mult
+                    except Exception as e:
+                        log.warning("[PAPER_SAMPLER_SIZE_MULT_APPLY_ERROR] symbol=%s err=%s", sym, e)
+
                 # P1.1AP-N2: Add recovery admission metadata if applicable
                 if result.get("recovery_admission"):
                     extra["learning_source"] = "paper_adaptive_recovery"
