@@ -21,4 +21,5 @@ data/research/
 logs_extracted_tmp/
 .claude/worktrees/
 local_learning_storage/cache.sqlite
+local_learning_storage/quota_attribution_snapshot.json
 runtime/firebase_cache.sqlite
