@@ -22,22 +22,31 @@ For detailed context, logic, and architecture, refer to:
 - **Execution**: `trade_executor.py` (Position lifecycle) -> `risk_engine.py`.
 - **State**: Firestore (Trades/Metrics) + Redis (Hydration).
 
-## DASHBOARD PERMANENT FIX (2026-06-11)
+## DASHBOARD PERMANENT FIX (2026-06-11, ExecStart corrected 2026-08-06)
 
 **Issue:** Dashboard Flask service kept crashing due to venv/import issues with Gunicorn wrapper.
 
-**Solution:** Run Flask app DIRECTLY via systemd (no Gunicorn wrapper).
+**Solution:** Run Flask app DIRECTLY via systemd (no Gunicorn wrapper). Current
+authoritative unit is `systemd/cryptomaster-dashboard.service` (a SEPARATE
+unit from `cryptomaster.service`, intentionally decoupled — see that file's
+comments):
 ```ini
-ExecStart=/opt/cryptomaster/venv/bin/python3 -u src/services/dashboard_web.py
+ExecStart=/opt/dashboard_venv/bin/python3 -u /opt/cryptomaster/start_flask_dashboard.py
 Restart=always
 RestartSec=10
-StartLimitBurst=3
 ```
+(The venv moved outside the repo to `/opt/dashboard_venv` and the entrypoint
+became the tracked `start_flask_dashboard.py` wrapper — this line below was
+accurate on 2026-06-11 but had drifted stale by 2026-08-06; do not trust it,
+trust `systemd/cryptomaster-dashboard.service` on the server instead:
+~~`ExecStart=/opt/cryptomaster/venv/bin/python3 -u src/services/dashboard_web.py`~~)
 
-**NEVER CHANGE:** This solution works. Any change to add Gunicorn wrapper or complex WSGI setup will break it.
-- DO: Run Flask directly with `python3 -u src/services/dashboard_web.py`
-- DON'T: Add Gunicorn, supervisor, or complex wrappers
-- CHECK: `curl http://localhost:5001/api/dashboard/metrics` before deploying
+**NEVER CHANGE:** the underlying principle — run Flask directly, no Gunicorn/WSGI wrapper.
+- DO: Run Flask directly per whatever `systemd/cryptomaster-dashboard.service` currently says (check the file, not this doc, for the exact ExecStart).
+- DON'T: Add Gunicorn, supervisor, or complex wrappers.
+- CHECK: `curl http://localhost:5001/api/dashboard/metrics` before deploying.
+- **KNOWN GAP (found 2026-08-06):** `cryptomaster-dashboard.service` is deliberately NOT restarted by bot deploys/restarts (see the unit file's `PartOf` comment) — but that means if its in-memory state ever freezes (observed once: 23.5h serving a stale snapshot with a re-stamped timestamp, root cause of the freeze itself not fully isolated), nothing restarts it automatically. `hetzner-deploy-apply.yml` now best-effort-restarts it after every successful bot DEPLOY as a mitigation (not a full fix for whatever caused the freeze). If dashboard numbers ever look suspiciously static across a long window again, `systemctl restart cryptomaster-dashboard` and compare — see `_workspace/05_dashboard_staleness_intake.md`.
+- **Two service unit files exist for this same service** (`deploy/cryptomaster-dashboard.service` using `simple_dashboard.py`, `systemd/cryptomaster-dashboard.service` using `start_flask_dashboard.py`) — the server runs the `systemd/` one; `deploy/cryptomaster-dashboard.service` is stale, do not install it.
 
 ---
 
