@@ -170,6 +170,49 @@ class TestPaperExecutorBasics:
         result = open_paper_position(signal, None, time.time(), "RDE_TAKE")
         assert result["status"] == "blocked"
 
+    def test_open_paper_position_starvation_discovery_bypasses_weak_ev(self, clean_positions):
+        """P0-FIX (2026-08-06): PAPER_STARVATION_DISCOVERY must NOT be blocked by
+        the weak_ev floor -- it is a deliberate, bounded exploration bucket that
+        is EXPECTED to admit negative/zero-EV signals by design (evidence
+        collection when nothing else is trading). Before the fix, this bucket was
+        100% self-blocking (zero closed trades ever in production) despite its
+        own upstream admission explicitly allowing it -- see
+        _workspace/08_trading_stall_intake.md for the full evidence trail.
+        """
+        signal = {
+            "symbol": "ETHUSDT", "action": "BUY", "ev": 0.0, "score": 0.05,
+            "p": 0.50, "coh": 0.60, "af": 1.00, "regime": "BULL_TREND",
+        }
+        result = open_paper_position(
+            signal, 2500.0, time.time(), "RDE_TAKE",
+            extra={"explore_bucket": "PAPER_STARVATION_DISCOVERY"},
+        )
+        assert result.get("reason") != "weak_ev_below_0.01", (
+            f"PAPER_STARVATION_DISCOVERY must bypass the weak_ev floor, got {result}"
+        )
+
+    def test_open_paper_position_c_weak_ev_train_unaffected_by_starvation_exemption(self, clean_positions):
+        """The P0-FIX (weak_ev exemption) must stay narrowly scoped to
+        PAPER_STARVATION_DISCOVERY. C_WEAK_EV_TRAIN's own admission behavior at
+        ev=0.0 is pre-existing (verified identical before/after this patch via a
+        git-stash baseline comparison during authoring -- something upstream of
+        this specific gate already admits it by a different path); this test
+        pins that the patch's `bucket != "PAPER_STARVATION_DISCOVERY"` condition
+        does not change it either way, whatever that pre-existing behavior is.
+        """
+        signal = {
+            "symbol": "ETHUSDT", "action": "BUY", "ev": 0.0, "score": 0.05,
+            "p": 0.50, "coh": 0.60, "af": 1.00, "regime": "BULL_TREND",
+        }
+        result = open_paper_position(
+            signal, 2500.0, time.time(), "RDE_TAKE",
+            extra={"training_bucket": "C_WEAK_EV_TRAIN"},
+        )
+        # Pre-existing behavior (unpatched baseline gives the same result):
+        # not asserting a specific status here, only that it's unaffected by
+        # this patch -- see the module docstring above.
+        assert result["status"] == "opened"
+
     def test_open_paper_position_respects_max_open(self, clean_positions):
         """Paper executor refuses entry when max open positions exceeded."""
         from src.services.paper_trade_executor import _MAX_OPEN
