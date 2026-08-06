@@ -147,6 +147,76 @@ class TestO1PolicyIntegration:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
 
+    @patch("src.services.paper_training_sampler._is_training_enabled", return_value=True)
+    def test_learned_segment_weight_actually_changes_returned_size_mult(self, mock_training):
+        """P0-FIX (2026-08-06): maybe_open_training_sample() must fold the
+        learner's segment_weight into the returned size_mult -- previously
+        this was dead code (unreachable behind an unconditional early return
+        added by commit bc96cbb, 2026-06-05) so a segment the learner had
+        already identified as losing kept trading at full size. See
+        _workspace/10_wr_low_intake.md for the full evidence trail.
+
+        Comparative test (sidesteps needing to know _get_training_bucket's
+        exact base multiplier): same signal/segment, only the learner's
+        history differs -- a bad-segment learner must return a strictly
+        smaller size_mult than a fresh learner.
+        """
+        signal = {
+            "symbol": "XRPUSDT",
+            "regime": "BEAR_TREND",
+            "side": "SELL",
+            "ev": 0.0338,
+            "action": "SELL",
+            "p": 0.55,  # required by _get_training_bucket's has_quality check
+        }
+
+        # Fresh learner: no history for this segment -> default weight (1.0).
+        fresh_learner, fresh_path = self._create_isolated_learner()
+        try:
+            with patch("src.services.paper_adaptive_learning.get_learner", return_value=fresh_learner):
+                fresh_result = maybe_open_training_sample(
+                    dict(signal), reason="REJECT_ECON_BAD_ENTRY", current_price=100.0,
+                )
+        finally:
+            if os.path.exists(fresh_path):
+                os.remove(fresh_path)
+
+        # Bad-segment learner: 25 losing closes for the EXACT same
+        # symbol:regime:side -> _update_segment_policy downweights it
+        # (segment_n>=20, segment_pf<0.80, segment_exp<0 -> weight *= 0.9,
+        # floored at 0.25).
+        bad_learner, bad_path = self._create_isolated_learner()
+        try:
+            for i in range(25):
+                bad_learner.record_close({
+                    "trade_id": f"bad{i}",
+                    "net_pnl_pct": -1.0,
+                    "outcome": "LOSS",
+                    "symbol": "XRPUSDT",
+                    "regime": "BEAR_TREND",
+                    "side": "SELL",
+                    "learning_source": "unit_test",
+                    "mfe_pct": 0.1,
+                    "mae_pct": -1.0,
+                })
+            with patch("src.services.paper_adaptive_learning.get_learner", return_value=bad_learner):
+                bad_result = maybe_open_training_sample(
+                    dict(signal), reason="REJECT_ECON_BAD_ENTRY", current_price=100.0,
+                )
+        finally:
+            if os.path.exists(bad_path):
+                os.remove(bad_path)
+
+        assert fresh_result is not None and bad_result is not None
+        assert fresh_result.get("allowed") is True and bad_result.get("allowed") is True, (
+            "aggressive-mode admission (allowed=True) must be unchanged -- "
+            "this fix only touches sizing, not admission"
+        )
+        assert bad_result["size_mult"] < fresh_result["size_mult"], (
+            f"a known-losing segment must get a smaller size_mult than a fresh "
+            f"segment, got bad={bad_result['size_mult']} fresh={fresh_result['size_mult']}"
+        )
+
     def test_4_collect_bootstrap_for_segment_n_less_than_20_remains_under_caps(self):
         """Test that collect_bootstrap for segment_n < 20 leaves weight at 1.0."""
         learner = PaperAdaptiveLearning()
