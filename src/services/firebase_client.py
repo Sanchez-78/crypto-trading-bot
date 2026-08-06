@@ -223,6 +223,45 @@ def _can_read(count=1):
 _READ_ATTRIBUTION: dict = {}
 _ATTRIBUTION_LOG_INTERVAL_S = 300
 _LAST_ATTRIBUTION_LOG_TS = 0.0
+_QUOTA_ATTRIBUTION_FILE = "local_learning_storage/quota_attribution_snapshot.json"
+
+
+def _persist_attribution_snapshot(reason: str = "periodic") -> None:
+    """P0-FIX (2026-08-06): durable, file-based read-attribution snapshot.
+
+    Evidence (_workspace, task 19 this session): a Firebase quota-exhaustion
+    incident (2026-08-06 10:08 UTC) could not be root-caused after the fact
+    because the ONLY record of _READ_ATTRIBUTION was the periodic
+    [QUOTA_ATTRIBUTION] journald log line, and journald retention had
+    collapsed to ~2 minutes under this process's own log volume (~170
+    lines/sec observed) -- the exact window needed (07:00-10:08 UTC) was
+    rotated away before anyone could read it. This writes the same
+    attribution data to a small local JSON file (survives journald
+    rotation/restarts) so a future incident is actually diagnosable.
+    Best-effort only: any failure here must never affect quota
+    accounting/gating itself, which is why it's wrapped and only ever
+    called from places that already hold or have released _QUOTA_LOCK
+    appropriately (never blocks the read/write path on I/O).
+    """
+    try:
+        with _QUOTA_LOCK:
+            snapshot = {
+                "generated_at_epoch": time.time(),
+                "generated_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "reason": reason,
+                "reads": _QUOTA_READS,
+                "reads_limit": _QUOTA_MAX_READS,
+                "writes": _QUOTA_WRITES,
+                "writes_limit": _QUOTA_MAX_WRITES,
+                "read_attribution": dict(_READ_ATTRIBUTION),
+            }
+        os.makedirs(os.path.dirname(_QUOTA_ATTRIBUTION_FILE), exist_ok=True)
+        tmp_path = _QUOTA_ATTRIBUTION_FILE + ".tmp"
+        with open(tmp_path, "w") as f:
+            json.dump(snapshot, f, indent=2)
+        os.replace(tmp_path, _QUOTA_ATTRIBUTION_FILE)
+    except Exception:
+        pass  # observability only -- never let this affect quota gating
 
 
 def _record_read(count=1, label="unlabeled"):
@@ -240,6 +279,7 @@ def _record_read(count=1, label="unlabeled"):
         logging.warning("[QUOTA_ATTRIBUTION] reads=%d/%d top=%s",
                         _QUOTA_READS, _QUOTA_MAX_READS,
                         " ".join(f"{k}:{v}" for k, v in top))
+        _persist_attribution_snapshot(reason="periodic")
     writes_pct = _QUOTA_WRITES/_QUOTA_MAX_WRITES*100
     severity = _get_quota_severity(reads_pct, writes_pct)
     import logging
@@ -337,6 +377,10 @@ def _mark_quota_exhausted(error_msg: str):
     logging.warning(f"⚠️  Firebase 429 error: {error_msg} — marked quota exhausted until midnight Pacific reset (09:00 GMT+2)")
     # Also set degradation flags
     _set_firebase_degraded(is_read=True, is_write=True, reason="quota_429")
+    # P0-FIX (2026-08-06): snapshot attribution AT THE MOMENT of exhaustion --
+    # the single most useful diagnostic point, and the one the periodic
+    # 300s snapshot could still miss by up to 5 minutes.
+    _persist_attribution_snapshot(reason=f"quota_429:{error_msg[:200]}")
 
 def _set_firebase_degraded(is_read=False, is_write=False, reason=None):
     """Mark Firebase as degraded due to 429/unavailable."""

@@ -1,3 +1,4 @@
+import os
 import time
 
 from src.services import firebase_client as fc
@@ -209,20 +210,30 @@ def test_load_push_token_uses_cache():
     assert fc.get_quota_status()["reads"] == 1
 
 
-def test_quota_reset_clears_quota_429_degradation():
+def test_quota_reset_clears_quota_429_degradation(tmp_path):
     """2026-07-14: quota_429 degradation must clear at the 07:00 UTC quota
     reset, not serve out a blind 24h window (kept learning dead all day)."""
     _reset_firebase_state(FakeDB(collections={}))
-    fc._mark_quota_exhausted("simulated 429")
-    assert fc.get_firebase_health()["available"] is False
-    assert fc.get_quota_status()["reads"] == fc._QUOTA_MAX_READS
+    # P0-FIX (2026-08-06): isolate the attribution snapshot file this test
+    # incidentally now writes (via _mark_quota_exhausted) -- without this it
+    # wrote a real file into the repo's local_learning_storage/ on every test
+    # run. See test_mark_quota_exhausted_also_persists_a_snapshot below for
+    # the dedicated test of that behavior.
+    original_path = fc._QUOTA_ATTRIBUTION_FILE
+    fc._QUOTA_ATTRIBUTION_FILE = str(tmp_path / "quota_attribution_snapshot.json")
+    try:
+        fc._mark_quota_exhausted("simulated 429")
+        assert fc.get_firebase_health()["available"] is False
+        assert fc.get_quota_status()["reads"] == fc._QUOTA_MAX_READS
 
-    # Force the window back before today's 07:00 UTC so a reset is due.
-    fc._QUOTA_WINDOW_START = time.time() - 48 * 3600
-    fc._reset_quota_if_new_day()
+        # Force the window back before today's 07:00 UTC so a reset is due.
+        fc._QUOTA_WINDOW_START = time.time() - 48 * 3600
+        fc._reset_quota_if_new_day()
 
-    assert fc.get_quota_status()["reads"] == 0
-    assert fc.get_firebase_health()["available"] is True
+        assert fc.get_quota_status()["reads"] == 0
+        assert fc.get_firebase_health()["available"] is True
+    finally:
+        fc._QUOTA_ATTRIBUTION_FILE = original_path
 
 
 def test_record_read_attributes_by_label():
@@ -234,3 +245,57 @@ def test_record_read_attributes_by_label():
     assert fc._READ_ATTRIBUTION["load_history"] == 5
     assert fc._READ_ATTRIBUTION["load_commands_since"] == 1
     assert fc.get_quota_status()["reads"] == 6
+
+
+def test_persist_attribution_snapshot_survives_as_a_durable_file(tmp_path):
+    """P0-FIX (2026-08-06): a quota-exhaustion event must leave a durable,
+    file-based attribution record -- journald alone was proven insufficient
+    (retention collapsed to ~2 min under this process's own log volume
+    during the 2026-08-06 10:08 UTC incident, destroying the only evidence
+    of which caller drove the read volume). See task 19 in this session's
+    evidence trail.
+    """
+    import json
+
+    _reset_firebase_state(FakeDB(collections={}))
+    fc._READ_ATTRIBUTION.clear()
+    snapshot_path = str(tmp_path / "quota_attribution_snapshot.json")
+    original_path = fc._QUOTA_ATTRIBUTION_FILE
+    try:
+        fc._QUOTA_ATTRIBUTION_FILE = snapshot_path
+        fc._record_read(7, label="load_stats")
+        fc._persist_attribution_snapshot(reason="unit_test")
+
+        assert os.path.exists(snapshot_path), "attribution snapshot file must be written"
+        with open(snapshot_path) as f:
+            data = json.load(f)
+        assert data["read_attribution"]["load_stats"] == 7
+        assert data["reads"] == 7
+        assert data["reason"] == "unit_test"
+        assert "generated_at_utc" in data
+    finally:
+        fc._QUOTA_ATTRIBUTION_FILE = original_path
+
+
+def test_mark_quota_exhausted_also_persists_a_snapshot(tmp_path):
+    """The moment of exhaustion is the single most useful diagnostic point
+    -- confirm _mark_quota_exhausted() writes a snapshot immediately,
+    not just the periodic (up to 300s-delayed) path."""
+    import json
+
+    _reset_firebase_state(FakeDB(collections={}))
+    fc._READ_ATTRIBUTION.clear()
+    snapshot_path = str(tmp_path / "quota_attribution_snapshot.json")
+    original_path = fc._QUOTA_ATTRIBUTION_FILE
+    try:
+        fc._QUOTA_ATTRIBUTION_FILE = snapshot_path
+        fc._record_read(2, label="load_history")
+        fc._mark_quota_exhausted("simulated 429 for test")
+
+        assert os.path.exists(snapshot_path)
+        with open(snapshot_path) as f:
+            data = json.load(f)
+        assert data["reason"].startswith("quota_429:")
+        assert data["reads"] == fc._QUOTA_MAX_READS  # exhaustion forces reads to max
+    finally:
+        fc._QUOTA_ATTRIBUTION_FILE = original_path
