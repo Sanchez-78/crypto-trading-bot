@@ -1398,8 +1398,24 @@ def open_paper_position(
     paper_source = extra.get("paper_source") if extra else None
 
     # PROFITABILITY FIX: Reject weak signals with low expected value (V10.26: apply to ALL entries)
+    # P0-FIX (2026-08-06): PAPER_STARVATION_DISCOVERY is exempt. Forensic evidence
+    # (_workspace/08_trading_stall_intake.md): this bucket is a deliberate, bounded
+    # exploration mechanism that only activates under starvation (15min+ idle) and
+    # is EXPECTED to admit negative/zero-EV signals by design — that's its entire
+    # purpose (evidence collection when nothing else is trading). V10.26 (commit
+    # afa5ad1) removed bucket-awareness to stop a DIFFERENT problem (~90% of ALL
+    # entries firing at ev=0.0, i.e. effectively random signals with no gating at
+    # all) but collaterally made this floor unconditional, which silently made
+    # PAPER_STARVATION_DISCOVERY 100% self-blocking: it had ZERO closed trades in
+    # 1614 recorded closes (repo-wide query) despite its own upstream admission
+    # decision explicitly logging "allowed=TRUE (ALL GATES DISABLED)" for it. The
+    # bot stalled completely (0 opens for 77+ min) once the market briefly had no
+    # positive-EV signal for ANY bucket, because this was the only fallback and it
+    # could never actually open a position. C_WEAK_EV_TRAIN (V10.26's real target)
+    # deliberately stays subject to the floor — only the exploration-specific
+    # bucket is exempted, so the original 2026-06-11 fix's intent is preserved.
     ev = float(signal.get("ev") or 0.0)
-    if ev < _MIN_EV_THRESHOLD:  # V10.26: Changed from "and bucket == C_WEAK_EV_TRAIN" to ALL trades
+    if ev < _MIN_EV_THRESHOLD and bucket != "PAPER_STARVATION_DISCOVERY":
         throttle_key = (symbol, bucket, "weak_ev_rejected")
         now_ts = time.time()
         last_log = _PAPER_ENTRY_BLOCKED_THROTTLE.get(throttle_key, 0.0)
