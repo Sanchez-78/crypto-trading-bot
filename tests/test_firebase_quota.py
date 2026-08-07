@@ -1,5 +1,6 @@
 import os
 import time
+from datetime import datetime, timezone
 
 from src.services import firebase_client as fc
 
@@ -299,3 +300,89 @@ def test_mark_quota_exhausted_also_persists_a_snapshot(tmp_path):
         assert data["reads"] == fc._QUOTA_MAX_READS  # exhaustion forces reads to max
     finally:
         fc._QUOTA_ATTRIBUTION_FILE = original_path
+
+
+# ── Quota window boundary (07:00 UTC) ────────────────────────────────────────
+# Regression cover for the 2026-08-07 self-perpetuating lockout: the reset
+# fired on calendar rollover (00:00 UTC), stamped _QUOTA_WINDOW_START 7h into
+# the future, and thereby made the real 07:00 reset unreachable forever.
+
+def _utc(day, hour, minute=0, second=0):
+    return datetime(2026, 8, day, hour, minute, second, tzinfo=timezone.utc)
+
+
+def _arm_window(day, hour, reads=40000):
+    """Put the module in a mid-window state: window opened at `day hour` UTC."""
+    _reset_firebase_state(FakeDB(collections={}))
+    fc._QUOTA_WINDOW_START = _utc(day, hour).timestamp()
+    fc._QUOTA_READS = reads
+    fc._QUOTA_WRITES = 1000
+
+
+def test_no_reset_at_calendar_midnight_utc():
+    """00:00 UTC is NOT the Firebase reset boundary — 07:00 UTC is."""
+    _arm_window(day=6, hour=7)  # window legitimately opened at Aug 6 07:00
+
+    fc._reset_quota_if_new_day(now_utc=_utc(7, 0, 0, 0))
+
+    assert fc._QUOTA_READS == 40000, "midnight must not clear the quota counters"
+    assert fc._QUOTA_WINDOW_START == _utc(6, 7).timestamp()
+    # The precise defect: the window start must never be stamped in the future.
+    assert fc._QUOTA_WINDOW_START <= _utc(7, 0).timestamp()
+
+
+def test_reset_fires_just_after_0700_utc():
+    _arm_window(day=6, hour=7)
+    fc._READ_ATTRIBUTION.clear()
+    fc._READ_ATTRIBUTION["load_history"] = 40000
+    fc._PREV_WINDOW_READ_ATTRIBUTION.clear()
+
+    fc._reset_quota_if_new_day(now_utc=_utc(7, 7, 0, 1))
+
+    assert fc._QUOTA_READS == 0
+    assert fc._QUOTA_WRITES == 0
+    assert fc._QUOTA_WINDOW_START == _utc(7, 7).timestamp()
+    # Attribution of the closed window survives the reset (a 429 arriving
+    # moments later must still be diagnosable).
+    assert fc._PREV_WINDOW_READ_ATTRIBUTION["load_history"] == 40000
+    assert fc._READ_ATTRIBUTION == {}
+
+
+def test_reset_is_idempotent_within_the_same_window():
+    _arm_window(day=6, hour=7)
+
+    fc._reset_quota_if_new_day(now_utc=_utc(7, 7, 0, 1))
+    assert fc._QUOTA_READS == 0
+
+    fc._QUOTA_READS = 120  # reads accrued after the reset
+    fc._reset_quota_if_new_day(now_utc=_utc(7, 7, 5, 0))
+    fc._reset_quota_if_new_day(now_utc=_utc(7, 23, 59, 59))
+
+    assert fc._QUOTA_READS == 120, "reset must not re-fire inside the same window"
+
+
+def test_midnight_then_0700_still_resets():
+    """The exact live failure: a midnight tick must not consume the day's
+    reset. Journal evidence 2026-08-07T07:05:53Z showed the 07:00 reset being
+    skipped because the 00:00 tick had already moved the window forward."""
+    _arm_window(day=6, hour=11)  # service start Aug 6 11:43Z (rounded)
+
+    fc._reset_quota_if_new_day(now_utc=_utc(7, 0, 0, 0))   # midnight: no-op
+    assert fc._QUOTA_READS == 40000
+
+    fc._reset_quota_if_new_day(now_utc=_utc(7, 7, 0, 1))   # real boundary
+    assert fc._QUOTA_READS == 0
+    assert fc._QUOTA_WINDOW_START == _utc(7, 7).timestamp()
+
+
+def test_pre_0700_hours_compare_against_yesterdays_boundary():
+    """At 02:00 UTC the live window is the one opened at yesterday 07:00."""
+    _arm_window(day=6, hour=7)
+    fc._reset_quota_if_new_day(now_utc=_utc(7, 2, 0, 0))
+    assert fc._QUOTA_READS == 40000, "02:00 is inside the Aug 6 07:00 window"
+
+    # A window older than yesterday's boundary is stale and must reset.
+    _arm_window(day=5, hour=7)
+    fc._reset_quota_if_new_day(now_utc=_utc(7, 2, 0, 0))
+    assert fc._QUOTA_READS == 0
+    assert fc._QUOTA_WINDOW_START == _utc(6, 7).timestamp()

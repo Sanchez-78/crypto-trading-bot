@@ -115,34 +115,55 @@ BOT2_METRICS_TTL = 300   # bot2 flushes metrics every 5 minutes
 PUSH_TOKEN_TTL   = 3600  # mobile push token is slow-moving
 AUDITOR_STATE_TTL = 300  # V10.22 FIX: Cache auditor state for 5min (was reading 5500x/hour!)
 
-def _reset_quota_if_new_day():
+def _reset_quota_if_new_day(now_utc=None):
     """Reset counters when we cross 07:00 UTC (Firebase daily reset time).
 
     Firebase quota resets at: 07:00 UTC each day (Midnight PT = 09:00 GMT+2).
-    Reset logic: if (last_reset was yesterday) OR (we're past 07:00 UTC today AND last_reset was before 07:00 UTC today)
+
+    The current quota window therefore starts at the most recent 07:00 UTC
+    instant that has already passed (yesterday's, if we are still before
+    07:00 today). A reset is due iff our recorded window start is older than
+    that boundary. Expressed this way the reset fires exactly once per real
+    boundary crossing and _QUOTA_WINDOW_START is never stamped into the future.
+
+    BUGFIX (2026-08-07): the previous implementation also reset on calendar-day
+    rollover (00:00 UTC) and then stamped _QUOTA_WINDOW_START with *today's*
+    07:00 — 7h in the future. Reads resumed 7h before Firebase's real reset,
+    immediately took a genuine 429 and re-locked for 24h; then at the real
+    07:00 the second condition compared `last_reset < today_07:00` →
+    `07:00 < 07:00` → False (strict <), so the legitimate reset was skipped for
+    the whole day. The bot stayed hard-gated in SAFE_MODE_FIREBASE_DEGRADED
+    until a manual restart, and midnight re-armed the trap every day.
+    Observed live on Hetzner at 2026-08-07T07:05:53Z:
+      [QUOTA_DEBUG] Quota high: 50000/50000 reads (100.0%). Not resetting
+      (conditions: now.date=2026-08-07 last.date=2026-08-07
+       now>reset_time=True last<reset_time=False)
+
+    `now_utc` is injectable for tests only; production always passes None.
     """
     global _QUOTA_WINDOW_START, _QUOTA_READS, _QUOTA_WRITES
     from datetime import datetime, timezone, timedelta
 
-    now_utc = datetime.now(timezone.utc)
-    last_reset_utc = datetime.fromtimestamp(_QUOTA_WINDOW_START, tz=timezone.utc)
+    if now_utc is None:
+        now_utc = datetime.now(timezone.utc)
 
-    # 07:00 UTC is the reset time
-    today_reset_time_utc = now_utc.replace(hour=7, minute=0, second=0, microsecond=0)
+    # Most recent 07:00 UTC boundary that has already passed.
+    window_boundary_utc = now_utc.replace(hour=7, minute=0, second=0, microsecond=0)
+    if now_utc < window_boundary_utc:
+        window_boundary_utc -= timedelta(days=1)
 
-    # Check if we need to reset:
-    # 1. Different calendar day → definitely reset
-    # 2. Same day BUT we're past 07:00 UTC AND last reset was before 07:00 UTC today → reset (happens after service restart)
-    should_reset = (
-        now_utc.date() > last_reset_utc.date() or
-        (now_utc.date() == last_reset_utc.date() and now_utc > today_reset_time_utc and last_reset_utc < today_reset_time_utc)
-    )
+    should_reset = _QUOTA_WINDOW_START < window_boundary_utc.timestamp()
 
     if should_reset:
         with _QUOTA_LOCK:
-            _QUOTA_WINDOW_START = today_reset_time_utc.timestamp()
+            _QUOTA_WINDOW_START = window_boundary_utc.timestamp()
             _QUOTA_READS = 0
             _QUOTA_WRITES = 0
+            # Retain the finished window's attribution: a 429 arriving moments
+            # after a reset would otherwise report an empty dict (observed
+            # 2026-08-07T00:00:00.162Z, which is why #139's snapshot was `{}`).
+            _PREV_WINDOW_READ_ATTRIBUTION.clear()
+            _PREV_WINDOW_READ_ATTRIBUTION.update(_READ_ATTRIBUTION)
             _READ_ATTRIBUTION.clear()
         import logging
         logging.warning(f"[QUOTA_RESET] Firebase quota reset to {_QUOTA_MAX_READS:,} reads, {_QUOTA_MAX_WRITES:,} writes (passed 07:00 UTC)")
@@ -157,10 +178,11 @@ def _reset_quota_if_new_day():
         import logging
         quota_reads_pct = (_QUOTA_READS / _QUOTA_MAX_READS * 100) if _QUOTA_MAX_READS > 0 else 0
         if quota_reads_pct > 50:
-            logging.warning("[QUOTA_DEBUG] Quota high: %d/%d reads (%.1f%%). Not resetting (conditions: now.date=%s last.date=%s now>reset_time=%s last<reset_time=%s)",
+            last_reset_utc = datetime.fromtimestamp(_QUOTA_WINDOW_START, tz=timezone.utc)
+            logging.warning("[QUOTA_DEBUG] Quota high: %d/%d reads (%.1f%%). Not resetting (window_start=%s >= boundary=%s, now=%s)",
                           _QUOTA_READS, _QUOTA_MAX_READS, quota_reads_pct,
-                          now_utc.date(), last_reset_utc.date(),
-                          now_utc > today_reset_time_utc, last_reset_utc < today_reset_time_utc)
+                          last_reset_utc.isoformat(), window_boundary_utc.isoformat(),
+                          now_utc.isoformat())
 
 def refresh_quota_window_on_startup():
     """
@@ -221,6 +243,9 @@ def _can_read(count=1):
 # Per-caller read attribution: without it a maxed counter cannot be traced
 # to its consumer (journal floods rotate history away within minutes).
 _READ_ATTRIBUTION: dict = {}
+# Attribution of the previous (already reset) quota window — kept so a 429
+# landing shortly after a window reset still has diagnosable read data.
+_PREV_WINDOW_READ_ATTRIBUTION: dict = {}
 _ATTRIBUTION_LOG_INTERVAL_S = 300
 _LAST_ATTRIBUTION_LOG_TS = 0.0
 _QUOTA_ATTRIBUTION_FILE = "local_learning_storage/quota_attribution_snapshot.json"
@@ -254,6 +279,7 @@ def _persist_attribution_snapshot(reason: str = "periodic") -> None:
                 "writes": _QUOTA_WRITES,
                 "writes_limit": _QUOTA_MAX_WRITES,
                 "read_attribution": dict(_READ_ATTRIBUTION),
+                "prev_window_read_attribution": dict(_PREV_WINDOW_READ_ATTRIBUTION),
             }
         os.makedirs(os.path.dirname(_QUOTA_ATTRIBUTION_FILE), exist_ok=True)
         tmp_path = _QUOTA_ATTRIBUTION_FILE + ".tmp"
