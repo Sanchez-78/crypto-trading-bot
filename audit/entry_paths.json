@@ -1,0 +1,114 @@
+{
+  "generated_at_utc": "2026-08-07T12:00:00Z",
+  "git_commit": "f54cdd55f3ca08ca9c38252d3ac8834f84d3387b",
+  "working_tree_dirty": true,
+  "working_tree_dirty_reason": "unrelated session bookkeeping (_workspace/*.md, _workspace/monitoring_progress.json) and an unrelated earlier task's untracked research scripts; no code files modified",
+  "command": "manual repository inspection (grep/read), Gate G0",
+  "exit_code": 0,
+  "entry_paths": [
+    {
+      "id": "E1",
+      "file": "src/services/paper_trade_executor.py",
+      "line": 1433,
+      "function": "open_paper_position",
+      "callers": ["E3", "E4", "E5", "E6"],
+      "entry_type": "canonical_paper_open_primitive",
+      "current_gate": "caller-dependent, not uniform",
+      "can_bypass_p0": true,
+      "can_reach_real_orders": false,
+      "test_coverage": ["test_paper_close_pipeline.py", "test_p0_3_paper_integration.py"],
+      "required_action": "all new strategy signals must route through evaluate_signal_for_paper_entry() before reaching this function; existing callers unchanged in this phase"
+    },
+    {
+      "id": "E3",
+      "file": "src/services/paper_training_sampler.py",
+      "function": "maybe_open_training_sample",
+      "calls": "open_paper_position (E1)",
+      "entry_type": "training_evidence",
+      "current_gate": "_route_training_sample_through_p0_rde (realtime_decision_engine.py:2866), historical fix",
+      "can_bypass_p0": "unverified_this_pass",
+      "can_reach_real_orders": false,
+      "test_coverage": ["test_p0_4_rde_routing.py", "test_p11ap_o2_scoped_bootstrap.py"],
+      "required_action": "add explicit AST/import-scan bypass test"
+    },
+    {
+      "id": "E4",
+      "file": "src/services/trade_executor.py",
+      "line": 125,
+      "function": "open_paper_position",
+      "entry_type": "compat_wrapper",
+      "calls": "open_paper_position (E1)",
+      "can_bypass_p0": "inherits_E1",
+      "can_reach_real_orders": false,
+      "test_coverage": [],
+      "required_action": "add to bypass-test import scan"
+    },
+    {
+      "id": "E5",
+      "file": "src/services/paper_exploration.py",
+      "function": "calls open_paper_position",
+      "entry_type": "exploration_entries",
+      "current_gate": "TRADING_AGENT_EXPLORATION_ENABLED config flag",
+      "can_bypass_p0": "unverified_this_pass",
+      "can_reach_real_orders": false,
+      "test_coverage": ["test_p1_paper_exploration.py"],
+      "required_action": "add explicit bypass test"
+    },
+    {
+      "id": "E6",
+      "file": "src/services/realtime_decision_engine.py",
+      "function": "calls open_paper_position; also defines _route_training_sample_through_p0_rde",
+      "entry_type": "primary_signal_path_and_closest_existing_p0_gate",
+      "can_bypass_p0": "n/a_is_the_gate",
+      "can_reach_real_orders": false,
+      "test_coverage": ["test_p0_segment_ev_gate.py", "test_p0_integration.py"],
+      "required_action": "integration point for new central router"
+    },
+    {
+      "id": "E9",
+      "file": "src/services/v5_legacy_bridge/__init__.py",
+      "line": "108,130",
+      "function": "record_open / record_close",
+      "entry_type": "evidence_persistence_not_order_entry",
+      "can_bypass_p0": "n/a",
+      "can_reach_real_orders": false,
+      "test_coverage": ["test_v5_legacy_bridge_hooks.py", "test_v5_legacy_bridge_outbox.py", "test_v5_legacy_bridge_quota.py"],
+      "required_action": "none - reuse as the evidence tier"
+    },
+    {
+      "id": "E10",
+      "file": "src/services/execution_engine.py",
+      "line": 154,
+      "function": "market_order (REST POST /api/v3/order)",
+      "entry_type": "real_order_only_call_site_in_repo",
+      "current_gate": "check_live_order_guard (runtime_mode.py 4-flag AND) + EXECUTION_ENGINE_ENABLED unset + no API keys present + paper_trade_executor import-time safe-mode enforcement",
+      "can_bypass_p0": "n/a",
+      "can_reach_real_orders": "unreachable_5_independent_guards_confirmed_live_2026-08-07",
+      "test_coverage": ["test_execution_engine_no_real_order.py"],
+      "required_action": "none required; re-run this test in every regression gate"
+    }
+  ],
+  "non_wired_architectures": [
+    {
+      "tree": "src/clean_core",
+      "wired_into_live_service": false,
+      "enforced_by_tests": ["tests/clean_core/test_no_legacy_runtime_wiring.py", "tests/clean_core/test_non_wiring.py"],
+      "purpose": "offline/replay research sandbox and cost-model reference implementation",
+      "action": "do not wire in; use execution/fees.py, funding.py, paper_accounting.py formulas as a cross-check reference only"
+    },
+    {
+      "tree": "src/v5_bot",
+      "wired_into_live_service": false,
+      "enforced_by_tests": null,
+      "purpose": "standalone v5-architecture runtime; appears to be the design source v5_legacy_bridge was extracted from",
+      "action": "do not wire in; src/services/v5_legacy_bridge is the live-wired evidence/outbox/quota tier to reuse instead"
+    }
+  ],
+  "real_order_call_sites_total": 1,
+  "real_order_reachable": false,
+  "limitations": [
+    "E3 and E5 bypass-safety recorded as unverified-this-pass, not as confirmed-safe; explicit tests are a required P0.7-adjacent action, not yet closed",
+    "shadow_excursion_recorder.py / trade_excursion.py existence and staleness (sqlite last written 2026-07-23) not yet root-caused",
+    "maker-fill model v2 integration status with live paper fills not yet confirmed"
+  ]
+}

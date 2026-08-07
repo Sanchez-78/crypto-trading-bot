@@ -1701,6 +1701,12 @@ def main():
     except Exception as e:
         print(f"  [WARNING] Failed to log runtime config: {e}", file=sys.stderr, flush=True)
 
+    # P0.7 (Evidence-First Strategy Expansion v2, §2.1): fail-closed startup
+    # assertion. Deliberately OUTSIDE the try/except above — a real-order
+    # misconfiguration must halt boot, not be reduced to a warning.
+    from src.core.runtime_mode import assert_real_orders_prohibited
+    assert_real_orders_prohibited()
+
     # Boot version marker — prevents confusion about which commit is running
     import os as _bv_os
     logging.info(

@@ -107,6 +107,42 @@ def live_trading_allowed() -> bool:
     return True
 
 
+def assert_real_orders_prohibited() -> None:
+    """Fail-closed startup assertion (Evidence-First Strategy Expansion v2, §2.1).
+
+    The five existing real-order guards (this module's live_trading_allowed(),
+    execution_engine.py's check_live_order_guard(), EXECUTION_ENGINE_ENABLED
+    being unset, absent Binance API keys, and paper_trade_executor.py's
+    import-time _enforce_paper_safe_mode()) are all guards-at-use: each one
+    individually blocks the real-order call site, but none of them is a single
+    fail-fast assertion that halts startup outright. This function is that
+    assertion — call it once during boot, outside any exception handler that
+    would swallow it, so a misconfigured real-order flag stops the process
+    before the event loop starts rather than merely being logged.
+
+    Must never fire under the current evidence-collection program: every
+    flag it inspects already defaults to the safe value (see
+    is_live_trading_enabled(), real_orders_enabled(), live_trading_confirmed()
+    above), so this is a zero-behavior-change addition unless the operator
+    has deliberately configured the box for real trading.
+    """
+    if real_orders_enabled():
+        raise RuntimeError(
+            "REAL trading is prohibited during the evidence program "
+            "(ENABLE_REAL_ORDERS is truthy — refusing to start)"
+        )
+    if is_live_trading_enabled():
+        raise RuntimeError(
+            "REAL trading is prohibited during the evidence program "
+            "(TRADING_MODE=live_real — refusing to start)"
+        )
+    if live_trading_confirmed():
+        raise RuntimeError(
+            "REAL trading is prohibited during the evidence program "
+            "(LIVE_TRADING_CONFIRMED is truthy — refusing to start)"
+        )
+
+
 def log_runtime_config():
     """Log current runtime configuration at startup."""
     mode = get_trading_mode()
