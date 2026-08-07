@@ -192,8 +192,124 @@ _STATE_FILE = "data/paper_open_positions.json"
 # (WR 57.1% -> 0%, see project memory). Both call sites now read these
 # module-level constants so they cannot silently diverge again.
 # See _workspace/02_forensics.md for the evidence trail.
-_DEFAULT_TP_ZONE_BPS = int(os.getenv("PAPER_TP_ZONE_BPS", "50"))
-_DEFAULT_SL_ZONE_BPS = int(os.getenv("PAPER_SL_ZONE_BPS", "40"))
+# The values this repo SHIPS, independent of any ambient env/.env. These are
+# what the cost-floor invariant test asserts on — an operator override cannot
+# make the shipped geometry look compliant.
+# 2026-08-07: SL 40 -> 25. With TP=50 and the shipped cost model
+# (_FEE_PCT+_SLIPPAGE_PCT = 18bps round-trip), TP=50/SL=40 required a break-even
+# TP-hit-share of 58/(32+58) = 64.4% — a genuine violation of the 60% ceiling,
+# not a borderline case. 50/25 needs 57.3% at the shipped cost and 38.7% at the
+# production cost (4bps).
+_SHIPPED_TP_ZONE_BPS = 50
+_SHIPPED_SL_ZONE_BPS = 25
+
+_DEFAULT_TP_ZONE_BPS = int(os.getenv("PAPER_TP_ZONE_BPS", str(_SHIPPED_TP_ZONE_BPS)))
+_DEFAULT_SL_ZONE_BPS = int(os.getenv("PAPER_SL_ZONE_BPS", str(_SHIPPED_SL_ZONE_BPS)))
+
+# Round-trip cost implied by the configured cost model, in bps. _calculate_pnl
+# subtracts (fee + slippage) ONCE as a round-trip charge (see its body and
+# tests/test_calculate_pnl_golden.py), so this is the full cost of a trade.
+_ROUND_TRIP_COST_BPS = (_FEE_PCT + _SLIPPAGE_PCT) * 10000.0
+
+# Break-even TP-hit-share the geometry may demand before it is considered
+# structurally losing. 0.60 = "must not require better than 60% accuracy".
+_MAX_BREAKEVEN_TP_SHARE = float(os.getenv("PAPER_MAX_BREAKEVEN_TP_SHARE", "0.60"))
+
+
+def validate_tp_sl_cost_floor(
+    tp_bps: float,
+    sl_bps: float,
+    cost_bps: float,
+    max_breakeven_share: float = None,
+) -> tuple:
+    """Check that a TP/SL geometry is not structurally guaranteed to lose.
+
+    The round-trip cost is subtracted from BOTH legs: a winner nets
+    (tp_bps - cost_bps), a loser nets -(sl_bps + cost_bps). A geometry can
+    therefore be fatal even with tp_bps > sl_bps, because the cost shrinks the
+    win and grows the loss. Three conditions must hold:
+
+      1. tp_bps >= 2 * cost_bps   — the TP leg clears cost with margin equal to
+         the cost itself (i.e. net win is at least as large as the fees paid).
+      2. sl_bps >= cost_bps       — a stop-out is not dominated by fees.
+      3. break-even TP-hit-share <= max_breakeven_share, where
+         share = (sl_bps + cost_bps) / ((tp_bps - cost_bps) + (sl_bps + cost_bps))
+
+    Evidence for why this guard exists: production ran TP=12/SL=10 at a 4bps
+    round-trip cost from 2026-07-31 09:00 UTC. That nets +8 on a win and -14 on
+    a loss => break-even share 63.6%, while the realised TP share was 50.5%
+    (347 TP vs 340 SL over 1314 closed trades, 2026-08-01..08-07). Profit factor
+    fell to 0.34-0.56 and win rate to 14-38%.
+
+    Args:
+        tp_bps: Take-profit zone in bps (gross, before cost)
+        sl_bps: Stop-loss zone in bps (gross, before cost)
+        cost_bps: Round-trip cost in bps
+        max_breakeven_share: Ceiling on the required TP-hit-share
+
+    Returns:
+        (ok: bool, reason: str) — reason is "" when ok
+    """
+    if max_breakeven_share is None:
+        max_breakeven_share = _MAX_BREAKEVEN_TP_SHARE
+
+    if tp_bps < 2 * cost_bps:
+        return False, (
+            f"TP leg does not clear cost with margin: tp={tp_bps:.1f}bps "
+            f"< 2x cost ({2 * cost_bps:.1f}bps); net win only {tp_bps - cost_bps:.1f}bps"
+        )
+    if sl_bps < cost_bps:
+        return False, (
+            f"SL leg dominated by cost: sl={sl_bps:.1f}bps < cost {cost_bps:.1f}bps"
+        )
+
+    tp_net = tp_bps - cost_bps
+    sl_net = sl_bps + cost_bps
+    # Degenerate input (e.g. all-zero, or negative bands from a malformed env
+    # var) would divide by zero below. This function is called at module scope,
+    # so raising here is an import-time crash — it must always return a verdict.
+    if tp_net + sl_net <= 0:
+        return False, (
+            f"degenerate geometry: tp={tp_bps:.1f}bps sl={sl_bps:.1f}bps "
+            f"cost={cost_bps:.1f}bps yields no distinguishable win/loss legs"
+        )
+    breakeven_share = sl_net / (tp_net + sl_net)
+    if breakeven_share > max_breakeven_share:
+        return False, (
+            f"break-even TP-hit-share {breakeven_share:.1%} exceeds ceiling "
+            f"{max_breakeven_share:.1%} (tp_net=+{tp_net:.1f}bps, sl_net=-{sl_net:.1f}bps)"
+        )
+    return True, ""
+
+
+# Fail loud (but do not crash a running bot) when the EFFECTIVE configured
+# geometry is structurally losing. The 2026-07-31 regression reached production
+# through an untracked systemd drop-in that no test or review ever saw; this
+# line puts the check on the path every process start takes.
+_tp_sl_ok, _tp_sl_reason = validate_tp_sl_cost_floor(
+    _DEFAULT_TP_ZONE_BPS, _DEFAULT_SL_ZONE_BPS, _ROUND_TRIP_COST_BPS
+)
+if not _tp_sl_ok:
+    log.critical(
+        f"[TP_SL_COST_FLOOR_VIOLATION] tp={_DEFAULT_TP_ZONE_BPS}bps sl={_DEFAULT_SL_ZONE_BPS}bps "
+        f"cost={_ROUND_TRIP_COST_BPS:.1f}bps — {_tp_sl_reason}"
+    )
+
+
+def get_tp_sl_cost_floor_status() -> dict:
+    """Effective TP/SL geometry and whether it holds the cost-floor invariant.
+
+    The startup log.critical alone is easy to miss (cf. the 23.5h stale-dashboard
+    incident in CLAUDE.md). This exposes the same state as data so a health
+    endpoint or deploy gate can assert on it instead of grepping logs.
+    """
+    return {
+        "tp_zone_bps": _DEFAULT_TP_ZONE_BPS,
+        "sl_zone_bps": _DEFAULT_SL_ZONE_BPS,
+        "round_trip_cost_bps": round(_ROUND_TRIP_COST_BPS, 2),
+        "cost_floor_ok": _tp_sl_ok,
+        "violation_reason": _tp_sl_reason,
+    }
 
 # P1.1Q Phase 5: Deduplication — track closed trades in current session to prevent double updates
 _CLOSED_TRADES_THIS_SESSION = set()  # trade_id -> (learned, metrics_updated)

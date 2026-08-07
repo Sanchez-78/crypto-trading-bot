@@ -15,6 +15,10 @@ import os
 import logging
 from typing import Dict, Tuple
 from src.services.learning_optimizer import get_optimizer
+from src.services.paper_trade_executor import (
+    _ROUND_TRIP_COST_BPS,
+    validate_tp_sl_cost_floor,
+)
 
 log = logging.getLogger(__name__)
 
@@ -89,6 +93,25 @@ class ParameterTuner:
 
             new_tp_bps = int(tp_bps * 1.5)  # Increase by 50%
             new_sl_bps = int(sl_bps * 1.5)
+
+            # 2026-08-07: this is the only automated actor that rewrites the TP/SL
+            # geometry, and it did so unvalidated. Scaling both legs by the same
+            # factor does NOT preserve the economics: the round-trip cost is a
+            # fixed subtraction from both, so the required break-even TP-hit-share
+            # moves as the bands scale. Refuse to write a geometry that the
+            # cost-floor invariant rejects — the 2026-07-31 WR collapse (PF 0.34,
+            # WR 14%) was exactly a structurally-losing band pair reaching prod
+            # unchecked. See paper_trade_executor.validate_tp_sl_cost_floor.
+            ok, reason = validate_tp_sl_cost_floor(
+                new_tp_bps, new_sl_bps, _ROUND_TRIP_COST_BPS
+            )
+            if not ok:
+                log.warning(
+                    f"[PARAMETER_TUNER_REJECTED] Refusing TP/SL increase "
+                    f"{tp_bps}→{new_tp_bps} / {sl_bps}→{new_sl_bps} bps at "
+                    f"cost={_ROUND_TRIP_COST_BPS:.1f}bps — {reason}"
+                )
+                return False
 
             # Update env file
             self._update_env('PAPER_TP_ZONE_BPS', str(new_tp_bps))
