@@ -105,6 +105,7 @@ def _reset_firebase_state(fake_db):
     fc._QUOTA_READS = 0
     fc._QUOTA_WRITES = 0
     fc._LAST_RECON_TS = 0
+    fc._PREV_WINDOW_READ_ATTRIBUTION.clear()
     for cache in (
         fc._HISTORY_CACHE,
         fc._WEIGHTS_CACHE,
@@ -373,6 +374,20 @@ def test_midnight_then_0700_still_resets():
     fc._reset_quota_if_new_day(now_utc=_utc(7, 7, 0, 1))   # real boundary
     assert fc._QUOTA_READS == 0
     assert fc._QUOTA_WINDOW_START == _utc(7, 7).timestamp()
+
+
+def test_future_window_start_from_clock_skew_forces_rearm():
+    """A window start ahead of real time is impossible state (the boundary is
+    always <= now) and reproduces the original lockout if left alone. Reachable
+    when the clock steps forward across 07:00 and is corrected back (NTP, VM
+    resume). Reviewer condition C1, _workspace/16_review.md."""
+    _arm_window(day=6, hour=7)
+    fc._QUOTA_WINDOW_START = _utc(7, 7).timestamp()  # stamped ahead of real time
+
+    fc._reset_quota_if_new_day(now_utc=_utc(7, 3, 0, 0))  # clock corrected backward
+
+    assert fc._QUOTA_READS == 0
+    assert fc._QUOTA_WINDOW_START == _utc(6, 7).timestamp(), "re-armed to the real boundary"
 
 
 def test_pre_0700_hours_compare_against_yesterdays_boundary():

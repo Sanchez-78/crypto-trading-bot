@@ -154,6 +154,13 @@ def _reset_quota_if_new_day(now_utc=None):
 
     should_reset = _QUOTA_WINDOW_START < window_boundary_utc.timestamp()
 
+    # Clock-skew guard: the boundary is always <= now, so a window start in the
+    # FUTURE is impossible state — it can only come from a clock that stepped
+    # forward across 07:00 and was then corrected back (NTP / VM resume). Left
+    # alone it reproduces the original lockout, so force a re-arm.
+    if _QUOTA_WINDOW_START > now_utc.timestamp():
+        should_reset = True
+
     if should_reset:
         with _QUOTA_LOCK:
             _QUOTA_WINDOW_START = window_boundary_utc.timestamp()
