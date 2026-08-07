@@ -217,7 +217,37 @@ learning propagation, or any real-order path. Paper-only.
 
 ## 7. Commit
 
-`caeacf8` — local only, not pushed.
+`09f1acd` — local only, not pushed. Subject: *"Fix: enforce TP/SL cost-floor
+invariant; shipped SL default 40 -> 25"*. Identify by subject rather than SHA if
+the commit is later amended.
+
+### Git incident during the review follow-up — disclosed
+
+While amending to apply the review conditions I ran `git commit --amend` while a
+concurrently-working agent's commit `1ff60ec` ("Fix (follow-up to f6e2f28): quota
+reset clock-skew guard + test isolation", 2 files, 22 insertions) was HEAD — it had
+landed on top of mine between my commit and my amend. The amend therefore **replaced
+that teammate's commit with my message and content**, destroying it from the branch.
+
+Detected immediately from `git show --stat` listing `src/services/firebase_client.py`
+and `tests/test_firebase_quota.py`, which are not mine. Repaired without data loss:
+
+1. Saved my review-fix delta (`git diff --binary 1ff60ec 1dbc2e2`).
+2. `git reset --hard 961152b` (back to my own commit).
+3. Re-applied and amended my commit properly → `09f1acd`.
+4. `git cherry-pick 1ff60ec` → teammate's commit restored as `65695b9`.
+
+Verified: `git diff 1dbc2e2 HEAD` is **empty** (no content lost), and the teammate's
+commit patch is **byte-identical** to the original with author and author-date
+preserved. Final order: `f6e2f28` → `09f1acd` (mine) → `65695b9` (teammate's).
+
+Nothing was pushed at any point, so this never left the local branch.
+
+**Unrelated pre-existing failure noted, not touched:**
+`tests/test_firebase_quota.py::test_load_history_counts_documents_and_caches_by_limit`
+fails (15 passed, 1 failed) with the teammate's commit applied, including when that
+suite runs alone. It is disjoint from my files and unaffected by the repair — flagging
+it for whoever owns the quota patch.
 
 ## 8. Recommendation to supervisor
 
