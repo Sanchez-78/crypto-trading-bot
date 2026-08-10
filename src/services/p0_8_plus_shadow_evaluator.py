@@ -37,6 +37,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 import os
+import threading
 import time
 from dataclasses import dataclass
 from typing import Callable, List, Mapping, Optional, Sequence, Tuple
@@ -57,6 +58,24 @@ log = logging.getLogger(__name__)
 # convention around the last close so downstream cost math stays
 # directionally correct even though the magnitude is not a real quote.
 SYNTHETIC_SPREAD_BPS = float(os.getenv("PAPER_P0_8_PLUS_SYNTHETIC_SPREAD_BPS", "3.0"))
+
+# signal_router.py's DEFAULT_MAX_DATA_AGE_MS (5_000ms) is sized for a true
+# live tick feed, where market_data_event_time_ms is the age of the last
+# bookTicker/aggTrade event. This module stamps market_data_event_time_ms
+# from the fetched candle's own open_time (each strategy's
+# `latest_open_time_ms`) -- for a 1m REST-polled candle, the in-progress
+# bar's open_time can legitimately be up to ~60s old by the time it's
+# evaluated, which is *correct* data, not stale data, for this source.
+# Found via independent audit (trading-safety-agent, 2026-08-10): with the
+# router's tight default, ~92% of ticks were rejected as
+# REJECT_STALE_MARKET_DATA purely from this clock-phase mismatch, not from
+# any strategy or risk decision -- making the shadow evidence collected
+# meaningless (it would mostly show "stale", not real admission behavior).
+# 90s covers a full candle interval plus fetch/processing latency with
+# margin, while still catching a genuinely stuck/frozen candle cache
+# (candle_cache_v1's own refresh_seconds=60 default would otherwise serve
+# progressively staler data past this point on a persistent fetch failure).
+SHADOW_MAX_DATA_AGE_MS = int(os.getenv("PAPER_P0_8_PLUS_MAX_DATA_AGE_MS", "90000"))
 
 _STRATEGY_MODULES = (trend_strategy, breakout_strategy, mean_reversion_strategy)
 
@@ -165,6 +184,7 @@ def evaluate_symbol(
                     realized_volatility_bps_per_second=0.1,
                     decision_latency_ms=50.0,
                     now_ms=now_ms_val,
+                    max_data_age_ms=SHADOW_MAX_DATA_AGE_MS,
                     registry=registry,
                     risk_guard_fn=risk_guard_fn,
                 )
@@ -204,3 +224,46 @@ def run_shadow_tick(
     if not all_results:
         log.info("[P0_8_PLUS_SHADOW] tick complete: 0 candidates across %d symbol(s)", len(syms))
     return all_results
+
+
+def start_shadow_monitoring_thread(
+    interval_s: float = 60.0,
+    symbols: Optional[Sequence[str]] = None,
+) -> Optional[threading.Thread]:
+    """Start a daemon background thread that calls run_shadow_tick() every
+    `interval_s` seconds -- same pattern as
+    emergency_health_monitor.start_monitoring_thread() (a daemon thread on
+    a fixed interval, no external event loop needed), and the same
+    try/except-per-call discipline as evaluate_symbol() itself: one failed
+    tick logs and retries next interval, it never kills the thread (§8.1
+    spirit: don't crash the main loop over one bad cycle -- extended here
+    to "don't crash the monitoring thread over one bad tick").
+
+    Gated by PAPER_P0_8_PLUS_SHADOW_ENABLED (default 'true'). Safe to leave
+    on by default: this thread never reaches the paper-entry primitive or
+    any other entry primitive (module docstring, bypass-tested), makes no Firestore
+    calls, and its only network activity is the same bounded, rate-limited
+    REST candle fetch candle_cache_v1.py already rate-limits internally
+    regardless of how often this thread ticks. Set to 'false'/'0'/'no'/'off'
+    to disable without a code change (e.g. via the systemd overlay).
+
+    Returns the Thread if started, or None if disabled.
+    """
+    enabled = os.getenv("PAPER_P0_8_PLUS_SHADOW_ENABLED", "true").strip().lower() not in ("0", "false", "no", "off")
+    if not enabled:
+        log.info("[P0_8_PLUS_SHADOW] monitoring thread disabled via PAPER_P0_8_PLUS_SHADOW_ENABLED")
+        return None
+
+    def _loop() -> None:
+        while True:
+            try:
+                run_shadow_tick(symbols=symbols)
+            except Exception as exc:  # never let one bad tick kill the thread
+                log.warning("[P0_8_PLUS_SHADOW] tick failed: %r", exc)
+            time.sleep(interval_s)
+
+    t = threading.Thread(target=_loop, name="p0-8-plus-shadow-evaluator", daemon=True)
+    t.start()
+    log.info("[P0_8_PLUS_SHADOW] monitoring thread started (interval=%.0fs, symbols=%s)",
+              interval_s, list(symbols) if symbols is not None else list(_env_symbols()))
+    return t

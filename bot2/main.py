@@ -1831,6 +1831,23 @@ def main():
     except Exception as e:
         logging.warning(f"[STARTUP] Emergency health monitor failed to start: {e}")
 
+    # ────────────────────────────────────────────────────────────────────────
+    # P0.8+ SHADOW EVALUATOR (Evidence-First Strategy Expansion v2, Gate G7
+    # phase 1): periodically fetches live candles, runs the new cost-aware
+    # strategies (trend/breakout/mean-reversion), and evaluates them through
+    # the central router + risk guard -- LOGS ONLY. Cannot open a position:
+    # no import of open_paper_position or any entry primitive anywhere in
+    # p0_8_plus_shadow_evaluator.py (bypass-tested). Zero Firestore calls;
+    # its only network activity is a rate-limited public REST candle fetch.
+    # Gated by PAPER_P0_8_PLUS_SHADOW_ENABLED (default "true" -- safe to
+    # leave on; set "false" to disable without a code change).
+    # ────────────────────────────────────────────────────────────────────────
+    try:
+        from src.services.p0_8_plus_shadow_evaluator import start_shadow_monitoring_thread
+        _p0_8_plus_shadow_thread = start_shadow_monitoring_thread(interval_s=60)
+    except Exception as e:
+        logging.warning(f"[STARTUP] P0.8+ shadow evaluator failed to start: {e}")
+
     while True:
         time.sleep(10)
 

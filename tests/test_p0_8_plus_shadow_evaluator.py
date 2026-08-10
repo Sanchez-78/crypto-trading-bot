@@ -4,6 +4,7 @@ inject a fake candle cache / registry / risk guard -- none touch real
 Binance, Firestore, or the live position store.
 """
 import random
+import time
 
 import pytest
 
@@ -158,6 +159,63 @@ def test_run_shadow_tick_covers_default_symbols_when_none_given():
 def test_run_shadow_tick_never_raises_on_empty_symbol_list():
     results = shadow.run_shadow_tick(symbols=[], cache=_fake_cache(_trending_candles()))
     assert results == []
+
+
+# ---------------------------------------------------------------------------
+# start_shadow_monitoring_thread
+# ---------------------------------------------------------------------------
+
+def test_monitoring_thread_disabled_via_env_returns_none(monkeypatch):
+    monkeypatch.setenv("PAPER_P0_8_PLUS_SHADOW_ENABLED", "false")
+    result = shadow.start_shadow_monitoring_thread(interval_s=0.01)
+    assert result is None
+
+
+@pytest.mark.parametrize("disable_value", ["0", "no", "off", "FALSE"])
+def test_monitoring_thread_disabled_accepts_common_falsy_spellings(monkeypatch, disable_value):
+    monkeypatch.setenv("PAPER_P0_8_PLUS_SHADOW_ENABLED", disable_value)
+    assert shadow.start_shadow_monitoring_thread(interval_s=0.01) is None
+
+
+def test_monitoring_thread_enabled_by_default_and_is_daemon(monkeypatch):
+    monkeypatch.delenv("PAPER_P0_8_PLUS_SHADOW_ENABLED", raising=False)
+    calls = {"n": 0}
+    monkeypatch.setattr(shadow, "run_shadow_tick", lambda symbols=None: calls.__setitem__("n", calls["n"] + 1))
+    t = shadow.start_shadow_monitoring_thread(interval_s=0.01)
+    try:
+        assert t is not None
+        assert t.daemon is True
+        # Wait briefly for at least one tick.
+        for _ in range(100):
+            if calls["n"] >= 1:
+                break
+            time.sleep(0.01)
+        assert calls["n"] >= 1
+    finally:
+        pass  # daemon thread; no explicit stop mechanism, same as
+              # emergency_health_monitor.start_monitoring_thread() -- dies
+              # with the process, harmless to leave running for the rest
+              # of this test session.
+
+
+def test_monitoring_thread_survives_a_failing_tick(monkeypatch):
+    """One bad tick must not kill the thread -- the next interval must
+    still fire."""
+    monkeypatch.delenv("PAPER_P0_8_PLUS_SHADOW_ENABLED", raising=False)
+    calls = {"n": 0}
+
+    def _flaky(symbols=None):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("first tick fails")
+
+    monkeypatch.setattr(shadow, "run_shadow_tick", _flaky)
+    shadow.start_shadow_monitoring_thread(interval_s=0.01)
+    for _ in range(200):
+        if calls["n"] >= 2:
+            break
+        time.sleep(0.01)
+    assert calls["n"] >= 2
 
 
 def test_candidate_evaluation_never_mutates_signal_or_exposes_execution_hooks():
