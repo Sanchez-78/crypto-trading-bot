@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 24,
+  "cycle": 25,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 24,
-  "current_wr": 12.0,
+  "total_cycles_completed": 25,
+  "current_wr": 13.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-10T06:44:37Z",
-  "status": "monitoring_post_hotfix_wr_goal_raised_to_55",
+  "last_update": "2026-08-10T07:25:47Z",
+  "status": "monitoring_wiring_phase_planned",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -242,6 +242,21 @@
       "deploy_result": "PASS",
       "caveat": "This is a stop-the-bleeding hygiene fix, NOT expected alone to reach WR>55% -- 2026-08-07 grid search over TP/SL in [8,40]bps against live MFE/MAE already found no profitable geometry in that range; 69% of exits are TIMEOUT (near-zero directional edge at this horizon, not a band-placement problem). Real path to the goal: wire the cost-aware P0.8-P1.2 strategies (commits d4d69ee..fa968c0, all evidence_only, self-filtering on positive net edge) into the live decision loop -- currently 0 live evidence collected for any of them. Next cycle: (a) re-measure WR/PF/quota post-hotfix, (b) if still structurally negative, begin the wiring design (Gate G7 scope) as the primary lever, (c) separately root-cause the Firebase read-quota burn source.",
       "elapsed_mins": 25
+    },
+    {
+      "cycle": 25,
+      "timestamp": "2026-08-10T07:25:47Z",
+      "status": "HOTFIX_EFFECT_MEASURED_FLAT_AS_PREDICTED_RISK_GUARD_BUILT_WIRING_PLAN_READY",
+      "wr_before": 12.0,
+      "wr_after": 13.0,
+      "pf_before": 0.411,
+      "pf_after": 0.491,
+      "note": "Measured TP/SL hotfix (bb8f6f6) effect after ~35min: WR 12->13%, PF 0.411->0.491, flats 60->66/100. Flat as predicted -- confirms grid-search finding that no TP/SL geometry alone reaches the goal. SAFE_MODE_FIREBASE_DEGRADED cleared on its own at 07:00 UTC boundary (reset-logic fix working correctly); quota burn source (rec #5) still open, deferred, not currently blocking. Built and deployed src/services/p0_risk_guard_v1.py (commit 9d75b18): closes a second, independent gap -- signal_router.py had risk_allowed hardcoded False since its first commit, meaning the P0.8+ pipeline could never have admitted a signal even if wired in. This is now fixed but remains INERT (nothing calls it live yet). Confirmed live candle source exists for the new strategies: binance_client.fetch_candles() already returns the exact schema they expect (used today by signal_generator.warmup()). Full wiring plan written: _workspace/18_live_wiring_plan.md.",
+      "fix_applied": "p0_risk_guard_v1.py (9d75b18) -- inert infra, no live behavior change",
+      "commit": "9d75b18",
+      "deploy_result": "N/A (not wired into live loop, safe to push without deploy gate)",
+      "next_cycle_plan": "Build the wiring glue module (candle cache + per-tick candidate generation + router + risk guard + open_paper_position, gated behind a new/reused env flag defaulting OFF, shadow/dry-run mode first) per _workspace/18_live_wiring_plan.md. This is the first change in the program that would alter live behavior once flipped on -- routes through full evidence-based-patch-orchestrator review before any deploy with the flag enabled.",
+      "elapsed_mins": 40
     }
   ],
   "experiment": {
