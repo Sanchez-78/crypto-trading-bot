@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 28,
+  "cycle": 29,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 28,
+  "total_cycles_completed": 29,
   "current_wr": 13.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-10T09:42:43Z",
-  "status": "monitoring_live_quote_cache_built_deploy_pending",
+  "last_update": "2026-08-10T10:47:07Z",
+  "status": "monitoring_reduced_cadence_deploy_pending",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -287,6 +287,16 @@
       "deploy_result": "BLOCKED_GATE5_STILL_PENDING",
       "next_cycle_plan": "Retry deploy opportunistically (not every cycle). Once deployed and running for a while, review shadow-evaluator logs for real quote_source=live admission-rate evidence. Remaining open item before any real open_paper_position() wiring: gap #2 (regime_classifier_v1.py unvalidated against real time-series). Continue standard WR/PF monitoring.",
       "elapsed_mins": 35
+    },
+    {
+      "cycle": 29,
+      "timestamp": "2026-08-10T10:47:07Z",
+      "status": "STABLE_MONITORING_DEPLOY_STILL_PENDING_7_ATTEMPTS",
+      "note": "WR/PF stable around 15%/0.41 (slow drift from TP/SL hotfix, consistent with prior cycles). Deploy attempted 7 times total this session, still blocked by Gate 5 -- this bot maintains near-continuous 1-position ETHUSDT occupancy. Not attempting to bypass or weaken the gate (explicitly out of scope for this autonomy grant -- deployment safety gates are not mine to override for convenience). Deprioritizing further active retry-polling every cycle; will check opportunistically at a lower cadence. No new actionable old-path findings (already-exhausted per multiple prior sessions grid-search).",
+      "commit": "312e8d2c (pending live deploy, same content as prior pending attempts)",
+      "deploy_result": "BLOCKED_GATE5_DEPRIORITIZED",
+      "next_cycle_plan": "Opportunistic deploy check + WR/PF monitoring at reduced cadence.",
+      "elapsed_mins": 20
     }
   ],
   "experiment": {
