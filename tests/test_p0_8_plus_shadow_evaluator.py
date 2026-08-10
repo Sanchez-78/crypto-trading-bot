@@ -218,6 +218,62 @@ def test_monitoring_thread_survives_a_failing_tick(monkeypatch):
     assert calls["n"] >= 2
 
 
+# ---------------------------------------------------------------------------
+# live quote preference (live_quote_cache_v1) vs synthetic fallback
+# ---------------------------------------------------------------------------
+
+def test_evaluate_symbol_uses_synthetic_quote_when_no_live_quote_cached():
+    reg = StrategyRegistry()
+    shadow.ensure_registered(["ETHUSDT"], registry=reg)
+    cache = _fake_cache(_trending_candles(drift_bps_per_bar=15.0, seed=10))
+    results = shadow.evaluate_symbol(
+        "ETHUSDT", cache=cache, registry=reg, risk_guard_fn=_allow_risk,
+        get_quote_fn=lambda symbol, max_age_s=None: None,
+    )
+    assert len(results) >= 1
+    assert all(r.quote_source == "synthetic" for r in results)
+
+
+def test_evaluate_symbol_prefers_live_quote_when_fresh():
+    from src.services.live_quote_cache_v1 import LastQuote
+    candles = _trending_candles(drift_bps_per_bar=15.0, seed=11)
+    close = candles[-1]["close"]
+    live_quote = LastQuote(symbol="ETHUSDT", bid=close * 0.99985, ask=close * 1.00015,
+                            price=close, received_at_s=123.0)
+
+    reg = StrategyRegistry()
+    shadow.ensure_registered(["ETHUSDT"], registry=reg)
+    cache = _fake_cache(candles)
+    results = shadow.evaluate_symbol(
+        "ETHUSDT", cache=cache, registry=reg, risk_guard_fn=_allow_risk,
+        get_quote_fn=lambda symbol, max_age_s=None: live_quote,
+    )
+    assert len(results) >= 1
+    assert all(r.quote_source == "live" for r in results)
+    assert all(r.signal.reference_price == close for r in results)
+
+
+def test_evaluate_symbol_falls_back_to_synthetic_when_quote_lookup_raises():
+    def _boom(symbol, max_age_s=None):
+        raise RuntimeError("cache unavailable")
+
+    reg = StrategyRegistry()
+    shadow.ensure_registered(["ETHUSDT"], registry=reg)
+    cache = _fake_cache(_trending_candles(drift_bps_per_bar=15.0, seed=12))
+    results = shadow.evaluate_symbol(
+        "ETHUSDT", cache=cache, registry=reg, risk_guard_fn=_allow_risk, get_quote_fn=_boom,
+    )
+    assert len(results) >= 1
+    assert all(r.quote_source == "synthetic" for r in results)
+
+
+def test_run_shadow_tick_subscribes_the_live_quote_cache(monkeypatch):
+    calls = {"n": 0}
+    monkeypatch.setattr(shadow.live_quote_cache_v1, "ensure_subscribed", lambda: calls.__setitem__("n", calls["n"] + 1))
+    shadow.run_shadow_tick(symbols=[], cache=_fake_cache(_trending_candles()))
+    assert calls["n"] == 1
+
+
 def test_candidate_evaluation_never_mutates_signal_or_exposes_execution_hooks():
     reg = StrategyRegistry()
     shadow.ensure_registered(["ETHUSDT"], registry=reg)

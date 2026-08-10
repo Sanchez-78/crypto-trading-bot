@@ -12,24 +12,31 @@ _workspace/18_live_wiring_plan.md originally scoped: reconnaissance this
 same session found two real gaps that make a genuine open decision
 premature, disclosed rather than papered over:
 
-  1. No live bid/ask feed is queryable from outside market_stream.py's
-     WebSocket dispatch (it publishes to event_bus internally, exposes no
-     "current bid/ask for symbol X" getter). This module approximates
-     best_bid/best_ask from the latest fetched candle's close plus a
-     configurable synthetic half-spread (SYNTHETIC_SPREAD_BPS) -- an
-     approximation, not a real order-book read. cost_model's spread-cost
-     and slippage terms are only as honest as this input, so admission
-     decisions computed against it must NOT be trusted for real capital
-     (even paper capital) allocation yet.
+  1. UPDATE 2026-08-10 (same session, later): a real live bid/ask feed is
+     now available via live_quote_cache_v1.py, a thin event_bus subscriber
+     on market_stream.py's existing "price_tick" publication -- resolved,
+     not just approximated, per CLAUDE.md's "always use the standard
+     event_bus" rule. This module now uses the real quote whenever one is
+     fresh (QUOTE_MAX_AGE_S) and cost_model's spread-cost/slippage terms
+     are computed from it; it falls back to the candle-close-based
+     synthetic approximation (SYNTHETIC_SPREAD_BPS) only when no live
+     quote exists yet (e.g. immediately at process startup, before the
+     WebSocket feed's first tick for that symbol arrives, or in a process
+     where market_stream.py never started -- such as this module's own
+     test suite). Every CandidateEvaluation records which source was used
+     (`quote_source`, "live" or "synthetic") so evidence collected while
+     falling back is distinguishable, not silently blended with real-quote
+     evidence.
   2. regime_classifier_v1.py (built this same session) is a new,
      minimally-validated classifier, not yet cross-checked against real
-     time-series behavior.
+     time-series behavior. Still open.
 
 Given both, this phase stops at "evaluate and log what the pipeline WOULD
 do" -- §11.7 Pattern A's shadow-counterfactual spirit, extended from just
 OFI to the whole pipeline. Wiring the actual open_paper_position() call is
 explicitly deferred to a follow-up, separately reviewed phase once (1) a
-real bid/ask source is integrated and (2) shadow-mode evidence exists to
+majority of evidence is collected against `quote_source="live"` rather than
+falling back to synthetic, and (2) shadow-mode evidence exists to
 sanity-check the regime classifier and admission rate against reality.
 """
 from __future__ import annotations
@@ -43,6 +50,7 @@ from dataclasses import dataclass
 from typing import Callable, List, Mapping, Optional, Sequence, Tuple
 
 from src.services import candle_cache_v1
+from src.services import live_quote_cache_v1
 from src.services import regime_classifier_v1
 from src.services import signal_router
 from src.services import strategy_contracts as sc
@@ -77,6 +85,13 @@ SYNTHETIC_SPREAD_BPS = float(os.getenv("PAPER_P0_8_PLUS_SYNTHETIC_SPREAD_BPS", "
 # progressively staler data past this point on a persistent fetch failure).
 SHADOW_MAX_DATA_AGE_MS = int(os.getenv("PAPER_P0_8_PLUS_MAX_DATA_AGE_MS", "90000"))
 
+# How old a cached live quote (live_quote_cache_v1) may be and still be
+# trusted over the synthetic candle-close approximation. market_stream.py
+# publishes on every WebSocket update -- for a liquid symbol that is
+# sub-second; 30s is generous margin for a quiet moment while still much
+# tighter than the candle-based fallback's own inherent staleness.
+QUOTE_MAX_AGE_S = float(os.getenv("PAPER_P0_8_PLUS_QUOTE_MAX_AGE_S", "30.0"))
+
 _STRATEGY_MODULES = (trend_strategy, breakout_strategy, mean_reversion_strategy)
 
 _DEFAULT_SYMBOLS: Tuple[str, ...] = ("ETHUSDT", "ADAUSDT", "SOLUSDT")
@@ -97,6 +112,7 @@ class CandidateEvaluation:
     regime_confidence: float
     signal: sc.StrategySignal
     evaluation: sc.SignalEvaluation
+    quote_source: str  # "live" or "synthetic" -- see module docstring point 1
 
 
 _registered_symbols: Optional[frozenset] = None
@@ -132,12 +148,34 @@ def _synthetic_best_bid_ask(candles: Sequence[Mapping]) -> Tuple[float, float]:
     return close - half_spread, close + half_spread
 
 
+def _resolve_best_bid_ask(
+    symbol: str,
+    candles: Sequence[Mapping],
+    *,
+    get_quote_fn: Optional[Callable[..., Optional[live_quote_cache_v1.LastQuote]]] = None,
+) -> Tuple[float, float, str]:
+    """Prefer a real live quote (live_quote_cache_v1); fall back to the
+    candle-close synthetic approximation only when none is fresh enough.
+    Returns (best_bid, best_ask, quote_source)."""
+    get_quote = get_quote_fn if get_quote_fn is not None else live_quote_cache_v1.get_last_quote
+    try:
+        quote = get_quote(symbol, max_age_s=QUOTE_MAX_AGE_S)
+    except Exception as exc:
+        log.warning("[P0_8_PLUS_SHADOW] live quote lookup failed for %s: %r", symbol, exc)
+        quote = None
+    if quote is not None:
+        return quote.bid, quote.ask, "live"
+    best_bid, best_ask = _synthetic_best_bid_ask(candles)
+    return best_bid, best_ask, "synthetic"
+
+
 def evaluate_symbol(
     symbol: str,
     *,
     cache: Optional[candle_cache_v1.CandleCache] = None,
     registry: Optional[StrategyRegistry] = None,
     risk_guard_fn: Optional[Callable] = None,
+    get_quote_fn: Optional[Callable[..., Optional[live_quote_cache_v1.LastQuote]]] = None,
     now_ms: Optional[int] = None,
 ) -> List[CandidateEvaluation]:
     """Fetch candles for `symbol`, classify regime, generate candidates from
@@ -153,7 +191,7 @@ def evaluate_symbol(
         return []
 
     regime, regime_confidence = regime_classifier_v1.classify_regime(candles)
-    best_bid, best_ask = _synthetic_best_bid_ask(candles)
+    best_bid, best_ask, quote_source = _resolve_best_bid_ask(symbol, candles, get_quote_fn=get_quote_fn)
     now_ms_val = now_ms if now_ms is not None else int(time.time() * 1000)
 
     results: List[CandidateEvaluation] = []
@@ -194,7 +232,7 @@ def evaluate_symbol(
             results.append(CandidateEvaluation(
                 symbol=symbol, strategy_id=mod.STRATEGY_ID, side=signal.side,
                 regime=regime, regime_confidence=regime_confidence,
-                signal=signal, evaluation=evaluation,
+                signal=signal, evaluation=evaluation, quote_source=quote_source,
             ))
     return results
 
@@ -209,6 +247,7 @@ def run_shadow_tick(
     summary line per candidate evaluated. Never opens a position (module
     docstring). Safe to call on any cadence -- the candle cache internally
     rate-limits the underlying REST fetches regardless of call frequency."""
+    live_quote_cache_v1.ensure_subscribed()
     syms = tuple(symbols) if symbols is not None else _env_symbols()
     ensure_registered(syms)
     all_results: List[CandidateEvaluation] = []
@@ -217,8 +256,8 @@ def run_shadow_tick(
         all_results.extend(results)
         for r in results:
             log.info(
-                "[P0_8_PLUS_SHADOW] %s %s %s regime=%s(%.2f) admitted=%s code=%s net_edge=%.2fbps",
-                r.symbol, r.strategy_id, r.side, r.regime, r.regime_confidence,
+                "[P0_8_PLUS_SHADOW] %s %s %s regime=%s(%.2f) quote=%s admitted=%s code=%s net_edge=%.2fbps",
+                r.symbol, r.strategy_id, r.side, r.regime, r.regime_confidence, r.quote_source,
                 r.evaluation.admitted, r.evaluation.decision_code, r.evaluation.net_expected_edge_bps,
             )
     if not all_results:
