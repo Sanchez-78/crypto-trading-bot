@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 27,
+  "cycle": 28,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 27,
+  "total_cycles_completed": 28,
   "current_wr": 13.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-10T09:05:02Z",
-  "status": "monitoring_shadow_deploy_pending_gate5",
+  "last_update": "2026-08-10T09:42:43Z",
+  "status": "monitoring_live_quote_cache_built_deploy_pending",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -277,6 +277,16 @@
       "deploy_result": "BLOCKED_GATE5_RETRY_LATER",
       "next_cycle_plan": "Retry the shadow-evaluator deploy opportunistically (any future deploy naturally checks Gate 5 again). Continue monitoring WR/PF. If a future cycle finds a concrete, evidence-backed fix for either the quota burn or the deploy-workflow Gate5-silent-success bug, scope it narrowly per the same discipline as every other change this session.",
       "elapsed_mins": 25
+    },
+    {
+      "cycle": 28,
+      "timestamp": "2026-08-10T09:42:43Z",
+      "status": "LIVE_QUOTE_CACHE_BUILT_GAP1_RESOLVED_DEPLOY_STILL_PENDING_GATE5",
+      "note": "Built live_quote_cache_v1.py -- thin event_bus subscriber on market_stream.py existing \"price_tick\" publication, resolves gap #1 from the earlier trading-safety-agent audit (no live bid/ask feed). Wired into p0_8_plus_shadow_evaluator.py: prefers real quote (30s freshness) over synthetic candle-close approximation, records quote_source per evaluation for evidence transparency. 393 tests passing (was 366). Commit 3bb196b4 pushed. Deploy attempted 5 total times this session -- still blocked by Gate 5 (bot maintains near-continuous 1-position occupancy on ETHUSDT). Deprioritizing active retry-polling; will deploy opportunistically. All shadow-evaluator code remains independently audited as unable to open a position regardless of deploy timing, so no urgency cost.",
+      "commit": "3bb196b4 (pending live deploy)",
+      "deploy_result": "BLOCKED_GATE5_STILL_PENDING",
+      "next_cycle_plan": "Retry deploy opportunistically (not every cycle). Once deployed and running for a while, review shadow-evaluator logs for real quote_source=live admission-rate evidence. Remaining open item before any real open_paper_position() wiring: gap #2 (regime_classifier_v1.py unvalidated against real time-series). Continue standard WR/PF monitoring.",
+      "elapsed_mins": 35
     }
   ],
   "experiment": {
