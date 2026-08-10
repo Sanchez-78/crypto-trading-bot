@@ -8,13 +8,22 @@ BASE_URLS = [
 ]
 
 
-def fetch_candles(symbol: str, interval: str) -> list[dict]:
-    """Fetch OHLCV candles from Binance."""
+def fetch_candles(symbol: str, interval: str, limit: int = CANDLE_LIMIT) -> list[dict]:
+    """Fetch OHLCV candles from Binance.
+
+    `limit` defaults to the shared config.CANDLE_LIMIT (100) so every
+    existing caller keeps its exact current behavior unchanged. Added
+    2026-08-10 for candle_cache_v1.py (Evidence-First Strategy Expansion
+    v2's P0.8+ pipeline), whose strategies need up to 200 candles
+    (strategy_trend_cost_aware_v1.MIN_CANDLES) -- more than the shared
+    default. Binance's own /api/v3/klines cap is 1000; not enforced here
+    since every current caller passes a value well under that.
+    """
 
     params = {
         "symbol": symbol,
         "interval": interval,
-        "limit": CANDLE_LIMIT,
+        "limit": limit,
     }
 
     data = None
