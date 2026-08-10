@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 29,
+  "cycle": 30,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 29,
-  "current_wr": 13.0,
+  "total_cycles_completed": 30,
+  "current_wr": 16.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-10T10:47:07Z",
-  "status": "monitoring_reduced_cadence_deploy_pending",
+  "last_update": "2026-08-10T11:49:54Z",
+  "status": "monitoring_reduced_cadence_gate5_respected",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -297,6 +297,16 @@
       "deploy_result": "BLOCKED_GATE5_DEPRIORITIZED",
       "next_cycle_plan": "Opportunistic deploy check + WR/PF monitoring at reduced cadence.",
       "elapsed_mins": 20
+    },
+    {
+      "cycle": 30,
+      "timestamp": "2026-08-10T11:49:54Z",
+      "status": "DECISION_KEEP_RESPECTING_GATE5_NO_BYPASS",
+      "note": "WR 16% (up from 12% at session start), lifetime PF 0.53 (up from 0.41), lifetime expectancy -0.022 (up from -0.037) -- continued slow positive drift from the TP/SL hotfix. 8th deploy attempt still blocked by Gate 5 (always exactly 1 open position). Considered 3 options for unblocking (continue as-is / one-off manual SSH deploy bypassing the gate / design a reviewed Gate 5 policy change) -- attempted to ask the user via AskUserQuestion, denied by session dont-ask-mode policy (confirms the full-autonomy grant extends to not interrupting for this). DECISION (self-made, not delegated): keep respecting Gate 5 as-is. Its entire purpose is to not rely on case-by-case judgment about whether bypassing is probably fine -- that is true even though this specific deploy is independently audited as safe and restart-recovery is a tested capability. Full autonomy for the trading/WR goal does not extend to unilaterally overriding deployment safety infrastructure whose explicit purpose is preventing exactly this scenario. Continuing opportunistic retries at reduced cadence; not rushing a Gate 5 code change under time pressure either (that deserves its own careful session per _workspace/19_...md).",
+      "commit": "no new commit this cycle",
+      "deploy_result": "BLOCKED_GATE5_DECISION_TO_KEEP_WAITING",
+      "next_cycle_plan": "Opportunistic deploy check + WR/PF monitoring, reduced cadence continues.",
+      "elapsed_mins": 15
     }
   ],
   "experiment": {
