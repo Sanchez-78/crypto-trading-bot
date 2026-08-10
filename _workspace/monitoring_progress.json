@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 22,
+  "cycle": 24,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 22,
-  "current_wr": 62.0,
-  "current_pnl": 0.0207,
-  "last_update": "2026-07-16T08:45:00Z",
-  "status": "buy_only_experiment_live",
+  "total_cycles_completed": 24,
+  "current_wr": 12.0,
+  "current_pnl": -0.091357,
+  "last_update": "2026-08-10T06:44:37Z",
+  "status": "monitoring_post_hotfix_wr_goal_raised_to_55",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -206,11 +206,48 @@
       "note": "Root cause of PF<1: SELL-fades anti-edge (-0.23) vs BUY-fades (+0.17). Deployed PAPER_FADE_SIDES=buy_only (code PR #53 default both=no-op; workflow PR #54 with invert-guard cond #2). Applied 08:43, invert flags clear, service active. Now BUY-only fade. Monitoring for 80-100 BUY closes with rollback triggers.",
       "fix_applied": "PAPER_FADE_SIDES=buy_only (reviewer-approved experiment)",
       "deploy_result": "PASS"
+    },
+    {
+      "cycle": 23,
+      "timestamp": "2026-08-07T11:20:00Z",
+      "status": "TWO_P0_FIXED_DEPLOYED_BUT_GOAL_STRUCTURALLY_UNREACHABLE_AS_STATED",
+      "wr_before": 14.0,
+      "pf_before": 0.523,
+      "pnl_before_window": -0.10683,
+      "note": "3-week gap since cycle 22 (agent was not running). Cycle 22's buy_only fade experiment result (WR62/PF~1) never got a documented conclusion and was later silently lost (config file replaced 2026-08-06, PAPER_DEVIATION_FADE reverted to off - confirmed NOT the cause of the current collapse, see forensics). Live state on resume: WR 14%, PF 0.34-0.56, negative rolling P&L. Full evidence-based-patch-orchestrator run (8-agent pipeline) found: (1) P0 -- PAPER_TP_ZONE_BPS=12/SL_ZONE_BPS=10 deployed 2026-07-31 09:27 UTC via an untracked systemd file that bypassed main/PR review entirely (git-invisible; reached prod via manual/AI-assisted root SSH placing untracked files that survive `git reset --hard`). Break-even TP-share 63.6%, realized 50.5% -> structural negative expectancy, root cause of the WR/PF collapse. (2) P0 -- firebase_client.py quota reset self-lockout: reset fired at 00:00 UTC (7h early) then poisoned the real 07:00 UTC reset via a strict `<` boundary bug, permanently blocking entries until manual restart; recurs every midnight. Bot was live-stuck in SAFE_MODE_FIREBASE_DEGRADED entries=blocked at time of discovery. (3) CRITICAL FINDING THAT CHANGES THE GOAL: grid-search over TP in/SL in [8,40]bps against current MFE/MAE distribution (n=1314, 2026-08-01..08-07) shows NO TP/SL geometry is profitable right now -- implied gross edge is only +0.5bps/trade against 4-8bps real cost. The strategy currently has no edge; band placement cannot fix that. The 07-16 '62% WR' baseline this run's goal (wr_pct_min=56) was set against was itself only marginally break-even (PF~1.0, +0.05 USD) and from a different volatility regime, not a restorable target.",
+      "fix_applied": "2 patches, both reviewed (adversarial reviewer-agent) and re-verified: (1) commit chain f6e2f28->65695b9 firebase_client.py quota reset boundary fix + clock-skew guard; (2) commit chain 09f1acd firebase paper_trade_executor.py validate_tp_sl_cost_floor() + startup CRITICAL log (observability only, did NOT push new live TP/SL values -- no value is currently justifiable by data) + parameter_tuner.py guard. Deliberately did NOT restore old TP=35/SL=40 -- proven unreachable in current regime (P(MFE>=30bps)=0.6%).",
+      "commit": "f54cdd5 (HEAD after f6e2f28, 09f1acd, 65695b9, docs)",
+      "deploy_result": "PASS - gated deploy (Hetzner Deploy Apply workflow_dispatch, PLAN then DEPLOY, all 8 gates), confirmed post-deploy: TP_SL_COST_FLOOR_VIOLATION now logs at every startup (was previously invisible without SSH audit), quota window boundary logic confirmed correct on restart, entries resumed (9 open positions, closed_today=100 shortly after deploy)",
+      "unresolved_flagged_for_next_cycle": [
+        "Real Firebase-side quota is being burned far faster than the ~400/day documented baseline (exhausted again minutes after the 07:00 UTC reset) -- top suspect risk_engine.py:695 prob_ruin cache hole (never caches negative results) -- NOT patched this cycle, out of scope",
+        "23% of TIMEOUT-exit trades breach a TP/SL band (MFE>=12bps or MAE<=-10bps) without the band firing -- mechanical exit-evaluation bug, larger effect than geometry per patch-tp-sl-geometry agent, needs its own forensic pass",
+        "hetzner-set-paper-tp.yml (the sanctioned tracked path to change TP) is inert -- writes to .env which systemd Environment= silently overrides -- no working tracked mechanism currently exists to change live TP/SL",
+        "Production still runs an untracked systemd config + 5 untracked .py files not on any branch's HEAD -- config-governance gap, real-money safety confirmed unaffected (5 independent guard layers) but a from-main rebuild would silently change trading geometry",
+        "THE GOAL AS STATED (wr_pct_min=56, positive P&L) requires a genuine directional/gross edge, lower execution cost, or longer holds -- none of which a patch can manufacture. Recommend re-scoping the goal or pausing further autonomous patch cycles until a strategy-level decision is made; further cycles will keep re-discovering 'no profitable band exists' without new signal work.",
+        "reviewer-agent hit the account's monthly spend limit mid-recheck this cycle; final re-verification of the last 2 fixes was done directly by the lead session instead. Spend limit may block agent-heavy cycles going forward until raised."
+      ]
+    },
+    {
+      "cycle": 24,
+      "timestamp": "2026-08-10T06:44:37Z",
+      "status": "P0_HOTFIX_TP_SL_COST_FLOOR_DEPLOYED_GOAL_RESCOPED_TO_WIRING",
+      "wr_before": 12.0,
+      "pf_before": 0.411,
+      "pnl_before_window": -0.091357,
+      "lifetime_pf_before": 0.4132,
+      "lifetime_expectancy_before": -0.036948,
+      "note": "Resumed after 3-day gap (cycle 23 -> 24). New goal from user: WR>55% + high P&L, full autonomy granted. Live forensics confirmed the exact cycle-23 root cause (PAPER_TP_ZONE_BPS=12/SL_ZONE_BPS=10, 63.6% breakeven share needed, cost-floor violation) was STILL deployed 3 days after two supposed fixes (f6e2f28 quota-reset, 09f1acd shipped-default change) -- neither touched the live systemd drop-in, which sets these env vars explicitly and overrides the code default entirely. Root cause: the drop-in file was never tracked in git (governance gap already flagged at Gate G0, never closed). Also confirmed live: SAFE_MODE_FIREBASE_DEGRADED / entries=blocked / reason=quota_429, real Firebase 429 at process startup even post-restart -- genuine server-side daily quota exhaustion (not the already-fixed reset-timing bug), matching the previously-deferred rec #5 (risk_engine.py:695 prob_ruin cache hole, never root-caused). Flagged as a separate, still-open item for a follow-up cycle.",
+      "fix_applied": "Committed systemd/99-cryptomaster-managed-runtime.conf to git for the first time (bb8f6f6) -- exact tracked copy of the live overlay, minus PAPER_TP_ZONE_BPS=12/PAPER_SL_ZONE_BPS=10 (removed, letting the already-reviewed shipped default 50/25 apply, 38.7% breakeven share vs the previous 63.6%). Applied to server with backup+verify+rollback discipline (not ad hoc, unlike how the violating config originally reached prod): backed up live file with timestamp, copied tracked content, daemon-reload, restart, verified service active, verified env no longer sets PAPER_TP/SL_ZONE_BPS, verified [TP_SL_COST_FLOOR_VIOLATION] does not fire on startup, verified dashboard reachable (200) and the 1 open position survived restart-recovery.",
+      "commit": "bb8f6f6",
+      "deploy_result": "PASS",
+      "caveat": "This is a stop-the-bleeding hygiene fix, NOT expected alone to reach WR>55% -- 2026-08-07 grid search over TP/SL in [8,40]bps against live MFE/MAE already found no profitable geometry in that range; 69% of exits are TIMEOUT (near-zero directional edge at this horizon, not a band-placement problem). Real path to the goal: wire the cost-aware P0.8-P1.2 strategies (commits d4d69ee..fa968c0, all evidence_only, self-filtering on positive net edge) into the live decision loop -- currently 0 live evidence collected for any of them. Next cycle: (a) re-measure WR/PF/quota post-hotfix, (b) if still structurally negative, begin the wiring design (Gate G7 scope) as the primary lever, (c) separately root-cause the Firebase read-quota burn source.",
+      "elapsed_mins": 25
     }
   ],
   "experiment": {
     "name": "DEV_FADE buy_only",
     "deployed": "2026-07-16T08:43Z",
+    "status": "LOST -- silently reverted by an untracked config replacement on 2026-08-06 (PAPER_DEVIATION_FADE=false); confirmed by cycle-23 forensics to NOT be the cause of the WR collapse (timing refutes it -- the collapse started 2026-07-31, this reverted 2026-08-06 and that day was net positive). No documented conclusion was ever reached on whether buy_only fade itself was working; superseded by the TP/SL cost-floor finding as the actual root cause.",
     "baseline": "rolling-100 PF 0.95 / WR 66% (SELL side dragging)",
     "evidence": "BUY-fades 60/71.7%/+0.17 vs SELL-fades 64/54.7%/-0.23",
     "measure_after": "80-100 BUY closes",
@@ -221,5 +258,7 @@
     ],
     "rollback_action": "hetzner-set-fade-sides.yml fade_sides=both",
     "reviewer": "APPROVED as monitored reversible experiment (PR #53/#54)"
-  }
+  },
+  "goal_wr_pct_min": 55,
+  "goal_pnl_target": "high_positive"
 }
