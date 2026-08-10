@@ -1,15 +1,32 @@
 """P0.7/central-contract tests -- evaluate_signal_for_paper_entry() (§16).
 
 Covers the document's mandatory §22.2 integration/rejection paths:
-candidate -> cost reject, signal -> P0 reject, P0 admit -> risk reject
-(no central risk guard exists yet, so risk always currently rejects --
-asserted explicitly, not silently passed).
+candidate -> cost reject, signal -> P0 reject, P0 admit -> risk guard
+(§17, p0_risk_guard_v1.py, wired 2026-08-10) -> admit or risk reject.
+
+Risk-guard-dependent tests inject a deterministic `risk_guard_fn` rather
+than exercising the real p0_risk_guard_v1.evaluate_risk_guard() (which reads
+live runtime_mode/risk_engine/firebase_client/paper_trade_executor global
+state) -- keeps this test file's outcomes independent of whatever state
+those modules happen to be in when the suite runs, same test-isolation
+discipline the rest of this file already follows via its own `registry`
+injection parameter. p0_risk_guard_v1's OWN behavior is covered by
+test_p0_risk_guard_v1.py.
 """
 import pytest
 
 from src.services import strategy_contracts as sc
+from src.services.p0_risk_guard_v1 import RiskGuardResult
 from src.services.signal_router import evaluate_signal_for_paper_entry
 from src.services.strategy_registry import StrategyRegistration, StrategyRegistry
+
+
+def _allow_risk(**_kwargs):
+    return RiskGuardResult(allowed=True, reason="")
+
+
+def _deny_risk(**_kwargs):
+    return RiskGuardResult(allowed=False, reason="test-injected denial")
 
 
 def _signal(**overrides):
@@ -139,17 +156,99 @@ def test_quarantined_symbol_rejected_by_p0():
     assert "quarantined" in ev.decision_reasons[0]
 
 
-def test_evidence_collection_admitted_by_p0_but_blocked_by_missing_risk_guard():
-    """§16 step 9 / P0.7 gap: no central risk guard exists yet. A signal
-    that clears cost + P0 (evidence-collection scope) must still come back
-    admitted=False, with an explicit, honest reason -- not a silent pass."""
+def test_evidence_collection_admitted_end_to_end_when_risk_guard_allows():
+    """§16 step 9, post-§17 wiring: a signal that clears cost + P0
+    (evidence-collection scope) AND the risk guard is now genuinely
+    admitted -- the P0.8+ pipeline's first-ever true admit path."""
     reg = _registry()
-    ev = evaluate_signal_for_paper_entry(_signal(), registry=reg, **_market_kwargs())
+    ev = evaluate_signal_for_paper_entry(
+        _signal(), registry=reg, risk_guard_fn=_allow_risk, **_market_kwargs(),
+    )
     assert ev.p0_strict_ev is False  # evidence_only signal, §2.4
     assert ev.p0_readiness_eligible is False
-    assert ev.admitted is False  # blocked on the missing risk guard, not on P0
+    assert ev.admitted is True
+    assert ev.risk_allowed is True
+    assert ev.decision_code == sc.P0_ADMIT_EVIDENCE_COLLECTION
+
+
+def test_p0_admit_blocked_by_risk_guard_denial():
+    """A signal that clears cost + P0 but the risk guard denies (daily-DD
+    unsafe, quota degraded, position conflict, real trading allowed, etc.)
+    must come back admitted=False with an explicit REJECT_RISK_DENIED code
+    and the guard's own reason surfaced -- not silently swallowed."""
+    reg = _registry()
+    ev = evaluate_signal_for_paper_entry(
+        _signal(), registry=reg, risk_guard_fn=_deny_risk, **_market_kwargs(),
+    )
+    assert ev.admitted is False
     assert ev.risk_allowed is False
-    assert "no central risk guard" in ev.risk_reason
+    assert ev.decision_code == sc.REJECT_RISK_DENIED
+    assert ev.risk_reason == "test-injected denial"
+
+
+def test_risk_guard_exception_fails_closed():
+    """§2.5: 'Do not replace a rejection with a permissive default.' If the
+    risk guard itself raises, the signal must be rejected, not admitted."""
+    def _exploding_guard(**_kwargs):
+        raise RuntimeError("boom")
+
+    reg = _registry()
+    ev = evaluate_signal_for_paper_entry(
+        _signal(), registry=reg, risk_guard_fn=_exploding_guard, **_market_kwargs(),
+    )
+    assert ev.admitted is False
+    assert ev.risk_allowed is False
+    assert ev.decision_code == sc.REJECT_RISK_UNAVAILABLE
+    assert "boom" in ev.risk_reason
+
+
+def test_risk_guard_not_evaluated_when_p0_already_rejects():
+    """The risk guard must not even be called for a P0-rejected signal
+    (§16's step ordering, and cheap-path discipline) -- a guard that raises
+    on every call must not affect the outcome if P0 already said no."""
+    def _exploding_guard(**_kwargs):
+        raise RuntimeError("must never be called")
+
+    reg = _registry(allowed_symbols=frozenset({"BTCUSDT"}))  # quarantined -> P0 rejects first
+    ev = evaluate_signal_for_paper_entry(
+        _signal(symbol="BTCUSDT"), registry=reg, risk_guard_fn=_exploding_guard, **_market_kwargs(),
+    )
+    assert ev.admitted is False
+    assert ev.decision_code == sc.P0_REJECT_QUARANTINED
+
+
+def test_risk_guard_receives_symbol_and_side():
+    """The router must pass the signal's own symbol/side through to the
+    guard, not a hardcoded or stale value."""
+    seen = {}
+
+    def _capturing_guard(**kwargs):
+        seen.update(kwargs)
+        return RiskGuardResult(allowed=True, reason="")
+
+    reg = _registry()
+    evaluate_signal_for_paper_entry(
+        _signal(symbol="ETHUSDT", side="BUY"), registry=reg,
+        risk_guard_fn=_capturing_guard, **_market_kwargs(),
+    )
+    assert seen.get("symbol") == "ETHUSDT"
+    assert seen.get("side") == "BUY"
+
+
+def test_default_risk_guard_is_the_real_p0_risk_guard_v1_when_not_injected():
+    """Without an explicit risk_guard_fn, the router must use the real
+    p0_risk_guard_v1.evaluate_risk_guard -- not silently no-op admit.
+    Exercised end-to-end against the real module's fail-closed defaults
+    (no live-trading env override in the test process, so
+    live_trading_allowed() is False and the paper-only check passes; other
+    checks depend on ambient risk_engine/firebase_client/paper_trade_executor
+    state, so this only asserts the call reaches the real function and
+    returns a well-formed result, not a specific admit/deny outcome)."""
+    reg = _registry()
+    ev = evaluate_signal_for_paper_entry(_signal(), registry=reg, **_market_kwargs())
+    assert ev.decision_code in (
+        sc.P0_ADMIT_EVIDENCE_COLLECTION, sc.REJECT_RISK_DENIED, sc.REJECT_RISK_UNAVAILABLE,
+    )
 
 
 def test_evidence_only_signal_never_gets_strict_ev_even_with_registration_not_evidence_only():

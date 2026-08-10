@@ -149,6 +149,11 @@ P0_ADMIT_EVIDENCE_COLLECTION = "P0_ADMIT_EVIDENCE_COLLECTION"
 P0_REJECT_QUARANTINED = "P0_REJECT_QUARANTINED"
 P0_REJECT_NOT_IN_EVIDENCE_SCOPE = "P0_REJECT_NOT_IN_EVIDENCE_SCOPE"
 
-# Risk (§30.5) -- reserved for when a central risk guard is wired in
-# (out of P0.7 scope; see docs/P0_7_P1_3_REPOSITORY_ARCHITECTURE.md gap table)
+# Risk (§30.5)
+# REJECT_RISK_UNAVAILABLE: the risk guard itself could not be evaluated
+# (raised an exception) -- an infrastructure problem, fails closed.
+# REJECT_RISK_DENIED: the risk guard ran successfully and said no (daily-DD
+# unsafe, quota degraded, position conflict, or real trading allowed) --
+# see p0_risk_guard_v1.py (§17), wired in 2026-08-10.
 REJECT_RISK_UNAVAILABLE = "REJECT_RISK_UNAVAILABLE"
+REJECT_RISK_DENIED = "REJECT_RISK_DENIED"

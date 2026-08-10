@@ -11,7 +11,13 @@ quarantine/evidence-collection reason-code vocabulary).
 This module deliberately does NOT open a position (§16 point 13: "prefer
 explicit separation between evaluation and execution"). It has no import of
 paper_trade_executor, trade_executor, or any open_paper_position call site --
-enforced by tests/test_signal_router_bypass.py's static source scan.
+enforced by tests/test_signal_router_bypass.py's static source scan. The
+risk guard it calls (p0_risk_guard_v1.py, §17) DOES need to read open
+positions to check for duplicate/opposite-position conflicts, but does so
+via a lazy, function-body-scoped import specifically so it never becomes a
+module-level dependency of THIS file (see p0_risk_guard_v1.py's own
+docstring) -- verified by the same bypass test's AST scan, which only
+inspects this file's own import statements.
 
 `market_state`/`portfolio_state` are NOT modeled as new dataclasses in this
 phase: no existing equivalent was found in Gate G0's reconnaissance to adapt,
@@ -20,14 +26,21 @@ over repository fact" this program's own §0.1 forbids. This function instead
 takes the specific fields cost_model.evaluate_edge() and the P0 gate actually
 need as explicit keyword arguments -- narrower, but honest about what is and
 is not yet wired.
+
+2026-08-10: `risk_allowed` was hardcoded False from this module's very first
+commit (d4d69ee) -- meaning the entire P0.8+ pipeline had never admitted a
+single signal, ever, regardless of edge or P0 eligibility. p0_risk_guard_v1.py
+(§17) closes that gap; see its own docstring for exactly what it does and
+does not check.
 """
 from __future__ import annotations
 
 import time
-from typing import Optional, Sequence
+from typing import Callable, Optional, Sequence
 
 from src.services import cost_model
 from src.services import strategy_contracts as sc
+from src.services.p0_risk_guard_v1 import RiskGuardResult, evaluate_risk_guard
 from src.services.p0_segment_ev_gate import P0SegmentEVGate
 from src.services.strategy_registry import StrategyRegistry, get_default_registry
 
@@ -50,6 +63,7 @@ def evaluate_signal_for_paper_entry(
     now_ms: Optional[int] = None,
     max_data_age_ms: int = DEFAULT_MAX_DATA_AGE_MS,
     registry: Optional[StrategyRegistry] = None,
+    risk_guard_fn: Optional[Callable[..., RiskGuardResult]] = None,
 ) -> sc.SignalEvaluation:
     """Evaluate one StrategySignal for paper-entry admission.
 
@@ -196,20 +210,35 @@ def evaluate_signal_for_paper_entry(
         p0_code = sc.P0_ADMIT_STRICT_EV if strict_ev else sc.P0_ADMIT_EVIDENCE_COLLECTION
         admitted_by_p0 = True
 
-    # 9. Risk guard (§16 step 9) -- no central risk guard exists yet
-    # (Gate G0 gap table); this phase reports the gap honestly rather than
-    # fabricating a pass. A caller integrating this router before a real
-    # risk guard exists must treat risk_allowed=False as "not yet wired",
-    # not "risk-rejected".
-    risk_allowed = False
-    risk_reason = "REJECT_RISK_UNAVAILABLE: no central risk guard wired in this phase (see Gate G0 gap table)"
+    # 9. Risk guard (§16 step 9). Only actually evaluated if P0 would
+    # otherwise admit -- an already-rejected signal has no need to touch
+    # live risk state (position lists, daily-DD tracker, Firebase health),
+    # keeping the common (rejected) path cheap and side-effect-free, same
+    # as the cost-check short-circuit above.
+    risk_code = sc.REJECT_RISK_UNAVAILABLE
+    if not admitted_by_p0:
+        risk_allowed = False
+        risk_reason = "risk guard not evaluated -- signal already rejected upstream (P0)"
+    else:
+        guard = risk_guard_fn if risk_guard_fn is not None else evaluate_risk_guard
+        try:
+            result = guard(symbol=signal.symbol, side=signal.side)
+            risk_allowed = bool(result.allowed)
+            risk_reason = result.reason if not risk_allowed else "risk guard: OK"
+            if not risk_allowed:
+                risk_code = sc.REJECT_RISK_DENIED
+        except Exception as exc:  # fail closed (§2.5) -- never let a risk-guard
+            # exception silently become a permissive default.
+            risk_allowed = False
+            risk_reason = f"risk guard raised: {exc!r}"
+            risk_code = sc.REJECT_RISK_UNAVAILABLE
 
     admitted = admitted_by_p0 and risk_allowed
 
     return sc.SignalEvaluation(
         signal_id=signal.signal_id,
         admitted=admitted,
-        decision_code=p0_code if not admitted_by_p0 else (sc.REJECT_RISK_UNAVAILABLE if not risk_allowed else p0_code),
+        decision_code=p0_code if not admitted_by_p0 else (risk_code if not risk_allowed else p0_code),
         decision_reasons=(p0_reason, risk_reason) if not admitted else (p0_reason,),
         gross_expected_move_bps=edge.gross_expected_move_bps,
         expected_cost_bps=edge.all_in_cost_bps,
