@@ -102,3 +102,37 @@ plan doc). The wiring glue is the first change in this program that would
 actually alter live bot behavior (once the flag is flipped) -- it deserves
 its own dedicated forensics-informed patch-author/review/deploy cycle
 rather than being appended to an already-large session.
+
+---
+
+## Update 2026-08-10, cycle 26: shadow evaluator built, smoke-tested against live data
+
+Built and pushed (commit `247c7fc`): `candle_cache_v1.py`, `regime_classifier_v1.py`,
+`p0_8_plus_shadow_evaluator.py`, plus a `limit` param added to
+`binance_client.fetch_candles()` (backward compatible). 358 tests passing.
+All still fully inert -- nothing in the live process calls any of this yet.
+
+**Live smoke test result** (ETHUSDT/ADAUSDT/SOLUSDT, real Binance data,
+260 1m candles each): all three symbols currently SIDEWAYS;
+volatility_breakout correctly rejected (no prior compression);
+sideways_mean_reversion's SOLUSDT short cleared its entry gate but was
+correctly cost-rejected (gross move 5.4bps < all-in cost 14.3bps). Zero
+admitted candidates in this one snapshot -- expected, not a failure; the
+cost-aware self-filter did exactly its job. Real evidence needs this
+running over time, not a single point-in-time check.
+
+**Decision:** stop here for this cycle. The next step -- adding an actual
+call site in `start.py` (a background thread calling `run_shadow_tick()`
+on a ~60s cadence, logging only, zero trading-state writes) -- is a real
+change to the live process, even though it is read-only/side-effect-free
+w.r.t. trading. It gets its own review pass (trading-safety-agent at
+minimum, per `CLAUDE.md`'s harness) and its own gated deploy, rather than
+being appended here. This is the same "small gated phases" discipline
+every other change today followed.
+
+**After that lands and runs for a while**, the actual decision to wire a
+real `open_paper_position()` call still needs, in order: (1) a real
+bid/ask source (event_bus subscription or equivalent) to replace the
+synthetic spread, (2) enough shadow-mode evidence to sanity-check
+`regime_classifier_v1.py` against reality, (3) a dedicated review cycle
+before flipping anything live.

@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 25,
+  "cycle": 26,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 25,
+  "total_cycles_completed": 26,
   "current_wr": 13.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-10T07:25:47Z",
-  "status": "monitoring_wiring_phase_planned",
+  "last_update": "2026-08-10T08:06:58Z",
+  "status": "monitoring_wiring_phase_shadow_evaluator_built",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -257,6 +257,16 @@
       "deploy_result": "N/A (not wired into live loop, safe to push without deploy gate)",
       "next_cycle_plan": "Build the wiring glue module (candle cache + per-tick candidate generation + router + risk guard + open_paper_position, gated behind a new/reused env flag defaulting OFF, shadow/dry-run mode first) per _workspace/18_live_wiring_plan.md. This is the first change in the program that would alter live behavior once flipped on -- routes through full evidence-based-patch-orchestrator review before any deploy with the flag enabled.",
       "elapsed_mins": 40
+    },
+    {
+      "cycle": 26,
+      "timestamp": "2026-08-10T08:06:58Z",
+      "status": "SHADOW_EVALUATOR_BUILT_TESTED_AGAINST_LIVE_DATA_STILL_INERT",
+      "note": "Built candle_cache_v1.py, regime_classifier_v1.py, p0_8_plus_shadow_evaluator.py (commit 247c7fc) -- the actual wiring glue that fetches live candles, classifies regime, calls all 3 P0.8+ candidate-generating strategies, and evaluates through signal_router+risk_guard. Structurally cannot open a position (no open_paper_position import anywhere, bypass-tested). Live smoke test against real Binance data (ETHUSDT/ADAUSDT/SOLUSDT): 0 candidates admitted in this one snapshot -- all SIDEWAYS, breakout correctly rejected on no-compression, mean-reversion SOLUSDT short cleared its entry gate but was correctly cost-rejected (5.4bps gross vs 14.3bps all-in cost). This is the self-filter working as designed, not a failure -- meaningful evidence needs this running over time. 358 tests passing.",
+      "commit": "247c7fc",
+      "deploy_result": "N/A (still not called from the live process -- confirmed by grep)",
+      "next_cycle_plan": "Wire an actual call site into start.py (background thread, run_shadow_tick() on a ~60s cadence, log-only, zero trading-state writes) -- first change that touches the live process itself, even though read-only. Needs a safety review pass before deploy per CLAUDE.md harness, then real gated Hetzner deploy + post-deploy verification. After it runs for a while: still needs a real bid/ask source before any actual open_paper_position() wiring can be trusted.",
+      "elapsed_mins": 35
     }
   ],
   "experiment": {
