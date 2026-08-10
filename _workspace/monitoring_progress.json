@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 26,
+  "cycle": 27,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 26,
+  "total_cycles_completed": 27,
   "current_wr": 13.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-10T08:06:58Z",
-  "status": "monitoring_wiring_phase_shadow_evaluator_built",
+  "last_update": "2026-08-10T09:05:02Z",
+  "status": "monitoring_shadow_deploy_pending_gate5",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -267,6 +267,16 @@
       "deploy_result": "N/A (still not called from the live process -- confirmed by grep)",
       "next_cycle_plan": "Wire an actual call site into start.py (background thread, run_shadow_tick() on a ~60s cadence, log-only, zero trading-state writes) -- first change that touches the live process itself, even though read-only. Needs a safety review pass before deploy per CLAUDE.md harness, then real gated Hetzner deploy + post-deploy verification. After it runs for a while: still needs a real bid/ask source before any actual open_paper_position() wiring can be trusted.",
       "elapsed_mins": 35
+    },
+    {
+      "cycle": 27,
+      "timestamp": "2026-08-10T09:05:02Z",
+      "status": "SHADOW_EVALUATOR_DEPLOY_BLOCKED_BY_GATE5_QUOTA_BURN_CURRENTLY_HEALTHY",
+      "note": "Attempted DEPLOY 4x (869a62f6 then 8aee326d after a follow-up commit) -- Gate 5 (zero-open-position) refused every time; this bot keeps ~1 ETHUSDT position open nearly continuously (new one opens within seconds of the previous closing), so a true 0-position window is rare/brief. Also found: the deploy workflow reports GH Actions conclusion=success even when Gate 5 refuses (_workspace/19_...md) -- always verify via server git log, not just the Actions UI. Deploy deferred to an opportunistic future window; the shadow evaluator code is diagnostic-only (cannot open positions, independently audited), so the delay has no safety or evidence-quality cost. Investigated Firebase quota burn (rec #5, risk_engine.py _get_prob_ruin): current window (since 07:00 UTC reset) shows only 527/50000 reads after ~2h (520 from load_history, 7 from load_auditor_state) -- a healthy ~264 reads/hour rate that would take ~8 days to exhaust the daily cap, NOT consistent with the exhaustion observed before todays 07:00 reset. Likely bursty/one-time rather than a constant per-tick leak; needs a longer observation window before attempting a fix. Deferred, not actioned.",
+      "commit": "8aee326d (pending live deploy)",
+      "deploy_result": "BLOCKED_GATE5_RETRY_LATER",
+      "next_cycle_plan": "Retry the shadow-evaluator deploy opportunistically (any future deploy naturally checks Gate 5 again). Continue monitoring WR/PF. If a future cycle finds a concrete, evidence-backed fix for either the quota burn or the deploy-workflow Gate5-silent-success bug, scope it narrowly per the same discipline as every other change this session.",
+      "elapsed_mins": 25
     }
   ],
   "experiment": {
