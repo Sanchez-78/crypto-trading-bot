@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 30,
+  "cycle": 31,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 30,
-  "current_wr": 16.0,
+  "total_cycles_completed": 31,
+  "current_wr": 8.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-10T11:49:54Z",
-  "status": "monitoring_reduced_cadence_gate5_respected",
+  "last_update": "2026-08-11T06:48:14Z",
+  "status": "monitoring_learning_diagnosed_noise_deploy_pending",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -307,6 +307,16 @@
       "deploy_result": "BLOCKED_GATE5_DECISION_TO_KEEP_WAITING",
       "next_cycle_plan": "Opportunistic deploy check + WR/PF monitoring, reduced cadence continues.",
       "elapsed_mins": 15
+    },
+    {
+      "cycle": 31,
+      "timestamp": "2026-08-11T06:48:14Z",
+      "status": "LEARNING_SYSTEM_DIAGNOSED_NON_CONVERGENT_NOT_BUGGY_DEPLOY_STILL_PENDING",
+      "note": "User asked why WR dropped to 5% and whether learning/auto-adjustment is functional. Deep-dived: Health=0.000/conv=0.00 is mathematically correct given the data (not a computation bug) -- lm_convergence() genuinely finds no variance-collapse in EV estimates even at n=155, meaning no stable pattern is emerging as data accumulates. The learned-TP auto-adjustment IS actively running (confirmed live position with tp_zone_bps_at_entry=35, differs from any static default) but has produced zero measurable effect -- 0 TP/SL exits in 6 days regardless of what value gets learned, because realized volatility (avg MFE 3-8bps) is below what any cost-floor-compliant band needs. WR 5-16% swings this session are largely noise around a near-zero/negative-edge equilibrium (trades are ~100% TIMEOUT with tiny near-zero pnl), not evidence of active degradation. Documented in _workspace/21_why_all_timeout_now.md (extended with this finding). Also found and documented: TP/SL geometry is computed by 4 DIFFERENT code paths with different fallback defaults (env-set / learned-value / shipped-default / calibration-function-hardcoded-60) -- explains why removing PAPER_TP_ZONE_BPS today landed on the learned-value path (35bps) rather than the intended shipped default (50bps) for TP specifically; SL was unaffected (no learned-value branch) and correctly landed on 25bps. Deploy attempt #9 still blocked by Gate 5.",
+      "commit": "5d12efb6 (pending live deploy, same content as prior pending attempts)",
+      "deploy_result": "BLOCKED_GATE5_9TH_ATTEMPT",
+      "next_cycle_plan": "Continue opportunistic deploy + WR/PF monitoring. Old-path conclusion is now confirmed from FOUR independent angles (2026-08-07 grid-search, MFE/timeout analysis, live health/convergence monitor, and TP/SL multi-path drift) -- do not re-investigate old-path tuning again without genuinely new evidence. Real lever remains the new pipeline, pending deploy.",
+      "elapsed_mins": 20
     }
   ],
   "experiment": {
