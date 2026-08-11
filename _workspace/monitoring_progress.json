@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 37,
+  "cycle": 38,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 37,
+  "total_cycles_completed": 38,
   "current_wr": 15.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-11T12:25:37Z",
-  "status": "shadow_pipeline_confirmed_stable_standard_monitoring",
+  "last_update": "2026-08-11T12:49:25Z",
+  "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -377,6 +377,16 @@
       "deploy_result": "N/A",
       "next_cycle_plan": "Standard hourly monitoring continues.",
       "elapsed_mins": 5
+    },
+    {
+      "cycle": 38,
+      "timestamp": "2026-08-11T12:49:25Z",
+      "status": "MAJOR_FINDING_QUOTA_BURN_CONFIRMED_DASHBOARD_DEGRADED_FIELD_UNRELIABLE",
+      "note": "User shared a live Firebase Console screenshot showing 50,137/50,000 reads used today. Investigated and CONFIRMED: bot has been in real SAFE_MODE_FIREBASE_DEGRADED (entries blocked) since ~11:04 UTC today, ~3h15m after this session's own 07:49 UTC deploy, sustained ~4.2 reads/sec drain, 98.7% unattributed (49,364 of 50,000 reads have no tracked source). CRITICAL: the dashboard API degraded field has been reporting False the whole time while the real bot process was degraded -- every stable-looking report this session for the past ~5 hours relied on this field and was not actually verifying bot health correctly. Corrected monitoring method going forward: check journalctl SAFE_MODE lines directly. Investigated root cause of the burn: ruled out firebase_trade_hydration.hydrate_trades_from_firebase() (unbounded stream, no limit) as prime suspect -- confirmed dead code, never called anywhere in repo. Also ruled out canonical_state.py (single doc read, startup-only, too small). Given the burn is sustained not a single burst, real cause is likely a periodic/hot-loop read not yet located via manual grep across 176+ files. Documented recommended next step (instrument Firestore client call sites, observe on next restart) in _workspace/22_quota_burn_confirmed_dashboard_lies.md. This is now the highest-priority known unfixed issue in the whole program -- silently degrades the bot for large parts of most days.",
+      "commit": "no code change (investigation + docs only), pushed",
+      "deploy_result": "N/A",
+      "next_cycle_plan": "Quota resets at 07:00 UTC daily -- bot will remain degraded (real entries blocked, starvation-discovery bootstrap trades may still fire) until then. Monitor via journalctl SAFE_MODE checks, not the dashboard field. Root-causing the actual burn source is the top priority for a future dedicated session (needs Firestore call-site instrumentation plus a fresh restart to observe, not more manual grep).",
+      "elapsed_mins": 30
     }
   ],
   "experiment": {
