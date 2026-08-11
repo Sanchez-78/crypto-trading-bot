@@ -47,8 +47,9 @@ def env(tmp_path, monkeypatch):
     cache = tmp_path / "cache.sqlite"
     state = tmp_path / "state.json"
     pos = tmp_path / "pos.json"
-    monkeypatch.setattr(rm, "_paths", lambda: (str(cache), str(state), str(pos)))
-    return {"cache": cache, "state": state, "pos": pos}
+    quota = tmp_path / "quota_attribution_snapshot.json"
+    monkeypatch.setattr(rm, "_paths", lambda: (str(cache), str(state), str(pos), str(quota)))
+    return {"cache": cache, "state": state, "pos": pos, "quota": quota}
 
 
 def _row(tid, side, net_pct, pnl_usd, outcome=None, reason="TP", ts=1_700_000_000):
@@ -304,6 +305,113 @@ def test_never_raises(env, setup):
     t = rm.get_recent_trades()     # must not raise (unguarded Flask wrapper)
     assert isinstance(d, dict) and isinstance(e, dict) and isinstance(t, list)
     assert "timestamp" in d
+
+
+# ── 17. firebase_quota -- 2026-08-11 fix for the "degraded field lied" incident ─
+# (_workspace/22_quota_burn_confirmed_dashboard_lies.md): the dashboard's
+# pre-existing `degraded` field means "did this module fail to read its own
+# 3 local sources" and has NOTHING to do with the bot's Firebase/quota state.
+# `firebase_quota` is a new, independent, honestly-scoped field for that.
+
+def _write_quota_snapshot(path, **overrides):
+    payload = {
+        "generated_at_epoch": 1_700_000_000.0,
+        "generated_at_utc": "2023-11-14T22:13:20Z",
+        "reason": "periodic",
+        "reads": 500, "reads_limit": 50000,
+        "writes": 200, "writes_limit": 20000,
+    }
+    payload.update(overrides)
+    path.write_text(json.dumps(payload))
+
+
+def test_firebase_quota_unknown_when_snapshot_file_absent(env):
+    d = rm.get_metrics()
+    fq = d["firebase_quota"]
+    assert fq["known"] is False
+    assert fq["quota_exhausted"] is False
+    assert fq["stale"] is True
+
+
+def test_firebase_quota_reports_healthy_snapshot(env, monkeypatch):
+    monkeypatch.setattr(rm.time, "time", lambda: 1_700_000_100.0)  # 100s after snapshot
+    _write_quota_snapshot(env["quota"])
+    fq = rm.get_metrics()["firebase_quota"]
+    assert fq["known"] is True
+    assert fq["quota_exhausted"] is False
+    assert fq["reads"] == 500 and fq["reads_limit"] == 50000
+    assert fq["snapshot_age_s"] == pytest.approx(100.0)
+    assert fq["stale"] is False
+
+
+def test_firebase_quota_exhausted_by_reads_at_cap(env, monkeypatch):
+    monkeypatch.setattr(rm.time, "time", lambda: 1_700_000_100.0)
+    _write_quota_snapshot(env["quota"], reads=50000, reason="quota_429:429 Quota exceeded.")
+    fq = rm.get_metrics()["firebase_quota"]
+    assert fq["quota_exhausted"] is True
+    assert "429" in fq["reason"]
+
+
+def test_firebase_quota_exhausted_by_writes_at_cap(env, monkeypatch):
+    monkeypatch.setattr(rm.time, "time", lambda: 1_700_000_100.0)
+    _write_quota_snapshot(env["quota"], writes=20000)
+    fq = rm.get_metrics()["firebase_quota"]
+    assert fq["quota_exhausted"] is True
+
+
+def test_firebase_quota_not_exhausted_when_under_both_limits(env, monkeypatch):
+    monkeypatch.setattr(rm.time, "time", lambda: 1_700_000_100.0)
+    _write_quota_snapshot(env["quota"], reads=527, writes=223)
+    fq = rm.get_metrics()["firebase_quota"]
+    assert fq["quota_exhausted"] is False
+
+
+def test_firebase_quota_stale_past_threshold(env, monkeypatch):
+    monkeypatch.setattr(rm.time, "time", lambda: 1_700_000_000.0 + rm.FIREBASE_QUOTA_STALE_AFTER_S + 1)
+    _write_quota_snapshot(env["quota"])
+    fq = rm.get_metrics()["firebase_quota"]
+    assert fq["known"] is True  # file was readable
+    assert fq["stale"] is True  # but too old to trust as "current"
+
+
+def test_firebase_quota_corrupt_json_is_unknown_not_a_raise(env):
+    _make_cache(env["cache"], [_row("a", "BUY", 0.82, 0.41, "WIN")])  # healthy local sources
+    env["quota"].write_text("{not valid json")
+    d = rm.get_metrics()  # must not raise
+    fq = d["firebase_quota"]
+    assert fq["known"] is False
+    # A broken quota snapshot must NOT flip the unrelated top-level degraded
+    # flag -- that flag is about this module's own 3 sources, not this one.
+    assert d["degraded"] is False
+
+
+def test_firebase_quota_does_not_affect_unrelated_degraded_flag(env, monkeypatch):
+    """Healthy local sources + exhausted Firebase quota => degraded stays
+    False (dashboard's own reads are fine) while firebase_quota independently
+    reports the real Firebase state -- this is the exact scenario from the
+    2026-08-11 incident, now distinguishable."""
+    _make_cache(env["cache"], [_row("a", "BUY", 0.82, 0.41, "WIN")])
+    monkeypatch.setattr(rm.time, "time", lambda: 1_700_000_100.0)
+    _write_quota_snapshot(env["quota"], reads=50000, reason="quota_429:429 Quota exceeded.")
+    d = rm.get_metrics()
+    assert d["degraded"] is False
+    assert d["firebase_quota"]["quota_exhausted"] is True
+
+
+def test_firebase_quota_present_in_enhanced_metrics_too(env, monkeypatch):
+    monkeypatch.setattr(rm.time, "time", lambda: 1_700_000_100.0)
+    _write_quota_snapshot(env["quota"], reads=50000)
+    e = rm.get_enhanced_metrics()
+    assert e["firebase_quota"]["quota_exhausted"] is True
+
+
+def test_firebase_quota_present_in_degraded_envelope(env):
+    """Even when this module's OWN reads fail entirely (degraded envelope
+    path), firebase_quota is still attempted independently."""
+    env["state"].write_text("[1, 2, 3]")  # triggers a degraded envelope elsewhere in the suite
+    _write_quota_snapshot(env["quota"])
+    d = rm.get_metrics()
+    assert "firebase_quota" in d
 
 
 def test_bad_positions_does_not_collapse_payload(env):

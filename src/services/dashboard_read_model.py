@@ -52,7 +52,17 @@ def _paths():
         os.path.join(base, "local_learning_storage/cache.sqlite"),
         os.path.join(base, "server_local_backups/paper_adaptive_learning_state.json"),
         os.path.join(base, "data/paper_open_positions.json"),
+        os.path.join(base, "local_learning_storage/quota_attribution_snapshot.json"),
     )
+
+
+# Snapshot older than this can no longer be trusted as reflecting the bot's
+# CURRENT Firebase state (see _load_firebase_quota_status() docstring) --
+# firebase_client._persist_attribution_snapshot() writes it at least every
+# 300s (periodic) and immediately on a 429, so anything past a few multiples
+# of that periodic interval means the writer itself may be stuck/dead, not
+# just "quota currently fine".
+FIREBASE_QUOTA_STALE_AFTER_S = 900
 
 
 def _now_iso():
@@ -70,6 +80,81 @@ def _ts_iso(ts):
 
 
 # ── source loaders (each records an error code instead of raising) ────────────
+
+def _load_firebase_quota_status() -> dict:
+    """Reads the quota-attribution snapshot the BOT process itself persists
+    (firebase_client._persist_attribution_snapshot(), every ~300s and
+    immediately on a 429). This is the only way this module can see the
+    bot's live Firebase/quota state: dashboard_web.py runs as a SEPARATE
+    systemd unit/process from cryptomaster.service (see CLAUDE.md's
+    'DASHBOARD PERMANENT FIX' section), so there is no shared memory --
+    only this shared file on disk.
+
+    Deliberately NOT the same thing as this module's own `degraded` field
+    below, which means "did dashboard_read_model itself fail to read
+    cache.sqlite/learning_state.json/positions.json" -- a completely
+    different question. Confirmed by direct investigation 2026-08-11
+    (_workspace/22_quota_burn_confirmed_dashboard_lies.md): the dashboard's
+    `degraded` field reported False continuously for ~5+ hours while the
+    bot was genuinely in SAFE_MODE_FIREBASE_DEGRADED (entries blocked) --
+    the two concepts share no relationship, and until this field existed
+    nothing in the dashboard API expressed the Firebase-specific one at
+    all. Every consumer checking `degraded` for "is Firebase OK" was
+    checking the wrong field; this function exists so that stops being
+    true. Never raises (module invariant) -- unavailability is expressed
+    via `known: False`/`stale: True`, not an exception or a mutation of the
+    unrelated top-level `errors`/`degraded` pair (a missing or stale quota
+    snapshot is not itself evidence the DASHBOARD's own reads are broken).
+    """
+    path = _paths()[3]
+    status = {
+        "known": False,
+        "quota_exhausted": False,
+        "reads": None,
+        "reads_limit": None,
+        "writes": None,
+        "writes_limit": None,
+        "reason": None,
+        "snapshot_age_s": None,
+        "stale": True,
+    }
+    try:
+        if not os.path.exists(path):
+            return status
+        with open(path) as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            return status
+
+        generated_at = data.get("generated_at_epoch")
+        try:
+            age_s = (time.time() - float(generated_at)) if generated_at is not None else None
+        except (TypeError, ValueError):
+            age_s = None
+
+        reads, reads_limit = data.get("reads"), data.get("reads_limit")
+        writes, writes_limit = data.get("writes"), data.get("writes_limit")
+        reason = data.get("reason")
+        exhausted = bool(
+            (isinstance(reads, (int, float)) and isinstance(reads_limit, (int, float))
+             and reads_limit > 0 and reads >= reads_limit)
+            or (isinstance(writes, (int, float)) and isinstance(writes_limit, (int, float))
+                and writes_limit > 0 and writes >= writes_limit)
+            or (isinstance(reason, str) and "429" in reason)
+        )
+        status.update({
+            "known": True,
+            "quota_exhausted": exhausted,
+            "reads": reads, "reads_limit": reads_limit,
+            "writes": writes, "writes_limit": writes_limit,
+            "reason": reason,
+            "snapshot_age_s": round(age_s, 1) if age_s is not None else None,
+            "stale": age_s is None or age_s > FIREBASE_QUOTA_STALE_AFTER_S,
+        })
+        return status
+    except (json.JSONDecodeError, OSError, TypeError, ValueError):
+        return status
+
 
 def _load_learning_state(errors):
     path = _paths()[1]
@@ -438,6 +523,10 @@ def get_metrics() -> dict:
                                  "lifetime_expectancy": lifetime_exp},
             "degraded": bool(errors),
             "errors": errors,
+            # See _load_firebase_quota_status()'s docstring: NOT the same
+            # signal as `degraded` above -- this reflects the bot process's
+            # own Firebase/quota state, not this module's read health.
+            "firebase_quota": _load_firebase_quota_status(),
         }
     except Exception:
         return _degraded_envelope(["internal_error"], iso)
@@ -518,4 +607,8 @@ def _degraded_envelope(errors, iso):
         "data_source": "degraded",
         "lifetime_metrics": {"lifetime_n": 0, "lifetime_pf": 0.0, "lifetime_expectancy": 0.0},
         "degraded": True, "errors": errors,
+        # Independent of the failure that produced this envelope -- the
+        # quota snapshot lives on its own file and _load_firebase_quota_status()
+        # never raises, so it's worth trying even when everything else failed.
+        "firebase_quota": _load_firebase_quota_status(),
     }
