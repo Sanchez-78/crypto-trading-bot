@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 31,
+  "cycle": 32,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 31,
+  "total_cycles_completed": 32,
   "current_wr": 8.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-11T06:48:14Z",
-  "status": "monitoring_learning_diagnosed_noise_deploy_pending",
+  "last_update": "2026-08-11T07:50:38Z",
+  "status": "shadow_pipeline_live_collecting_evidence",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -317,6 +317,16 @@
       "deploy_result": "BLOCKED_GATE5_9TH_ATTEMPT",
       "next_cycle_plan": "Continue opportunistic deploy + WR/PF monitoring. Old-path conclusion is now confirmed from FOUR independent angles (2026-08-07 grid-search, MFE/timeout analysis, live health/convergence monitor, and TP/SL multi-path drift) -- do not re-investigate old-path tuning again without genuinely new evidence. Real lever remains the new pipeline, pending deploy.",
       "elapsed_mins": 20
+    },
+    {
+      "cycle": 32,
+      "timestamp": "2026-08-11T07:50:38Z",
+      "status": "DEPLOY_SUCCEEDED_SHADOW_PIPELINE_LIVE",
+      "note": "MILESTONE: caught a genuine 0-open-position window and deployed immediately (10th attempt). commit ff28d63 now live on server. Verified: git log -1 matches target, service active, [P0_8_PLUS_SHADOW] monitoring thread started (interval=60s, symbols=ETHUSDT/ADAUSDT/SOLUSDT), first tick completed cleanly (0 candidates -- expected, matches every local smoke test today), live_quote_cache_v1 subscribed ([OK] Subscribed: price_tick -> _on_price_tick), 9 positions recovered correctly after restart (restart-recovery confirmed working as designed), dashboard reachable, no tracebacks. This is the first live-data evidence collection window for the whole P0.8+ pipeline (5 phases of work today: risk guard, shadow evaluator, live quote cache) -- previously 100% inert/untested against real production conditions.",
+      "commit": "ff28d63f (DEPLOYED)",
+      "deploy_result": "PASS",
+      "next_cycle_plan": "Let the shadow pipeline run and accumulate real evidence. Check journalctl for P0_8_PLUS_SHADOW admission-rate/quote_source patterns over the next several hours. Continue WR/PF monitoring on the old path (still expected flat per 4-angle diagnosis). No further deploy needed until a new patch is ready.",
+      "elapsed_mins": 15
     }
   ],
   "experiment": {
