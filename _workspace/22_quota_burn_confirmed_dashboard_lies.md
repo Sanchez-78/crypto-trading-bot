@@ -72,3 +72,37 @@ calls (candle fetch is Binance REST; live quotes come from the existing event_bu
 code review (only `p0_risk_guard_v1.py` touches `firebase_client.get_firebase_health()`, a
 read-only in-memory status check, not a Firestore call). The shadow pipeline's "0 candidates for
 5 hours, zero errors" observation stands independently of this finding.
+
+---
+
+## Update: ruled out the obvious hypothesis, root cause still not found
+
+Checked `firebase_trade_hydration.py:hydrate_trades_from_firebase()` (unbounded
+`db.collection('trades').stream()`, no `.limit()`) as the prime suspect for a
+big startup burst. **It's dead code** -- grepped the entire repo, it is never
+called from anywhere (`bot2/main.py`, `start.py`, or any `src/services/*.py`).
+Not the cause.
+
+Also checked `canonical_state.py:_load_from_firestore()` (single-document
+read, gated behind `initialize_canonical_state()`, startup-only) -- too small
+(1 read) to matter, not the cause either.
+
+**Given the drain is sustained (~4.2 reads/sec for ~3h15m, not a single
+burst), the real cause is more likely something periodic** (a background
+timer/loop re-reading a collection every N seconds, or a per-tick/per-symbol
+read multiplied across a hot loop) rather than a single big startup call.
+Manual grep-based code review across 176+ files in `src/services/` is not
+converging efficiently.
+
+**Recommended approach for the next session that picks this up:** rather
+than continuing manual review, monkey-patch/wrap the Firestore client's
+`.get()`/`.stream()`/`.where()` methods at the `firebase_client.db` object
+level with a call-site logger (capture `inspect.stack()` on every real
+Firestore read call, log the caller file:line, aggregate counts per
+call-site over a time window) and observe on the next restart. This
+would find the actual source empirically in one restart cycle instead of
+continued manual grep. Not implemented this session -- would itself need a
+deploy (Gate 5) and a dedicated observation window, and this session has
+already spent significant time on this specific side-investigation without
+reaching a confirmed root cause; stopping here rather than guess-fixing
+without evidence (this session's established discipline throughout).
