@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 32,
+  "cycle": 33,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 32,
-  "current_wr": 8.0,
+  "total_cycles_completed": 33,
+  "current_wr": 18.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-11T07:50:38Z",
-  "status": "shadow_pipeline_live_collecting_evidence",
+  "last_update": "2026-08-11T08:21:44Z",
+  "status": "shadow_pipeline_confirmed_stable_standard_monitoring",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -327,6 +327,16 @@
       "deploy_result": "PASS",
       "next_cycle_plan": "Let the shadow pipeline run and accumulate real evidence. Check journalctl for P0_8_PLUS_SHADOW admission-rate/quote_source patterns over the next several hours. Continue WR/PF monitoring on the old path (still expected flat per 4-angle diagnosis). No further deploy needed until a new patch is ready.",
       "elapsed_mins": 15
+    },
+    {
+      "cycle": 33,
+      "timestamp": "2026-08-11T08:21:44Z",
+      "status": "SHADOW_PIPELINE_STABLE_30MIN_NO_ERRORS",
+      "note": "Confirmed shadow pipeline (ff28d63) stable for 30+ min post-deploy: ~30 ticks at correct ~60s cadence, zero P0_8_PLUS_SHADOW errors/tracebacks, consistently 0 candidates (expected, matches quiet-market finding from earlier). Old-path WR 18%/PF 0.421 -- within the 5-18% noise band already established this session, not attributable to the deploy (old path code unchanged today beyond the earlier TP/SL systemd fix). Returning to standard hourly cadence now that stability is confirmed.",
+      "commit": "ff28d63f (deployed, stable)",
+      "deploy_result": "PASS_CONFIRMED_STABLE",
+      "next_cycle_plan": "Standard hourly monitoring: deploy status N/A (nothing new pending), WR/PF check, shadow evaluator log spot-check.",
+      "elapsed_mins": 10
     }
   ],
   "experiment": {
