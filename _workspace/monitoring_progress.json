@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 45,
+  "cycle": 46,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 45,
+  "total_cycles_completed": 46,
   "current_wr": 13.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-12T09:03:47Z",
+  "last_update": "2026-08-12T09:34:33Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -457,6 +457,16 @@
       "deploy_result": "PASS",
       "next_cycle_plan": "Check journalctl for [FIRESTORE_READ_TRACE_SUMMARY] every cycle over the next several hours -- this is now the top priority until the burn source is identified and fixed.",
       "elapsed_mins": 20
+    },
+    {
+      "cycle": 46,
+      "timestamp": "2026-08-12T09:34:33Z",
+      "status": "STILL_WAITING_FOR_BURST_35MIN_NO_TRACE_HITS",
+      "note": "35min post-restart, still zero [FIRESTORE_READ_TRACE_SUMMARY] hits, tracked reads only 26 (up from 20, healthy baseline rate). Consistent with prior observation the burst is delayed by hours, not immediate. Restart was ~09:01 UTC; if the ~3h15m-post-restart pattern from the first incident repeats, expect a possible burst around 12:00-13:00 UTC.",
+      "commit": "e948d77 (deployed, stable)",
+      "deploy_result": "N/A",
+      "next_cycle_plan": "Keep checking for FIRESTORE_READ_TRACE_SUMMARY every cycle.",
+      "elapsed_mins": 5
     }
   ],
   "experiment": {
