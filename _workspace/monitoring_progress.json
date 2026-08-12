@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 42,
+  "cycle": 43,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 42,
-  "current_wr": 12.0,
+  "total_cycles_completed": 43,
+  "current_wr": 13.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-12T07:08:45Z",
+  "last_update": "2026-08-12T08:09:54Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -427,6 +427,16 @@
       "deploy_result": "BLOCKED_GATE5",
       "next_cycle_plan": "Standard hourly monitoring + opportunistic deploy retry continues.",
       "elapsed_mins": 6
+    },
+    {
+      "cycle": 43,
+      "timestamp": "2026-08-12T08:09:54Z",
+      "status": "QUOTA_HEALTHY_1H_POST_RESET_DEPLOY_STILL_PENDING",
+      "note": "1h post-reset: only 12/50000 reads used -- much healthier trajectory than yesterday's same-point-in-time burn, which was already climbing steeply by now. Possibly yesterday's burst was correlated with this session's own deploy activity or a one-time event rather than a daily-recurring pattern -- worth continued observation before concluding either way. WR 13%/PF 0.461, noise band. Deploy still blocked (1 position).",
+      "commit": "18bbc95 (pending live deploy)",
+      "deploy_result": "BLOCKED_GATE5",
+      "next_cycle_plan": "Standard hourly monitoring + opportunistic deploy retry continues.",
+      "elapsed_mins": 5
     }
   ],
   "experiment": {
