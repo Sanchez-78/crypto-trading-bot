@@ -30,10 +30,88 @@ Switch: set PERF_MODE=True in this file; restart bot.
 
 import firebase_admin
 from firebase_admin import credentials, firestore
+import inspect
 import logging
 import os, json, base64, time, requests, threading
 
 _QUOTA_LOCK = threading.RLock()
+
+# ── Diagnostic read-call-site tracer (2026-08-12) ──────────────────────────────
+# Built to find the ~49k/50k daily unattributed Firestore read burn confirmed
+# in _workspace/22_quota_burn_confirmed_dashboard_lies.md (real Firebase
+# Console usage far exceeds what this module's own _QUOTA_READS counter and
+# read_attribution dict show -- meaning the dominant source calls the
+# Firestore SDK directly, bypassing _record_read()/_can_read() entirely).
+# Manual grep-based review across every db.collection(...) call site in
+# src/services/ (canonical_state.py, auto_filter.py, this module's own
+# load_history/load_auditor_state/_load_mandatory_knowledge, PERF_MODE
+# constants) did not converge -- every site found is individually small or
+# already bounded, confirmed both by code reading and (for PERF_MODE) by
+# checking the live server's actual value matched the conservative default.
+#
+# Patches the Firestore SDK's CollectionReference/Query .get()/.stream()
+# methods AT THE CLASS LEVEL, so every call through ANY module is caught --
+# not just call sites already known about -- and aggregates counts by
+# immediate caller (file:line) in memory, periodically logging the top
+# offenders instead of needing thousands of individual log lines read by
+# hand. Purely additive: wraps the original method, calls straight through,
+# never changes its return value, behavior, or the actual quota consumed.
+#
+# Gated behind FIREBASE_READ_TRACE_ENABLED (default "false") -- adds one
+# inspect.stack() call per real Firestore read, acceptable only for a
+# bounded diagnostic window, not intended to run permanently.
+FIREBASE_READ_TRACE_ENABLED = os.getenv("FIREBASE_READ_TRACE_ENABLED", "false").strip().lower() in ("1", "true", "yes", "on")
+_READ_TRACE_LOCK = threading.Lock()
+_READ_TRACE_COUNTS: dict = {}  # "{file}:{line}" -> count
+_READ_TRACE_SUMMARY_INTERVAL_S = 60.0
+_read_trace_last_summary_ts = [0.0]
+
+
+def _read_trace_record(caller_key: str) -> None:
+    now = time.time()
+    with _READ_TRACE_LOCK:
+        _READ_TRACE_COUNTS[caller_key] = _READ_TRACE_COUNTS.get(caller_key, 0) + 1
+        if now - _read_trace_last_summary_ts[0] >= _READ_TRACE_SUMMARY_INTERVAL_S:
+            _read_trace_last_summary_ts[0] = now
+            top = sorted(_READ_TRACE_COUNTS.items(), key=lambda kv: -kv[1])[:10]
+            logging.warning("[FIRESTORE_READ_TRACE_SUMMARY] top call sites: %s", top)
+
+
+def _install_firestore_read_tracer() -> None:
+    """Idempotent (checks a marker attribute before patching); safe to call
+    more than once (e.g. module reload in tests)."""
+    if not FIREBASE_READ_TRACE_ENABLED:
+        return
+    try:
+        from google.cloud.firestore_v1.base_collection import BaseCollectionReference
+        from google.cloud.firestore_v1.base_query import BaseQuery
+    except ImportError:
+        logging.warning("[FIRESTORE_READ_TRACE] could not import Firestore base classes; tracer not installed")
+        return
+
+    def _wrap(cls, method_name):
+        original = getattr(cls, method_name, None)
+        if original is None or getattr(original, "_read_traced", False):
+            return
+
+        def traced(self, *args, **kwargs):
+            try:
+                frame = inspect.stack()[1]
+                _read_trace_record(f"{frame.filename}:{frame.lineno}")
+            except Exception:
+                pass
+            return original(self, *args, **kwargs)
+
+        traced._read_traced = True
+        setattr(cls, method_name, traced)
+
+    for cls in (BaseCollectionReference, BaseQuery):
+        for method_name in ("get", "stream"):
+            _wrap(cls, method_name)
+    logging.warning("[FIRESTORE_READ_TRACE] installed on %s", [c.__name__ for c in (BaseCollectionReference, BaseQuery)])
+
+
+_install_firestore_read_tracer()
 
 # V10.15: ACTIVATE 4-tier cache system (was implemented but unused)
 # Reduces Firebase reads 50-80% (50K → <5K per day)
