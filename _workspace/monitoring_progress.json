@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 48,
+  "cycle": 49,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 48,
+  "total_cycles_completed": 49,
   "current_wr": 13.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-12T10:39:47Z",
+  "last_update": "2026-08-12T11:10:50Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -487,6 +487,16 @@
       "deploy_result": "N/A",
       "next_cycle_plan": "Deploy opportunistically, then wait for the NEXT burst to finally see the real culprit.",
       "elapsed_mins": 25
+    },
+    {
+      "cycle": 49,
+      "timestamp": "2026-08-12T11:10:50Z",
+      "status": "DEPLOY_BLOCKED_QUOTA_STILL_EXHAUSTED_UNTIL_TOMORROW_RESET",
+      "note": "Deploy blocked (1 position). Quota still exhausted, won't reset until tomorrow 07:00 UTC.",
+      "commit": "bc80d27 (pending deploy)",
+      "deploy_result": "BLOCKED_GATE5",
+      "next_cycle_plan": "Opportunistic deploy retry continues.",
+      "elapsed_mins": 5
     }
   ],
   "experiment": {
