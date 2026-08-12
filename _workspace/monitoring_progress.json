@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 40,
+  "cycle": 41,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 40,
-  "current_wr": 19.0,
+  "total_cycles_completed": 41,
+  "current_wr": 13.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-11T14:12:27Z",
+  "last_update": "2026-08-12T06:09:26Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -406,6 +406,16 @@
       "commit": "545e5b7 (pending live deploy)",
       "deploy_result": "BLOCKED_GATE5",
       "next_cycle_plan": "Standard hourly monitoring, corrected method continues.",
+      "elapsed_mins": 5
+    },
+    {
+      "cycle": 41,
+      "timestamp": "2026-08-12T06:09:26Z",
+      "status": "STILL_DEGRADED_RESET_DUE_SOON",
+      "note": "06:08 UTC Aug 12 -- still actively QUOTA_HARD_GATE blocking (confirmed, high-frequency log line more reliable than the throttled SAFE_MODE line for point-in-time checks). 07:00 UTC daily reset is ~51min away. WR 13%/PF 0.443, noise band. Deploy still pending (1 position). Will check again after the reset window to confirm recovery.",
+      "commit": "545e5b7 (pending live deploy)",
+      "deploy_result": "N/A",
+      "next_cycle_plan": "Check shortly after 07:00 UTC reset for quota recovery + retry deploy opportunistically.",
       "elapsed_mins": 5
     }
   ],
