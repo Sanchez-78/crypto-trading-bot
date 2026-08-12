@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 41,
+  "cycle": 42,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 41,
-  "current_wr": 13.0,
+  "total_cycles_completed": 42,
+  "current_wr": 12.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-12T06:09:26Z",
+  "last_update": "2026-08-12T07:08:45Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -417,6 +417,16 @@
       "deploy_result": "N/A",
       "next_cycle_plan": "Check shortly after 07:00 UTC reset for quota recovery + retry deploy opportunistically.",
       "elapsed_mins": 5
+    },
+    {
+      "cycle": 42,
+      "timestamp": "2026-08-12T07:08:45Z",
+      "status": "QUOTA_RESET_CONFIRMED_HEALTHY_DEPLOY_STILL_PENDING",
+      "note": "07:05:38 UTC reset fired correctly: reads 50000->2, writes 20000->250, reason=periodic. The reset-timing fix from earlier this program is working as designed. Bot should now operate un-degraded for a while (until today's burn -- still root-cause-unknown -- exhausts it again, timing TBD). dashboard firebase_quota field confirmed still not live (None) -- fix commit 170f321 still pending deploy, still blocked by Gate 5 (1 position). WR 12%/PF 0.43, noise band unchanged.",
+      "commit": "170f321 (pending live deploy)",
+      "deploy_result": "BLOCKED_GATE5",
+      "next_cycle_plan": "Standard hourly monitoring + opportunistic deploy retry continues.",
+      "elapsed_mins": 6
     }
   ],
   "experiment": {
