@@ -49,7 +49,8 @@ _QUOTA_LOCK = threading.RLock()
 # already bounded, confirmed both by code reading and (for PERF_MODE) by
 # checking the live server's actual value matched the conservative default.
 #
-# Patches the Firestore SDK's CollectionReference/Query .get()/.stream()
+# Patches the Firestore SDK's CollectionReference/Query/DocumentReference
+# .get()/.stream() (reads) and .set()/.update()/.delete()/.create() (writes)
 # methods AT THE CLASS LEVEL, so every call through ANY module is caught --
 # not just call sites already known about -- and aggregates counts by
 # immediate caller (file:line) in memory, periodically logging the top
@@ -57,12 +58,23 @@ _QUOTA_LOCK = threading.RLock()
 # hand. Purely additive: wraps the original method, calls straight through,
 # never changes its return value, behavior, or the actual quota consumed.
 #
+# UPDATE 2026-08-12 (same day, later): the first version of this tracer only
+# patched BaseCollectionReference/BaseQuery. Deployed, then observed a full
+# quota exhaustion (reads AND writes both hit their exact caps,
+# firebase_quota.quota_exhausted=True) with ZERO trace hits -- meaning the
+# burst goes through neither class. The obvious gap: every single-document
+# read already found in this codebase (canonical_state.py, auto_filter.py,
+# this file's own calibration/weights/metrics loads) uses the
+# `.document(x).get()` pattern -- a DocumentReference method, a THIRD class
+# never covered. Also added write methods since writes were exhausted too,
+# to see whether the same call site does both or they're independent.
+#
 # Gated behind FIREBASE_READ_TRACE_ENABLED (default "false") -- adds one
-# inspect.stack() call per real Firestore read, acceptable only for a
+# inspect.stack() call per real Firestore operation, acceptable only for a
 # bounded diagnostic window, not intended to run permanently.
 FIREBASE_READ_TRACE_ENABLED = os.getenv("FIREBASE_READ_TRACE_ENABLED", "false").strip().lower() in ("1", "true", "yes", "on")
 _READ_TRACE_LOCK = threading.Lock()
-_READ_TRACE_COUNTS: dict = {}  # "{file}:{line}" -> count
+_READ_TRACE_COUNTS: dict = {}  # "{op}:{file}:{line}" -> count
 _READ_TRACE_SUMMARY_INTERVAL_S = 60.0
 _read_trace_last_summary_ts = [0.0]
 
@@ -84,12 +96,13 @@ def _install_firestore_read_tracer() -> None:
         return
     try:
         from google.cloud.firestore_v1.base_collection import BaseCollectionReference
+        from google.cloud.firestore_v1.base_document import BaseDocumentReference
         from google.cloud.firestore_v1.base_query import BaseQuery
     except ImportError:
         logging.warning("[FIRESTORE_READ_TRACE] could not import Firestore base classes; tracer not installed")
         return
 
-    def _wrap(cls, method_name):
+    def _wrap(cls, method_name, op_label):
         original = getattr(cls, method_name, None)
         if original is None or getattr(original, "_read_traced", False):
             return
@@ -97,7 +110,7 @@ def _install_firestore_read_tracer() -> None:
         def traced(self, *args, **kwargs):
             try:
                 frame = inspect.stack()[1]
-                _read_trace_record(f"{frame.filename}:{frame.lineno}")
+                _read_trace_record(f"{op_label}:{frame.filename}:{frame.lineno}")
             except Exception:
                 pass
             return original(self, *args, **kwargs)
@@ -105,10 +118,24 @@ def _install_firestore_read_tracer() -> None:
         traced._read_traced = True
         setattr(cls, method_name, traced)
 
-    for cls in (BaseCollectionReference, BaseQuery):
-        for method_name in ("get", "stream"):
-            _wrap(cls, method_name)
-    logging.warning("[FIRESTORE_READ_TRACE] installed on %s", [c.__name__ for c in (BaseCollectionReference, BaseQuery)])
+    read_targets = (
+        (BaseCollectionReference, ("get", "stream")),
+        (BaseQuery, ("get", "stream")),
+        (BaseDocumentReference, ("get", "collections")),
+    )
+    write_targets = (
+        (BaseDocumentReference, ("set", "update", "delete", "create")),
+    )
+    for cls, methods in read_targets:
+        for method_name in methods:
+            _wrap(cls, method_name, "READ")
+    for cls, methods in write_targets:
+        for method_name in methods:
+            _wrap(cls, method_name, "WRITE")
+    logging.warning(
+        "[FIRESTORE_READ_TRACE] installed on %s",
+        sorted({cls.__name__ for cls, _ in read_targets} | {cls.__name__ for cls, _ in write_targets}),
+    )
 
 
 _install_firestore_read_tracer()

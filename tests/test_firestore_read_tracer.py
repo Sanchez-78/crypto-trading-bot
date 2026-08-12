@@ -1,14 +1,30 @@
-"""Tests for the diagnostic Firestore read-call-site tracer added to
+"""Tests for the diagnostic Firestore call-site tracer added to
 firebase_client.py (2026-08-12) to find the unattributed quota burn
 confirmed in _workspace/22_quota_burn_confirmed_dashboard_lies.md.
-"""
-import importlib
 
+Covers CollectionReference/Query (reads) and DocumentReference (reads +
+writes) -- the DocumentReference coverage was added same-day after the
+first version (CollectionReference/Query only) caught zero hits during a
+live full quota exhaustion, proving `.document(x).get()` -- used by every
+single-document read already found in this codebase -- was the coverage
+gap.
+"""
 import pytest
 from google.cloud.firestore_v1.base_collection import BaseCollectionReference
+from google.cloud.firestore_v1.base_document import BaseDocumentReference
 from google.cloud.firestore_v1.base_query import BaseQuery
 
 from src.services import firebase_client as fc
+
+_READ_TARGETS = (
+    (BaseCollectionReference, ("get", "stream")),
+    (BaseQuery, ("get", "stream")),
+    (BaseDocumentReference, ("get", "collections")),
+)
+_WRITE_TARGETS = (
+    (BaseDocumentReference, ("set", "update", "delete", "create")),
+)
+_ALL_TARGETS = _READ_TARGETS + _WRITE_TARGETS
 
 
 @pytest.fixture(autouse=True)
@@ -19,19 +35,14 @@ def _reset_tracer_state(monkeypatch):
     leftover wrapper."""
     monkeypatch.setattr(fc, "_READ_TRACE_COUNTS", {})
     monkeypatch.setattr(fc, "_read_trace_last_summary_ts", [0.0])
-    original_get = BaseCollectionReference.__dict__.get("get")
-    original_stream = BaseCollectionReference.__dict__.get("stream")
-    original_query_get = BaseQuery.__dict__.get("get")
-    original_query_stream = BaseQuery.__dict__.get("stream")
+    originals = {
+        (cls, name): cls.__dict__.get(name)
+        for cls, names in _ALL_TARGETS for name in names
+    }
     yield
-    if original_get is not None:
-        BaseCollectionReference.get = original_get
-    if original_stream is not None:
-        BaseCollectionReference.stream = original_stream
-    if original_query_get is not None:
-        BaseQuery.get = original_query_get
-    if original_query_stream is not None:
-        BaseQuery.stream = original_query_stream
+    for (cls, name), original in originals.items():
+        if original is not None:
+            setattr(cls, name, original)
 
 
 def test_disabled_by_default_does_not_patch(monkeypatch):
@@ -42,13 +53,13 @@ def test_disabled_by_default_does_not_patch(monkeypatch):
     assert before is after  # untouched
 
 
-def test_enabled_patches_get_and_stream_on_both_classes(monkeypatch):
+@pytest.mark.parametrize("cls,methods", _ALL_TARGETS)
+def test_enabled_patches_every_target_method(monkeypatch, cls, methods):
     monkeypatch.setattr(fc, "FIREBASE_READ_TRACE_ENABLED", True)
     fc._install_firestore_read_tracer()
-    for cls in (BaseCollectionReference, BaseQuery):
-        for method_name in ("get", "stream"):
-            method = getattr(cls, method_name)
-            assert getattr(method, "_read_traced", False) is True
+    for method_name in methods:
+        method = getattr(cls, method_name)
+        assert getattr(method, "_read_traced", False) is True
 
 
 def test_install_is_idempotent(monkeypatch):
@@ -81,20 +92,47 @@ def test_traced_get_still_calls_through_and_preserves_return_value(monkeypatch):
     assert calls == [(("posarg",), {"kw": "kwval"})]
 
 
+def test_document_reference_get_is_traced_as_a_read(monkeypatch):
+    """The specific gap found live 2026-08-12: single-document reads
+    (`db.collection(x).document(y).get()`) are DocumentReference.get(), a
+    method CollectionReference/Query patching never touches."""
+    monkeypatch.setattr(BaseDocumentReference, "get", lambda self, *a, **kw: "doc", raising=True)
+    monkeypatch.setattr(fc, "FIREBASE_READ_TRACE_ENABLED", True)
+    fc._install_firestore_read_tracer()
+    fc._READ_TRACE_COUNTS.clear()
+
+    BaseDocumentReference.get(object())
+    assert len(fc._READ_TRACE_COUNTS) == 1
+    (key,) = fc._READ_TRACE_COUNTS.keys()
+    assert key.startswith("READ:")
+
+
+def test_document_reference_writes_are_traced_as_writes(monkeypatch):
+    for method_name in ("set", "update", "delete", "create"):
+        monkeypatch.setattr(BaseDocumentReference, method_name, lambda self, *a, **kw: None, raising=True)
+    monkeypatch.setattr(fc, "FIREBASE_READ_TRACE_ENABLED", True)
+    fc._install_firestore_read_tracer()
+    fc._READ_TRACE_COUNTS.clear()
+
+    BaseDocumentReference.set(object(), {})
+    (key,) = fc._READ_TRACE_COUNTS.keys()
+    assert key.startswith("WRITE:")
+
+
 def test_read_trace_record_aggregates_by_caller_key():
     fc._READ_TRACE_COUNTS.clear()
-    fc._read_trace_record("some_file.py:42")
-    fc._read_trace_record("some_file.py:42")
-    fc._read_trace_record("other_file.py:7")
-    assert fc._READ_TRACE_COUNTS["some_file.py:42"] == 2
-    assert fc._READ_TRACE_COUNTS["other_file.py:7"] == 1
+    fc._read_trace_record("READ:some_file.py:42")
+    fc._read_trace_record("READ:some_file.py:42")
+    fc._read_trace_record("WRITE:other_file.py:7")
+    assert fc._READ_TRACE_COUNTS["READ:some_file.py:42"] == 2
+    assert fc._READ_TRACE_COUNTS["WRITE:other_file.py:7"] == 1
 
 
 def test_read_trace_record_never_raises_on_summary_logging(monkeypatch):
     """Force the summary branch to fire and confirm it doesn't blow up."""
     fc._READ_TRACE_COUNTS.clear()
     fc._read_trace_last_summary_ts[0] = 0.0
-    fc._read_trace_record("x.py:1")  # first call after ts=0 always triggers summary
+    fc._read_trace_record("READ:x.py:1")  # first call after ts=0 always triggers summary
     # No assertion beyond "didn't raise" -- logging.warning is the only side effect.
 
 
@@ -108,6 +146,7 @@ def test_traced_method_records_the_real_caller(monkeypatch):
     assert len(fc._READ_TRACE_COUNTS) == 1
     (key,) = fc._READ_TRACE_COUNTS.keys()
     assert "test_firestore_read_tracer.py" in key
+    assert key.startswith("READ:")
 
 
 def test_import_error_is_handled_gracefully(monkeypatch):
