@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 50,
+  "cycle": 51,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 50,
+  "total_cycles_completed": 51,
   "current_wr": 42.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-12T12:12:10Z",
+  "last_update": "2026-08-12T12:16:58Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -507,6 +507,16 @@
       "deploy_result": "N/A",
       "next_cycle_plan": "Keep monitoring whether this positive shift holds or reverts. If it holds, investigate causality (starvation-discovery-only routing hypothesis) once evidence accumulates further -- do not conclude prematurely from one data point.",
       "elapsed_mins": 10
+    },
+    {
+      "cycle": 51,
+      "timestamp": "2026-08-12T12:16:58Z",
+      "status": "DEPLOY_BLOCKED_GATE5_POSITION_CHURN_TOO_FAST_FOR_RUNNER_LATENCY",
+      "note": "3 more deploy attempts for commit bc80d27 (DocumentReference tracer fix), all blocked by Gate 5 (open-position count 4, 5, 5). Notably: a direct SSH check right before the 3rd attempt showed positions=0, but by the time the GH Actions runner started and the gated script re-checked (~30-40s later, runner queue+startup+SSH latency), 5 new positions had already opened. Bot is opening/closing positions fast enough (multiple concurrent, hold_s ranging 300-900s) that the runner-startup latency alone is enough to miss a 0-window caught via direct SSH poll. Confirms _workspace/19 finding that opportunistic manual polling has a structural latency gap, not just bad luck. Will keep trying opportunistically on each cycle but won't burn multiple rapid-fire attempts per cycle anymore -- diminishing returns. live=e948d77 still (unchanged), target=12a9979 (bc80d27's descendant) still pending.",
+      "commit": "bc80d27 / 12a9979 (pending deploy)",
+      "deploy_result": "BLOCKED_GATE5_x3",
+      "next_cycle_plan": "Continue standing monitoring loop. One opportunistic deploy attempt per cycle instead of rapid-fire retries. Once deployed, wait for next quota exhaustion event to finally read FIRESTORE_READ_TRACE_SUMMARY and identify the real quota-burn culprit.",
+      "elapsed_mins": 8
     }
   ],
   "experiment": {
