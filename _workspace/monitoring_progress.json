@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 47,
+  "cycle": 48,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 47,
+  "total_cycles_completed": 48,
   "current_wr": 13.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-12T10:05:44Z",
+  "last_update": "2026-08-12T10:39:47Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -477,6 +477,16 @@
       "deploy_result": "N/A",
       "next_cycle_plan": "Keep checking for FIRESTORE_READ_TRACE_SUMMARY every cycle.",
       "elapsed_mins": 5
+    },
+    {
+      "cycle": 48,
+      "timestamp": "2026-08-12T10:39:47Z",
+      "status": "QUOTA_EXHAUSTED_AGAIN_TRACER_MISSED_IT_FIXED_GAP_PENDING_REDEPLOY",
+      "note": "Quota fully exhausted again (~1h16m post-restart this time, faster than the first incident's 3h15m) -- confirmed via the new firebase_quota dashboard field: reads=50000/50000, writes=20000/20000, quota_exhausted=True. BUT the tracer caught ZERO hits despite this. Found the gap immediately: every single-document read in this codebase uses `.document(x).get()` -- DocumentReference.get(), a THIRD Firestore SDK class the first tracer version never patched (only CollectionReference/Query). Fixed: added BaseDocumentReference (.get/.collections as reads, .set/.update/.delete/.create as writes -- writes were also exhausted, worth seeing if same source). 13 tests, all passing. Committed and pushed (pending commit). Deploy still needs a 0-position window (3 open now) -- may be harder to catch while the bot is in degraded/exhausted state.",
+      "commit": "pushed, pending deploy",
+      "deploy_result": "N/A",
+      "next_cycle_plan": "Deploy opportunistically, then wait for the NEXT burst to finally see the real culprit.",
+      "elapsed_mins": 25
     }
   ],
   "experiment": {
