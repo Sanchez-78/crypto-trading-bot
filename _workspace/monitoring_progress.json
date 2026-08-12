@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 43,
+  "cycle": 44,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 43,
+  "total_cycles_completed": 44,
   "current_wr": 13.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-12T08:09:54Z",
+  "last_update": "2026-08-12T08:29:39Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -437,6 +437,16 @@
       "deploy_result": "BLOCKED_GATE5",
       "next_cycle_plan": "Standard hourly monitoring + opportunistic deploy retry continues.",
       "elapsed_mins": 5
+    },
+    {
+      "cycle": 44,
+      "timestamp": "2026-08-12T08:29:39Z",
+      "status": "READ_TRACER_BUILT_PENDING_DEPLOY_NEW_SCREENSHOT_EVIDENCE",
+      "note": "User shared a 2nd Firebase Console screenshot: 5,776/50,000 reads by ~2AM Pacific (09:00 UTC) today -- climbing again, smaller/slower than the first incident but the same early-UTC-morning pattern. Local SSH check at the same time showed only 15 reads -- same ~380x undercount pattern as before, confirms this is real and recurring, not a one-off. Investigated further: checked systemd timers (daily-log-fix-prompt-bot.timer fires 08:00 UTC daily but crashes instantly on a missing directory, ruled out; cryptomaster-autodeploy.timer runs a log-analysis script with no Firebase calls, ruled out), checked firebase_client.py's own _load_mandatory_knowledge() (bounded, 4 reads, ruled out), checked PERF_MODE (confirmed False on live server matching code default, ruled out despite the file's own header comment flagging PERF_MODE=True as a plausible cause). Manual review still not converging after this many angles, so built a proper diagnostic: a Firestore SDK-level read-call-site tracer (patches CollectionReference/Query .get()/.stream() at the class level, aggregates by caller file:line, logs top offenders every 60s), gated behind FIREBASE_READ_TRACE_ENABLED. 8 new tests, all passing. Enabled in the tracked systemd overlay for this diagnostic window. Committed and pushed (4002b9c). Still blocked by Gate 5 for the code deploy. NOTE for next successful deploy: the systemd overlay change may also need a manual sync to /etc/systemd/system/cryptomaster.service.d/ (unconfirmed whether the gated deploy script propagates systemd/*.conf automatically -- verify after next successful deploy).",
+      "commit": "4002b9c (pending live deploy)",
+      "deploy_result": "BLOCKED_GATE5",
+      "next_cycle_plan": "Deploy opportunistically. After deploy: verify FIREBASE_READ_TRACE_ENABLED actually took effect (may need manual systemd overlay sync), then watch for [FIRESTORE_READ_TRACE_SUMMARY] log lines to finally identify the real burn source.",
+      "elapsed_mins": 40
     }
   ],
   "experiment": {
