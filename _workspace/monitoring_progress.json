@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 44,
+  "cycle": 45,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 44,
+  "total_cycles_completed": 45,
   "current_wr": 13.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-12T08:29:39Z",
+  "last_update": "2026-08-12T09:03:47Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -447,6 +447,16 @@
       "deploy_result": "BLOCKED_GATE5",
       "next_cycle_plan": "Deploy opportunistically. After deploy: verify FIREBASE_READ_TRACE_ENABLED actually took effect (may need manual systemd overlay sync), then watch for [FIRESTORE_READ_TRACE_SUMMARY] log lines to finally identify the real burn source.",
       "elapsed_mins": 40
+    },
+    {
+      "cycle": 45,
+      "timestamp": "2026-08-12T09:03:47Z",
+      "status": "DEPLOY_SUCCEEDED_TRACER_LIVE_WAITING_FOR_BURST",
+      "note": "Caught a 0-position window and deployed (commit e948d77). Both fixes now live and verified: (1) dashboard firebase_quota field working correctly ({'known': True, 'quota_exhausted': False, 'reads': 20, ...}), (2) [FIRESTORE_READ_TRACE] installed on BaseCollectionReference/BaseQuery. Confirmed the systemd overlay change does NOT auto-sync from the gated deploy (as suspected) -- manually applied it the same disciplined way as the TP/SL fix (backup+verify+rollback), restarted, 13 positions recovered cleanly, FIREBASE_READ_TRACE_ENABLED confirmed set. ~4.5 minutes post-restart: zero traced reads so far, tracked quota counter still exactly 20 (unchanged) -- the burst does NOT happen immediately at startup, consistent with both prior observations where it ramped up hours after reset/restart (first incident: ~3h15m after restart; second: visible by ~2h after reset). Will need to keep checking over the next several hours to catch [FIRESTORE_READ_TRACE_SUMMARY] log lines when the burst actually happens.",
+      "commit": "e948d77 (DEPLOYED)",
+      "deploy_result": "PASS",
+      "next_cycle_plan": "Check journalctl for [FIRESTORE_READ_TRACE_SUMMARY] every cycle over the next several hours -- this is now the top priority until the burn source is identified and fixed.",
+      "elapsed_mins": 20
     }
   ],
   "experiment": {
