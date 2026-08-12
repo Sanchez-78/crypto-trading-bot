@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 51,
+  "cycle": 52,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 51,
-  "current_wr": 42.0,
+  "total_cycles_completed": 52,
+  "current_wr": 47.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-12T12:16:58Z",
+  "last_update": "2026-08-12T12:49:56Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -517,6 +517,16 @@
       "deploy_result": "BLOCKED_GATE5_x3",
       "next_cycle_plan": "Continue standing monitoring loop. One opportunistic deploy attempt per cycle instead of rapid-fire retries. Once deployed, wait for next quota exhaustion event to finally read FIRESTORE_READ_TRACE_SUMMARY and identify the real quota-burn culprit.",
       "elapsed_mins": 8
+    },
+    {
+      "cycle": 52,
+      "timestamp": "2026-08-12T12:49:56Z",
+      "status": "POSITIVE_SHIFT_REVERTED_LIFETIME_BACK_NEGATIVE_DEPLOY_STILL_BLOCKED",
+      "note": "Cycle 50's 'major positive shift' (lifetime_expectancy +0.020, lifetime_pf 1.272) did NOT hold: now back to lifetime_expectancy=-0.041, lifetime_pf=0.573 across 3554 trades (+23 since last check -- slow trade rate, consistent with quota exhaustion still blocking most normal-path admissions). recent-100 win_rate_pct=47.0% (down from 42%, but still far above the single-digit/low-teens numbers typical most of this session). CONCLUSION: the earlier positive lifetime shift was very likely a transient/noisy blip in a small window, not a stable structural improvement -- starvation-discovery-routing hypothesis is NOT supported by this data point (if that path were structurally better, lifetime metrics should stay elevated, not revert). Correctly flagged as unconfirmed earlier; now effectively falsified as a durable effect, though recent-window WR staying elevated (42-47%) vs baseline is still worth watching. Firebase quota_exhausted=True still per dashboard field (though snapshot itself is 9146s / ~2.5h stale -- exhausted state may be preventing the bot from even attempting fresh quota-checking reads that would refresh the snapshot). Deploy: 2 more opportunistic attempts this cycle, both blocked (1 pos observed via SSH -> 1 pos at gate check; 0 pos observed via SSH -> 2 pos at gate check) -- same runner-latency gap as cycle 51. live=e948d77 unchanged, target=3bea1b7 (bc80d27 descendant) still pending.",
+      "commit": "3bea1b7 (pending deploy)",
+      "deploy_result": "BLOCKED_GATE5_x2",
+      "next_cycle_plan": "Continue standing monitoring loop, 1-2 opportunistic deploy attempts per cycle. Treat the cycle-50 positive-shift finding as likely noise going forward unless it recurs. Still waiting for quota reset (07:00 UTC) and for the tracer to actually deploy so the next exhaustion event can be attributed.",
+      "elapsed_mins": 5
     }
   ],
   "experiment": {
