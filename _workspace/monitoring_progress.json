@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 49,
+  "cycle": 50,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 49,
-  "current_wr": 13.0,
+  "total_cycles_completed": 50,
+  "current_wr": 42.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-12T11:10:50Z",
+  "last_update": "2026-08-12T12:12:10Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -497,6 +497,16 @@
       "deploy_result": "BLOCKED_GATE5",
       "next_cycle_plan": "Opportunistic deploy retry continues.",
       "elapsed_mins": 5
+    },
+    {
+      "cycle": 50,
+      "timestamp": "2026-08-12T12:12:10Z",
+      "status": "MAJOR_POSITIVE_SHIFT_WR42_LIFETIME_PF_ABOVE_1",
+      "note": "Big unexpected positive shift: recent-100 WR jumped to 42% (wins=42, losses=44, flats=14 -- notably fewer flats than the 50-65 typical earlier today), PF 0.962. More significantly: LIFETIME expectancy is now POSITIVE (+0.020/trade, was -0.02 to -0.037 all day) and lifetime PF is 1.272 (was 0.41-0.55 all day) across 3531 trades (+240 since last check). exit_distribution tp/sl counts still frozen (stale metric, separate bug) so this isn't simple TP/SL hits -- SOLUSDT trades now appearing (were rare/absent earlier, mostly ETHUSDT all day), hold_s=900 (max) on those. Leading hypothesis, NOT confirmed: quota exhaustion is blocking the normal EV-gated entry path, so trades may now be routing almost exclusively through the PAPER_STARVATION_DISCOVERY bootstrap path (different geometry, found tp_zone_bps=35 earlier) which may be performing better in current market conditions than the normal path was -- possible the quota bug has been accidentally helping. Flagged to user, not yet causally confirmed. Deploy still blocked (1-4 positions fluctuating), quota still exhausted until tomorrow's reset.",
+      "commit": "c0a1cca (deploy pending)",
+      "deploy_result": "N/A",
+      "next_cycle_plan": "Keep monitoring whether this positive shift holds or reverts. If it holds, investigate causality (starvation-discovery-only routing hypothesis) once evidence accumulates further -- do not conclude prematurely from one data point.",
+      "elapsed_mins": 10
     }
   ],
   "experiment": {
