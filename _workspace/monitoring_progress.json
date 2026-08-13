@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 66,
+  "cycle": 67,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 66,
-  "current_wr": 13.0,
+  "total_cycles_completed": 67,
+  "current_wr": 9.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-13T12:28:27Z",
+  "last_update": "2026-08-13T13:01:22Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -666,6 +666,16 @@
       "commit": "e841ab9 / 663e0b9 (pending deploy: lifetime fix + tracer gen3 + gate5 retry)",
       "deploy_result": "BLOCKED_GATE5",
       "next_cycle_plan": "Continue standard 30-min cadence, 1 deploy attempt per cycle. Quota reset 07:00 UTC.",
+      "elapsed_mins": 5
+    },
+    {
+      "cycle": 67,
+      "timestamp": "2026-08-13T13:01:22Z",
+      "status": "DEPLOY_BLOCKED_AGAIN_WR_DIPPED_TO_9PCT",
+      "note": "Deploy blocked again (91s retry, ended at 1 position). win_rate_pct dipped to 9.0% (recent-100 window, lowest in a while, within the noisy range seen all session -- not treating as signal on its own). lifetime_expectancy=-0.0196, lifetime_pf=0.754 (3986 trades, still old rolling100-based calc). Quota still exhausted (~3.1h this check, ~10.5h+ total). No new findings.",
+      "commit": "e841ab9 / a40c9da (pending deploy: lifetime fix + tracer gen3 + gate5 retry)",
+      "deploy_result": "BLOCKED_GATE5",
+      "next_cycle_plan": "Continue standard 30-min cadence, 1 deploy attempt per cycle.",
       "elapsed_mins": 5
     }
   ],
