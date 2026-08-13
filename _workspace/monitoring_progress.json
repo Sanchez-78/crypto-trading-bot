@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 65,
+  "cycle": 66,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 65,
-  "current_wr": 15.0,
+  "total_cycles_completed": 66,
+  "current_wr": 13.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-13T11:55:21Z",
+  "last_update": "2026-08-13T12:28:27Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -656,6 +656,16 @@
       "commit": "e841ab9 / 58d197b (pending deploy: lifetime fix + tracer gen3 + gate5 retry)",
       "deploy_result": "BLOCKED_GATE5",
       "next_cycle_plan": "Continue standard 30-min cadence, 1 deploy attempt per cycle.",
+      "elapsed_mins": 5
+    },
+    {
+      "cycle": 66,
+      "timestamp": "2026-08-13T12:28:27Z",
+      "status": "DEPLOY_BLOCKED_AGAIN_QUOTA_STILL_EXHAUSTED_9H_METRICS_STEADY",
+      "note": "Deploy blocked again (91s retry, ended at 1 position). Quota still exhausted, snapshot_age_s=9198 (~2.6h since exhaustion, ~9h since the original 09:55 UTC exhaustion event given prior cycles). closed_trades=3978 (+7 in 30 min, still slow degraded-mode rate). win_rate_pct=13.0%, lifetime_expectancy=+0.0006 (essentially breakeven), lifetime_pf=1.106 -- still the OLD rolling100-based calc (pending deploy), so this reading carries the same caveat as all readings this session: not yet trustworthy as a true lifetime average. No new findings; steady-state waiting continues.",
+      "commit": "e841ab9 / 663e0b9 (pending deploy: lifetime fix + tracer gen3 + gate5 retry)",
+      "deploy_result": "BLOCKED_GATE5",
+      "next_cycle_plan": "Continue standard 30-min cadence, 1 deploy attempt per cycle. Quota reset 07:00 UTC.",
       "elapsed_mins": 5
     }
   ],
