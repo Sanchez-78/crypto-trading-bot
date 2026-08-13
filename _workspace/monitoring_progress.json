@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 58,
+  "cycle": 59,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 58,
-  "current_wr": 15.0,
+  "total_cycles_completed": 59,
+  "current_wr": 13.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-13T08:05:04Z",
+  "last_update": "2026-08-13T08:36:59Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -586,6 +586,16 @@
       "commit": "3633bba / 4d4e8fa (pending deploy, tracer gen3)",
       "deploy_result": "BLOCKED_GATE5_REAL_3_POSITIONS",
       "next_cycle_plan": "Keep watching lifetime metric oscillation -- do not trust a single positive reading given the cycle 50 precedent. If it stays positive across 2+ more consecutive checks, that would be the first real signal worth investigating causally. Continue opportunistic deploy.",
+      "elapsed_mins": 5
+    },
+    {
+      "cycle": 59,
+      "timestamp": "2026-08-13T08:36:59Z",
+      "status": "LIFETIME_METRIC_OSCILLATING_AROUND_BREAKEVEN_CONFIRMS_NOISE_NOT_TREND",
+      "note": "lifetime_expectancy back to slightly negative (-0.0023, was +0.0036 last cycle), lifetime_pf=1.04 (was 1.20) -- 3918 trades (+11, slow rate). This is the THIRD directional flip of this metric within a few cycles (negative -> positive cycle 58 -> near-breakeven now), confirming it's oscillating noise around breakeven rather than a real trend in either direction -- treating the whole lifetime_pf/expectancy readout as low-signal for now given this volatility at ~4000 trades of history (a swing this size from +11 new trades shouldn't move a true flat-average lifetime stat this much -- flagging this as worth a dedicated forensic look at how learning_state.json actually computes 'lifetime' stats, but not urgent). recent-100 win_rate_pct=13.0% (down again). Deploy: blocked again at 4 open positions (commit 0ec8789, tracer gen3 descendant). Quota still healthy.",
+      "commit": "3633bba / 0ec8789 (pending deploy, tracer gen3)",
+      "deploy_result": "BLOCKED_GATE5_REAL_4_POSITIONS",
+      "next_cycle_plan": "Stop trying to interpret single-cycle lifetime metric swings as signal -- treat it as noisy until a dedicated look at its computation happens. Continue standard cadence + opportunistic deploy.",
       "elapsed_mins": 5
     }
   ],
