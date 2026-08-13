@@ -111,7 +111,17 @@ class TestRollingMetricsTracking:
         assert newest_ts >= oldest_ts
 
     def test_4_rolling_metrics_compute_correct_pf_and_expectancy(self):
-        """Test that PF and expectancy are computed correctly."""
+        """Test that PF and expectancy are computed correctly.
+
+        2026-08-13 fix: all 5 trades previously shared trade_id="t1", so the
+        P0.2 persistent dedupe-by-trade_id check (record_close(), which runs
+        BEFORE the rolling-window append) silently discarded closes 2-5 --
+        only the first trade (1.0, WIN) was ever actually recorded, and this
+        test was passing against neither the documented expected value nor
+        real intent (confirmed failing the same way on main before today's
+        lifetime-metric patch, i.e. pre-existing and unrelated to it). Each
+        trade needs its own trade_id for the dedupe guard to let all 5 in.
+        """
         learner = PaperAdaptiveLearning()
         # Add 3 wins and 2 losses
         trades = [
@@ -121,10 +131,10 @@ class TestRollingMetricsTracking:
             {"net_pnl_pct": -0.5, "outcome": "LOSS"},
             {"net_pnl_pct": -1.0, "outcome": "LOSS"},
         ]
-        for trade in trades:
+        for i, trade in enumerate(trades):
             t = {
                 **trade,
-                "trade_id": "t1",
+                "trade_id": f"t{i}",
                 "symbol": "BTC",
                 "regime": "TREND",
                 "side": "BUY",
@@ -137,6 +147,75 @@ class TestRollingMetricsTracking:
         assert learner.lifetime_expectancy == pytest.approx(0.3, abs=0.01)
         # PF = gross_wins / abs(gross_losses) = 3 / 1.5 = 2.0
         assert learner.lifetime_pf == pytest.approx(2.0, abs=0.01)
+
+    def test_4b_lifetime_survives_past_rolling100_window_2026_08_13(self):
+        """Regression test for _workspace/23_lifetime_metric_was_rolling100.md:
+        lifetime_pf/lifetime_expectancy used to be recomputed from
+        list(self.rolling100) on every close -- i.e. "lifetime" was silently
+        just the last 100 trades. Close 150 trades where the first 100 are
+        all big losses and the last 50 are all wins: the old buggy code
+        would show a strongly positive lifetime_pf/expectancy once the
+        losing trades rotate out of rolling100 (since only the last 100
+        entries fit in the deque, and by trade 150 the deque holds trades
+        51-150 -- 50 losses + 50 wins). The fix must keep reflecting the
+        TRUE full-history mix of 100 losses + 50 wins throughout."""
+        learner = PaperAdaptiveLearning()
+        for i in range(100):
+            learner.record_close({
+                "trade_id": f"loss{i}", "net_pnl_pct": -1.0, "outcome": "LOSS",
+                "symbol": "BTC", "regime": "TREND", "side": "BUY",
+                "learning_source": "test", "mfe_pct": 0.1, "mae_pct": -1.0,
+            })
+        for i in range(50):
+            learner.record_close({
+                "trade_id": f"win{i}", "net_pnl_pct": 1.0, "outcome": "WIN",
+                "symbol": "BTC", "regime": "TREND", "side": "BUY",
+                "learning_source": "test", "mfe_pct": 1.0, "mae_pct": -0.1,
+            })
+        assert learner.lifetime_n == 150
+        # True lifetime: 100 losses (-1.0 each) + 50 wins (+1.0 each)
+        # expectancy = (-100 + 50) / 150 = -0.333...
+        assert learner.lifetime_expectancy == pytest.approx(-1.0 / 3.0, abs=0.001)
+        # pf = gross_wins / gross_losses = 50 / 100 = 0.5 -- still net negative,
+        # NOT the misleadingly-positive number the rolling100-only bug would
+        # have shown (rolling100 at this point holds losses 51-100 + all 50
+        # wins == 50 losses + 50 wins == pf 1.0, still not what the buggy
+        # code would compute either way -- the key regression is that this
+        # value must NOT drift as more trades close past 100).
+        assert learner.lifetime_pf == pytest.approx(0.5, abs=0.001)
+        # rolling100, by contrast, legitimately only sees the last 100 (50
+        # losses + 50 wins) -- distinct from lifetime, as intended.
+        rolling100_pf = learner._compute_rolling_pf(learner.rolling100)
+        assert rolling100_pf == pytest.approx(1.0, abs=0.001)
+        assert learner.lifetime_pf != pytest.approx(rolling100_pf, abs=0.001)
+
+    def test_4c_lifetime_pf_survives_restart_past_rolling100_window(self):
+        """The true cumulative sums must persist across save/load, not just
+        within one process lifetime -- otherwise every deploy/restart would
+        silently reset lifetime_pf back toward the rolling100 approximation
+        every time gross_wins/gross_losses aren't found (which they always
+        are, once saved by the fixed code)."""
+        import src.services.paper_adaptive_learning as pal_mod
+        for i in range(120):
+            outcome = "LOSS" if i < 80 else "WIN"
+            pnl = -1.0 if outcome == "LOSS" else 1.0
+            get_learner().record_close({
+                "trade_id": f"t{i}", "net_pnl_pct": pnl, "outcome": outcome,
+                "symbol": "BTC", "regime": "TREND", "side": "BUY",
+                "learning_source": "test", "mfe_pct": 0.1, "mae_pct": -0.1,
+            })
+        before = get_learner()
+        expected_pf = before.lifetime_pf
+        expected_exp = before.lifetime_expectancy
+        assert before.lifetime_n == 120
+
+        # Simulate a restart: drop the singleton, force a fresh load from
+        # the same (fixture-provided) state file.
+        pal_mod._learner = None
+        after = get_learner()
+        assert after.lifetime_n == 120
+        assert after.lifetime_pf == pytest.approx(expected_pf, abs=1e-9)
+        assert after.lifetime_expectancy == pytest.approx(expected_exp, abs=1e-9)
 
 
 class TestSegmentPolicyAdaptation:
@@ -494,6 +573,64 @@ class TestPersistence:
             assert learner2.lifetime_n == 42
             assert learner2.lifetime_pf == 1.5
             assert learner2.lifecycle == "REAL_READY"
+
+    def test_17b_load_state_migrates_legacy_state_without_gross_sums(self):
+        """_workspace/23_lifetime_metric_was_rolling100.md: state files saved
+        before this fix have lifetime_pf/lifetime_expectancy but no
+        lifetime_gross_wins/lifetime_gross_losses keys. Loading such a file
+        must not crash and must back-solve a continuity seed instead of
+        silently resetting to gross_wins=gross_losses=0 (which would make
+        lifetime_pf jump to 1.0/0.0 on the next close instead of smoothly
+        continuing from the legacy reading)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_file = os.path.join(tmpdir, "legacy_state.json")
+            legacy = {
+                "lifetime_n": 200,
+                "lifetime_pf": 1.5,
+                "lifetime_expectancy": 0.1,
+                "lifecycle": "PAPER_COLLECTING",
+                "rolling20": [], "rolling50": [], "rolling100": [],
+                "segment_weights": {},
+            }
+            with open(state_file, "w") as f:
+                json.dump(legacy, f)
+
+            learner = PaperAdaptiveLearning()
+            learner._state_file = state_file
+            learner._load_state()
+
+            assert learner.lifetime_n == 200
+            assert learner.lifetime_pf == pytest.approx(1.5, abs=0.001)
+            # Backfilled sums must be internally consistent: gross_wins /
+            # gross_losses reproduces the legacy pf, and (wins - losses)
+            # reproduces the legacy expectancy * n.
+            assert learner._lifetime_gross_wins > 0
+            assert learner._lifetime_gross_losses > 0
+            recomputed_pf = learner._pf_from_gross(
+                learner._lifetime_gross_wins, learner._lifetime_gross_losses
+            )
+            assert recomputed_pf == pytest.approx(1.5, abs=0.01)
+            net = learner._lifetime_gross_wins - learner._lifetime_gross_losses
+            assert net == pytest.approx(0.1 * 200, abs=0.01)
+
+            # Unrelated pre-existing gap: calling _load_state() directly
+            # (bypassing __init__'s post-load fallback) leaves
+            # qualification_started_at=None, which record_close() ->
+            # _try_increment_qualification() can't compare against. Not
+            # what this test is about; seed it like __init__ would.
+            learner.qualification_started_at = time.time()
+
+            # And the very next close must extend from this seed exactly
+            # like any true-cumulative trade, not reset anything.
+            learner.record_close({
+                "trade_id": "next", "net_pnl_pct": 1.0, "outcome": "WIN",
+                "symbol": "BTC", "regime": "TREND", "side": "BUY",
+                "learning_source": "test", "mfe_pct": 1.0, "mae_pct": -0.1,
+            })
+            assert learner.lifetime_n == 201
+            assert learner.lifetime_expectancy == pytest.approx(
+                (0.1 * 200 + 1.0) / 201, abs=0.001
+            )
 
     def test_18_singleton_get_learner(self):
         """Test that get_learner() returns singleton instance."""

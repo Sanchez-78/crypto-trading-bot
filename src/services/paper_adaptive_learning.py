@@ -60,6 +60,17 @@ class PaperAdaptiveLearning:
         self.lifetime_pf = 1.0
         self.lifetime_expectancy = 0.0
         self.lifetime_net_pnl = 0.0
+        # 2026-08-13 forensics (_workspace/23_lifetime_metric_was_rolling100.md):
+        # lifetime_pf/lifetime_expectancy were being recomputed on every trade
+        # from _lifetime_entries() == list(self.rolling100) -- i.e. "lifetime"
+        # was actually just the last 100 trades in disguise, exactly as noisy
+        # as any other 100-trade rolling stat, oscillating between clearly
+        # positive and clearly negative within single-digit-cycle timeframes
+        # despite ~3900+ true lifetime trades. These two accumulators are the
+        # true running sums (all trades, no window), used to compute
+        # lifetime_pf/lifetime_expectancy going forward instead.
+        self._lifetime_gross_wins = 0.0
+        self._lifetime_gross_losses = 0.0
 
         # Rolling windows: list of (net_pnl_pct, outcome, segment_key, ts)
         self.rolling20 = deque(maxlen=20)
@@ -279,14 +290,57 @@ class PaperAdaptiveLearning:
                 # Old JSON format: {"lifetime_n": N}
                 if "lifetime_metrics" in data:
                     # Firebase/new format
-                    self.lifetime_n = data.get("lifetime_metrics", {}).get("trades_closed", 0)
-                    self.lifetime_pf = data.get("lifetime_metrics", {}).get("profit_factor", 1.0)
-                    self.lifetime_expectancy = data.get("lifetime_metrics", {}).get("expectancy", 0.0)
+                    lm = data.get("lifetime_metrics", {})
+                    self.lifetime_n = lm.get("trades_closed", 0)
+                    self.lifetime_pf = lm.get("profit_factor", 1.0)
+                    self.lifetime_expectancy = lm.get("expectancy", 0.0)
+                    self.lifetime_net_pnl = lm.get("net_pnl", 0.0)
+                    gross_wins = lm.get("gross_wins")
+                    gross_losses = lm.get("gross_losses")
                 else:
                     # Old JSON format (fallback)
                     self.lifetime_n = data.get("lifetime_n", 0)
                     self.lifetime_pf = data.get("lifetime_pf", 1.0)
                     self.lifetime_expectancy = data.get("lifetime_expectancy", 0.0)
+                    self.lifetime_net_pnl = data.get("lifetime_net_pnl", 0.0)
+                    gross_wins = data.get("lifetime_gross_wins")
+                    gross_losses = data.get("lifetime_gross_losses")
+
+                # 2026-08-13 (_workspace/23_lifetime_metric_was_rolling100.md):
+                # true cumulative gross win/loss sums. If this state predates
+                # the fix, back-solve a continuity seed from the already-loaded
+                # (rolling100-approximated) lifetime_pf/expectancy/n so the
+                # first post-deploy reading doesn't jump discontinuously --
+                # exact historical gross wins/losses aren't recoverable once
+                # trades have aged out of rolling100, this is a one-time
+                # best-effort estimate; every trade recorded from here on is
+                # a true, exact increment.
+                if gross_wins is None or gross_losses is None:
+                    n = self.lifetime_n
+                    pf = self.lifetime_pf
+                    exp = self.lifetime_expectancy
+                    net_sum = self.lifetime_net_pnl or (exp * n)
+                    if pf and pf != 1.0 and n > 0:
+                        losses = net_sum / (pf - 1.0)
+                        losses = max(losses, 0.0)
+                        wins = pf * losses
+                    else:
+                        wins = max(net_sum, 0.0)
+                        losses = max(-net_sum, 0.0)
+                    self._lifetime_gross_wins = wins
+                    self._lifetime_gross_losses = losses
+                    self.lifetime_net_pnl = net_sum
+                    log.warning(
+                        "[LIFETIME_METRICS_MIGRATION] pre-fix state loaded (no "
+                        "gross_wins/gross_losses persisted) -- seeded from legacy "
+                        "rolling100-approximated pf=%.3f expectancy=%.6f n=%d as "
+                        "gross_wins=%.4f gross_losses=%.4f net_pnl=%.4f; exact from "
+                        "here on",
+                        pf, exp, n, wins, losses, net_sum,
+                    )
+                else:
+                    self._lifetime_gross_wins = float(gross_wins)
+                    self._lifetime_gross_losses = float(gross_losses)
 
                 # Lifecycle can be in either format
                 self.lifecycle = data.get("learning_controls", {}).get("lifecycle") or data.get("lifecycle", "PAPER_COLLECTING")
@@ -370,6 +424,11 @@ class PaperAdaptiveLearning:
                 "profit_factor": self.lifetime_pf,
                 "expectancy": self.lifetime_expectancy,
                 "net_pnl": self.lifetime_net_pnl,
+                # 2026-08-13: true cumulative gross win/loss sums, so
+                # lifetime_pf survives restarts as an accurate all-time
+                # figure instead of resetting to a rolling100 approximation.
+                "gross_wins": self._lifetime_gross_wins,
+                "gross_losses": self._lifetime_gross_losses,
             },
             "learning_controls": {
                 "lifecycle": self.lifecycle,
@@ -408,6 +467,9 @@ class PaperAdaptiveLearning:
                 "lifetime_n": self.lifetime_n,
                 "lifetime_pf": self.lifetime_pf,
                 "lifetime_expectancy": self.lifetime_expectancy,
+                "lifetime_net_pnl": self.lifetime_net_pnl,
+                "lifetime_gross_wins": self._lifetime_gross_wins,
+                "lifetime_gross_losses": self._lifetime_gross_losses,
                 "lifecycle": self.lifecycle,
                 "rolling20": list(self.rolling20),
                 "rolling50": list(self.rolling50),
@@ -504,14 +566,17 @@ class PaperAdaptiveLearning:
             self._recorded_trade_ids.append(trade_id)
             self._recorded_trade_ids_set.add(trade_id)
 
-        # Update lifetime metrics
+        # Update lifetime metrics -- TRUE cumulative running sums (2026-08-13
+        # fix, see _workspace/23_lifetime_metric_was_rolling100.md), not the
+        # rolling100-window approximation this used to silently be.
         self.lifetime_n += 1
-        self.lifetime_expectancy = self._compute_expectancy(
-            [e[0] for e in self._lifetime_entries()]
-        )
-        self.lifetime_pf = self._compute_pf(
-            [(e[0], e[1]) for e in self._lifetime_entries()]
-        )
+        self.lifetime_net_pnl += net_pnl_pct
+        if outcome == "WIN":
+            self._lifetime_gross_wins += net_pnl_pct
+        elif outcome == "LOSS":
+            self._lifetime_gross_losses += abs(net_pnl_pct)
+        self.lifetime_expectancy = self.lifetime_net_pnl / self.lifetime_n
+        self.lifetime_pf = self._pf_from_gross(self._lifetime_gross_wins, self._lifetime_gross_losses)
 
         # Update segment metrics and policy
         self._update_segment_policy(segment_key)
@@ -692,9 +757,15 @@ class PaperAdaptiveLearning:
         )
 
     def _lifetime_entries(self) -> List:
-        """Get all lifetime entries (rolling20+50+100 combined)."""
-        # This is approximate; ideally we'd track all lifetime entries
-        # For now, combine rolling windows (will miss oldest after rotate)
+        """Rolling100 as an approximation -- used ONLY by the rare D_NEG
+        reconciliation fallback in _reconcile_state() (2026-08-13: the main
+        record_close() path no longer uses this; it tracks true cumulative
+        sums in lifetime_net_pnl/_lifetime_gross_wins/_lifetime_gross_losses
+        instead, see _workspace/23_lifetime_metric_was_rolling100.md). Left
+        as-is here because reconciling D_NEG contamination out of the true
+        sums would require knowing exactly which entries were tainted, which
+        isn't recoverable once they've aged out of rolling100 -- this
+        fallback is unchanged/no worse than before for that rare path."""
         return list(self.rolling100)
 
     def _compute_expectancy(self, net_pnl_pcts: List[float]) -> float:
@@ -707,6 +778,10 @@ class PaperAdaptiveLearning:
         """Profit factor: gross_wins / abs(gross_losses)."""
         gross_wins = sum(net for net, outcome in trades if outcome == "WIN")
         gross_losses = abs(sum(net for net, outcome in trades if outcome == "LOSS"))
+        return self._pf_from_gross(gross_wins, gross_losses)
+
+    def _pf_from_gross(self, gross_wins: float, gross_losses: float) -> float:
+        """Profit factor from already-summed gross wins/losses (both >= 0)."""
         if gross_losses == 0:
             return 1.0 if gross_wins >= 0 else 0.0
         return gross_wins / gross_losses if gross_wins > 0 else 0.0
