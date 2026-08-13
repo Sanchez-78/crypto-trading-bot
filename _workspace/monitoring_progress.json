@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 60,
+  "cycle": 61,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 60,
+  "total_cycles_completed": 61,
   "current_wr": 13.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-13T09:20:06Z",
+  "last_update": "2026-08-13T09:52:59Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -607,6 +607,16 @@
       "deploy_result": "BLOCKED_GATE5_CLOSEST_YET_1_POSITION",
       "next_cycle_plan": "Continue opportunistic deploy. Once live, watch the NOW-TRUSTWORTHY lifetime_pf/lifetime_expectancy for real signal on progress toward the WR>55%/high-PnL goal, distinct from the noisy recent-100 window.",
       "elapsed_mins": 35
+    },
+    {
+      "cycle": 61,
+      "timestamp": "2026-08-13T09:52:59Z",
+      "status": "DEPLOY_BLOCKED_STUCK_AT_1_POSITION_NOT_STRANDED_JUST_FRESH",
+      "note": "Deploy blocked twice more at exactly 1 open position (stable across a 6x6s poll loop). Checked it's not a stranded/stuck position: single ETHUSDT BUY, entry_ts fresh (age ~109s at check time), timeout_s=900 -- legitimately just mid-hold, not a bug. With typically only 1-3 positions open right now (quieter than the 14-41 range seen right after the quota reset), this may actually be closer to a real zero-window than earlier cycles -- worth trying again next cycle rather than burning more attempts now. win_rate_pct=13.0% (stable), lifetime_expectancy=-0.0072, lifetime_pf=0.962 (3947 trades, still on OLD rolling100-based calc since fix commit e841ab9/07cc0f7 hasn't deployed yet). Quota healthy throughout.",
+      "commit": "e841ab9 / 07cc0f7 (pending deploy, lifetime metric fix)",
+      "deploy_result": "BLOCKED_GATE5_STABLE_1_POSITION",
+      "next_cycle_plan": "Position count has been low (1-3) this cycle vs 10-41 earlier -- keep trying opportunistically, may catch a real zero window soon.",
+      "elapsed_mins": 5
     }
   ],
   "experiment": {
