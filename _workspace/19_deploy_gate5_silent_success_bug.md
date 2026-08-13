@@ -58,3 +58,28 @@ surfaces as a red X, not a green check. Until fixed: **always verify a
 "successful" deploy by checking `git log -1` on the server directly**, not
 just the GH Actions conclusion -- this session's own practice going
 forward.
+
+## UPDATE 2026-08-13: true zero-position windows are real but rare (~1x/8h+)
+
+Separate from the silent-success bug above: this session also found (and
+fixed, commit 27af5dc) that Gate 5 used a single point-in-time check instead
+of any retry, which combined with GH Actions runner startup latency made it
+lose races against position churn almost every time, even when a direct-SSH
+check moments earlier showed 0.
+
+Measured via `journalctl | grep 'PAPER_TRAIN_HEALTH.*open=0'`: only **1**
+true zero-position log line in an 8-hour window (11:18:15 UTC). So a true
+zero window does occur periodically, but rarely and evidently briefly --
+the deploy attempt launched ~1 minute after that exact window (with the new
+~90s Gate 5 retry budget active) still missed it.
+
+Given the rarity (~once per 8h+, not once every few minutes), widening the
+Gate 5 in-run retry budget further has sharply diminishing returns -- a
+budget would need to span many minutes to meaningfully raise the odds of
+coinciding with one of these rare windows, which starts trading off against
+GH Actions runner cost/practicality for what is a manually-triggered gate.
+The better lever is **frequency of attempts over time** (this session's
+existing ~30-min monitoring cadence, each with one bounded-retry attempt)
+rather than a single very-long retry budget. Left as informational --
+no further Gate 5 change planned unless the observed hit rate over many
+more cycles suggests otherwise.

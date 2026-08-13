@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 63,
+  "cycle": 64,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 63,
+  "total_cycles_completed": 64,
   "current_wr": 14.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-13T10:47:53Z",
+  "last_update": "2026-08-13T11:22:31Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -637,6 +637,16 @@
       "deploy_result": "BLOCKED_GATE5_x2_WITH_NEW_90S_RETRY_BUDGET",
       "next_cycle_plan": "Gate 5 now retries internally -- fewer manual re-triggers needed per cycle (1 attempt now covers what used to need many). Continue standard cadence, 1 attempt per cycle should suffice given the new 90s internal budget.",
       "elapsed_mins": 45
+    },
+    {
+      "cycle": 64,
+      "timestamp": "2026-08-13T11:22:31Z",
+      "status": "MEASURED_TRUE_ZERO_WINDOW_FREQUENCY_RARE_1x_PER_8H_PLUS_GATE5_BUDGET_NOT_THE_LEVER",
+      "note": "Deploy blocked again (91s used, new Gate 5 retry ran correctly). Investigated whether widening the retry budget further would help: grepped journalctl for 'PAPER_TRAIN_HEALTH.*open=0' across an 8h window -- only 1 true zero-position log line found (11:18:15 UTC). This attempt (11:19:17-11:20:53) started ~1 min AFTER that exact window and still missed it -- confirms true zero-windows are both rare (~once per 8h+) and evidently brief. CONCLUSION: further widening Gate 5's in-run retry budget has sharply diminishing returns (would need many minutes to meaningfully raise odds of coinciding with an 8h-rare event) -- the better lever is attempt FREQUENCY OVER TIME (this session's existing 30-min cadence), not a longer single retry. Documented in _workspace/19 update. No further Gate 5 changes planned; will just keep trying once per cycle and expect roughly 1 hit per ~8h+ of monitoring, statistically. WR=14.0% (stable), lifetime_pf=0.914 (still old calc pending deploy), quota still exhausted (degraded mode, slow trade rate: +7 in 3 min).",
+      "commit": "e841ab9 / 27af5dc (pending deploy: lifetime fix + tracer gen3 + gate5 retry)",
+      "deploy_result": "BLOCKED_GATE5_MISSED_RARE_WINDOW_BY_~1MIN",
+      "next_cycle_plan": "Continue standard 30-min cadence, 1 deploy attempt per cycle. Expect a hit roughly once per several cycles given the measured ~1x/8h+ true zero-window frequency. No further Gate5 tuning planned.",
+      "elapsed_mins": 10
     }
   ],
   "experiment": {
