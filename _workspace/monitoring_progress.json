@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 67,
+  "cycle": 68,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 67,
+  "total_cycles_completed": 68,
   "current_wr": 9.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-13T13:01:22Z",
+  "last_update": "2026-08-13T13:34:28Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -674,6 +674,16 @@
       "status": "DEPLOY_BLOCKED_AGAIN_WR_DIPPED_TO_9PCT",
       "note": "Deploy blocked again (91s retry, ended at 1 position). win_rate_pct dipped to 9.0% (recent-100 window, lowest in a while, within the noisy range seen all session -- not treating as signal on its own). lifetime_expectancy=-0.0196, lifetime_pf=0.754 (3986 trades, still old rolling100-based calc). Quota still exhausted (~3.1h this check, ~10.5h+ total). No new findings.",
       "commit": "e841ab9 / a40c9da (pending deploy: lifetime fix + tracer gen3 + gate5 retry)",
+      "deploy_result": "BLOCKED_GATE5",
+      "next_cycle_plan": "Continue standard 30-min cadence, 1 deploy attempt per cycle.",
+      "elapsed_mins": 5
+    },
+    {
+      "cycle": 68,
+      "timestamp": "2026-08-13T13:34:28Z",
+      "status": "DEPLOY_BLOCKED_AGAIN_TRADE_RATE_VERY_SLOW_QUOTA_EXHAUSTED_3_6H",
+      "note": "Deploy blocked again (91s retry, 1 position). closed_trades=3992 (+6 in 30 min, still slow degraded-mode rate). win_rate_pct=9.0% (stable vs last cycle). lifetime_expectancy=-0.0275, lifetime_pf=0.609 (3992 trades, still old calc). Quota exhausted ~3.65h this stretch (snapshot_age_s=13159). No new findings; steady-state waiting for either a zero-position window or the 07:00 UTC quota reset.",
+      "commit": "e841ab9 / af52114 (pending deploy: lifetime fix + tracer gen3 + gate5 retry)",
       "deploy_result": "BLOCKED_GATE5",
       "next_cycle_plan": "Continue standard 30-min cadence, 1 deploy attempt per cycle.",
       "elapsed_mins": 5
