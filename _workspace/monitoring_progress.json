@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 52,
+  "cycle": 53,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 52,
-  "current_wr": 47.0,
+  "total_cycles_completed": 53,
+  "current_wr": 20.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-12T12:49:56Z",
+  "last_update": "2026-08-13T05:40:48Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -526,6 +526,16 @@
       "commit": "3bea1b7 (pending deploy)",
       "deploy_result": "BLOCKED_GATE5_x2",
       "next_cycle_plan": "Continue standing monitoring loop, 1-2 opportunistic deploy attempts per cycle. Treat the cycle-50 positive-shift finding as likely noise going forward unless it recurs. Still waiting for quota reset (07:00 UTC) and for the tracer to actually deploy so the next exhaustion event can be attributed.",
+      "elapsed_mins": 5
+    },
+    {
+      "cycle": 53,
+      "timestamp": "2026-08-13T05:40:48Z",
+      "status": "QUOTA_EXHAUSTED_19H_CONTINUOUS_DEPLOY_STILL_BLOCKED_RESET_IMMINENT",
+      "note": "firebase_quota snapshot_age_s=69748 (~19.4h) -- quota has been continuously exhausted since 2026-08-12T10:17:07Z with zero refresh, consistent with design: once quota_exhausted is set, pre-flight _can_read/_can_write blocks calls before they reach the network, so no fresh 429 responses occur to update the snapshot until the daily reset. No 07:00 UTC boundary has been crossed since the exhaustion (next one is ~1h20m from this check) so this is expected/consistent, not a new bug. closed_trades=3761 (+207 since last check, so paper trading itself keeps running fine in degraded mode -- graceful degradation working). recent-100 win_rate_pct back down to 20.0% (was 42-47% the last two cycles) -- further evidence the earlier positive shift was noise, not a structural improvement. lifetime_expectancy=-0.0134, lifetime_pf=0.767 (3761 trades) -- still negative but less deeply so than the -0.037 to -0.041 range seen most of the session. Deploy: 2 more opportunistic attempts, both blocked (0 SSH-observed -> 5 at gate; 0 SSH-observed -> 4 at gate) -- same latency gap, unresolved. live=e948d77 unchanged, target=c94b745 (bc80d27 descendant) still pending.",
+      "commit": "c94b745 (pending deploy)",
+      "deploy_result": "BLOCKED_GATE5_x2",
+      "next_cycle_plan": "Quota reset expected at 07:00 UTC (~1h20m out) -- try to catch a deploy window before or shortly after so the tracer is live before the next exhaustion cycle repeats. Continue standard 30-min cadence otherwise.",
       "elapsed_mins": 5
     }
   ],
