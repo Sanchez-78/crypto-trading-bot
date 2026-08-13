@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 57,
+  "cycle": 58,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 57,
-  "current_wr": 17.0,
+  "total_cycles_completed": 58,
+  "current_wr": 15.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-13T07:32:58Z",
+  "last_update": "2026-08-13T08:05:04Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -576,6 +576,16 @@
       "commit": "3633bba / 473218d (pending deploy, tracer gen3)",
       "deploy_result": "BLOCKED_GATE5_REAL_12_POSITIONS",
       "next_cycle_plan": "Continue standard 30-min cadence with corrected position-count check. Watch WR/PF trend over a longer post-reset window before drawing conclusions about quota-health vs performance correlation.",
+      "elapsed_mins": 5
+    },
+    {
+      "cycle": 58,
+      "timestamp": "2026-08-13T08:05:04Z",
+      "status": "LIFETIME_FLIPPED_POSITIVE_AGAIN_LIKELY_SAME_OSCILLATION_AS_CYCLE50_NOT_YET_TRUSTED",
+      "note": "lifetime_expectancy flipped positive again: +0.0036 (was -0.029 last cycle), lifetime_pf=1.20 (>1.0, above breakeven), 3907 trades (+28). recent-100 win_rate_pct dropped to 15.0% though (down from 17%) -- same puzzling combination as cycle 50 (lifetime positive while recent WR is low/mediocre). Given cycle 50's identical-looking positive flip fully reverted by cycle 52 within an hour, treating this the same way: noting it, NOT concluding a real improvement yet. With only +28 trades since last check, a swing this large in the lifetime aggregate (over 3907 total trades) suggests the metric itself may be sensitive/noisy at the aggregation level (possibly recalculated from a rolling/decayed window rather than a true flat lifetime average) rather than reflecting real edge -- worth a dedicated forensic look at how lifetime_expectancy/lifetime_pf are actually computed in learning_state.json if this keeps oscillating, but not urgent this cycle. Deploy: 2 attempts, both blocked at 3 open positions (closest yet to a real zero window). Quota healthy throughout (12 reads/50000, 84 writes/20000).",
+      "commit": "3633bba / 4d4e8fa (pending deploy, tracer gen3)",
+      "deploy_result": "BLOCKED_GATE5_REAL_3_POSITIONS",
+      "next_cycle_plan": "Keep watching lifetime metric oscillation -- do not trust a single positive reading given the cycle 50 precedent. If it stays positive across 2+ more consecutive checks, that would be the first real signal worth investigating causally. Continue opportunistic deploy.",
       "elapsed_mins": 5
     }
   ],
