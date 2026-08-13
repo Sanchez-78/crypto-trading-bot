@@ -69,6 +69,23 @@ _QUOTA_LOCK = threading.RLock()
 # never covered. Also added write methods since writes were exhausted too,
 # to see whether the same call site does both or they're independent.
 #
+# UPDATE 2026-08-13: added BaseDocumentReference, deployed, and confirmed
+# live (right after this restart, calibration/weights/metrics/canonical
+# loads all hit 429 within seconds) that even this STILL produced zero
+# [FIRESTORE_READ_TRACE_SUMMARY] hits despite dozens of real, observed 429s.
+# Root cause finally isolated by inspecting the installed SDK directly:
+# `Base*` (BaseDocumentReference/BaseCollectionReference/BaseQuery) are
+# abstract bases -- the CONCRETE classes actually returned by
+# `db.collection(...)`/`.document(...)` (google.cloud.firestore_v1.document.
+# DocumentReference, .collection.CollectionReference, .query.Query -- the
+# *sync* client firebase_admin.firestore uses) each define their OWN
+# `get`/`stream`/`set`/`update`/`create`/`delete` in their own __dict__,
+# which shadows the Base implementation entirely per Python MRO. Patching
+# the Base classes was therefore inert from the very first version -- no
+# instance ever resolved a call through the patched Base method. Now patches
+# the concrete sync classes directly (still also patches Base as a harmless
+# no-op fallback in case some code path constructs a bare Base instance).
+#
 # Gated behind FIREBASE_READ_TRACE_ENABLED (default "false") -- adds one
 # inspect.stack() call per real Firestore operation, acceptable only for a
 # bounded diagnostic window, not intended to run permanently.
@@ -94,17 +111,39 @@ def _install_firestore_read_tracer() -> None:
     more than once (e.g. module reload in tests)."""
     if not FIREBASE_READ_TRACE_ENABLED:
         return
+    classes = []
     try:
         from google.cloud.firestore_v1.base_collection import BaseCollectionReference
         from google.cloud.firestore_v1.base_document import BaseDocumentReference
         from google.cloud.firestore_v1.base_query import BaseQuery
+        classes += [BaseCollectionReference, BaseDocumentReference, BaseQuery]
     except ImportError:
-        logging.warning("[FIRESTORE_READ_TRACE] could not import Firestore base classes; tracer not installed")
+        logging.warning("[FIRESTORE_READ_TRACE] could not import Firestore base classes; skipping base fallback")
+
+    # The concrete sync classes actually instantiated by firebase_admin's
+    # Client -- these define their own get/stream/set/... in __dict__, which
+    # shadows Base* per Python MRO, so patching Base alone is a no-op for
+    # every real call. These are the ones that matter.
+    try:
+        from google.cloud.firestore_v1.collection import CollectionReference
+        from google.cloud.firestore_v1.document import DocumentReference
+        from google.cloud.firestore_v1.query import Query
+        classes += [CollectionReference, DocumentReference, Query]
+    except ImportError:
+        logging.warning("[FIRESTORE_READ_TRACE] could not import concrete Firestore classes; tracer coverage incomplete")
+
+    if not classes:
+        logging.warning("[FIRESTORE_READ_TRACE] no Firestore classes importable; tracer not installed")
         return
 
     def _wrap(cls, method_name, op_label):
-        original = getattr(cls, method_name, None)
-        if original is None or getattr(original, "_read_traced", False):
+        # Only patch if this class defines the method itself (own __dict__) --
+        # patching an inherited attribute would rebind it on the subclass
+        # that actually owns it too, double-wrapping under some MROs.
+        if method_name not in cls.__dict__:
+            return
+        original = cls.__dict__[method_name]
+        if getattr(original, "_read_traced", False):
             return
 
         def traced(self, *args, **kwargs):
@@ -118,23 +157,16 @@ def _install_firestore_read_tracer() -> None:
         traced._read_traced = True
         setattr(cls, method_name, traced)
 
-    read_targets = (
-        (BaseCollectionReference, ("get", "stream")),
-        (BaseQuery, ("get", "stream")),
-        (BaseDocumentReference, ("get", "collections")),
-    )
-    write_targets = (
-        (BaseDocumentReference, ("set", "update", "delete", "create")),
-    )
-    for cls, methods in read_targets:
-        for method_name in methods:
+    read_method_names = ("get", "stream", "collections")
+    write_method_names = ("set", "update", "delete", "create")
+    for cls in classes:
+        for method_name in read_method_names:
             _wrap(cls, method_name, "READ")
-    for cls, methods in write_targets:
-        for method_name in methods:
+        for method_name in write_method_names:
             _wrap(cls, method_name, "WRITE")
     logging.warning(
         "[FIRESTORE_READ_TRACE] installed on %s",
-        sorted({cls.__name__ for cls, _ in read_targets} | {cls.__name__ for cls, _ in write_targets}),
+        sorted({cls.__name__ for cls in classes}),
     )
 
 

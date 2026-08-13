@@ -106,3 +106,46 @@ deploy (Gate 5) and a dedicated observation window, and this session has
 already spent significant time on this specific side-investigation without
 reaching a confirmed root cause; stopping here rather than guess-fixing
 without evidence (this session's established discipline throughout).
+
+## UPDATE 2026-08-13: Tracer generation 3 — root cause of zero-hits found
+
+Generation 2 (BaseDocumentReference added) deployed as commit `bc80d27`→`c7c30028`
+and confirmed live via `journalctl`: right at process restart, `calibration`,
+`weights`, `metrics`, `canonical state`, `load_stats`, `load_model_state` all
+hit `429 Quota exceeded` within seconds — real Firestore reads were definitely
+being attempted — yet **zero** `[FIRESTORE_READ_TRACE_SUMMARY]` lines appeared,
+even ~60s+ after install (past the summary interval).
+
+Root cause isolated by inspecting the installed SDK directly on the server:
+
+```python
+DocumentReference.get is own:    True   # NOT inherited from BaseDocumentReference
+CollectionReference.get is own:  True   # NOT inherited from BaseCollectionReference
+CollectionReference.stream is own: True
+Query.get is own:                True   # NOT inherited from BaseQuery
+Query.stream is own:             True
+DocumentReference.set/update/create/delete is own: True (all four)
+```
+
+`Base*` classes are abstract bases; the **concrete** sync classes actually
+returned by `db.collection(...)`/`.document(...)` (the ones `firebase_admin`'s
+sync `Client` instantiates) each define their own `get`/`stream`/`set`/
+`update`/`create`/`delete`/`collections` in their own `__dict__`. Per Python
+MRO, an instance's method lookup finds the concrete class's own method first
+and never falls back to a patched `Base*` method — patching `Base*` was
+**inert from generation 1**, on every single deploy of this tracer so far.
+
+**Fix (commit pending, this session):** `_install_firestore_read_tracer()` now
+patches `google.cloud.firestore_v1.{collection,document,query}`'s
+`CollectionReference`/`DocumentReference`/`Query` directly (in addition to the
+harmless Base fallback), gated by `method_name not in cls.__dict__` so each
+method is wrapped exactly once on the class that actually owns it. 21 tests
+(new file content), including a direct regression test
+(`test_patching_base_class_alone_would_not_have_covered_the_concrete_class`)
+that asserts the concrete classes' methods are NOT the same object as
+whatever `Base*` defines for that name.
+
+**Next step once deployed:** wait for the next quota-exhaustion burst (still
+recurring every ~1-19h depending on window) and read the actual
+`[FIRESTORE_READ_TRACE_SUMMARY] top call sites: [...]` line for the first
+time this diagnostic effort has produced real data.
