@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 53,
+  "cycle": 54,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 53,
-  "current_wr": 20.0,
+  "total_cycles_completed": 54,
+  "current_wr": 21.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-13T05:40:48Z",
+  "last_update": "2026-08-13T06:13:45Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -536,6 +536,16 @@
       "commit": "c94b745 (pending deploy)",
       "deploy_result": "BLOCKED_GATE5_x2",
       "next_cycle_plan": "Quota reset expected at 07:00 UTC (~1h20m out) -- try to catch a deploy window before or shortly after so the tracer is live before the next exhaustion cycle repeats. Continue standard 30-min cadence otherwise.",
+      "elapsed_mins": 5
+    },
+    {
+      "cycle": 54,
+      "timestamp": "2026-08-13T06:13:45Z",
+      "status": "DEPLOY_STILL_BLOCKED_TRADE_RATE_SLOWING_QUOTA_RESET_SOON",
+      "note": "closed_trades=3769 (+8 in 30 min, much slower than earlier -- rate has been dropping steadily as quota-exhausted degraded mode persists). recent-100 win_rate_pct=21.0% (stable vs last cycle's 20.0%). lifetime_expectancy=-0.0133, lifetime_pf=0.769 (3769 trades) -- essentially flat vs last cycle, holding steady in the -0.013 to -0.041 band seen all session, well short of the WR>55%/positive-PnL goal. firebase_quota still exhausted, snapshot_age_s=71779 (~19.9h), reset boundary (07:00 UTC) about 47 min out at time of this check. Deploy: 2 more opportunistic attempts, both blocked (0 SSH-observed -> 3 at gate; 0 SSH-observed -> 2 at gate) -- confirms the gated workflow has NO retry/poll loop of its own (checked .github/workflows/hetzner-deploy-apply.yml: single pos_count check, no wait). This is a real structural gap worth fixing in a dedicated future session (add a short bounded poll-for-zero-window inside the gate script itself, e.g. retry every 5s for 60s) rather than relying on external timing luck -- noting this as a candidate improvement, not actioning now per this session's deferred-workflow-fix policy (_workspace/19_...md). live=e948d77 unchanged, target=551854a (bc80d27 descendant) still pending.",
+      "commit": "551854a (pending deploy)",
+      "deploy_result": "BLOCKED_GATE5_x2",
+      "next_cycle_plan": "Watch for quota reset (~47min out) and any change in trade rate/WR after. Keep trying opportunistic deploy 1-2x per cycle. Continue standard 30-min cadence.",
       "elapsed_mins": 5
     }
   ],
