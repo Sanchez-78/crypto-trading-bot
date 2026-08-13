@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 62,
+  "cycle": 63,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 62,
-  "current_wr": 13.0,
+  "total_cycles_completed": 63,
+  "current_wr": 14.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-13T10:08:50Z",
+  "last_update": "2026-08-13T10:47:53Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -627,6 +627,16 @@
       "deploy_result": "BLOCKED_GATE5_x4_TRUE_ZERO_WINDOW_STRUCTURALLY_RARE",
       "next_cycle_plan": "Position replacement happens near-instantly even during quota exhaustion, so a true zero-window may need many more attempts or luck. Continue opportunistic 1-2 tries per cycle without over-investing. Next quota reset 07:00 UTC tomorrow.",
       "elapsed_mins": 20
+    },
+    {
+      "cycle": 63,
+      "timestamp": "2026-08-13T10:47:53Z",
+      "status": "GATE5_IMPROVED_TO_BOUNDED_RETRY_POLL_STILL_NOT_LUCKY_YET_BUT_STRUCTURALLY_BETTER",
+      "note": "After 12+ blocked deploy attempts across many hours, improved Gate 5 itself (commit 27af5dc) from a single point-in-time position check to a bounded retry-poll (up to 18 attempts, 5s apart, ~90s budget) -- verified in isolation against 5 fixtures (missing file, corrupt file, immediate-zero, transitions-to-zero-mid-loop, never-clears-in-budget) before pushing; does NOT relax the safety bar at all, same exact-zero + fail-closed-on-UNKNOWN semantics, just gives the same check more chances per workflow run instead of relying on an operator's external re-trigger timing (which also loses ~15-40s to GH Actions runner startup latency on top of the check itself). Confirmed the new logic runs correctly (both attempts this cycle took ~91-92s, matching the 18x5s budget) but still didn't land a 0-window either time -- position count is evidently non-zero for stretches longer than 90s some of the time. This IS a real structural improvement (higher hit-rate per attempt going forward) even though it hasn't paid off yet. closed_trades=3958 (+8, slow -- quota still exhausted, degraded mode). WR=14.0%, lifetime_pf=0.886 (still old rolling100-based calc pending the metric fix deploy).",
+      "commit": "e841ab9 / 27af5dc (pending deploy: lifetime fix + tracer gen3 + gate5 retry)",
+      "deploy_result": "BLOCKED_GATE5_x2_WITH_NEW_90S_RETRY_BUDGET",
+      "next_cycle_plan": "Gate 5 now retries internally -- fewer manual re-triggers needed per cycle (1 attempt now covers what used to need many). Continue standard cadence, 1 attempt per cycle should suffice given the new 90s internal budget.",
+      "elapsed_mins": 45
     }
   ],
   "experiment": {
