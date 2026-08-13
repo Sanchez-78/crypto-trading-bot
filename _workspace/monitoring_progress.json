@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 59,
+  "cycle": 60,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 59,
+  "total_cycles_completed": 60,
   "current_wr": 13.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-13T08:36:59Z",
+  "last_update": "2026-08-13T09:20:06Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -597,6 +597,16 @@
       "deploy_result": "BLOCKED_GATE5_REAL_4_POSITIONS",
       "next_cycle_plan": "Stop trying to interpret single-cycle lifetime metric swings as signal -- treat it as noisy until a dedicated look at its computation happens. Continue standard cadence + opportunistic deploy.",
       "elapsed_mins": 5
+    },
+    {
+      "cycle": 60,
+      "timestamp": "2026-08-13T09:20:06Z",
+      "status": "FOUND_AND_FIXED_ROOT_CAUSE_OF_LIFETIME_METRIC_OSCILLATION_DEPLOY_PENDING",
+      "note": "Root-caused the lifetime_pf/lifetime_expectancy oscillation flagged across cycles 50-59: record_close() in paper_adaptive_learning.py recomputed both on EVERY close from _lifetime_entries() == list(self.rolling100) -- i.e. 'lifetime' was secretly just the last 100 trades, exactly as noisy as rolling100_pf/expectancy (logged alongside it under an honest name). lifetime_n was always a true counter; only pf/expectancy were the rolling100 approximation. Full analysis + before/after table in _workspace/23_lifetime_metric_was_rolling100.md. FIX (commit e841ab9, pending deploy): true cumulative running sums (lifetime_net_pnl -- an existing-but-dead field, never actually incremented before -- plus new _lifetime_gross_wins/_lifetime_gross_losses), persisted across restarts, with a backward-compat migration that back-solves a continuity seed from legacy state so the first post-deploy reading doesn't jump discontinuously. 3 new tests + 2 unrelated pre-existing test bugs fixed while in the file (confirmed already-broken on main before this patch via git stash verification). 42/42 tests pass. Deploy: 3 attempts this cycle, closest yet (1 position twice), still blocked. Once deployed, lifetime_pf/lifetime_expectancy become trustworthy for the first time this session -- recent-100 win_rate_pct (13.0%, stable) remains the reliable short-window indicator meanwhile.",
+      "commit": "e841ab9 (pending deploy, lifetime metric fix)",
+      "deploy_result": "BLOCKED_GATE5_CLOSEST_YET_1_POSITION",
+      "next_cycle_plan": "Continue opportunistic deploy. Once live, watch the NOW-TRUSTWORTHY lifetime_pf/lifetime_expectancy for real signal on progress toward the WR>55%/high-PnL goal, distinct from the noisy recent-100 window.",
+      "elapsed_mins": 35
     }
   ],
   "experiment": {
