@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 64,
+  "cycle": 65,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 64,
-  "current_wr": 14.0,
+  "total_cycles_completed": 65,
+  "current_wr": 15.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-13T11:22:31Z",
+  "last_update": "2026-08-13T11:55:21Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -647,6 +647,16 @@
       "deploy_result": "BLOCKED_GATE5_MISSED_RARE_WINDOW_BY_~1MIN",
       "next_cycle_plan": "Continue standard 30-min cadence, 1 deploy attempt per cycle. Expect a hit roughly once per several cycles given the measured ~1x/8h+ true zero-window frequency. No further Gate5 tuning planned.",
       "elapsed_mins": 10
+    },
+    {
+      "cycle": 65,
+      "timestamp": "2026-08-13T11:55:21Z",
+      "status": "DEPLOY_BLOCKED_AGAIN_STEADY_STATE_METRICS_UNCHANGED",
+      "note": "Deploy blocked again (91s retry ran, still ended at 1 position). No new findings this cycle -- consistent with the measured ~1x/8h+ zero-window rate from last cycle, this is expected variance, not a new problem. win_rate_pct=15.0% (stable, 13-15% range), lifetime_expectancy=-0.0078, lifetime_pf=0.943 (3971 trades, +6 in 30 min -- still slow, quota still exhausted). All pending fixes (lifetime metric true-cumulative fix, tracer gen3, Gate5 retry budget) remain queued at commit 58d197b.",
+      "commit": "e841ab9 / 58d197b (pending deploy: lifetime fix + tracer gen3 + gate5 retry)",
+      "deploy_result": "BLOCKED_GATE5",
+      "next_cycle_plan": "Continue standard 30-min cadence, 1 deploy attempt per cycle.",
+      "elapsed_mins": 5
     }
   ],
   "experiment": {
