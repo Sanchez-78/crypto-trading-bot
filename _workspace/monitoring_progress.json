@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 56,
+  "cycle": 57,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 56,
-  "current_wr": 20.0,
+  "total_cycles_completed": 57,
+  "current_wr": 17.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-13T07:01:28Z",
+  "last_update": "2026-08-13T07:32:58Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -567,6 +567,16 @@
       "deploy_result": "BLOCKED_GATE5_REAL_41_POSITIONS",
       "next_cycle_plan": "Continue standard 30-min cadence. Watch WR/PF/lifetime post-quota-reset trend now that Firebase ops have resumed. Keep 1 opportunistic deploy check per cycle with the corrected position-count script.",
       "elapsed_mins": 10
+    },
+    {
+      "cycle": 57,
+      "timestamp": "2026-08-13T07:32:58Z",
+      "status": "QUOTA_HEALTHY_TRADE_RATE_NORMAL_WR_DOWN_DEPLOY_STILL_BLOCKED",
+      "note": "Post-reset: firebase_quota healthy (reads=6/50000, writes=39/20000, quota_exhausted=False). closed_trades=3879 (+101 in 30 min -- trade rate back to normal now that Firebase ops aren't blocked). recent-100 win_rate_pct=17.0% (down from 20-21%), lifetime_expectancy=-0.0294, lifetime_pf=0.308 (3879 trades) -- notably worse PF than the 0.53-0.77 range seen during the quota-degraded window, though still in the same broadly-negative territory the whole session has shown. No clear signal yet that healthy-quota operation is better or worse than degraded operation for this metric -- too noisy /too short a window post-reset to draw a conclusion. Open positions: 10 (SSH direct) -> 12 (at Gate 5 check moments later, using the NOW CORRECTED count method) -- deploy blocked again for commit 473218d (tracer gen3, 3633bba). Position count has ranged 10-43 since the quota reset; still no true zero window observed with the corrected check.",
+      "commit": "3633bba / 473218d (pending deploy, tracer gen3)",
+      "deploy_result": "BLOCKED_GATE5_REAL_12_POSITIONS",
+      "next_cycle_plan": "Continue standard 30-min cadence with corrected position-count check. Watch WR/PF trend over a longer post-reset window before drawing conclusions about quota-health vs performance correlation.",
+      "elapsed_mins": 5
     }
   ],
   "experiment": {
