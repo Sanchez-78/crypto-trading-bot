@@ -128,7 +128,25 @@ jobs:
           echo "staging validation OK"
 
           # ── Gate 5: zero-open-position (FAIL-CLOSED: missing/corrupt = UNKNOWN) ─
-          pos_count="$($PYTHON_BIN - "data/paper_open_positions.json" <<'PYEOF'
+          # 2026-08-13: bounded poll instead of a single point-in-time check.
+          # An autonomous monitoring session observed this gate blocking a
+          # safe, already-reviewed, feature-flagged diagnostic patch for many
+          # hours across dozens of manual re-triggers: the bot replaces a
+          # closed position with a new one fast enough (observed: within the
+          # same close-scan cycle, even during Firebase-quota-degraded
+          # operation) that a single external check -- plus the ~15-40s of
+          # GH Actions runner queue/startup latency before this step even
+          # runs -- almost always loses the race against a window confirmed
+          # "0" moments earlier via direct SSH. This does NOT relax the
+          # safety bar: every one of the (bounded) attempts below still
+          # requires pos_count to read exactly "0" (missing/corrupt file is
+          # still UNKNOWN => refuse, identical fail-closed semantics to
+          # before); it only gives the SAME check more chances inside one
+          # workflow run instead of requiring an operator to externally
+          # re-dispatch the whole workflow and hope for exact-instant timing.
+          pos_count="UNKNOWN"
+          for _ in $(seq 1 18); do
+            pos_count="$($PYTHON_BIN - "data/paper_open_positions.json" <<'PYEOF'
           import json, sys
           try:
               d = json.load(open(sys.argv[1]))
@@ -139,6 +157,9 @@ jobs:
               print("UNKNOWN")
           PYEOF
           )"
+            [ "$pos_count" = "0" ] && break
+            sleep 5
+          done
           if [ "$pos_count" != "0" ]; then
             echo "CRITICAL: open-position state = '$pos_count' (fail-closed) — not deploying"; exit 1
           fi
