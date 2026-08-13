@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 55,
+  "cycle": 56,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 55,
-  "current_wr": 21.0,
+  "total_cycles_completed": 56,
+  "current_wr": 20.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-13T06:59:22Z",
+  "last_update": "2026-08-13T07:01:28Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -557,6 +557,16 @@
       "deploy_result": "BLOCKED_GATE5_REAL_14_15_POSITIONS",
       "next_cycle_plan": "Use the corrected position-count check going forward. Keep watching for a genuine zero window but reset expectations -- may be rare given typical 14-15 concurrent position count. Consider flagging Gate 5 design for future review if no zero window occurs over several more cycles.",
       "elapsed_mins": 20
+    },
+    {
+      "cycle": 56,
+      "timestamp": "2026-08-13T07:01:28Z",
+      "status": "QUOTA_RESET_HAPPENED_07_00_UTC_CONFIRMED_CLEAN_POSITION_COUNT_SURGED_41_STABLE",
+      "note": "Firebase quota reset confirmed live: journalctl shows [QUOTA_RESET] Firebase quota reset to 50,000 reads, 20,000 writes (passed 07:00 UTC) at 07:00:07 UTC, immediately followed by [QUOTA_RESET] cleared quota_429 degradation. Dashboard firebase_quota field (this session's earlier fix) correctly reflects it within ~1 min: quota_exhausted=False, reads=1/50000, fresh snapshot -- confirms that fix is working correctly in a real reset event, good validation. Open-position count surged from the low-teens up to 41 within ~20s of the reset (16 at 07:00:03 per PAPER_TIMEOUT_SCAN -> 41 at 07:00:22 per V5_BRIDGE_DASHBOARD_METRICS), then held steady at 41 across 2 more checks 30s apart -- looks like the SAFE_MODE-degraded admission backlog released and re-synced in one burst, not runaway growth. win_rate_pct still 20.0%, lifetime_expectancy=-0.0276, lifetime_pf=0.532 (3778 trades) -- too soon post-reset to show any effect. With ~41 concurrent open positions as the new normal (not the 0-4 my broken check suggested), a true Gate-5 zero-window is going to be much harder to catch than assumed -- will keep polling opportunistically with the FIXED position-count check but without spending many attempts per cycle.",
+      "commit": "3633bba (pending deploy, tracer gen3)",
+      "deploy_result": "BLOCKED_GATE5_REAL_41_POSITIONS",
+      "next_cycle_plan": "Continue standard 30-min cadence. Watch WR/PF/lifetime post-quota-reset trend now that Firebase ops have resumed. Keep 1 opportunistic deploy check per cycle with the corrected position-count script.",
+      "elapsed_mins": 10
     }
   ],
   "experiment": {
