@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 54,
+  "cycle": 55,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 54,
+  "total_cycles_completed": 55,
   "current_wr": 21.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-13T06:13:45Z",
+  "last_update": "2026-08-13T06:59:22Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -547,6 +547,16 @@
       "deploy_result": "BLOCKED_GATE5_x2",
       "next_cycle_plan": "Watch for quota reset (~47min out) and any change in trade rate/WR after. Keep trying opportunistic deploy 1-2x per cycle. Continue standard 30-min cadence.",
       "elapsed_mins": 5
+    },
+    {
+      "cycle": 55,
+      "timestamp": "2026-08-13T06:59:22Z",
+      "status": "MAJOR_CORRECTION_MY_OWN_POSITION_CHECK_SCRIPT_WAS_BROKEN_ALL_SESSION_PLUS_TRACER_GEN3_DEPLOYED_TO_c7c30028",
+      "note": "TWO significant events this cycle. (1) Deployed tracer generation 3 (commit c7c30028) which finally found the REAL root cause of zero tracer hits across 2 prior deploys: BaseCollectionReference/BaseDocumentReference/BaseQuery are abstract bases -- the CONCRETE sync classes firebase_admin actually instantiates (CollectionReference/DocumentReference/Query) each define their OWN get/stream/set/update/create/delete in their own __dict__, shadowing Base entirely per MRO. Patching Base was inert since generation 1. Now patches the concrete classes directly. 21 tests pass. Pushed as commit 3633bba, blocked at deploy by Gate 5 (13-15 positions). (2) MAJOR CORRECTION: while investigating why Gate 5 kept blocking despite my SSH check showing '0', I found MY OWN diagnostic one-liner was broken: `d.get('positions', [])` assumed the file was {'positions': [...]}, but paper_open_positions.json is actually a FLAT DICT keyed by trade_id ({trade_id: {...}, ...}) -- so my check silently returned 0 EVERY SINGLE TIME regardless of real state, all session. The 'runner-latency race' theory documented in cycles 51-54 was WRONG -- there was no race; my own polling script was the bug. Real position count checked properly (len(d) on the raw dict, matching the gate script's own logic exactly) is currently 14-15 and has NOT dropped to 0 across 8 checks over ~70s. This means the bot typically runs with ~14-15 concurrent open positions, not the 0-4 I believed -- a true zero-window may be rare or may simply not have occurred yet in this session. Correcting course: opportunistic polling continues but with the FIXED check, and expectations reset -- this may take considerably longer or may warrant reconsidering Gate 5's zero-position requirement in a future dedicated session (flagging, not actioning -- same caution as the silent-success bug in _workspace/19).",
+      "commit": "3633bba (pending deploy, tracer gen3)",
+      "deploy_result": "BLOCKED_GATE5_REAL_14_15_POSITIONS",
+      "next_cycle_plan": "Use the corrected position-count check going forward. Keep watching for a genuine zero window but reset expectations -- may be rare given typical 14-15 concurrent position count. Consider flagging Gate 5 design for future review if no zero window occurs over several more cycles.",
+      "elapsed_mins": 20
     }
   ],
   "experiment": {
