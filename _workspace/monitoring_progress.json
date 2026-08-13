@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 61,
+  "cycle": 62,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 61,
+  "total_cycles_completed": 62,
   "current_wr": 13.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-13T09:52:59Z",
+  "last_update": "2026-08-13T10:08:50Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -617,6 +617,16 @@
       "deploy_result": "BLOCKED_GATE5_STABLE_1_POSITION",
       "next_cycle_plan": "Position count has been low (1-3) this cycle vs 10-41 earlier -- keep trying opportunistically, may catch a real zero window soon.",
       "elapsed_mins": 5
+    },
+    {
+      "cycle": 62,
+      "timestamp": "2026-08-13T10:08:50Z",
+      "status": "QUOTA_EXHAUSTED_AGAIN_CONFIRMED_BY_USER_SCREENSHOT_TRACER_GEN2_STILL_LIVE_MISSED_IT_AGAIN",
+      "note": "User shared a Firebase Console screenshot showing 49,745/50,000 reads (99%) climbing steadily UTC-7 00:00-04:00 -- confirmed live on server: quota_exhausted=True, reads=50000/50000 exactly, writes=20000/20000 exactly, since ~09:54:57 UTC. Live commit is STILL c7c30028 (tracer gen2, known-ineffective due to the Base-vs-concrete-class MRO gap found and fixed this session as gen3, commit 89f9a20/07cc0f7) -- so this exhaustion event, like every one before it, produced zero useful trace data. Made a focused push to catch a deploy window: watched one specific position (paper_c47c90970f4d, ETHUSDT) count down to its expected 900s timeout close (~10:05:49 UTC) and polled through it -- it did close, but a new position (paper_c0fcdf625920) opened within roughly the same scan cycle, keeping the count at 1 continuously. Even quota-exhausted/degraded mode doesn't produce a true zero-position window because new admissions (bootstrap/starvation-discovery path) keep replacing closed ones near real-time. 4 deploy attempts this cycle, all blocked at 1 position. win_rate_pct=13.0% (stable), lifetime_pf=0.909 (still old rolling100-based calc, 3950 trades).",
+      "commit": "e841ab9 / 89f9a20 (pending deploy, lifetime fix + tracer gen3)",
+      "deploy_result": "BLOCKED_GATE5_x4_TRUE_ZERO_WINDOW_STRUCTURALLY_RARE",
+      "next_cycle_plan": "Position replacement happens near-instantly even during quota exhaustion, so a true zero-window may need many more attempts or luck. Continue opportunistic 1-2 tries per cycle without over-investing. Next quota reset 07:00 UTC tomorrow.",
+      "elapsed_mins": 20
     }
   ],
   "experiment": {
