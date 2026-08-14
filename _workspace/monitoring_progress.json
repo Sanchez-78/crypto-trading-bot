@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 72,
+  "cycle": 73,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 72,
+  "total_cycles_completed": 73,
   "current_wr": 11.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-14T07:03:34Z",
+  "last_update": "2026-08-14T07:14:45Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -727,6 +727,16 @@
       "deploy_result": "N/A (already live)",
       "next_cycle_plan": "Watch firebase_quota reads climb over the day. When it approaches 50000/quota_exhausted flips True, immediately check journalctl for [FIRESTORE_READ_TRACE_SUMMARY] to finally identify the real culprit call site.",
       "elapsed_mins": 5
+    },
+    {
+      "cycle": 73,
+      "timestamp": "2026-08-14T07:14:45Z",
+      "status": "MAJOR_WR_FIX_DEPLOYED_LEARNING_SYSTEM_VERIFIED_PARTIALLY_WORKING_GAP_CLOSED",
+      "note": "Operator directive: verify learning process + do everything to raise WR. Full forensic investigation: measured live rolling100 bucket breakdown -- PAPER_STARVATION_DISCOVERY (admits candidates the primary EV gate REJECTED, by design, to keep collecting learning data) is 89% of ALL trade volume with WR=11.2%, vs 33.3% on the EV-gated A_STRICT_TAKE path (only 6% of volume) -- i.e. volume MIX, not just signal quality, is a major driver of the stuck-low headline WR. Learning system verified PARTIALLY working: segment_weights ARE correctly computed (4/7 live segments at the 0.25 downweight floor from real evidence, 2 near the 2.0 ceiling) but have ZERO practical effect on the dominant 89%-share path, because _apply_adaptive_policy_to_paper_candidate () explicitly (and correctly, in isolation) refuses to size-adjust EV<=0 candidates -- and starvation-discovery candidates are EV<=0 by construction. Neither existing cooldown mechanism covers this gap either (bucket-level requires pf==0.0 exactly, never true with real wins present; segment-level is scoped only to C_WEAK_EV_TRAIN bucket). FIX (commit 38c4b36, DEPLOYED): maybe_open_training_sample() now refuses admission when segment_n>=20 AND segment_weight<=0.25 (floor) -- stops feeding MORE trades into segments already conclusively proven bad, preserves discovery for segments still being explored. 5 new tests, full test_paper_mode.py+test_app_metrics_contract.py (exact deploy-gate test set) clean. Full analysis in _workspace/24_starvation_discovery_dominates_wr.md. Deployed immediately (Gate 5 advisory-only since last cycle) even with 46 open positions -- confirmed service healthy post-restart.",
+      "commit": "38c4b36 (LIVE)",
+      "deploy_result": "SUCCESS",
+      "next_cycle_plan": "Watch for [PAPER_STARVATION_SKIP_CONFIRMED_BAD_SEGMENT] log lines once starvation-discovery warmup window (600s post-restart) passes. Monitor WR trend over the coming hours -- this is a volume-mix fix, expect a real but likely modest lift, not a jump to 55%. The bigger remaining lever (wiring cost-aware strategies or improving the primary EV gate) stays the larger open task if this alone is insufficient.",
+      "elapsed_mins": 40
     }
   ],
   "experiment": {
