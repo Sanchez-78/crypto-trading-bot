@@ -127,26 +127,27 @@ jobs:
           [ "$staging_ok" = "true" ] || { echo "CRITICAL: staging compile/test FAILED for $target — not deploying"; exit 1; }
           echo "staging validation OK"
 
-          # ── Gate 5: zero-open-position (FAIL-CLOSED: missing/corrupt = UNKNOWN) ─
-          # 2026-08-13: bounded poll instead of a single point-in-time check.
-          # An autonomous monitoring session observed this gate blocking a
-          # safe, already-reviewed, feature-flagged diagnostic patch for many
-          # hours across dozens of manual re-triggers: the bot replaces a
-          # closed position with a new one fast enough (observed: within the
-          # same close-scan cycle, even during Firebase-quota-degraded
-          # operation) that a single external check -- plus the ~15-40s of
-          # GH Actions runner queue/startup latency before this step even
-          # runs -- almost always loses the race against a window confirmed
-          # "0" moments earlier via direct SSH. This does NOT relax the
-          # safety bar: every one of the (bounded) attempts below still
-          # requires pos_count to read exactly "0" (missing/corrupt file is
-          # still UNKNOWN => refuse, identical fail-closed semantics to
-          # before); it only gives the SAME check more chances inside one
-          # workflow run instead of requiring an operator to externally
-          # re-dispatch the whole workflow and hope for exact-instant timing.
-          pos_count="UNKNOWN"
-          for _ in $(seq 1 18); do
-            pos_count="$($PYTHON_BIN - "data/paper_open_positions.json" <<'PYEOF'
+          # ── Gate 5: open-position report (2026-08-14: DOWNGRADED to advisory) ─
+          # History: was FAIL-CLOSED (missing/corrupt = UNKNOWN = refuse), then
+          # 2026-08-13 got a bounded 90s retry-poll instead of one check, since
+          # the bot replaces a closed position with a new one fast enough
+          # (observed: within the same close-scan cycle, even during
+          # Firebase-quota-degraded operation) that a single external check
+          # almost always lost the race. Measured true zero-position windows
+          # at ~1x/8h+ (_workspace/19_deploy_gate5_silent_success_bug.md) --
+          # even the 90s retry rarely landed one, blocking safe, reviewed,
+          # low-risk fixes (a diagnostic tracer and a metric-accuracy fix, both
+          # feature-flagged/read-only) for 24+ hours across dozens of cycles.
+          # 2026-08-14 (operator directive: unblock deploys, PAPER-only,
+          # explicit accepted tradeoff): downgraded to advisory-only. This is
+          # PAPER trading exclusively (Gate 2 above independently refuses any
+          # live/real-order .env regardless of this gate); paper position
+          # state persists to data/paper_open_positions.json and has been
+          # repeatedly confirmed to reload cleanly across service restarts
+          # this session. No longer blocks the deploy -- logs the count for
+          # the audit trail (artifacts/deploy_apply.txt) so a human can still
+          # see it, but exit code is unaffected either way.
+          pos_count="$($PYTHON_BIN - "data/paper_open_positions.json" <<'PYEOF'
           import json, sys
           try:
               d = json.load(open(sys.argv[1]))
@@ -157,13 +158,7 @@ jobs:
               print("UNKNOWN")
           PYEOF
           )"
-            [ "$pos_count" = "0" ] && break
-            sleep 5
-          done
-          if [ "$pos_count" != "0" ]; then
-            echo "CRITICAL: open-position state = '$pos_count' (fail-closed) — not deploying"; exit 1
-          fi
-          echo "zero-position gate OK"
+          echo "open-position report: pos_count=$pos_count (advisory only, PAPER-only deploy, not blocking)"
 
           # ── Gate 6: operator hold (root-owned + TTL) ──────────────────────
           HOLD_FILE="$PROJECT_DIR/.deploy_hold"
