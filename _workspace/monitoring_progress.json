@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 82,
+  "cycle": 83,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 82,
+  "total_cycles_completed": 83,
   "current_wr": 12.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-14T11:45:11Z",
+  "last_update": "2026-08-14T11:56:38Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -827,6 +827,16 @@
       "deploy_result": "SUCCESS",
       "next_cycle_plan": "URGENT: confirm trading actually resumed (closed_trades increasing again) -- this is now the top priority check for the next cycle. If still stalled, investigate further (may not have been solely the segment-skip issue).",
       "elapsed_mins": 20
+    },
+    {
+      "cycle": 83,
+      "timestamp": "2026-08-14T11:56:38Z",
+      "status": "ADMISSION_STALL_RESOLVED_TRADING_RESUMED_CONFIRMED",
+      "note": "CONFIRMED: trading resumed after the safety-valve fix (commit 1d7c70a). 18 new PAPER_ENTRY log lines / 18 open positions in the 12 minutes since restart (was 0/0 for the prior hour+). closed_trades still 4633 (unchanged -- these new positions haven't had time to close yet, expected). win_rate_pct=12.0%, lifetime stable. Quota healthy (reads=3/50000). The cycle-73/82 incident is resolved end-to-end: found (cycle 82), fixed, deployed, and now confirmed working within about 30 minutes total.",
+      "commit": "1d7c70a (LIVE, unchanged)",
+      "deploy_result": "N/A",
+      "next_cycle_plan": "Resume standard monitoring cadence (30min). Watch that closed_trades starts climbing again as these new positions mature, and keep an eye on whether the segment-skip safety valve needs to fire again (would show as brief idle_s excursions toward 900s, not a full stall).",
+      "elapsed_mins": 10
     }
   ],
   "experiment": {
