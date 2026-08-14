@@ -24,6 +24,19 @@ REDIS_URL: str      = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 AUDIT_CHANNEL: str  = "audits"
 MAX_AUDITS: int    = 50
 BATCH_INTERVAL: float = 3.0   # seconds between batch flushes
+# 2026-08-14 (_workspace/26_quota_burn_found_audit_worker_offset.md): the
+# cleanup query below (.offset(MAX_AUDITS)) was running on every single
+# batch flush -- as often as every BATCH_INTERVAL (3s) whenever the buffer
+# had anything. Firestore bills an offset() query for every document it
+# skips server-side, not just the ones returned, so each cleanup call was
+# reading on the order of MAX_AUDITS+20 documents regardless of whether
+# cleanup was actually needed. Confirmed live via the Firestore read tracer
+# (finally working after 3 tracer generations, see _workspace/22/23_...md):
+# this was the single largest READ call site during an active quota-burn
+# window. Throttling the cleanup to once per CLEANUP_INTERVAL_S is enough --
+# the audits collection is naturally near its 50-doc cap already (this
+# worker enforces it), so it doesn't need re-trimming on every 3s flush.
+CLEANUP_INTERVAL_S: float = 300.0  # only run the offset-based cleanup this often
 
 class AuditWorker:
     def __init__(self) -> None:
@@ -32,6 +45,7 @@ class AuditWorker:
         self._last_write_ts: dict[str, float] = {}
         self._buffer: list[dict] = []
         self._flush_task: Optional[asyncio.Task] = None
+        self._last_cleanup_ts: float = 0.0
 
     async def _get_redis(self) -> Optional[Any]:
         if self._redis is None:
@@ -158,19 +172,27 @@ class AuditWorker:
             batch.commit()
             
             log.debug("Audit batch committed: %d events", len(items))
-            
-            # Cleanup: delete oldest if > MAX_AUDITS
-            try:
-                snap = db.collection("audits").order_by(
-                    "timestamp", direction="DESCENDING"
-                ).offset(MAX_AUDITS).limit(20).get()
-                if snap:
-                    del_batch = db.batch()
-                    for doc in snap:
-                        del_batch.delete(doc.reference)
-                    del_batch.commit()
-            except Exception:
-                pass  # cleanup failure is non-critical
+
+            # Cleanup: delete oldest if > MAX_AUDITS.
+            # 2026-08-14 quota-burn fix: this offset() query is expensive
+            # (Firestore bills for every skipped document, not just the 20
+            # returned) and previously ran on every flush -- throttled to
+            # once per CLEANUP_INTERVAL_S since the collection is already
+            # kept near its cap and doesn't need re-trimming every 3s.
+            now = time.time()
+            if now - self._last_cleanup_ts >= CLEANUP_INTERVAL_S:
+                self._last_cleanup_ts = now
+                try:
+                    snap = db.collection("audits").order_by(
+                        "timestamp", direction="DESCENDING"
+                    ).offset(MAX_AUDITS).limit(20).get()
+                    if snap:
+                        del_batch = db.batch()
+                        for doc in snap:
+                            del_batch.delete(doc.reference)
+                        del_batch.commit()
+                except Exception:
+                    pass  # cleanup failure is non-critical
                 
         except Exception as exc:
             log.debug("_sync_batch_write error: %s", exc)
