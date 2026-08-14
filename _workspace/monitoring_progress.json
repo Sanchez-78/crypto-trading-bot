@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 68,
+  "cycle": 69,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 68,
-  "current_wr": 9.0,
+  "total_cycles_completed": 69,
+  "current_wr": 11.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-13T13:34:28Z",
+  "last_update": "2026-08-14T05:57:28Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -686,6 +686,16 @@
       "commit": "e841ab9 / af52114 (pending deploy: lifetime fix + tracer gen3 + gate5 retry)",
       "deploy_result": "BLOCKED_GATE5",
       "next_cycle_plan": "Continue standard 30-min cadence, 1 deploy attempt per cycle.",
+      "elapsed_mins": 5
+    },
+    {
+      "cycle": 69,
+      "timestamp": "2026-08-14T05:57:28Z",
+      "status": "LONG_GAP_SINCE_LAST_CHECK_SERVICE_STABLE_DEPLOY_STILL_BLOCKED",
+      "note": "Large gap since last check (~16h). Service remained active/stable throughout (systemctl is-active=active, no crash). closed_trades=4188 (+196 over the gap, ~12/hr degraded-mode rate). win_rate_pct=11.0%, lifetime_expectancy=-0.0289, lifetime_pf=0.274 (4188 trades, worse than recent readings -- still old rolling100-based calc, unreliable until the fix deploys). Quota still exhausted (snapshot_age_s=72136, ~20h since the mark, no reset boundary crossed yet -- next reset 07:00 UTC, ~1h out at this check). Deploy blocked again (91s retry, 1 position). All 3 pending fixes (lifetime metric, tracer gen3, gate5 retry -- the last one already live and working, first two still queued) remain undeployed at commit b08119b.",
+      "commit": "e841ab9 / b08119b (pending deploy: lifetime fix + tracer gen3)",
+      "deploy_result": "BLOCKED_GATE5",
+      "next_cycle_plan": "Quota reset imminent (~1h). Continue standard cadence, 1 deploy attempt per cycle. Service health confirmed stable across the gap.",
       "elapsed_mins": 5
     }
   ],
