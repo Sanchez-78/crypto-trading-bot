@@ -1995,6 +1995,67 @@ def maybe_open_training_sample(
                 "max_hold_s": 0,
             }
 
+        # 2026-08-14 evidence-based fix (_workspace/24_starvation_discovery_dominates_wr.md):
+        # this path (candidates the primary EV gate REJECTED) is 89% of ALL
+        # trade volume (measured live: rolling100 bucket breakdown), with
+        # recent-100 WR=11.2% here vs 33.3% on the EV-gated A_STRICT_TAKE
+        # path (6% of volume) -- i.e. the dominant driver of the low
+        # headline WR is simply volume, not signal quality alone.
+        # _apply_adaptive_policy_to_paper_candidate() (called further below,
+        # deliberately) refuses to size-adjust EV<=0 candidates at all --
+        # correct in isolation (never let a learned weight make a negative-EV
+        # trade look artificially better), but as a side effect the learner's
+        # segment_weights (proven working: 4/7 live segments already at the
+        # 0.25 downweight floor from real evidence) had ZERO influence on
+        # this path's admission volume. This adds a narrower, separate check:
+        # once a segment has been explored enough to reach a confident
+        # verdict (segment_n>=20, the same threshold _update_segment_policy
+        # itself uses) AND the learner has already pushed its weight all the
+        # way to the floor (repeated, sustained losing evidence, not a
+        # single bad reading), stop opening MORE discovery samples in that
+        # exact segment -- it no longer adds learning value, it just keeps
+        # dragging WR down on an already-proven-bad bet. Segments still
+        # being explored (n<20) or only partially downweighted are
+        # unaffected, so the discovery/learning function itself is preserved.
+        #
+        # Does not duplicate the existing cooldown machinery just above this
+        # function (_bootstrap_discovery_cooldown_from_learner /
+        # _bootstrap_segment_cooldowns_from_learner): the bucket-level one
+        # only trips at pf==0.0 EXACTLY (all losses, zero wins) which our
+        # live data never satisfies (10 wins / 89 discovery trades, still
+        # 11.2% WR) so it has never fired; the segment-level one is scoped
+        # to admission_bucket=="C_WEAK_EV_TRAIN" only, never
+        # "PAPER_STARVATION_DISCOVERY" (the actual dominant bucket) at all.
+        # This check instead reuses segment_weights, which are NOT
+        # bucket-scoped (computed from the segment's full rolling100
+        # history regardless of which admission path opened each trade),
+        # so it catches the gap those two miss.
+        try:
+            from src.services.paper_adaptive_learning import get_learner
+            _learner = get_learner()
+            _regime = signal.get("regime", "UNKNOWN") if signal else "UNKNOWN"
+            _seg_key = f"{symbol}:{_regime}:{side}"
+            _seg_n = sum(1 for e in _learner.rolling100 if e[2] == _seg_key)
+            _seg_weight = _learner.segment_weights.get(_seg_key, 1.0)
+            if _seg_n >= 20 and _seg_weight <= 0.25:
+                log.info(
+                    "[PAPER_STARVATION_SKIP_CONFIRMED_BAD_SEGMENT] symbol=%s "
+                    "segment=%s segment_n=%d segment_weight=%.2f -- already "
+                    "confirmed losing, skipping further discovery admission",
+                    symbol, _seg_key, _seg_n, _seg_weight,
+                )
+                return {
+                    "allowed": False,
+                    "bucket": "",
+                    "reason": "segment_confirmed_bad_skip_discovery",
+                    "size_mult": 0.0,
+                    "side": side,
+                    "side_inferred": side_inferred,
+                    "max_hold_s": 0,
+                }
+        except Exception as e:
+            log.warning("[PAPER_STARVATION_SKIP_CHECK_ERROR] symbol=%s err=%s", symbol, e)
+
         # AGGRESSIVE MODE: Skip all quality gates - allow all trades
         log.info(
             "[PAPER_AGGRESSIVE_MODE] symbol=%s side=%s bucket=%s reason=%s allowed=TRUE (ALL GATES DISABLED)",
