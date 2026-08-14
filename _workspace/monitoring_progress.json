@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 71,
+  "cycle": 72,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 71,
+  "total_cycles_completed": 72,
   "current_wr": 11.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-14T06:43:45Z",
+  "last_update": "2026-08-14T07:03:34Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -717,6 +717,16 @@
       "deploy_result": "SUCCESS",
       "next_cycle_plan": "Wait for the next quota exhaustion event to finally read the real [FIRESTORE_READ_TRACE_SUMMARY] culprit (tracer is live and proven working now). Continue monitoring WR/PF with the now-trustworthy lifetime metric. Refocus on actual WR-improving work given the deploy bottleneck is resolved.",
       "elapsed_mins": 15
+    },
+    {
+      "cycle": 72,
+      "timestamp": "2026-08-14T07:03:34Z",
+      "status": "QUOTA_RESET_CONFIRMED_TRACER_LIVE_AND_ARMED_LIFETIME_METRIC_NOW_STABLE_INCREMENTS",
+      "note": "User confirmed quota reset; verified live: quota_exhausted=False, reads=20/50000, writes=0/20000, fresh post-reset state. Tracer (gen3, all 6 classes) is live on commit 61db7bd and already proven working (caught a real hit earlier this cycle) -- now armed and waiting for the quota to climb back toward exhaustion to finally capture the real burst culprit. lifetime_n=4200 (+5), lifetime_expectancy=-0.0312 (barely moved from -0.0311 last check) -- confirms the true-cumulative fix is behaving exactly as designed: smooth small increments instead of the wild multi-flip oscillation seen in cycles 49-59. win_rate_pct=11.0% (stable).",
+      "commit": "61db7bd (LIVE)",
+      "deploy_result": "N/A (already live)",
+      "next_cycle_plan": "Watch firebase_quota reads climb over the day. When it approaches 50000/quota_exhausted flips True, immediately check journalctl for [FIRESTORE_READ_TRACE_SUMMARY] to finally identify the real culprit call site.",
+      "elapsed_mins": 5
     }
   ],
   "experiment": {
