@@ -1,5 +1,41 @@
 # Finding + fix: live TP was cost-floor-violating, and the learned-TP path had drifted to zero net edge
 
+## CORRECTION (post-deploy verification, same day)
+
+The "live TP=35bps violates at cost=18bps" finding below was measured via a
+standalone SSH diagnostic script that called `load_dotenv()` -- which reads
+`.env`, not the systemd-injected environment the real running process
+actually uses. `_workspace/project_systemd_dropin_override_precedence.md`
+(prior session) already documented that PAPER_* params are authoritative
+via `service.d/override.conf`, not `.env` -- I re-made exactly that mistake
+here before catching it. Verified directly on the live systemd process
+after deploying this fix: `PAPER_FEE_PCT=0.0004` / `PAPER_SLIPPAGE_PCT=0.0`
+**are** set in the systemd override (cost = 4bps, not 18bps); `PAPER_TP_
+ZONE_BPS`/`PAPER_SL_ZONE_BPS` are **not** set there, so they fall through
+to `.env`'s 35/25. At the real 4bps cost, 35bps TP / 25bps SL needs only
+~23.3bps to clear the floor -- **the currently-active production geometry
+was NOT actually violating.** No `[TP_SL_COST_FLOOR_VIOLATION]` logged at
+this deploy's startup, and no `[TP_COST_FLOOR_CLAMPED]` fired on live
+entries afterward -- both consistent with a compliant live geometry, not a
+bug in the fix.
+
+The fix itself is still correct and worth keeping: it reads the same
+`_ROUND_TRIP_COST_BPS`/`_MAX_BREAKEVEN_TP_SHARE` module globals the rest of
+the file already uses (so it automatically sees the real 4bps at runtime,
+not my flawed diagnostic's 18bps), and it still closes two real, live gaps:
+(1) the learned-TP path (`regime_tp_strategy`) had adapted to 18bps for
+SOLUSDT/BEAR_TREND, which **does** violate even at the correct 4bps cost
+(needs ~23.3bps) -- it just isn't the path currently winning in production,
+since the env override takes precedence; (2) the `trade_executor`-provided
+TP/SL path had zero cost-floor protection of its own. Both remain latent
+regressions-in-waiting (e.g. if `PAPER_TP_ZONE_BPS` is ever removed from
+`.env`, as has happened by design in a past cost-floor fix this session),
+now closed. Kept as a defense-in-depth fix, not the single root cause of
+the WR problem it first looked like.
+
+---
+
+
 **Date:** 2026-08-14
 **Trigger:** Operator directive "zapoj vse co pomuze k uspesnosti bota a jeho uceni"
 (wire in everything that helps the bot's success and its learning)
