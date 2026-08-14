@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 74,
+  "cycle": 75,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 74,
-  "current_wr": 11.0,
+  "total_cycles_completed": 75,
+  "current_wr": 22.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-14T07:38:29Z",
+  "last_update": "2026-08-14T08:09:39Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -747,6 +747,16 @@
       "deploy_result": "SUCCESS",
       "next_cycle_plan": "Continue standard monitoring. Watch WR trend from the segment-skip fix (cycle 73, the one still-standing well-evidenced WR lever this cycle). Watch for shadow evaluator candidates now that 7 symbols are covered. Watch for [TP_COST_FLOOR_CLAMPED] in case the learned-TP path or a future .env change ever makes it load-bearing.",
       "elapsed_mins": 60
+    },
+    {
+      "cycle": 75,
+      "timestamp": "2026-08-14T08:09:39Z",
+      "status": "FIRST_POST_FIX_READING_WR_22PCT_ENCOURAGING_BUT_ONE_DATAPOINT_NOT_YET_TRUSTED",
+      "note": "First metrics check since cycles 73-74's 3 fixes deployed. win_rate_pct=22.0% -- notably above the 9-15% range typical most of this session, but only 1 data point so far; given this session's own history of transient WR/lifetime spikes that reverted (cycle 50), NOT concluding this is the fix's effect yet -- needs a few more consistent readings. lifetime_expectancy=-0.0306, lifetime_pf=0.254 (4445 trades, TRUE cumulative now post cycle-71's fix -- stable/consistent with last reading, no wild swing, which itself is a good sign the metric fix is holding). closed_trades +257 (fast healthy rate, quota reset and healthy). PAPER_STARVATION_SKIP_CONFIRMED_BAD_SEGMENT: 0 hits in last 30min -- hasn't fired yet post-restart (segment state persists across restart, so this isn't necessarily a bug, may just not have hit the right idle/segment combo yet). Shadow evaluator (now 7 symbols): still 0 candidates -- widening symbol coverage alone hasn't produced a hit yet either, will keep watching.",
+      "commit": "789c0da (LIVE, unchanged)",
+      "deploy_result": "N/A",
+      "next_cycle_plan": "Keep watching WR trend for 2-3 more cycles before drawing any conclusion about the segment-skip fix effect. Watch for first [PAPER_STARVATION_SKIP_CONFIRMED_BAD_SEGMENT] and shadow candidate hits.",
+      "elapsed_mins": 5
     }
   ],
   "experiment": {
