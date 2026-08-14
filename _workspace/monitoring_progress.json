@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 70,
+  "cycle": 71,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 70,
+  "total_cycles_completed": 71,
   "current_wr": 11.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-14T06:30:16Z",
+  "last_update": "2026-08-14T06:43:45Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -707,6 +707,16 @@
       "deploy_result": "BLOCKED_GATE5",
       "next_cycle_plan": "Verify quota reset took effect. Continue standard cadence, 1 deploy attempt per cycle.",
       "elapsed_mins": 5
+    },
+    {
+      "cycle": 71,
+      "timestamp": "2026-08-14T06:43:45Z",
+      "status": "DEPLOY_FINALLY_SUCCEEDED_OPERATOR_UNBLOCKED_GATE5_MAJOR_MILESTONE",
+      "note": "OPERATOR DIRECTIVE: unblock deploy, WR too low to keep waiting. Downgraded Gate 5 from FAIL-CLOSED to advisory-only (commit 61db7bd) -- explicit accepted tradeoff, scoped to PAPER-only (Gate 2 independently and unconditionally still refuses any live/real-order .env). Deployed immediately: [DEPLOY_OK] live now 61db7bd, [DASHBOARD_RESTART_OK]. Verified the open position (paper_8ce6cd4201a4) survived the restart cleanly -- validates the safety assumption Gate 5 was protecting. THREE queued fixes are now finally live: (1) tracer gen3 -- confirmed working: '[FIRESTORE_READ_TRACE] installed on [...6 classes...]' + first EVER real trace hit '[FIRESTORE_READ_TRACE_SUMMARY] top call sites: [(READ:firebase_client.py:927, 1)]' (load_history's already-tracked .stream() call, just 1 hit at startup -- not the burst source itself, need to observe the NEXT quota exhaustion event to see the real culprit). (2) lifetime metric true-cumulative fix -- confirmed working: '[LIFETIME_METRICS_MIGRATION] pre-fix state loaded ... seeded ... gross_wins=41.334 gross_losses=171.895 net_pnl=-130.561; exact from here on' -- dashboard now shows lifetime_expectancy=-0.0311/lifetime_pf=0.240 matching the migration log exactly, and every trade from now on is a TRUE cumulative increment, not a rolling100 approximation. (3) Gate5 retry/advisory change itself, obviously live. win_rate_pct still 11.0% (unchanged, expected -- these were infra/accuracy fixes, not trading-logic changes; the actual WR-improving strategy work remains the larger open task). Quota still exhausted, reset imminent (~17 min).",
+      "commit": "61db7bd (LIVE)",
+      "deploy_result": "SUCCESS",
+      "next_cycle_plan": "Wait for the next quota exhaustion event to finally read the real [FIRESTORE_READ_TRACE_SUMMARY] culprit (tracer is live and proven working now). Continue monitoring WR/PF with the now-trustworthy lifetime metric. Refocus on actual WR-improving work given the deploy bottleneck is resolved.",
+      "elapsed_mins": 15
     }
   ],
   "experiment": {
