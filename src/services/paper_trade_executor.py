@@ -282,6 +282,38 @@ def validate_tp_sl_cost_floor(
     return True, ""
 
 
+def _min_valid_tp_bps(
+    sl_bps: float,
+    cost_bps: float,
+    max_breakeven_share: float = None,
+) -> float:
+    """Smallest tp_bps for which validate_tp_sl_cost_floor(tp_bps, sl_bps,
+    cost_bps, max_breakeven_share) would return True, given a fixed sl_bps.
+
+    Inverts the two conditions validate_tp_sl_cost_floor checks (2x-cost
+    margin and break-even TP-hit-share ceiling) and returns the larger of
+    the two -- whichever is binding. 2026-08-14 (_workspace/25_learned_tp_
+    below_cost_floor.md): the break-even-share condition is USUALLY the
+    binding one in practice (e.g. sl=25bps, cost=18bps, max_share=60% =>
+    ~46.7bps required, well above the 36bps the 2x-cost condition alone
+    would suggest), so a caller using only "2 * cost_bps" as a floor (a
+    plausible-looking but incomplete shortcut) would still ship a
+    structurally-losing geometry.
+    """
+    if max_breakeven_share is None:
+        max_breakeven_share = _MAX_BREAKEVEN_TP_SHARE
+    floor_from_2x_cost = 2 * cost_bps
+    sl_net = sl_bps + cost_bps
+    # breakeven_share = sl_net / (tp_net + sl_net) <= max_breakeven_share
+    # => tp_net >= sl_net * (1 - max_breakeven_share) / max_breakeven_share
+    if max_breakeven_share > 0:
+        tp_net_min = sl_net * (1.0 - max_breakeven_share) / max_breakeven_share
+        floor_from_breakeven_share = tp_net_min + cost_bps
+    else:
+        floor_from_breakeven_share = floor_from_2x_cost
+    return max(floor_from_2x_cost, floor_from_breakeven_share)
+
+
 # Fail loud (but do not crash a running bot) when the EFFECTIVE configured
 # geometry is structurally losing. The 2026-07-31 regression reached production
 # through an untracked systemd drop-in that no test or review ever saw; this
@@ -1768,6 +1800,34 @@ def open_paper_position(
         else:
             tp_zone_bps = tp_zone_bps_static
     sl_zone_bps = int(os.getenv("PAPER_SL_ZONE_BPS", str(_DEFAULT_SL_ZONE_BPS)))  # P0-FIX: shared default
+
+    # 2026-08-14 (_workspace/25_learned_tp_below_cost_floor.md): enforce the
+    # cost-floor invariant on the ACTUAL per-trade tp_zone_bps, regardless of
+    # which of the three paths above set it (env override, learned TP, or
+    # dynamic ATR calculation). validate_tp_sl_cost_floor() previously only
+    # ran once at module import against the static defaults (a log.critical
+    # that's easy to miss, per its own comment) -- it never validated the
+    # value actually used to open a position. Confirmed live: the learned-TP
+    # path (regime_tp_strategy, which adapts purely on win-rate with no cost
+    # awareness) had settled at 18bps for SOLUSDT/BEAR_TREND against an
+    # 18bps round-trip cost -- a TP hit at that geometry nets ~0bps, not a
+    # real edge -- and even the current env-configured static default
+    # (35bps) was itself violating (needs ~46.7bps given sl=25/cost=18/
+    # max_breakeven=60%, confirmed via the same log.critical at every
+    # process start). Clamping up (never down) preserves any wider TP a
+    # path already chose; only lifts geometries that would otherwise ship
+    # structurally-losing.
+    _tp_floor_bps = _min_valid_tp_bps(sl_zone_bps, _ROUND_TRIP_COST_BPS, _MAX_BREAKEVEN_TP_SHARE)
+    if tp_zone_bps < _tp_floor_bps:
+        log.warning(
+            "[TP_COST_FLOOR_CLAMPED] symbol=%s tp_zone_bps=%d -> %d "
+            "(sl_zone_bps=%d cost_bps=%.1f max_breakeven_share=%.2f) -- "
+            "requested TP would not clear cost with the required margin",
+            symbol, tp_zone_bps, int(round(_tp_floor_bps)),
+            sl_zone_bps, _ROUND_TRIP_COST_BPS, _MAX_BREAKEVEN_TP_SHARE,
+        )
+        tp_zone_bps = int(round(_tp_floor_bps))
+
     tp_pct_env = 1.0 + tp_zone_bps / 10000 if side == "BUY" else 1.0 - tp_zone_bps / 10000
     sl_pct_env = 1.0 - sl_zone_bps / 10000 if side == "BUY" else 1.0 + sl_zone_bps / 10000
     tp_price_env = price * tp_pct_env
@@ -1785,6 +1845,28 @@ def open_paper_position(
         sl_price = extra["sl_from_executor"]
         tp_sl = normalize_paper_tp_sl(side, price, tp_price, sl_price)
         if tp_sl:
+            # 2026-08-14 (_workspace/25_learned_tp_below_cost_floor.md): same
+            # cost-floor clamp as the local-computation path below -- this
+            # path is currently superseded in production by the env-override
+            # block just after it (PAPER_TP_ZONE_BPS is set live), but if
+            # that env var is ever removed, trade_executor's TP/SL would
+            # become load-bearing with zero cost-floor protection of its
+            # own (normalize_paper_tp_sl only repairs side-inverted levels,
+            # never validates against cost). Clamp here too so the eventual
+            # cost-floor bug can't silently reappear.
+            _executor_tp_bps = tp_sl["tp_pct"] * 100.0
+            _executor_sl_bps = tp_sl["sl_pct"] * 100.0
+            _executor_tp_floor_bps = _min_valid_tp_bps(_executor_sl_bps, _ROUND_TRIP_COST_BPS, _MAX_BREAKEVEN_TP_SHARE)
+            if _executor_tp_bps < _executor_tp_floor_bps:
+                log.warning(
+                    "[TP_COST_FLOOR_CLAMPED] symbol=%s source=tp_from_executor "
+                    "tp_bps=%.1f -> %.1f (sl_bps=%.1f cost_bps=%.1f max_breakeven_share=%.2f)",
+                    symbol, _executor_tp_bps, _executor_tp_floor_bps,
+                    _executor_sl_bps, _ROUND_TRIP_COST_BPS, _MAX_BREAKEVEN_TP_SHARE,
+                )
+                _clamped_tp_pct = 1.0 + _executor_tp_floor_bps / 10000 if side == "BUY" else 1.0 - _executor_tp_floor_bps / 10000
+                tp_price = price * _clamped_tp_pct
+                tp_sl = normalize_paper_tp_sl(side, price, tp_price, sl_price) or tp_sl
             log.info(f"[PAPER_TP_SL_FROM_EXECUTOR] symbol={symbol} side={side} tp={tp_price:.8f} sl={sl_price:.8f}")
         else:
             log.warning(f"[PAPER_TP_SL_VALIDATION_FAILED] symbol={symbol} side={side} tp={tp_price:.8f} sl={sl_price:.8f} - fallback to local")
