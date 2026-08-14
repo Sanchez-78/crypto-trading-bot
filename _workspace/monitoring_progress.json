@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 76,
+  "cycle": 77,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 76,
+  "total_cycles_completed": 77,
   "current_wr": 17.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-14T08:40:46Z",
+  "last_update": "2026-08-14T09:03:12Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -767,6 +767,16 @@
       "deploy_result": "N/A",
       "next_cycle_plan": "Segment-skip mechanism confirmed active. Effect on headline WR not yet dramatically visible (expected -- takes time for reduced bad-segment volume to shift a noisy 100-trade rolling WR). Continue watching over more cycles for a gradual trend.",
       "elapsed_mins": 5
+    },
+    {
+      "cycle": 77,
+      "timestamp": "2026-08-14T09:03:12Z",
+      "status": "MULTI_DAY_QUOTA_BURN_MYSTERY_FINALLY_SOLVED_AND_FIXED_DEPLOYED",
+      "note": "User shared a live Firebase Console screenshot (36648/50000 reads, 73%, climbing) -- checked the now-finally-working read tracer's [FIRESTORE_READ_TRACE_SUMMARY] for the first time this multi-day investigation produced real attribution data. Top READ site: audit_worker.py:166, 436 hits and climbing fast. ROOT CAUSE: _sync_batch_write()'s 'keep last 50 audits' cleanup query (.offset(50).limit(20).get()) ran on EVERY batch flush (as often as every 3s). Firestore bills offset() for every document skipped server-side, not just the ones returned -- each call was reading ~50-70+ documents regardless of whether cleanup was needed. This plausibly explains the ENTIRE multi-day quota-exhaustion mystery (_workspace/13, 22 -- every exhaustion timing this session observed, 1-20h depending on activity level, is consistent with this burn rate). FIX (commit 53f9c25, DEPLOYED): throttled the cleanup to run at most once per 300s via a per-worker _last_cleanup_ts, independent of flush frequency -- regular audit writes untouched, still commit every flush. Checked the top WRITE site too (firebase_client_wrapper.py:62) -- confirmed it's a shared generic chokepoint for all legitimate V5-bridge writes, not a bug (writes were only 13% of quota vs reads' 73% anyway). 5 new tests, full deploy-gate test set clean. Full writeup in _workspace/26_quota_burn_found_audit_worker_offset.md.",
+      "commit": "53f9c25 (LIVE)",
+      "deploy_result": "SUCCESS",
+      "next_cycle_plan": "Watch the Firebase Console reads-over-time graph over the coming hours/days -- expect a dramatically flatter growth curve instead of the steep climb-to-exhaustion pattern seen in every screenshot this session. This should end the recurring quota-exhaustion degraded-mode cycles that slowed trade rate throughout this session.",
+      "elapsed_mins": 30
     }
   ],
   "experiment": {
