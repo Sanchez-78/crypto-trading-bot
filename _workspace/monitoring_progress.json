@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 69,
+  "cycle": 70,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 69,
+  "total_cycles_completed": 70,
   "current_wr": 11.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-14T05:57:28Z",
+  "last_update": "2026-08-14T06:30:16Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -696,6 +696,16 @@
       "commit": "e841ab9 / b08119b (pending deploy: lifetime fix + tracer gen3)",
       "deploy_result": "BLOCKED_GATE5",
       "next_cycle_plan": "Quota reset imminent (~1h). Continue standard cadence, 1 deploy attempt per cycle. Service health confirmed stable across the gap.",
+      "elapsed_mins": 5
+    },
+    {
+      "cycle": 70,
+      "timestamp": "2026-08-14T06:30:16Z",
+      "status": "DEPLOY_BLOCKED_AGAIN_QUOTA_RESET_SHOULD_HAVE_JUST_PASSED",
+      "note": "Deploy blocked again (91s retry, 1 position). closed_trades=4193 (+5 in 30 min, very slow). win_rate_pct=11.0% (stable). lifetime_expectancy=-0.0303, lifetime_pf=0.249 (4193 trades, still old calc, worst reading yet under the old buggy computation). Quota snapshot still shows exhausted with snapshot_age_s=74107 (~20.6h) -- the 07:00 UTC reset boundary should have just passed (~ current time), snapshot may not have refreshed yet or reset didn't register -- worth checking next cycle whether quota_exhausted flips to False.",
+      "commit": "e841ab9 / 756373d (pending deploy: lifetime fix + tracer gen3)",
+      "deploy_result": "BLOCKED_GATE5",
+      "next_cycle_plan": "Verify quota reset took effect. Continue standard cadence, 1 deploy attempt per cycle.",
       "elapsed_mins": 5
     }
   ],
