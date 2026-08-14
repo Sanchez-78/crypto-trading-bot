@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 83,
+  "cycle": 84,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 83,
-  "current_wr": 12.0,
+  "total_cycles_completed": 84,
+  "current_wr": 18.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-14T11:56:38Z",
+  "last_update": "2026-08-14T12:27:25Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -837,6 +837,16 @@
       "deploy_result": "N/A",
       "next_cycle_plan": "Resume standard monitoring cadence (30min). Watch that closed_trades starts climbing again as these new positions mature, and keep an eye on whether the segment-skip safety valve needs to fire again (would show as brief idle_s excursions toward 900s, not a full stall).",
       "elapsed_mins": 10
+    },
+    {
+      "cycle": 84,
+      "timestamp": "2026-08-14T12:27:25Z",
+      "status": "FULLY_RECOVERED_STEADY_STATE_TRADE_RATE_BACK_TO_NORMAL",
+      "note": "Full recovery confirmed: closed_trades=4771 (+138 in 30min, back to a healthy normal rate). 14 open positions (normal churn). win_rate_pct=18.0% (normal range). lifetime_expectancy=-0.0322, lifetime_pf=0.274 (4771 trades) -- stable. Quota healthy (reads=9/50000, ~5.5h post the audit_worker fix with no exhaustion). Service healthy. Both major incidents this session (quota burn, admission stall) fully resolved and confirmed stable.",
+      "commit": "1d7c70a (LIVE, unchanged)",
+      "deploy_result": "N/A",
+      "next_cycle_plan": "Continue standard 30-min monitoring cadence.",
+      "elapsed_mins": 5
     }
   ],
   "experiment": {
