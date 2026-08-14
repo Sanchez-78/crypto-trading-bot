@@ -159,3 +159,56 @@ def test_learner_lookup_error_fails_open_not_closed(mock_gate, mock_idle, mock_t
         )
     assert result.get("allowed") is True
     assert result.get("reason") != "segment_confirmed_bad_skip_discovery"
+
+
+# ---------------------------------------------------------------------------
+# 2026-08-14 SAFETY VALVE regression tests
+# (_workspace/27_starvation_skip_caused_total_admission_stall.md): the skip
+# above, deployed alone, drove the bot to zero opened positions for a full
+# hour once most of the (small, ~8-segment) universe crossed the
+# confirmed-bad threshold simultaneously. Bypass the skip once
+# starvation-discovery idle time reaches the same 900s "critical idle"
+# threshold bot2/main.py's pre-existing watchdog already escalates on.
+# ---------------------------------------------------------------------------
+
+@patch("src.services.paper_training_sampler._is_cold_start_starvation", return_value=False)
+@patch("src.services.paper_training_sampler._is_training_enabled", return_value=True)
+@patch("src.services.paper_training_sampler._is_starvation_discovery_idle", return_value=True)
+@patch("src.services.paper_training_sampler._training_quality_gate", return_value={"allowed": True, "reason": "ok"})
+def test_safety_valve_bypasses_skip_at_critical_idle(mock_gate, mock_idle, mock_training, mock_cold, clean_sampler_state):
+    """A confirmed-bad segment (would normally be skipped) is admitted
+    anyway once idle_s crosses the 900s critical-idle threshold -- total
+    admission stall is a worse outcome than the WR drag the skip fixes."""
+    # maybe_open_training_sample() resets idle_s to 0 on its own if
+    # last_eligible_entry_ts reads as the "never set" sentinel (0.0) -- set
+    # both fields consistently so that fresh-startup reset doesn't fire.
+    pts._starvation_discovery_state["last_eligible_entry_ts"] = time.time() - 950.0
+    pts._starvation_discovery_state["idle_s"] = 950.0  # past the 900s threshold
+    entries = [(-0.5, "LOSS", _SEG_KEY, time.time())] * 25
+    learner = _fake_learner(entries, {_SEG_KEY: 0.25})
+    with patch("src.services.paper_adaptive_learning.get_learner", return_value=learner):
+        result = maybe_open_training_sample(
+            signal=dict(_BASE_SIGNAL), ctx={}, reason="REJECT_NEGATIVE_EV",
+            current_price=45000.0,
+        )
+    assert result.get("allowed") is True
+    assert result.get("reason") != "segment_confirmed_bad_skip_discovery"
+
+
+@patch("src.services.paper_training_sampler._is_cold_start_starvation", return_value=False)
+@patch("src.services.paper_training_sampler._is_training_enabled", return_value=True)
+@patch("src.services.paper_training_sampler._is_starvation_discovery_idle", return_value=True)
+@patch("src.services.paper_training_sampler._training_quality_gate", return_value={"allowed": True, "reason": "ok"})
+def test_safety_valve_does_not_bypass_below_the_idle_threshold(mock_gate, mock_idle, mock_training, mock_cold, clean_sampler_state):
+    """Just below the 900s threshold, the skip still applies normally --
+    the safety valve is a last resort, not a general loophole."""
+    pts._starvation_discovery_state["idle_s"] = 899.0
+    entries = [(-0.5, "LOSS", _SEG_KEY, time.time())] * 25
+    learner = _fake_learner(entries, {_SEG_KEY: 0.25})
+    with patch("src.services.paper_adaptive_learning.get_learner", return_value=learner):
+        result = maybe_open_training_sample(
+            signal=dict(_BASE_SIGNAL), ctx={}, reason="REJECT_NEGATIVE_EV",
+            current_price=45000.0,
+        )
+    assert result.get("allowed") is False
+    assert result.get("reason") == "segment_confirmed_bad_skip_discovery"

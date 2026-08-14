@@ -2030,31 +2030,53 @@ def maybe_open_training_sample(
         # bucket-scoped (computed from the segment's full rolling100
         # history regardless of which admission path opened each trade),
         # so it catches the gap those two miss.
-        try:
-            from src.services.paper_adaptive_learning import get_learner
-            _learner = get_learner()
-            _regime = signal.get("regime", "UNKNOWN") if signal else "UNKNOWN"
-            _seg_key = f"{symbol}:{_regime}:{side}"
-            _seg_n = sum(1 for e in _learner.rolling100 if e[2] == _seg_key)
-            _seg_weight = _learner.segment_weights.get(_seg_key, 1.0)
-            if _seg_n >= 20 and _seg_weight <= 0.25:
-                log.info(
-                    "[PAPER_STARVATION_SKIP_CONFIRMED_BAD_SEGMENT] symbol=%s "
-                    "segment=%s segment_n=%d segment_weight=%.2f -- already "
-                    "confirmed losing, skipping further discovery admission",
-                    symbol, _seg_key, _seg_n, _seg_weight,
-                )
-                return {
-                    "allowed": False,
-                    "bucket": "",
-                    "reason": "segment_confirmed_bad_skip_discovery",
-                    "size_mult": 0.0,
-                    "side": side,
-                    "side_inferred": side_inferred,
-                    "max_hold_s": 0,
-                }
-        except Exception as e:
-            log.warning("[PAPER_STARVATION_SKIP_CHECK_ERROR] symbol=%s err=%s", symbol, e)
+        # 2026-08-14 SAFETY VALVE (_workspace/27_starvation_skip_caused_total_
+        # admission_stall.md): deployed the skip above, then observed the bot
+        # go to ZERO opened positions for a full hour (entries_1h=1435,
+        # closed_1h=0) with idle_s climbing past 9000s and the PRE-EXISTING
+        # watchdog (bot2/main.py) escalating "[WATCHDOG] Critical idle (15min)
+        # -> enabling micro-trades" repeatedly without effect. Root cause:
+        # only 8 segments are actively tracked (3-7 symbols x a handful of
+        # regimes), and when the market sits in one or two correlated
+        # regimes for a while (common in crypto -- alts move together), MOST
+        # or ALL of them can cross the confirmed-bad threshold at once, since
+        # the skip below has no awareness of total admission volume -- it
+        # only ever looks at one segment in isolation. The skip's WHOLE
+        # PURPOSE was to stop wasting trades on conclusively-bad segments
+        # without gutting the discovery mechanism -- a total stall is a
+        # worse outcome than the WR drag it was fixing (zero trades means
+        # zero data AND zero P&L, not just a worse WR). Bypass the skip
+        # entirely once starvation-discovery idle time crosses the same 900s
+        # "critical idle" threshold the existing watchdog already uses --
+        # i.e. explicitly defer to that pre-existing escalation signal
+        # instead of fighting it.
+        _idle_s = _starvation_discovery_state.get("idle_s", 0.0)
+        if _idle_s < 900.0:
+            try:
+                from src.services.paper_adaptive_learning import get_learner
+                _learner = get_learner()
+                _regime = signal.get("regime", "UNKNOWN") if signal else "UNKNOWN"
+                _seg_key = f"{symbol}:{_regime}:{side}"
+                _seg_n = sum(1 for e in _learner.rolling100 if e[2] == _seg_key)
+                _seg_weight = _learner.segment_weights.get(_seg_key, 1.0)
+                if _seg_n >= 20 and _seg_weight <= 0.25:
+                    log.info(
+                        "[PAPER_STARVATION_SKIP_CONFIRMED_BAD_SEGMENT] symbol=%s "
+                        "segment=%s segment_n=%d segment_weight=%.2f -- already "
+                        "confirmed losing, skipping further discovery admission",
+                        symbol, _seg_key, _seg_n, _seg_weight,
+                    )
+                    return {
+                        "allowed": False,
+                        "bucket": "",
+                        "reason": "segment_confirmed_bad_skip_discovery",
+                        "size_mult": 0.0,
+                        "side": side,
+                        "side_inferred": side_inferred,
+                        "max_hold_s": 0,
+                    }
+            except Exception as e:
+                log.warning("[PAPER_STARVATION_SKIP_CHECK_ERROR] symbol=%s err=%s", symbol, e)
 
         # AGGRESSIVE MODE: Skip all quality gates - allow all trades
         log.info(
