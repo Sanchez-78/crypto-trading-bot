@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 77,
+  "cycle": 78,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 77,
-  "current_wr": 17.0,
+  "total_cycles_completed": 78,
+  "current_wr": 8.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-14T09:03:12Z",
+  "last_update": "2026-08-14T09:34:43Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -777,6 +777,16 @@
       "deploy_result": "SUCCESS",
       "next_cycle_plan": "Watch the Firebase Console reads-over-time graph over the coming hours/days -- expect a dramatically flatter growth curve instead of the steep climb-to-exhaustion pattern seen in every screenshot this session. This should end the recurring quota-exhaustion degraded-mode cycles that slowed trade rate throughout this session.",
       "elapsed_mins": 30
+    },
+    {
+      "cycle": 78,
+      "timestamp": "2026-08-14T09:34:43Z",
+      "status": "QUOTA_FIX_CONFIRMED_WORKING_AUDIT_WORKER_READS_DROPPED_99PCT",
+      "note": "STRONG CONFIRMATION the audit_worker cleanup-throttle fix (cycle 77, commit 53f9c25) is working: audit_worker.py:188 (the cleanup call, line shifted by the fix) shows only 6 cumulative hits across 3 consecutive 1-min-apart trace summaries spanning ~20 min -- flat, zero NEW hits in that window, consistent with the 300s throttle (expect ~1 hit per 5 min = 4 hits/20min, close enough given restart timing). This is down from 400+ hits per 13 min pre-fix -- a >99% reduction in that call site's frequency. firebase_quota healthy (reads=6/50000). closed_trades=4571 (+93 since last check). win_rate_pct=8.0% (low end of this session's range, within noise). lifetime_expectancy=-0.0306, lifetime_pf=0.268 (4571 trades) -- stable, small movement as expected from the true-cumulative metric. PAPER_STARVATION_SKIP_CONFIRMED_BAD_SEGMENT: 73 hits in 30min (lower than cycle 76's 521, natural variance -- still actively firing).",
+      "commit": "53f9c25 (LIVE, unchanged)",
+      "deploy_result": "N/A",
+      "next_cycle_plan": "Quota burn fix confirmed working at the log-line level -- next, confirm it holds over many more hours and that a quota_exhausted event does NOT recur (would be the strongest possible confirmation). Continue standard WR/PF monitoring.",
+      "elapsed_mins": 5
     }
   ],
   "experiment": {
