@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 81,
+  "cycle": 82,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 81,
+  "total_cycles_completed": 82,
   "current_wr": 12.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-14T11:07:22Z",
+  "last_update": "2026-08-14T11:45:11Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -817,6 +817,16 @@
       "deploy_result": "N/A",
       "next_cycle_plan": "Watch the trade-rate slowdown trend -- if it continues dropping, investigate whether it is purely the segment-skip fix (expected, benign) or something else. Continue quota-health tracking.",
       "elapsed_mins": 5
+    },
+    {
+      "cycle": 82,
+      "timestamp": "2026-08-14T11:45:11Z",
+      "status": "CAUGHT_AND_FIXED_TOTAL_ADMISSION_STALL_CAUSED_BY_CYCLE73_FIX_SAFETY_VALVE_DEPLOYED",
+      "note": "CRITICAL: this cycle's trade-rate check found closed_trades had gone to +0/30min with 0 open positions and entries_1h=1435/closed_1h=0 -- a TOTAL admission stall. Root cause: the cycle-73 segment-skip fix (_workspace/24_...md) has no awareness of aggregate admission volume -- only 8 symbol:regime:side segments are tracked at all, and confirmed live that 5 of 8 were at the 0.25 downweight floor. When the market sat in correlated regimes for a while, candidates concentrated exactly in the already-blocked segments -- admission ground to zero even though the skip behaved correctly per-segment. The pre-existing watchdog (bot2/main.py) had been escalating '[WATCHDOG] Critical idle (15min) -> enabling micro-trades' for ~2h without effect since my skip didn't respect that signal. FIX (commit 1d7c70a, DEPLOYED): safety valve -- bypass the segment skip entirely once starvation-discovery idle_s reaches 900s (the SAME threshold the existing watchdog already uses), deferring to that pre-existing escalation instead of fighting it. Below 900s, unchanged from cycle 73. 2 new tests (7/7 total in the file pass) -- writing them caught a real subtlety (the function resets idle_s to 0 on a 'never set' sentinel). Full writeup: _workspace/27_starvation_skip_caused_total_admission_stall.md. Restart itself reset the idle counter fresh (0s), so admission should resume immediately assuming genuine candidates appear -- not yet confirmed (0 entries in first 2 min post-restart, too soon to tell, needs re-check next cycle).",
+      "commit": "1d7c70a (LIVE)",
+      "deploy_result": "SUCCESS",
+      "next_cycle_plan": "URGENT: confirm trading actually resumed (closed_trades increasing again) -- this is now the top priority check for the next cycle. If still stalled, investigate further (may not have been solely the segment-skip issue).",
+      "elapsed_mins": 20
     }
   ],
   "experiment": {
