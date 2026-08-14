@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 73,
+  "cycle": 74,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 73,
+  "total_cycles_completed": 74,
   "current_wr": 11.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-14T07:14:45Z",
+  "last_update": "2026-08-14T07:38:29Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -737,6 +737,16 @@
       "deploy_result": "SUCCESS",
       "next_cycle_plan": "Watch for [PAPER_STARVATION_SKIP_CONFIRMED_BAD_SEGMENT] log lines once starvation-discovery warmup window (600s post-restart) passes. Monitor WR trend over the coming hours -- this is a volume-mix fix, expect a real but likely modest lift, not a jump to 55%. The bigger remaining lever (wiring cost-aware strategies or improving the primary EV gate) stays the larger open task if this alone is insufficient.",
       "elapsed_mins": 40
+    },
+    {
+      "cycle": 74,
+      "timestamp": "2026-08-14T07:38:29Z",
+      "status": "THREE_FIXES_DEPLOYED_INCLUDING_SELF_CAUGHT_DIAGNOSTIC_ERROR_CORRECTION",
+      "note": "Operator directive: wire in everything that helps the bot's success and learning. Landed 2 more fixes on top of cycle 73's segment-skip fix, deployed via the now-advisory Gate 5: (1) commit efd837b: widened P0.8+ shadow evaluator from 3 to all 7 live-trading symbols after finding 0 candidates across 24h+ of ticks -- verified live this is NOT a pipeline bug (candle fetch/regime classify/strategy modules all execute correctly), just narrow symbol coverage; shadow-only, zero risk. (2) commit 789c0da: added a cost-floor ENFORCEMENT clamp in open_paper_position() (validate_tp_sl_cost_floor previously only ran once at import against static defaults, never against the actual per-trade value). IMPORTANT SELF-CORRECTION: my first diagnostic (via a standalone SSH script using load_dotenv()) wrongly concluded live TP=35bps was violating at cost=18bps -- re-verified directly against the real systemd-injected environment after deploying and found PAPER_FEE_PCT=0.0004/SLIPPAGE=0.0 (cost=4bps, not 18bps) IS set via systemd (authoritative), while PAPER_TP/SL_ZONE_BPS are NOT set there and fall through to .env's 35/25 -- at the REAL 4bps cost, 35/25 was already compliant (needs ~23.3bps). Confirmed via live logs: no [TP_SL_COST_FLOOR_VIOLATION] at this deploy's startup, no [TP_COST_FLOOR_CLAMPED] fired on live entries. The fix is still correct/valuable as defense-in-depth though: the learned-TP path (regime_tp_strategy) HAD adapted to 18bps for SOLUSDT/BEAR_TREND, which DOES violate even at the correct 4bps cost (needs ~23.3bps) -- it just isn't the path currently winning in production (env override wins). Corrected _workspace/25_...md same-day with the full re-verification. This is a good example of the evidence-based-patch-orchestrator discipline working as intended: caught my own error via live re-verification before reporting it as fact, not after. All 3 fixes deployed, service healthy, positions correctly capped at max_open=100.",
+      "commit": "789c0da (LIVE)",
+      "deploy_result": "SUCCESS",
+      "next_cycle_plan": "Continue standard monitoring. Watch WR trend from the segment-skip fix (cycle 73, the one still-standing well-evidenced WR lever this cycle). Watch for shadow evaluator candidates now that 7 symbols are covered. Watch for [TP_COST_FLOOR_CLAMPED] in case the learned-TP path or a future .env change ever makes it load-bearing.",
+      "elapsed_mins": 60
     }
   ],
   "experiment": {
