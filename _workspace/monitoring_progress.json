@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 75,
+  "cycle": 76,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 75,
-  "current_wr": 22.0,
+  "total_cycles_completed": 76,
+  "current_wr": 17.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-14T08:09:39Z",
+  "last_update": "2026-08-14T08:40:46Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -756,6 +756,16 @@
       "commit": "789c0da (LIVE, unchanged)",
       "deploy_result": "N/A",
       "next_cycle_plan": "Keep watching WR trend for 2-3 more cycles before drawing any conclusion about the segment-skip fix effect. Watch for first [PAPER_STARVATION_SKIP_CONFIRMED_BAD_SEGMENT] and shadow candidate hits.",
+      "elapsed_mins": 5
+    },
+    {
+      "cycle": 76,
+      "timestamp": "2026-08-14T08:40:46Z",
+      "status": "STARVATION_SKIP_CONFIRMED_ACTIVELY_FIRING_521_HITS_30MIN_WR_BACK_TO_NORMAL_RANGE",
+      "note": "STRONG CONFIRMATION the cycle-73 segment-skip fix is working as designed: [PAPER_STARVATION_SKIP_CONFIRMED_BAD_SEGMENT] fired 521 times in the last 30 min -- actively refusing admission into confirmed-bad segments. Trade rate correspondingly slower (+33 closed vs +257 last cycle) since a chunk of what used to auto-admit now gets refused -- exactly the intended mechanism. win_rate_pct=17.0% (back down from cycle 75's 22.0%, confirms that was noise not a durable shift -- within this session's normal 9-22% range). lifetime_expectancy=-0.0312, lifetime_pf=0.252 (4478 trades, +33) -- barely moved from last reading (-0.0306/0.254), exactly the small-increment behavior expected from a correctly-fixed true-cumulative metric, good ongoing confirmation the lifetime-metric fix continues working. Shadow evaluator (7 symbols): still 0 candidates. Quota healthy.",
+      "commit": "789c0da (LIVE, unchanged)",
+      "deploy_result": "N/A",
+      "next_cycle_plan": "Segment-skip mechanism confirmed active. Effect on headline WR not yet dramatically visible (expected -- takes time for reduced bad-segment volume to shift a noisy 100-trade rolling WR). Continue watching over more cycles for a gradual trend.",
       "elapsed_mins": 5
     }
   ],
