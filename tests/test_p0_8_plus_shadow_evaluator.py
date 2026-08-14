@@ -156,6 +156,19 @@ def test_run_shadow_tick_covers_default_symbols_when_none_given():
     assert symbols_seen <= set(shadow._DEFAULT_SYMBOLS)
 
 
+def test_default_symbols_match_live_trading_universe():
+    """2026-08-14: widened from a 3-symbol MVP subset to the full live
+    universe (config.SYMBOLS) after journalctl showed 0 shadow candidates
+    across every tick for 24h+ straight on the narrower set -- verified
+    live that the pipeline itself (candle fetch, regime classification,
+    all 3 strategy modules) executes correctly end to end, it just never
+    got a chance to see most of the traded symbols. This is a shadow-only
+    module (never opens a position), so watching more symbols only widens
+    observation, at no additional risk."""
+    from config import SYMBOLS as LIVE_TRADING_SYMBOLS
+    assert set(shadow._DEFAULT_SYMBOLS) == set(LIVE_TRADING_SYMBOLS)
+
+
 def test_run_shadow_tick_never_raises_on_empty_symbol_list():
     results = shadow.run_shadow_tick(symbols=[], cache=_fake_cache(_trending_candles()))
     assert results == []

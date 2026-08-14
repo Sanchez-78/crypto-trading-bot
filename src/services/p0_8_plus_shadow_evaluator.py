@@ -94,7 +94,19 @@ QUOTE_MAX_AGE_S = float(os.getenv("PAPER_P0_8_PLUS_QUOTE_MAX_AGE_S", "30.0"))
 
 _STRATEGY_MODULES = (trend_strategy, breakout_strategy, mean_reversion_strategy)
 
-_DEFAULT_SYMBOLS: Tuple[str, ...] = ("ETHUSDT", "ADAUSDT", "SOLUSDT")
+# 2026-08-14: widened from the original 3-symbol MVP subset ("ETHUSDT",
+# "ADAUSDT", "SOLUSDT") to match config.py's full live-trading SYMBOLS list.
+# Evidence: journalctl showed 0 candidates across every single 60s tick for
+# 24h+ straight -- traced to genuinely selective strategy-internal pattern
+# thresholds (compression/z-score), not a pipeline bug (verified live: the
+# candle cache, regime classifier, and all 3 strategy modules are wired and
+# executing correctly end to end, they just haven't seen a qualifying setup
+# on these 3 symbols in the observed window). Watching 7 symbols instead of
+# 3 more than doubles the chances of observing one, at effectively zero
+# added cost or risk: still shadow-only (never opens a position -- module
+# docstring), and candle_cache_v1 already rate-limits to one REST poll per
+# symbol per 60s regardless of how many symbols are configured.
+_DEFAULT_SYMBOLS: Tuple[str, ...] = ("BTCUSDT", "ETHUSDT", "ADAUSDT", "BNBUSDT", "DOTUSDT", "SOLUSDT", "XRPUSDT")
 
 
 def _env_symbols() -> Tuple[str, ...]:
