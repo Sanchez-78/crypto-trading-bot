@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 80,
+  "cycle": 81,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 80,
-  "current_wr": 11.0,
+  "total_cycles_completed": 81,
+  "current_wr": 12.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-14T10:36:26Z",
+  "last_update": "2026-08-14T11:07:22Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -806,6 +806,16 @@
       "commit": "53f9c25 (LIVE, unchanged)",
       "deploy_result": "N/A",
       "next_cycle_plan": "Continue standard monitoring toward a full 24h quota-health confirmation.",
+      "elapsed_mins": 5
+    },
+    {
+      "cycle": 81,
+      "timestamp": "2026-08-14T11:07:22Z",
+      "status": "STEADY_STATE_QUOTA_HEALTHY_2H_TRADE_RATE_NOTABLY_SLOWER",
+      "note": "Quota still healthy 2h post-fix (reads=24/50000). closed_trades=4632 (+7 only in 30min -- trade rate has slowed markedly across the last few cycles, from the pre-fix 200+/30min down to single-digits now). Two plausible explanations, not yet distinguished: (a) segment-skip fix correctly removing a lot of previously-admitted bad-segment volume (intended effect), or (b) some other admission throttle. Not alarming (WR/PF metrics look normal, service healthy, no error logs), but worth watching -- if the rate keeps dropping toward near-zero that would need investigation. win_rate_pct=12.0%, lifetime_expectancy=-0.0309, lifetime_pf=0.272 (4632 trades) -- very stable. Service healthy.",
+      "commit": "53f9c25 (LIVE, unchanged)",
+      "deploy_result": "N/A",
+      "next_cycle_plan": "Watch the trade-rate slowdown trend -- if it continues dropping, investigate whether it is purely the segment-skip fix (expected, benign) or something else. Continue quota-health tracking.",
       "elapsed_mins": 5
     }
   ],
