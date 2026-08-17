@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 91,
+  "cycle": 92,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 91,
-  "current_wr": 22.0,
-  "current_pnl": -0.066086,
-  "last_update": "2026-08-17T11:52:05.414848Z",
+  "total_cycles_completed": 92,
+  "current_wr": 39.0,
+  "current_pnl": 0.589623,
+  "last_update": "2026-08-17T12:23:34.470233Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -919,6 +919,22 @@
       "quota_max": 50000,
       "degraded": false,
       "notes": "Standard 30min health check. No new blocker -- consistent with long-documented negative-EV primary signal path (the deeper issue this session's P0.8+ wiring work targets). P0.8+ live pipeline confirmed alive+healthy via new tick-complete log, 0 positions opened yet (expected -- narrow BULL_TREND-only admission scope, no qualifying setup seen yet). No action taken this cycle -- monitoring continues."
+    },
+    {
+      "cycle": 92,
+      "timestamp": "2026-08-17T12:23:34.470150Z",
+      "status": "CAUTION",
+      "wr_recent100": 39.0,
+      "pf_recent100_pct_basis": 1.863,
+      "lifetime_pf": 0.358,
+      "lifetime_expectancy": -0.0312,
+      "lifetime_n": 5395,
+      "open_positions": 11,
+      "quota_reads": 526,
+      "quota_max": 50000,
+      "p0_8_plus_live_ticks_seen": 17,
+      "p0_8_plus_live_opens": 0,
+      "notes": "recent-100 WR/PF jumped 22%->39%, PF 0.601->1.863 (pct basis) -- noisy window swing, consistent with this session's long-documented recent-100 volatility pattern, NOT treated as goal-reached evidence given lifetime_pf still 0.358 (well below 1.0) and lifetime_expectancy still negative. P0.8+ live pipeline: 17 tick-complete logs seen in 32min at expected ~62s cadence, 0 opens (no qualifying BULL_TREND setup yet) -- observability fix confirmed working as intended, thread definitively alive. No new blocker, no action taken."
     }
   ],
   "experiment": {
