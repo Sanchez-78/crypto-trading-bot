@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 86,
+  "cycle": 87,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 86,
+  "total_cycles_completed": 87,
   "current_wr": 17.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-17T06:20:37Z",
+  "last_update": "2026-08-17T06:33:44Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -867,6 +867,16 @@
       "deploy_result": "N/A",
       "next_cycle_plan": "This is now the top-priority item for a FUTURE dedicated session (not rushed). Continue standard monitoring meanwhile -- report this honestly to the user now given the severity.",
       "elapsed_mins": 25
+    },
+    {
+      "cycle": 87,
+      "timestamp": "2026-08-17T06:33:44Z",
+      "status": "DEEP_LEARNING_AUDIT_COMPLETE_MOST_LEARNING_MODULES_ARE_DEAD_CODE",
+      "note": "Operator requested deep analysis of the learning process. Systematically checked reachability (from start.py -> bot2.main.main()) and consumption for 20+ modules with 'learn'/'strategy' in the name. FINDING: only 2 mechanisms actually close the loop live -- segment_weights (sizing/admission, both improved this session) and regime_tp_strategy (TP target, confirmed already wired). FULLY DEAD (defined, never called from the live path, not just unused-import): the RL/DQN agent (train_rl_agent appears exactly once in bot2/main.py -- its own def line, never invoked) and the V4 genetic-algorithm strategy selector (update_strategy_fitness, same pattern -- defined, never called). A dozen more *_learner.py/*_optimizer.py modules are unreachable from the live import graph entirely. src/optimized/orchestrator.py (which DOES reference train_rl_agent) is confirmed NOT the live entry point -- start.py imports bot2.main.main, not that module. Full writeup: _workspace/29_deep_learning_process_audit.md, memory updated. This is intentionally an AUDIT not a fix -- wiring the RL agent/genetic selector in for real is a substantial design task, flagged for a dedicated future session, not attempted here (consistent with today's earlier caution around the core decision engine). Bot still stalled (0 PAPER_ENTRY in the last 30min, per the SKIP_SCORE_HARD issue found and deliberately not yet patched, _workspace/28).",
+      "commit": "1d7c70a (LIVE, unchanged -- analytical cycle, no code changes)",
+      "deploy_result": "N/A",
+      "next_cycle_plan": "Continue standard monitoring. Two priority items now queued for a future dedicated session: (1) SKIP_SCORE_HARD fix (_workspace/28, higher priority -- currently blocking all trading), (2) decide whether to wire in or remove the dead RL/genetic subsystems (_workspace/29).",
+      "elapsed_mins": 30
     }
   ],
   "experiment": {
