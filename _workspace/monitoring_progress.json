@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 93,
+  "cycle": 94,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 93,
-  "current_wr": 38.0,
-  "current_pnl": 0.59248,
-  "last_update": "2026-08-17T12:54:31.423417Z",
+  "total_cycles_completed": 94,
+  "current_wr": 43.0,
+  "current_pnl": 0.64087,
+  "last_update": "2026-08-17T13:25:43.089882Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -950,6 +950,21 @@
       "p0_8_plus_live_ticks_seen": 15,
       "p0_8_plus_live_opens": 0,
       "notes": "Steady state, service healthy zero errors. recent-100 WR/PF still in the elevated-window swing (38%/2.2x), lifetime metrics unchanged (still losing). P0.8+ pipeline: 15 more tick-complete logs, still 0 opens, no crash indicators. No action needed."
+    },
+    {
+      "cycle": 94,
+      "timestamp": "2026-08-17T13:25:43.089663Z",
+      "status": "CAUTION",
+      "wr_recent100": 43.0,
+      "pf_recent100_pct_basis": 2.581,
+      "lifetime_pf": 0.364,
+      "lifetime_expectancy": -0.0308,
+      "lifetime_n": 5458,
+      "open_positions": 12,
+      "quota_reads": 538,
+      "p0_8_plus_live_ticks_seen": 17,
+      "p0_8_plus_live_opens": 0,
+      "notes": "WATCH: recent-100 WR/PF now trending upward 3 cycles straight (22->39->38->43%, PF 0.60->1.86->2.20->2.58) -- less consistent with pure window noise than earlier cycles assumed, worth tracking as a possible real trend rather than dismissing outright. NOT yet goal evidence: still below WR>55% target, lifetime_pf still 0.364 (well under 1.0, unmoved), lifetime_expectancy still negative. P0.8+ pipeline not a factor (0 opens, cannot be contributing). No code change this cycle -- observing only."
     }
   ],
   "experiment": {
