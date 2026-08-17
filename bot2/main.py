@@ -111,36 +111,15 @@ except ImportError as e:
     AnomalyDetector = None
     StateHistory = None
 
-# ────────────────────────────────────────────────────────────────────────────
-# PATCH: V4 Self-Evolving Strategy (Genetic Algorithm)
-# ────────────────────────────────────────────────────────────────────────────
-try:
-    from src.core.genetic_pool import GeneticPool
-    from src.core.strategy_selector import StrategySelector
-    from src.core.strategy_executor import StrategyExecutor
-except ImportError as e:
-    import logging
-    logging.warning(f"Genetic algorithm imports failed: {e} - continuing without genetic pool")
-    GeneticPool = None
-    StrategySelector = None
-    StrategyExecutor = None
-
-# ────────────────────────────────────────────────────────────────────────────
-# PATCH: V5.1 Reinforcement Learning (RL Agent)
-# ────────────────────────────────────────────────────────────────────────────
-# V5.1: Using RLAgent from src.services (not DQNAgent from src.core)
-try:
-    from src.services.rl_agent import RLAgent
-    rl_agent_instance = RLAgent()
-except Exception as e:
-    import logging
-    logging.warning(f"RL Agent import error: {e} - continuing without RL")
-    rl_agent_instance = None
-
-# Legacy imports (commented out for V5.1 compatibility)
-# from src.core.rl_agent import DQNAgent
-# from src.core.state_builder import StateBuilder, ACTIONS, action_to_name
-# from src.core.reward_engine import RewardEngine
+# 2026-08-17 cleanup (_workspace/29_deep_learning_process_audit.md,
+# _workspace/31_...): removed the V4 genetic-algorithm (GeneticPool/
+# StrategySelector/StrategyExecutor) and V5.1 RL-agent (RLAgent,
+# rl_agent_instance) imports/instantiation that used to run here --
+# confirmed dead code (constructed once at startup, never consulted or
+# trained afterward). src/core/genetic_pool.py, strategy_selector.py,
+# strategy_executor.py, and src/services/rl_agent.py are untouched (not
+# deleted) in case a future session wires them in for real; only the
+# unused import/instantiation in this live entry point was removed.
 
 import src.services.signal_generator
 import src.services.signal_engine
@@ -331,25 +310,12 @@ def watchdog(now, agent=None):
             pass
 
 
-# ────────────────────────────────────────────────────────────────────────────
-# PATCH: V4 Self-Evolving Strategy System (Genetic Algorithm)
-# ────────────────────────────────────────────────────────────────────────────
-_genetic_pool = None
-_strategy_selector = None
-_current_strategy = None
-_strategy_trade_count = [0]  # Use list for mutability
-_evolution_interval = 50  # Run evolution every N trades
-
-# ────────────────────────────────────────────────────────────────────────────
-# PATCH: V5 Reinforcement Learning (DQN Agent)
-# ────────────────────────────────────────────────────────────────────────────
-_rl_agent = None
-_state_builder = None
-_reward_engine = None
-_prev_state = None
-_prev_action = None
-_episode_reward = [0.0]  # Use list for mutability
-_rl_training_interval = 10  # Train every 10 transitions
+# 2026-08-17 cleanup (_workspace/29_deep_learning_process_audit.md,
+# _workspace/31_...): removed the V4 genetic-algorithm and V5.1 RL-agent
+# module-level state (_genetic_pool, _strategy_selector, _current_strategy,
+# _strategy_trade_count, _evolution_interval, _rl_agent, _state_builder,
+# _reward_engine, _prev_state, _prev_action, _episode_reward,
+# _rl_training_interval) -- confirmed dead, see the audit doc.
 
 
 # ── FX rate cache (USD/CZK) ───────────────────────────────────────────────────
@@ -373,149 +339,13 @@ def _refresh_fx_rate() -> None:
         pass  # keep stale value — better than 0
 
 
-# ────────────────────────────────────────────────────────────────────────────
-# PATCH: V4 Strategy Evolution Cycle (Genetic Algorithm)
-# ────────────────────────────────────────────────────────────────────────────
-
-def update_strategy_fitness(trade):
-    """
-    Update current strategy fitness when a trade closes.
-    
-    Called after every trade close to record outcomes and trigger evolution if needed.
-    
-    Args:
-        trade: Trade object with pnl, net_pnl_pct, result, etc.
-    """
-    global _current_strategy, _strategy_trade_count, _genetic_pool, _strategy_selector
-    
-    if _current_strategy is None or _genetic_pool is None:
-        return
-    
-    try:
-        # Record trade in strategy
-        _current_strategy.record_trade(trade)
-        _strategy_trade_count[0] += 1
-        
-        # Log updates every 10 trades
-        if _strategy_trade_count[0] % 10 == 0:
-            bus = get_event_bus()
-            msg = f"STRATEGY: {_current_strategy} | Pool avg fitness: {_genetic_pool.get_stats()['avg_fitness']:.3f}"
-            bus.emit("LOG_OUTPUT", {"message": msg}, time.time())
-        
-        # Evolution trigger: every N trades
-        if _strategy_trade_count[0] % _evolution_interval == 0:
-            bus = get_event_bus()
-            msg = f"🧬 EVOLVE: Running evolution cycle (trade #{_strategy_trade_count[0]})"
-            bus.emit("LOG_OUTPUT", {"message": msg}, time.time())
-            
-            # Run evolution
-            _genetic_pool.evolve()
-            
-            # Select new strategy for next trades
-            _current_strategy = _strategy_selector.select(
-                regime='RANGING',  # Could be enhanced with actual regime
-                force_best=False
-            )
-            
-            # Log pool state
-            stats = _genetic_pool.get_stats()
-            msg = (
-                f"POOL: size={stats['population_size']}, "
-                f"evolution={stats['evolution_count']}, "
-                f"diversity={stats['diversity']}, "
-                f"avg_fitness={stats['avg_fitness']:.3f}, "
-                f"max_fitness={stats['max_fitness']:.3f}"
-            )
-            bus.emit("LOG_OUTPUT", {"message": msg}, time.time())
-            
-    except Exception as e:
-        import logging as _log_evo
-        _log_evo.getLogger(__name__).error(f"Strategy fitness update error: {e}")
-
-
-# ────────────────────────────────────────────────────────────────────────────
-# PATCH: V5 RL Training (Experience Replay & Q-Learning)
-# ────────────────────────────────────────────────────────────────────────────
-
-def train_rl_agent(trade, market_data=None, learning_state=None):
-    """
-    Train DQN agent on closed trade (experience replay).
-    
-    Called after every trade close. Records outcome as (state, action, reward, next_state)
-    and trains the agent.
-    
-    Args:
-        trade: Closed trade object
-        market_data: Current market data (for state)
-        learning_state: Learning system state (for state)
-    """
-    global _rl_agent, _state_builder, _reward_engine, _prev_state, _prev_action, _episode_reward
-    
-    if _rl_agent is None or _state_builder is None or _reward_engine is None:
-        return
-    
-    try:
-        # Compute reward for closed trade
-        reward = _reward_engine.compute({
-            'pnl': trade.net_pnl_pct / 100 if hasattr(trade, 'net_pnl_pct') else 0.0,
-            'exit_reason': trade.close_reason.value if hasattr(trade, 'close_reason') else 'unknown',
-            'duration_seconds': trade.duration_seconds if hasattr(trade, 'duration_seconds') else 0,
-            'bars_held': 1,
-        })
-        
-        _episode_reward[0] += reward
-        
-        # Build next state (from market data if available)
-        if market_data is not None and learning_state is not None:
-            next_state = _state_builder.build(market_data, learning_state)
-        else:
-            next_state = None
-        
-        # Record experience (state, action, reward, next_state, done)
-        if _prev_state is not None and _prev_action is not None:
-            done = True  # Trade is done
-            _rl_agent.remember(_prev_state, _prev_action, reward, next_state or _prev_state, done)
-            
-            # Train agent on batch
-            _rl_agent.replay(batch_size=32)
-            
-            # Log RL progress every 50 trades
-            if _reward_engine.reward_count % 50 == 0:
-                bus = get_event_bus()
-                rl_stats = _rl_agent.get_stats()
-                msg = (
-                    f"🧠 RL STATUS: epsilon={rl_stats['epsilon']:.3f}, "
-                    f"steps={rl_stats['training_steps']}, "
-                    f"q_table={rl_stats['q_table_size']}, "
-                    f"avg_reward={_reward_engine.avg_reward:.5f}"
-                )
-                bus.emit("LOG_OUTPUT", {"message": msg}, time.time())
-        
-        # Update previous state/action for next iteration
-        _prev_state = next_state or _prev_state
-        _prev_action = None  # Reset action (will be chosen by agent next cycle)
-        
-    except Exception as e:
-        import logging as _log_rl
-        _log_rl.getLogger(__name__).error(f"RL agent training error: {e}")
-
-
-# ────────────────────────────────────────────────────────────────────────────
-# RL Agent Safety Hooks (called by V3 self-healing when needed)
-# ────────────────────────────────────────────────────────────────────────────
-
-def rl_force_exploration():
-    """Force RL agent to explore (during crisis/stall)."""
-    global _rl_agent
-    if _rl_agent:
-        _rl_agent.force_exploration(epsilon=1.0)
-
-
-def rl_force_exploitation():
-    """Force RL agent to exploit best strategy (during safe mode)."""
-    global _rl_agent
-    if _rl_agent:
-        _rl_agent.force_exploitation(epsilon=0.05)
+# 2026-08-17 cleanup (_workspace/29_deep_learning_process_audit.md,
+# _workspace/31_...): removed update_strategy_fitness() (V4 genetic
+# algorithm), train_rl_agent()/rl_force_exploration()/
+# rl_force_exploitation() (V5.1 RL agent) -- all confirmed dead code, never
+# called anywhere in the live path (each appeared exactly once in this
+# file: its own `def` line). See the audit doc for the full evidence
+# trail.
 
 
 
@@ -1488,39 +1318,17 @@ def main():
         _anomaly_detector = None
         _state_history = None
 
-    # Initialize V4 self-evolving strategy system (Genetic Algorithm)
-    print("  [3/7] Initializing genetic algorithm system...", file=sys.stderr, flush=True)
-    global _genetic_pool, _strategy_selector, _current_strategy
-    try:
-        if GeneticPool:
-            _genetic_pool = GeneticPool(size=20)
-            _strategy_selector = StrategySelector(_genetic_pool)
-            _current_strategy = _strategy_selector.select(regime="RANGING", force_best=False)
-        else:
-            _genetic_pool = None
-            _strategy_selector = None
-            _current_strategy = None
-    except Exception as e:
-        import logging
-        logging.warning(f"Genetic algorithm init failed: {e}")
-        _genetic_pool = None
-        _strategy_selector = None
-        _current_strategy = None
-
-    # Initialize V5.1 reinforcement learning system (RLAgent from services)
-    global _rl_agent, _state_builder, _reward_engine
-    _rl_agent = rl_agent_instance  # V5.1: Use services RL agent
-    _state_builder = None  # Legacy - not used in V5.1
-    _reward_engine = None  # Legacy - not used in V5.1
-
-    bus = get_event_bus()
-    if _genetic_pool:
-        msg = f"✅ V4 Genetic Pool initialized: {_genetic_pool}, Current strategy: {_current_strategy}"
-        bus.emit("LOG_OUTPUT", {"message": msg}, time.time())
-
-    if _rl_agent:
-        msg = f"🧠 V5.1 RL Agent initialized: {_rl_agent}"
-        bus.emit("LOG_OUTPUT", {"message": msg}, time.time())
+    # 2026-08-17 cleanup (_workspace/29_deep_learning_process_audit.md,
+    # _workspace/31_...): removed the V4 genetic-algorithm strategy system
+    # and V5.1 RL agent initialization that used to run here. Both were
+    # fully dead code from a behavioral standpoint -- confirmed via a
+    # comprehensive call-graph audit that update_strategy_fitness() and
+    # train_rl_agent()/rl_force_exploration()/rl_force_exploitation() (the
+    # only functions that ever consulted or trained these objects) were
+    # never called anywhere in the live path; this init block constructed
+    # them, selected one initial "current strategy" once, logged it, and
+    # then nothing ever touched them again for the rest of the process
+    # lifetime. See the audit doc for the full evidence trail.
 
     # Initialize async learning flush worker (V10.13n - Latency Fix)
     # Background thread queues and flushes learning updates asynchronously
