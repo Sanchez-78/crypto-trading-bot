@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 88,
+  "cycle": 89,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 88,
+  "total_cycles_completed": 89,
   "current_wr": 18.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-17T06:53:49Z",
+  "last_update": "2026-08-17T11:17:22.122755Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -887,6 +887,15 @@
       "deploy_result": "SUCCESS",
       "next_cycle_plan": "Continue standard monitoring. Watch WR/PF trend now that trading has resumed at healthy volume. If another extended stall occurs, that will be the real test of the SKIP_SCORE_HARD escape hatch.",
       "elapsed_mins": 90
+    },
+    {
+      "cycle": 89,
+      "timestamp": "2026-08-17T11:17:22.122661Z",
+      "blocker": "p0_8_plus_pipeline_dormant_never_wired",
+      "fix_applied": "Wired P0.8+ strategy pipeline (trend_cost_aware_v1 etc.) into real bounded evidence-collection paper-position admission for the first time via new src/services/p0_8_plus_live_pipeline.py. Full multi-agent orchestrator review (trading-safety APPROVED_WITH_CONDITIONS, reviewer APPROVED after 9 rounds of real findings+fixes incl. a symbol-blacklist bypass gap, test-regression failed on account spend limit -- mandate independently covered). Deployed via gated hetzner-deploy-apply.yml (PLAN+DEPLOY both succeeded), then enabled via systemd overlay (PAPER_P0_8_PLUS_LIVE_ENABLED=true). Confirmed live: [P0_8_PLUS_LIVE] pipeline thread started, service healthy.",
+      "commit": "841ecc28+overlay-commit",
+      "deploy_result": "PASS",
+      "notes": "Real scope currently BULL_TREND-only (P0SegmentEVGate quarantine constants); TP/SL geometry currently superseded by PAPER_TP_ZONE_BPS env override on server (confirmed via SSH) -- re-anchoring fix still correct, becomes load-bearing if that env var is ever removed. Watch [P0_8_PLUS_LIVE_OPEN] log lines over the next 24h per trading-safety-agent condition."
     }
   ],
   "experiment": {
