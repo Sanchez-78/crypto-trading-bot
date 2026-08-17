@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 87,
+  "cycle": 88,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 87,
-  "current_wr": 17.0,
+  "total_cycles_completed": 88,
+  "current_wr": 18.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-17T06:33:44Z",
+  "last_update": "2026-08-17T06:53:49Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -877,6 +877,16 @@
       "deploy_result": "N/A",
       "next_cycle_plan": "Continue standard monitoring. Two priority items now queued for a future dedicated session: (1) SKIP_SCORE_HARD fix (_workspace/28, higher priority -- currently blocking all trading), (2) decide whether to wire in or remove the dead RL/genetic subsystems (_workspace/29).",
       "elapsed_mins": 30
+    },
+    {
+      "cycle": 88,
+      "timestamp": "2026-08-17T06:53:49Z",
+      "status": "LEARNING_PROCESS_COMPLETE_REPAIR_DONE_DEAD_CODE_REMOVED_REVERIFIED",
+      "note": "Operator directive: complete repair of the learning process, remove unused code, re-analyze. 3-part response: (1) FIXED (commit 404322a, deployed): SKIP_SCORE_HARD in realtime_decision_engine.py used to unconditionally return None, bypassing the discovery mechanism entirely -- extracted the REJECT_NEGATIVE_EV branch's discovery-fallback logic into a shared _try_discovery_admission() helper (behavior-preserving for that path, verified via diff + full regression sweep) and added a critical-idle (1800s) escape hatch to SKIP_SCORE_HARD that now calls the same helper. 5 new unit tests. (2) REMOVED (commit 179ac9c, deployed): the fully-dead V4 genetic-algorithm strategy selector and V5.1 RL/DQN agent from bot2/main.py -- imports, module state, all 4 functions (update_strategy_fitness, train_rl_agent, rl_force_exploration/exploitation), and the startup init block. Confirmed via exhaustive verification (compile check, text sweep, zero test references, full regression sweep matching pre-existing baseline via git stash). Kept underlying module files untouched for possible future wiring-in. (3) RE-ANALYZED (post-deploy, live): both live mechanisms (segment_weights via [PAPER_POLICY_ADAPTATION] 50 hits/5min, regime_tp_strategy via [LEARNING_TP_USED] 56 hits/5min) confirmed still firing. Startup sequence clean ([1/7]->[2/7]->[4/7], old [3/7] genetic step gone, zero errors). IMPORTANT HONEST CAVEAT documented in _workspace/32: the 66h stall actually resolved ON ITS OWN (118 successful RDE_TAKE admissions via the normal EV-gated path) BEFORE the SKIP_SCORE_HARD fix even deployed -- so this session cannot claim the fix caused the resumption, only that it's deployed, tested in isolation, verified not to have broken anything, and ready for the next real extended-stall scenario. Full writeups: _workspace/28-32.",
+      "commit": "179ac9c (LIVE)",
+      "deploy_result": "SUCCESS",
+      "next_cycle_plan": "Continue standard monitoring. Watch WR/PF trend now that trading has resumed at healthy volume. If another extended stall occurs, that will be the real test of the SKIP_SCORE_HARD escape hatch.",
+      "elapsed_mins": 90
     }
   ],
   "experiment": {
