@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 94,
+  "cycle": 95,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 94,
-  "current_wr": 43.0,
-  "current_pnl": 0.64087,
-  "last_update": "2026-08-17T13:25:43.089882Z",
+  "total_cycles_completed": 95,
+  "current_wr": 35.0,
+  "current_pnl": 0.148353,
+  "last_update": "2026-08-17T13:56:52.683758Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -965,6 +965,19 @@
       "p0_8_plus_live_ticks_seen": 17,
       "p0_8_plus_live_opens": 0,
       "notes": "WATCH: recent-100 WR/PF now trending upward 3 cycles straight (22->39->38->43%, PF 0.60->1.86->2.20->2.58) -- less consistent with pure window noise than earlier cycles assumed, worth tracking as a possible real trend rather than dismissing outright. NOT yet goal evidence: still below WR>55% target, lifetime_pf still 0.364 (well under 1.0, unmoved), lifetime_expectancy still negative. P0.8+ pipeline not a factor (0 opens, cannot be contributing). No code change this cycle -- observing only."
+    },
+    {
+      "cycle": 95,
+      "timestamp": "2026-08-17T13:56:52.683513Z",
+      "status": "CAUTION",
+      "wr_recent100": 35.0,
+      "pf_recent100_pct_basis": 1.121,
+      "lifetime_pf": 0.364,
+      "lifetime_expectancy": -0.0311,
+      "lifetime_n": 5486,
+      "open_positions": 3,
+      "quota_reads": 544,
+      "notes": "RESOLVED watch item from cycle 94: WR/PF reverted back down (43%->35%, PF 2.58->1.12) after the 3-cycle upward run -- confirms it WAS window noise, not a real sustained improvement. Lifetime metrics essentially flat throughout (PF ~0.36, expectancy ~-0.031) the whole time, consistent with noise interpretation. P0.8+ pipeline: confirmed healthy via normal ~62s tick cadence (an earlier narrower grep window this cycle produced a false-alarm low count, resolved by re-checking with a wider window -- service uptime 2h5min, no restart, memory/CPU nominal). No action needed."
     }
   ],
   "experiment": {
