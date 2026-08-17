@@ -313,6 +313,21 @@ def run_live_tick(
                     symbol, r.strategy_id, exc,
                 )
                 continue
+    # 2026-08-17 (found during the first post-enable monitoring cycle,
+    # _workspace/33_p0_8_plus_live_wiring.md): the shadow evaluator's
+    # run_shadow_tick() logs a "tick complete" summary even on 0 candidates
+    # -- this function only logged per-candidate lines, so a tick with 0
+    # candidates (the common case) produced NO log output at all. That made
+    # "thread is alive and found nothing" indistinguishable from "thread
+    # silently died" from journalctl alone -- exactly the observability gap
+    # that let SKIP_SCORE_HARD's discovery bypass go unnoticed for 66+
+    # hours earlier this session (_workspace/28). Added for the same reason
+    # the shadow evaluator already has it: liveness must never depend on
+    # something interesting having happened.
+    log.info(
+        "[P0_8_PLUS_LIVE] tick complete: %d opened across %d symbol(s)",
+        len(opened), len(syms),
+    )
     return opened
 
 
