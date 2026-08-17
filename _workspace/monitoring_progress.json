@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 92,
+  "cycle": 93,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 92,
-  "current_wr": 39.0,
-  "current_pnl": 0.589623,
-  "last_update": "2026-08-17T12:23:34.470233Z",
+  "total_cycles_completed": 93,
+  "current_wr": 38.0,
+  "current_pnl": 0.59248,
+  "last_update": "2026-08-17T12:54:31.423417Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -935,6 +935,21 @@
       "p0_8_plus_live_ticks_seen": 17,
       "p0_8_plus_live_opens": 0,
       "notes": "recent-100 WR/PF jumped 22%->39%, PF 0.601->1.863 (pct basis) -- noisy window swing, consistent with this session's long-documented recent-100 volatility pattern, NOT treated as goal-reached evidence given lifetime_pf still 0.358 (well below 1.0) and lifetime_expectancy still negative. P0.8+ live pipeline: 17 tick-complete logs seen in 32min at expected ~62s cadence, 0 opens (no qualifying BULL_TREND setup yet) -- observability fix confirmed working as intended, thread definitively alive. No new blocker, no action taken."
+    },
+    {
+      "cycle": 93,
+      "timestamp": "2026-08-17T12:54:31.423301Z",
+      "status": "CAUTION",
+      "wr_recent100": 38.0,
+      "pf_recent100_pct_basis": 2.204,
+      "lifetime_pf": 0.361,
+      "lifetime_expectancy": -0.0311,
+      "lifetime_n": 5432,
+      "open_positions": 1,
+      "quota_reads": 532,
+      "p0_8_plus_live_ticks_seen": 15,
+      "p0_8_plus_live_opens": 0,
+      "notes": "Steady state, service healthy zero errors. recent-100 WR/PF still in the elevated-window swing (38%/2.2x), lifetime metrics unchanged (still losing). P0.8+ pipeline: 15 more tick-complete logs, still 0 opens, no crash indicators. No action needed."
     }
   ],
   "experiment": {
