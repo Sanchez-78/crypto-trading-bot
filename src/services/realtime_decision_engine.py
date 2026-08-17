@@ -2947,6 +2947,107 @@ def _route_training_sample_through_p0_rde(signal, route_reason, score_before_adj
         return None
 
 
+def _try_discovery_admission(
+    signal, route_reason, reject_reason, score_before_adj, score_adj
+):
+    """Route a rejected candidate through the P0-gated 'starvation
+    discovery' exploration mechanism (bounded, learning-only paper
+    admission) -- shared by every rejection path that should still get a
+    chance at it.
+
+    2026-08-17 (_workspace/28_hard_score_reject_bypasses_discovery_
+    entirely.md, then _workspace/30_...): extracted out of the
+    REJECT_NEGATIVE_EV branch, where this exact logic was previously
+    inlined and reachable ONLY from there. The SKIP_SCORE_HARD branch
+    above has its own unconditional `return None` and never reached this
+    code at all -- confirmed live: a persistently negative EV/score (no
+    amount of adaptive threshold relaxation can rescue a negative score
+    against a positive floor) silently stalled ALL trading for 66+ hours
+    with the service reporting perfectly healthy the whole time, because
+    nothing downstream of SKIP_SCORE_HARD ever got a chance to admit even
+    a bounded exploration trade. Extracting into a shared function (rather
+    than duplicating the block) means both callers can never drift out of
+    sync with each other.
+
+    Never raises -- every internal step already independently
+    exception-guarded, matching the original inline block's behavior.
+    """
+    try:
+        from src.services.paper_exploration import maybe_open_paper_exploration_from_reject
+
+        maybe_open_paper_exploration_from_reject(
+            signal=signal,
+            ctx={},
+            original_decision=route_reason,
+            reject_reason=reject_reason,
+            current_price=signal.get("price") if signal else None,
+        )
+    except Exception:
+        pass  # Graceful degrade if exploration unavailable
+
+    # P0.4: Route RDE training sampler through P0 gate BEFORE maybe_open_training_sample()
+    routed_signal = _route_training_sample_through_p0_rde(
+        signal=signal,
+        route_reason=route_reason,
+        score_before_adj=score_before_adj,
+        score_adj=score_adj,
+    )
+
+    if routed_signal is None:
+        return
+
+    # P0 approved: proceed to sampler with routed metadata
+    try:
+        from src.services.paper_training_sampler import maybe_open_training_sample
+        from src.services.paper_trade_executor import open_paper_position
+
+        sampler_result = maybe_open_training_sample(
+            signal=routed_signal,
+            ctx={},
+            reason=route_reason,
+            current_price=routed_signal.get("price") if routed_signal else None,
+        )
+
+        if sampler_result.get("allowed"):
+            # Open paper training position with P0-routed metadata
+            extra = {
+                "paper_source": routed_signal.get("paper_source", "paper_evidence_collection"),
+                "training_bucket": sampler_result.get("bucket"),
+                "explore_bucket": sampler_result.get("bucket"),
+                "original_decision": route_reason,
+                "reject_reason": reject_reason,
+                "side_inferred": sampler_result.get("side_inferred", False),
+                "cost_edge_ok": sampler_result.get("cost_edge_ok", False),
+                "expected_move_pct": sampler_result.get("expected_move_pct", 0.0),
+                "expected_move_src": sampler_result.get("expected_move_src", ""),
+                "required_move_pct": sampler_result.get("required_move_pct", 0.0),
+                "size_mult": sampler_result.get("size_mult", 1.0),
+                "max_hold_s": sampler_result.get("max_hold_s", 300),
+                "tags": sampler_result.get("tags", []),
+                "score_raw": round(score_before_adj, 6),
+                "score_final": round(score_adj, 6),
+                "decision_score": round(score_adj, 6),
+                "recovery_admission": sampler_result.get("recovery_admission", False),
+                "learning_source": routed_signal.get("learning_source", "paper_evidence_collection"),
+                "admission_reason": sampler_result.get("admission_reason"),
+                "historical_health": sampler_result.get("historical_health"),
+                "cost_edge_bypassed": sampler_result.get("cost_edge_bypassed", False),
+                "cost_edge_bypass_reason": sampler_result.get("cost_edge_bypass_reason", "none"),
+                "segment_key": routed_signal.get("segment_key"),
+                "p0_gate_reason": routed_signal.get("p0_gate_reason"),
+            }
+
+            open_paper_position(
+                signal=routed_signal,
+                price=routed_signal.get("price", 0),
+                ts=_time.time(),
+                reason="PAPER_TRAINING",
+                extra=extra,
+            )
+    except Exception:
+        pass  # Graceful degrade if training sampler unavailable
+
+
 def evaluate_signal(signal):
     # V10.15 QUOTA FIX: Use cached history instead of load_history() on every signal
     history = _get_cached_history()
@@ -3585,6 +3686,28 @@ def evaluate_signal(signal):
             
             _timing_str = f" timing×{_timing_mult:.2f}" if _timing_mult < 1.0 else ""
             print(f"    decision=SKIP_SCORE_HARD  ev={_ev_adj:.3f}{_timing_str}  score={_score_adj:.3f}<{_score_hard_floor:.3f}")
+
+            # 2026-08-17 fix (_workspace/28_hard_score_reject_bypasses_
+            # discovery_entirely.md, _workspace/30_...): this branch used to
+            # `return None` unconditionally here, which meant the discovery
+            # fallback below (shared with REJECT_NEGATIVE_EV, see
+            # _try_discovery_admission) never ran for a score-based hard
+            # reject -- confirmed live: a persistently negative EV/score
+            # (no threshold relaxation, however lenient, can admit a
+            # negative score against a positive floor) silently stalled
+            # ALL trading for 66+ hours, service reporting healthy the
+            # whole time. Deliberately a MUCH more conservative bar than
+            # the 900s "critical idle" used elsewhere in this same
+            # function/hardblock_adapter -- this is a last-resort escape
+            # hatch for a more central gate, not a routine relaxation.
+            _hard_reject_idle_s = (
+                max(0.0, _time.time() - _last_trade_ts[0]) if _last_trade_ts[0] > 0 else 0.0
+            )
+            if _hard_reject_idle_s >= 1800.0:
+                _try_discovery_admission(
+                    signal, "SKIP_SCORE_HARD", "score_hard_floor",
+                    _score_before_adj, _score_adj,
+                )
             return None
 
         # Check fallback unblock path (only if not already soft-penalized)
@@ -3788,79 +3911,14 @@ def evaluate_signal(signal):
             # V10.13u+18g: Emit from rejection path as production-safe fallback
             _maybe_emit_econ_bad_diag_from_reject(source="rde_reject")
 
-        # V10.13u+20 P1.1b: Try paper exploration for negative EV reject (capped baseline)
-        try:
-            from src.services.paper_exploration import maybe_open_paper_exploration_from_reject
-
-            maybe_open_paper_exploration_from_reject(
-                signal=signal,
-                ctx={},
-                original_decision="REJECT_NEGATIVE_EV",
-                reject_reason="negative_ev",
-                current_price=signal.get("price") if signal else None,
-            )
-        except Exception:
-            pass  # Graceful degrade if exploration unavailable
-
-        # P0.4: Route RDE training sampler through P0 gate BEFORE maybe_open_training_sample()
-        routed_signal = _route_training_sample_through_p0_rde(
-            signal=signal,
-            route_reason="REJECT_NEGATIVE_EV",
-            score_before_adj=_score_before_adj,
-            score_adj=_score_adj,
+        # V10.13u+20 P1.1b / 2026-08-17 refactor: try the shared discovery
+        # fallback (paper exploration + P0-routed sampler admission) for
+        # this negative-EV reject. See _try_discovery_admission's docstring
+        # for why this is now a shared helper instead of inlined here.
+        _try_discovery_admission(
+            signal, "REJECT_NEGATIVE_EV", "negative_ev",
+            _score_before_adj, _score_adj,
         )
-
-        if routed_signal is not None:
-            # P0 approved: proceed to sampler with routed metadata
-            try:
-                from src.services.paper_training_sampler import maybe_open_training_sample
-                from src.services.paper_trade_executor import open_paper_position
-
-                sampler_result = maybe_open_training_sample(
-                    signal=routed_signal,
-                    ctx={},
-                    reason="REJECT_NEGATIVE_EV",
-                    current_price=routed_signal.get("price") if routed_signal else None,
-                )
-
-                if sampler_result.get("allowed"):
-                    # Open paper training position with P0-routed metadata
-                    extra = {
-                        "paper_source": routed_signal.get("paper_source", "paper_evidence_collection"),
-                        "training_bucket": sampler_result.get("bucket"),
-                        "explore_bucket": sampler_result.get("bucket"),
-                        "original_decision": "REJECT_NEGATIVE_EV",
-                        "reject_reason": "negative_ev",
-                        "side_inferred": sampler_result.get("side_inferred", False),
-                        "cost_edge_ok": sampler_result.get("cost_edge_ok", False),
-                        "expected_move_pct": sampler_result.get("expected_move_pct", 0.0),
-                        "expected_move_src": sampler_result.get("expected_move_src", ""),
-                        "required_move_pct": sampler_result.get("required_move_pct", 0.0),
-                        "size_mult": sampler_result.get("size_mult", 1.0),
-                        "max_hold_s": sampler_result.get("max_hold_s", 300),
-                        "tags": sampler_result.get("tags", []),
-                        "score_raw": round(_score_before_adj, 6),
-                        "score_final": round(_score_adj, 6),
-                        "decision_score": round(_score_adj, 6),
-                        "recovery_admission": sampler_result.get("recovery_admission", False),
-                        "learning_source": routed_signal.get("learning_source", "paper_evidence_collection"),  # P0.4: from routed signal
-                        "admission_reason": sampler_result.get("admission_reason"),
-                        "historical_health": sampler_result.get("historical_health"),
-                        "cost_edge_bypassed": sampler_result.get("cost_edge_bypassed", False),
-                        "cost_edge_bypass_reason": sampler_result.get("cost_edge_bypass_reason", "none"),
-                        "segment_key": routed_signal.get("segment_key"),  # P0.4: segment tracking
-                        "p0_gate_reason": routed_signal.get("p0_gate_reason"),  # P0.4: audit trail
-                    }
-
-                    open_paper_position(
-                        signal=routed_signal,
-                        price=routed_signal.get("price", 0),
-                        ts=_time.time(),
-                        reason="PAPER_TRAINING",
-                        extra=extra,
-                    )
-            except Exception:
-                pass  # Graceful degrade if training sampler unavailable
 
         return None
 
