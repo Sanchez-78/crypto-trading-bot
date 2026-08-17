@@ -692,7 +692,10 @@ def on_price(data):
     # in-sample split is post-hoc, so this is validation, not a confirmed edge.
     # Default empty = no change.
     _bl = os.getenv("PAPER_SYMBOL_BLACKLIST", "")
-    if _bl and s in _bl.split(","):
+    # .strip() each entry (2026-08-17, reviewer-agent nit on the
+    # paper_trade_executor.py choke -- kept in lockstep here so the two
+    # enforcement sites can never silently diverge on a spaced list value).
+    if _bl and s in {x.strip() for x in _bl.split(",")}:
         return
     obi  = data.get("obi", 0.0)
 

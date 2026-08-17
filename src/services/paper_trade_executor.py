@@ -1496,6 +1496,27 @@ def open_paper_position(
                  _sym, reason)
         return {"status": "blocked", "reason": "data_collection_only", "symbol": _sym}
 
+    # SYMBOL BLACKLIST — AUTHORITATIVE CHOKE (2026-08-17, reviewer-agent
+    # finding C1, _workspace/33_p0_8_plus_live_wiring.md). PAPER_SYMBOL_
+    # BLACKLIST (2026-07-09, signal_generator.py:694 -- forward-test finding
+    # that BNB/XRP have anti-edge) was only ever enforced at the legacy
+    # signal_generator.on_price() entry point, upstream of THIS function --
+    # any caller reaching open_paper_position() directly (as
+    # p0_8_plus_live_pipeline.py now does) never saw it. Same rationale as
+    # the PAPER_DATA_COLLECTION_ONLY choke immediately above: gating here
+    # closes EVERY path regardless of caller, present or future, rather
+    # than trusting each new caller to re-implement the check.
+    _bl_env = os.getenv("PAPER_SYMBOL_BLACKLIST", "")
+    if _bl_env:
+        _sym = (signal or {}).get("symbol", "UNKNOWN")
+        # .strip() each entry (reviewer-agent nit): a value like
+        # "BNBUSDT, XRPUSDT" would otherwise silently fail to match the
+        # space-prefixed second entry. Current prod value has no spaces,
+        # but this and signal_generator.py:694 should stay in lockstep.
+        if _sym in {s.strip() for s in _bl_env.split(",")}:
+            log.info("[PAPER_ENTRY_BLOCKED] symbol=%s reason=symbol_blacklisted", _sym)
+            return {"status": "blocked", "reason": "symbol_blacklisted", "symbol": _sym}
+
     # V10.16: SELL ENFORCEMENT - balance BUY/SELL ratio for diversification
     side_raw = signal.get("action", signal.get("side", "BUY"))
     now_ts = time.time()  # V10.27: define before any early branch; peak-check (2d4aa48) reads it on the price-valid path
@@ -1562,8 +1583,17 @@ def open_paper_position(
     # could never actually open a position. C_WEAK_EV_TRAIN (V10.26's real target)
     # deliberately stays subject to the floor — only the exploration-specific
     # bucket is exempted, so the original 2026-06-11 fix's intent is preserved.
+    # 2026-08-17 (_workspace/33_p0_8_plus_live_wiring.md): P0_8_PLUS_EVIDENCE_
+    # COLLECTION (p0_8_plus_live_pipeline.py) is exempted for the same reason
+    # PAPER_STARVATION_DISCOVERY is -- its "ev" here is a bps->fraction
+    # conversion of net_expected_edge_bps, already validated by
+    # signal_router.py's own purpose-built cost_model.evaluate_edge() gate
+    # (a different scale than this floor was tuned for), not an unvetted
+    # zero/negative-EV admission like the discovery bucket's. Re-applying
+    # this legacy floor to it would reject genuinely-positive-edge signals
+    # solely from a unit mismatch, not from any real quality problem.
     ev = float(signal.get("ev") or 0.0)
-    if ev < _MIN_EV_THRESHOLD and bucket != "PAPER_STARVATION_DISCOVERY":
+    if ev < _MIN_EV_THRESHOLD and bucket not in ("PAPER_STARVATION_DISCOVERY", "P0_8_PLUS_EVIDENCE_COLLECTION"):
         throttle_key = (symbol, bucket, "weak_ev_rejected")
         now_ts = time.time()
         last_log = _PAPER_ENTRY_BLOCKED_THROTTLE.get(throttle_key, 0.0)

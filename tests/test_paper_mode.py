@@ -191,6 +191,51 @@ class TestPaperExecutorBasics:
             f"PAPER_STARVATION_DISCOVERY must bypass the weak_ev floor, got {result}"
         )
 
+    def test_open_paper_position_p0_8_plus_evidence_collection_bypasses_weak_ev(self, clean_positions, monkeypatch):
+        """2026-08-17 (_workspace/33_p0_8_plus_live_wiring.md): the new
+        P0_8_PLUS_EVIDENCE_COLLECTION bucket (p0_8_plus_live_pipeline.py)
+        must also bypass this floor -- its "ev" value is a bps->fraction
+        conversion of an already cost-gate-validated net_expected_edge_bps,
+        on a different scale than this floor's threshold assumes. The
+        module-level autouse fixture relaxes this gate to -inf for the
+        whole file, so restore a realistic threshold for this one test to
+        actually exercise the exemption condition.
+        """
+        from src.services import paper_trade_executor as pte
+
+        monkeypatch.setattr(pte, "_MIN_EV_THRESHOLD", 0.01)
+        signal = {
+            "symbol": "ETHUSDT", "action": "BUY", "ev": 0.0017, "score": 0.6,
+            "regime": "BULL_TREND", "learning_source": "trend_cost_aware_v1",
+            "strict_ev": False, "readiness_eligible": False,
+        }
+        result = open_paper_position(
+            signal, 2500.0, time.time(), "P0_8_PLUS_EVIDENCE_COLLECTION",
+            extra={"explore_bucket": "P0_8_PLUS_EVIDENCE_COLLECTION"},
+        )
+        assert result.get("reason") != "weak_ev_below_0.01", (
+            f"P0_8_PLUS_EVIDENCE_COLLECTION must bypass the weak_ev floor, got {result}"
+        )
+
+    def test_open_paper_position_unrelated_bucket_still_blocked_by_weak_ev(self, clean_positions, monkeypatch):
+        """Negative control for the two exemptions above: an unrecognized
+        bucket name with the same low ev must still be blocked -- pins that
+        the new `bucket not in (...)` condition stays a narrow allowlist,
+        not an accidental blanket bypass.
+        """
+        from src.services import paper_trade_executor as pte
+
+        monkeypatch.setattr(pte, "_MIN_EV_THRESHOLD", 0.01)
+        signal = {
+            "symbol": "ETHUSDT", "action": "BUY", "ev": 0.0017, "score": 0.6,
+            "regime": "BULL_TREND",
+        }
+        result = open_paper_position(
+            signal, 2500.0, time.time(), "RDE_TAKE",
+            extra={"explore_bucket": "SOME_OTHER_BUCKET"},
+        )
+        assert result.get("reason") == "weak_ev_below_0.01"
+
     def test_open_paper_position_c_weak_ev_train_unaffected_by_starvation_exemption(self, clean_positions):
         """The P0-FIX (weak_ev exemption) must stay narrowly scoped to
         PAPER_STARVATION_DISCOVERY. C_WEAK_EV_TRAIN's own admission behavior at

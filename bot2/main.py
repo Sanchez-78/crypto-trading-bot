@@ -1656,6 +1656,26 @@ def main():
     except Exception as e:
         logging.warning(f"[STARTUP] P0.8+ shadow evaluator failed to start: {e}")
 
+    # ────────────────────────────────────────────────────────────────────────
+    # P0.8+ LIVE PIPELINE (Gate G7 phase 2, 2026-08-17): completes the wiring
+    # _workspace/18_live_wiring_plan.md scoped and deliberately left inert.
+    # Reuses the exact same evaluate_symbol() call as the shadow evaluator
+    # above; the ONLY new behavior is opening a bounded, cost-gated,
+    # risk-guarded paper position (P0_8_PLUS_EVIDENCE_COLLECTION bucket) for
+    # an admitted candidate backed by a REAL (not synthetic) quote. Does not
+    # flip evidence_only on any strategy registration -- see
+    # p0_8_plus_live_pipeline.py's module docstring for the full safety
+    # inventory (cost gate, P0 segment gate, risk guard, exploration
+    # exposure caps, cost-floor TP/SL clamp all inherited, not reimplemented).
+    # Gated by PAPER_P0_8_PLUS_LIVE_ENABLED (default "false" -- opt-in, not
+    # opt-out, pending the orchestrator review's verdict on flipping it).
+    # ────────────────────────────────────────────────────────────────────────
+    try:
+        from src.services.p0_8_plus_live_pipeline import start_live_pipeline_thread
+        _p0_8_plus_live_thread = start_live_pipeline_thread(interval_s=60)
+    except Exception as e:
+        logging.warning(f"[STARTUP] P0.8+ live pipeline failed to start: {e}")
+
     while True:
         time.sleep(10)
 
