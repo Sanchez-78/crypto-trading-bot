@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 89,
+  "cycle": 90,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 89,
+  "total_cycles_completed": 90,
   "current_wr": 18.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-17T11:17:22.122755Z",
+  "last_update": "2026-08-17T11:51:15.571336Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -896,6 +896,14 @@
       "commit": "841ecc28+overlay-commit",
       "deploy_result": "PASS",
       "notes": "Real scope currently BULL_TREND-only (P0SegmentEVGate quarantine constants); TP/SL geometry currently superseded by PAPER_TP_ZONE_BPS env override on server (confirmed via SSH) -- re-anchoring fix still correct, becomes load-bearing if that env var is ever removed. Watch [P0_8_PLUS_LIVE_OPEN] log lines over the next 24h per trading-safety-agent condition."
+    },
+    {
+      "cycle": 90,
+      "timestamp": "2026-08-17T11:51:15.571252Z",
+      "blocker": "p0_8_plus_live_observability_gap",
+      "fix_applied": "First post-enable monitoring check found zero [P0_8_PLUS_LIVE] log activity in 35min -- traced to run_live_tick() only logging per-candidate lines, no tick-complete summary for the common 0-candidate case (unlike the shadow evaluator). Added matching tick-complete log line. Pure additive, zero behavior change, 23/23 tests unchanged. Deployed via gated PLAN+DEPLOY. Confirmed live: [P0_8_PLUS_LIVE] tick complete: 0 opened across 7 symbol(s) -- thread confirmed alive, just found nothing (expected).",
+      "commit": "a81fab1",
+      "deploy_result": "PASS"
     }
   ],
   "experiment": {
