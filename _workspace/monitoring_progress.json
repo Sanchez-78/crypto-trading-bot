@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 85,
+  "cycle": 86,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 85,
+  "total_cycles_completed": 86,
   "current_wr": 17.0,
   "current_pnl": -0.091357,
-  "last_update": "2026-08-14T12:58:50Z",
+  "last_update": "2026-08-17T06:20:37Z",
   "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -857,6 +857,16 @@
       "deploy_result": "N/A",
       "next_cycle_plan": "Continue standard 30-min monitoring cadence.",
       "elapsed_mins": 5
+    },
+    {
+      "cycle": 86,
+      "timestamp": "2026-08-17T06:20:37Z",
+      "status": "MULTI_DAY_GAP_FOUND_A_DEEPER_SILENT_STALL_ROOT_CAUSED_DELIBERATELY_NOT_PATCHED",
+      "note": "Large monitoring gap (~2.8 days). closed_trades only +13 over 67h. Investigated: 0 PAPER_ENTRY log lines in the last 48h -- a genuine, sustained, SILENT stall (service never crashed, systemctl is-active=active the whole time, uptime continuous since the 2026-08-14 11:44 UTC deploy). Root cause found: realtime_decision_engine.py's SKIP_SCORE_HARD branch unconditionally `return None`s when decision_score=0.7*ev+0.3*ws falls below the adaptive hard floor -- confirmed the floor itself has ALREADY self-relaxed to its most lenient setting (0.02, CRITICAL idle tier) but observed scores are persistently NEGATIVE (-0.07 to -0.12), which no floor relaxation can rescue. A SEPARATE, LATER code path (REJECT_NEGATIVE_EV, ~line 3774) routes negative-EV candidates through the starvation-discovery fallback (the SAME mechanism fixed in cycles 73/82) -- but SKIP_SCORE_HARD's early return never reaches it. DELIBERATELY NOT PATCHED this session: this is the most historically fragile file in the codebase (per project memory: signal inversion bugs, RSI/ADX saturation, cost-floor-via-untracked-config incidents), a correct fix needs a full trace of signal/EV state not completed this session, and today ALREADY had one same-shaped gap-and-fix (segment-skip -> stall -> safety valve) -- doing this again in the MORE sensitive core decision engine risks compounding mistakes. The current stalled-but-safe state was judged lower-risk than a rushed patch. Full analysis: _workspace/28_hard_score_reject_bypasses_discovery_entirely.md. Memory updated with a pointer + the operational lesson (always check PAPER_ENTRY recency, not just service-active, after any gap). CONFIRMED STILL WORKING over this same 67h gap: quota fix (reads=768/50000, strongest possible confirmation), service stability (no crashes), lifetime metric (stable, no anomalies).",
+      "commit": "1d7c70a (LIVE, unchanged -- new finding documented, not yet patched)",
+      "deploy_result": "N/A",
+      "next_cycle_plan": "This is now the top-priority item for a FUTURE dedicated session (not rushed). Continue standard monitoring meanwhile -- report this honestly to the user now given the severity.",
+      "elapsed_mins": 25
     }
   ],
   "experiment": {
