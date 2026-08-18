@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 97,
+  "cycle": 98,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 97,
-  "current_wr": 21.0,
+  "total_cycles_completed": 98,
+  "current_wr": 17.0,
   "current_pnl": -0.299011,
-  "last_update": "2026-08-18T06:50:39.965752Z",
+  "last_update": "2026-08-18T07:11:52.128395Z",
   "status": "quota_wait",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -1003,6 +1003,19 @@
       "commit": "7f07837",
       "deploy_result": "PASS",
       "notes": "Confirmed the previously-known 24h-flat-lockout issue is a SEPARATE, already-fixed (2026-08-07) problem -- todays quota_429 degradation will still correctly clear at the 07:00 UTC reset regardless of this fix. Value of this fix is for future days writes cross 20k while reads stay healthy. Root cause of the 20k+ writes/day itself not yet investigated -- flagged as a possible follow-up if it recurs."
+    },
+    {
+      "cycle": 98,
+      "timestamp": "2026-08-18T07:11:52.128268Z",
+      "status": "RECOVERED",
+      "wr_recent100": 17.0,
+      "lifetime_pf": 0.363,
+      "lifetime_n": 5532,
+      "open_positions": 98,
+      "quota_reads": 2,
+      "quota_writes": 10,
+      "quota_exhausted": false,
+      "notes": "CONFIRMED RECOVERY: 07:00 UTC quota reset worked cleanly (reads 2/50000, writes 10/20000, quota_exhausted=False). Bot resumed active trading immediately: 100 PAPER_ENTRY in last 15min, healthy ENTRY_PIPELINE_SUMMARY logs (thousands of raw_signals/rde_candidates, no tracebacks). Correction: real position cap appears to be 100 (open=100 in max_open_exceeded rejects), not PAPER_MAX_POSITIONS=50 as assumed from the systemd overlay -- noted, not investigated further (not a safety concern, cap IS being enforced). WR still low (17%, noisy window) -- unrelated to the quota incident, consistent with the long-documented primary-signal-path issue."
     }
   ],
   "experiment": {
