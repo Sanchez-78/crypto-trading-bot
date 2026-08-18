@@ -236,6 +236,44 @@ class TestPaperExecutorBasics:
         )
         assert result.get("reason") == "weak_ev_below_0.01"
 
+    def test_can_admit_paper_evidence_collection_p0_8_plus_allows_sideways(self, clean_positions):
+        """2026-08-18 (_workspace/35): the P0_8_PLUS_EVIDENCE_COLLECTION
+        bucket must be able to admit SIDEWAYS/VOLATILE regimes -- the
+        legacy EVIDENCE_REGIMES set (BULL_TREND/BEAR_TREND only) would
+        otherwise silently re-block sideways_mean_reversion_v1/
+        volatility_breakout_v1 candidates even after signal_router.py's
+        own scope was widened for this bucket."""
+        from src.services.paper_trade_executor import _can_admit_paper_evidence_collection
+
+        for regime in ("SIDEWAYS", "VOLATILE", "BULL_TREND", "BEAR_TREND"):
+            allowed, reason = _can_admit_paper_evidence_collection(
+                "ETHUSDT", regime, bucket="P0_8_PLUS_EVIDENCE_COLLECTION",
+            )
+            assert allowed is True, f"{regime} should be allowed for the P0.8+ bucket, got {reason}"
+
+    def test_can_admit_paper_evidence_collection_legacy_bucket_still_rejects_sideways(self, clean_positions):
+        """Negative control: the LEGACY path (no bucket, or any other
+        bucket) must be completely unaffected by the P0.8+ widening --
+        SIDEWAYS stays rejected exactly as before."""
+        from src.services.paper_trade_executor import _can_admit_paper_evidence_collection
+
+        allowed, reason = _can_admit_paper_evidence_collection("ETHUSDT", "SIDEWAYS")
+        assert allowed is False
+        assert "regime_not_in_evidence_scope" in reason
+
+        allowed2, reason2 = _can_admit_paper_evidence_collection(
+            "ETHUSDT", "SIDEWAYS", bucket="C_WEAK_EV_TRAIN",
+        )
+        assert allowed2 is False
+
+    def test_can_admit_paper_evidence_collection_p0_8_plus_rejects_unknown_regime(self, clean_positions):
+        from src.services.paper_trade_executor import _can_admit_paper_evidence_collection
+
+        allowed, reason = _can_admit_paper_evidence_collection(
+            "ETHUSDT", "SOME_UNKNOWN_REGIME", bucket="P0_8_PLUS_EVIDENCE_COLLECTION",
+        )
+        assert allowed is False
+
     def test_open_paper_position_c_weak_ev_train_unaffected_by_starvation_exemption(self, clean_positions):
         """The P0-FIX (weak_ev exemption) must stay narrowly scoped to
         PAPER_STARVATION_DISCOVERY. C_WEAK_EV_TRAIN's own admission behavior at

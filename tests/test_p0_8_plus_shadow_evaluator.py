@@ -132,6 +132,64 @@ def test_evaluate_symbol_never_raises_when_router_errors(monkeypatch):
     assert results == []
 
 
+# ---------------------------------------------------------------------------
+# P0.8+ evidence-scope widening (2026-08-18, _workspace/35) --
+# _p0_8_plus_quarantine_fn / _p0_8_plus_evidence_eligibility_fn
+# ---------------------------------------------------------------------------
+
+def test_p0_8_plus_quarantine_fn_never_quarantines_a_known_regime():
+    for regime in ("BULL_TREND", "BEAR_TREND", "SIDEWAYS", "VOLATILE"):
+        is_quarantined, reason = shadow._p0_8_plus_quarantine_fn("BTCUSDT", regime)
+        assert is_quarantined is False, f"{regime} should not be quarantined for the P0.8+ pipeline"
+
+
+def test_p0_8_plus_quarantine_fn_quarantines_an_unknown_regime():
+    """Defensive: a regime string outside the classifier's known
+    vocabulary (drift/bug) must still fail closed, not silently pass."""
+    is_quarantined, reason = shadow._p0_8_plus_quarantine_fn("BTCUSDT", "SOME_UNKNOWN_REGIME")
+    assert is_quarantined is True
+    assert "unknown_regime" in reason
+
+
+def test_p0_8_plus_evidence_eligibility_fn_allows_all_known_regimes():
+    """The whole point of this override: SIDEWAYS/VOLATILE (which the
+    shared P0SegmentEVGate default rejects, blocking
+    sideways_mean_reversion_v1/volatility_breakout_v1 entirely) must be
+    eligible here."""
+    for regime in ("BULL_TREND", "BEAR_TREND", "SIDEWAYS", "VOLATILE"):
+        is_eligible, reason = shadow._p0_8_plus_evidence_eligibility_fn("ETHUSDT", regime)
+        assert is_eligible is True, f"{regime} should be evidence-eligible for the P0.8+ pipeline"
+
+
+def test_p0_8_plus_evidence_eligibility_fn_rejects_an_unknown_regime():
+    is_eligible, reason = shadow._p0_8_plus_evidence_eligibility_fn("ETHUSDT", "SOME_UNKNOWN_REGIME")
+    assert is_eligible is False
+    assert "unknown_regime" in reason
+
+
+def test_evaluate_symbol_passes_p0_8_plus_overrides_to_the_router(monkeypatch):
+    """Wiring check: evaluate_symbol() must actually pass this module's
+    quarantine_fn/evidence_eligibility_fn through to signal_router.py --
+    a previously-correct override function that never gets wired in would
+    be silent dead code."""
+    reg = StrategyRegistry()
+    shadow.ensure_registered(["ETHUSDT"], registry=reg)
+    cache = _fake_cache(_trending_candles(drift_bps_per_bar=15.0, seed=4))
+
+    captured_kwargs = {}
+    real_fn = shadow.signal_router.evaluate_signal_for_paper_entry
+
+    def _spy(*args, **kwargs):
+        captured_kwargs.update(kwargs)
+        return real_fn(*args, **kwargs)
+
+    monkeypatch.setattr(shadow.signal_router, "evaluate_signal_for_paper_entry", _spy)
+    shadow.evaluate_symbol("ETHUSDT", cache=cache, registry=reg, risk_guard_fn=_allow_risk)
+
+    assert captured_kwargs.get("quarantine_fn") is shadow._p0_8_plus_quarantine_fn
+    assert captured_kwargs.get("evidence_eligibility_fn") is shadow._p0_8_plus_evidence_eligibility_fn
+
+
 def test_evaluate_symbol_evaluation_reflects_risk_guard_denial():
     reg = StrategyRegistry()
     shadow.ensure_registered(["ETHUSDT"], registry=reg)

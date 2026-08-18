@@ -156,6 +156,52 @@ def test_quarantined_symbol_rejected_by_p0():
     assert "quarantined" in ev.decision_reasons[0]
 
 
+def test_quarantine_fn_override_lets_a_normally_quarantined_symbol_through():
+    """2026-08-18 (_workspace/35): a caller with its own, already-reviewed
+    per-strategy boundary can override the shared P0SegmentEVGate
+    quarantine -- BTCUSDT is quarantined by the default, but a custom
+    quarantine_fn that says otherwise must be honored (proceeding on to
+    the risk guard, not stopping at P0_REJECT_QUARANTINED)."""
+    reg = _registry(allowed_symbols=frozenset({"BTCUSDT"}))
+    ev = evaluate_signal_for_paper_entry(
+        _signal(symbol="BTCUSDT"), registry=reg, risk_guard_fn=_allow_risk,
+        quarantine_fn=lambda symbol, regime: (False, "test_override_not_quarantined"),
+        **_market_kwargs(),
+    )
+    assert ev.decision_code != sc.P0_REJECT_QUARANTINED
+    assert ev.admitted is True
+
+
+def test_evidence_eligibility_fn_override_allows_a_normally_ineligible_regime():
+    """The shared P0SegmentEVGate default only allows BULL_TREND/BEAR_TREND
+    for evidence collection -- a custom evidence_eligibility_fn can widen
+    this for a caller whose own strategies target other regimes (e.g.
+    sideways_mean_reversion_v1 targets SIDEWAYS, which the default would
+    reject as P0_REJECT_NOT_IN_EVIDENCE_SCOPE)."""
+    reg = _registry(allowed_regimes=frozenset({"SIDEWAYS"}))
+    ev = evaluate_signal_for_paper_entry(
+        _signal(regime="SIDEWAYS"), registry=reg, risk_guard_fn=_allow_risk,
+        evidence_eligibility_fn=lambda symbol, regime: (True, "test_override_eligible"),
+        **_market_kwargs(),
+    )
+    assert ev.decision_code != sc.P0_REJECT_NOT_IN_EVIDENCE_SCOPE
+    assert ev.admitted is True
+    assert ev.decision_code == sc.P0_ADMIT_EVIDENCE_COLLECTION
+
+
+def test_evidence_eligibility_fn_default_still_rejects_sideways_when_not_overridden():
+    """Negative control: without the override, SIDEWAYS stays rejected --
+    pins that the default (unchanged) behavior is what the override tests
+    above are actually testing against, not a pre-existing pass."""
+    reg = _registry(allowed_regimes=frozenset({"SIDEWAYS"}))
+    ev = evaluate_signal_for_paper_entry(
+        _signal(regime="SIDEWAYS"), registry=reg, risk_guard_fn=_allow_risk,
+        **_market_kwargs(),
+    )
+    assert ev.admitted is False
+    assert ev.decision_code == sc.P0_REJECT_NOT_IN_EVIDENCE_SCOPE
+
+
 def test_evidence_collection_admitted_end_to_end_when_risk_guard_allows():
     """§16 step 9, post-§17 wiring: a signal that clears cost + P0
     (evidence-collection scope) AND the risk guard is now genuinely

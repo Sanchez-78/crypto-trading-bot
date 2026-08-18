@@ -64,13 +64,38 @@ def evaluate_signal_for_paper_entry(
     max_data_age_ms: int = DEFAULT_MAX_DATA_AGE_MS,
     registry: Optional[StrategyRegistry] = None,
     risk_guard_fn: Optional[Callable[..., RiskGuardResult]] = None,
+    quarantine_fn: Optional[Callable[[str, str], "tuple[bool, str]"]] = None,
+    evidence_eligibility_fn: Optional[Callable[[str, str], "tuple[bool, str]"]] = None,
 ) -> sc.SignalEvaluation:
     """Evaluate one StrategySignal for paper-entry admission.
 
     Never opens a position. Never mutates `signal`. Returns an immutable
     SignalEvaluation whose `admitted` flag a caller (P0.8+ strategy glue,
     not this module) may act on.
+
+    `quarantine_fn`/`evidence_eligibility_fn` (2026-08-18, _workspace/35):
+    default to P0SegmentEVGate.is_quarantined_for_strict_ev /
+    is_eligible_for_evidence_collection -- zero behavior change for any
+    existing caller. Injectable so a caller with its own,
+    already-reviewed per-strategy symbol/regime boundary (registration.
+    allowed_symbols/allowed_regimes, checked above at step 1-2) is not
+    ALSO forced through P0SegmentEVGate's separate, legacy-signal-path-
+    oriented QUARANTINED_SYMBOLS/QUARANTINED_REGIMES/
+    EVIDENCE_COLLECTION_REGIMES constants -- those were tuned for the old
+    signal path (e.g. "paper trading is long-only" for the BEAR_TREND
+    quarantine) and do not necessarily apply to a new strategy whose own
+    registration already declares a different, deliberate boundary (e.g.
+    trend_cost_aware_v1 explicitly supports SHORT entries in BEAR_TREND
+    via its own ALLOWED_SHORT_REGIMES). Widening the SHARED
+    P0SegmentEVGate constants themselves would also change the legacy
+    signal path's behavior -- out of scope here; this stays local to
+    whichever caller opts in.
     """
+    quarantine_check = quarantine_fn if quarantine_fn is not None else P0SegmentEVGate.is_quarantined_for_strict_ev
+    evidence_eligibility_check = (
+        evidence_eligibility_fn if evidence_eligibility_fn is not None
+        else P0SegmentEVGate.is_eligible_for_evidence_collection
+    )
     now_ms = int(now_ms if now_ms is not None else time.time() * 1000)
     reg = registry if registry is not None else get_default_registry()
 
@@ -180,8 +205,8 @@ def evaluate_signal_for_paper_entry(
         f"{segment_key.source}:{segment_key.tp_sl_profile}"
     )
 
-    is_quarantined, quarantine_reason = P0SegmentEVGate.is_quarantined_for_strict_ev(signal.symbol, signal.regime)
-    is_evidence_eligible, evidence_reason = P0SegmentEVGate.is_eligible_for_evidence_collection(signal.symbol, signal.regime)
+    is_quarantined, quarantine_reason = quarantine_check(signal.symbol, signal.regime)
+    is_evidence_eligible, evidence_reason = evidence_eligibility_check(signal.symbol, signal.regime)
 
     # §2.4: "All new strategies begin as evidence-only sources
     # (strict_ev=false, readiness_eligible=false) until they separately

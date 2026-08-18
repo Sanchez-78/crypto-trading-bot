@@ -529,7 +529,18 @@ def _calculate_dynamic_position_size(signal: dict) -> float:
         return _POSITION_SIZE_BASE * 0.3  # Very low: 0.3x
 
 
-def _can_admit_paper_evidence_collection(symbol: str, regime: str) -> tuple[bool, str]:
+# 2026-08-18: the full set of regimes regime_classifier_v1.py can emit.
+# Deliberately a standalone constant, not imported from
+# p0_8_plus_shadow_evaluator.py (which has its own identical copy for the
+# signal_router-level override) -- this is a foundational, widely-imported
+# module and should not gain a module-level dependency on one specific
+# new strategy pipeline for a 4-string frozenset. Keep both copies in
+# sync if regime_classifier_v1.py's output vocabulary ever changes
+# (covered by test_p0_8_plus_evidence_scope_widening.py on both sides).
+_P0_8_PLUS_KNOWN_REGIMES = frozenset({"BULL_TREND", "BEAR_TREND", "SIDEWAYS", "VOLATILE"})
+
+
+def _can_admit_paper_evidence_collection(symbol: str, regime: str, *, bucket: Optional[str] = None) -> tuple[bool, str]:
     """P0.3C: Check if signal is allowed in evidence collection scope.
 
     Evidence collection scope (first restart):
@@ -543,6 +554,23 @@ def _can_admit_paper_evidence_collection(symbol: str, regime: str) -> tuple[bool
     EVIDENCE_SYMBOLS = {"ETHUSDT", "BTCUSDT", "BNBUSDT", "ADAUSDT", "XRPUSDT", "SOLUSDT", "DOTUSDT", "LTCUSDT", "LINKUSDT"}
     # Allowed regimes for evidence collection (V10.26: enabled both BULL and BEAR for full market coverage)
     EVIDENCE_REGIMES = {"BULL_TREND", "BEAR_TREND"}  # Full regime coverage for hedge/short opportunities
+
+    # 2026-08-18 (_workspace/35_p0_8_plus_evidence_scope_widening.md): the
+    # P0.8+ pipeline (p0_8_plus_live_pipeline.py) already passed its own
+    # per-strategy StrategyRegistration.allowed_regimes/allowed_symbols
+    # boundary AND signal_router.py's own (also-widened-for-this-bucket)
+    # quarantine/evidence-eligibility check before ever reaching here --
+    # re-applying THIS separate, legacy-signal-path-tuned regime allowlist
+    # (SIDEWAYS/VOLATILE were never in scope here, only BULL/BEAR_TREND)
+    # would silently re-impose the exact restriction the router-level
+    # widening was meant to lift, for sideways_mean_reversion_v1 and
+    # volatility_breakout_v1 specifically. Scoped narrowly to this one
+    # bucket string so the legacy signal path's own regime scope is
+    # completely untouched.
+    if bucket == "P0_8_PLUS_EVIDENCE_COLLECTION":
+        if regime not in _P0_8_PLUS_KNOWN_REGIMES:
+            return False, f"regime_not_in_evidence_scope:{regime}"
+        return True, "allowed_for_evidence_collection_p0_8_plus"
 
     if symbol not in EVIDENCE_SYMBOLS:
         return False, f"symbol_not_in_evidence_scope:{symbol}"
@@ -1624,7 +1652,7 @@ def open_paper_position(
 
     if reject_p0:
         # P0.3C: Strict EV blocked → Route to evidence collection if allowed
-        can_admit_evidence, evidence_reason = _can_admit_paper_evidence_collection(symbol, regime)
+        can_admit_evidence, evidence_reason = _can_admit_paper_evidence_collection(symbol, regime, bucket=bucket)
 
         if can_admit_evidence:
             # P0.3C: Route to evidence collection with EXPLICIT metadata

@@ -115,6 +115,48 @@ def _env_symbols() -> Tuple[str, ...]:
     return symbols if symbols else _DEFAULT_SYMBOLS
 
 
+# 2026-08-18 (_workspace/35_p0_8_plus_evidence_scope_widening.md): the full
+# set of regimes regime_classifier_v1.py can emit -- kept in sync with the
+# standalone copy in paper_trade_executor.py's own bucket-scoped exemption
+# (see that module's comment for why it isn't imported from here).
+_P0_8_PLUS_KNOWN_REGIMES = frozenset({"BULL_TREND", "BEAR_TREND", "SIDEWAYS", "VOLATILE"})
+
+
+def _p0_8_plus_quarantine_fn(symbol: str, regime: str) -> Tuple[bool, str]:
+    """signal_router.py's quarantine_fn override for this pipeline only.
+
+    P0SegmentEVGate.is_quarantined_for_strict_ev (the shared default)
+    blocks QUARANTINED_SYMBOLS={"BTCUSDT","SOLUSDT"} and
+    QUARANTINED_REGIMES={"BEAR_TREND"} -- both tuned for the LEGACY signal
+    path (the BEAR_TREND block's own comment says "paper trading is
+    long-only", i.e. that path cannot short). That premise does not hold
+    for the P0.8+ pipeline: trend_cost_aware_v1 explicitly supports SHORT
+    entries in BEAR_TREND via its own ALLOWED_SHORT_REGIMES, and every
+    strategy's per-symbol/per-regime scope is already enforced earlier
+    (signal_router.py step 1-2, StrategyRegistration.allowed_symbols/
+    allowed_regimes) before this function is ever consulted. The only
+    thing left to guard against here is a genuinely unrecognized regime
+    string (a classifier bug/drift), not a specific symbol or regime this
+    pipeline's own strategies weren't already scoped to.
+    """
+    if regime not in _P0_8_PLUS_KNOWN_REGIMES:
+        return True, f"unknown_regime:{regime}"
+    return False, "not_quarantined"
+
+
+def _p0_8_plus_evidence_eligibility_fn(symbol: str, regime: str) -> Tuple[bool, str]:
+    """signal_router.py's evidence_eligibility_fn override for this
+    pipeline only -- see _p0_8_plus_quarantine_fn's docstring for the
+    same rationale. P0SegmentEVGate.is_eligible_for_evidence_collection's
+    shared default only allows BULL_TREND/BEAR_TREND, which structurally
+    excludes sideways_mean_reversion_v1 (targets SIDEWAYS) and
+    volatility_breakout_v1 (targets VOLATILE) from ever being admitted,
+    regardless of how good their signals are."""
+    if regime not in _P0_8_PLUS_KNOWN_REGIMES:
+        return False, f"unknown_regime:{regime}"
+    return True, "allowed_for_evidence_collection_p0_8_plus"
+
+
 @dataclass(frozen=True)
 class CandidateEvaluation:
     symbol: str
@@ -237,6 +279,8 @@ def evaluate_symbol(
                     max_data_age_ms=SHADOW_MAX_DATA_AGE_MS,
                     registry=registry,
                     risk_guard_fn=risk_guard_fn,
+                    quarantine_fn=_p0_8_plus_quarantine_fn,
+                    evidence_eligibility_fn=_p0_8_plus_evidence_eligibility_fn,
                 )
             except Exception as exc:
                 log.warning("[P0_8_PLUS_SHADOW] router evaluation failed for %s/%s: %r", symbol, mod.STRATEGY_ID, exc)
