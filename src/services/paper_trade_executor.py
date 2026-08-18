@@ -3417,7 +3417,41 @@ def calibrate_paper_training_geometry(
     else:  # paper_train
         tp_floor_pct = fee_drag_pct + 0.03  # ~0.21%
         tp_cap_pct = 2.50      # V10.21: Increased from 0.45% to allow 2.5% TP targets
-        sl_default_pct = 2.00  # V10.21: Increased from 0.45% to match TP width
+        # P1.1AQ FIX (2026-08-18): V10.21 set this to 2.00% to pair with the then
+        # tp_cap_pct=2.50 (rr ~1.25, coherent). V10.27 (e2a6ba3) + 313eba6 then
+        # added the flat-market TP floor below (tp_floor_pct) WITHOUT touching
+        # this constant, silently decoupling SL from the TP it was designed to
+        # pair with. In production the TP floor is pinned at exactly 0.20% (not
+        # a range) by trade_executor.MIN_TP_PCT=0.0020, since
+        # max(fee_drag_pct+0.03, MIN_TP_PCT*100) = max(0.07, 0.20) = 0.20 with
+        # the live PAPER_FEE_PCT=0.0004 -> fee_drag_pct=0.04 -- so the actual TP
+        # almost always lands there, leaving a ~10x TP:SL mismatch (rr as low as
+        # 0.10) that also contradicts this function's own docstring ("SL range:
+        # 0.35-0.60%, suggested 0.45%"). Live evidence (2026-08-18, forensic
+        # pass): 205 C_WEAK_EV_TRAIN closes, 0 SL exits ever recorded -- the
+        # 2.00% stop has never once been reachable within this bucket's observed
+        # hold window (hold_s 301-305 vs hold_limit_s=300 at entry; unrelated to
+        # the separate general _MAX_AGE_S=1200s ceiling in _effective_paper_hold_s())
+        # (worst observed MAE -0.053%, 38x short of the stop) -- so it was pure
+        # latent tail risk plus a poisoned learning signal (rr=0.100 logged for a
+        # geometry never actually traded). Restored to the function's own
+        # documented value.
+        #
+        # KNOWN LIMITATION (tracked as a follow-up, not fixed here): even 0.45%
+        # still fails this repo's own validate_tp_sl_cost_floor() invariant at a
+        # 0.20% TP (needs an 80.0% TP-hit-share vs a 60% ceiling) -- no point in
+        # the documented 0.35-0.60% range satisfies it, because that range
+        # predates the TP floor binding. The invariant-consistent fix is to
+        # derive SL from the calibrated TP (or explicitly decide this
+        # evidence-collection bucket is exempt from the profitability
+        # invariant), not to swap in a second hardcoded constant. This patch is
+        # deliberately scoped to removing the ~10x mismatch (94.1% -> 80.0%
+        # breakeven share) and NOT to closing that remaining gap -- see the
+        # cost-floor invariant follow-up ticket, which must land before or with
+        # any future fix to the system-wide TP/SL-stopped-firing issue (once
+        # exits resume, this bucket would otherwise go from "geometry never
+        # resolves" to "geometry resolves at a structurally losing rate").
+        sl_default_pct = 0.45  # matches this function's docstring SL range (0.35-0.60%, suggested 0.45%)
 
     # V10.27 SENIOR FIX: Calibrate TP/SL to ACTUAL market volatility (expected_move_pct)
     # Root cause: 80/50 bps targets unreachable in 600s flat market (price only moves 1-7 bps)

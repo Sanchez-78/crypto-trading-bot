@@ -5449,6 +5449,58 @@ class TestP1_1AN_PaperTrainingGeometryCalibration:
             # wider targets in volatile markets; expected_move=10% -> capped at 2.5%.
             assert result["tp_pct"] <= 2.50, f"TP {result['tp_pct']}% should be <= 2.50%"
 
+    def test_calibration_sl_matches_documented_range_not_stale_2pct(self, clean_positions):
+        """P1.1AQ regression: SL must land in the docstring's documented
+        0.35-0.60% range, not the stale 2.00% left over from before V10.27
+        decoupled the flat-market TP floor from this constant.
+
+        Live evidence (2026-08-18 forensic pass, production PAPER_FEE_PCT=0.0004
+        -> fee_drag_pct=0.04): a real C_WEAK_EV_TRAIN entry calibrated to
+        tp_pct=0.200 sl_pct=2.000 (rr=0.100) despite the original signal
+        requesting tp_pct_before=0.350 sl_pct_before=0.250 (rr=1.4) -- SL was
+        never reachable (0/205 SL exits ever) while risking 10x the TP distance.
+        """
+        from src.services.paper_trade_executor import calibrate_paper_training_geometry
+
+        entry_price = 75.875
+        normalized_tp_sl = {
+            "tp": 76.14,
+            "sl": 75.685,
+            "tp_pct": 0.350,
+            "sl_pct": 0.250,
+            "rr": 1.4,
+            "repaired": False,
+            "repair_reason": None,
+        }
+
+        result = calibrate_paper_training_geometry(
+            mode="paper_train",
+            source="training_sampler",
+            training_bucket="C_WEAK_EV_TRAIN",
+            side="SELL",
+            entry=entry_price,
+            tp_sl=normalized_tp_sl,
+            expected_move_pct=0.0,  # flat market, matches live evidence
+            fee_drag_pct=0.04,      # matches production PAPER_FEE_PCT=0.0004
+        )
+
+        assert result.get("calibrated") is True
+        assert 0.35 <= result["sl_pct"] <= 0.60, (
+            f"sl_pct {result['sl_pct']}% must be in the documented 0.35-0.60% "
+            f"range, not the stale 2.00% (regression: rr would collapse to "
+            f"~0.10 against an unreachable stop)"
+        )
+        # rr must no longer be a ~10x mismatch -- the fixed SL keeps the ratio
+        # within a plausible training-signal range (not asserting a specific
+        # target rr, only that it is no longer an order of magnitude off).
+        # NOTE: this bound is coupled to trade_executor.MIN_TP_PCT (currently
+        # 0.0020 -> TP floor 0.20%, rr=0.45/0.20=~2.25 in the cap direction and
+        # 0.44 here since sl_default_pct=0.45 dominates); if MIN_TP_PCT is ever
+        # lowered below ~0.00135 the TP floor falls back to fee_drag_pct+0.03=0.07
+        # and rr drops to ~0.156, failing this assertion for a reason unrelated
+        # to the SL constant this test targets.
+        assert result["rr"] >= 0.30, f"rr {result['rr']} still implausibly low"
+
     def test_calibration_metadata_in_position(self, clean_positions):
         """Test: Calibration metadata is stored in position dict."""
         import time
