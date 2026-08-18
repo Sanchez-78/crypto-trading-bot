@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 100,
+  "cycle": 101,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 100,
+  "total_cycles_completed": 101,
   "current_wr": 33.0,
   "current_pnl": -0.299011,
-  "last_update": "2026-08-18T08:09:04.133818Z",
+  "last_update": "2026-08-18T08:16:31.058422Z",
   "status": "quota_wait",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -1039,6 +1039,16 @@
       "quota_reads": 6,
       "quota_writes": 38,
       "notes": "Post scope-widening-deploy check: still ZERO candidate-level log lines (admitted true or false) from any of the 3 P0.8+ strategies in 32min -- confirms the bottleneck is now upstream at strategy-level generate_candidates() (internal pattern thresholds), not admission scope (which is now fixed). Consistent with the pre-documented hypothesis. No action this cycle -- this needs longer observation, not another code change yet. Overall bot health nominal: quota healthy, lifetime_n growing at a normal pace again post-quota-recovery (+239 since last check), service healthy zero errors."
+    },
+    {
+      "cycle": 101,
+      "timestamp": "2026-08-18T08:16:31.058318Z",
+      "status": "FIXED_AND_DEPLOYED",
+      "blocker": "dynamic_trend_exit_v1_never_wired",
+      "fix_applied": "Item #2 from prioritized next steps: wired P1.0 dynamic_trend_exit_v1 (previously zero call sites) into update_paper_positions() via new _evaluate_p0_8_plus_dynamic_exit(), scoped to trend_cost_aware_v1-sourced P0.8+ positions only (the only strategy this exit module was designed for). Also fixed open_paper_position() silently dropping extra[strategy_id]. Deliberately scoped out: flow_evaluation (P0.9 still shadow-only), remaining_net_edge_bps (no safe decay model), allowed_regimes-based REGIME_INVALIDATED (no live per-tick reclassification). 12 new tests, 273 passed / 1 pre-existing failure across full regression. Deployed via gated PLAN+DEPLOY, service healthy.",
+      "commit": "1ac9288",
+      "deploy_result": "PASS",
+      "notes": "Currently dormant -- 0 P0.8+ positions have opened since the scope-widening fix, still watching for first real admit. Gate G6 (Dynamic exit accepted) from the source document now has real code behind it, though RUNTIME_VERIFIED status still pending an actual live trigger."
     }
   ],
   "experiment": {
