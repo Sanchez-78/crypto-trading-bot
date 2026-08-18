@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 98,
+  "cycle": 99,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 98,
+  "total_cycles_completed": 99,
   "current_wr": 17.0,
   "current_pnl": -0.299011,
-  "last_update": "2026-08-18T07:11:52.128395Z",
+  "last_update": "2026-08-18T07:37:19.068584Z",
   "status": "quota_wait",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -1016,6 +1016,16 @@
       "quota_writes": 10,
       "quota_exhausted": false,
       "notes": "CONFIRMED RECOVERY: 07:00 UTC quota reset worked cleanly (reads 2/50000, writes 10/20000, quota_exhausted=False). Bot resumed active trading immediately: 100 PAPER_ENTRY in last 15min, healthy ENTRY_PIPELINE_SUMMARY logs (thousands of raw_signals/rde_candidates, no tracebacks). Correction: real position cap appears to be 100 (open=100 in max_open_exceeded rejects), not PAPER_MAX_POSITIONS=50 as assumed from the systemd overlay -- noted, not investigated further (not a safety concern, cap IS being enforced). WR still low (17%, noisy window) -- unrelated to the quota incident, consistent with the long-documented primary-signal-path issue."
+    },
+    {
+      "cycle": 99,
+      "timestamp": "2026-08-18T07:37:19.068489Z",
+      "status": "FIXED_AND_DEPLOYED",
+      "blocker": "p0_8_plus_evidence_scope_too_narrow",
+      "fix_applied": "Operator directive: implement priority-1 item from proposed next steps. Root cause of 0 admitted candidates across ~24h found: shared P0SegmentEVGate.EVIDENCE_COLLECTION_REGIMES={BULL_TREND,BEAR_TREND} structurally excluded sideways_mean_reversion_v1 (SIDEWAYS only) and volatility_breakout_v1 (SIDEWAYS+VOLATILE) entirely; QUARANTINED_REGIMES={BEAR_TREND} long-only rationale factually false for trend_cost_aware_v1 which has its own ALLOWED_SHORT_REGIMES. Fixed via injectable quarantine_fn/evidence_eligibility_fn on signal_router.py (same DI pattern as risk_guard_fn) + bucket-scoped override in paper_trade_executor.py (open_paper_position internal P0.3C reroute independently re-checks the same legacy regime set, would have silently re-blocked one layer downstream). Legacy signal path completely untouched -- opt-in injection + bucket-scoped string match only. 11 new tests, 340 passed / 2 pre-existing failures (confirmed via git stash) across full regression sweep. Deployed via gated PLAN+DEPLOY, service healthy.",
+      "commit": "ebdb2a6",
+      "deploy_result": "PASS",
+      "notes": "Not yet observed to produce real admitted candidates -- deployed same session, watching over next cycles."
     }
   ],
   "experiment": {
