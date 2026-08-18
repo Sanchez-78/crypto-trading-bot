@@ -156,3 +156,46 @@ Auto-deploy-on-push is **not** the live mechanism (a stale assumption in project
 | Untracked systemd config drop-in on server (governance gap, pre-existing, flagged this session) | High (separate incident, already known) | Not this program's scope to fix, but new P0.7+ flags must not be added the same untracked way |
 
 **Gate G0 verdict: PASS.** Entry-path inventory complete for all currently-reachable paths; two items (E3, E5) carry forward as explicit test obligations rather than closed items — this is disclosed, not hidden, per document §0.3. Service command identified. Effective configuration identified from live source. Real-order path identified and independently re-confirmed unreachable. Working tree protected (no destructive operations performed; only new files added under `docs/`, `audit/`).
+
+---
+
+## 10. Update — 2026-08-17/18 (Gate G7 wiring, entry-path inventory revision)
+
+New call site #7 added to the entry-path inventory referenced in §2 (see
+`docs/P0_8_ACCEPTANCE.md`/`docs/P1_0_ACCEPTANCE.md` and
+`_workspace/33`/`35`/`36` for the full evidence trail): `src/services/
+p0_8_plus_live_pipeline.py`'s `run_live_tick()` is now the first and ONLY
+module beyond the legacy `signal_generator.py`/`realtime_decision_engine.py`
+path that reaches `open_paper_position()` for a P0.8+-sourced signal. It
+does not create a new admission decision — it activates the pre-existing
+`P0_ADMIT_EVIDENCE_COLLECTION` code path `signal_router.py` had already
+computed since commit `d4d69ee` (2026-08-07) but which had zero callers
+until this wiring.
+
+**Gate progression against §36A (this report's own gate framework):**
+
+| Gate | Status as of 2026-08-18 |
+|---|---|
+| G0 Repository truth | PASS (this report) |
+| G1 Data integrity | Not separately re-verified this pass (candle-based, not the full §8 tick-stream pipeline — deliberate MVP scope decision, see `_workspace/18_live_wiring_plan.md`) |
+| G2 Execution/persistence integrity | PASS — reuses the existing, already-hardened `open_paper_position()` choke |
+| G3 P0.7 accepted | See `docs/P0_7_ACCEPTANCE.md` |
+| G4 Trend shadow accepted | PASS — shadow evaluator ran read-only for days before any live wiring (`_workspace/18`'s own smoke test, cost-rejection observed working correctly) |
+| G5 OFI shadow accepted | Module exists, unit-tested, zero live callers — see `docs/P0_9_ACCEPTANCE.md`. Not formally "accepted" via a runtime observation window because nothing consumes its output yet. |
+| G6 Dynamic exit accepted | Wired 2026-08-18 (`docs/P1_0_ACCEPTANCE.md`), scoped to `trend_cost_aware_v1` only, not yet RUNTIME_VERIFIED against a real position (0 P0.8+ positions opened as of this writing) |
+| G7 Controlled runtime accepted | Live wiring deployed + reviewed (trading-safety-agent APPROVED_WITH_CONDITIONS, reviewer-agent APPROVED) — `_workspace/33`. Admission scope widened `_workspace/35`. Still 0 real admits observed — the evidence-collection window this gate is supposed to unlock has not yet produced its first data point. |
+
+**Known, still-open architectural gap this update explicitly flags (not
+new, but now more consequential given G7 progress):** `paper_trade_executor.py`
+maintains its own, independent, legacy-format segment-key and
+evidence-collection-eligibility logic (`_should_skip_segment_p0_strict_ev`/
+`_can_admit_paper_evidence_collection`) that re-decides admission on
+every P0.8+ position AFTER `signal_router.py` has already decided —
+confirmed structurally always triggered for a brand-new strategy
+(`_workspace/33`'s finding). This is not a safety bug (both gates being
+more conservative than either alone is fail-safe), but it means the
+system does NOT yet have the single central admission path the document's
+§34 "Final Acceptance Criteria: Architecture" requires literally — there
+are, in practice, two admission decisions per P0.8+ candidate, not one.
+Unifying these is the most architecturally significant remaining gap
+against full document compliance; see `_workspace/37_document_compliance_gap_analysis.md`.
