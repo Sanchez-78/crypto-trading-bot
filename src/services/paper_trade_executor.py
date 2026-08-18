@@ -2031,6 +2031,11 @@ def open_paper_position(
         "explore_bucket": explore_bucket,
         "training_bucket": training_bucket,
         "bucket": bucket,  # P1.1AF: Canonical bucket field for learning state propagation
+        # 2026-08-18 (_workspace/36_dynamic_trend_exit_wiring.md): P0.8+
+        # positions carry their originating strategy_id in extra but it was
+        # previously dropped here -- needed to route P0.8+ TREND positions
+        # to dynamic_trend_exit_v1's exit hierarchy in update_paper_positions().
+        "strategy_id": extra.get("strategy_id") if extra else None,
         "explore_sub_bucket": extra.get("explore_sub_bucket") if extra else "",  # P1.1i
         "original_decision": extra.get("original_decision") if extra else "TAKE",
         "reject_reason": extra.get("reject_reason") if extra else None,
@@ -2320,6 +2325,152 @@ def check_and_close_timeout_positions(now: Optional[float] = None) -> List[dict]
     return closed_trades
 
 
+# 2026-08-18 (_workspace/36_dynamic_trend_exit_wiring.md): P1.0
+# dynamic_trend_exit_v1.py had zero call sites anywhere -- positions
+# opened by the P0.8+ pipeline (p0_8_plus_live_pipeline.py) exited
+# through the exact same generic TP/SL/timeout machinery as every other
+# paper position, missing the whole point of a purpose-built exit
+# hierarchy (structural trend failure, trailing stop, edge decay,
+# regime invalidation -- Sec 12). This wires it in, scoped narrowly to
+# trend_cost_aware_v1-sourced P0.8+ positions specifically (the only
+# strategy this exit module was designed for -- its own imports
+# reference strategy_trend_cost_aware_v1.TrendFeatures directly; the
+# other two P0.8+ strategies don't have a dedicated P1.x exit module and
+# keep using the generic exit unchanged).
+#
+# Deliberately scoped-out for this first pass (disclosed, not
+# oversights): flow_evaluation (needs P0.9 order_flow_features wiring,
+# itself still shadow-only) and remaining_net_edge_bps (no safe,
+# reviewed way yet to track edge decay over a position's life) are left
+# None -- FLOW_REVERSAL_EXIT and EDGE_DECAY_EXIT simply never fire.
+# allowed_regimes is left None (disables REGIME_INVALIDATED) because
+# this function has no live regime re-classification per tick, only the
+# regime captured once at entry -- passing a value that could only ever
+# equal itself would be a false signal of active protection.
+# max_hold_seconds reuses the position's own timeout_s (same value the
+# generic path would have used), so this hierarchy's own
+# MAX_HOLD_SAFETY_EXIT (Sec 12.9 "rare compared with semantic exits")
+# is the real safety backstop, not a separate parallel timeout.
+_P0_8_PLUS_DYNAMIC_EXIT_FEATURE_REFRESH_S = 15.0  # throttle: compute_trend_features() does real EMA work
+
+
+def _evaluate_p0_8_plus_dynamic_exit(
+    trade_id: str, pos: dict, current_price: float, ts: float,
+) -> Optional[str]:
+    """Route a trend_cost_aware_v1-sourced P0.8+ position through
+    dynamic_trend_exit_v1.evaluate_exit(). Returns a legacy-mapped exit
+    reason string if the position should close now, or None if it should
+    stay open (including the case where the hierarchy only updated the
+    trailing stop -- that mutation is applied here, under the caller's
+    already-held _POSITION_LOCK).
+
+    Never raises -- any failure (missing candle history, malformed
+    position fields, an exception inside the hierarchy itself) logs and
+    returns None, falling through to... nothing further for THIS position
+    on THIS tick (see call site: P0.8+ positions skip the generic TP/SL/
+    timeout check entirely, matching this module's own docstring "prefer
+    explicit separation" spirit -- a transient failure here just means
+    one tick with no exit evaluation, not a silent fallback to different
+    exit semantics that could conflict with this hierarchy's own stop
+    management).
+    """
+    try:
+        from src.services import candle_cache_v1
+        from src.services import dynamic_trend_exit_v1 as dyn_exit
+        from src.services.strategy_trend_cost_aware_v1 import MIN_CANDLES, compute_trend_features
+
+        side = pos.get("side", "BUY")
+        entry_price = _safe_float(pos.get("entry_price"), 0.0)
+        if entry_price <= 0:
+            return None
+
+        # Initial stop snapshot -- captured once, on this position's first
+        # dynamic-exit evaluation, never overwritten afterward (needed so
+        # the hierarchy can tell a trailed stop apart from the original
+        # one for its HARD_STOP_VOLATILITY vs HARD_STOP_STRUCTURAL code).
+        if not pos.get("dynamic_exit_initial_stop"):
+            with _POSITION_LOCK:
+                if trade_id in _POSITIONS and not _POSITIONS[trade_id].get("dynamic_exit_initial_stop"):
+                    _POSITIONS[trade_id]["dynamic_exit_initial_stop"] = pos.get("sl")
+            pos = _POSITIONS.get(trade_id, pos)
+        initial_stop = _safe_float(pos.get("dynamic_exit_initial_stop"), 0.0) or _safe_float(pos.get("sl"), 0.0)
+        current_stop = _safe_float(pos.get("sl"), 0.0)
+        if initial_stop <= 0 or current_stop <= 0:
+            return None
+
+        # MFE from the already-tracked extremes (P1.1AG), converted to
+        # signed favorable-direction bps.
+        if side == "BUY":
+            mfe_bps = max(0.0, (_safe_float(pos.get("max_seen"), entry_price) - entry_price) / entry_price * 10_000.0)
+        else:
+            mfe_bps = max(0.0, (entry_price - _safe_float(pos.get("min_seen"), entry_price)) / entry_price * 10_000.0)
+
+        # Throttled feature refresh -- compute_trend_features() does real
+        # EMA/ATR work; no need to redo it more than once per ~15s per
+        # position.
+        symbol = pos["symbol"]
+        cached_ts = pos.get("_dyn_exit_features_ts", 0.0)
+        trend_features = pos.get("_dyn_exit_trend_features")
+        atr_bps = pos.get("_dyn_exit_atr_bps")
+        if ts - cached_ts >= _P0_8_PLUS_DYNAMIC_EXIT_FEATURE_REFRESH_S or trend_features is None:
+            try:
+                candles = candle_cache_v1.get_default_cache().get_candles(symbol)
+                if len(candles) >= MIN_CANDLES:
+                    trend_features = compute_trend_features(candles)
+                    atr_bps = trend_features.atr_bps
+                    with _POSITION_LOCK:
+                        if trade_id in _POSITIONS:
+                            _POSITIONS[trade_id]["_dyn_exit_trend_features"] = trend_features
+                            _POSITIONS[trade_id]["_dyn_exit_atr_bps"] = atr_bps
+                            _POSITIONS[trade_id]["_dyn_exit_features_ts"] = ts
+            except Exception as exc:
+                log.debug("[P0_8_PLUS_DYNAMIC_EXIT] feature refresh failed for %s: %r", symbol, exc)
+
+        inp = dyn_exit.ExitEvaluationInput(
+            side=side,
+            entry_price=entry_price,
+            current_price=current_price,
+            initial_stop_price=initial_stop,
+            current_stop_price=current_stop,
+            target_reference_price=_safe_float(pos.get("tp"), 0.0) or None,
+            entry_time_ms=int(_safe_float(pos.get("entry_ts"), ts) * 1000),
+            now_ms=int(ts * 1000),
+            max_hold_seconds=int(pos.get("timeout_s", _MAX_AGE_S)),
+            atr_bps=atr_bps if atr_bps is not None else 0.0,
+            mfe_bps=mfe_bps,
+            regime=pos.get("regime", "UNKNOWN"),
+            trend_features=trend_features,
+            flow_evaluation=None,  # scoped out this pass, see module comment above
+            remaining_net_edge_bps=None,  # scoped out this pass, see module comment above
+            data_integrity_ok=True,
+            min_holding_seconds=30,
+            allowed_regimes=None,  # disabled -- see module comment above
+        )
+        decision = dyn_exit.evaluate_exit(inp)
+        if decision is None:
+            return None
+
+        if decision.new_stop_price is not None and decision.trigger_price is None:
+            # Non-terminal: trailing-stop update only, position stays open.
+            with _POSITION_LOCK:
+                if trade_id in _POSITIONS:
+                    _POSITIONS[trade_id]["sl"] = decision.new_stop_price
+            log.info(
+                "[P0_8_PLUS_DYNAMIC_EXIT] %s trailing stop updated: %s",
+                symbol, decision.detail,
+            )
+            return None
+
+        log.warning(
+            "[P0_8_PLUS_DYNAMIC_EXIT] %s %s reason=%s detail=%s",
+            symbol, side, decision.reason_code, decision.detail,
+        )
+        return dyn_exit.legacy_exit_label(decision.reason_code)
+    except Exception as exc:
+        log.warning("[P0_8_PLUS_DYNAMIC_EXIT] evaluation failed for trade_id=%s: %r", trade_id, exc)
+        return None
+
+
 def update_paper_positions(
     symbol_prices: Dict[str, float],
     ts: float,
@@ -2413,6 +2564,19 @@ def update_paper_positions(
         # timeout_s respects PAPER_MAX_POSITION_AGE_S env var (600s)
         # max_hold_s is legacy training cap and should NOT control timeout
         timeout_s = pos.get("timeout_s", _MAX_AGE_S)
+
+        # 2026-08-18 (_workspace/36): trend_cost_aware_v1-sourced P0.8+
+        # positions route through dynamic_trend_exit_v1's purpose-built
+        # exit hierarchy instead of the generic TP/SL/timeout check below
+        # -- see _evaluate_p0_8_plus_dynamic_exit's own docstring for the
+        # exact scope (and what's deliberately left out this pass).
+        if pos.get("explore_bucket") == "P0_8_PLUS_EVIDENCE_COLLECTION" and pos.get("strategy_id") == "trend_cost_aware":
+            dyn_exit_reason = _evaluate_p0_8_plus_dynamic_exit(trade_id, pos, current_price, ts)
+            if dyn_exit_reason:
+                closed_trade = close_paper_position(position_id=trade_id, price=current_price, ts=ts, reason=dyn_exit_reason)
+                if closed_trade:
+                    closed_trades.append(closed_trade)
+            continue
 
         # V10.46 CRITICAL FIX: Validate TP/SL prices before evaluation
         # Blocks cases where pos["tp"]/pos["sl"] are None/0/invalid (would always evaluate to False)
