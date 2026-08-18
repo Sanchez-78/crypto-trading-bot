@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 104,
+  "cycle": 105,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 104,
+  "total_cycles_completed": 105,
   "current_wr": 33.0,
   "current_pnl": -0.299011,
-  "last_update": "2026-08-18T09:48:15.095864Z",
+  "last_update": "2026-08-18T10:34:22.745362Z",
   "status": "quota_wait",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -1075,6 +1075,16 @@
       "commit": "23eb11d",
       "deploy_result": "PASS",
       "notes": "Post-deploy verification extended beyond usual (given risk level): 20 legacy PAPER_ENTRY in 2min post-deploy (normal pace), 0 tracebacks, P0.8+ pipeline ticking normally. Fixes _workspace/33s C6 attribution-overwrite finding as a side effect. Document section 34 (one central admission path) now literally true for the P0.8+ pipeline. Tier A roadmap: items 1-3 all done, #4 (machine-readable audit artifacts, \u00a736D) next."
+    },
+    {
+      "cycle": 105,
+      "timestamp": "2026-08-18T10:34:22.745285Z",
+      "status": "FIXED_AND_DEPLOYED",
+      "blocker": "closed_trade_attribution_lost_on_sqlite_write",
+      "fix_applied": "Post-deploy monitoring noticed recent-100 WR crashed to 3%. Investigated thoroughly given proximity to the days riskiest change (admission-path unification, commit 23eb11d) -- ruled that out and every other change made today via direct log tracing ([PAPER_TRAIN_QUALITY_ENTRY] showed correct attribution in memory at open time). Root cause found: local_persistent_cache.py save_closed_trade() INSERT statement never included bucket/source/paper_source/learning_source/tp_sl_profile/readiness_eligible/tags_json columns, despite the live DB having them and the closed_trade dict carrying them. Pre-existing structural bug, not caused by anything this session touched today -- confirmed none of the 5 other commits today touch this module. Fixed: migration + INSERT extended to write all 12 missing columns. 10 new tests, 282 passed regression. Deployed via gated PLAN+DEPLOY.",
+      "commit": "6131899",
+      "deploy_result": "PASS",
+      "notes": "No trading-safety impact -- only learning-attribution metadata affected, core PnL/exit_reason always correct. Historical trades in the affected window (~06:48-10:32 UTC, several hundred trades) keep NULL attribution permanently, no backfill (source data genuinely gone). Live confirmation that the fix writes correctly pending the next trade close after deploy (last close observed was 38s BEFORE deploy completed) -- verify next cycle."
     }
   ],
   "experiment": {
