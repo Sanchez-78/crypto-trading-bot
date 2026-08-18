@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 95,
+  "cycle": 96,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 95,
-  "current_wr": 35.0,
-  "current_pnl": 0.148353,
-  "last_update": "2026-08-17T13:56:52.683758Z",
-  "status": "firebase_degraded_confirmed_dashboard_bug_found_root_cause_open",
+  "total_cycles_completed": 96,
+  "current_wr": 21.0,
+  "current_pnl": -0.299011,
+  "last_update": "2026-08-18T06:07:34.346277Z",
+  "status": "quota_wait",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -978,6 +978,21 @@
       "open_positions": 3,
       "quota_reads": 544,
       "notes": "RESOLVED watch item from cycle 94: WR/PF reverted back down (43%->35%, PF 2.58->1.12) after the 3-cycle upward run -- confirms it WAS window noise, not a real sustained improvement. Lifetime metrics essentially flat throughout (PF ~0.36, expectancy ~-0.031) the whole time, consistent with noise interpretation. P0.8+ pipeline: confirmed healthy via normal ~62s tick cadence (an earlier narrower grep window this cycle produced a false-alarm low count, resolved by re-checking with a wider window -- service uptime 2h5min, no restart, memory/CPU nominal). No action needed."
+    },
+    {
+      "cycle": 96,
+      "timestamp": "2026-08-18T06:07:34.346174Z",
+      "status": "QUOTA_WAIT",
+      "wr_recent100": 21.0,
+      "pf_recent100_pct_basis": 0.424,
+      "lifetime_pf": 0.364,
+      "lifetime_expectancy": -0.0312,
+      "lifetime_n": 5523,
+      "open_positions": 0,
+      "quota_reads": 50000,
+      "quota_max": 50000,
+      "quota_exhausted": true,
+      "notes": "Firebase quota fully exhausted (50000/50000 reads, 20000/20000 writes, 429 errors). lifetime_n frozen (5523, unmoved across 2min re-check) -- bot appears fully stalled, not just degraded, likely cascading from inability to read segment/learning state. Reset at 07:00 UTC, current ~06:07 UTC (~53min away). Per harness quota-guardian rule: waiting for reset rather than attempting a patch (a code fix cannot un-exhaust todays quota). P0.8+ pipeline unaffected/not a contributing factor (0 Firestore calls, 0 opens all along, confirmed via persistent SQLite not just volatile journal). Scheduling next check just after the 07:00 UTC reset boundary to confirm recovery."
     }
   ],
   "experiment": {
