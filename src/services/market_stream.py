@@ -91,11 +91,64 @@ def _dispatch(sym: str, bid: float, ask: float, bid_qty: float = 0.0, ask_qty: f
 
     _symbol_prices[sym] = p
     from src.services.paper_trade_executor import update_paper_positions
-    update_paper_positions(_symbol_prices, time.time())
+    # P1.1AR FIX (2026-08-18, forensic pass): this call's return value was
+    # discarded, exactly like the analogous bot2/main.py main-loop call site
+    # (see that fix's comment for the full root-cause writeup). This one is
+    # the more important of the two: it fires on EVERY WS tick (this is the
+    # `_dispatch()` tick handler) and runs BEFORE `publish("price_tick", ...)`
+    # below -- which is what trade_executor.on_price() is subscribed to. So
+    # THIS call almost always wins the race to observe a TP/SL price crossing
+    # first (it pops the closed position from the shared _POSITIONS state
+    # before on_price's own call even runs), and its return value -- the only
+    # place that closed trade's data still existed -- was thrown away. This is
+    # very likely the PRIMARY sink of the "0 TP/SL exits in cache.sqlite since
+    # 2026-08-05" data loss, more so than the bot2/main.py site. Fixed the
+    # same way: persist via _save_paper_trade_closed(), the same function
+    # on_price() already uses.
+    #
+    # Why this specific pair (this call vs. on_price()'s own call, reached
+    # via publish("price_tick", ...) below) cannot double-persist the same
+    # trade: event_bus.publish() is fully SYNCHRONOUS (src/core/event_bus.py,
+    # calls each handler inline on the caller's thread), and _dispatch() has
+    # no threads/async of its own -- so within one tick, this call always
+    # completes BEFORE on_price()'s call even begins, on the SAME thread. A
+    # position closed here is already gone from _POSITIONS by the time
+    # on_price() looks. This is NOT guaranteed by close_paper_position()'s
+    # own _CLOSED_TRADES_THIS_SESSION dedup set in general (that set's
+    # membership-check and mark happen in two separate lock acquisitions --
+    # a real TOCTOU gap between genuinely concurrent callers, e.g. this
+    # thread vs. the separate bot2/main.py main-loop thread); it is the
+    # same-thread sequential ordering that makes THIS pair safe. Local
+    # cache's INSERT OR REPLACE is additionally idempotent regardless.
+    #
+    # The evaluation call itself stays here (unchanged timing/order -- it's
+    # what actually pops a closed position out of shared state); the
+    # persistence write is deferred to AFTER publish() below so a slow/
+    # blocking Firebase call cannot delay tick fan-out to downstream
+    # consumers -- ordering the write after publish is safe precisely
+    # because of the same-thread sequencing above, not because ordering is
+    # irrelevant in general. Wrapped in try/except (this call site
+    # previously had none -- see paper_trade_executor.py's CYCLE#11 comment
+    # for a documented precedent of an unguarded exception here silently
+    # killing price tracking/price_tick fanout/signal generation on every
+    # tick) so an evaluation error cannot interrupt the WS tick dispatcher.
+    _closed_papers = []
+    try:
+        _closed_papers = update_paper_positions(_symbol_prices, time.time())
+    except Exception as e:
+        log.warning(f"[PAPER_UPDATE_ERROR] {e}")
 
     track_price(sym, p)
     publish("price_tick", {"symbol": sym, "price": p, "obi": obi,
                            "bid": bid, "ask": ask})  # M1.2: executable quote for shadow recorder
+
+    if _closed_papers:
+        try:
+            from src.services.trade_executor import _save_paper_trade_closed
+            for _closed_trade in _closed_papers:
+                _save_paper_trade_closed(_closed_trade)
+        except Exception as e:
+            log.warning(f"[PAPER_SAVE_ERROR] {e}")
     try:
         from src.services.signal_engine import SIGNAL_ENGINE_ENABLED, push_tick
         if SIGNAL_ENGINE_ENABLED:

@@ -1819,14 +1819,45 @@ def main():
 
         # V10.15k HOTFIX: Update paper positions (check exits, timeouts, TP/SL)
         # Previously missing from main loop - caused trades to hold hours beyond max_hold_s
+        #
+        # P1.1AR FIX (2026-08-18, forensic pass): update_paper_positions() is
+        # ALSO called from trade_executor.on_price() (the WS tick handler),
+        # racing against this main-loop call on the same shared _POSITIONS
+        # state. Whichever caller observes a TP/SL crossing first pops the
+        # closed position and gets it in its own return value; the other
+        # caller never sees it (already gone). on_price() persists its return
+        # value via _save_paper_trade_closed(); THIS call site discarded its
+        # return value entirely -- any TP/SL close this loop happened to win
+        # the race for was executed correctly (position closed, PnL realized
+        # in-memory) but NEVER written to cache.sqlite/Firebase, and TP/SL has
+        # no other persistence path (unlike TIMEOUT, which is independently
+        # re-caught by check_and_close_timeout_positions()). Confirmed live:
+        # 100% of TP/SL closes and ~25% of TIMEOUT closes were being lost this
+        # way; cache.sqlite shows zero non-TIMEOUT exits since 2026-08-05
+        # despite TP/SL still firing correctly every day since. This is the
+        # root cause of the "100% TIMEOUT" pattern that many earlier cycles'
+        # geometry-tuning attempts were (unknowingly) diagnosing against
+        # corrupted data. Fix: persist this caller's return value the same
+        # way on_price() does -- do not touch update_paper_positions() itself
+        # or the price-map divergence question (why this loop sometimes wins
+        # the race at all is a separate, not-yet-answered question, flagged
+        # for follow-up, not blocking this fix).
         try:
             from src.services.paper_trade_executor import update_paper_positions
             m = get_metrics()
             lp = m.get("last_prices", {})
-            update_paper_positions(lp, now)
+            _closed_papers = update_paper_positions(lp, now)
+            if _closed_papers:
+                from src.services.trade_executor import _save_paper_trade_closed
+                for _closed_trade in _closed_papers:
+                    _save_paper_trade_closed(_closed_trade)
         except Exception as e:
             import logging
-            logging.debug(f"[PAPER_UPDATE_ERROR] {e}")
+            # warning (not debug): this block now also carries persistence
+            # (_save_paper_trade_closed) -- a silent debug-level failure here
+            # would be exactly the kind of invisible data loss this fix exists
+            # to close. (safety-persist-fix review, cycle 106)
+            logging.warning(f"[PAPER_UPDATE_ERROR] {e}")
 
         # ════════════════════════════════════════════════════════════════════
         # V5.1 ADAPTIVE RECOVERY CYCLE — Stall detection + self-healing
