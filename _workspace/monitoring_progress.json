@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 96,
+  "cycle": 97,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 96,
+  "total_cycles_completed": 97,
   "current_wr": 21.0,
   "current_pnl": -0.299011,
-  "last_update": "2026-08-18T06:07:34.346277Z",
+  "last_update": "2026-08-18T06:50:39.965752Z",
   "status": "quota_wait",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -993,6 +993,16 @@
       "quota_max": 50000,
       "quota_exhausted": true,
       "notes": "Firebase quota fully exhausted (50000/50000 reads, 20000/20000 writes, 429 errors). lifetime_n frozen (5523, unmoved across 2min re-check) -- bot appears fully stalled, not just degraded, likely cascading from inability to read segment/learning state. Reset at 07:00 UTC, current ~06:07 UTC (~53min away). Per harness quota-guardian rule: waiting for reset rather than attempting a patch (a code fix cannot un-exhaust todays quota). P0.8+ pipeline unaffected/not a contributing factor (0 Firestore calls, 0 opens all along, confirmed via persistent SQLite not just volatile journal). Scheduling next check just after the 07:00 UTC reset boundary to confirm recovery."
+    },
+    {
+      "cycle": 97,
+      "timestamp": "2026-08-18T06:50:39.965669Z",
+      "status": "FIXED_AND_DEPLOYED",
+      "blocker": "firebase_quota_read_write_conflation",
+      "fix_applied": "User shared Firebase Console screenshot showing writes at 100% free tier (20008/20000) while reads were only 29% (14880/50000) -- contradicting the app-internal quota status (reported reads 50000/50000 exhausted). Root cause: _mark_quota_exhausted() unconditionally pinned BOTH read+write counters on ANY 429, regardless of which pool triggered it. A write-only breach was collaterally blocking ~71% of still-available read capacity, plausibly degrading trade admission (lifetime_n frozen across a 2min re-check during the incident). Fixed: is_read/is_write kwargs threaded through all 3 call sites, defaults preserve old conservative behavior. Also fixed unthrottled [QUOTA_DEBUG] log spam (was firing dozens of times/sec). 6 new tests, 85 passed / 1 pre-existing failure (confirmed via git stash) across full quota/firebase sweep. Deployed via gated PLAN+DEPLOY, service healthy post-restart.",
+      "commit": "7f07837",
+      "deploy_result": "PASS",
+      "notes": "Confirmed the previously-known 24h-flat-lockout issue is a SEPARATE, already-fixed (2026-08-07) problem -- todays quota_429 degradation will still correctly clear at the 07:00 UTC reset regardless of this fix. Value of this fix is for future days writes cross 20k while reads stay healthy. Root cause of the 20k+ writes/day itself not yet investigated -- flagged as a possible follow-up if it recurs."
     }
   ],
   "experiment": {
