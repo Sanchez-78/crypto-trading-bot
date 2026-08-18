@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 99,
+  "cycle": 100,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 99,
-  "current_wr": 17.0,
+  "total_cycles_completed": 100,
+  "current_wr": 33.0,
   "current_pnl": -0.299011,
-  "last_update": "2026-08-18T07:37:19.068584Z",
+  "last_update": "2026-08-18T08:09:04.133818Z",
   "status": "quota_wait",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -1026,6 +1026,19 @@
       "commit": "ebdb2a6",
       "deploy_result": "PASS",
       "notes": "Not yet observed to produce real admitted candidates -- deployed same session, watching over next cycles."
+    },
+    {
+      "cycle": 100,
+      "timestamp": "2026-08-18T08:09:04.133733Z",
+      "status": "CAUTION",
+      "wr_recent100": 33.0,
+      "pf_recent100_pct_basis": 0.629,
+      "lifetime_pf": 0.38,
+      "lifetime_n": 5771,
+      "open_positions": 19,
+      "quota_reads": 6,
+      "quota_writes": 38,
+      "notes": "Post scope-widening-deploy check: still ZERO candidate-level log lines (admitted true or false) from any of the 3 P0.8+ strategies in 32min -- confirms the bottleneck is now upstream at strategy-level generate_candidates() (internal pattern thresholds), not admission scope (which is now fixed). Consistent with the pre-documented hypothesis. No action this cycle -- this needs longer observation, not another code change yet. Overall bot health nominal: quota healthy, lifetime_n growing at a normal pace again post-quota-recovery (+239 since last check), service healthy zero errors."
     }
   ],
   "experiment": {
