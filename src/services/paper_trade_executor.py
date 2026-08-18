@@ -4415,20 +4415,61 @@ def _on_signal_created(signal: dict) -> None:
         log.exception("[SIGNAL_HANDLER_ERROR] %s %s: %s", symbol, action, e)
 
 
-# Subscribe to signal_created events
-subscribe_once("signal_created", _on_signal_created)
+# 2026-08-18 (STATE-01, CLAUDE_COMPREHENSIVE_REMEDIATION_PROMPT_2026-08-18.md):
+# this module used to subscribe to the live event bus and load/reconcile/
+# rewrite paper-position state UNCONDITIONALLY at import time (module-bottom
+# code below has no `if __name__ == ...` or lazy guard -- it ran the instant
+# anything did `import paper_trade_executor`, including a test file, a
+# throwaway diagnostic script, or a REPL). Confirmed by direct static read:
+# `_init_paper_state_once()` -> `_load_paper_state()` reads `_STATE_FILE`
+# (data/paper_open_positions.json), migrates/normalizes it, calls
+# `_reconcile_stale_paper_positions()` (which can CLOSE stale positions --
+# real learning-affecting business logic), and writes the file back to disk
+# on a schema conversion. Confirmed root cause of the disclosed local-state
+# contamination from two prior diagnostic import probes
+# (paper_close/learning_update fabricated for real trade_ids, ~119 outbox
+# rows created, learner qualification_n mutated 457->468).
+#
+# Invariant now enforced: importing this module defines symbols only.
+# `initialize_paper_trade_executor()` performs every side effect the old
+# module-bottom code used to (event-bus subscription + one-time state
+# load/reconcile), but only when explicitly called from the authoritative
+# startup lifecycle (bot2/main.py's main(), immediately after
+# _init_event_handlers() so the event bus exists to subscribe against).
+# Idempotent (still guarded by _PAPER_STATE_INITIALIZED) -- calling it more
+# than once, or not at all in a test process, is always safe.
+_PAPER_TRADE_EXECUTOR_SUBSCRIBED = False
 
-# Call startup initializer after all functions are defined
-try:
-    print('[BEFORE_INIT_CALL] About to call _init_paper_state_once()', flush=True)
-    _init_paper_state_once()
-    print('[AFTER_INIT_CALL] Successfully initialized paper state', flush=True)
-except Exception as e:
-    print(f'[MODULE_INIT_ERROR] Failed: {e}', flush=True)
-    import traceback
-    traceback.print_exc()
 
-print('[MODULE_LOAD_COMPLETE] paper_trade_executor module fully initialized', flush=True)
+def initialize_paper_trade_executor() -> None:
+    """Explicit, idempotent runtime initialization -- call once from the
+    authoritative startup lifecycle (bot2/main.py). Never call this from
+    module import, a test fixture default, or any other implicit trigger.
 
-# MARKER: Module loaded successfully
-log.info('[MODULE_LOAD_COMPLETE] paper_trade_executor module fully initialized')
+    Performs, in order:
+    1. Live event-bus subscription (signal_created -> _on_signal_created)
+       -- previously happened unconditionally at import time.
+    2. One-time paper-position state load + stale-position reconciliation
+       (_init_paper_state_once(), itself still guarded by
+       _PAPER_STATE_INITIALIZED) -- previously happened unconditionally at
+       import time, including inside test processes that only meant to
+       import a function reference.
+    """
+    global _PAPER_TRADE_EXECUTOR_SUBSCRIBED
+    if not _PAPER_TRADE_EXECUTOR_SUBSCRIBED:
+        subscribe_once("signal_created", _on_signal_created)
+        _PAPER_TRADE_EXECUTOR_SUBSCRIBED = True
+        log.info("[PAPER_TRADE_EXECUTOR_INIT] subscribed to signal_created")
+
+    # Exception handling deliberately matches the ORIGINAL module-bottom
+    # code's behavior exactly (catch, log, do not propagate) -- this patch
+    # is scoped to STATE-01 (import-time side effects) only. Whether a
+    # state-load failure should instead halt startup is a separate,
+    # legitimate question (OPS-02 territory) intentionally not bundled
+    # into this change.
+    try:
+        log.info("[PAPER_TRADE_EXECUTOR_INIT] initializing paper state")
+        _init_paper_state_once()
+        log.info("[PAPER_TRADE_EXECUTOR_INIT] paper state initialized")
+    except Exception as e:
+        log.exception("[PAPER_TRADE_EXECUTOR_INIT_ERROR] %s", e)

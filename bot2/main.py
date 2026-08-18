@@ -1301,6 +1301,18 @@ def main():
     print("  [1/7] Initializing event bus handlers...", file=sys.stderr, flush=True)
     _init_event_handlers()
 
+    # STATE-01 (CLAUDE_COMPREHENSIVE_REMEDIATION_PROMPT_2026-08-18.md):
+    # paper_trade_executor.py used to subscribe to signal_created and
+    # load/reconcile paper-position state unconditionally at IMPORT time
+    # (confirmed root cause of disclosed local-state contamination from
+    # prior diagnostic import probes). This explicit call is now the only
+    # place that side effect happens -- placed here, immediately after
+    # the event bus itself is initialized (subscribe_once needs it to
+    # exist) and before market_stream/signal generation can start.
+    print("  [1/7] Initializing paper trade executor (state load + event subscription)...", file=sys.stderr, flush=True)
+    from src.services.paper_trade_executor import initialize_paper_trade_executor
+    initialize_paper_trade_executor()
+
     # Initialize self-healing system (Autonomous Failure Detection)
     # V10.12i: Declare global last_trade_ts to avoid UnboundLocalError
     print("  [2/7] Initializing self-healing system...", file=sys.stderr, flush=True)
