@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 103,
+  "cycle": 104,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 103,
+  "total_cycles_completed": 104,
   "current_wr": 33.0,
   "current_pnl": -0.299011,
-  "last_update": "2026-08-18T09:09:03.758195Z",
+  "last_update": "2026-08-18T09:48:15.095864Z",
   "status": "quota_wait",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -1065,6 +1065,16 @@
       "commit": "085c6d9",
       "deploy_result": "PASS",
       "notes": "Closes Gate G0s own flagged gap (no central typed config-validation-at-startup module). Tier A remaining: unify the dual admission-check (signal_router.py vs paper_trade_executor.py internal P0.3C reroute) -- most architecturally significant remaining gap, higher risk, needs careful approach."
+    },
+    {
+      "cycle": 104,
+      "timestamp": "2026-08-18T09:48:15.095769Z",
+      "status": "FIXED_AND_DEPLOYED",
+      "blocker": "dual_unreconciled_admission_path",
+      "fix_applied": "Top Tier-A priority: unified the P0.8+ admission path. signal_router.py already made the authoritative decision before open_paper_position() was called; paper_trade_executor.py then independently re-decided a second time via its own P0.3B/P0.3C gate, always finding no segment history for a brand-new strategy and overwriting learning_source/segment_key/p0_gate_reason. Fixed: the legacy re-check is now bypassed specifically for bucket==P0_8_PLUS_EVIDENCE_COLLECTION; every other caller (the entire legacy signal path) byte-for-byte unaffected. Highest-stakes single function change this session -- extensively verified: 352 passed regression sweep, test_v5_legacy_bridge_hooks.py pre-existing failures independently re-confirmed via git stash scoped to exactly the changed files, updated the real (unmocked) open_paper_position() integration test to assert corrected attribution.",
+      "commit": "23eb11d",
+      "deploy_result": "PASS",
+      "notes": "Post-deploy verification extended beyond usual (given risk level): 20 legacy PAPER_ENTRY in 2min post-deploy (normal pace), 0 tracebacks, P0.8+ pipeline ticking normally. Fixes _workspace/33s C6 attribution-overwrite finding as a side effect. Document section 34 (one central admission path) now literally true for the P0.8+ pipeline. Tier A roadmap: items 1-3 all done, #4 (machine-readable audit artifacts, \u00a736D) next."
     }
   ],
   "experiment": {

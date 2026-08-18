@@ -51,7 +51,7 @@ rather than claiming a false "done."
 | §15 P1.3 funding_observer_v1 | IMPLEMENTED, UNIT_TESTED | Correctly never-wired (§15.4, by design) |
 | §15A Paper execution realism | PARTIALLY INSPECTED | Fill model exists (pre-program); not re-audited against new P0.8+ call site (item 5 above) |
 | §15B Concurrency/crash recovery | NOT_INSPECTED against the new call site | Relies on pre-existing machinery, not independently re-tested this session (items 3, 12 above) |
-| §16 Central P0 routing | IMPLEMENTED, UNIT_TESTED, RUNTIME_VERIFIED (ticking live) | **Known architectural gap**: `paper_trade_executor.py`'s internal P0.3C reroute is a SECOND, independent admission re-check — the document's "one central signal admission path" (§34) is not yet literally true. See `docs/P0_7_P1_3_REPOSITORY_ARCHITECTURE.md` §10. |
+| §16 Central P0 routing | IMPLEMENTED, UNIT_TESTED, RUNTIME_VERIFIED | **FIXED 2026-08-18** (`_workspace/38_admission_path_unification.md`) — `paper_trade_executor.py`'s internal P0.3C reroute is now bypassed for the P0.8+ bucket specifically; the document's "one central signal admission path" (§34) is now literally true for this pipeline. Deployed, verified live (legacy path unaffected: 20 PAPER_ENTRY/2min post-deploy, 0 tracebacks). |
 | §17 Risk guard | IMPLEMENTED, UNIT_TESTED, RUNTIME_VERIFIED | `p0_risk_guard_v1.py`, wired 2026-08-10 |
 | §18 Evidence model | PARTIALLY IMPLEMENTED | Entry/close metadata present via existing position-dict fields; not independently checked against every §18 required field |
 | §19 Firestore/Outbox | PARTIALLY INSPECTED | Priority classes (§19.1), idempotency (§19.2) rely on pre-existing v5_legacy_bridge machinery, not re-audited this session. Close reserve (§19.3, `REJECT_EVIDENCE_CLOSE_RESERVE`) — **not implemented**, no such reject code exists. |
@@ -83,11 +83,11 @@ rather than claiming a false "done."
 
 ## Prioritized remaining work (roadmap for subsequent cycles)
 
-**Tier A — tractable, high-value, low-risk (next):**
-1. §20 Configuration validation at startup for the new pipeline's flags (concrete, bounded scope, pure safety-hardening).
-2. Unify or at least formally reconcile the two independent P0.8+ admission checks (`signal_router.py` vs `paper_trade_executor.py`'s internal P0.3C reroute) — the single biggest concrete gap against §34's "one central signal admission path."
-3. §22.7 Property invariants — compile a single named test module asserting the document's explicit invariant list (many are probably already incidentally true; making them explicit, named tests closes real §22.7 gap cheaply).
-4. §36D — generate the missing machine-readable audit artifacts (mostly plumbing given the facts already exist in code/tests).
+**Tier A — tractable, high-value, low-risk:**
+1. ~~§20 Configuration validation at startup~~ — DONE 2026-08-18.
+2. ~~Unify the two independent P0.8+ admission checks~~ — DONE 2026-08-18 (`_workspace/38`).
+3. ~~§22.7 Property invariants~~ — DONE 2026-08-18.
+4. §36D — generate the missing machine-readable audit artifacts (mostly plumbing given the facts already exist in code/tests). **Next up.**
 
 **Tier B — larger but bounded:**
 5. §22.4 Deterministic replay fixture — meaningful engineering effort, no external dependency, high evidentiary value once the pipeline starts producing real candidates.
