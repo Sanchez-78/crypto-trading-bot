@@ -234,6 +234,13 @@ _QUOTA_READS = 0 if _is_new_day else 0    # Reset if crossed midnight
 _QUOTA_WRITES = 0 if _is_new_day else 0   # Reset if crossed midnight
 _QUOTA_MAX_READS = int(os.getenv("FIREBASE_QUOTA_MAX_READS", "50000"))   # Daily limit: 50,000 reads = real Firebase free-tier ceiling (was 40,000; raised to real max 2026-07-10). Blaze (paid) needed to exceed.
 _QUOTA_MAX_WRITES = int(os.getenv("FIREBASE_QUOTA_MAX_WRITES", "20000"))  # Daily limit: 20,000 writes = real Firebase free-tier ceiling (was 15,000; raised to real max 2026-07-10). Blaze (paid) needed to exceed.
+# 2026-08-18 (_workspace/34_quota_read_write_conflation.md): throttle for
+# the [QUOTA_DEBUG] line below -- observed live logging dozens of times
+# PER SECOND once quota_reads_pct > 50 (this function is called on every
+# quota check, i.e. on every read attempt), drowning the journal and
+# making genuine diagnosis harder, exactly the kind of noise this
+# session's forensics has repeatedly had to work around.
+_LAST_QUOTA_DEBUG_LOG = 0.0
 
 # EMERGENCY (2026-04-25): Firebase degradation tracking — safe mode on 429/unavailable
 _FIREBASE_READ_DEGRADED = False
@@ -278,7 +285,7 @@ def _reset_quota_if_new_day(now_utc=None):
 
     `now_utc` is injectable for tests only; production always passes None.
     """
-    global _QUOTA_WINDOW_START, _QUOTA_READS, _QUOTA_WRITES
+    global _QUOTA_WINDOW_START, _QUOTA_READS, _QUOTA_WRITES, _LAST_QUOTA_DEBUG_LOG
     from datetime import datetime, timezone, timedelta
 
     if now_utc is None:
@@ -318,15 +325,21 @@ def _reset_quota_if_new_day(now_utc=None):
             _clear_firebase_degradation()
             logging.warning("[QUOTA_RESET] cleared quota_429 degradation — Firebase ops resume")
     else:
-        # Debug log to understand quota state
+        # Debug log to understand quota state -- throttled to once per 60s
+        # (2026-08-18: this branch runs on every quota check, i.e. every
+        # read attempt while reads_pct>50, which produced dozens of
+        # identical log lines per second before this fix).
         import logging
         quota_reads_pct = (_QUOTA_READS / _QUOTA_MAX_READS * 100) if _QUOTA_MAX_READS > 0 else 0
         if quota_reads_pct > 50:
-            last_reset_utc = datetime.fromtimestamp(_QUOTA_WINDOW_START, tz=timezone.utc)
-            logging.warning("[QUOTA_DEBUG] Quota high: %d/%d reads (%.1f%%). Not resetting (window_start=%s >= boundary=%s, now=%s)",
-                          _QUOTA_READS, _QUOTA_MAX_READS, quota_reads_pct,
-                          last_reset_utc.isoformat(), window_boundary_utc.isoformat(),
-                          now_utc.isoformat())
+            now_ts = time.time()
+            if now_ts - _LAST_QUOTA_DEBUG_LOG >= 60.0:
+                _LAST_QUOTA_DEBUG_LOG = now_ts
+                last_reset_utc = datetime.fromtimestamp(_QUOTA_WINDOW_START, tz=timezone.utc)
+                logging.warning("[QUOTA_DEBUG] Quota high: %d/%d reads (%.1f%%). Not resetting (window_start=%s >= boundary=%s, now=%s)",
+                              _QUOTA_READS, _QUOTA_MAX_READS, quota_reads_pct,
+                              last_reset_utc.isoformat(), window_boundary_utc.isoformat(),
+                              now_utc.isoformat())
 
 def refresh_quota_window_on_startup():
     """
@@ -536,17 +549,38 @@ def _check_quota_status():
     allowed_read, _, _ = _can_read()
     return not allowed_read
 
-def _mark_quota_exhausted(error_msg: str):
-    """Mark quota as exhausted via 429 error (reactive)."""
+def _mark_quota_exhausted(error_msg: str, *, is_read: bool = True, is_write: bool = True):
+    """Mark quota as exhausted via 429 error (reactive).
+
+    2026-08-18 (_workspace/34_quota_read_write_conflation.md): `is_read`/
+    `is_write` let a caller that KNOWS which quota pool actually triggered
+    the 429 (every real call site does -- `_read_doc_dict`/`load_history`/
+    `load_commands_since` are read-only operations, `save_batch`/
+    `_async_firebase_write` are write-only) avoid pinning the OTHER pool
+    too. Found live: a write-quota 429 (writes crossed the 20,000/day free
+    tier -- see Firebase Console) pinned `_QUOTA_READS` to its max even
+    though real reads were only at 14,880/50,000 (29%, confirmed via the
+    Firebase Console, not just this process's own tracker) -- wasting the
+    remaining ~71% of read capacity for the rest of the day on a purely
+    write-side problem. Defaults preserve the old (both-pinned) behavior
+    for any caller that doesn't specify -- fail-closed/conservative by
+    default, not a behavior change unless a call site opts in.
+    """
     global _QUOTA_READS, _QUOTA_WRITES
     import logging
-    # Set quotas to their limits to immediately prevent further operations
+    # Set the AFFECTED quota pool(s) to their limit to immediately prevent
+    # further operations of that type -- not necessarily both.
     with _QUOTA_LOCK:
-        _QUOTA_READS = _QUOTA_MAX_READS
-        _QUOTA_WRITES = _QUOTA_MAX_WRITES
-    logging.warning(f"⚠️  Firebase 429 error: {error_msg} — marked quota exhausted until midnight Pacific reset (09:00 GMT+2)")
-    # Also set degradation flags
-    _set_firebase_degraded(is_read=True, is_write=True, reason="quota_429")
+        if is_read:
+            _QUOTA_READS = _QUOTA_MAX_READS
+        if is_write:
+            _QUOTA_WRITES = _QUOTA_MAX_WRITES
+    logging.warning(
+        "⚠️  Firebase 429 error (is_read=%s is_write=%s): %s — marked quota exhausted until midnight Pacific reset (09:00 GMT+2)",
+        is_read, is_write, error_msg,
+    )
+    # Also set degradation flags -- only for the pool(s) actually affected.
+    _set_firebase_degraded(is_read=is_read, is_write=is_write, reason="quota_429")
     # P0-FIX (2026-08-06): snapshot attribution AT THE MOMENT of exhaustion --
     # the single most useful diagnostic point, and the one the periodic
     # 300s snapshot could still miss by up to 5 minutes.
@@ -645,9 +679,13 @@ def _cache_set(cache: dict, data) -> None:
     cache["ts"] = time.time()
 
 
-def _handle_quota_error(label: str, exc: Exception) -> None:
+def _handle_quota_error(label: str, exc: Exception, *, is_read: bool = True, is_write: bool = False) -> None:
+    # 2026-08-18: every current caller (_read_doc_dict, load_history,
+    # load_commands_since) is a read-only operation, so is_read=True/
+    # is_write=False is the correct default here -- see
+    # _mark_quota_exhausted's docstring for why this distinction matters.
     if "429" in str(exc) or "Quota" in str(exc):
-        _mark_quota_exhausted(str(exc))
+        _mark_quota_exhausted(str(exc), is_read=is_read, is_write=is_write)
     else:
         logging.error("%s: %s", label, exc)
 
@@ -963,7 +1001,10 @@ def _async_firebase_write(slimmed, batch_size):
         _record_write(batch_size)
     except Exception as e:
         if "429" in str(e) or "Quota" in str(e):
-            _mark_quota_exhausted(str(e))
+            # write-only context (fb_batch.commit()) -- see
+            # _mark_quota_exhausted's docstring for why this must not also
+            # pin reads.
+            _mark_quota_exhausted(str(e), is_read=False, is_write=True)
         print(f"⚠️  Async Firebase write failed: {e}")
 
 
@@ -1029,7 +1070,10 @@ def save_batch(batch):
     except Exception as e:
         # Detect 429 Quota Exceeded errors (reactive fallback) — mark quota exhausted immediately
         if "429" in str(e) or "Quota" in str(e):
-            _mark_quota_exhausted(str(e))
+            # write-only context (fb_batch.commit()) -- see
+            # _mark_quota_exhausted's docstring for why this must not also
+            # pin reads.
+            _mark_quota_exhausted(str(e), is_read=False, is_write=True)
         print(f"⚠️  save_batch failed ({safe_log_exception(e)}) — queuing for retry (no blocking sleep)")
         # If Firebase fails, queue batch and return immediately instead of blocking
         # Market stream must stay responsive to price ticks

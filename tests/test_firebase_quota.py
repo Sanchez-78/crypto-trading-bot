@@ -238,6 +238,108 @@ def test_quota_reset_clears_quota_429_degradation(tmp_path):
         fc._QUOTA_ATTRIBUTION_FILE = original_path
 
 
+def test_mark_quota_exhausted_write_429_does_not_pin_reads(tmp_path):
+    """2026-08-18 (_workspace/34_quota_read_write_conflation.md): a
+    write-quota 429 (writes crossed the 20,000/day free tier) must NOT
+    also pin reads to their max -- found live: writes hit their ceiling
+    while reads were only at 29% (14,880/50,000, confirmed via the
+    Firebase Console), but the old unconditional both-pinning behavior
+    made the app treat reads as fully exhausted too, wasting ~71% of
+    still-available read capacity for the rest of the quota day."""
+    _reset_firebase_state(FakeDB(collections={}))
+    original_path = fc._QUOTA_ATTRIBUTION_FILE
+    fc._QUOTA_ATTRIBUTION_FILE = str(tmp_path / "quota_attribution_snapshot.json")
+    try:
+        fc._QUOTA_READS = 14880  # realistic pre-exhaustion read level
+        fc._mark_quota_exhausted("simulated write 429", is_read=False, is_write=True)
+
+        assert fc._QUOTA_READS == 14880, "a write-only 429 must not touch the read counter"
+        assert fc._QUOTA_WRITES == fc._QUOTA_MAX_WRITES
+
+        health = fc.get_firebase_health()
+        assert health["write_degraded"] is True
+        assert health["read_degraded"] is False
+    finally:
+        fc._QUOTA_ATTRIBUTION_FILE = original_path
+        fc._clear_firebase_degradation()
+
+
+def test_mark_quota_exhausted_read_429_does_not_pin_writes(tmp_path):
+    """Symmetric case: a read-quota 429 must not pin writes."""
+    _reset_firebase_state(FakeDB(collections={}))
+    original_path = fc._QUOTA_ATTRIBUTION_FILE
+    fc._QUOTA_ATTRIBUTION_FILE = str(tmp_path / "quota_attribution_snapshot.json")
+    try:
+        fc._QUOTA_WRITES = 500
+        fc._mark_quota_exhausted("simulated read 429", is_read=True, is_write=False)
+
+        assert fc._QUOTA_READS == fc._QUOTA_MAX_READS
+        assert fc._QUOTA_WRITES == 500, "a read-only 429 must not touch the write counter"
+
+        health = fc.get_firebase_health()
+        assert health["read_degraded"] is True
+        assert health["write_degraded"] is False
+    finally:
+        fc._QUOTA_ATTRIBUTION_FILE = original_path
+        fc._clear_firebase_degradation()
+
+
+def test_mark_quota_exhausted_default_still_pins_both(tmp_path):
+    """Backward-compat: a caller that doesn't specify is_read/is_write
+    (defaults) keeps the old conservative both-pinned behavior -- this is
+    a narrow opt-in for the two call sites that DO know their context
+    (_async_firebase_write, save_batch, _handle_quota_error), not a
+    behavior change for anything unspecified."""
+    _reset_firebase_state(FakeDB(collections={}))
+    original_path = fc._QUOTA_ATTRIBUTION_FILE
+    fc._QUOTA_ATTRIBUTION_FILE = str(tmp_path / "quota_attribution_snapshot.json")
+    try:
+        fc._mark_quota_exhausted("simulated 429, unspecified type")
+        assert fc._QUOTA_READS == fc._QUOTA_MAX_READS
+        assert fc._QUOTA_WRITES == fc._QUOTA_MAX_WRITES
+        health = fc.get_firebase_health()
+        assert health["read_degraded"] is True
+        assert health["write_degraded"] is True
+    finally:
+        fc._QUOTA_ATTRIBUTION_FILE = original_path
+        fc._clear_firebase_degradation()
+
+
+def test_handle_quota_error_defaults_to_read_only():
+    """_handle_quota_error's only real callers (_read_doc_dict,
+    load_history, load_commands_since) are all read-only operations --
+    pins that its default doesn't accidentally also degrade writes."""
+    _reset_firebase_state(FakeDB(collections={}))
+    try:
+        fc._QUOTA_WRITES = 777
+        fc._handle_quota_error("some_read_label", Exception("429 Quota exceeded"))
+        assert fc._QUOTA_WRITES == 777, "the default must not touch the write counter"
+        assert fc.get_firebase_health()["write_degraded"] is False
+        assert fc.get_firebase_health()["read_degraded"] is True
+    finally:
+        fc._clear_firebase_degradation()
+
+
+def test_quota_debug_log_is_throttled(caplog):
+    """2026-08-18: [QUOTA_DEBUG] was observed logging dozens of times per
+    second in production once reads crossed 50% (this function runs on
+    every quota check). Confirm repeated calls within 60s only log once."""
+    import logging as _logging
+
+    _reset_firebase_state(FakeDB(collections={}))
+    fc._QUOTA_READS = fc._QUOTA_MAX_READS  # >50%, and window won't be due for reset
+    fc._QUOTA_WINDOW_START = time.time()  # freshly "started" -- not due for reset
+    fc._LAST_QUOTA_DEBUG_LOG = 0.0
+    try:
+        with caplog.at_level(_logging.WARNING, logger="root"):
+            for _ in range(20):
+                fc._reset_quota_if_new_day()
+        debug_lines = [r for r in caplog.records if "[QUOTA_DEBUG]" in r.getMessage()]
+        assert len(debug_lines) == 1, f"expected exactly 1 throttled log line, got {len(debug_lines)}"
+    finally:
+        fc._LAST_QUOTA_DEBUG_LOG = 0.0
+
+
 def test_record_read_attributes_by_label():
     _reset_firebase_state(FakeDB(collections={}))
     fc._READ_ATTRIBUTION.clear()
