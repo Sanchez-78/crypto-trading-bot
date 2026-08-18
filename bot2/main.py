@@ -1515,6 +1515,14 @@ def main():
     from src.core.runtime_mode import assert_real_orders_prohibited
     assert_real_orders_prohibited()
 
+    # §20 (2026-08-18, _workspace/37): fail-closed startup validation for
+    # the P0.8+ pipeline's own configuration surface (negative fee/
+    # slippage/spread, non-positive freshness windows). Same deliberate
+    # placement as the assertion above -- outside any exception handler
+    # that would reduce a real misconfiguration to a warning.
+    from src.services.p0_8_plus_config_validation import assert_p0_8_plus_config_valid
+    assert_p0_8_plus_config_valid()
+
     # Boot version marker — prevents confusion about which commit is running
     import os as _bv_os
     logging.info(
