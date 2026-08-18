@@ -100,6 +100,38 @@ def _init_db():
         except sqlite3.OperationalError:
             pass  # column already exists
 
+    # 2026-08-18 (_workspace/39_closed_trade_attribution_write_bug.md):
+    # found the deployed cache.sqlite already HAS these attribution
+    # columns (bucket/source/paper_source/learning_source/etc. -- added
+    # to the live DB at some earlier, untracked point, per this project's
+    # well-documented history of ad-hoc schema drift), but save_closed_trade()
+    # below never wrote to them -- every trade closed since at least
+    # 2026-08-18 06:48 UTC lost this attribution on the way to SQLite even
+    # though it was correctly present on the in-memory position at open
+    # time (confirmed via the [PAPER_TRAIN_QUALITY_ENTRY] log line).
+    # Declared here too (idempotent, same ADD-COLUMN-if-missing pattern as
+    # the F8 migration above) so a fresh/local/test database also gets
+    # them -- this fix must not assume the column already exists.
+    _attribution_cols = (
+        ("source", "source TEXT"),
+        ("tp_sl_profile", "tp_sl_profile TEXT"),
+        ("bucket", "bucket TEXT"),
+        ("training_bucket", "training_bucket TEXT"),
+        ("explore_bucket", "explore_bucket TEXT"),
+        ("paper_source", "paper_source TEXT"),
+        ("learning_source", "learning_source TEXT"),
+        ("readiness_eligible", "readiness_eligible INTEGER"),
+        ("real_readiness_eligible", "real_readiness_eligible INTEGER"),
+        ("paper_learning_only", "paper_learning_only INTEGER"),
+        ("learning_shadow_only", "learning_shadow_only INTEGER"),
+        ("tags_json", "tags_json TEXT"),
+    )
+    for _col, _decl in _attribution_cols:
+        try:
+            cursor.execute(f"ALTER TABLE closed_trades ADD COLUMN {_decl}")
+        except sqlite3.OperationalError:
+            pass  # column already exists
+
     # Learning metrics (cumulative)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS learning_metrics (
@@ -267,6 +299,23 @@ def save_closed_trade(trade: Dict[str, Any]):
             outcome = trade.get("outcome")
             if outcome is None and net_pct is not None:
                 outcome = classify_outcome(net_pct).value
+            # 2026-08-18 (_workspace/39_closed_trade_attribution_write_bug.md):
+            # bucket/source/paper_source/learning_source/etc. were computed
+            # correctly and present on the in-memory position at open time
+            # (confirmed live via [PAPER_TRAIN_QUALITY_ENTRY]) but this
+            # INSERT never wrote them -- every trade lost this attribution
+            # on the way to persistent storage. `bucket` itself prefers the
+            # canonical field with a training/explore fallback, matching
+            # the same precedence trade_executor.py's own readers already
+            # use elsewhere (`bucket or training_bucket or explore_bucket`).
+            _bucket = trade.get("bucket") or trade.get("training_bucket") or trade.get("explore_bucket")
+
+            def _bool_to_int(v):
+                return None if v is None else (1 if v else 0)
+
+            _tags = trade.get("tags")
+            _tags_json = json.dumps(_tags) if _tags else None
+
             cursor.execute("""
                 INSERT OR REPLACE INTO closed_trades
                 (trade_id, symbol, side, entry_ts, exit_ts, entry_price, exit_price,
@@ -274,8 +323,13 @@ def save_closed_trade(trade: Dict[str, Any]):
                  outcome, metrics_contract_version,
                  mfe_gross_pct, mae_gross_pct, mfe_gross_bps, mae_gross_bps,
                  time_to_mfe_ms, time_to_mae_ms, excursion_policy_version,
+                 source, tp_sl_profile, bucket, training_bucket, explore_bucket,
+                 paper_source, learning_source, readiness_eligible,
+                 real_readiness_eligible, paper_learning_only, learning_shadow_only,
+                 tags_json,
                  synced_to_firebase)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
             """, (
                 trade.get("trade_id"),
                 trade.get("symbol"),
@@ -303,6 +357,18 @@ def save_closed_trade(trade: Dict[str, Any]):
                 trade.get("time_to_mfe_ms"),
                 trade.get("time_to_mae_ms"),
                 trade.get("excursion_policy_version"),
+                trade.get("source"),
+                trade.get("tp_sl_profile"),
+                _bucket,
+                trade.get("training_bucket"),
+                trade.get("explore_bucket"),
+                trade.get("paper_source"),
+                trade.get("learning_source"),
+                _bool_to_int(trade.get("readiness_eligible")),
+                _bool_to_int(trade.get("real_readiness_eligible")),
+                _bool_to_int(trade.get("paper_learning_only")),
+                _bool_to_int(trade.get("learning_shadow_only")),
+                _tags_json,
             ))
             conn.commit()
             conn.close()
