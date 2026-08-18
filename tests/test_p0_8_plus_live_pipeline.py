@@ -395,10 +395,20 @@ def test_live_pipeline_signal_opens_a_real_paper_position(clean_positions, monke
     positions = get_paper_open_positions()
     stored = next(p for p in positions if p.get("trade_id") == result["trade_id"])
 
-    # Reliable attribution (survives the executor's internal P0.3C reroute,
-    # per _map_to_legacy_signal's docstring):
     assert stored.get("explore_bucket") == "P0_8_PLUS_EVIDENCE_COLLECTION"
     assert stored.get("training_bucket") == "P0_8_PLUS_EVIDENCE_COLLECTION"
+
+    # 2026-08-18 (_workspace/38_admission_path_unification.md): the
+    # legacy internal P0.3C reroute is now bypassed for this bucket, so
+    # attribution is no longer overwritten -- learning_source/segment_key/
+    # p0_gate_reason must be signal_router.py's OWN values (the ones
+    # _map_to_legacy_signal actually set), not the legacy gate's
+    # "paper_evidence_collection"/underscore-segment-key/
+    # "no_segment_history" overwrite this test used to (correctly, at the
+    # time) document.
+    assert stored.get("learning_source") == "trend_cost_aware_v1"
+    assert stored.get("segment_key") == candidate.evaluation.p0_segment_key
+    assert stored.get("p0_gate_reason") == candidate.evaluation.decision_code
 
     # TP/SL re-anchored to the booked price (2010.0), not the strategy's
     # raw reference-price-relative absolute prices (2030.0/1980.0) --

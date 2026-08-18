@@ -1638,73 +1638,105 @@ def open_paper_position(
     side_raw = signal.get("action", signal.get("side", "BUY"))
     side_normalized, _ = _normalize_side(side_raw)
 
-    # Call P0.3B gate
-    tp_sl_profile = extra.get("tp_sl_profile", "unknown") if extra else "unknown"
-    source = paper_source or "rde_take"
+    # 2026-08-18 (_workspace/38_admission_path_unification.md): the P0.8+
+    # pipeline (p0_8_plus_live_pipeline.py) already has its own,
+    # independent, central admission decision from signal_router.py's
+    # evaluate_signal_for_paper_entry() BEFORE this function is ever
+    # called for that bucket. Re-deciding admission here (a different,
+    # underscore-separated segment-key format, its own closed-trade
+    # lookup) was found to be structurally redundant AND actively harmful
+    # to evidence quality: for a brand-new evidence-only strategy this
+    # legacy gate always finds "no segment history" and unconditionally
+    # overwrites the already-correct learning_source/segment_key/
+    # p0_gate_reason signal_router.py had already computed
+    # (_workspace/33's finding). This was, until this fix, the single
+    # most architecturally significant gap against document §34's "one
+    # central signal admission path" requirement -- there were, in
+    # practice, two admission decisions per P0.8+ candidate.
+    #
+    # Bypass this whole legacy re-check for this bucket specifically:
+    # trust the values _map_to_legacy_signal() already set on `signal`
+    # (strict_ev, readiness_eligible, learning_source, segment_key,
+    # p0_gate_reason) rather than recomputing and overwriting them a
+    # second time. Every other caller/bucket (the entire legacy
+    # signal_generator.py path) is completely unaffected -- the `else`
+    # branch below is byte-for-byte the same code this function already
+    # ran for every P0.3B/P0.3C-gated caller before this patch.
+    if bucket == "P0_8_PLUS_EVIDENCE_COLLECTION":
+        log.debug(
+            "[P0_8_PLUS_ADMISSION_TRUSTED] symbol=%s regime=%s segment_key=%s -- "
+            "signal_router.py already decided admission, skipping the legacy "
+            "P0.3B/P0.3C re-check",
+            symbol, regime, signal.get("segment_key"),
+        )
+    else:
+        # Call P0.3B gate
+        tp_sl_profile = extra.get("tp_sl_profile", "unknown") if extra else "unknown"
+        source = paper_source or "rde_take"
 
-    reject_p0, p0_decision = _should_skip_segment_p0_strict_ev(
-        symbol=symbol,
-        side=side_normalized,
-        regime=regime,
-        source=source,
-        tp_sl_profile=tp_sl_profile,
-    )
+        reject_p0, p0_decision = _should_skip_segment_p0_strict_ev(
+            symbol=symbol,
+            side=side_normalized,
+            regime=regime,
+            source=source,
+            tp_sl_profile=tp_sl_profile,
+        )
 
-    if reject_p0:
-        # P0.3C: Strict EV blocked → Route to evidence collection if allowed
-        can_admit_evidence, evidence_reason = _can_admit_paper_evidence_collection(symbol, regime, bucket=bucket)
+        if reject_p0:
+            # P0.3C: Strict EV blocked → Route to evidence collection if allowed
+            can_admit_evidence, evidence_reason = _can_admit_paper_evidence_collection(symbol, regime, bucket=bucket)
 
-        if can_admit_evidence:
-            # P0.3C: Route to evidence collection with EXPLICIT metadata
-            log.info(
-                "[P0_EVIDENCE_COLLECTION_ADMIT] symbol=%s regime=%s "
-                "strict_ev_allowed=false reason=%s evidence_reason=%s",
-                symbol, regime,
-                p0_decision.get("reason", "unknown"),
-                evidence_reason,
-            )
-
-            # Set metadata BEFORE opening position
-            signal["strict_ev"] = False
-            signal["readiness_eligible"] = False
-            signal["learning_source"] = "paper_evidence_collection"
-            signal["p0_gate_reason"] = p0_decision.get("reason", "p0_rejected")
-            signal["segment_key"] = f"{symbol}_{side_normalized}_{regime}_{source}_{tp_sl_profile}"
-
-            # Update paper_source for tracking
-            if extra is None:
-                signal["extra"] = {}
-            else:
-                signal["extra"] = extra
-
-            signal["extra"]["paper_source"] = "paper_evidence_collection"
-            signal["extra"]["p0_gate_reason"] = p0_decision.get("reason", "unknown")
-            signal["extra"]["segment_key"] = signal["segment_key"]
-
-            # Continue to position opening with evidence metadata set
-            log.debug(
-                "[P0_EVIDENCE_COLLECTION_METADATA] signal_id=%s source=paper_evidence_collection "
-                "strict_ev=false readiness_eligible=false segment_key=%s",
-                signal.get("trade_id", "unknown"),
-                signal["segment_key"],
-            )
-
-        else:
-            # Not allowed in evidence collection scope → Block
-            throttle_key = (symbol, "p0_gate", evidence_reason)
-            now_ts = time.time()
-            last_log = _PAPER_ENTRY_BLOCKED_THROTTLE.get(throttle_key, 0.0)
-            if now_ts - last_log >= _PAPER_ENTRY_BLOCKED_TTL:
+            if can_admit_evidence:
+                # P0.3C: Route to evidence collection with EXPLICIT metadata
                 log.info(
-                    "[PAPER_ENTRY_P0_REJECTED] symbol=%s regime=%s "
-                    "strict_ev_reason=%s evidence_reason=%s",
+                    "[P0_EVIDENCE_COLLECTION_ADMIT] symbol=%s regime=%s "
+                    "strict_ev_allowed=false reason=%s evidence_reason=%s",
                     symbol, regime,
                     p0_decision.get("reason", "unknown"),
                     evidence_reason,
                 )
-                _PAPER_ENTRY_BLOCKED_THROTTLE[throttle_key] = now_ts
 
-            return {"status": "blocked", "reason": f"p0_gate:{evidence_reason}"}
+                # Set metadata BEFORE opening position
+                signal["strict_ev"] = False
+                signal["readiness_eligible"] = False
+                signal["learning_source"] = "paper_evidence_collection"
+                signal["p0_gate_reason"] = p0_decision.get("reason", "p0_rejected")
+                signal["segment_key"] = f"{symbol}_{side_normalized}_{regime}_{source}_{tp_sl_profile}"
+
+                # Update paper_source for tracking
+                if extra is None:
+                    signal["extra"] = {}
+                else:
+                    signal["extra"] = extra
+
+                signal["extra"]["paper_source"] = "paper_evidence_collection"
+                signal["extra"]["p0_gate_reason"] = p0_decision.get("reason", "unknown")
+                signal["extra"]["segment_key"] = signal["segment_key"]
+
+                # Continue to position opening with evidence metadata set
+                log.debug(
+                    "[P0_EVIDENCE_COLLECTION_METADATA] signal_id=%s source=paper_evidence_collection "
+                    "strict_ev=false readiness_eligible=false segment_key=%s",
+                    signal.get("trade_id", "unknown"),
+                    signal["segment_key"],
+                )
+
+            else:
+                # Not allowed in evidence collection scope → Block
+                throttle_key = (symbol, "p0_gate", evidence_reason)
+                now_ts = time.time()
+                last_log = _PAPER_ENTRY_BLOCKED_THROTTLE.get(throttle_key, 0.0)
+                if now_ts - last_log >= _PAPER_ENTRY_BLOCKED_TTL:
+                    log.info(
+                        "[PAPER_ENTRY_P0_REJECTED] symbol=%s regime=%s "
+                        "strict_ev_reason=%s evidence_reason=%s",
+                        symbol, regime,
+                        p0_decision.get("reason", "unknown"),
+                        evidence_reason,
+                    )
+                    _PAPER_ENTRY_BLOCKED_THROTTLE[throttle_key] = now_ts
+
+                return {"status": "blocked", "reason": f"p0_gate:{evidence_reason}"}
 
     # Optional: Old segment profitability gate (for backwards compatibility if needed)
     skip_segment, skip_reason = _should_skip_segment_by_profitability(symbol, regime, side_normalized)

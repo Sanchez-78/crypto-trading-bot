@@ -130,25 +130,22 @@ def _map_to_legacy_signal(candidate: CandidateEvaluation, booked_price: float) -
     strategy's own reference_price) and reapplying it to the booked price
     preserves the intended geometry.
 
-    NOTE ON ATTRIBUTION (reviewer-agent finding C6, disclosed not fixed):
-    open_paper_position()'s own internal P0.3B/P0.3C gate
-    (_should_skip_segment_p0_strict_ev / _can_admit_paper_evidence_
-    collection) re-decides admission using ITS OWN segment-key format and
-    closed-trade history lookup -- independent of, and redundant with,
-    signal_router.py's already-applied decision. For a brand-new
-    evidence-only strategy with no history under that legacy segment-key
-    shape, this ALWAYS finds reject_p0=True and reroutes, which
-    UNCONDITIONALLY OVERWRITES signal["learning_source"] ->
-    "paper_evidence_collection", signal["p0_gate_reason"],
-    signal["segment_key"], and extra["paper_source"] ->
-    "paper_evidence_collection" on the way to storage (paper_trade_
-    executor.py's P0.3C block). The values set below for those four
-    fields are therefore best-effort / correct-if-not-rerouted, not
-    guaranteed to survive onto the stored position. Fields that DO survive
-    and should be used for reliable attribution of P0.8+-sourced positions:
-    extra["explore_bucket"]/["training_bucket"] (BUCKET, untouched by the
-    reroute), extra["strategy_id"]/["strategy_version"]/["quote_source"],
-    and extra["admission_reason"] (signal_router's own decision code)."""
+    NOTE ON ATTRIBUTION (reviewer-agent finding C6, FIXED 2026-08-18,
+    _workspace/38_admission_path_unification.md): open_paper_position()
+    used to run its own internal P0.3B/P0.3C gate a second time on every
+    P0.8+ position (a different, underscore-separated segment-key format,
+    its own closed-trade history lookup) -- independent of, and redundant
+    with, signal_router.py's already-applied decision. For a brand-new
+    evidence-only strategy with no history under that legacy shape, this
+    ALWAYS found reject_p0=True and rerouted, unconditionally overwriting
+    signal["learning_source"]/["p0_gate_reason"]/["segment_key"] and
+    extra["paper_source"] on the way to storage. This is now bypassed
+    entirely for the "P0_8_PLUS_EVIDENCE_COLLECTION" bucket specifically
+    (paper_trade_executor.py's own comment at that bypass explains the
+    scoping) -- every field set below now survives onto the stored
+    position unchanged, and this pipeline has a genuinely single central
+    admission path, not two independently-decided ones. The legacy signal
+    path (every other bucket) is completely unaffected."""
     sig = candidate.signal
     ev = candidate.evaluation
     side = _normalize_side(sig.side)
