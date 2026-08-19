@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 108,
+  "cycle": 109,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 108,
+  "total_cycles_completed": 109,
   "current_wr": 8.0,
   "current_pnl": -0.439103,
-  "last_update": "2026-08-19T08:47:00Z",
-  "status": "monitoring_deadlock_fix_confirmed_working_trading_resumed",
+  "last_update": "2026-08-19T13:27:00Z",
+  "status": "duplicate_trades_p1_1av_fix_live_partial_new_gap_found",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -1054,7 +1054,7 @@
       "cycle": 102,
       "timestamp": "2026-08-18T08:48:11.610875Z",
       "status": "DOC_COMPLIANCE_WORK",
-      "notes": "Operator directive: continue full-document implementation until compliance, alongside monitoring. Read all remaining unread sections of the source document. Built honest gap analysis (_workspace/37) -- full compliance is a multi-week undertaking, not claimed done. Executed Tier A items this cycle: 4 phase acceptance reports + strategy design doc + rollback doc (docs/), .env.example updated with real P0.8+ flags, repository architecture doc updated with gate-by-gate status, and a consolidated \u00a722.7 property-invariant test suite (6 new tests, closed 2 genuine coverage gaps). Biggest finding: dual/unreconciled admission path (signal_router.py vs paper_trade_executor.py internal P0.3C reroute) -- flagged as top remaining Tier-A priority. All documentation-only or test-only, zero runtime risk, no deploy needed. Service confirmed healthy throughout."
+      "notes": "Operator directive: continue full-document implementation until compliance, alongside monitoring. Read all remaining unread sections of the source document. Built honest gap analysis (_workspace/37) -- full compliance is a multi-week undertaking, not claimed done. Executed Tier A items this cycle: 4 phase acceptance reports + strategy design doc + rollback doc (docs/), .env.example updated with real P0.8+ flags, repository architecture doc updated with gate-by-gate status, and a consolidated §22.7 property-invariant test suite (6 new tests, closed 2 genuine coverage gaps). Biggest finding: dual/unreconciled admission path (signal_router.py vs paper_trade_executor.py internal P0.3C reroute) -- flagged as top remaining Tier-A priority. All documentation-only or test-only, zero runtime risk, no deploy needed. Service confirmed healthy throughout."
     },
     {
       "cycle": 103,
@@ -1074,7 +1074,7 @@
       "fix_applied": "Top Tier-A priority: unified the P0.8+ admission path. signal_router.py already made the authoritative decision before open_paper_position() was called; paper_trade_executor.py then independently re-decided a second time via its own P0.3B/P0.3C gate, always finding no segment history for a brand-new strategy and overwriting learning_source/segment_key/p0_gate_reason. Fixed: the legacy re-check is now bypassed specifically for bucket==P0_8_PLUS_EVIDENCE_COLLECTION; every other caller (the entire legacy signal path) byte-for-byte unaffected. Highest-stakes single function change this session -- extensively verified: 352 passed regression sweep, test_v5_legacy_bridge_hooks.py pre-existing failures independently re-confirmed via git stash scoped to exactly the changed files, updated the real (unmocked) open_paper_position() integration test to assert corrected attribution.",
       "commit": "23eb11d",
       "deploy_result": "PASS",
-      "notes": "Post-deploy verification extended beyond usual (given risk level): 20 legacy PAPER_ENTRY in 2min post-deploy (normal pace), 0 tracebacks, P0.8+ pipeline ticking normally. Fixes _workspace/33s C6 attribution-overwrite finding as a side effect. Document section 34 (one central admission path) now literally true for the P0.8+ pipeline. Tier A roadmap: items 1-3 all done, #4 (machine-readable audit artifacts, \u00a736D) next."
+      "notes": "Post-deploy verification extended beyond usual (given risk level): 20 legacy PAPER_ENTRY in 2min post-deploy (normal pace), 0 tracebacks, P0.8+ pipeline ticking normally. Fixes _workspace/33s C6 attribution-overwrite finding as a side effect. Document section 34 (one central admission path) now literally true for the P0.8+ pipeline. Tier A roadmap: items 1-3 all done, #4 (machine-readable audit artifacts, §36D) next."
     },
     {
       "cycle": 105,
@@ -1150,6 +1150,28 @@
         "process_note": "This is the review harness working exactly as designed -- a plausible, well-tested-looking one-line fix was caught by an adversarial reviewer before it could cause harm. Not a wasted cycle: the deeper dead-code bug is a genuine, real finding (also affects _is_starvation_discovery_idle() at ~line 1075 and bucket-selection logic at ~line 960, which read the same permanently-stale state), just one that needs its own dedicated forensics pass rather than a same-day rider fix."
       },
       "next_cycle_plan": "1) Dedicated future session: map every consumer of _starvation_discovery_state[\"idle_s\"]/last_eligible_entry_ts, confirm (not assume) whether moving the PAPER_STARVATION_DISCOVERY bookkeeping above the aggressive-mode return is safe (the return's own 'ALL GATES DISABLED' comment might mean skipping that bookkeeping is deliberate), only then re-attempt the idle_s fix correctly. 2) Continue monitoring the buy_enforcement/sell_enforcement diversity-balancing gate (confirmed pre-existing V10.16 mechanism, not a bug, just newly visible now that volume resumed) in case it becomes a real throughput limiter. 3) Watch Firebase quota given confirmed volume step-change. 4) Re-baseline WR/PF/P&L once enough post-fix closes accumulate for a meaningful sample -- current_wr/current_pnl fields remain stale placeholders from before both cycle 106 and 107's fixes."
+    },
+    {
+      "cycle": 109,
+      "timestamp": "2026-08-19T13:27:00Z",
+      "status": "DUPLICATE_TRADES_P1_1AV_FIX_LIVE_CONFIRMED_PARTIAL_NEW_GAP_FOUND",
+      "trigger": "User question: \"nejsou nektere uzavrene obchody duplikovane?\" (aren't some closed trades duplicated?). Confirmed via SSH+sqlite: 102 closed trades in 1h window, only 48 distinct (symbol,side,entry_price,exit_ts); worst cluster 13 near-identical SOLUSDT positions within 1.86s.",
+      "first_attempt_P1_1AU_REJECTED": "atomic re-check inside insert lock (TOCTOU framing) -- reviewer-agent proved via live production trace it was inert for ~94% of affected volume (wrong bucket field checked: explore_bucket only) and that the live cluster was sequential admission through a no-op cap, not a concurrency race.",
+      "root_cause_fix_P1_1AV": "_check_exploration_exposure_caps() counted open positions by raw explore_bucket alone; candidates admitted via the P0.3C evidence-collection reroute carry training_bucket set with explore_bucket=None, so counts were structurally 0 forever for that attribution. Fixed with _position_effective_bucket(p) = training_bucket or explore_bucket, mirroring the caller's own bucket derivation. P1.1AU retained as documented defensive hardening, relabeled as NOT the fix for the reported symptom.",
+      "review": {
+        "reviewer_agent": "APPROVED WITH CONDITIONS -- independently re-traced root cause, independently re-ran mutation-kill, confirmed no over-blocking on RDE/P0.8+ paths. Conditions: expect real throughput drop on A_STRICT_TAKE path (intended), confirm P0.8+ still admits despite incidental additional tightening.",
+        "trading_safety_agent": "PASS -- paper-only scope confirmed, fail-closed on exception verified in code, no real-trading gate touched, no orphaned state on early return."
+      },
+      "commit": "b921d54",
+      "deploy_result": "PASS",
+      "live_verification": {
+        "admission_not_stalled": "PASS with caveat -- zero-admission window 13:03:46-13:18:45 UTC was the 2-slot max_open_per_bucket cap fully held (expected), cleared on its own once those positions closed; throughput ~35/hr post-deploy vs 22-25/hr pre-deploy baseline, same ballpark.",
+        "caps_firing": "PASS, fix live-active -- [PAPER_ENTRY_BLOCKED] reason=max_open_per_symbol/max_open_per_bucket now firing continuously for bucket=A_STRICT_TAKE candidates (was 0 blocks pre-fix for this attribution).",
+        "methodology_note": "journalctl on Hetzner only retains ~7min at current log volume (~134k lines/hr) -- an hourly aggregate from journalctl was a rotation artifact, discarded, rebuilt from cache.sqlite instead. Do not trust hourly journalctl aggregates on this host."
+      },
+      "new_finding_unbucketed_path_still_duplicates": "NOT a regression -- pre-existing, separate mechanism, now the dominant remaining duplicate source. _check_exploration_exposure_caps() returns None (skips all caps) when effective bucket is None -- candidates via reason=P0_GATE carry training_bucket=None AND explore_bucket=None by design. Only remaining guard is _SYMBOL_CAPS[\"ETHUSDT\"]=10. Live evidence post-deploy: ETHUSDT BUY @1936.095 tb=None eb=None x4 (same second, 13:18:45 UTC) and @1937.895 x2 (13:21:06 UTC), 4 already closed on TIMEOUT. User's original symptom therefore only PARTIALLY closed by this cycle.",
+      "workspace_doc": "_workspace/41_duplicate_trades_p1_1av_fix.md",
+      "next_cycle_plan": "Dedicated future cycle: root-cause the P0_GATE unbucketed admission path (why are 4-6 near-identical candidates generated/admitted in the same second?) before designing a minimal patch -- either a real per-symbol concurrency cap independent of the generous _SYMBOL_CAPS default, or an explicit same-symbol-same-side-same-price dedupe window at admission time regardless of bucket attribution. Needs its own forensics pass, not a same-day rider fix, per standing evidence-first discipline."
     }
   ],
   "experiment": {
