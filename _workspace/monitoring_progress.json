@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 107,
+  "cycle": 108,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 107,
+  "total_cycles_completed": 108,
   "current_wr": 8.0,
   "current_pnl": -0.439103,
-  "last_update": "2026-08-19T08:15:00Z",
-  "status": "critical_fix_deployed_pending_verification",
+  "last_update": "2026-08-19T08:47:00Z",
+  "status": "monitoring_deadlock_fix_confirmed_working_trading_resumed",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -1135,6 +1135,21 @@
       "known_followup_NOT_fixed_this_cycle": "reviewer-agent independently found a SECOND, likely-related deadlock contributor: paper_training_sampler.py's 2026-08-14 idle-based bypass safety valve (~line 2053) reads a cached idle_s value that is only updated on SUCCESSFUL admission -- structurally dead during a stall (idle_s freezes near 0 while nothing is admitting, so the bypass condition that's supposed to eventually force a discovery trade during starvation never fires). This is plausibly why the confirmed-bad-segment skip ran completely unmitigated for the full 17.5h instead of being caught by this exact safety valve. One-line fix identified by the reviewer (recompute idle_s from a last-successful-entry timestamp instead of the stale cached field) but deliberately NOT bundled into this commit -- flagged as the top-priority item for the next cycle.",
       "next_bottleneck_flagged_not_a_regression": "Once past the fixed deadlock, other symbols (SOLUSDT, ADAUSDT) now hit a DIFFERENT, downstream gate: [PAPER_BLOCKED] reason=buy_enforcement (196 hits) / sell_enforcement (9 hits) in the same post-deploy window. Not blocking everything (18 opens got through), but likely the next throughput limiter -- not yet investigated, not this cycle's scope.",
       "next_cycle_plan": "1) High priority: fix the second deadlock contributor (paper_training_sampler.py stale idle_s bypass valve) as its own separate, reviewed patch. 2) Investigate the buy_enforcement/sell_enforcement downstream gate as the next throughput limiter. 3) Watch Firebase write quota given the confirmed volume step-change (18 opens in 2min vs 0 in the prior 17.5h). 4) Confirm closed_today becomes nonzero once the first post-fix positions complete their hold time. 5) Once trading resumes at volume, re-baseline WR/PF/P&L from scratch -- every number from before this cycle reflects either the TP/SL persistence bug (cycle 106) or this admission deadlock (cycle 107), not genuine strategy performance. 6) Revisit the 3 anomalies flagged at the end of cycle 106 (dashboard staleness, apparent quota EOD spike) if still relevant."
+    },
+    {
+      "cycle": 108,
+      "timestamp": "2026-08-19T08:47:00Z",
+      "status": "DEADLOCK_FIX_LIVE_CONFIRMED_PLUS_REJECTED_FOLLOWUP_SAFELY_CAUGHT",
+      "live_confirmation_of_cycle_107_fix": "closed_today went from 0 to 55 within ~15 minutes of the fc1f73d deploy; open_positions cycled from 100 (cap hit almost immediately -- 18 opens in 2min, then continued) down to 62 as closes started completing. Firebase quota remained healthy throughout (14/20000 writes, 603/50000 reads at last check). Full open-to-close trading cycle confirmed genuinely working again, not just 'opens succeed'.",
+      "attempted_followup_REJECTED_not_deployed": {
+        "target": "paper_training_sampler.py's 2026-08-14 idle-based safety valve (flagged by reviewer-agent during cycle 107's review as a likely-related second deadlock contributor)",
+        "attempted_fix": "one-line change: idle_s = time.time() - last_eligible_entry_ts (fresh computation) instead of reading the stale cached idle_s field. Had a mutation-killed regression test 'proving' it worked.",
+        "verdict": "REJECTED by reviewer-agent, with strong evidence (AST + live runtime experiment)",
+        "why_rejected": "last_eligible_entry_ts itself is ALSO never updated in production -- its sole writer (_update_starvation_discovery_idle(), ~line 2204) is UNREACHABLE dead code, sitting behind an unconditional 'AGGRESSIVE MODE -- ALL GATES DISABLED' return at ~line 2139 that predates the idle-tracking valve by 3 months. So last_eligible_entry_ts is permanently pinned to process-start time. The attempted fix would have made idle_s silently measure PROCESS UPTIME instead of actual idleness -- the 900s bypass would fire once, 15 minutes after every process start, and then stay open FOREVER for that process's remaining lifetime, permanently disabling the confirmed-bad-segment protection (the exact 2026-08-14 fix) on every restart. Worse than doing nothing, given cycle 107 just widened admission to more symbols flowing through this exact path.",
+        "action_taken": "git checkout -- (reverted both changed files) BEFORE any commit/push/deploy -- nothing from this attempt ever reached the repository history or production. Documented in full at _workspace/40_starvation_idle_s_dead_code_rejected_fix.md.",
+        "process_note": "This is the review harness working exactly as designed -- a plausible, well-tested-looking one-line fix was caught by an adversarial reviewer before it could cause harm. Not a wasted cycle: the deeper dead-code bug is a genuine, real finding (also affects _is_starvation_discovery_idle() at ~line 1075 and bucket-selection logic at ~line 960, which read the same permanently-stale state), just one that needs its own dedicated forensics pass rather than a same-day rider fix."
+      },
+      "next_cycle_plan": "1) Dedicated future session: map every consumer of _starvation_discovery_state[\"idle_s\"]/last_eligible_entry_ts, confirm (not assume) whether moving the PAPER_STARVATION_DISCOVERY bookkeeping above the aggressive-mode return is safe (the return's own 'ALL GATES DISABLED' comment might mean skipping that bookkeeping is deliberate), only then re-attempt the idle_s fix correctly. 2) Continue monitoring the buy_enforcement/sell_enforcement diversity-balancing gate (confirmed pre-existing V10.16 mechanism, not a bug, just newly visible now that volume resumed) in case it becomes a real throughput limiter. 3) Watch Firebase quota given confirmed volume step-change. 4) Re-baseline WR/PF/P&L once enough post-fix closes accumulate for a meaningful sample -- current_wr/current_pnl fields remain stale placeholders from before both cycle 106 and 107's fixes."
     }
   ],
   "experiment": {
