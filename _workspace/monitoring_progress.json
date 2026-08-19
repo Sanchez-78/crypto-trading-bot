@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 105,
+  "cycle": 106,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 105,
-  "current_wr": 33.0,
-  "current_pnl": -0.299011,
-  "last_update": "2026-08-18T10:34:22.745362Z",
-  "status": "quota_wait",
+  "total_cycles_completed": 106,
+  "current_wr": 8.0,
+  "current_pnl": -0.439103,
+  "last_update": "2026-08-19T06:01:20Z",
+  "status": "monitoring_wr_stale_pending_reexamination",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -1085,6 +1085,38 @@
       "commit": "6131899",
       "deploy_result": "PASS",
       "notes": "No trading-safety impact -- only learning-attribution metadata affected, core PnL/exit_reason always correct. Historical trades in the affected window (~06:48-10:32 UTC, several hundred trades) keep NULL attribution permanently, no backfill (source data genuinely gone). Live confirmation that the fix writes correctly pending the next trade close after deploy (last close observed was 38s BEFORE deploy completed) -- verify next cycle."
+    },
+    {
+      "cycle": 106,
+      "timestamp": "2026-08-18T11:20:07Z",
+      "status": "FIXED_AND_DEPLOYED_TWO_ITEMS_PLUS_MAJOR_LEAD_FOUND",
+      "wr_recent100": 8.0,
+      "wr_recent100_note": "Dashboard policy counts flats in denominator (8 wins/52 losses/40 flats=100). Excluding flats: 13.3%. cache.sqlite recompute (raw win column): RECENT_100 WR=19.0%, RECENT_500 WR=39.4%, TODAY_UTC WR=39.6%, LIFETIME(n=5175) WR=39.8%/PF=1.151 -- confirms the 3% figure that triggered cycle 105's investigation was NEVER an artifact of the NULL-attribution bug (WR comes from pnl_usd/win, not the attribution columns); it is genuinely the recent-100 window, which is noisy at n=100. Two disagreeing 'lifetime' figures exist (learning_state.json n=6301/PF 0.413 vs cache.sqlite n=5175/PF 1.151, different backing stores/depths) -- do not treat as the same metric.",
+      "pf_recent100": 0.096,
+      "pnl_recent100_usd": -0.439103,
+      "lifetime_pf": 0.413,
+      "quota_reads": 3,
+      "quota_writes": 20,
+      "quota_exhausted": false,
+      "blockers_fixed": [
+        {
+          "id": "STATE-01",
+          "commit": "3e3acc0",
+          "summary": "Import-time business side effects in paper_trade_executor.py (subscribe_once + _init_paper_state_once unconditional at module import) extracted into explicit initialize_paper_trade_executor(), called once from bot2/main.py after event-bus init. Root cause of the disclosed local-state contamination from two earlier diagnostic import probes this session. Originated from CLAUDE_COMPREHENSIVE_REMEDIATION_PROMPT_2026-08-18.md (a separate, stricter-mode audit task run earlier this session, PARTIAL status, only this one finding fixed there); committed here under the standing loop's full-autonomy authority since the fix was already fully tested/documented. 5 new tests + 291-296/292-297 broad regression, 1 pre-existing unrelated failure."
+        },
+        {
+          "id": "P1.1AQ",
+          "commit": "0d9a0b7",
+          "summary": "calibrate_paper_training_geometry() paper_train/C_WEAK_EV_TRAIN branch: sl_default_pct hardcoded 2.00% (stale since V10.27 decoupled it from the TP floor it was designed to pair with) -> 0.45% (this function's own documented value). Live evidence: rr=1.4 requested -> rr=0.10 delivered (0/205 SL exits ever, pure latent tail risk + poisoned learning signal). Scope: ~2.7% of entries, paper_train only, no real-order path, no other bucket. Reviewed (reviewer-agent APPROVED WITH CONDITIONS, safety-agent PASS). KNOWN LIMITATION documented in code+tests: even 0.45% still fails validate_tp_sl_cost_floor() (needs 80.0% TP-hit-share vs 60% ceiling) -- reduces the mismatch, does not claim profitability; follow-up ticket tracked, must land before/with any fix to the TP/SL-stopped-firing issue below."
+        }
+      ],
+      "deploy_result": "PASS",
+      "deploy_notes": "Server was at 6131899 (cycle 105), deploy carried 3bb3540+3e3acc0+0d9a0b7 together (functionally just the two changes above). git HEAD verified 0d9a0b7. Service healthy, 0 tracebacks from new PID, dashboard 200, [PAPER_TRADE_EXECUTOR_INIT] confirmed live in correct startup order. SL fix present in deployed source (line 3454) but not yet live-observed in a real C_WEAK_EV_TRAIN entry as of deploy verification -- next cycle should confirm sl_pct=0.450 appears in [PAPER_TRAIN_QUALITY_ENTRY].",
+      "major_finding_ROOT_CAUSED_AND_FIXED_same_cycle": "forensic-timeout-anomaly agent found the TP/SL-stopped-firing symptom was a MISDIAGNOSIS of the real bug: TP/SL exits were still firing correctly every day, but update_paper_positions() is called from THREE racing callers against shared _POSITIONS state (trade_executor.on_price via WS price_tick, bot2/main.py's 10s loop, and market_stream._dispatch() -- the true dominant one, since it runs on EVERY tick BEFORE publish(\"price_tick\") and so wins the close-race almost always) and TWO of the three (bot2/main.py, market_stream.py) silently discarded their return value -- so any TP/SL close either of them won the race for was executed correctly in-memory but never persisted (TIMEOUT survived via a second, independent persistence path that TP/SL never had). cache.sqlite showed a hard cliff to zero non-TIMEOUT exits at 2026-08-05T10:40:26Z despite [TP_SL_HIT] logs proving they kept firing. Fixed both call sites (commit 9a685d6, persist via the same _save_paper_trade_closed() on_price() already used; market_stream.py additionally gained its first-ever exception guard, closing a documented CYCLE#11-class latent bug where an unguarded exception there could kill price tracking/price_tick fanout/signal generation for that whole tick). Two full rounds of reviewer-agent + trading-safety-agent review (APPROVED / PASS both rounds, several conditions addressed: path-scoped commits excluding a concurrent session's in-flight SEC-01/dashboard work, log level debug->warning, comment accuracy, test hardening against throwaway-assign and partial-persist regressions, deferred the Firebase write past publish()+push_tick() to protect tick-fan-out latency). Small non-blocking follow-up (commit 13527eb, pushed but not yet separately deployed -- purely a comment/ordering nit, zero behavior risk) folds in the reviewer's last two nits.",
+      "persist_fix_LIVE_VERIFIED": "Direct SSH+sqlite verification (2026-08-19, ~18h after deploy -- the deploy-verify-agent that was supposed to do this hit the account's monthly spend limit mid-task and failed before reporting; verified manually instead): server git HEAD = 9a685d6 (confirmed), service active continuously since deploy with 0 restarts. cache.sqlite query for exit_ts > deploy time: 190 closes total, of which 2 are SL (paper_59d32cbd32c3, paper_42619db1cf4c, both ETHUSDT) -- THE ZERO-NON-TIMEOUT CLIFF SINCE 2026-08-05 IS BROKEN. This is the definitive proof the fix works in production.",
+      "new_anomalies_found_during_verification_NOT_YET_INVESTIGATED": "(1) Firebase write quota near/at exhaustion (20003/20000 as of 05:57 UTC 2026-08-19, ~1h before the 07:00 daily reset -- plausibly just normal EOD usage, possibly accelerated by this cycle's fix recovering previously-lost writes; watch after next reset). (2) [CRITICAL] DASHBOARD_ZERO logs showing the dashboard has gone 30000+s (~8.4h) without an update, despite systemctl reporting cryptomaster-dashboard.service as active -- matches the exact known-gap pattern already documented in CLAUDE.md (in-memory freeze not caught by systemd's process-alive check); the deploy's best-effort dashboard restart apparently did not resolve or prevent this recurrence. (3) Last actual position close in cache.sqlite is ~15h old (0 PAPER_EXIT in the most recent 40min window) despite PAPER_ENTRY continuing (17 in the same 40min) -- worth checking whether positions are backing up unclosed, though not yet confirmed as a real problem vs. normal hold-time variance. None of these three are yet root-caused; flagged for the next monitoring cycle, not this one -- this cycle's scope (cycle 106) is closed as the two confirmed fixes above.",
+      "next_cycle_plan": "1) Investigate the three new anomalies above (quota exhaustion, dashboard staleness recurrence, apparent close-rate slowdown) -- in that priority order, since quota exhaustion could itself explain the other two. 2) Confirm SL fix (0.45%) has been live-observed in an actual C_WEAK_EV_TRAIN entry yet (was not yet observed as of the last check). 3) Opportunistically deploy 13527eb (cosmetic follow-up, no urgency). 4) Standard WR/PF check now that TP/SL exits are persisting again -- the recent-100 WR/PF numbers from before this cycle should no longer be trusted as representative (they were computed against data missing nearly all TP/SL exits); re-baseline once a full window of correctly-persisted data accumulates.",
+      "session_note_spend_limit": "The deploy-verify-agent subagent hit 'You've hit your monthly spend limit' mid-task on 2026-08-19 (before reporting a result) -- this is an account-level constraint, not specific to this task. Verified the deploy manually via direct SSH instead of retrying the subagent. Future cycles in this session may need to rely more on direct tool use (SSH via Bash) rather than spawning agents until the limit resets/is raised -- flag this to the user if agent spawns keep failing."
     }
   ],
   "experiment": {
