@@ -142,13 +142,6 @@ def _dispatch(sym: str, bid: float, ask: float, bid_qty: float = 0.0, ask_qty: f
     publish("price_tick", {"symbol": sym, "price": p, "obi": obi,
                            "bid": bid, "ask": ask})  # M1.2: executable quote for shadow recorder
 
-    if _closed_papers:
-        try:
-            from src.services.trade_executor import _save_paper_trade_closed
-            for _closed_trade in _closed_papers:
-                _save_paper_trade_closed(_closed_trade)
-        except Exception as e:
-            log.warning(f"[PAPER_SAVE_ERROR] {e}")
     try:
         from src.services.signal_engine import SIGNAL_ENGINE_ENABLED, push_tick
         if SIGNAL_ENGINE_ENABLED:
@@ -157,6 +150,24 @@ def _dispatch(sym: str, bid: float, ask: float, bid_qty: float = 0.0, ask_qty: f
                        "bid_qty": bid_qty, "ask_qty": ask_qty})
     except Exception as e:
         log.warning(f"signal_engine push failed: {e}")
+
+    # Deferred to the very end of _dispatch() (past BOTH publish() and
+    # push_tick()) so the blocking Firebase write fully realizes its intent
+    # of not delaying any downstream tick consumer -- not just price_tick
+    # subscribers, but the signal engine too. Safe regardless of position
+    # in this function: close_paper_position() (called inside
+    # update_paper_positions() above) has already popped the closed
+    # position from _POSITIONS and marked it in _CLOSED_TRADES_THIS_SESSION
+    # before returning -- nothing downstream in this tick can re-observe or
+    # re-return it, so deferring the write changes only latency, not
+    # correctness.
+    if _closed_papers:
+        try:
+            from src.services.trade_executor import _save_paper_trade_closed
+            for _closed_trade in _closed_papers:
+                _save_paper_trade_closed(_closed_trade)
+        except Exception as e:
+            log.warning(f"[PAPER_SAVE_ERROR] {e}")
 
 
 # ── WebSocket helpers ─────────────────────────────────────────────────────────

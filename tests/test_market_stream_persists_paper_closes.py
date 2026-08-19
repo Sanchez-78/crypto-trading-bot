@@ -45,7 +45,12 @@ def test_update_paper_positions_return_value_is_not_discarded():
 def test_closed_papers_from_dispatch_are_persisted():
     src = _read_market_stream_source()
     assign_idx = src.index("= update_paper_positions(_symbol_prices, time.time())")
-    window = src[assign_idx: assign_idx + 900]
+    # Bounded by the end of _dispatch() (the next top-level `def`), not a
+    # fixed char count -- the persist block is deliberately deferred past
+    # both publish() and push_tick(), further from the assignment than an
+    # arbitrary small window would assume.
+    next_def_idx = src.index("\ndef ", assign_idx)
+    window = src[assign_idx:next_def_idx]
     assert "_save_paper_trade_closed" in window, (
         "P1.1AR regression: the WS tick dispatcher's update_paper_positions() "
         "return value is captured but never passed to _save_paper_trade_closed()"
