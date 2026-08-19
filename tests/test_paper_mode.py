@@ -236,6 +236,155 @@ class TestPaperExecutorBasics:
         )
         assert result.get("reason") == "weak_ev_below_0.01"
 
+    def test_toctou_race_blocked_by_atomic_recheck(self, clean_positions):
+        """P1.1AU (2026-08-19): defensive hardening test, NOT proof of the
+        live duplicate-trade fix -- see
+        test_exploration_caps_block_same_bucket_via_training_bucket_field
+        below for that (P1.1AV, the actual root cause). This test proves a
+        real, separate property: the exposure-cap check (~line 1771) and
+        the actual _POSITIONS insert (~line 2118) used to run under TWO
+        SEPARATE `with _POSITION_LOCK:` acquisitions, with ~280 lines of
+        unlocked work (TP/SL calc, sizing, P0 guards) in between -- a
+        genuine TOCTOU window if two truly concurrent callers ever hit it
+        for a symbol/bucket already at its cap. Simulates that scenario:
+        `_check_exploration_exposure_caps` is monkeypatched so its FIRST
+        call (the early check) returns None (caps look clear) but, as a
+        side effect, inserts a "concurrent winner" position for the same
+        symbol+bucket into _POSITIONS -- then its SECOND call (the atomic
+        re-check added by this fix, right before the insert) is allowed to
+        run for real and must correctly see that concurrent position and
+        block.
+
+        Honest limitation (reviewer-agent's condition #4): this proves the
+        re-check FIRES and CATCHES the simulated state, and that the check
+        and the insert are the last two statements in one `with` block (by
+        reading the code), but it does not exercise true OS-level thread
+        concurrency -- it cannot, by construction, distinguish "the
+        re-check runs inside the lock" from "the re-check runs immediately
+        before the lock is acquired" if nothing else could run in between
+        in a single-threaded test process. Real atomicity here rests on
+        code inspection (confirmed by reviewer-agent: same `with
+        _POSITION_LOCK:` block, nothing between the re-check and the
+        insert that could release/reacquire it), not on this test alone.
+        """
+        from src.services import paper_trade_executor as pte
+
+        call_count = {"n": 0}
+        real_check = pte._check_exploration_exposure_caps
+
+        def fake_check(symbol, bucket):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                pte._POSITIONS["concurrent_race_winner"] = {
+                    "symbol": symbol,
+                    "explore_bucket": bucket,
+                    "entry_ts": time.time(),
+                    "max_hold_s": 300,
+                }
+                return None
+            return real_check(symbol, bucket)
+
+        signal = {
+            "symbol": "SOLUSDT", "action": "BUY", "ev": 0.0, "score": 0.05,
+            "p": 0.50, "coh": 0.60, "af": 1.00, "regime": "BULL_TREND",
+        }
+        with patch(
+            "src.services.paper_trade_executor._check_exploration_exposure_caps",
+            side_effect=fake_check,
+        ):
+            result = open_paper_position(
+                signal, 150.0, time.time(), "RDE_TAKE",
+                extra={"explore_bucket": "PAPER_STARVATION_DISCOVERY"},
+            )
+
+        assert call_count["n"] == 2, (
+            "expected exactly two exposure-cap checks: the original early "
+            "check and the new atomic re-check right before the insert"
+        )
+        assert result.get("status") == "blocked", (
+            f"P1.1AU regression: a position for SOLUSDT was inserted despite "
+            f"a concurrent position for the same symbol/bucket already "
+            f"existing at insert time -- the atomic re-check did not close "
+            f"the race window. Got: {result}"
+        )
+        assert result.get("reason") in (
+            "max_open_per_symbol", "max_open_per_bucket", "max_open_per_symbol_bucket",
+        )
+        # Only the simulated "concurrent winner" should be in _POSITIONS --
+        # our own call must NOT have also inserted a duplicate.
+        assert len(pte._POSITIONS) == 1
+        assert "concurrent_race_winner" in pte._POSITIONS
+
+    def test_exploration_caps_block_same_bucket_via_training_bucket_field(self, clean_positions):
+        """P1.1AV regression (2026-08-19, reviewer-agent's actual root
+        cause for the live duplicate-trade incident): reproduces the exact
+        production attribution reviewer-agent traced from cache.sqlite --
+        paper_source="paper_evidence_collection", explore_bucket=None,
+        training_bucket="A_STRICT_TAKE", symbol="SOLUSDT" (absent from
+        _SYMBOL_CAPS, defaults to 999 -- never binds). Before this fix,
+        `_check_exploration_exposure_caps()` was called with
+        `bucket = training_bucket or explore_bucket` but its three internal
+        counts filtered/compared on `p.get("explore_bucket")` alone -- a
+        position with training_bucket set and explore_bucket=None was
+        NEVER counted by any of the three caps, no matter how many
+        identical positions were already open. Confirmed live: 13
+        near-identical SOLUSDT positions admitted within 1.86s with this
+        exact attribution, symbol_count/bucket_count/symbol_bucket_count
+        all reading 0 every single time. This test proves a second position
+        with the SAME effective bucket (via training_bucket, not
+        explore_bucket) for the SAME symbol is now correctly blocked by
+        the symbol-bucket cap (max 1)."""
+        from src.services import paper_trade_executor as pte
+
+        # First position: same attribution as the live incident, already open.
+        pte._POSITIONS["already_open"] = {
+            "symbol": "SOLUSDT",
+            "explore_bucket": None,
+            "training_bucket": "A_STRICT_TAKE",
+            "paper_source": "paper_evidence_collection",
+            "entry_ts": time.time(),
+            "max_hold_s": 300,
+        }
+
+        result = pte._check_exploration_exposure_caps("SOLUSDT", "A_STRICT_TAKE")
+
+        assert result is not None, (
+            "P1.1AV regression: a second SOLUSDT position with the same "
+            "training_bucket='A_STRICT_TAKE' as an already-open position "
+            "was NOT blocked -- the exposure-cap counters are filtering on "
+            "explore_bucket again instead of the effective bucket, "
+            "reproducing the exact bug that let 13 near-identical positions "
+            "open live within 1.86 seconds"
+        )
+        assert result["status"] == "blocked"
+        assert result["reason"] in (
+            "max_open_per_symbol", "max_open_per_symbol_bucket", "max_open_per_bucket",
+        )
+
+    def test_exploration_caps_still_allow_different_symbol_same_training_bucket(self, clean_positions):
+        """Negative control: the P1.1AV fix must not become an accidental
+        blanket bucket-wide lock -- a DIFFERENT symbol with the same
+        training_bucket must still be allowed (only max_open_per_bucket=2
+        applies across symbols, not per-symbol)."""
+        from src.services import paper_trade_executor as pte
+
+        pte._POSITIONS["already_open"] = {
+            "symbol": "SOLUSDT",
+            "explore_bucket": None,
+            "training_bucket": "A_STRICT_TAKE",
+            "paper_source": "paper_evidence_collection",
+            "entry_ts": time.time(),
+            "max_hold_s": 300,
+        }
+
+        result = pte._check_exploration_exposure_caps("ADAUSDT", "A_STRICT_TAKE")
+        assert result is None, (
+            f"a different symbol sharing the same training_bucket must not "
+            f"be blocked by the per-symbol or per-symbol-bucket caps, only "
+            f"the per-bucket cap (2) which a single existing position "
+            f"doesn't reach yet. Got: {result}"
+        )
+
     def test_can_admit_paper_evidence_collection_p0_8_plus_allows_sideways(self, clean_positions):
         """2026-08-18 (_workspace/35): the P0_8_PLUS_EVIDENCE_COLLECTION
         bucket must be able to admit SIDEWAYS/VOLATILE regimes -- the

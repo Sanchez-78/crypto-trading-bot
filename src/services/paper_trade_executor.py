@@ -1358,6 +1358,17 @@ def evaluate_paper_tp_sl_exits(price_by_symbol: Optional[dict] = None, now: Opti
     }
 
 
+def _position_effective_bucket(p: dict) -> Optional[str]:
+    """The same `training_bucket or explore_bucket` derivation used at the
+    open_paper_position() call site (~line 1592-1594) that computes the
+    `bucket` argument this module passes into
+    _check_exploration_exposure_caps(). Factored out so the cap-counting
+    logic below counts positions the same way the caller decided what
+    "bucket" a new candidate belongs to -- see that function's P1.1AV fix
+    for why this matters."""
+    return p.get("training_bucket") or p.get("explore_bucket")
+
+
 def _check_exploration_exposure_caps(symbol: str, bucket: Optional[str]) -> Optional[dict]:
     """Check exploration-specific exposure caps.
 
@@ -1368,8 +1379,24 @@ def _check_exploration_exposure_caps(symbol: str, bucket: Optional[str]) -> Opti
 
     P1.1Z: Ignore stale positions in cap counts.
 
-    Returns:
-        None if caps OK, else {"status": "blocked", "reason": ..., "detail": ...}
+    P1.1AV FIX (2026-08-19, live incident forensics -- user-reported
+    duplicate closed trades): this function is called with
+    `bucket = training_bucket or explore_bucket` (open_paper_position(),
+    ~line 1594), but the three counts below used to filter/compare on
+    `p.get("explore_bucket")` alone -- a position admitted with
+    `training_bucket` set and `explore_bucket=None` (confirmed live: the
+    dominant real-world case, ~94% of the affected trade volume, bucket
+    name "A_STRICT_TAKE") was NEVER counted by any of these three checks,
+    regardless of how many identical positions were already open. This
+    made the entire exposure-cap mechanism a structural no-op for that
+    attribution -- confirmed live: 13 near-identical SOLUSDT positions
+    (same entry price) admitted within 1.86s, all with
+    explore_bucket=None/training_bucket="A_STRICT_TAKE", none blocked by
+    any of these three caps (symbol_count/bucket_count/symbol_bucket_count
+    were all 0 every single time, no matter how many were already open).
+    Fixed by counting each position's EFFECTIVE bucket
+    (_position_effective_bucket(), the same derivation the caller uses),
+    not just its raw explore_bucket field.
     """
     if not bucket:
         return None  # Not an exploration trade, skip caps
@@ -1377,15 +1404,15 @@ def _check_exploration_exposure_caps(symbol: str, bucket: Optional[str]) -> Opti
     now = time.time()
     symbol_count = sum(
         1 for p in _POSITIONS.values()
-        if p["symbol"] == symbol and p.get("explore_bucket") and not _is_position_stale(p, now)
+        if p["symbol"] == symbol and _position_effective_bucket(p) and not _is_position_stale(p, now)
     )
     bucket_count = sum(
         1 for p in _POSITIONS.values()
-        if p.get("explore_bucket") == bucket and not _is_position_stale(p, now)
+        if _position_effective_bucket(p) == bucket and not _is_position_stale(p, now)
     )
     symbol_bucket_count = sum(
         1 for p in _POSITIONS.values()
-        if p["symbol"] == symbol and p.get("explore_bucket") == bucket and not _is_position_stale(p, now)
+        if p["symbol"] == symbol and _position_effective_bucket(p) == bucket and not _is_position_stale(p, now)
     )
 
     # Check symbol cap
@@ -2115,6 +2142,79 @@ def open_paper_position(
         return {"status": "blocked", "reason": "p0_metadata_incomplete"}
 
     with _POSITION_LOCK:
+        # P1.1AU (2026-08-19, defensive hardening -- NOT the fix for the
+        # reported duplicate-trade symptom, see P1.1AV on
+        # _check_exploration_exposure_caps() above for that): re-validate
+        # exposure caps ATOMICALLY with the insert. The original cap checks
+        # (~line 1769-1836) ran inside their OWN, separate
+        # `with _POSITION_LOCK:` block that closed immediately after -- then
+        # ~280 lines of non-trivial work (TP/SL calculation, dynamic sizing,
+        # P0 metadata guards) ran WITHOUT holding the lock, before this
+        # second, independent lock acquisition inserted the position. That
+        # is a genuine, real TOCTOU window: two truly concurrent callers for
+        # a symbol/bucket already AT its cap could both pass the early check
+        # in the gap and both insert. It was NOT, on its own, the cause of
+        # the specific live duplicate cluster reported by the user and
+        # investigated in this cycle -- reviewer-agent traced that cluster
+        # (13 near-identical SOLUSDT positions, 1.86s span, monotonically
+        # INCREASING visible concurrency at each entry, 120-250ms apart) and
+        # found it was sequential admission through a cap that was a
+        # structural no-op for that attribution (P1.1AV), not concurrent
+        # calls racing an unlocked window. This block is retained as correct
+        # defensive hardening for the real (but separately-caused) race that
+        # remains possible once a cap actually binds -- it is not itself
+        # sufficient and must not be described as "the duplicate fix".
+        _race_cap_check = _check_exploration_exposure_caps(symbol, bucket)
+        if _race_cap_check:
+            _race_throttle_key = (symbol, bucket or "N/A", "race_" + _race_cap_check["reason"])
+            _race_now_log = time.time()
+            _race_last_log = _PAPER_ENTRY_BLOCKED_THROTTLE.get(_race_throttle_key, 0.0)
+            if _race_now_log - _race_last_log >= _PAPER_ENTRY_BLOCKED_TTL:
+                log.warning(
+                    "[PAPER_ENTRY_BLOCKED_RACE] trade_id=%s symbol=%s reason=%s -- "
+                    "another concurrent admission won the race for this symbol/bucket",
+                    trade_id, symbol, _race_cap_check["reason"],
+                )
+                _PAPER_ENTRY_BLOCKED_THROTTLE[_race_throttle_key] = _race_now_log
+            return _race_cap_check
+        if paper_source == "training_sampler":
+            _race_training_cap_check = _check_training_sampler_caps(symbol, training_bucket)
+            if _race_training_cap_check:
+                _race_throttle_key = (symbol, training_bucket or "N/A", "race_" + _race_training_cap_check["reason"])
+                _race_now_log = time.time()
+                _race_last_log = _PAPER_ENTRY_BLOCKED_THROTTLE.get(_race_throttle_key, 0.0)
+                if _race_now_log - _race_last_log >= _PAPER_ENTRY_BLOCKED_TTL:
+                    log.warning(
+                        "[PAPER_ENTRY_BLOCKED_RACE] trade_id=%s symbol=%s reason=%s",
+                        trade_id, symbol, _race_training_cap_check["reason"],
+                    )
+                    _PAPER_ENTRY_BLOCKED_THROTTLE[_race_throttle_key] = _race_now_log
+                return _race_training_cap_check
+        _race_now = time.time()
+        _race_alive = [p for p in _POSITIONS.values() if not _is_position_stale(p, _race_now)]
+        _race_symbol_cap = _SYMBOL_CAPS.get(symbol, 999)
+        _race_alive_for_symbol = [p for p in _race_alive if p.get("symbol") == symbol]
+        if len(_race_alive_for_symbol) >= _race_symbol_cap:
+            _race_throttle_key = (symbol, "race_symbol_cap", "exceeded")
+            _race_last_log = _PAPER_ENTRY_BLOCKED_THROTTLE.get(_race_throttle_key, 0.0)
+            if _race_now - _race_last_log >= _PAPER_ENTRY_BLOCKED_TTL:
+                log.warning(
+                    "[PAPER_ENTRY_BLOCKED_RACE] trade_id=%s symbol=%s reason=symbol_cap_exceeded",
+                    trade_id, symbol,
+                )
+                _PAPER_ENTRY_BLOCKED_THROTTLE[_race_throttle_key] = _race_now
+            return {"status": "blocked", "reason": "symbol_cap_exceeded"}
+        if len(_race_alive) >= _MAX_OPEN:
+            _race_throttle_key = (symbol, bucket or training_bucket or "N/A", "race_max_open_exceeded")
+            _race_last_log = _PAPER_ENTRY_BLOCKED_THROTTLE.get(_race_throttle_key, 0.0)
+            if _race_now - _race_last_log >= _PAPER_ENTRY_BLOCKED_TTL:
+                log.warning(
+                    "[PAPER_ENTRY_BLOCKED_RACE] trade_id=%s symbol=%s reason=max_open_exceeded",
+                    trade_id, symbol,
+                )
+                _PAPER_ENTRY_BLOCKED_THROTTLE[_race_throttle_key] = _race_now
+            return {"status": "blocked", "reason": "max_open_exceeded"}
+
         _POSITIONS[trade_id] = position
 
     log.warning(
