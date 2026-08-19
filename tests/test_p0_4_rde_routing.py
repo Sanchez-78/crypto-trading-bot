@@ -20,6 +20,7 @@ from unittest.mock import Mock, patch, MagicMock
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from src.services.p0_segment_ev_gate import P0SegmentEVGate
+from src.services.realtime_decision_engine import _route_training_sample_through_p0_rde
 
 
 class TestP04RDERouting:
@@ -27,40 +28,30 @@ class TestP04RDERouting:
 
     # Test 1: RDE ETHUSDT BULL_TREND admitted to evidence
     def test_rde_ethusdt_bull_trend_admits_to_evidence(self):
-        """Test 1: RDE routes ETHUSDT+BULL_TREND to evidence collection."""
-        # Simulate RDE routing logic via P0 gate
-        decision = P0SegmentEVGate.decide_segment_gate(
-            symbol="ETHUSDT",
-            side="BUY",
-            regime="BULL_TREND",
-            source="rde_training_sampler",
-            tp_sl_profile="unknown",
-            closed_trades=[],
+        """Test 1: RDE routes ETHUSDT+BULL_TREND to evidence collection --
+        calls the REAL function, not a hardcoded reproduction of its logic."""
+        signal = {"symbol": "ETHUSDT", "side": "BUY", "regime": "BULL_TREND", "price": 2500.0}
+        routed = _route_training_sample_through_p0_rde(
+            signal, "REJECT_NEGATIVE_EV", 0.0, 0.0, closed_trades=[]
         )
 
-        # Should NOT be approved for strict EV (no history)
-        assert decision.strict_ev_allowed is False
+        assert routed is not None, "ETHUSDT+BULL_TREND must be admitted to evidence collection"
+        assert routed["strict_ev"] is False
+        assert routed["readiness_eligible"] is False
+        assert routed["learning_source"] == "paper_evidence_collection"
+        assert routed["paper_source"] == "paper_evidence_collection"
+        assert routed["segment_key"] == "ETHUSDT_BUY_BULL_TREND_rde_training_sampler_unknown"
 
-        # But should be in evidence collection scope
-        in_scope = "ETHUSDT" in {"ETHUSDT"} and "BULL_TREND" in {"BULL_TREND"}
-        assert in_scope is True
-
-        # Verify: Metadata would be set
-        metadata_to_set = {
-            "strict_ev": False,
-            "readiness_eligible": False,
-            "learning_source": "paper_evidence_collection",
-            "segment_key": "ETHUSDT_BUY_BULL_TREND_rde_training_sampler_unknown",
-            "p0_gate_reason": decision.reason,
-        }
-
-        assert metadata_to_set["learning_source"] == "paper_evidence_collection"
-        assert metadata_to_set["strict_ev"] is False
-        assert metadata_to_set["readiness_eligible"] is False
-
-    # Test 2: RDE BTCUSDT blocked (quarantine)
-    def test_rde_btcusdt_blocked_by_quarantine(self):
-        """Test 2: BTCUSDT blocked from both strict EV and evidence."""
+    # Test 2: RDE BTCUSDT -- quarantined for strict EV, but P1.1AS FIX
+    # (2026-08-19): evidence collection is regime-gated only (matches
+    # P0SegmentEVGate.is_eligible_for_evidence_collection()'s own documented
+    # "V10.25 EMERGENCY: Allow ALL symbols" design), so BTCUSDT is now
+    # correctly ADMITTED to evidence collection despite being strict-EV
+    # quarantined -- this is an intentional behavior change from the
+    # pre-fix hardcoded `{"ETHUSDT"}`-only allowlist, not a regression.
+    def test_rde_btcusdt_quarantined_for_strict_ev_but_admitted_to_evidence(self):
+        """Test 2: BTCUSDT blocked from strict EV (quarantine), but ADMITTED
+        to evidence collection (regime-only gate, not symbol-gated)."""
         decision = P0SegmentEVGate.decide_segment_gate(
             symbol="BTCUSDT",
             side="BUY",
@@ -69,20 +60,24 @@ class TestP04RDERouting:
             tp_sl_profile="unknown",
             closed_trades=[],
         )
-
-        # Verify: Quarantine blocks strict EV
         assert decision.strict_ev_allowed is False
         assert "quarantine" in decision.reason.lower()
 
-        # Verify: Not in evidence scope
-        in_scope = "BTCUSDT" in {"ETHUSDT"}
-        assert in_scope is False
+        signal = {"symbol": "BTCUSDT", "side": "BUY", "regime": "BULL_TREND", "price": 60000.0}
+        routed = _route_training_sample_through_p0_rde(
+            signal, "REJECT_NEGATIVE_EV", 0.0, 0.0, closed_trades=[]
+        )
+        assert routed is not None, (
+            "P1.1AS regression: BTCUSDT must be admitted to evidence "
+            "collection (strict-EV quarantine and evidence-collection "
+            "eligibility are separate gates) -- if this is None, the "
+            "hardcoded single-symbol allowlist bug has returned"
+        )
+        assert routed["learning_source"] == "paper_evidence_collection"
 
-        # Expected: Signal blocked (no P0 routing, no sampler call)
-
-    # Test 3: RDE SOLUSDT blocked
-    def test_rde_solusdt_blocked_by_quarantine(self):
-        """Test 3: SOLUSDT blocked from evidence."""
+    # Test 3: RDE SOLUSDT -- same reasoning as BTCUSDT above
+    def test_rde_solusdt_quarantined_for_strict_ev_but_admitted_to_evidence(self):
+        """Test 3: SOLUSDT blocked from strict EV, but admitted to evidence."""
         decision = P0SegmentEVGate.decide_segment_gate(
             symbol="SOLUSDT",
             side="BUY",
@@ -91,18 +86,24 @@ class TestP04RDERouting:
             tp_sl_profile="unknown",
             closed_trades=[],
         )
-
-        # Verify: Quarantine
         assert decision.strict_ev_allowed is False
         assert "quarantine" in decision.reason.lower()
 
-        # Verify: Not in evidence scope
-        in_scope = "SOLUSDT" in {"ETHUSDT"}
-        assert in_scope is False
+        signal = {"symbol": "SOLUSDT", "side": "BUY", "regime": "BULL_TREND", "price": 150.0}
+        routed = _route_training_sample_through_p0_rde(
+            signal, "REJECT_NEGATIVE_EV", 0.0, 0.0, closed_trades=[]
+        )
+        assert routed is not None
+        assert routed["learning_source"] == "paper_evidence_collection"
 
-    # Test 4: RDE BEAR_TREND blocked (first restart)
-    def test_rde_bear_trend_blocked_first_restart(self):
-        """Test 4: BEAR_TREND not in evidence scope (first restart)."""
+    # Test 4: RDE BEAR_TREND -- P0SegmentEVGate.EVIDENCE_COLLECTION_REGIMES
+    # already includes BEAR_TREND (both regimes allowed); the old inline
+    # "in_scope = 'BEAR_TREND' in {'BULL_TREND'}" assertion in this test was
+    # itself stale even before the P1.1AS fix (it never called the real
+    # function or the real regime set).
+    def test_rde_bear_trend_admitted_to_evidence(self):
+        """Test 4: BEAR_TREND (ETHUSDT) IS in evidence scope -- quarantined
+        for strict EV, but not for evidence collection."""
         decision = P0SegmentEVGate.decide_segment_gate(
             symbol="ETHUSDT",
             side="BUY",
@@ -111,25 +112,21 @@ class TestP04RDERouting:
             tp_sl_profile="unknown",
             closed_trades=[],
         )
-
-        # Verify: BEAR_TREND quarantine
         assert decision.strict_ev_allowed is False
         assert "quarantine" in decision.reason.lower()
 
-        # Verify: Not in evidence scope (only BULL_TREND allowed first)
-        in_scope = "BEAR_TREND" in {"BULL_TREND"}
-        assert in_scope is False
+        signal = {"symbol": "ETHUSDT", "side": "BUY", "regime": "BEAR_TREND", "price": 2500.0}
+        routed = _route_training_sample_through_p0_rde(
+            signal, "REJECT_NEGATIVE_EV", 0.0, 0.0, closed_trades=[]
+        )
+        assert routed is not None
+        assert routed["learning_source"] == "paper_evidence_collection"
 
     # Test 5: All 3 RDE routes (REJECT_NEGATIVE_EV, ECON_BAD_ENTRY, ECON_BAD_FORCED)
     # use P0 helper before sampler
     def test_all_rde_routes_use_p0_helper(self):
-        """Test 5: Code inspection — all 3 RDE sampler paths route through P0."""
-        # This is a code-inspection assertion:
-        # After fix, RDE should not have direct sampler calls without P0 helper.
-        # Verification: grep for "maybe_open_training_sample(" in RDE
-        # Expected: No direct calls, only through P0 helper.
-
-        # For this test, we verify the routing decisions are consistent:
+        """Test 5: all 3 RDE route_reason variants route through the real
+        P0 helper and get admitted to evidence collection for ETHUSDT/BULL_TREND."""
         routes = [
             ("REJECT_NEGATIVE_EV", "ETHUSDT", "BULL_TREND"),
             ("REJECT_ECON_BAD_ENTRY", "ETHUSDT", "BULL_TREND"),
@@ -137,19 +134,47 @@ class TestP04RDERouting:
         ]
 
         for route_reason, symbol, regime in routes:
-            decision = P0SegmentEVGate.decide_segment_gate(
-                symbol=symbol,
-                side="BUY",
-                regime=regime,
-                source="rde_training_sampler",
-                tp_sl_profile="unknown",
-                closed_trades=[],
+            signal = {"symbol": symbol, "side": "BUY", "regime": regime, "price": 2500.0}
+            routed = _route_training_sample_through_p0_rde(
+                signal, route_reason, 0.0, 0.0, closed_trades=[]
             )
+            assert routed is not None, f"{route_reason}/{symbol}/{regime} should be admitted"
+            assert routed["strict_ev"] is False
 
-            # All should route to evidence collection (not strict EV)
-            assert decision.strict_ev_allowed is False
-            in_scope = symbol in {"ETHUSDT"} and regime in {"BULL_TREND"}
-            assert in_scope is True
+    # Test 5b (P1.1AS regression, the exact deadlock scenario found live):
+    # a non-ETHUSDT symbol in a non-quarantined-for-evidence regime must be
+    # admitted -- this is the case that was structurally impossible before
+    # the fix (hardcoded `symbol in {"ETHUSDT"}`), and whose absence caused
+    # a total, ~17.5h paper-trading admission deadlock once ETHUSDT's own
+    # segments were exhausted by starvation-discovery's "confirmed bad
+    # segment" protection.
+    def test_rde_non_ethusdt_symbol_admitted_to_evidence_regression(self):
+        """P1.1AS: ADAUSDT/BEAR_TREND must be admitted -- reproduces the
+        exact live deadlock scenario (mutation-killed: fails against the
+        pre-fix hardcoded {"ETHUSDT"} allowlist, passes with the shared
+        P0SegmentEVGate.is_eligible_for_evidence_collection() check)."""
+        signal = {"symbol": "ADAUSDT", "side": "SELL", "regime": "BEAR_TREND", "price": 0.35}
+        routed = _route_training_sample_through_p0_rde(
+            signal, "REJECT_NEGATIVE_EV", 0.0, 0.0, closed_trades=[]
+        )
+        assert routed is not None, (
+            "P1.1AS regression: a non-ETHUSDT symbol in an evidence-eligible "
+            "regime must be admitted -- this is the exact scenario that "
+            "caused a total live admission deadlock once ETHUSDT's own "
+            "segments were exhausted by starvation-discovery"
+        )
+        assert routed["learning_source"] == "paper_evidence_collection"
+        assert routed["segment_key"] == "ADAUSDT_SELL_BEAR_TREND_rde_training_sampler_unknown"
+
+    def test_rde_quiet_range_still_blocked_negative_control(self):
+        """Negative control: a regime NOT in EVIDENCE_COLLECTION_REGIMES
+        (e.g. QUIET_RANGE) must still be blocked -- the fix widens the
+        SYMBOL scope, not the regime scope."""
+        signal = {"symbol": "ETHUSDT", "side": "BUY", "regime": "QUIET_RANGE", "price": 2500.0}
+        routed = _route_training_sample_through_p0_rde(
+            signal, "REJECT_NEGATIVE_EV", 0.0, 0.0, closed_trades=[]
+        )
+        assert routed is None, "QUIET_RANGE must remain out of evidence scope"
 
     # Test 6: Metadata set correctly after P0 routing
     def test_p0_routed_metadata_set_correctly(self):

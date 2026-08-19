@@ -2905,23 +2905,49 @@ def _route_training_sample_through_p0_rde(signal, route_reason, score_before_adj
             closed_trades=closed_trades,
         )
 
+        # P1.1AS FIX (2026-08-19, forensic pass): this call site used to hardcode
+        # `symbol in {"ETHUSDT"}` here -- a local, single-symbol allowlist that
+        # silently ignored the shared, already-used-elsewhere (signal_router.py)
+        # is_eligible_for_evidence_collection() method. That method itself checks
+        # ONLY regime, not symbol -- its own symbol gate was deliberately removed
+        # in commit bfce62f ("HOTFIX: Remove P0 symbol gate - allow ALL symbols"),
+        # so switching to it widens this route from ETHUSDT-only to effectively
+        # ALL symbols (regime-gated only), not just the 9 named in
+        # EVIDENCE_COLLECTION_SYMBOLS (that constant is unused dead config here --
+        # see the class docstring history). Strict-EV quarantine
+        # (QUARANTINED_SYMBOLS/QUARANTINED_REGIMES, a separate, independent gate)
+        # is completely unaffected: BTCUSDT/SOLUSDT/BEAR_TREND remain quarantined
+        # for strict EV even though they are now admitted to evidence collection --
+        # this is the same intentional split the shared method already applied
+        # everywhere else it's called. Root cause of a total admission deadlock
+        # observed live: ETHUSDT was the ONLY symbol this route would ever admit
+        # into evidence collection; once starvation-discovery's own "already
+        # confirmed bad segment" protection (2026-08-14 fix) correctly
+        # stopped admitting into ETHUSDT's two exhausted segments
+        # (ETHUSDT:BEAR_TREND:SELL, ETHUSDT:BULL_TREND:BUY, both segment_n=21,
+        # segment_weight=0.25), there was no other symbol left anywhere in the
+        # system this route would ever admit -- zero paper entries succeeded for
+        # ~17.5h despite thousands of signal evaluations per minute. Fixed by
+        # using the shared, already-tested method instead of a local duplicate
+        # that had drifted out of sync with it.
+        can_admit_evidence, evidence_reason = P0SegmentEVGate.is_eligible_for_evidence_collection(
+            symbol, regime
+        )
+
         log.info(
             "[P0_RDE_TRAINING_ROUTE] symbol=%s side=%s regime=%s route_reason=%s "
             "strict_ev_allowed=%s reason=%s evidence_allowed_check=%s",
             symbol, side, regime, route_reason,
             decision.strict_ev_allowed, decision.reason,
-            symbol in {"ETHUSDT"} and regime in {"BULL_TREND", "BEAR_TREND"},
+            can_admit_evidence,
         )
-
-        # Check if evidence collection is allowed for this symbol/regime
-        can_admit_evidence = (symbol in {"ETHUSDT"}) and (regime in {"BULL_TREND", "BEAR_TREND"})
 
         if not can_admit_evidence:
             # Not in evidence scope -> block
             log.info(
                 "[P0_RDE_TRAINING_ROUTE_BLOCKED] symbol=%s regime=%s "
-                "reason=out_of_evidence_scope",
-                symbol, regime,
+                "reason=%s",
+                symbol, regime, evidence_reason,
             )
             return None
 

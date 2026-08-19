@@ -294,11 +294,27 @@ class TestEvidenceCollectionScope:
         is_allowed, reason = P0SegmentEVGate.is_eligible_for_evidence_collection("ETHUSDT", "BEAR_TREND")
         assert is_allowed is True
 
-    def test_btcusdt_not_eligible_for_evidence_collection(self):
-        """Test BTCUSDT is blocked from evidence collection."""
+    def test_btcusdt_eligible_for_evidence_collection_despite_strict_ev_quarantine(self):
+        """P1.1AS fix (2026-08-19): this test previously asserted BTCUSDT was
+        blocked from evidence collection -- stale since commit bfce62f
+        (2026-06-10, "HOTFIX: Remove P0 symbol gate - allow ALL symbols"),
+        which removed the symbol check from is_eligible_for_evidence_collection()
+        entirely, leaving only the regime gate. The old assertion was already
+        failing against current code before this fix (confirmed via git stash);
+        a contradicting red test asserting the OPPOSITE of the gate's actual,
+        deliberate, documented behavior is exactly how a future edit could
+        silently re-narrow evidence-collection scope and reintroduce the
+        ~17.5h admission deadlock this fix resolved. BTCUSDT remains
+        quarantined for STRICT EV (a separate gate, unaffected -- see
+        is_quarantined_for_strict_ev tests) -- evidence collection and
+        strict-EV eligibility are intentionally independent."""
         is_allowed, reason = P0SegmentEVGate.is_eligible_for_evidence_collection("BTCUSDT", "BULL_TREND")
-        assert is_allowed is False
-        assert "not_in_evidence_scope" in reason
+        assert is_allowed is True
+        assert reason == "allowed_for_evidence_collection"
+
+        is_quar, quar_reason = P0SegmentEVGate.is_quarantined_for_strict_ev("BTCUSDT", "BULL_TREND")
+        assert is_quar is True
+        assert "quarantine" in quar_reason.lower()
 
 
 class TestDecideSegmentGateComplete:
