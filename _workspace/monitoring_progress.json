@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 109,
+  "cycle": 110,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 109,
+  "total_cycles_completed": 110,
   "current_wr": 8.0,
   "current_pnl": -0.439103,
-  "last_update": "2026-08-19T13:27:00Z",
-  "status": "duplicate_trades_p1_1av_fix_live_partial_new_gap_found",
+  "last_update": "2026-08-24T07:25:00Z",
+  "status": "unbucketed_duplicate_fix_reviewed_approved_not_yet_deployed",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -1172,6 +1172,23 @@
       "new_finding_unbucketed_path_still_duplicates": "NOT a regression -- pre-existing, separate mechanism, now the dominant remaining duplicate source. _check_exploration_exposure_caps() returns None (skips all caps) when effective bucket is None -- candidates via reason=P0_GATE carry training_bucket=None AND explore_bucket=None by design. Only remaining guard is _SYMBOL_CAPS[\"ETHUSDT\"]=10. Live evidence post-deploy: ETHUSDT BUY @1936.095 tb=None eb=None x4 (same second, 13:18:45 UTC) and @1937.895 x2 (13:21:06 UTC), 4 already closed on TIMEOUT. User's original symptom therefore only PARTIALLY closed by this cycle.",
       "workspace_doc": "_workspace/41_duplicate_trades_p1_1av_fix.md",
       "next_cycle_plan": "Dedicated future cycle: root-cause the P0_GATE unbucketed admission path (why are 4-6 near-identical candidates generated/admitted in the same second?) before designing a minimal patch -- either a real per-symbol concurrency cap independent of the generous _SYMBOL_CAPS default, or an explicit same-symbol-same-side-same-price dedupe window at admission time regardless of bucket attribution. Needs its own forensics pass, not a same-day rider fix, per standing evidence-first discipline."
+    },
+    {
+      "cycle": 110,
+      "timestamp": "2026-08-24T07:25:00Z",
+      "status": "UNBUCKETED_DUPLICATE_FIX_REVIEWED_APPROVED_NOT_YET_DEPLOYED",
+      "trigger": "Follow-up from cycle 109 post-deploy live verification: duplicate trades still occurring on a SEPARATE unbucketed (training_bucket=None AND explore_bucket=None) admission path that P1.1AV never touched by design.",
+      "root_cause": "signal_generator.py on_price() publishes a fresh signal_created event on every qualifying tick with no debounce. _on_signal_created()'s P0_GATE branch calls open_paper_position(reason=\"P0_GATE\") with no bucket keys -- skips _check_exploration_exposure_caps() entirely (falsy-bucket no-op by contract) and never reaches paper_training_sampler.py's dedicated _recent_dedupe (scoped only to maybe_open_training_sample()). Live evidence: 15 tight duplicate clusters in 24h post-P1.1AV-deploy, worst case 4 near-identical ETHUSDT positions within 0.9s, nearly all bucket=None.",
+      "fix_P1_1AW": "_UNBUCKETED_LAST_ADMISSION dict + short cooldown (default 5.0s, env PAPER_UNBUCKETED_ADMISSION_COOLDOWN_S), applied inside open_paper_position()'s atomic lock block, scoped to reason==\"P0_GATE\" specifically (not every unbucketed caller -- broader scope regressed 13 pre-existing tests, reverted; reviewer-agent independently verified the narrower scoping against all 9 real call sites plus live cache.sqlite gap-distribution data).",
+      "review": {
+        "reviewer_agent": "APPROVED WITH CONDITIONS -- independently verified P0_GATE scoping against all call sites + live data. C1 (path-scoped commit) and C3 (dict never cleared, test leakage) and C4 (cooldown stamped before unrelated cap checks, could wrongly block a later legitimate candidate) applied same cycle. C2 (misleading unconditional SUCCESS log on _on_signal_created) applied same cycle. C5 (post-deploy monitoring) and C6 (optional test nits) deferred/skipped.",
+        "trading_safety_agent": "PASS -- paper-only scope confirmed (0 deletions in either file, 181 insertions, structurally cannot weaken any gate), fail-closed confirmed (no exception path in new code), unbounded-dict concern assessed as non-issue (bounded by |symbols|x|sides|, same pattern as pre-existing _PAPER_ENTRY_BLOCKED_THROTTLE), directionally-restrictive-only confirmed by reading. Independently corroborated C1 and C4."
+      },
+      "commit": "5b22812",
+      "deploy_result": "NOT_YET_DEPLOYED",
+      "both_review_agents_hit_transient_529_overload": "status.claude.com confirmed an active platform incident (\"Elevated errors for multiple models\", first reported 05:06 UTC, still unresolved at last check ~07:20 UTC) during this cycle -- both reviewer-agent and trading-safety-agent needed several retries across ~40 minutes before succeeding. Verified via WebFetch rather than assumed, per user pushback (\"pretizeni je blbost duvod musi byt jiny\").",
+      "workspace_doc": "_workspace/42_unbucketed_duplicate_admission_fix.md",
+      "next_cycle_plan": "Deploy via gated Hetzner workflow (PLAN then DEPLOY), then live-verify: confirm unbucketed_admission_cooldown blocks fire on repeat P0_GATE candidates, confirm the new [SIGNAL_BLOCKED] log (C2 fix) is observable, re-run the duplicate-cluster cache.sqlite query to confirm unbucketed clusters stop appearing. If total P0_GATE admission volume drops materially more than expected, consider lowering PAPER_UNBUCKETED_ADMISSION_COOLDOWN_S to 2.0 (needs restart, read at import) per reviewer C5."
     }
   ],
   "experiment": {
