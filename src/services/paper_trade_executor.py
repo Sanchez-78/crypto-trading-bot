@@ -351,6 +351,28 @@ _CLOSED_TRADES_LOCK = __import__("threading").RLock()
 _PAPER_ENTRY_BLOCKED_THROTTLE = {}  # (symbol, bucket, reason) -> last_log_ts
 _PAPER_ENTRY_BLOCKED_TTL = 60.0  # seconds between logs per key
 
+# P1.1AW (2026-08-24, cycle 110, _workspace/42_unbucketed_duplicate_admission_fix.md):
+# short per-(symbol, side) admission cooldown, scoped to reason=="P0_GATE"
+# candidates only (see the scoping note at the actual check, ~line 2213).
+# Those candidates are unbucketed (bucket falsy -- training_bucket and
+# explore_bucket both None) and never pass through
+# _check_exploration_exposure_caps() at all (its own contract: `if not
+# bucket: return None`, by original design -- that function is
+# exposure-caps for exploration buckets specifically, not a general
+# admission dedupe), nor through paper_training_sampler.py's dedicated
+# _recent_dedupe/_recent_dup_candidate mechanism (that lives entirely
+# inside maybe_open_training_sample(), which the P0_GATE path never calls).
+# Root cause of the still-open half of the cycle 109 duplicate-trade
+# finding: signal_generator.py's on_price() publishes a fresh signal_created
+# event on every qualifying tick with no debounce; when ticks arrive in a
+# sub-second burst the same symbol/side decision republishes repeatedly, and
+# with zero dedup of any kind on this path, each republish opened its own
+# paper position (live-confirmed: up to 4 near-identical ETHUSDT/ADAUSDT/
+# SOLUSDT positions admitted within under a second, all bucket=None,
+# reason=P0_GATE).
+_UNBUCKETED_LAST_ADMISSION = {}  # (symbol, side) -> last admission timestamp
+_UNBUCKETED_ADMISSION_COOLDOWN_S = float(os.getenv("PAPER_UNBUCKETED_ADMISSION_COOLDOWN_S", "5.0"))
+
 # P1.1AA: Throttle PAPER_TIMEOUT_SCAN logs (max once per 60s)
 _PAPER_TIMEOUT_SCAN_THROTTLE = 0.0  # last scan log timestamp
 _PAPER_TIMEOUT_SCAN_TTL = 60.0  # seconds between scan logs
@@ -2191,6 +2213,46 @@ def open_paper_position(
                     _PAPER_ENTRY_BLOCKED_THROTTLE[_race_throttle_key] = _race_now_log
                 return _race_training_cap_check
         _race_now = time.time()
+        # P1.1AW: unbucketed candidates skip every check above by design
+        # (both the exposure-cap and training-sampler-cap checks require a
+        # truthy bucket). Apply the standalone cooldown here -- see the
+        # _UNBUCKETED_LAST_ADMISSION docstring above for why this exists.
+        # Scoped to reason=="P0_GATE" specifically, NOT every unbucketed
+        # caller: that is the exact, confirmed live source of the burst
+        # (_on_signal_created's P0_GATE branch, the only caller that both
+        # sets no bucket AND has no debounce upstream -- signal_generator.
+        # on_price() republishes signal_created on every qualifying tick).
+        # A broader `if not bucket:` scope was tried first and reverted: it
+        # regressed 13 pre-existing tests that legitimately open several
+        # same-symbol RDE_TAKE positions in quick succession within a single
+        # test (e.g. test_open_paper_position_respects_max_open filling
+        # _MAX_OPEN slots on one symbol) -- those calls are unbucketed too
+        # but are not the bug this cycle investigated, and a real-time
+        # cooldown has no way to distinguish "legitimate rapid test setup"
+        # from "duplicate burst" without this extra signal.
+        # C4 (reviewer-agent/trading-safety-agent, cycle 110 review): the
+        # cooldown must only be STAMPED on a genuine admission, not merely
+        # on passing this check -- otherwise a candidate that later gets
+        # rejected by the symbol-cap or max-open check below (unrelated to
+        # this guard) would still burn the cooldown window for a position
+        # that never actually opened. `_unbucketed_admission_key` carries
+        # the key forward to the stamp site right before the insert; it
+        # stays None for every other candidate (bucketed, or not P0_GATE).
+        _unbucketed_admission_key = None
+        if not bucket and reason == "P0_GATE":
+            _unbucketed_admission_key = (symbol, side)
+            _unbucketed_last = _UNBUCKETED_LAST_ADMISSION.get(_unbucketed_admission_key, 0.0)
+            if _race_now - _unbucketed_last < _UNBUCKETED_ADMISSION_COOLDOWN_S:
+                _race_throttle_key = (symbol, "N/A", "race_unbucketed_admission_cooldown")
+                _race_last_log = _PAPER_ENTRY_BLOCKED_THROTTLE.get(_race_throttle_key, 0.0)
+                if _race_now - _race_last_log >= _PAPER_ENTRY_BLOCKED_TTL:
+                    log.warning(
+                        "[PAPER_ENTRY_BLOCKED_RACE] trade_id=%s symbol=%s side=%s reason=unbucketed_admission_cooldown "
+                        "elapsed=%.2fs cooldown=%.1fs",
+                        trade_id, symbol, side, _race_now - _unbucketed_last, _UNBUCKETED_ADMISSION_COOLDOWN_S,
+                    )
+                    _PAPER_ENTRY_BLOCKED_THROTTLE[_race_throttle_key] = _race_now
+                return {"status": "blocked", "reason": "unbucketed_admission_cooldown"}
         _race_alive = [p for p in _POSITIONS.values() if not _is_position_stale(p, _race_now)]
         _race_symbol_cap = _SYMBOL_CAPS.get(symbol, 999)
         _race_alive_for_symbol = [p for p in _race_alive if p.get("symbol") == symbol]
@@ -2215,6 +2277,10 @@ def open_paper_position(
                 _PAPER_ENTRY_BLOCKED_THROTTLE[_race_throttle_key] = _race_now
             return {"status": "blocked", "reason": "max_open_exceeded"}
 
+        # C4: stamp the cooldown only now that every other check has been
+        # passed and the position is genuinely about to be inserted.
+        if _unbucketed_admission_key is not None:
+            _UNBUCKETED_LAST_ADMISSION[_unbucketed_admission_key] = _race_now
         _POSITIONS[trade_id] = position
 
     log.warning(
@@ -3607,6 +3673,14 @@ def reset_paper_positions():
     """Reset all open positions (for testing)."""
     with _POSITION_LOCK:
         _POSITIONS.clear()
+        # C3 (reviewer-agent, cycle 110 review): P1.1AW's cooldown dict is
+        # otherwise cleared by nothing -- neither this function nor
+        # _reset_paper_sampler_test_state() touched it, so state leaked
+        # across tests (and would leak across a live process restart only
+        # in the harmless sense of resetting to empty, but leaked across
+        # *test* runs it silently made later tests' unbucketed candidates
+        # depend on unrelated earlier tests' timing).
+        _UNBUCKETED_LAST_ADMISSION.clear()
 
 
 def normalize_paper_tp_sl(side: str, entry: float, tp: float, sl: float) -> dict:
@@ -4535,16 +4609,35 @@ def _on_signal_created(signal: dict) -> None:
                     return
 
             log.info("[SIGNAL_OPENING] %s %s price=%s ts=%s", symbol, action, price, ts)
-            open_paper_position(
+            _open_result = open_paper_position(
                 signal=signal,
                 price=price,
                 ts=ts,
                 reason="P0_GATE",
                 extra={"p0_decision": decision.reason}
             )
-            # Mark signal as handled by paper to prevent RDE double-processing
+            # Mark signal as handled by paper regardless of outcome -- the
+            # paper routing logic already made a final decision (open OR
+            # block) for this signal, so RDE must not also try it.
             signal["__paper_handled"] = True
-            log.info("[SIGNAL_OPENED] %s %s SUCCESS", symbol, action)
+            # C2 (reviewer-agent, cycle 110 review): this used to log
+            # unconditional "SUCCESS" even when open_paper_position()
+            # returned status="blocked" (e.g. P1.1AW's unbucketed_admission_
+            # cooldown, or any other admission-time guard) -- with
+            # [PAPER_ENTRY_BLOCKED_RACE] throttled to once/60s
+            # (_PAPER_ENTRY_BLOCKED_TTL), a misleading SUCCESS log on every
+            # single blocked candidate made it impossible to verify from
+            # journalctl alone whether a guard like P1.1AW was actually
+            # firing post-deploy.
+            if isinstance(_open_result, dict) and _open_result.get("status") == "opened":
+                log.info("[SIGNAL_OPENED] %s %s SUCCESS", symbol, action)
+            else:
+                log.info(
+                    "[SIGNAL_BLOCKED] %s %s status=%s reason=%s",
+                    symbol, action,
+                    (_open_result or {}).get("status", "unknown"),
+                    (_open_result or {}).get("reason", "unknown"),
+                )
     except Exception as e:
         log.exception("[SIGNAL_HANDLER_ERROR] %s %s: %s", symbol, action, e)
 

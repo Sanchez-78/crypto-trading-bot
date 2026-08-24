@@ -385,6 +385,198 @@ class TestPaperExecutorBasics:
             f"doesn't reach yet. Got: {result}"
         )
 
+    def test_unbucketed_admission_cooldown_blocks_rapid_duplicate(self, clean_positions):
+        """P1.1AW regression (2026-08-24, cycle 110): reproduces the second,
+        still-open half of the cycle 109 duplicate-trade finding --
+        candidates with NO bucket at all (training_bucket=None AND
+        explore_bucket=None, exactly the P0_GATE / _on_signal_created
+        admission path in production) skip _check_exploration_exposure_caps
+        entirely by that function's own contract (`if not bucket: return
+        None`), and never touch paper_training_sampler.py's dedicated
+        _recent_dedupe mechanism either (that lives only inside
+        maybe_open_training_sample(), which this path never calls). Before
+        this fix the ONLY remaining guard was the generous per-symbol
+        _SYMBOL_CAPS default (e.g. ETHUSDT=10), so a sub-second burst of
+        re-published signal_created events (signal_generator.on_price() has
+        no debounce) could open several near-identical positions. Confirmed
+        live: up to 4 near-identical ETHUSDT positions within under a
+        second, all bucket=None. This test proves a second unbucketed
+        candidate for the same (symbol, side) within the cooldown window is
+        now blocked."""
+        from src.services import paper_trade_executor as pte
+
+        pte._UNBUCKETED_LAST_ADMISSION.clear()
+        signal = {
+            "symbol": "ETHUSDT", "action": "BUY", "ev": 0.0, "score": 0.05,
+            "p": 0.50, "coh": 0.60, "af": 1.00, "regime": "BULL_TREND",
+        }
+        first = open_paper_position(signal, 2500.0, time.time(), "P0_GATE", extra={})
+        assert first.get("status") == "opened", f"first (unbucketed) admission should succeed, got {first}"
+
+        second = open_paper_position(dict(signal), 2500.5, time.time(), "P0_GATE", extra={})
+        assert second.get("status") == "blocked", (
+            f"P1.1AW regression: a second unbucketed ETHUSDT/BUY position was "
+            f"admitted within the cooldown window right after the first -- "
+            f"reproduces the live duplicate-burst bug on the unbucketed "
+            f"admission path. Got: {second}"
+        )
+        assert second.get("reason") == "unbucketed_admission_cooldown"
+
+    def test_unbucketed_admission_cooldown_allows_different_symbol(self, clean_positions):
+        """Negative control: the per-(symbol, side) cooldown must not become
+        an accidental global lock -- a different symbol must be admitted
+        immediately even though it is also unbucketed and inside the same
+        cooldown window as a just-opened position."""
+        from src.services import paper_trade_executor as pte
+
+        pte._UNBUCKETED_LAST_ADMISSION.clear()
+        open_paper_position(
+            {"symbol": "ETHUSDT", "action": "BUY", "ev": 0.0, "score": 0.05,
+             "p": 0.50, "coh": 0.60, "af": 1.00, "regime": "BULL_TREND"},
+            2500.0, time.time(), "P0_GATE", extra={},
+        )
+        other = open_paper_position(
+            {"symbol": "SOLUSDT", "action": "BUY", "ev": 0.0, "score": 0.05,
+             "p": 0.50, "coh": 0.60, "af": 1.00, "regime": "BULL_TREND"},
+            93.9, time.time(), "P0_GATE", extra={},
+        )
+        assert other.get("status") == "opened", (
+            f"a different symbol must not be blocked by another symbol's "
+            f"unbucketed admission cooldown. Got: {other}"
+        )
+
+    def test_unbucketed_admission_cooldown_allows_opposite_side(self, clean_positions):
+        """Negative control: the cooldown is scoped to (symbol, side), not
+        symbol alone -- a genuine opposite-direction signal for the same
+        symbol right after must not be blocked."""
+        from src.services import paper_trade_executor as pte
+
+        pte._UNBUCKETED_LAST_ADMISSION.clear()
+        open_paper_position(
+            {"symbol": "ETHUSDT", "action": "BUY", "ev": 0.0, "score": 0.05,
+             "p": 0.50, "coh": 0.60, "af": 1.00, "regime": "BULL_TREND"},
+            2500.0, time.time(), "P0_GATE", extra={},
+        )
+        opposite = open_paper_position(
+            {"symbol": "ETHUSDT", "action": "SELL", "ev": 0.0, "score": 0.05,
+             "p": 0.50, "coh": 0.60, "af": 1.00, "regime": "BEAR_TREND"},
+            2500.0, time.time(), "P0_GATE", extra={},
+        )
+        assert opposite.get("status") == "opened", (
+            f"an opposite-side signal for the same symbol must not be "
+            f"blocked by the same-side admission cooldown. Got: {opposite}"
+        )
+
+    def test_unbucketed_admission_cooldown_allows_after_expiry(self, clean_positions):
+        """After the cooldown window has genuinely elapsed, a new unbucketed
+        admission for the same (symbol, side) must be allowed again -- this
+        is a duplicate-burst guard, not a permanent one-shot-per-symbol
+        limiter."""
+        from src.services import paper_trade_executor as pte
+
+        pte._UNBUCKETED_LAST_ADMISSION.clear()
+        pte._UNBUCKETED_LAST_ADMISSION[("ETHUSDT", "BUY")] = time.time() - (pte._UNBUCKETED_ADMISSION_COOLDOWN_S + 1.0)
+        result = open_paper_position(
+            {"symbol": "ETHUSDT", "action": "BUY", "ev": 0.0, "score": 0.05,
+             "p": 0.50, "coh": 0.60, "af": 1.00, "regime": "BULL_TREND"},
+            2500.0, time.time(), "P0_GATE", extra={},
+        )
+        assert result.get("status") == "opened", (
+            f"an unbucketed admission after the cooldown window has elapsed "
+            f"must be allowed. Got: {result}"
+        )
+
+    def test_unbucketed_admission_cooldown_not_stamped_on_unrelated_block(self, clean_positions, monkeypatch):
+        """C4 regression (trading-safety-agent + reviewer-agent, cycle 110
+        review): the cooldown must be stamped only on a GENUINE admission,
+        not merely on passing the cooldown check itself -- a candidate that
+        passes the cooldown check but is then rejected by an unrelated guard
+        (max_open_exceeded here) must not burn the cooldown window for a
+        position that never actually opened. Before this fix the timestamp
+        was written as soon as the cooldown check passed, BEFORE the
+        symbol-cap/max-open checks further down -- so this blocked attempt
+        would have silently made the NEXT, otherwise-fully-legitimate
+        candidate 5 seconds later fail with unbucketed_admission_cooldown
+        too, for a position that was never actually admitted the first time.
+
+        _SYMBOL_CAPS (999 default for an unlisted symbol) can't be used to
+        force this deterministically because there is an EARLIER, separate,
+        non-atomic symbol-cap check (~line 1859, pre-dating P1.1AW) that
+        would intercept first and never reach the P1.1AW block at all --
+        same technique test_toctou_race_blocked_by_atomic_recheck already
+        uses for the same reason: monkeypatch
+        _check_exploration_exposure_caps (unconditionally called just
+        before the P1.1AW block, inside the same atomic lock) to insert
+        _MAX_OPEN "concurrent" positions as a side effect, so the pool only
+        fills up AFTER the early (pre-lock) checks already passed."""
+        from src.services import paper_trade_executor as pte
+
+        pte._UNBUCKETED_LAST_ADMISSION.clear()
+
+        # _check_exploration_exposure_caps is called TWICE per open attempt
+        # (an early, non-atomic check ~line 1820, then again as the atomic
+        # re-check ~line 2189, same two-call structure
+        # test_toctou_race_blocked_by_atomic_recheck exercises). Only fill
+        # the position pool on the SECOND (atomic) call -- filling it on the
+        # first call would trip the separate EARLY max-open check instead
+        # and never reach the P1.1AW block or the late atomic max-open
+        # check at all.
+        _call_count = {"n": 0}
+
+        def _fill_pool_on_second_call(symbol, bucket):
+            _call_count["n"] += 1
+            if _call_count["n"] >= 2:
+                for i in range(pte._MAX_OPEN):
+                    pte._POSITIONS[f"concurrent_filler_{i}"] = {
+                        "symbol": "BTCUSDT", "explore_bucket": None, "training_bucket": None,
+                        "entry_ts": time.time(), "max_hold_s": 300,
+                    }
+            return None
+
+        with patch(
+            "src.services.paper_trade_executor._check_exploration_exposure_caps",
+            side_effect=_fill_pool_on_second_call,
+        ):
+            blocked = open_paper_position(
+                {"symbol": "ETHUSDT", "action": "BUY", "ev": 0.0, "score": 0.05,
+                 "p": 0.50, "coh": 0.60, "af": 1.00, "regime": "BULL_TREND"},
+                2500.0, time.time(), "P0_GATE", extra={},
+            )
+        assert blocked.get("status") == "blocked"
+        assert blocked.get("reason") == "max_open_exceeded"
+        assert ("ETHUSDT", "BUY") not in pte._UNBUCKETED_LAST_ADMISSION, (
+            "a candidate rejected by an unrelated cap (max_open_exceeded) "
+            "must not stamp the unbucketed-admission cooldown -- doing so "
+            "would wrongly block a later, otherwise-legitimate candidate "
+            "for a position that never actually opened"
+        )
+
+    def test_unbucketed_admission_cooldown_does_not_affect_bucketed_candidates(self, clean_positions):
+        """Negative control: P1.1AW must be a strict no-op for bucketed
+        candidates -- two rapid admissions with an explicit training_bucket
+        are governed entirely by _check_exploration_exposure_caps (P1.1AV),
+        not by the new unbucketed-only cooldown, so a bucketed candidate for
+        a DIFFERENT symbol than a just-opened unbucketed one must not be
+        incidentally throttled."""
+        from src.services import paper_trade_executor as pte
+
+        pte._UNBUCKETED_LAST_ADMISSION.clear()
+        open_paper_position(
+            {"symbol": "ETHUSDT", "action": "BUY", "ev": 0.0, "score": 0.05,
+             "p": 0.50, "coh": 0.60, "af": 1.00, "regime": "BULL_TREND"},
+            2500.0, time.time(), "P0_GATE", extra={},
+        )
+        bucketed = open_paper_position(
+            {"symbol": "ADAUSDT", "action": "BUY", "ev": 0.0, "score": 0.05,
+             "p": 0.50, "coh": 0.60, "af": 1.00, "regime": "BULL_TREND"},
+            0.22, time.time(), "RDE_TAKE",
+            extra={"training_bucket": "A_STRICT_TAKE", "paper_source": "paper_evidence_collection"},
+        )
+        assert bucketed.get("status") == "opened", (
+            f"a bucketed candidate must be entirely unaffected by the "
+            f"unbucketed-only cooldown. Got: {bucketed}"
+        )
+
     def test_can_admit_paper_evidence_collection_p0_8_plus_allows_sideways(self, clean_positions):
         """2026-08-18 (_workspace/35): the P0_8_PLUS_EVIDENCE_COLLECTION
         bucket must be able to admit SIDEWAYS/VOLATILE regimes -- the
