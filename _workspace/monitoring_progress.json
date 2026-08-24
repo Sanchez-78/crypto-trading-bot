@@ -11,8 +11,8 @@
   "total_cycles_completed": 110,
   "current_wr": 8.0,
   "current_pnl": -0.439103,
-  "last_update": "2026-08-24T07:25:00Z",
-  "status": "unbucketed_duplicate_fix_reviewed_approved_not_yet_deployed",
+  "last_update": "2026-08-24T07:40:00Z",
+  "status": "unbucketed_duplicate_fix_deployed_live_verified",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -1185,10 +1185,18 @@
         "trading_safety_agent": "PASS -- paper-only scope confirmed (0 deletions in either file, 181 insertions, structurally cannot weaken any gate), fail-closed confirmed (no exception path in new code), unbounded-dict concern assessed as non-issue (bounded by |symbols|x|sides|, same pattern as pre-existing _PAPER_ENTRY_BLOCKED_THROTTLE), directionally-restrictive-only confirmed by reading. Independently corroborated C1 and C4."
       },
       "commit": "5b22812",
-      "deploy_result": "NOT_YET_DEPLOYED",
+      "deploy_result": "PASS",
       "both_review_agents_hit_transient_529_overload": "status.claude.com confirmed an active platform incident (\"Elevated errors for multiple models\", first reported 05:06 UTC, still unresolved at last check ~07:20 UTC) during this cycle -- both reviewer-agent and trading-safety-agent needed several retries across ~40 minutes before succeeding. Verified via WebFetch rather than assumed, per user pushback (\"pretizeni je blbost duvod musi byt jiny\").",
       "workspace_doc": "_workspace/42_unbucketed_duplicate_admission_fix.md",
-      "next_cycle_plan": "Deploy via gated Hetzner workflow (PLAN then DEPLOY), then live-verify: confirm unbucketed_admission_cooldown blocks fire on repeat P0_GATE candidates, confirm the new [SIGNAL_BLOCKED] log (C2 fix) is observable, re-run the duplicate-cluster cache.sqlite query to confirm unbucketed clusters stop appearing. If total P0_GATE admission volume drops materially more than expected, consider lowering PAPER_UNBUCKETED_ADMISSION_COOLDOWN_S to 2.0 (needs restart, read at import) per reviewer C5."
+      "next_cycle_plan": "Deploy via gated Hetzner workflow (PLAN then DEPLOY), then live-verify: confirm unbucketed_admission_cooldown blocks fire on repeat P0_GATE candidates, confirm the new [SIGNAL_BLOCKED] log (C2 fix) is observable, re-run the duplicate-cluster cache.sqlite query to confirm unbucketed clusters stop appearing. If total P0_GATE admission volume drops materially more than expected, consider lowering PAPER_UNBUCKETED_ADMISSION_COOLDOWN_S to 2.0 (needs restart, read at import) per reviewer C5.",
+      "live_sha": "3a294cd (docs-only commit directly on top of 5b22812, code-identical)",
+      "live_verification": {
+        "admission_not_stalled": "PASS, throughput went UP -- 6x [PAPER_ENTRY] in ~20min post-restart (3 via P0_GATE) vs only 3 total in the 2h pre-deploy window on b921d54.",
+        "cooldown_firing": "PASS, direct proof: a duplicate 0.27s behind a genuine ETHUSDT/BUY/P0_GATE admission was blocked with reason=unbucketed_admission_cooldown.",
+        "signal_blocked_log_fix_c2": "PASS, and immediately surfaced a much bigger pre-existing truth gap: the OLD unconditional [SIGNAL_OPENED] SUCCESS log had fired 1231x in 2h pre-deploy against only 3 real [PAPER_ENTRY] (~99.8% false). Post-deploy honest [SIGNAL_BLOCKED] breakdown now visible (bootstrap_open, buy_enforcement, max_open_per_symbol=805 confirming cycle 109 P1.1AV also firing, allowed_for_evidence_collection, regime_quarantined_p0, edge_generation_failed, symbol_quarantined_p0).",
+        "known_limitation": "5.0s window does not cover wider-spaced repeats -- two ETHUSDT/BUY/P0_GATE positions 8s apart both admitted and both open concurrently. By design, not a bug. Tunable via PAPER_UNBUCKETED_ADMISSION_COOLDOWN_S (needs restart) if 24h duplicate-cluster monitoring shows this matters.",
+        "unrelated_side_effect": "Deploy restart incidentally cleared a pre-existing DASHBOARD_ZERO freeze (~48min stale, the known CLAUDE.md-documented dashboard-freeze gap) -- not caused by or in scope of this fix."
+      }
     }
   ],
   "experiment": {

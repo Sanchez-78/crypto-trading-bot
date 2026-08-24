@@ -144,10 +144,66 @@ pre-fix baseline. Full regression sweep (`test_paper_mode.py` full file +
 pre-existing, unrelated local-`.env` contamination as cycle 109:
 `test_strict_take_disabled_for_training`), 4 skipped.
 
-## Not yet done
+## Deploy and live verification (DONE)
 
-- Deploy via the gated Hetzner workflow.
-- Post-deploy live verification (C5): confirm `unbucketed_admission_cooldown`
-  blocks actually fire on repeat P0_GATE candidates, confirm the
-  `[SIGNAL_BLOCKED]` log (C2 fix) is now observable, re-run the duplicate-
-  cluster query to confirm the unbucketed clusters stop appearing.
+Deployed via gated `hetzner-deploy-apply.yml` (PLAN run 32702136941 → DEPLOY
+run 32702196387, both green). Live SHA pinned to `3a294cd` (the docs-only
+commit directly on top of `5b22812` — code-identical, keeps the server in
+sync with `origin/main` HEAD). Service active, 0 restarts, dashboard
+restarted cleanly, real-trading gate (Gate 2) confirmed still PAPER-only.
+
+**Sanity check 1 (admission not stalled): PASS, throughput went UP.** 6×
+`[PAPER_ENTRY]` in ~20 min post-restart (3 via `reason=P0_GATE`) vs only 3
+total in the 2h pre-deploy window on `b921d54`. No stall.
+
+**Sanity check 2 (cooldown live-active): PASS, direct proof.** A duplicate
+0.27s behind a genuine admission was blocked:
+```
+07:38:22 [PAPER_ENTRY] symbol=ETHUSDT side=BUY ... reason=P0_GATE
+07:38:22 [PAPER_ENTRY_BLOCKED_RACE] trade_id=paper_4958ba1f780a symbol=ETHUSDT side=BUY reason=unbucketed_admission_cooldown elapsed=0.27s cooldown=5.0s
+```
+Exactly the sub-second burst class the patch targets.
+
+**Sanity check 3 (C2 log-observability fix): PASS, and it immediately
+surfaced a much bigger pre-existing truth gap.** Pre-deploy, the old
+unconditional `[SIGNAL_OPENED] ... SUCCESS` log fired 1231× in 2h against
+only 3 real `[PAPER_ENTRY]` — ~99.8% false. Post-deploy the honest
+`[SIGNAL_BLOCKED]` breakdown is now visible: `bootstrap_open` 1619,
+`buy_enforcement` 1552, `max_open_per_symbol` 805 (this is cycle 109's
+P1.1AV fix visibly firing too), `allowed_for_evidence_collection` 798,
+`regime_quarantined_p0` 610, `edge_generation_failed` 389,
+`symbol_quarantined_p0` 196, plus
+`p0_gate:regime_not_in_evidence_scope:QUIET_RANGE`.
+
+### Known limitation surfaced live (not a bug, by design)
+
+The 5.0s window does not cover wider-spaced repeats: at 07:38:22 and again
+at 07:38:30 (8s apart, outside the cooldown), two ETHUSDT BUY
+`reason=P0_GATE` positions both admitted and are both currently open
+concurrently. This is correct behavior for a 5.0s window, not a defect —
+but if the eventual goal is "no near-identical unbucketed duplicates at
+all" rather than specifically "no sub-second burst", 5.0s may be too
+short. Tunable via `PAPER_UNBUCKETED_ADMISSION_COOLDOWN_S` (requires a
+restart, read at import) without a code change. Watch the duplicate-
+cluster query over the next 24h (per reviewer's C5) to decide whether
+widening is warranted — do not change blind.
+
+### Unrelated, incidentally fixed by the restart
+
+The old process had been emitting `[CRITICAL] DASHBOARD_ZERO: Dashboard
+stale: 2882s without update` for ~48 min before this deploy — the known,
+previously-documented dashboard-freeze gap (see CLAUDE.md's "KNOWN GAP
+(found 2026-08-06)" section and `_workspace/05_dashboard_staleness_intake.md`).
+The deploy workflow's best-effort `cryptomaster-dashboard` restart cleared
+it as a side effect (0 `DASHBOARD_ZERO` since). Not caused by, and not a
+target of, this cycle's fix — noted here only because it happened to
+surface during this deploy's health check.
+
+## Next cycle candidates
+
+- Watch the 24h duplicate-cluster query (per C5) to decide if the 5.0s
+  window needs widening given the confirmed 8s-apart concurrent-open case
+  above.
+- The dashboard-freeze recurrence is a known, unresolved gap (not root-
+  caused) — still just mitigated by best-effort restart-on-deploy, per
+  CLAUDE.md. Not this cycle's scope, but worth a dedicated cycle eventually.
