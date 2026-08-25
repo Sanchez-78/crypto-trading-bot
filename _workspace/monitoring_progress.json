@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 111,
+  "cycle": 115,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 111,
+  "total_cycles_completed": 115,
   "current_wr": 24.0,
   "current_pnl": -3.9307,
-  "last_update": "2026-08-25T08:35:00Z",
-  "status": "fail_no_new_actionable_bug_confirmed_no_edge",
+  "last_update": "2026-08-25T10:35:00Z",
+  "status": "monitoring_two_leads_ruled_out_this_window_searching_for_next_lever",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -1217,6 +1217,53 @@
       "investigation": "TIMEOUT dominance (78% of 201 trades in a clean 12h post-P1.1AV/AW cohort) re-investigated per the standing three-auditor-question mandate (STATE-02 session). Live MFE/MAE data: TIMEOUT exits average only +7.8bps max-favorable-excursion across a 387s avg hold, vs the 35-47bps TP zone -- nowhere close. TP exits (8% of trades) average +51.5bps MFE in under half the hold time (144s) -- qualitatively different, stronger moves, not a barely-missed-TP pattern. Re-confirms (fresh evidence, not re-litigated blindly) the prior cycle-23 grid-search finding: no TP/SL geometry is profitable on the current signal path. Root cause is signal generation lacking directional edge for the majority of admitted entries, not exit-geometry mismatch.",
       "action_taken": "No TP/SL retune attempted (would repeat an already-disproven cycle-23 experiment without new evidence the underlying signal changed). No new bug found (admission/duplicate-trade bugs already fixed cycles 107-110; service healthy, quota healthy, no data corruption). Documented in _workspace/43_timeout_dominance_no_edge_confirmation.md.",
       "next_cycle_plan": "Continue standing 30-min cadence. Real edge-generation progress depends on the project's ongoing multi-cycle strategy R&D effort (P0.8+ evidence-collection strategies, order-flow/microprice work, funding-carry thread just closed NO-GO) rather than a same-cycle patch. A future cycle MAY re-run a bounded TP/SL grid search on current data if there is reason to believe market regime has shifted since cycle 23 -- as its own dedicated, evidence-first exercise, not a reaction to this note."
+    },
+    {
+      "cycle": 112,
+      "timestamp": "2026-08-25T09:05:00Z",
+      "status": "CAUTION_NON_ISSUE_CLOSED",
+      "metrics_snapshot": {
+        "note": "Not independently re-collected this cycle -- investigation-focused, no live-metrics-changing action taken.",
+        "firebase_quota": "healthy (re-confirmed)",
+        "service": "active"
+      },
+      "investigation": "Followed up on the P0.8+ evidence-collection scope-widening 'watch logs' open question from 2026-08-18. Confirmed in production logs that trend_cost_aware_v1 / sideways_mean_reversion_v1 / volatility_breakout_v1 are producing real admitted evidence-collection candidates, not just structurally-blocked attempts.",
+      "action_taken": "None needed -- closed as a non-issue. Memory updated (project_p0_8_plus_scope_widening_20260818.md).",
+      "next_cycle_plan": "Continue standing 30-min cadence toward WR/P&L goal."
+    },
+    {
+      "cycle": 113,
+      "timestamp": "2026-08-25T09:35:00Z",
+      "status": "FAIL_NO_ACTIONABLE_FIX_NEGATIVE_RESULT_DOCUMENTED",
+      "metrics_snapshot": {
+        "note": "Investigation used a 72h retrospective counterfactual window (n=1656 closed trades) via cache.sqlite MFE/MAE columns, not a fresh live snapshot.",
+        "live_baseline_this_window": "PF 0.736 (price basis), mean -3.24bps/trade, WR 43.2%"
+      },
+      "investigation": "Direct response to user pushback ('wr nizke a pl negativni', rejecting 'no new bug, keep waiting'). Ran an evidence-first TP/SL counterfactual grid search on live data (cache.sqlite mfe_gross_bps/mae_gross_bps/time_to_mfe_ms/time_to_mae_ms), simulating alternate TP/SL geometries retrospectively. Narrower TP (8-35bps): confirmed worse than live on every combo tested. Wide TP (60-100bps) + very tight SL (5-6bps): a tempting PF 1.16 signal at tp=100/sl=5, but WR only 29.9% and it FAILS the project's standing split-sample robustness check -- edge collapses or reverses in the second half of the window for every combo tested (e.g. 100/5: PF 1.305->1.012, mean +1.74bps->+0.07bps).",
+      "action_taken": "No live TP/SL change made or recommended. Negative result documented in _workspace/44_tp_sl_counterfactual_grid_search_cycle113.md to prevent future re-discovery without the split check. Strengthens (does not contradict) cycle 111's conclusion: bottleneck is signal generation, not exit geometry, now confirmed from a second, independent angle with fresh evidence.",
+      "next_cycle_plan": "Try a different lever than exit geometry -- segment-level allocation (is a good segment being under-explored, or a bad one over-admitted)."
+    },
+    {
+      "cycle": 114,
+      "timestamp": "2026-08-25T10:05:00Z",
+      "status": "FAIL_LEAD_FOUND_NOT_YET_VALIDATED",
+      "metrics_snapshot": {
+        "note": "Segment-level allocation check, not a live-metrics snapshot cycle."
+      },
+      "investigation": "Checked segment_weights in live learning state for under/over-exploited segments. Found SOLUSDT:BEAR_TREND:BUY upweighted 2x (the only upweighted segment) with strong historical performance (PF 3.53, WR 68.1%, n=185/30d) but ZERO trades in at least the last 7 days despite being the best-performing segment in the system. Traced (live logs, partial) to SOLUSDT quarantine logic (P0SegmentEVGate.QUARANTINED_SYMBOLS/QUARANTINED_REGIMES) blocking STRICT_EV promotion; working hypothesis is the countertrend BUY direction is no longer being generated/admitted via the evidence-collection/starvation-discovery path that originally built the 185-trade track record, for a reason not yet traced to code.",
+      "action_taken": "No code change -- root mechanism not yet confirmed at code level, and this cycle's own write-up flagged (before any action) that the 30d PF needed its own split-sample robustness check before being trusted, matching cycle 113's discipline. Documented in _workspace/45_solusdt_countertrend_segment_silent_cycle114.md as NOT YET VALIDATED.",
+      "next_cycle_plan": "Run the split-sample robustness check on this segment's 185 trades before treating it as an actionable lead (explicitly deferred within this same cycle's own write-up, not left implicit)."
+    },
+    {
+      "cycle": 115,
+      "timestamp": "2026-08-25T10:35:00Z",
+      "status": "FAIL_SELF_CORRECTED_LEAD_DOWNGRADED",
+      "metrics_snapshot": {
+        "note": "Self-correction/robustness-check cycle, not a live-metrics snapshot cycle."
+      },
+      "investigation": "Ran the split-sample check cycle 114 itself flagged as required before trusting its finding. Result: all 185 SOLUSDT:BEAR_TREND:BUY trades occurred in a single ~6.5-day window (2026-07-30 to 2026-08-06), three weeks before this cycle -- the segment has actually been silent ~19 days, not 7 as cycle 114 implied. Within that window itself, performance decays sharply: half-split PF 3.995 -> 1.409; third-split PF 2.11 -> 22.2 -> 1.01 (most recent third essentially breakeven, WR 46%). Matches the same time-concentrated regime-luck signature already discredited for the TP/SL counterfactual in cycle 113 and for price-only momentum leads earlier in this project's research arc.",
+      "action_taken": "Corrected cycle 114's own 'promising lead' framing in place (_workspace/45_solusdt_countertrend_segment_silent_cycle114.md, committed 4b7ec30) before it could propagate into any code action. Downgraded from 'promising lead worth a dedicated forensic cycle' to 'low priority, likely another discredited regime-luck pattern.' No code change made.",
+      "next_cycle_plan": "Two candidate levers (TP/SL geometry, this specific segment reactivation) now both ruled out with fresh evidence. Next cycle should look for a genuinely different, currently-active, split-stable signal rather than re-probing either of these two discredited directions -- or accept that closing the gap requires the project's longer-horizon strategy R&D (P0.8+, order-flow/microprice) to mature rather than a same-cycle patch, and shift monitoring focus back to verifying those strategies' live admitted-candidate performance once they accumulate enough trades."
     }
   ],
   "experiment": {
