@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 116,
+  "cycle": 117,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 116,
-  "current_wr": 34.0,
-  "current_pnl": 1.0754,
-  "last_update": "2026-08-25T10:35:00Z",
-  "status": "monitoring_p0_8_plus_sample_too_small_lifetime_still_negative",
+  "total_cycles_completed": 117,
+  "current_wr": 32.0,
+  "current_pnl": 0.399,
+  "last_update": "2026-08-25T11:08:00Z",
+  "status": "monitoring_stable_no_new_blocker",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -1284,6 +1284,26 @@
       "investigation": "Followed cycle 115's own next_cycle_plan: checked live admitted-candidate performance of the three P0.8+ evidence-collection strategies (trend_cost_aware_v1, sideways_mean_reversion_v1, volatility_breakout_v1) via learning_source attribution in cache.sqlite, since both prior levers (TP/SL geometry, SOLUSDT segment reactivation) are now ruled out. Result: trend_cost_aware_v1 n=3 (silent since 2026-08-19, PF 3.74 but meaningless at n=3); sideways_mean_reversion_v1 n=13, WR 15.4%, PF 0.228, sum_pnl -4.21% (actively losing, still active as of ~3h before this cycle -- but n=13 is far too small to treat as a real edge read, evidence-collection strategies are expected to lose while gathering data); volatility_breakout_v1 n=3, roughly breakeven. Total n=19 across all three since the 2026-08-17/18 wiring -- confirms cycle 112's 'too small for an edge read' note, now with an actual breakdown rather than just an aggregate n=6/24h.",
       "action_taken": "None -- no actionable finding at this sample size, no new blocker (service/quota/errors all healthy, recent-100 window net-positive this cycle at PF 1.12/WR 34%, lifetime still net-negative at PF 0.657/expectancy -0.0275). Correctly a CAUTION, not a fabricated fix.",
       "next_cycle_plan": "Continue standing 30-min cadence. P0.8+ strategies need materially more accumulated trades (order of 100+ each) before their live performance is a meaningful signal either way -- checking again every cycle at n<20 would not add information. Sideways_mean_reversion_v1's PF 0.228 at n=13 is worth a re-check once it reaches a larger sample, not a same-cycle action."
+    },
+    {
+      "cycle": 117,
+      "timestamp": "2026-08-25T11:08:00Z",
+      "status": "CAUTION_STABLE_NO_NEW_BLOCKER",
+      "metrics_snapshot": {
+        "recent_100_wr_pct": 32.0,
+        "recent_100_pf_pct_basis": 1.044,
+        "recent_100_pf_usd_basis": 0.944,
+        "recent_100_net_pnl_pct": 0.399,
+        "recent_100_net_pnl_usd": -0.078155,
+        "lifetime_n": 10453,
+        "lifetime_pf": 0.6562642888148572,
+        "lifetime_expectancy": -0.02759189562804941,
+        "firebase_quota": "50/50000 reads, 499/20000 writes -- healthy",
+        "service": "active, 0 errors, degraded=false, 3 open positions, closed_today=100"
+      },
+      "investigation": "Routine 30-min check. Recent-100 window drifted slightly negative vs cycle 116 (WR 34%->32%, PF pct-basis 1.12->1.044, usd-basis net now -0.078 vs +0.028) -- normal noise at n=100, not a new regression signature (no error spike, no single-symbol/single-side concentration flagged, quota and service both healthy). Re-checked P0.8+ strategy sample growth: unchanged from cycle 116 (trend_cost_aware_v1 n=3, sideways_mean_reversion_v1 n=13 PF=0.228, volatility_breakout_v1 n=3) -- no new trades in either P0.8+ evidence-collection strategy this cycle, expected given their narrow admission scope.",
+      "action_taken": "None -- no new blocker, no actionable signal. Correctly CAUTION.",
+      "next_cycle_plan": "Continue standing 30-min cadence. Keep tracking P0.8+ sample growth (cheap check) but do not re-investigate every cycle once samples stop moving -- only act once a strategy crosses a meaningfully larger n."
     }
   ],
   "experiment": {
