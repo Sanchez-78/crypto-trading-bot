@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 110,
+  "cycle": 111,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 110,
-  "current_wr": 8.0,
-  "current_pnl": -0.439103,
-  "last_update": "2026-08-24T07:40:00Z",
-  "status": "unbucketed_duplicate_fix_deployed_live_verified",
+  "total_cycles_completed": 111,
+  "current_wr": 24.0,
+  "current_pnl": -3.9307,
+  "last_update": "2026-08-25T08:35:00Z",
+  "status": "fail_no_new_actionable_bug_confirmed_no_edge",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -1197,6 +1197,26 @@
         "known_limitation": "5.0s window does not cover wider-spaced repeats -- two ETHUSDT/BUY/P0_GATE positions 8s apart both admitted and both open concurrently. By design, not a bug. Tunable via PAPER_UNBUCKETED_ADMISSION_COOLDOWN_S (needs restart) if 24h duplicate-cluster monitoring shows this matters.",
         "unrelated_side_effect": "Deploy restart incidentally cleared a pre-existing DASHBOARD_ZERO freeze (~48min stale, the known CLAUDE.md-documented dashboard-freeze gap) -- not caused by or in scope of this fix."
       }
+    },
+    {
+      "cycle": 111,
+      "timestamp": "2026-08-25T08:35:00Z",
+      "status": "FAIL_NO_NEW_ACTIONABLE_BUG_CONFIRMED_NO_EDGE",
+      "metrics_snapshot": {
+        "recent_100_wr_pct": 24.0,
+        "recent_100_pf_pct_basis": 0.615,
+        "recent_100_pf_usd_basis": 0.384,
+        "recent_100_net_pnl_pct": -3.9307,
+        "recent_100_net_pnl_usd": -0.76356,
+        "lifetime_n": 10390,
+        "lifetime_pf": 0.6538957205332715,
+        "lifetime_expectancy": -0.02774776564003853,
+        "firebase_quota": "18/50000 reads, 279/20000 writes -- healthy",
+        "service": "active, 0 errors, 2 open positions, closed_today=100"
+      },
+      "investigation": "TIMEOUT dominance (78% of 201 trades in a clean 12h post-P1.1AV/AW cohort) re-investigated per the standing three-auditor-question mandate (STATE-02 session). Live MFE/MAE data: TIMEOUT exits average only +7.8bps max-favorable-excursion across a 387s avg hold, vs the 35-47bps TP zone -- nowhere close. TP exits (8% of trades) average +51.5bps MFE in under half the hold time (144s) -- qualitatively different, stronger moves, not a barely-missed-TP pattern. Re-confirms (fresh evidence, not re-litigated blindly) the prior cycle-23 grid-search finding: no TP/SL geometry is profitable on the current signal path. Root cause is signal generation lacking directional edge for the majority of admitted entries, not exit-geometry mismatch.",
+      "action_taken": "No TP/SL retune attempted (would repeat an already-disproven cycle-23 experiment without new evidence the underlying signal changed). No new bug found (admission/duplicate-trade bugs already fixed cycles 107-110; service healthy, quota healthy, no data corruption). Documented in _workspace/43_timeout_dominance_no_edge_confirmation.md.",
+      "next_cycle_plan": "Continue standing 30-min cadence. Real edge-generation progress depends on the project's ongoing multi-cycle strategy R&D effort (P0.8+ evidence-collection strategies, order-flow/microprice work, funding-carry thread just closed NO-GO) rather than a same-cycle patch. A future cycle MAY re-run a bounded TP/SL grid search on current data if there is reason to believe market regime has shifted since cycle 23 -- as its own dedicated, evidence-first exercise, not a reaction to this note."
     }
   ],
   "experiment": {
