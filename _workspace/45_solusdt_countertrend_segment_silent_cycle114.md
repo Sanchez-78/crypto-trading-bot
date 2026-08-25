@@ -1,6 +1,6 @@
 # 45 — SOLUSDT:BEAR_TREND:BUY (historically PF 3.53) has gone completely silent — new lead, NOT fixed this cycle
 
-## Status: FOUND, forensically traced to signal-direction generation (not admission blocking), NOT YET root-caused to the code level. Needs a dedicated future cycle.
+## Status: FOUND, forensically traced to signal-direction generation (not admission blocking). **CYCLE 115 CORRECTION: the "promising lead" framing below was premature — split-sample analysis shows this is very likely the same time-concentrated regime-luck artifact already discredited for TP/SL in cycle 113, not a suppressed-but-valid edge. See Cycle 115 Correction section at the end before trusting anything above it.**
 
 ## Trigger
 
@@ -95,3 +95,40 @@ change, or something else entirely).
    removing SOLUSDT from `QUARANTINED_SYMBOLS` wholesale, which would
    also affect the confirmed-bad `SOLUSDT:BEAR_TREND:SELL` segment and
    other SOLUSDT segments not part of this investigation.
+
+## Cycle 115 correction: the split-sample check (item 3 above) was run, and it weakens this lead substantially
+
+Ran the same robustness check cycle 113 applied to the TP/SL counterfactual.
+Chronological breakdown of all 185 trades:
+
+- **All 185 trades occurred between 2026-07-30 13:40 and 2026-08-06 01:30
+  -- a single ~6.5-day window, roughly three weeks before this cycle
+  (2026-08-25), not "the last 7 days" as the framing above implied.** The
+  segment has actually been silent for ~19 days, not 7.
+- Split in half by time: first half (n=151) PF 3.995; second half (n=34)
+  PF 1.409 -- already a steep within-window decay.
+- Split into thirds: third 1 (n=61) PF 2.11; **third 2 (n=61) PF 22.2**
+  (WR 90.2%, driven almost entirely by TIMEOUT exits with a slight
+  positive drift, not TP hits -- an unusual pattern in itself); third 3
+  (n=63, the most recent of the three, closest to when the segment went
+  quiet) PF **1.01 -- essentially breakeven**, WR 46.0%.
+
+**Interpretation:** this looks like the same time-concentrated,
+regime-specific-luck signature already discredited for the TP/SL
+counterfactual in cycle 113 (and for the price-only momentum leads
+earlier in this project's research arc): performance is real but
+concentrated in a specific, short, past window (plausibly a genuine SOL
+price bounce that the regime detector mislabeled or continued to call
+BEAR_TREND through), decays sharply within its own active period, and
+has produced nothing at all for three weeks since. This does NOT look
+like "a good segment currently being wrongly suppressed" -- it looks more
+like "a temporary artifact from a specific past week that naturally
+stopped recurring."
+
+**Revised recommendation:** downgrade this from "promising lead worth a
+dedicated forensic cycle" to "low priority, likely another discredited
+regime-luck pattern." Do not invest further session time chasing this
+specific segment without first checking whether a *different* mechanism
+(not this one) currently shows a genuinely recent, sustained, split-stable
+positive segment -- this one does not qualify on the evidence gathered
+so far.
