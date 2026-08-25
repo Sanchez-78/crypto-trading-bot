@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 115,
+  "cycle": 116,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 115,
-  "current_wr": 24.0,
-  "current_pnl": -3.9307,
+  "total_cycles_completed": 116,
+  "current_wr": 34.0,
+  "current_pnl": 1.0754,
   "last_update": "2026-08-25T10:35:00Z",
-  "status": "monitoring_two_leads_ruled_out_this_window_searching_for_next_lever",
+  "status": "monitoring_p0_8_plus_sample_too_small_lifetime_still_negative",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -1264,6 +1264,26 @@
       "investigation": "Ran the split-sample check cycle 114 itself flagged as required before trusting its finding. Result: all 185 SOLUSDT:BEAR_TREND:BUY trades occurred in a single ~6.5-day window (2026-07-30 to 2026-08-06), three weeks before this cycle -- the segment has actually been silent ~19 days, not 7 as cycle 114 implied. Within that window itself, performance decays sharply: half-split PF 3.995 -> 1.409; third-split PF 2.11 -> 22.2 -> 1.01 (most recent third essentially breakeven, WR 46%). Matches the same time-concentrated regime-luck signature already discredited for the TP/SL counterfactual in cycle 113 and for price-only momentum leads earlier in this project's research arc.",
       "action_taken": "Corrected cycle 114's own 'promising lead' framing in place (_workspace/45_solusdt_countertrend_segment_silent_cycle114.md, committed 4b7ec30) before it could propagate into any code action. Downgraded from 'promising lead worth a dedicated forensic cycle' to 'low priority, likely another discredited regime-luck pattern.' No code change made.",
       "next_cycle_plan": "Two candidate levers (TP/SL geometry, this specific segment reactivation) now both ruled out with fresh evidence. Next cycle should look for a genuinely different, currently-active, split-stable signal rather than re-probing either of these two discredited directions -- or accept that closing the gap requires the project's longer-horizon strategy R&D (P0.8+, order-flow/microprice) to mature rather than a same-cycle patch, and shift monitoring focus back to verifying those strategies' live admitted-candidate performance once they accumulate enough trades."
+    },
+    {
+      "cycle": 116,
+      "timestamp": "2026-08-25T10:35:00Z",
+      "status": "CAUTION_NO_NEW_BLOCKER_INSUFFICIENT_SAMPLE_ON_NEXT_LEVER",
+      "metrics_snapshot": {
+        "recent_100_wr_pct": 34.0,
+        "recent_100_pf_pct_basis": 1.12,
+        "recent_100_pf_usd_basis": 1.024,
+        "recent_100_net_pnl_pct": 1.0754,
+        "recent_100_net_pnl_usd": 0.027835,
+        "lifetime_n": 10439,
+        "lifetime_pf": 0.6567599509838771,
+        "lifetime_expectancy": -0.027531965226554305,
+        "firebase_quota": "43/50000 reads, 451/20000 writes -- healthy",
+        "service": "active, 0 errors, degraded=false, 3 open positions, closed_today=100"
+      },
+      "investigation": "Followed cycle 115's own next_cycle_plan: checked live admitted-candidate performance of the three P0.8+ evidence-collection strategies (trend_cost_aware_v1, sideways_mean_reversion_v1, volatility_breakout_v1) via learning_source attribution in cache.sqlite, since both prior levers (TP/SL geometry, SOLUSDT segment reactivation) are now ruled out. Result: trend_cost_aware_v1 n=3 (silent since 2026-08-19, PF 3.74 but meaningless at n=3); sideways_mean_reversion_v1 n=13, WR 15.4%, PF 0.228, sum_pnl -4.21% (actively losing, still active as of ~3h before this cycle -- but n=13 is far too small to treat as a real edge read, evidence-collection strategies are expected to lose while gathering data); volatility_breakout_v1 n=3, roughly breakeven. Total n=19 across all three since the 2026-08-17/18 wiring -- confirms cycle 112's 'too small for an edge read' note, now with an actual breakdown rather than just an aggregate n=6/24h.",
+      "action_taken": "None -- no actionable finding at this sample size, no new blocker (service/quota/errors all healthy, recent-100 window net-positive this cycle at PF 1.12/WR 34%, lifetime still net-negative at PF 0.657/expectancy -0.0275). Correctly a CAUTION, not a fabricated fix.",
+      "next_cycle_plan": "Continue standing 30-min cadence. P0.8+ strategies need materially more accumulated trades (order of 100+ each) before their live performance is a meaningful signal either way -- checking again every cycle at n<20 would not add information. Sideways_mean_reversion_v1's PF 0.228 at n=13 is worth a re-check once it reaches a larger sample, not a same-cycle action."
     }
   ],
   "experiment": {
