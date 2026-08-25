@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 118,
+  "cycle": 119,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 118,
-  "current_wr": 33.0,
-  "current_pnl": -0.4112,
-  "last_update": "2026-08-25T11:39:00Z",
+  "total_cycles_completed": 119,
+  "current_wr": 35.0,
+  "current_pnl": -2.4697,
+  "last_update": "2026-08-25T12:10:00Z",
   "status": "monitoring_stable_no_new_blocker",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -1324,6 +1324,26 @@
       "investigation": "Routine 30-min check. Recent-100 window dipped slightly below PF 1.0 (0.959 pct-basis) this cycle -- WR 33% is between cycle 116 (34%) and 117 (32%), not a monotonic 3-cycle drop, so regression-spiral guard does NOT trigger. Lifetime metrics essentially flat vs cycle 117. exit_distribution counters incrementing normally (no anomalous jump in any single exit_reason). P0.8+ strategy sample counts unchanged again (n=3/13/3) -- no new trades either strategy this cycle.",
       "action_taken": "None -- normal n=100 window noise, no new blocker.",
       "next_cycle_plan": "Continue standing 30-min cadence."
+    },
+    {
+      "cycle": 119,
+      "timestamp": "2026-08-25T12:10:00Z",
+      "status": "CAUTION_STABLE_NO_NEW_BLOCKER",
+      "metrics_snapshot": {
+        "recent_100_wr_pct": 35.0,
+        "recent_100_pf_pct_basis": 0.787,
+        "recent_100_pf_usd_basis": 1.052,
+        "recent_100_net_pnl_pct": -2.4697,
+        "recent_100_net_pnl_usd": 0.093933,
+        "lifetime_n": 10481,
+        "lifetime_pf": 0.6556566091489053,
+        "lifetime_expectancy": -0.027711085297204497,
+        "firebase_quota": "62/50000 reads, 581/20000 writes -- healthy",
+        "service": "active, 0 errors, degraded=false, 3 open positions, closed_today=100"
+      },
+      "investigation": "Routine 30-min check. WR ticked up to 35% (sequence 34/32/33/35 over cycles 116-119 -- no monotonic decline, spiral guard not triggered). Notable pct-basis vs usd-basis PF divergence this window (0.787 vs 1.052, net_pnl_pct -2.47% vs net_pnl_usd +0.094) -- both bases have diverged before in this project (position sizing varies per trade) and is not itself a new anomaly; not investigated further this cycle since no error/quota/service signal accompanies it. P0.8+ sample counts unchanged (n=3/13/3), no new trades.",
+      "action_taken": "None -- normal window noise, no new blocker.",
+      "next_cycle_plan": "Continue standing 30-min cadence. If the pct/usd PF divergence recurs and widens over several more cycles, worth a dedicated look at position-sizing distribution -- not yet warranted from a single window."
     }
   ],
   "experiment": {
