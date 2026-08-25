@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 121,
+  "cycle": 122,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 121,
+  "total_cycles_completed": 122,
   "current_wr": 36.0,
-  "current_pnl": -1.8995,
-  "last_update": "2026-08-25T13:13:00Z",
+  "current_pnl": -3.2458,
+  "last_update": "2026-08-25T13:45:00Z",
   "status": "monitoring_stable_no_new_blocker",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -1384,6 +1384,26 @@
       "investigation": "usd-basis PF has now read above 1.0 for 3 consecutive cycles (119: 1.052, 120: 1.005, 121: 1.029). IMPORTANT CAVEAT before over-reading this: recent_100 is a rolling window, so consecutive 30-min cycles share ~85-90% of the same underlying trades -- these are NOT 3 independent samples, they are heavily autocorrelated re-reads of largely the same window. This is explicitly NOT being treated as 3x confirming evidence of a durable usd-P&L edge; it is one slowly-evolving window that happens to have stayed >1.0 on usd-basis so far. WR 36% (34/32/33/35/37/36, still no goal-relevant trend either way).",
       "action_taken": "None. Explicitly noting the rolling-window autocorrelation caveat so a future cycle doesn't mistake overlapping re-reads for independent confirmation.",
       "next_cycle_plan": "Continue standing 30-min cadence. A genuinely independent read would require waiting for the window to substantially turn over (n=100 trades at current pace is roughly several hours), not just another 30-min snapshot."
+    },
+    {
+      "cycle": 122,
+      "timestamp": "2026-08-25T13:45:00Z",
+      "status": "CAUTION_STABLE_NO_NEW_BLOCKER",
+      "metrics_snapshot": {
+        "recent_100_wr_pct": 36.0,
+        "recent_100_pf_pct_basis": 0.775,
+        "recent_100_pf_usd_basis": 0.978,
+        "recent_100_net_pnl_pct": -3.2458,
+        "recent_100_net_pnl_usd": -0.060307,
+        "lifetime_n": 10521,
+        "lifetime_pf": 0.6553680805342883,
+        "lifetime_expectancy": -0.02782601321167193,
+        "firebase_quota": "81/50000 reads, 712/20000 writes -- healthy",
+        "service": "active, 0 errors, degraded=false, 3 open positions, closed_today=100"
+      },
+      "investigation": "usd-basis PF dropped back below 1.0 (0.978), ending the 3-cycle streak flagged (with an explicit non-independence caveat) in cycle 121 -- confirms it was rolling-window noise, not a durable trend, exactly as that caveat anticipated. WR flat at 36%. P0.8+ samples unchanged (n=3/13/3).",
+      "action_taken": "None -- normal noise, no new blocker.",
+      "next_cycle_plan": "Continue standing 30-min cadence."
     }
   ],
   "experiment": {
