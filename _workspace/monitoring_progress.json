@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 120,
+  "cycle": 121,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 120,
-  "current_wr": 37.0,
-  "current_pnl": -2.6096,
-  "last_update": "2026-08-25T12:41:00Z",
+  "total_cycles_completed": 121,
+  "current_wr": 36.0,
+  "current_pnl": -1.8995,
+  "last_update": "2026-08-25T13:13:00Z",
   "status": "monitoring_stable_no_new_blocker",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -1364,6 +1364,26 @@
       "investigation": "WR continued rising (34/32/33/35/37 over cycles 116-120). Followed up on the pct/usd PF divergence flagged in cycle 119 since it recurred (0.789 vs 1.005 this window, similar magnitude to cycle 119's 0.787 vs 1.052). Checked implied position sizing (pnl_usd / (pnl_pct/100)) on the current recent-100 window: winning trades average $15.22 size vs losing trades $14.44 -- a modest but real skew toward larger size on wins. Plausible explanation: segment_weights (the live learning mechanism, upweights per-segment position size based on historical performance) is allocating somewhat more size to segments that are currently winning more often, which would mechanically lift usd-basis PF above pct-basis PF without any pct-basis edge improving. This is consistent with segment_weights working as designed, not a bug.",
       "action_taken": "None -- explained as a plausible consequence of existing, already-verified position-sizing behavior, not a new issue. No code change.",
       "next_cycle_plan": "Continue standing 30-min cadence. If usd-basis PF sustains meaningfully above 1.0 while pct-basis stays below, worth eventually noting as a real (if modest) usd-P&L-positive signal distinct from the WR>50% goal component -- too early to call from 2 cycles."
+    },
+    {
+      "cycle": 121,
+      "timestamp": "2026-08-25T13:13:00Z",
+      "status": "CAUTION_STABLE_NO_NEW_BLOCKER",
+      "metrics_snapshot": {
+        "recent_100_wr_pct": 36.0,
+        "recent_100_pf_pct_basis": 0.843,
+        "recent_100_pf_usd_basis": 1.029,
+        "recent_100_net_pnl_pct": -1.8995,
+        "recent_100_net_pnl_usd": 0.062405,
+        "lifetime_n": 10507,
+        "lifetime_pf": 0.6559471563123703,
+        "lifetime_expectancy": -0.027711390977443642,
+        "firebase_quota": "75/50000 reads, 670/20000 writes -- healthy",
+        "service": "active, 0 errors, degraded=false, 2 open positions, closed_today=100"
+      },
+      "investigation": "usd-basis PF has now read above 1.0 for 3 consecutive cycles (119: 1.052, 120: 1.005, 121: 1.029). IMPORTANT CAVEAT before over-reading this: recent_100 is a rolling window, so consecutive 30-min cycles share ~85-90% of the same underlying trades -- these are NOT 3 independent samples, they are heavily autocorrelated re-reads of largely the same window. This is explicitly NOT being treated as 3x confirming evidence of a durable usd-P&L edge; it is one slowly-evolving window that happens to have stayed >1.0 on usd-basis so far. WR 36% (34/32/33/35/37/36, still no goal-relevant trend either way).",
+      "action_taken": "None. Explicitly noting the rolling-window autocorrelation caveat so a future cycle doesn't mistake overlapping re-reads for independent confirmation.",
+      "next_cycle_plan": "Continue standing 30-min cadence. A genuinely independent read would require waiting for the window to substantially turn over (n=100 trades at current pace is roughly several hours), not just another 30-min snapshot."
     }
   ],
   "experiment": {
