@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 122,
+  "cycle": 123,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 122,
-  "current_wr": 36.0,
-  "current_pnl": -3.2458,
-  "last_update": "2026-08-25T13:45:00Z",
-  "status": "monitoring_stable_no_new_blocker",
+  "total_cycles_completed": 123,
+  "current_wr": 24.0,
+  "current_pnl": -5.4823,
+  "last_update": "2026-08-26T06:05:00Z",
+  "status": "quota_wait_two_new_low_urgency_bugs_pending_post_reset_fix",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -1404,6 +1404,26 @@
       "investigation": "usd-basis PF dropped back below 1.0 (0.978), ending the 3-cycle streak flagged (with an explicit non-independence caveat) in cycle 121 -- confirms it was rolling-window noise, not a durable trend, exactly as that caveat anticipated. WR flat at 36%. P0.8+ samples unchanged (n=3/13/3).",
       "action_taken": "None -- normal noise, no new blocker.",
       "next_cycle_plan": "Continue standing 30-min cadence."
+    },
+    {
+      "cycle": 123,
+      "timestamp": "2026-08-26T06:05:00Z",
+      "status": "QUOTA_WAIT_PLUS_TWO_NEW_LOW_URGENCY_BUGS_FOUND",
+      "metrics_snapshot": {
+        "recent_100_wr_pct": 24.0,
+        "recent_100_pf_pct_basis": 0.45,
+        "recent_100_pf_usd_basis": 0.362,
+        "recent_100_net_pnl_pct": -5.4823,
+        "recent_100_net_pnl_usd": -0.91118,
+        "lifetime_n": 10806,
+        "lifetime_pf": 0.6579878454118281,
+        "lifetime_expectancy": -0.02785676337220069,
+        "firebase_quota": "234/50000 reads, 20013-20163/20000 writes -- GENUINELY EXHAUSTED (real 429s), resets 07:00 UTC",
+        "service": "active, NRestarts=0, uptime since 2026-08-24T07:35:49Z (NOT actually crashed despite false CRASH_DETECTED alerts -- see below)"
+      },
+      "investigation": "Real Firebase write-quota exhaustion (20013-20163/20000, genuine 429s from Firestore, not the read/write conflation bug fixed 2026-08-18). Went deeper than usual given the WR crash to 24% and unfamiliar log patterns. Found TWO new, distinct, root-caused (not yet patched) bugs: (1) v5_legacy_bridge/firebase_writer.py's outbox-replay path for learning_update entries appends '/learning' to the trade path, producing a 3-segment path ending on a collection, which Firestore always rejects ('must end on doc, not collection') -- 60 occurrences, all starting exactly 2026-08-26 05:19:03 (correlates with quota pressure pushing more writes into the outbox, where this dormant bug then fires on every replay attempt). Live-path writes are unaffected (different, correct code path); scope is limited to the Firestore/Android learning-view mirror, NOT the local cache.sqlite/segment_weights trading-decision loop. (2) emergency_health_monitor.py's detect_crashes() does a naive substring match for 'Exception'/'ERROR'/'Traceback'/'FATAL' anywhere in a log line -- flagged a false CRITICAL CRASH_DETECTED at 06:05:18 triggered by a benign, already-handled WebSocket ping/pong timeout warning (matches only because 'WebSocketTimeoutException' contains the substring 'Exception'). Confirmed false positive: systemctl shows NRestarts=0, continuous uptime since 2026-08-24 -- service never actually crashed despite several RESTART_SERVICE/RESTART_SERVICE_FORCE alerts logged 05:48-06:05 UTC. Confirmed these alerts are advisory-only (no subprocess/systemctl auto-execution in the file), so no operational harm today, just misleading log noise. WR 24% this cycle is very likely ordinary recent-100 rolling-window noise (already documented range 9-43% depending on window) -- no evidence found linking it to the quota exhaustion (Firestore writes don't feed the local trading-decision loop).",
+      "action_taken": "None -- documented both new findings in full in _workspace/46_quota_exhaustion_outbox_path_bug_and_false_crash_alerts_cycle123.md with proposed minimal fixes for each, deliberately NOT patched/deployed this cycle because (a) quota is genuinely exhausted right now so post-deploy log verification would be unreadable against ongoing unrelated 429 noise, (b) both bugs are real but low-urgency (cosmetic/audit-trail gap and false-alarm-only advisory logging, neither touches live trading decisions).",
+      "next_cycle_plan": "After the 07:00 UTC quota reset, author both fixes as two small independent patches, dispatch trading-safety-agent + reviewer-agent per standard process, deploy through the gated Hetzner workflow, and verify clean logs post-deploy (now free of quota-exhaustion noise)."
     }
   ],
   "experiment": {
