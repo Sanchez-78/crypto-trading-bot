@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 128,
+  "cycle": 129,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 128,
+  "total_cycles_completed": 129,
   "current_wr": 24.0,
   "current_pnl": -5.4823,
-  "last_update": "2026-08-26T08:30:00Z",
-  "status": "v2_corrections_resubmitted_for_final_review",
+  "last_update": "2026-08-26T08:55:00Z",
+  "status": "deploy_dispatched_awaiting_verification",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -1501,6 +1501,17 @@
       "investigation": "Both dispatched review agents finally responded (after several idle_notification-only pings requiring explicit nudges). trading-safety-agent: PASS, with one non-blocking caution. reviewer-agent: REJECTED, with a materially important, independently-verified finding: v1's per-pass Firestore .count() call was claimed to cost '1 read' but actually costs ~1 read per 1,000 index entries matched -- ~93 reads against the live ~92,684-doc collection, making the fix ~2.2x MORE expensive than the old code during the exact period (huge backlog) it mattered most, and count() is invisible to the Firestore read tracer (unobservable to the exact instrument built to catch this class of problem). Reviewer also independently found the OLD DESCENDING+offset(50) query deleted the 51st-70th newest documents, never the true oldest tail -- explaining WHY the backlog reached 92,684 independent of the cost question, and confirming the ASCENDING rewrite (kept unchanged) fixes a real logic bug, not just a cost one. Also flagged an over-broad '⚠️' skip in the emergency_health_monitor.py fix that silently suppressed genuine runtime_fault_registry.py CRITICAL faults, and a test fixture that touched the live bot's real runtime/v5_trade_outbox.sqlite instead of an isolated tmp_path.",
       "action_taken": "Corrected all three findings (commit 1d1037d): audit_worker.py now caches the Firestore count locally, refreshed via a real .count() only once per CLEANUP_COUNT_REFRESH_S (~hourly), kept in sync from local write/delete counts between refreshes -- net ~9,672 reads/day, parity with the old code; bare except now logs a warning. emergency_health_monitor.py: removed the '⚠️' skip, added an explicit 'RUNTIME_FAULT [CRITICAL]' marker instead. Test fixture: monkeypatches config.V5_OUTBOX_DB_PATH to tmp_path before constructing DurableOutbox(). 19 tests now pass locally (5 new). Resubmitted both commits (edd78ce + 1d1037d) to both review agents for final confirmation. Still not deployed.",
       "next_cycle_plan": "Wait for final review confirmation; deploy through the gated Hetzner workflow once approved, then verify clean post-deploy logs."
+    },
+    {
+      "cycle": 129,
+      "timestamp": "2026-08-26T08:55:00Z",
+      "status": "BOTH_AGENTS_APPROVED_DEPLOY_DISPATCHED",
+      "metrics_snapshot": {
+        "note": "Deploy-focused entry, no fresh live-metrics poll -- see cycle 130 for post-deploy metrics."
+      },
+      "investigation": "Both review agents reached final verdicts. trading-safety-agent: PASS on both edd78ce and 1d1037d (independently re-audited 1d1037d since it touched files from its first review, confirmed no auto-restart/real-trading exposure, verified the RUNTIME_FAULT fix against its actual source line). reviewer-agent: APPROVED WITH CONDITIONS on 1d1037d -- ran an independent out-of-repo simulation (thousands of cleanup passes) confirming the cached-count design has zero drift and converges correctly to MAX_AUDITS; conditions were non-blocking (monitor drain rate after 24h via the new log line, add a regression test for the decrement path, escalate TTL policy to the user). Also both agents independently caught the same test-count overclaim (19 vs actual 17) in this session's own commit message -- corrected in docs.",
+      "action_taken": "Added the two regression tests reviewer-agent's condition #2 asked for (commit 23acd2f, now 19 tests verified via raw pytest, matches the corrected count this time). Dispatched deploy-verify-agent to push through the gated Hetzner workflow, verify service health, and run a post-deploy log sanity check specifically for the three fixed symptoms.",
+      "next_cycle_plan": "Check deploy-verify-agent's result. If PASS, this closes cycles 123-125's queued work. If FAIL_REVERTED, investigate why and re-plan."
     }
   ],
   "experiment": {
