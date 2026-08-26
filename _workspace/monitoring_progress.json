@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 125,
+  "cycle": 126,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 125,
+  "total_cycles_completed": 126,
   "current_wr": 24.0,
   "current_pnl": -5.4823,
-  "last_update": "2026-08-26T07:15:00Z",
-  "status": "three_fixes_authored_pending_review_before_deploy",
+  "last_update": "2026-08-26T07:46:00Z",
+  "status": "waiting_on_review_agents_before_deploy",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -1450,6 +1450,26 @@
       "investigation": "Confirmed the 07:00 UTC quota reset occurred cleanly. Proceeded to author, locally test, and commit the three fixes queued from cycles 123-124: (1) firebase_writer.py outbox-replay malformed path for learning_update, (2) emergency_health_monitor.py false-positive CRASH_DETECTED, (3) audit_worker.py offset-free cleanup. While implementing fix 3, discovered and self-corrected an overclaim from cycle 124: the .offset() read-cost mechanism was already found and consciously accepted as a tradeoff on 2026-08-14 (_workspace/26_...md), not a fresh discovery -- what's genuinely new is that the accepted mitigation proved insufficient in practice (quota still exhausts) and live-querying the real 'audits' collection found ~92,684 documents (design cap: 50), a materially bigger problem. Wrote 14 new/updated regression tests across 3 test files, all pass locally; a broader sweep found 6 pre-existing failures in test_v5_legacy_bridge_hooks.py confirmed via git stash to be unrelated (already failing without these changes).",
       "action_taken": "Committed and pushed (edd78ce) all 3 fixes + tests + corrected documentation (_workspace/47_...md, memory correction). Dispatched trading-safety-agent and reviewer-agent in the background per harness discipline -- NOT deployed yet, waiting for review approval before triggering the gated Hetzner deploy workflow.",
       "next_cycle_plan": "Check review agent results; if approved, deploy through the gated workflow and verify clean logs (quota exhaustion noise should now be absent, giving a clean post-deploy verification window). If rejected or conditions raised, address and re-review before deploying."
+    },
+    {
+      "cycle": 126,
+      "timestamp": "2026-08-26T07:46:00Z",
+      "status": "CAUTION_STABLE_WAITING_ON_REVIEW_AGENTS",
+      "metrics_snapshot": {
+        "recent_100_wr_pct": 20.0,
+        "recent_100_pf_pct_basis": 0.313,
+        "recent_100_pf_usd_basis": 0.254,
+        "recent_100_net_pnl_pct": -6.1738,
+        "recent_100_net_pnl_usd": -0.652547,
+        "lifetime_n": 10838,
+        "lifetime_pf": 0.6576178587048571,
+        "lifetime_expectancy": -0.027879275235283323,
+        "firebase_quota": "9/50000 reads, 222/20000 writes -- healthy",
+        "service": "active, 0 errors, degraded=false, 3 open positions, closed_today=100"
+      },
+      "investigation": "Routine health check while waiting on trading-safety-agent and reviewer-agent verdicts for cycle 125's 3 fixes (dispatched ~07:15 UTC, still idle/no verdict as of this cycle despite two status-check nudges each). Service/quota healthy, no new blocker. WR 20% this window still reflects the earlier quota-exhaustion-period trades rolling through the recent-100 window, not a new regression.",
+      "action_taken": "Sent a second status-check nudge to both review agents. No deploy attempted -- still waiting for explicit approval per harness discipline (no deployment without all agent approvals).",
+      "next_cycle_plan": "Check again for review verdicts; if still unavailable after another cycle, consider whether the agents stalled and may need to be re-dispatched."
     }
   ],
   "experiment": {
