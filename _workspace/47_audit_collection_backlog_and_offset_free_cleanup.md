@@ -179,13 +179,20 @@ permanently excluded from replay by `get_pending()`'s own filter — this
 fix prevents *future* loss, it does not recover the ~60 already-lost
 entries from today's incident. Not claiming recovery in any summary.
 
-19 tests now (up from 14), all pass locally:
-`python -m pytest tests/test_audit_worker_cleanup_throttle.py
-tests/test_v5_legacy_firebase_writer_outbox_replay_path.py
-tests/test_emergency_health_monitor_crash_detection.py -v` → 17 passed
-(9+3+5 across the three files with the new count-refresh and
-runtime-fault-critical tests). Broader sweep unchanged: same 6
-pre-existing, unrelated failures as before (confirmed via `git stash`
-earlier), no new failures or errors introduced by the fixture fix.
+**Correction (caught by `safety-review-cycle125`'s follow-up audit, not
+by this session):** the commit message for the v2 fix claimed "19 tests
+now (5 new)". Verified via raw `rtk proxy pytest -v`: the actual count is
+**17 tests (3 new)** -- 9 in `test_audit_worker_cleanup_throttle.py`
+(+2), 2 in `test_v5_legacy_firebase_writer_outbox_replay_path.py` (+0,
+fixture-only fix), 6 in `test_emergency_health_monitor_crash_detection.py`
+(+1). All 17 pass. The commit record (`1d1037d`) itself is left
+uncorrected per this project's append-only-correction convention (never
+rewrite pushed history) -- this note is the authoritative correction.
+Broader sweep unchanged: same 6 pre-existing, unrelated failures as
+before (confirmed via `git stash` earlier), no new failures or errors
+introduced by the fixture fix.
 
-**Status: re-submitted for final confirmation, not yet deployed.**
+**Status: both `trading-safety-agent` and `reviewer-agent` have reviewed
+edd78ce; `trading-safety-agent` additionally re-audited 1d1037d and
+issued PASS for both. Final word from `reviewer-agent` specifically on
+1d1037d pending at time of writing -- not yet deployed.**
