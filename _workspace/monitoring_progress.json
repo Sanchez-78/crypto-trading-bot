@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 124,
+  "cycle": 125,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 124,
+  "total_cycles_completed": 125,
   "current_wr": 24.0,
   "current_pnl": -5.4823,
-  "last_update": "2026-08-26T06:40:00Z",
-  "status": "quota_wait_major_forensic_lead_on_read_mystery_three_fixes_queued_post_reset",
+  "last_update": "2026-08-26T07:15:00Z",
+  "status": "three_fixes_authored_pending_review_before_deploy",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -1437,6 +1437,19 @@
       "investigation": "User's screenshot revealed the app's own reads counter (238) is ~40x below the real Firebase Console figure (9,425) -- reopened the long-standing (since 2026-08-11) unattributed-read-burn mystery documented in _workspace/22_quota_burn_confirmed_dashboard_lies.md, which every prior session failed to root-cause despite building a purpose-designed Firestore call-site tracer. Confirmed FIREBASE_READ_TRACE_ENABLED=true is actually live on the server and firing (first real data ever for this investigation). Top call site by raw count is a WRITE (v5_legacy_bridge/firebase_client_wrapper.py:62, 13204 calls/48h uptime -- expected, proportional to trading volume, same file as cycle 123's outbox-path bug). Plausible root cause for the READ mystery: audit_worker.py:188's cleanup query (.offset(50).limit(20).get()) -- the 2026-08-14 fix throttled call FREQUENCY (every 300s) but Firestore still bills every skipped document per call, so each call costs up to 70 reads; 248 calls/48h x up to 70 = up to ~8,680 reads/day from this ONE site, closely matching the console's actual 9,425/24h. Also found load_stats() (firebase_client.py:1135) has zero quota-gate/attribution instrumentation at all, unlike every sibling read helper in the file.",
       "action_taken": "Evidence-only, appended (not overwritten) to the existing _workspace/22_...md investigation file with full call-site table and proposed fixes; wrote a new memory entry (project_read_quota_mystery_likely_solved_20260826.md) and updated MEMORY.md. NOT patched or deployed -- write quota is still genuinely exhausted (would make post-deploy verification unreadable) and this needs the standard evidence-review-deploy pipeline given it touches production Firestore query logic.",
       "next_cycle_plan": "Once quota resets (07:00 UTC) and normal cadence resumes: author the audit_worker.py offset-elimination fix and the load_stats() instrumentation gap as reviewed patches (alongside cycle 123's two findings -- three total fixes now queued), deploy, then track the Console's real reads/24h over the following day to confirm the drop -- the actual proof this was the dominant source, not just a plausible correlation."
+    },
+    {
+      "cycle": 125,
+      "timestamp": "2026-08-26T07:15:00Z",
+      "status": "QUOTA_RESET_CONFIRMED_THREE_FIXES_AUTHORED_PENDING_REVIEW",
+      "metrics_snapshot": {
+        "firebase_quota": "reads=2/50000, writes=172/20000 -- reset confirmed clean",
+        "recent_100_wr_pct": 24.0,
+        "note": "recent-100 window still carries the low-WR period from before the quota-exhaustion incident; will roll over naturally"
+      },
+      "investigation": "Confirmed the 07:00 UTC quota reset occurred cleanly. Proceeded to author, locally test, and commit the three fixes queued from cycles 123-124: (1) firebase_writer.py outbox-replay malformed path for learning_update, (2) emergency_health_monitor.py false-positive CRASH_DETECTED, (3) audit_worker.py offset-free cleanup. While implementing fix 3, discovered and self-corrected an overclaim from cycle 124: the .offset() read-cost mechanism was already found and consciously accepted as a tradeoff on 2026-08-14 (_workspace/26_...md), not a fresh discovery -- what's genuinely new is that the accepted mitigation proved insufficient in practice (quota still exhausts) and live-querying the real 'audits' collection found ~92,684 documents (design cap: 50), a materially bigger problem. Wrote 14 new/updated regression tests across 3 test files, all pass locally; a broader sweep found 6 pre-existing failures in test_v5_legacy_bridge_hooks.py confirmed via git stash to be unrelated (already failing without these changes).",
+      "action_taken": "Committed and pushed (edd78ce) all 3 fixes + tests + corrected documentation (_workspace/47_...md, memory correction). Dispatched trading-safety-agent and reviewer-agent in the background per harness discipline -- NOT deployed yet, waiting for review approval before triggering the gated Hetzner deploy workflow.",
+      "next_cycle_plan": "Check review agent results; if approved, deploy through the gated workflow and verify clean logs (quota exhaustion noise should now be absent, giving a clean post-deploy verification window). If rejected or conditions raised, address and re-review before deploying."
     }
   ],
   "experiment": {
