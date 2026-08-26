@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 134,
+  "cycle": 135,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 134,
-  "current_wr": 33.0,
-  "current_pnl": -3.8986,
-  "last_update": "2026-08-26T10:50:00Z",
+  "total_cycles_completed": 135,
+  "current_wr": 30.0,
+  "current_pnl": -4.8544,
+  "last_update": "2026-08-26T11:21:00Z",
   "status": "stable_no_new_blocker",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -1605,6 +1605,26 @@
       "investigation": "Routine check, no new blocker. WR 33%, within normal noise range. User asked an out-of-band status question about the learning process this cycle (not a bug report) -- confirmed both segment_weights and regime_tp_strategy are actively updating in near-real-time (learning_state.json mtime ~18min fresh at the time of the check), not dead/stale mechanisms.",
       "action_taken": "None needed -- informational check only, no blocker found.",
       "next_cycle_plan": "Continue standard cadence."
+    },
+    {
+      "cycle": 135,
+      "timestamp": "2026-08-26T11:21:00Z",
+      "status": "CAUTION_STABLE_NO_NEW_BLOCKER",
+      "metrics_snapshot": {
+        "recent_100_wr_pct": 30.0,
+        "recent_100_pf_pct_basis": 0.512,
+        "recent_100_pf_usd_basis": 0.219,
+        "recent_100_net_pnl_pct": -4.8544,
+        "recent_100_net_pnl_usd": -0.568101,
+        "lifetime_n": 10973,
+        "lifetime_pf": 0.6554408234791084,
+        "lifetime_expectancy": -0.028136697803700043,
+        "firebase_quota": "635/50000 reads, 238/20000 writes -- healthy",
+        "service": "active, 0 errors, degraded=false, 6 open positions, closed_today=100"
+      },
+      "investigation": "Routine check, no new blocker. WR 30%, normal noise. Still zero AUDIT_CLEANUP_COUNT_REFRESH lines since the one at deploy time (~3h ago now, should have had 2 more 1h-refresh opportunities). Checked Redis 'audits' pubsub channel -- confirmed AuditWorker's subscription is active (channel listed with a subscriber). Most likely explanation: simply no audit/rejection events have been published to that channel in this window, so _sync_batch_write never fires, not a broken worker. Not concerning either way -- if no new audit docs are being written, the backlog also isn't growing.",
+      "action_taken": "None -- informational check only, no blocker or regression evidence found.",
+      "next_cycle_plan": "Continue standard cadence. Will stop actively chasing the audit-drain-confirmation question unless it becomes clearly relevant -- absence of new writes is a neutral, not concerning, signal on its own."
     }
   ],
   "experiment": {
