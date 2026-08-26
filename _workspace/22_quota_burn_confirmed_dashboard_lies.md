@@ -149,3 +149,93 @@ whatever `Base*` defines for that name.
 recurring every ~1-19h depending on window) and read the actual
 `[FIRESTORE_READ_TRACE_SUMMARY] top call sites: [...]` line for the first
 time this diagnostic effort has produced real data.
+
+## UPDATE 2026-08-26 (standing-loop cycle 124): tracer has real data at last -- likely root cause found
+
+Confirmed via SSH that `FIREBASE_READ_TRACE_ENABLED=true` is set on the
+live systemd unit (`99-cryptomaster-managed-runtime.conf`) and the tracer
+**is firing** (`journalctl | grep FIRESTORE_READ_TRACE_SUMMARY` → 19 hits
+total, first real data this investigation has ever had). Triggered by the
+user sharing a live Firebase Console screenshot (2026-08-26 08:30 GMT+2)
+showing **101% of daily write quota used, reads 9,425/50,000** -- while
+this app's own `firebase_quota` field reported only **238** reads at
+almost the same timestamp, a ~40x undercount, reopening this exact
+investigation mid-burst.
+
+**Top call sites (2026-08-26 06:34 UTC, counts cumulative since process
+start 2026-08-24T07:35:49Z, ~48h uptime):**
+
+| rank | op | call site | count |
+|---|---|---|---|
+| 1 | WRITE | `v5_legacy_bridge/firebase_client_wrapper.py:62` (`FirestorePathClient.set()`) | 13,204 |
+| 2 | WRITE | `firestore_v1/collection.py:134` (SDK-internal, likely batch/paged write) | 1,043 |
+| 3 | WRITE | `firebase_client.py:2130` | 737 |
+| 4 | WRITE | `firebase_client.py:2207` | 736 |
+| 5 | WRITE | `v5_legacy_bridge/firebase_client_wrapper.py:95` (`FirestorePathClient.update()`) | 648 |
+| 6 | READ | `firebase_client.py:709` (a generic cached single-doc read helper, properly `_record_read()`-tracked) | 474 |
+| 7 | READ | `firebase_client.py:1135` (`load_stats()`) | 370 |
+| 8 | WRITE | `firebase_client.py:1408` | 346 |
+| 9 | READ | `audit_worker.py:188` (`.offset(MAX_AUDITS).limit(20).get()` cleanup query) | 248 |
+| 10 | READ | `firestore_v1/query.py:204` (SDK-internal, paired with #9) | 248 |
+
+**Rank #1 write site directly confirms cycle 123's Finding 2** (the
+outbox-replay malformed-path bug lives in the same file, one function
+below `.set()` at line 62 -- both the correct live-write path and the
+broken outbox-replay path funnel through this same `ref.set()` call).
+This alone is not a new bug -- it's the expected central write funnel for
+every paper-trade open/close/learning-update mirrored to the V5/Android
+bridge, proportional to trading volume (~100 closed trades/30min observed
+this session → several thousand writes/day is expected, not anomalous).
+
+**The likely read-burn root cause, however, IS new: rank #9,
+`audit_worker.py:188`.** This is the exact cleanup query the 2026-08-14
+fix ([[project_dashboard_datasource_truth]] / this file's own line
+28-36 comment) throttled from "every 3s" to "every `CLEANUP_INTERVAL_S`
+(300s)". **That fix reduced call FREQUENCY but not per-call COST** --
+`.offset(MAX_AUDITS).limit(20).get()` with `MAX_AUDITS=50` bills Firestore
+for up to 50 skipped + 20 returned = **up to 70 documents read per single
+call**, and Firestore bills every skipped document, not just the ones
+returned (the file's own 2026-08-14 comment already says this explicitly
+-- the fix addressed frequency, not this per-call cost, which was never
+revisited). The tracer counts this as "1" per call (it counts call-site
+invocations, not documents billed), which is why it doesn't look dominant
+in the raw table above -- **but the real Firestore-billed cost is
+~248 calls × up to 70 docs ≈ up to 17,360 reads over the 48h tracer
+window, i.e. up to ~8,680 reads/day from this ONE call site** -- strikingly
+close to the console's actual **9,425 reads in the last 24h**. This is
+circumstantial, not a certain proof (haven't instrumented per-call
+document-count directly), but the order-of-magnitude match after weeks of
+failing to find *any* plausible single dominant source is the strongest
+lead this investigation has ever produced.
+
+**Also newly found in the same pass (unrelated call site, smaller):**
+`firebase_client.py:1135` (`load_stats()`, rank #7, 370 calls/48h) reads
+`db.document(_STATS_DOC).get()` with **no `_can_read()` gate and no
+`_record_read()` call** -- unlike every other read helper in this file, it
+bypasses both the quota check (will keep firing Firestore calls even
+during active exhaustion, worsening 429 storms) and the attribution
+counter (contributing directly to the app's own reads-undercount vs the
+real Firestore console). Small in volume alone (~185/day) but a real,
+minimal, separately-fixable gap.
+
+**Proposed fixes (NOT yet applied/deployed -- evidence-only this cycle,
+matches the harness's "no patch without evidence, but evidence now" rule;
+also deferred because Firebase write quota is still genuinely exhausted at
+the time of this writing, see cycle 123):**
+
+1. `audit_worker.py`'s cleanup query: replace the `.offset(MAX_AUDITS)`
+   pagination pattern (which bills for every skipped document) with an
+   offset-free approach -- e.g. track total doc count via a maintained
+   counter field instead of querying+skipping to find "how many over the
+   cap", or use `order_by(...).limit_to_last(N)`/cursor-based
+   (`start_after`) pagination that doesn't re-read already-seen documents
+   every single cleanup pass.
+2. `load_stats()`: add the same `_can_read()`/`_record_read()` guard every
+   other read helper in this file already has.
+
+**This does not change today's operational status** (still `QUOTA_WAIT`,
+resets 07:00 UTC per cycle 123) -- but it upgrades this file's status from
+"root cause not found, manual review not converging" (all prior entries)
+to "plausible root cause identified with live evidence, fix designed, not
+yet deployed" -- the first real progress on this specific mystery since it
+was opened 2026-08-11.
