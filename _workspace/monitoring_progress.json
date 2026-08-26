@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 127,
+  "cycle": 128,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 127,
+  "total_cycles_completed": 128,
   "current_wr": 24.0,
   "current_pnl": -5.4823,
-  "last_update": "2026-08-26T08:07:00Z",
-  "status": "waiting_on_review_agents_before_deploy",
+  "last_update": "2026-08-26T08:30:00Z",
+  "status": "v2_corrections_resubmitted_for_final_review",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -1490,6 +1490,17 @@
       "investigation": "Routine health check, no new blocker. Both review agents (dispatched ~07:15 UTC) have now sent 3+ idle_notifications each with no substantive PASS/FAIL or APPROVED/REJECTED content despite multiple explicit nudges asking them to reply via SendMessage. This has now been ~50 min without a usable verdict.",
       "action_taken": "Sent a more explicit, mechanism-specific nudge to both agents (asked them to git show the commit directly and SendMessage(to='main', ...) their verdict). Still no deploy -- holding the hard rule (no deployment without all agent approvals) rather than overriding it due to agent unresponsiveness.",
       "next_cycle_plan": "If still no verdict next cycle, consider re-dispatching fresh review agent instances (the current ones may be stuck/stalled) rather than continuing to nudge indefinitely."
+    },
+    {
+      "cycle": 128,
+      "timestamp": "2026-08-26T08:30:00Z",
+      "status": "REVIEW_FEEDBACK_RECEIVED_AND_ADDRESSED_RESUBMITTED",
+      "metrics_snapshot": {
+        "note": "No new live-metrics check this entry -- purely the review/correction arc for the 3 queued fixes, continuing from cycle 125."
+      },
+      "investigation": "Both dispatched review agents finally responded (after several idle_notification-only pings requiring explicit nudges). trading-safety-agent: PASS, with one non-blocking caution. reviewer-agent: REJECTED, with a materially important, independently-verified finding: v1's per-pass Firestore .count() call was claimed to cost '1 read' but actually costs ~1 read per 1,000 index entries matched -- ~93 reads against the live ~92,684-doc collection, making the fix ~2.2x MORE expensive than the old code during the exact period (huge backlog) it mattered most, and count() is invisible to the Firestore read tracer (unobservable to the exact instrument built to catch this class of problem). Reviewer also independently found the OLD DESCENDING+offset(50) query deleted the 51st-70th newest documents, never the true oldest tail -- explaining WHY the backlog reached 92,684 independent of the cost question, and confirming the ASCENDING rewrite (kept unchanged) fixes a real logic bug, not just a cost one. Also flagged an over-broad '⚠️' skip in the emergency_health_monitor.py fix that silently suppressed genuine runtime_fault_registry.py CRITICAL faults, and a test fixture that touched the live bot's real runtime/v5_trade_outbox.sqlite instead of an isolated tmp_path.",
+      "action_taken": "Corrected all three findings (commit 1d1037d): audit_worker.py now caches the Firestore count locally, refreshed via a real .count() only once per CLEANUP_COUNT_REFRESH_S (~hourly), kept in sync from local write/delete counts between refreshes -- net ~9,672 reads/day, parity with the old code; bare except now logs a warning. emergency_health_monitor.py: removed the '⚠️' skip, added an explicit 'RUNTIME_FAULT [CRITICAL]' marker instead. Test fixture: monkeypatches config.V5_OUTBOX_DB_PATH to tmp_path before constructing DurableOutbox(). 19 tests now pass locally (5 new). Resubmitted both commits (edd78ce + 1d1037d) to both review agents for final confirmation. Still not deployed.",
+      "next_cycle_plan": "Wait for final review confirmation; deploy through the gated Hetzner workflow once approved, then verify clean post-deploy logs."
     }
   ],
   "experiment": {
