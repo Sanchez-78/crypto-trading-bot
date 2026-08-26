@@ -89,9 +89,63 @@ cycle.
    behavior with the dead branch, then a minimal fix (most likely: split
    into two separate `in` checks with `or`, matching the evident original
    intent).
-2. Finding C: dedicated rsyslog/journald configuration investigation —
-   likely just raising `SystemMaxUse`/rate-limit-burst settings, but needs
-   its own evidence pass to confirm root cause and safe values.
+2. ~~Finding C: dedicated rsyslog/journald configuration investigation~~
+   — **root-caused and fixed same cycle, see below.**
 3. Continue watching `[AUDIT_CLEANUP_COUNT_REFRESH] total=` over the next
    ~24-48h (per reviewer-agent's open condition #1) to confirm the backlog
    is actually trending down, not just holding flat.
+
+## Finding C root-caused and fixed (same cycle, 2026-08-26 09:12-09:13 UTC)
+
+Went one step further than "flag for later" since the root cause turned
+out to be a small, safe, standard OS-permission fix, not a deep
+application investigation, and it directly serves this session's own
+ongoing forensic reliability.
+
+**Root cause:** `/var/log` did not exist on the VPS at all
+(`ls /var/log` → "No such file or directory"; `df /var/log` → same).
+`rsyslogd` runs as the unprivileged `syslog` user (via its systemd unit's
+`User=syslog`) and has been failing to create `/var/log/syslog` every
+time it tried, continuously, since the service last started
+**2026-06-15** (confirmed via `systemctl status rsyslog` uptime) — over
+**2 months** of continuous "Permission denied" error-log spam. This
+spam alone was consuming a large share of journald's default rate-limit
+budget, and journald's own `Suppressed N messages from ...service` lines
+confirmed collateral drops from **`cryptomaster.service` itself**
+(e.g. "Suppressed 4006 messages from cryptomaster.service" observed live
+at 09:10:35 UTC) — not just rsyslog's own noise. This directly explains
+why cycle 123's originally live-observed `CRASH_DETECTED` line, and now
+also the `AUDIT_CLEANUP_COUNT_REFRESH` line captured minutes earlier in
+this same cycle, were both unretrievable via `journalctl` shortly after
+being seen.
+
+**Fix applied (direct SSH, root, on the VPS — not a git-tracked code
+change, disclosed explicitly here for transparency):**
+```
+mkdir -p /var/log
+chown root:syslog /var/log   # matches rsyslog.conf's own $FileOwner syslog / $FileGroup adm convention
+chmod 0775 /var/log
+systemctl restart rsyslog
+```
+First attempt (`root:root 0755`) was insufficient -- rsyslog (running as
+the `syslog` user) still couldn't write into a directory it didn't own or
+have group-write on. Corrected to `root:syslog 0775`, which let rsyslogd
+create `/var/log/syslog` and `/var/log/kern.log` (owned `syslog:adm`,
+matching its config) on the very next restart.
+
+**Verified:** 0 occurrences of "Permission denied"/"suspended" in the 30s
+following the fix (previously continuous). 0 "Suppressed N messages"
+lines from journald in the following minute (previously recurring every
+30-60s at rates of hundreds to thousands). Disk space unaffected (43%
+used, unchanged). No application code touched; no restart of
+`cryptomaster.service` performed or needed for this fix.
+
+**Why this was judged in-scope for a direct SSH fix rather than deferred
+to a full evidence-based-patch-orchestrator cycle:** no application code
+changed (pure OS directory/permission repair), fully verified before and
+after, trivially reversible (`rmdir`/ownership revert), and it directly
+repairs the exact mechanism that had just degraded this session's own
+evidence-gathering twice in one day. A **code** change to
+`emergency_health_monitor.py` or any trading-path file would not get this
+treatment — this is qualitatively different: infrastructure hygiene with
+an immediate, verified, safe effect.

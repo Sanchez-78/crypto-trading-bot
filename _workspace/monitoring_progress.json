@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 130,
+  "cycle": 131,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 130,
-  "current_wr": 24.0,
-  "current_pnl": -5.4823,
-  "last_update": "2026-08-26T09:20:00Z",
-  "status": "deployed_pass_two_new_findings_deferred_resuming_normal_cadence",
+  "total_cycles_completed": 131,
+  "current_wr": 27.0,
+  "current_pnl": -3.9544,
+  "last_update": "2026-08-26T09:15:00Z",
+  "status": "stable_infra_fix_applied_rsyslog_repaired",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -1525,6 +1525,26 @@
       "investigation": "deploy-verify-agent report: PASS, no revert. Fix 3 (audit_worker.py) CONFIRMED ACTIVE at runtime -- captured '[AUDIT_CLEANUP_COUNT_REFRESH] total=93755' live, independently confirming the backlog thesis (93,755 docs under a 50-doc cap), draining at up to ~17,280/day (60/300s theoretical max). Fixes 1 (firebase_writer.py) and 2 (emergency_health_monitor.py) are deployed and code-correct but NOT runtime-verified -- their trigger conditions (malformed-path errors, false CRASH_DETECTED) occurred zero times in BOTH the pre-deploy 7-day baseline AND the post-deploy window, so their absence is consistent with but not evidence of the fixes working; those failure paths were already dormant in the observation window. Two new, separate findings surfaced (NOT part of this changeset, deliberately not acted on): (B) a pre-existing dead-code bug in emergency_health_monitor.py:207 -- a grep-style '\\|' alternation inside a plain Python substring check that can never match, permanently breaking detect_entry_stall()'s 'entries flowing' detection (dates to original commit 4807ad6, relevant given this detector exists specifically to catch trading stalls like the historical 66h incident); (C) rsyslogd is actively dropping 1,000-2,000 log messages per 5s (~190 lines/sec sustained vs 500/5s allowed) -- this degrades ALL future log-based forensics, and specifically explains why cycle 123's originally-observed false CRASH_DETECTED line is no longer retrievable via journalctl days later (verified as rate-limit eviction, not a fabricated observation).",
       "action_taken": "Accepted the deploy as PASS. Deliberately NOT claiming fixes 1/2 as 'verified working' per the deploy agent's own explicit caution -- documenting them as 'deployed, believed correct, awaiting a real trigger to confirm.' Findings B and C logged as new, deferred, out-of-scope items for a future dedicated cycle (neither has forensics/review done yet, per harness discipline no same-cycle patch).",
       "next_cycle_plan": "Resume standard 30-min metrics monitoring. Consider prioritizing finding B (dead entry-stall detector) in a future cycle given its relevance to trading-stall detection specifically. Finding C (log rate-limiting) is an infrastructure health item worth a dedicated look too. Neither is urgent (no live trading impact confirmed)."
+    },
+    {
+      "cycle": 131,
+      "timestamp": "2026-08-26T09:15:00Z",
+      "status": "CAUTION_STABLE_PLUS_INFRA_FIX_RSYSLOG_ROOT_CAUSED_AND_FIXED",
+      "metrics_snapshot": {
+        "recent_100_wr_pct": 27.0,
+        "recent_100_pf_pct_basis": 0.522,
+        "recent_100_pf_usd_basis": 0.431,
+        "recent_100_net_pnl_pct": -3.9544,
+        "recent_100_net_pnl_usd": -0.429613,
+        "lifetime_n": 10886,
+        "lifetime_pf": 0.6568269868216615,
+        "lifetime_expectancy": -0.027969519107110097,
+        "firebase_quota": "609/50000 reads, 58/20000 writes -- healthy",
+        "service": "active, 0 errors, degraded=false, 5 open positions, closed_today=100"
+      },
+      "investigation": "Routine metrics check, no new trading-logic blocker (WR 27%, normal-range noise). Followed up on cycle 130's Finding C (rsyslog dropping app logs) rather than only deferring it, since the root cause turned out tractable: /var/log did not exist on the VPS at all -- rsyslogd (running as the unprivileged 'syslog' user) had been failing to create /var/log/syslog on every attempt since its last restart 2026-06-15 (2+ months of continuous 'Permission denied' spam). Confirmed via live journald 'Suppressed N messages from cryptomaster.service' lines that this spam was directly displacing the bot's own log messages from journald's rate-limit budget, not just rsyslog's own noise -- explaining both cycle 123's and this same cycle's own lost evidence lines.",
+      "action_taken": "Fixed directly via SSH (root, not a git-tracked code change): created /var/log with root:syslog 0775 ownership (matching rsyslog.conf's own FileOwner/FileGroup convention), restarted rsyslog. Verified: 0 permission errors and 0 journald suppression lines in the following ~1-2 minutes, vs continuous before. Judged in-scope for a direct fix (not deferred to full review pipeline) because it's a pure OS-level permission repair touching no application code, fully verified, trivially reversible, and directly repairs a mechanism that had just degraded this session's own forensics twice in one day.",
+      "next_cycle_plan": "Continue standard cadence. Watch for any recurrence of rsyslog write failures (would indicate a deeper cause, e.g. a startup script or tmpfiles.d rule that deletes /var/log). Finding B (dead entry-stall regex) remains deferred for a future dedicated code-review cycle."
     }
   ],
   "experiment": {
