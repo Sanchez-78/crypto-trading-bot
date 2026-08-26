@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 135,
+  "cycle": 136,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 135,
-  "current_wr": 30.0,
-  "current_pnl": -4.8544,
-  "last_update": "2026-08-26T11:21:00Z",
+  "total_cycles_completed": 136,
+  "current_wr": 29.0,
+  "current_pnl": -3.9603,
+  "last_update": "2026-08-26T11:53:00Z",
   "status": "stable_no_new_blocker",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -1625,6 +1625,26 @@
       "investigation": "Routine check, no new blocker. WR 30%, normal noise. Still zero AUDIT_CLEANUP_COUNT_REFRESH lines since the one at deploy time (~3h ago now, should have had 2 more 1h-refresh opportunities). Checked Redis 'audits' pubsub channel -- confirmed AuditWorker's subscription is active (channel listed with a subscriber). Most likely explanation: simply no audit/rejection events have been published to that channel in this window, so _sync_batch_write never fires, not a broken worker. Not concerning either way -- if no new audit docs are being written, the backlog also isn't growing.",
       "action_taken": "None -- informational check only, no blocker or regression evidence found.",
       "next_cycle_plan": "Continue standard cadence. Will stop actively chasing the audit-drain-confirmation question unless it becomes clearly relevant -- absence of new writes is a neutral, not concerning, signal on its own."
+    },
+    {
+      "cycle": 136,
+      "timestamp": "2026-08-26T11:53:00Z",
+      "status": "CAUTION_STABLE_NO_NEW_BLOCKER",
+      "metrics_snapshot": {
+        "recent_100_wr_pct": 29.0,
+        "recent_100_pf_pct_basis": 0.55,
+        "recent_100_pf_usd_basis": 0.117,
+        "recent_100_net_pnl_pct": -3.9603,
+        "recent_100_net_pnl_usd": -1.012147,
+        "lifetime_n": 10999,
+        "lifetime_pf": 0.6553104462744636,
+        "lifetime_expectancy": -0.02815100327302488,
+        "firebase_quota": "641/50000 reads, 280/20000 writes -- healthy",
+        "service": "active, 0 errors, degraded=false, 3 open positions, closed_today=100"
+      },
+      "investigation": "Routine check, no new blocker. WR 29%, normal noise. Notable but not alarming: usd-basis PF (0.117) diverged more than usual from pct-basis PF (0.55) this window, and net_pnl_usd (-1.01) is the worst single-window usd loss seen in recent cycles -- consistent with the already-characterized position-sizing-driven pct/usd divergence pattern (cycles 119-122), not a new phenomenon.",
+      "action_taken": "None -- within already-understood noise pattern.",
+      "next_cycle_plan": "Continue standard cadence."
     }
   ],
   "experiment": {
