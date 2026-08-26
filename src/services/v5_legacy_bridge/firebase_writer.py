@@ -316,8 +316,16 @@ class V5LegacyFirebaseWriter:
                         self.quota_guard.record_write(1, reason="outbox_replay")
                         success = True
                     elif entry.event_type == "learning_update":
+                        # 2026-08-26 FIX: was f"v5_trades/{id}/learning" -- a 3-segment
+                        # path ending on a collection, which Firestore always rejects
+                        # ("must end on doc, not collection"). write_learning_update()'s
+                        # live-write path (above, ~line 170) already uses the correct
+                        # 2-segment doc path with merge=True; outbox replay must match it
+                        # exactly or every learning_update that ever falls back to the
+                        # outbox (e.g. under quota pressure) retries forever and never
+                        # persists. See _workspace/46_quota_exhaustion_outbox_path_bug_and_false_crash_alerts_cycle123.md.
                         self.firebase_client.set(
-                            f"v5_trades/{entry.idempotency_key}/learning", entry.payload
+                            f"v5_trades/{entry.idempotency_key}", entry.payload, merge=True
                         )
                         self.quota_guard.record_write(1, reason="outbox_replay")
                         success = True

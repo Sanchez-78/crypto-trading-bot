@@ -223,11 +223,26 @@ def detect_crashes(last_logs: List[str]) -> Tuple[bool, List[str]]:
     """Detect Traceback / runtime crashes.
 
     Returns: (has_crash, crash_lines)
+
+    2026-08-26 FIX: the old check flagged ANY log line containing the bare
+    substring "Exception"/"ERROR"/"FATAL" as a crash -- this false-positived
+    on already-handled, logged warnings whose message text happens to
+    mention an exception class name (e.g. "WebSocket error:
+    WebSocketTimeoutException: ping/pong timed out", a normal transient
+    reconnect, matches only because "Exception" appears inside the class
+    name). Confirmed false positive live (2026-08-26 06:05 UTC): systemctl
+    showed NRestarts=0 and continuous uptime at the exact moment this fired
+    a CRITICAL CRASH_DETECTED alert. Now requires an actual traceback
+    signature or an unhandled/fatal marker, and explicitly excludes lines
+    already tagged as a handled warning by this codebase's own "⚠️" prefix
+    convention. See _workspace/46_quota_exhaustion_outbox_path_bug_and_false_crash_alerts_cycle123.md.
     """
     crash_lines = []
 
     for log_line in last_logs[-100:]:
-        if "Traceback" in log_line or "Exception" in log_line or "FATAL" in log_line or "ERROR" in log_line:
+        if "⚠️" in log_line:
+            continue  # already-handled warning, not an unhandled crash
+        if "Traceback (most recent call last)" in log_line or "FATAL" in log_line:
             crash_lines.append(log_line[:150])
 
     return len(crash_lines) > 0, crash_lines

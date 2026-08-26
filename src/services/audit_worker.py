@@ -36,7 +36,24 @@ BATCH_INTERVAL: float = 3.0   # seconds between batch flushes
 # window. Throttling the cleanup to once per CLEANUP_INTERVAL_S is enough --
 # the audits collection is naturally near its 50-doc cap already (this
 # worker enforces it), so it doesn't need re-trimming on every 3s flush.
-CLEANUP_INTERVAL_S: float = 300.0  # only run the offset-based cleanup this often
+CLEANUP_INTERVAL_S: float = 300.0  # only run the cleanup this often
+# 2026-08-26 (_workspace/47_audit_collection_backlog_and_offset_free_cleanup.md):
+# the throttle above reduced call FREQUENCY but the .offset(MAX_AUDITS) query
+# itself still bills Firestore for every one of the 50 skipped documents on
+# every call, and its fixed .limit(20) deletion rate never kept pace with
+# the collection's write rate -- live-confirmed the "audits" collection has
+# grown to ~92,684 documents despite MAX_AUDITS=50 (the intended cap was
+# never actually being enforced). CLEANUP_BATCH_LIMIT raises the per-pass
+# delete count to drain the backlog faster than before, while count()-based
+# sizing (see _sync_batch_write) removes the wasted 50-skip reads entirely --
+# net cheaper AND faster per pass than the old offset() pattern. Still
+# deliberately NOT a one-shot full-backlog drain (would cost ~92k reads, an
+# entire day's quota in a single call) -- backlog clears gradually over many
+# days at this rate; a Firestore TTL policy on the `timestamp` field would
+# eliminate the backlog risk entirely going forward but requires Firebase
+# Console/gcloud access this session does not have -- flagged for the user,
+# not something silently configured here.
+CLEANUP_BATCH_LIMIT: int = 60
 
 class AuditWorker:
     def __init__(self) -> None:
@@ -174,23 +191,31 @@ class AuditWorker:
             log.debug("Audit batch committed: %d events", len(items))
 
             # Cleanup: delete oldest if > MAX_AUDITS.
-            # 2026-08-14 quota-burn fix: this offset() query is expensive
-            # (Firestore bills for every skipped document, not just the 20
-            # returned) and previously ran on every flush -- throttled to
-            # once per CLEANUP_INTERVAL_S since the collection is already
-            # kept near its cap and doesn't need re-trimming every 3s.
+            # 2026-08-14 quota-burn fix: throttled to once per
+            # CLEANUP_INTERVAL_S instead of every flush.
+            # 2026-08-26 quota-burn fix #2 (see CLEANUP_BATCH_LIMIT comment
+            # above): replaced the .offset(MAX_AUDITS).limit(20) pattern
+            # (bills 50 wasted skip-reads every call, regardless of whether
+            # anything needs deleting) with an aggregate .count() (1 read)
+            # to size the actual excess, then an ascending-order query that
+            # only reads the documents it is actually about to delete.
             now = time.time()
             if now - self._last_cleanup_ts >= CLEANUP_INTERVAL_S:
                 self._last_cleanup_ts = now
                 try:
-                    snap = db.collection("audits").order_by(
-                        "timestamp", direction="DESCENDING"
-                    ).offset(MAX_AUDITS).limit(20).get()
-                    if snap:
-                        del_batch = db.batch()
-                        for doc in snap:
-                            del_batch.delete(doc.reference)
-                        del_batch.commit()
+                    count_result = db.collection("audits").count().get()
+                    total = count_result[0][0].value
+                    excess = total - MAX_AUDITS
+                    if excess > 0:
+                        drain_limit = min(excess, CLEANUP_BATCH_LIMIT)
+                        snap = db.collection("audits").order_by(
+                            "timestamp", direction="ASCENDING"
+                        ).limit(drain_limit).get()
+                        if snap:
+                            del_batch = db.batch()
+                            for doc in snap:
+                                del_batch.delete(doc.reference)
+                            del_batch.commit()
                 except Exception:
                     pass  # cleanup failure is non-critical
                 
