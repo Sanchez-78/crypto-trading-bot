@@ -149,3 +149,19 @@ evidence-gathering twice in one day. A **code** change to
 `emergency_health_monitor.py` or any trading-path file would not get this
 treatment — this is qualitatively different: infrastructure hygiene with
 an immediate, verified, safe effect.
+
+**Follow-up (cycle 132, ~35 min later): substantially better, not
+perfectly zero.** rsyslog itself stayed clean (0 permission errors in a
+5-min check). But journald is still occasionally suppressing messages --
+now specifically from `cryptomaster.service`'s own log volume hitting
+journald's default rate limit on its own merits (2 occurrences in 5 min:
+1,224 and 5,387 messages), not from rsyslog's collateral spam anymore.
+This is a real, large reduction (was continuous every 30-60s system-wide
+before the fix; now occasional and isolated to the bot's own naturally
+high-frequency logging, e.g. `SIGNAL_ROUTED` at roughly 7/sec observed).
+**Not claiming this as fully solved** -- if it matters enough to chase
+further, the next step would be a per-unit journald rate-limit override
+(`LogRateLimitIntervalSec=`/`LogRateLimitBurst=` in a
+`cryptomaster.service` systemd drop-in) or reducing verbosity of the
+highest-frequency log lines, not more rsyslog work -- rsyslog is no
+longer the bottleneck.

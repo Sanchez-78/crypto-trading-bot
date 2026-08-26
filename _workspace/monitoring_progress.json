@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 131,
+  "cycle": 132,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 131,
-  "current_wr": 27.0,
-  "current_pnl": -3.9544,
-  "last_update": "2026-08-26T09:15:00Z",
-  "status": "stable_infra_fix_applied_rsyslog_repaired",
+  "total_cycles_completed": 132,
+  "current_wr": 28.0,
+  "current_pnl": -5.6558,
+  "last_update": "2026-08-26T09:46:00Z",
+  "status": "stable_rsyslog_fix_holding",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -1545,6 +1545,26 @@
       "investigation": "Routine metrics check, no new trading-logic blocker (WR 27%, normal-range noise). Followed up on cycle 130's Finding C (rsyslog dropping app logs) rather than only deferring it, since the root cause turned out tractable: /var/log did not exist on the VPS at all -- rsyslogd (running as the unprivileged 'syslog' user) had been failing to create /var/log/syslog on every attempt since its last restart 2026-06-15 (2+ months of continuous 'Permission denied' spam). Confirmed via live journald 'Suppressed N messages from cryptomaster.service' lines that this spam was directly displacing the bot's own log messages from journald's rate-limit budget, not just rsyslog's own noise -- explaining both cycle 123's and this same cycle's own lost evidence lines.",
       "action_taken": "Fixed directly via SSH (root, not a git-tracked code change): created /var/log with root:syslog 0775 ownership (matching rsyslog.conf's own FileOwner/FileGroup convention), restarted rsyslog. Verified: 0 permission errors and 0 journald suppression lines in the following ~1-2 minutes, vs continuous before. Judged in-scope for a direct fix (not deferred to full review pipeline) because it's a pure OS-level permission repair touching no application code, fully verified, trivially reversible, and directly repairs a mechanism that had just degraded this session's own forensics twice in one day.",
       "next_cycle_plan": "Continue standard cadence. Watch for any recurrence of rsyslog write failures (would indicate a deeper cause, e.g. a startup script or tmpfiles.d rule that deletes /var/log). Finding B (dead entry-stall regex) remains deferred for a future dedicated code-review cycle."
+    },
+    {
+      "cycle": 132,
+      "timestamp": "2026-08-26T09:46:00Z",
+      "status": "CAUTION_STABLE_RSYSLOG_FIX_HOLDING_RESIDUAL_APP_LEVEL_RATE_LIMIT_NOTED",
+      "metrics_snapshot": {
+        "recent_100_wr_pct": 28.0,
+        "recent_100_pf_pct_basis": 0.447,
+        "recent_100_pf_usd_basis": 0.293,
+        "recent_100_net_pnl_pct": -5.6558,
+        "recent_100_net_pnl_usd": -0.666028,
+        "lifetime_n": 10911,
+        "lifetime_pf": 0.6556331547525746,
+        "lifetime_expectancy": -0.028111748235725466,
+        "firebase_quota": "616/50000 reads, 108/20000 writes -- healthy",
+        "service": "active, 0 errors, degraded=false, 3 open positions, closed_today=100"
+      },
+      "investigation": "Routine check, no new blocker. Followed up on cycle 131's rsyslog fix: confirmed holding (0 permission errors in a 5-min window). However journald is still occasionally suppressing messages -- now specifically from cryptomaster.service's own high log volume hitting journald's default rate limit on its own merits (2 occurrences/5min: 1224 and 5387 messages), not from rsyslog's collateral spam anymore. A large, real improvement (was continuous system-wide every 30-60s before) but not perfectly zero.",
+      "action_taken": "Documented the nuance honestly in _workspace/48_...md -- not claiming Finding C as fully solved, just substantially improved. No further action this cycle (diminishing-returns residual, not urgent).",
+      "next_cycle_plan": "If this residual app-level rate-limiting matters enough to chase further later, the fix would be a per-unit journald rate-limit override or reducing the verbosity of the highest-frequency log lines (e.g. SIGNAL_ROUTED) -- not more rsyslog work."
     }
   ],
   "experiment": {
