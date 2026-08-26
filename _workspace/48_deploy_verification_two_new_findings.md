@@ -1,0 +1,97 @@
+# 48 — Cycle 130: deploy PASS, honest verification scope, two new deferred findings
+
+## Status: DEPLOYED (23acd2f), service healthy. Fix 3 runtime-confirmed; fixes 1-2 deployed but unproven at runtime (their trigger conditions didn't occur in the observation window). Two new bugs found, both deliberately deferred (out of scope, no forensics done yet).
+
+## Deploy result (deploy-verify-agent)
+
+PASS, no revert. `ready_bot_sha`/git HEAD on server both match `23acd2f`.
+Service active, `NRestarts=0`, dashboard HTTP 200. Zero CRITICAL/ERROR/
+Traceback/CRASH_DETECTED/FIRESTORE_PATH_SET_FAILED/AUDIT_CLEANUP_FAILED/
+FIREBASE_DEGRADED in the ~115k-line, 10-minute post-deploy window. Bot
+actively trading (SIGNAL_ROUTED 4407, PAPER_ENTRY 35, SIGNAL_OPENING 674
+in the window; TRADE_CLOSED 0 is expected given exits are timeout-dominated
+and the window was short).
+
+## Fix-by-fix verification honesty
+
+**Fix 3 (audit_worker.py): CONFIRMED ACTIVE.** Live-captured
+`[AUDIT_CLEANUP_COUNT_REFRESH] total=93755` at 08:25:06 UTC — independently
+confirms the backlog thesis at a very similar order of magnitude to this
+session's own live-query (92,684 vs 93,755, consistent with continued
+growth in the ~2h between measurements). Drain rate up to ~17,280/day
+(60/300s theoretical maximum) → backlog clears in ~5.4 days if the
+cleanup fires at that theoretical max rate.
+
+**Fixes 1 (firebase_writer.py) and 2 (emergency_health_monitor.py):
+deployed and code-correct, but NOT runtime-verified.** The deploy agent
+pulled a 7-day pre-deploy baseline and found the trigger conditions for
+both bugs (malformed-path errors, false CRASH_DETECTED) occurred **zero
+times** in that baseline too — meaning their post-deploy absence is
+consistent with the fixes working but is not actual evidence, since those
+failure paths were already dormant in the observation window regardless
+of the fix. **Do not record fixes 1/2 as "verified working" until a real
+trigger occurs post-deploy** (e.g., the next time write-quota pressure
+pushes a `learning_update` into the outbox, or the next benign-but-
+exception-mentioning warning line appears).
+
+## New finding A (informational, not a bug): my own cycle-123 evidence line is no longer retrievable
+
+The specific false `CRASH_DETECTED` line I directly observed live via SSH
+in cycle 123 (2026-08-26 06:05 UTC) does not appear anywhere in 7 days of
+`journalctl` across any unit when the deploy agent checked. This is
+**not** a fabrication — I captured it in a live terminal session at the
+time — but it means the log record itself did not survive. Root cause:
+see Finding C below (rsyslog rate-limiting evicts it).
+
+## New finding B (deferred, out of scope): dead entry-stall detector
+
+`emergency_health_monitor.py:207`:
+```python
+if "PAPER_ENTRY\|admission_reason=paper_learning" in log_line:
+```
+This is a grep-style `\|` alternation written inside a **plain Python
+substring check** — `in` does literal substring matching, not regex, so
+this can never match anything (no log line will ever literally contain
+the string `PAPER_ENTRY\|admission_reason=paper_learning`). Effect:
+`detect_entry_stall()`'s "entries flowing" early-return path is
+permanently dead code. Also emits a `SyntaxWarning` (invalid escape
+sequence) visible in the deploy workflow logs.
+
+**Not touched by 23acd2f** (git blame traces it to the file's original
+commit `4807ad6`). **Deliberately not fixed this cycle** — no forensics
+done yet on the actual runtime impact (does `detect_entry_stall()`'s
+dead "entries flowing" path cause false stall alerts, or does the
+function have other logic that still works around it?), and per harness
+discipline a new bug needs its own evidence-first pass before a patch,
+not a same-cycle addition to an already-large changeset. **Worth
+prioritizing given this detector exists specifically to catch trading
+stalls** — this project has a documented history of a 66h+ silent
+trading stall (`project_skip_score_hard_stall_20260817` in memory).
+
+## New finding C (deferred, out of scope): rsyslog dropping log volume
+
+`rsyslogd` is actively dropping **1,000-2,000 messages per 5-second
+window** (~190 lines/sec sustained vs a 500-per-5s allowance) — verified
+via rsyslog's own rate-limit messages and `journald.conf`, not assumed.
+
+**Effect: degrades every future log-based forensic investigation in this
+project**, not just this one. Directly explains why Finding A's evidence
+line was unretrievable. Given how much of this project's standing
+monitoring loop depends on `journalctl`-based evidence (essentially every
+cycle in this session), this is a real, currently-unaddressed
+infrastructure health risk — worth its own dedicated investigation (raise
+the rate limit, reduce log verbosity at the source, or both) in a future
+cycle.
+
+## Recommended next steps (future cycles, not this one)
+
+1. Finding B: forensic pass on `detect_entry_stall()`'s actual current
+   behavior with the dead branch, then a minimal fix (most likely: split
+   into two separate `in` checks with `or`, matching the evident original
+   intent).
+2. Finding C: dedicated rsyslog/journald configuration investigation —
+   likely just raising `SystemMaxUse`/rate-limit-burst settings, but needs
+   its own evidence pass to confirm root cause and safe values.
+3. Continue watching `[AUDIT_CLEANUP_COUNT_REFRESH] total=` over the next
+   ~24-48h (per reviewer-agent's open condition #1) to confirm the backlog
+   is actually trending down, not just holding flat.

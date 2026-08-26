@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 129,
+  "cycle": 130,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 129,
+  "total_cycles_completed": 130,
   "current_wr": 24.0,
   "current_pnl": -5.4823,
-  "last_update": "2026-08-26T08:55:00Z",
-  "status": "deploy_dispatched_awaiting_verification",
+  "last_update": "2026-08-26T09:20:00Z",
+  "status": "deployed_pass_two_new_findings_deferred_resuming_normal_cadence",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -1512,6 +1512,19 @@
       "investigation": "Both review agents reached final verdicts. trading-safety-agent: PASS on both edd78ce and 1d1037d (independently re-audited 1d1037d since it touched files from its first review, confirmed no auto-restart/real-trading exposure, verified the RUNTIME_FAULT fix against its actual source line). reviewer-agent: APPROVED WITH CONDITIONS on 1d1037d -- ran an independent out-of-repo simulation (thousands of cleanup passes) confirming the cached-count design has zero drift and converges correctly to MAX_AUDITS; conditions were non-blocking (monitor drain rate after 24h via the new log line, add a regression test for the decrement path, escalate TTL policy to the user). Also both agents independently caught the same test-count overclaim (19 vs actual 17) in this session's own commit message -- corrected in docs.",
       "action_taken": "Added the two regression tests reviewer-agent's condition #2 asked for (commit 23acd2f, now 19 tests verified via raw pytest, matches the corrected count this time). Dispatched deploy-verify-agent to push through the gated Hetzner workflow, verify service health, and run a post-deploy log sanity check specifically for the three fixed symptoms.",
       "next_cycle_plan": "Check deploy-verify-agent's result. If PASS, this closes cycles 123-125's queued work. If FAIL_REVERTED, investigate why and re-plan."
+    },
+    {
+      "cycle": 130,
+      "timestamp": "2026-08-26T09:20:00Z",
+      "status": "DEPLOYED_PASS_PARTIAL_RUNTIME_VERIFICATION_TWO_NEW_FINDINGS_DEFERRED",
+      "metrics_snapshot": {
+        "note": "Deploy verification entry; deploy-verify-agent's own report is the metrics source this cycle.",
+        "deployed_sha": "23acd2f",
+        "service": "active, NRestarts=0, ready_bot_sha matches, dashboard HTTP 200"
+      },
+      "investigation": "deploy-verify-agent report: PASS, no revert. Fix 3 (audit_worker.py) CONFIRMED ACTIVE at runtime -- captured '[AUDIT_CLEANUP_COUNT_REFRESH] total=93755' live, independently confirming the backlog thesis (93,755 docs under a 50-doc cap), draining at up to ~17,280/day (60/300s theoretical max). Fixes 1 (firebase_writer.py) and 2 (emergency_health_monitor.py) are deployed and code-correct but NOT runtime-verified -- their trigger conditions (malformed-path errors, false CRASH_DETECTED) occurred zero times in BOTH the pre-deploy 7-day baseline AND the post-deploy window, so their absence is consistent with but not evidence of the fixes working; those failure paths were already dormant in the observation window. Two new, separate findings surfaced (NOT part of this changeset, deliberately not acted on): (B) a pre-existing dead-code bug in emergency_health_monitor.py:207 -- a grep-style '\\|' alternation inside a plain Python substring check that can never match, permanently breaking detect_entry_stall()'s 'entries flowing' detection (dates to original commit 4807ad6, relevant given this detector exists specifically to catch trading stalls like the historical 66h incident); (C) rsyslogd is actively dropping 1,000-2,000 log messages per 5s (~190 lines/sec sustained vs 500/5s allowed) -- this degrades ALL future log-based forensics, and specifically explains why cycle 123's originally-observed false CRASH_DETECTED line is no longer retrievable via journalctl days later (verified as rate-limit eviction, not a fabricated observation).",
+      "action_taken": "Accepted the deploy as PASS. Deliberately NOT claiming fixes 1/2 as 'verified working' per the deploy agent's own explicit caution -- documenting them as 'deployed, believed correct, awaiting a real trigger to confirm.' Findings B and C logged as new, deferred, out-of-scope items for a future dedicated cycle (neither has forensics/review done yet, per harness discipline no same-cycle patch).",
+      "next_cycle_plan": "Resume standard 30-min metrics monitoring. Consider prioritizing finding B (dead entry-stall detector) in a future cycle given its relevance to trading-stall detection specifically. Finding C (log rate-limiting) is an infrastructure health item worth a dedicated look too. Neither is urgent (no live trading impact confirmed)."
     }
   ],
   "experiment": {
