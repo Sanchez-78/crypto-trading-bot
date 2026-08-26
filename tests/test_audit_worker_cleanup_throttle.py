@@ -223,3 +223,57 @@ def test_cleanup_skips_delete_query_when_under_max_audits():
     worker._sync_batch_write(db, [{"reason": "x", "timestamp": time.time()}])
 
     db.collection.return_value.order_by.assert_not_called()
+
+
+def test_cached_count_decrements_by_the_actual_deleted_count(monkeypatch):
+    """2026-08-26 (post-review, reviewer-agent's condition #2): the earlier
+    committed suite only ever exercised the delete query with an empty
+    result, so `self._cached_audit_count -= deleted` (the line that keeps
+    the local estimate in sync between hourly count() refreshes) was
+    entirely uncovered -- reviewer-agent instead verified this property via
+    an out-of-repo, uncommitted simulation. This locks it in as a real test:
+    a delete query that actually returns CLEANUP_BATCH_LIMIT fake documents
+    must decrement the cache by exactly that many, not by 0 (an empty-list
+    assumption) or by some other count."""
+    worker = audit_worker.AuditWorker()
+    total = audit_worker.MAX_AUDITS + 500
+    db, _, _ = _make_fake_db(total_docs=total)
+
+    fake_docs = [MagicMock() for _ in range(audit_worker.CLEANUP_BATCH_LIMIT)]
+    fake_query = db.collection.return_value.order_by.return_value
+    fake_query.get.side_effect = None
+    fake_query.get.return_value = fake_docs
+
+    worker._sync_batch_write(db, [{"reason": "x", "timestamp": time.time()}])
+
+    assert worker._cached_audit_count == total - audit_worker.CLEANUP_BATCH_LIMIT
+
+
+def test_cached_count_increments_by_written_items_between_refreshes(monkeypatch):
+    """The other half of the local sync: += len(items) on every successful
+    write batch, so the estimate doesn't just drift downward from deletes
+    while staying blind to new inflow between hourly count() refreshes.
+
+    Note: the increment only applies once the cache is already populated
+    (it starts as None, and the very first call's real count() -- which in
+    production would already reflect that same call's just-committed batch
+    -- establishes the baseline instead)."""
+    worker = audit_worker.AuditWorker()
+    # Stay under MAX_AUDITS so the delete query never fires -- isolates the
+    # increment path from the decrement path tested above.
+    db, count_calls, delete_calls = _make_fake_db(total_docs=5)
+    fake_now = [1_000_000.0]
+    monkeypatch.setattr(audit_worker.time, "time", lambda: fake_now[0])
+
+    worker._sync_batch_write(db, [{"reason": "a"}, {"reason": "b"}])
+    assert worker._cached_audit_count == 5  # first call: real count() sets the baseline
+    assert len(count_calls) == 1
+
+    # Advance past the (much shorter) cleanup-pass throttle but stay well
+    # inside CLEANUP_COUNT_REFRESH_S, so no second real count() call occurs
+    # -- the cache must still track this next write correctly on its own.
+    fake_now[0] += audit_worker.CLEANUP_INTERVAL_S + 1
+    worker._sync_batch_write(db, [{"reason": "c"}])
+    assert worker._cached_audit_count == 5 + 1
+    assert len(count_calls) == 1
+    assert len(delete_calls) == 0, "collection stays well under MAX_AUDITS -- no delete query should ever fire"
