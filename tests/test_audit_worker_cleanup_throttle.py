@@ -7,15 +7,20 @@ CLEANUP_INTERVAL_S, tracked via a per-instance _last_cleanup_ts, independent
 of how often _sync_batch_write() itself is called
 (_workspace/26_quota_burn_found_audit_worker_offset.md).
 
-2026-08-26 fix: the throttle above only reduced call FREQUENCY -- the
-.offset(MAX_AUDITS) query itself still billed Firestore for 50 skipped
-documents on every call regardless of whether anything needed deleting, and
-its fixed .limit(20) never kept pace with the collection's write rate (the
-"audits" collection was found to have grown to ~92,684 documents live,
-despite MAX_AUDITS=50). Replaced with an aggregate .count() (1 read) to size
-the actual excess, then an ascending-order query that only reads the
-documents it is about to delete, with a higher CLEANUP_BATCH_LIMIT to drain
-the backlog faster (_workspace/47_audit_collection_backlog_and_offset_free_cleanup.md).
+2026-08-26 v1 fix: replaced the DESCENDING+offset(50) query (found on review
+to delete the 51st-70th NEWEST docs, never the true oldest tail -- the
+"audits" collection had grown to ~92,684 documents despite MAX_AUDITS=50)
+with an ASCENDING order_by that actually targets the oldest documents,
+sized via a per-pass aggregate .count().
+
+2026-08-26 v2 fix (after review): v1's per-pass .count() was REJECTED --
+Firestore bills count() at ~1 read per 1,000 index entries matched, so
+against the live ~92,684-doc collection it cost ~93 reads/call, not 1,
+roughly doubling total read cost during the exact period (a huge backlog)
+where it mattered most. v2 caches the count locally, refreshed only once
+per CLEANUP_COUNT_REFRESH_S (~hourly), and keeps the local estimate in
+sync between refreshes purely from local knowledge (no extra Firestore
+reads) -- see _workspace/47_audit_collection_backlog_and_offset_free_cleanup.md.
 """
 import time
 from unittest.mock import MagicMock
@@ -27,15 +32,19 @@ from src.services import audit_worker
 
 def _make_fake_db(total_docs: int = 0):
     """A minimal fake Firestore client: batch()/collection() chain that
-    counts how many times the cleanup count() query is invoked.
+    separately counts (a) how many times the aggregate .count().get() is
+    invoked and (b) how many times the ASCENDING delete query's .get() is
+    invoked -- these are now gated by two independent timers
+    (CLEANUP_INTERVAL_S vs CLEANUP_COUNT_REFRESH_S) and must be tracked
+    separately to test each timer's behavior.
 
     total_docs controls the simulated collection size for the aggregate
     .count().get() call. Defaults to 0 (well under MAX_AUDITS), so `excess`
-    is always negative and no delete query is attempted -- isolates the
-    cleanup-throttle timing behavior from the deletion path itself, matching
-    the original tests' intent."""
+    is always negative and the delete query never runs -- isolates the
+    cleanup-throttle timing behavior from the deletion path itself."""
     db = MagicMock()
-    cleanup_count_calls = []
+    count_calls = []
+    delete_query_calls = []
 
     fake_collection = MagicMock()
 
@@ -43,7 +52,7 @@ def _make_fake_db(total_docs: int = 0):
     fake_count_result.__getitem__.return_value = [MagicMock(value=total_docs)]
 
     def _count_get():
-        cleanup_count_calls.append(1)
+        count_calls.append(1)
         return fake_count_result
 
     fake_collection.count.return_value.get.side_effect = _count_get
@@ -51,58 +60,103 @@ def _make_fake_db(total_docs: int = 0):
     fake_query = MagicMock()
     fake_query.order_by.return_value = fake_query
     fake_query.limit.return_value = fake_query
-    fake_query.get.return_value = []  # no docs returned by the delete query
+
+    def _delete_get():
+        delete_query_calls.append(1)
+        return []  # no docs returned -- isolates call-count from delete logic
+
+    fake_query.get.side_effect = _delete_get
 
     fake_collection.order_by.return_value = fake_query
 
     db.collection.return_value = fake_collection
     db.batch.return_value = MagicMock()
-    return db, cleanup_count_calls
+    return db, count_calls, delete_query_calls
 
 
 def test_cleanup_runs_on_first_flush():
     worker = audit_worker.AuditWorker()
-    db, cleanup_calls = _make_fake_db()
+    db, count_calls, _ = _make_fake_db()
     worker._sync_batch_write(db, [{"reason": "x", "timestamp": time.time()}])
-    assert len(cleanup_calls) == 1
+    assert len(count_calls) == 1
 
 
 def test_cleanup_does_not_rerun_within_the_throttle_window():
     worker = audit_worker.AuditWorker()
-    db, cleanup_calls = _make_fake_db()
+    db, count_calls, _ = _make_fake_db()
     worker._sync_batch_write(db, [{"reason": "x", "timestamp": time.time()}])
     # Immediately flush again -- well within CLEANUP_INTERVAL_S (300s).
     worker._sync_batch_write(db, [{"reason": "y", "timestamp": time.time()}])
     worker._sync_batch_write(db, [{"reason": "z", "timestamp": time.time()}])
-    assert len(cleanup_calls) == 1, (
+    assert len(count_calls) == 1, (
         "cleanup ran more than once within the throttle window -- this is "
         "the exact regression (every-3s offset() scan) this fix closes"
     )
 
 
-def test_cleanup_reruns_after_the_throttle_window_elapses(monkeypatch):
+def test_cleanup_delete_query_reruns_after_the_cleanup_throttle_elapses(monkeypatch):
+    """The outer CLEANUP_INTERVAL_S throttle must still re-fire the cleanup
+    pass itself (checked via the delete query, which runs on every fired
+    pass as long as excess > 0) -- distinct from the much longer
+    CLEANUP_COUNT_REFRESH_S timer covered by the next test."""
     worker = audit_worker.AuditWorker()
-    db, cleanup_calls = _make_fake_db()
+    total = audit_worker.MAX_AUDITS + 100  # keep excess > 0 throughout
+    db, count_calls, delete_calls = _make_fake_db(total_docs=total)
     fake_now = [1_000_000.0]
     monkeypatch.setattr(audit_worker.time, "time", lambda: fake_now[0])
 
     worker._sync_batch_write(db, [{"reason": "x", "timestamp": fake_now[0]}])
-    assert len(cleanup_calls) == 1
+    assert len(delete_calls) == 1
 
     fake_now[0] += audit_worker.CLEANUP_INTERVAL_S - 1  # still inside the window
     worker._sync_batch_write(db, [{"reason": "y", "timestamp": fake_now[0]}])
-    assert len(cleanup_calls) == 1
+    assert len(delete_calls) == 1
 
     fake_now[0] += 2  # now past CLEANUP_INTERVAL_S since the first cleanup
     worker._sync_batch_write(db, [{"reason": "z", "timestamp": fake_now[0]}])
-    assert len(cleanup_calls) == 2
+    assert len(delete_calls) == 2
+
+
+def test_count_refresh_does_not_rerun_within_its_own_much_longer_window(monkeypatch):
+    """CLEANUP_COUNT_REFRESH_S (~hourly) is independent of and much longer
+    than CLEANUP_INTERVAL_S (300s) -- the real .count() call must NOT
+    re-fire on every cleanup pass, only once per refresh window, even
+    though the cleanup pass itself (and its delete query) keeps re-firing."""
+    worker = audit_worker.AuditWorker()
+    total = audit_worker.MAX_AUDITS + 100
+    db, count_calls, delete_calls = _make_fake_db(total_docs=total)
+    fake_now = [1_000_000.0]
+    monkeypatch.setattr(audit_worker.time, "time", lambda: fake_now[0])
+
+    worker._sync_batch_write(db, [{"reason": "x", "timestamp": fake_now[0]}])
+    assert len(count_calls) == 1
+    assert len(delete_calls) == 1
+
+    # Advance past several CLEANUP_INTERVAL_S windows but still well within
+    # a single CLEANUP_COUNT_REFRESH_S window.
+    for _ in range(3):
+        fake_now[0] += audit_worker.CLEANUP_INTERVAL_S + 1
+        worker._sync_batch_write(db, [{"reason": "y", "timestamp": fake_now[0]}])
+
+    assert len(delete_calls) == 4, "the cleanup pass itself must keep re-firing"
+    assert len(count_calls) == 1, (
+        "the real count() must NOT be re-called until CLEANUP_COUNT_REFRESH_S "
+        "elapses -- re-calling it every pass was the exact defect rejected "
+        "on review (each call costs ~93 reads against the live ~92,684-doc "
+        "collection, not 1)"
+    )
+
+    # Now advance past CLEANUP_COUNT_REFRESH_S too.
+    fake_now[0] += audit_worker.CLEANUP_COUNT_REFRESH_S + 1
+    worker._sync_batch_write(db, [{"reason": "z", "timestamp": fake_now[0]}])
+    assert len(count_calls) == 2
 
 
 def test_batch_commit_still_happens_every_flush_regardless_of_throttle():
     """The throttle must only gate the cleanup query -- the actual audit
     writes (batch.set/commit) must still happen on every flush."""
     worker = audit_worker.AuditWorker()
-    db, _ = _make_fake_db()
+    db, _, _ = _make_fake_db()
     for i in range(3):
         worker._sync_batch_write(db, [{"reason": f"r{i}", "timestamp": time.time()}])
     assert db.batch.call_count == 3, "one write batch per flush call expected"
@@ -113,7 +167,7 @@ def test_cleanup_failure_does_not_break_the_write_batch_or_the_throttle(monkeypa
     'cleanup failure is non-critical') and must still advance the throttle
     timestamp so a persistently-failing cleanup can't spin every flush."""
     worker = audit_worker.AuditWorker()
-    db, _ = _make_fake_db()
+    db, _, _ = _make_fake_db()
     db.collection.return_value.count.return_value.get.side_effect = RuntimeError("boom")
 
     # Must not raise.
@@ -124,18 +178,39 @@ def test_cleanup_failure_does_not_break_the_write_batch_or_the_throttle(monkeypa
     )
 
 
+def test_cleanup_failure_is_logged_not_silently_swallowed(monkeypatch, caplog):
+    """2026-08-26 (post-review): a bare `except Exception: pass` was exactly
+    how the collection reached ~92,684 docs under a 50-doc cap without
+    anyone noticing -- a cleanup failure must now be logged."""
+    import logging
+
+    worker = audit_worker.AuditWorker()
+    db, _, _ = _make_fake_db()
+    db.collection.return_value.count.return_value.get.side_effect = RuntimeError("boom")
+
+    with caplog.at_level(logging.WARNING, logger="src.services.audit_worker"):
+        worker._sync_batch_write(db, [{"reason": "x", "timestamp": time.time()}])
+
+    assert any("AUDIT_CLEANUP_FAILED" in r.message for r in caplog.records)
+
+
 def test_cleanup_deletes_only_the_excess_over_max_audits():
     """When total docs exceed MAX_AUDITS, the delete query must be sized to
     min(excess, CLEANUP_BATCH_LIMIT) via the ascending-order/limit query --
     not an unbounded or fixed-20 delete."""
     worker = audit_worker.AuditWorker()
     total = audit_worker.MAX_AUDITS + audit_worker.CLEANUP_BATCH_LIMIT + 500
-    db, _ = _make_fake_db(total_docs=total)
+    db, _, _ = _make_fake_db(total_docs=total)
 
     worker._sync_batch_write(db, [{"reason": "x", "timestamp": time.time()}])
 
     fake_query = db.collection.return_value.order_by.return_value
     fake_query.limit.assert_called_once_with(audit_worker.CLEANUP_BATCH_LIMIT)
+    # Regression check for the review finding: the delete query must be
+    # ASCENDING (the true oldest docs), not DESCENDING+offset (which
+    # deleted the 51st-70th newest and never reached the real backlog).
+    fake_collection = db.collection.return_value
+    fake_collection.order_by.assert_called_once_with("timestamp", direction="ASCENDING")
 
 
 def test_cleanup_skips_delete_query_when_under_max_audits():
@@ -143,7 +218,7 @@ def test_cleanup_skips_delete_query_when_under_max_audits():
     or under MAX_AUDITS -- avoids an unnecessary read even for the (cheap)
     ascending-order query."""
     worker = audit_worker.AuditWorker()
-    db, _ = _make_fake_db(total_docs=audit_worker.MAX_AUDITS)
+    db, _, _ = _make_fake_db(total_docs=audit_worker.MAX_AUDITS)
 
     worker._sync_batch_write(db, [{"reason": "x", "timestamp": time.time()}])
 

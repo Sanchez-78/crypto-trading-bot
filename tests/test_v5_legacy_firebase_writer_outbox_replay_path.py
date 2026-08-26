@@ -12,7 +12,6 @@ pushing learning_update writes into the outbox
 (_workspace/46_quota_exhaustion_outbox_path_bug_and_false_crash_alerts_cycle123.md).
 """
 import os
-import tempfile
 from unittest.mock import MagicMock
 
 import pytest
@@ -24,13 +23,18 @@ from src.services.v5_legacy_bridge import config
 
 
 @pytest.fixture
-def fresh_outbox():
-    if os.path.exists(config.V5_OUTBOX_DB_PATH):
-        os.remove(config.V5_OUTBOX_DB_PATH)
+def fresh_outbox(tmp_path, monkeypatch):
+    # 2026-08-26 (post-review fix): originally pointed at the REAL runtime
+    # artifact config.V5_OUTBOX_DB_PATH (runtime/v5_trade_outbox.sqlite),
+    # the same file the live bot uses -- os.remove()ing it collided with an
+    # open handle on Windows and contaminated a shared path other tests
+    # also touch (the same pre-existing sin as test_phase4d_outbox_flush_worker.py).
+    # Redirect to an isolated tmp_path instead; DurableOutbox reads
+    # config.V5_OUTBOX_DB_PATH only at construction time, so the monkeypatch
+    # must happen before instantiating it.
+    monkeypatch.setattr(config, "V5_OUTBOX_DB_PATH", str(tmp_path / "test_outbox.sqlite"))
     outbox = DurableOutbox()
     yield outbox
-    if os.path.exists(config.V5_OUTBOX_DB_PATH):
-        os.remove(config.V5_OUTBOX_DB_PATH)
 
 
 def test_learning_update_outbox_replay_uses_the_same_path_shape_as_the_live_write(fresh_outbox):

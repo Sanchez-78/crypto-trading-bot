@@ -10,6 +10,14 @@ fired a CRITICAL CRASH_DETECTED alert, while systemctl showed NRestarts=0
 and continuous uptime at the exact same moment -- proof the service never
 actually crashed
 (_workspace/46_quota_exhaustion_outbox_path_bug_and_false_crash_alerts_cycle123.md).
+
+v1 of this fix additionally skipped any line containing the "⚠️" marker.
+REJECTED on review: the positive-match narrowing alone already kills the
+production false positive, and the emoji skip cost real detection --
+`runtime_fault_registry.py` logs genuine CRITICAL faults as
+"⚠️  RUNTIME_FAULT [CRITICAL]: ..." and was being silently suppressed.
+v2 removed the emoji skip and added an explicit "RUNTIME_FAULT [CRITICAL]"
+marker instead (_workspace/47_...md).
 """
 from src.services.emergency_health_monitor import detect_crashes
 
@@ -53,6 +61,16 @@ def test_fatal_marker_is_still_detected():
     logs = ["[STARTUP FATAL] Firebase initialization failed: connection refused"]
     has_crash, crash_lines = detect_crashes(logs)
     assert has_crash is True
+
+
+def test_runtime_fault_critical_is_detected_even_with_the_warning_emoji():
+    """v1 of this fix would have wrongly suppressed this -- it starts with
+    '⚠️' but is a genuine CRITICAL fault from runtime_fault_registry.py,
+    not a benign handled warning. Must still be caught."""
+    logs = ["⚠️  RUNTIME_FAULT [CRITICAL]: signal_engine: division by zero"]
+    has_crash, crash_lines = detect_crashes(logs)
+    assert has_crash is True
+    assert any("RUNTIME_FAULT [CRITICAL]" in line for line in crash_lines)
 
 
 def test_no_logs_no_crash():

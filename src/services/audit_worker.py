@@ -37,23 +37,40 @@ BATCH_INTERVAL: float = 3.0   # seconds between batch flushes
 # the audits collection is naturally near its 50-doc cap already (this
 # worker enforces it), so it doesn't need re-trimming on every 3s flush.
 CLEANUP_INTERVAL_S: float = 300.0  # only run the cleanup this often
-# 2026-08-26 (_workspace/47_audit_collection_backlog_and_offset_free_cleanup.md):
-# the throttle above reduced call FREQUENCY but the .offset(MAX_AUDITS) query
-# itself still bills Firestore for every one of the 50 skipped documents on
-# every call, and its fixed .limit(20) deletion rate never kept pace with
-# the collection's write rate -- live-confirmed the "audits" collection has
-# grown to ~92,684 documents despite MAX_AUDITS=50 (the intended cap was
-# never actually being enforced). CLEANUP_BATCH_LIMIT raises the per-pass
-# delete count to drain the backlog faster than before, while count()-based
-# sizing (see _sync_batch_write) removes the wasted 50-skip reads entirely --
-# net cheaper AND faster per pass than the old offset() pattern. Still
-# deliberately NOT a one-shot full-backlog drain (would cost ~92k reads, an
-# entire day's quota in a single call) -- backlog clears gradually over many
-# days at this rate; a Firestore TTL policy on the `timestamp` field would
+# 2026-08-26 v1 (_workspace/47_...md): the throttle above reduced call
+# FREQUENCY, but the .offset(MAX_AUDITS) query still bills 50 skipped reads
+# every call. ALSO (found independently by two review agents during patch
+# review, not by this session's own analysis): the DESCENDING+offset(50)
+# query was deleting the 51st-70th NEWEST documents, never the true oldest
+# tail -- so the "audits" collection grew to ~92,684 documents despite
+# MAX_AUDITS=50 because the cleanup never reached the actual backlog at
+# all, regardless of the read-cost question.
+#
+# 2026-08-26 v2 (after review): v1 of this fix replaced offset() with a
+# per-pass aggregate .count() call, intending to save reads. REJECTED on
+# review: Firestore bills count() at 1 read per 1,000 index entries
+# matched, so against a ~92,684-doc collection count() actually costs
+# ~93 reads, not 1 -- calling it every cleanup pass roughly DOUBLED the
+# read cost (153/call vs the old 70/call) during the exact period (a huge
+# backlog) where it mattered most, and count() is also invisible to the
+# Firestore read tracer (not one of the classes it patches), making the
+# new dominant cost unobservable to the instrument built to catch exactly
+# this. Fixed to v2: cache the count locally, refreshed only once per
+# CLEANUP_COUNT_REFRESH_S (~hourly) via a real .count() call, and kept
+# in sync between refreshes purely from local knowledge (+= len(items)
+# on every successful write batch, -= the actual delete count on every
+# cleanup pass) -- no extra Firestore reads needed to track it. Net cost
+# ~9,672 reads/day (drain query 60/pass x ~124 passes/day + ~93 reads/hour
+# for the periodic count refresh), roughly at parity with the old code's
+# estimated cost while ACTUALLY draining the true oldest tail via the
+# ASCENDING order_by kept from v1. Deliberately NOT a one-shot full-backlog
+# drain (would cost ~92k reads, an entire day's quota, in one call) --
+# clears gradually; a Firestore TTL policy on the `timestamp` field would
 # eliminate the backlog risk entirely going forward but requires Firebase
-# Console/gcloud access this session does not have -- flagged for the user,
-# not something silently configured here.
+# Console/gcloud access this session does not have -- flagged for the
+# user, not something silently configured here.
 CLEANUP_BATCH_LIMIT: int = 60
+CLEANUP_COUNT_REFRESH_S: float = 3600.0  # re-run the real count() at most this often
 
 class AuditWorker:
     def __init__(self) -> None:
@@ -63,6 +80,8 @@ class AuditWorker:
         self._buffer: list[dict] = []
         self._flush_task: Optional[asyncio.Task] = None
         self._last_cleanup_ts: float = 0.0
+        self._cached_audit_count: Optional[int] = None
+        self._last_count_refresh_ts: float = 0.0
 
     async def _get_redis(self) -> Optional[Any]:
         if self._redis is None:
@@ -187,25 +206,41 @@ class AuditWorker:
                 ref = db.collection("audits").document()
                 batch.set(ref, data)
             batch.commit()
-            
+
             log.debug("Audit batch committed: %d events", len(items))
+
+            # Keep the local count estimate in sync with zero extra reads --
+            # see CLEANUP_COUNT_REFRESH_S comment above for why this exists.
+            if self._cached_audit_count is not None:
+                self._cached_audit_count += len(items)
 
             # Cleanup: delete oldest if > MAX_AUDITS.
             # 2026-08-14 quota-burn fix: throttled to once per
             # CLEANUP_INTERVAL_S instead of every flush.
-            # 2026-08-26 quota-burn fix #2 (see CLEANUP_BATCH_LIMIT comment
-            # above): replaced the .offset(MAX_AUDITS).limit(20) pattern
-            # (bills 50 wasted skip-reads every call, regardless of whether
-            # anything needs deleting) with an aggregate .count() (1 read)
-            # to size the actual excess, then an ascending-order query that
-            # only reads the documents it is actually about to delete.
+            # 2026-08-26 v2 quota-burn fix (see CLEANUP_BATCH_LIMIT /
+            # CLEANUP_COUNT_REFRESH_S comments above): the real .count() is
+            # only actually called once per CLEANUP_COUNT_REFRESH_S; every
+            # other pass reuses the locally-tracked estimate. The delete
+            # query is ASCENDING-ordered (the true oldest documents, unlike
+            # the old DESCENDING+offset(50) pattern which deleted the
+            # 51st-70th newest and never reached the actual backlog).
             now = time.time()
             if now - self._last_cleanup_ts >= CLEANUP_INTERVAL_S:
                 self._last_cleanup_ts = now
                 try:
-                    count_result = db.collection("audits").count().get()
-                    total = count_result[0][0].value
-                    excess = total - MAX_AUDITS
+                    if (
+                        self._cached_audit_count is None
+                        or (now - self._last_count_refresh_ts) >= CLEANUP_COUNT_REFRESH_S
+                    ):
+                        count_result = db.collection("audits").count().get()
+                        self._cached_audit_count = count_result[0][0].value
+                        self._last_count_refresh_ts = now
+                        log.info(
+                            "[AUDIT_CLEANUP_COUNT_REFRESH] total=%d",
+                            self._cached_audit_count,
+                        )
+
+                    excess = self._cached_audit_count - MAX_AUDITS
                     if excess > 0:
                         drain_limit = min(excess, CLEANUP_BATCH_LIMIT)
                         snap = db.collection("audits").order_by(
@@ -213,12 +248,20 @@ class AuditWorker:
                         ).limit(drain_limit).get()
                         if snap:
                             del_batch = db.batch()
+                            deleted = 0
                             for doc in snap:
                                 del_batch.delete(doc.reference)
+                                deleted += 1
                             del_batch.commit()
-                except Exception:
-                    pass  # cleanup failure is non-critical
-                
+                            self._cached_audit_count -= deleted
+                except Exception as e:
+                    # 2026-08-26: was a bare `except Exception: pass` -- a
+                    # silently-swallowed cleanup failure is exactly how the
+                    # collection reached ~92,684 docs under a 50-doc cap
+                    # without anyone noticing. Still non-fatal (must not
+                    # break the write batch above), but now logged.
+                    log.warning("[AUDIT_CLEANUP_FAILED] %s", e)
+
         except Exception as exc:
             log.debug("_sync_batch_write error: %s", exc)
 

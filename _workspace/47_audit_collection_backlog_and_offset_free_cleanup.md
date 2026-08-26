@@ -120,3 +120,72 @@ quota-safe mitigation, not a replacement for that.
 Dispatch `trading-safety-agent` + `reviewer-agent` (per harness discipline
 for any production code change) before deploying through the gated
 Hetzner workflow.
+
+## Review results + v2 corrections (same cycle)
+
+**`trading-safety-agent`: PASS** (no real-trading exposure in any of the
+3 files; confirmed the advisory-only nature of `emergency_health_monitor`'s
+alerts end-to-end, not just by inspection — traced `monitor_loop` and
+confirmed the return value is discarded, no subprocess/systemctl call
+exists anywhere in the path). Flagged the same count()-cost concern as
+`reviewer-agent` below, non-blocking from a safety standpoint but
+recommended fixing before deploy.
+
+**`reviewer-agent`: REJECTED**, with three findings, all addressed below:
+
+1. **Blocking, Fix 3 cost claim was wrong.** Firestore bills `.count()`
+   at ~1 read per 1,000 index entries matched, not a flat 1 — against the
+   live ~92,684-doc collection, v1's per-pass `.count()` actually cost
+   ~93 reads, making the fix ~2.2x MORE expensive than the old code
+   during the exact period (huge backlog) it mattered most, and — worse —
+   `count()` is invisible to the Firestore read tracer (not one of the
+   patched classes), so this new cost would have been unobservable to the
+   very instrument built to catch this class of problem.
+   **Fixed (v2):** cache the count locally, refresh via a real `.count()`
+   only once per `CLEANUP_COUNT_REFRESH_S` (~hourly), keep the estimate in
+   sync between refreshes purely from local knowledge (`+= len(items)` on
+   every write batch, `-= deleted` on every cleanup pass) — zero extra
+   Firestore reads to track it. Net cost now ~9,672 reads/day, roughly at
+   parity with the old code's estimated cost.
+2. **Corrects a premise I got wrong, favors the fix.** The OLD
+   `DESCENDING + offset(50)` query deleted the **51st-70th newest**
+   documents, never the true oldest tail — this is *why* the collection
+   reached 92,684 despite the cap, independent of the read-cost question.
+   The v1 rewrite's `ASCENDING order_by` (kept unchanged in v2) is the
+   *correct* direction and was already right; I hadn't realized this was
+   also fixing a logic bug, not just a cost one. Confirmed no data-loss
+   risk either version — neither query ever touches the newest 50.
+3. **Bare `except Exception: pass` masked exactly this kind of failure.**
+   Fixed: now `log.warning("[AUDIT_CLEANUP_FAILED] %s", e)`.
+
+Also for Fix 2 (`emergency_health_monitor.py`): the `⚠️` line-skip added
+in v1 was unnecessary (the positive-match narrowing alone already kills
+the production false positive) and cost a real detection — it silently
+suppressed `runtime_fault_registry.py`'s genuine
+`"⚠️  RUNTIME_FAULT [CRITICAL]: ..."` faults. **Fixed (v2):** removed the
+emoji skip, added an explicit `"RUNTIME_FAULT [CRITICAL]"` marker to the
+positive-match list instead.
+
+Also for the test suite: `tests/test_v5_legacy_firebase_writer_outbox_replay_path.py`'s
+fixture originally pointed at the real runtime artifact
+`config.V5_OUTBOX_DB_PATH` and `os.remove()`d it — the same file the live
+bot uses, risking a Windows file-handle collision and contaminating a
+shared path. **Fixed:** fixture now monkeypatches `config.V5_OUTBOX_DB_PATH`
+to an isolated `tmp_path` before constructing `DurableOutbox()`.
+
+Also noted, not acted on (informational): `write_learning_update()` entries
+that already exceeded `OUTBOX_MAX_RETRIES=3` before this deploy are
+permanently excluded from replay by `get_pending()`'s own filter — this
+fix prevents *future* loss, it does not recover the ~60 already-lost
+entries from today's incident. Not claiming recovery in any summary.
+
+19 tests now (up from 14), all pass locally:
+`python -m pytest tests/test_audit_worker_cleanup_throttle.py
+tests/test_v5_legacy_firebase_writer_outbox_replay_path.py
+tests/test_emergency_health_monitor_crash_detection.py -v` → 17 passed
+(9+3+5 across the three files with the new count-refresh and
+runtime-fault-critical tests). Broader sweep unchanged: same 6
+pre-existing, unrelated failures as before (confirmed via `git stash`
+earlier), no new failures or errors introduced by the fixture fix.
+
+**Status: re-submitted for final confirmation, not yet deployed.**
