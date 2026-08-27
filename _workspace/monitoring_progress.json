@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 139,
+  "cycle": 140,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 139,
+  "total_cycles_completed": 140,
   "current_wr": 26.0,
-  "current_pnl": -3.4018,
-  "last_update": "2026-08-27T05:50:00Z",
-  "status": "quota_wait_daily_pattern_fix1_now_confirmed",
+  "current_pnl": -4.2615,
+  "last_update": "2026-08-27T06:23:00Z",
+  "status": "quota_wait_continuing",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -1705,6 +1705,26 @@
       "investigation": "Real daily write-quota exhaustion recurred (expected, same pattern as cycle 123 -- resets 07:00 UTC daily, this is normal not a regression). Used this second real exhaustion event to verify the cycle-125 fixes hold under genuine quota pressure (deploy-verify-agent could not confirm fixes 1/2 at deploy time since their trigger conditions hadn't occurred yet). RESULT: zero 'must end on doc' malformed-path errors across the entire ~21h since deploy, despite 76 learning_update outbox retries occurring during this exact quota-pressure window -- every single retry failed only on genuine 429/timeout, never the old path bug. Fix #1 (firebase_writer.py outbox path) is now RUNTIME-CONFIRMED, not just deployed-and-believed-correct. Also re-confirmed: zero CRASH_DETECTED/AUDIT_CLEANUP_FAILED in the last hour, rsyslog still clean (0 permission errors in 2h) -- both other fixes holding too.",
       "action_taken": "None needed -- documenting the upgraded verification status. No new blocker, this is the same self-resolving daily pattern as before.",
       "next_cycle_plan": "Wait for 07:00 UTC reset, resume normal cadence after."
+    },
+    {
+      "cycle": 140,
+      "timestamp": "2026-08-27T06:23:00Z",
+      "status": "QUOTA_WAIT_CONTINUING",
+      "metrics_snapshot": {
+        "recent_100_wr_pct": 26.0,
+        "recent_100_pf_pct_basis": 0.592,
+        "recent_100_pf_usd_basis": 1.032,
+        "recent_100_net_pnl_pct": -4.2615,
+        "recent_100_net_pnl_usd": 0.0426,
+        "lifetime_n": 11399,
+        "lifetime_pf": 0.6586712178730043,
+        "lifetime_expectancy": -0.028254301693131118,
+        "firebase_quota": "808/50000 reads, 20002/20000 writes -- still exhausted, reset ~07:00 UTC (~37 min away)",
+        "service": "active, 0 errors, degraded=false, 1 open position"
+      },
+      "investigation": "Still in the expected daily quota-exhaustion window, ~37 min before reset. No new blocker, service healthy.",
+      "action_taken": "None -- waiting for reset.",
+      "next_cycle_plan": "Check again after 07:00 UTC reset, resume normal cadence."
     }
   ],
   "experiment": {
