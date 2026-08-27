@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 141,
+  "cycle": 142,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 141,
-  "current_wr": 23.0,
-  "current_pnl": -5.8281,
-  "last_update": "2026-08-27T06:54:00Z",
-  "status": "quota_wait_almost_reset",
+  "total_cycles_completed": 142,
+  "current_wr": 24.0,
+  "current_pnl": -4.6273,
+  "last_update": "2026-08-27T07:25:00Z",
+  "status": "stable_quota_reset_confirmed",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -1745,6 +1745,26 @@
       "investigation": "Still within the daily quota-exhaustion window, ~6 min from the 07:00 UTC reset. No new blocker.",
       "action_taken": "None.",
       "next_cycle_plan": "Confirm reset next cycle, resume normal cadence."
+    },
+    {
+      "cycle": 142,
+      "timestamp": "2026-08-27T07:25:00Z",
+      "status": "CAUTION_STABLE_QUOTA_RESET_CONFIRMED",
+      "metrics_snapshot": {
+        "recent_100_wr_pct": 24.0,
+        "recent_100_pf_pct_basis": 0.505,
+        "recent_100_pf_usd_basis": 0.659,
+        "recent_100_net_pnl_pct": -4.6273,
+        "recent_100_net_pnl_usd": -0.420266,
+        "lifetime_n": 11420,
+        "lifetime_pf": 0.6589493401902489,
+        "lifetime_expectancy": -0.02821589185639244,
+        "firebase_quota": "5/50000 reads, 204/20000 writes -- reset confirmed clean",
+        "service": "active, 0 errors, degraded=false, 2 open positions, closed_today=100"
+      },
+      "investigation": "Quota reset confirmed. No new blocker. WR 24%, within normal noise range. Resuming standard cadence.",
+      "action_taken": "None.",
+      "next_cycle_plan": "Continue standard cadence."
     }
   ],
   "experiment": {
