@@ -112,10 +112,26 @@ marker (bracket-terminated, verified via `paper_trade_executor.py:2298`
 to exclude the `_BLOCKED`/`_SKIP`/`_ATTEMPT` variants) counts. Bonus find
 from the same review: the dead branch also caused a **second**,
 previously-unnoticed bug -- `last_entry_rate` could never be stamped, so
-`time_since_entry` was always `current_time - 0` (≈ epoch seconds),
-firing a spurious `ENTRY_STALL` alert on every cycle with EV candidates
-present. Both bugs closed by the same fix. 11 tests pass (verified via
-mutation testing by the reviewer, not just run-and-pass).
+`time_since_entry` was always `current_time - 0` (≈ epoch seconds), which
+*would* fire a spurious `ENTRY_STALL` alert on any cycle where
+`has_ev_candidates` is also true. Both bugs closed by the same fix. 11
+tests pass (verified via mutation testing by the reviewer, not just
+run-and-pass).
+
+**Correction (deploy-verify-agent, post-deploy): this second bug was
+real in code but NOT an observed production symptom.** Checked
+`ENTRY_STALL` counts directly: 0 in the 24h before the deploy, 0 after --
+the bug stayed latent because firing also requires a `candidate_ev=` line
+inside the specific 500-line `journalctl` slice the monitor reads each
+cycle, which only occurred ~28 times in 24h and never coincided with the
+check window in practice. **Do not cite "was firing a spurious alert
+every cycle" as an observed pre-deploy symptom** -- it was a real,
+now-fixed defect that happened to almost never meet its own
+precondition, not something anyone was actually seeing. What deploy
+verification DID positively confirm: the fixed matcher is reachable
+against real log text -- a bare `[PAPER_ENTRY]` line was emitted and
+matched under the new code within seconds of restart, a path that could
+never be taken before this fix.
 
 ## Recommended next steps (future cycles, not this one)
 2. ~~Finding C: dedicated rsyslog/journald configuration investigation~~

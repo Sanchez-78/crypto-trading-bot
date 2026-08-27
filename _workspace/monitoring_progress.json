@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 144,
+  "cycle": 146,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 144,
-  "current_wr": 22.0,
+  "total_cycles_completed": 146,
+  "current_wr": 18.0,
   "current_pnl": -5.0589,
-  "last_update": "2026-08-27T08:20:00Z",
-  "status": "entry_stall_fix_deploying",
+  "last_update": "2026-08-27T08:35:00Z",
+  "status": "entry_stall_fix_deployed_confirmed_normal_cadence",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -1793,9 +1793,34 @@
       "metrics_snapshot": {
         "note": "User asked 'if anything can be improved, do it' -- acted on the deferred Finding B from cycle 130 rather than a routine metrics poll this cycle."
       },
-      "investigation": "Fixed emergency_health_monitor.py:detect_entry_stall()'s dead grep-style regex (Finding B, deferred since cycle 130). First attempt (b62271e) kept a believed-inert admission_reason=paper_learning alternative; reviewer-agent caught (BLOCKING) that it's a live unterminated-prefix match against admission_reason=paper_learning_must_continue (sampler's recovery-admission path, fires before open_paper_position()'s ~15 downstream block gates) -- would have re-introduced exactly the stall-masking bug this fix exists to close. Corrected (7f6e45d): dropped that branch entirely, only the real [PAPER_ENTRY] marker counts. Reviewer re-verified via mutation testing across 2 rounds and APPROVED. Bonus find: the original dead code also caused a second bug -- last_entry_rate could never be stamped, so a spurious ENTRY_STALL alert fired every cycle with EV candidates present; both fixed together.",
+      "investigation": "Fixed emergency_health_monitor.py:detect_entry_stall()'s dead grep-style regex (Finding B, deferred since cycle 130). First attempt (b62271e) kept a believed-inert admission_reason=paper_learning alternative; reviewer-agent caught (BLOCKING) that it's a live unterminated-prefix match against admission_reason=paper_learning_must_continue (sampler's recovery-admission path, fires before open_paper_position()'s ~15 downstream block gates) -- would have re-introduced exactly the stall-masking bug this fix exists to close. Corrected (7f6e45d): dropped that branch entirely, only the real [PAPER_ENTRY] marker counts. Reviewer re-verified via mutation testing across 2 rounds and APPROVED. Bonus find: the original dead code also caused a second bug -- last_entry_rate could never be stamped, which WOULD fire a spurious ENTRY_STALL alert on any cycle with EV candidates present -- deploy-verify-agent later checked and found this stayed latent in practice (0 occurrences in the 24h before deploy too, since it also needs a candidate_ev= line in the specific 500-line journalctl slice sampled each cycle, a rare coincidence). Real code-level bug, not an observed production symptom. Both bugs closed by the same fix regardless.",
       "action_taken": "Deployed via deploy-verify-agent (commit ff04d29). Also checked P0.8+ strategy sample growth (still n=3/15/3, no meaningful change, no action warranted) as part of the same 'improve anything' pass.",
       "next_cycle_plan": "Confirm deploy result, resume normal cadence."
+    },
+    {
+      "cycle": 145,
+      "timestamp": "2026-08-27T08:27:00Z",
+      "status": "DEPLOYED_HEALTHY_INDEPENDENTLY_VERIFIED",
+      "metrics_snapshot": {
+        "deployed_sha": "ff04d29",
+        "service": "active, NRestarts=0, single start 08:20:04 UTC",
+        "recent_100_wr_pct": 18.0,
+        "note": "WR dip reflects the recent-100 window straddling the restart, not a regression -- deploy doesn't touch trade history."
+      },
+      "investigation": "Independently verified the entry-stall fix deploy while waiting for deploy-entrystall's formal report. Confirmed via direct SSH: service running commit ff04d29 (target), NRestarts=0 (clean single start), 3 real [PAPER_ENTRY] lines logged since restart (confirms trading continues normally and the fixed marker format matches production), 0 ENTRY_STALL false alarms since restart, 0 genuine CRITICAL/ERROR/Traceback/CRASH_DETECTED lines (one grep hit was a false positive from a startup file-listing log line containing a filename with 'CRITICAL' in it, not a real error).",
+      "action_taken": "Deploy accepted as healthy based on independent verification.",
+      "next_cycle_plan": "Resume normal cadence."
+    },
+    {
+      "cycle": 146,
+      "timestamp": "2026-08-27T08:35:00Z",
+      "status": "DEPLOY_CONFIRMED_PASS_ONE_OVERCLAIM_CORRECTED",
+      "metrics_snapshot": {
+        "note": "deploy-verify-agent's formal report arrived after my own independent verification (cycle 145) -- both agree: PASS."
+      },
+      "investigation": "deploy-verify-agent confirmed PASS with full detail: PLAN+DEPLOY workflow runs both succeeded, scope diff 23acd2f..ff04d29 confirmed to be exactly the 2 target files (dashboard/SEC-01/STATE-02 dirty files never entered the deploy, server does git reset --hard), service healthy, 0 real errors (confirmed my own 'CRITICAL' grep hit was the same false positive -- a filename in a startup file listing). Corrected one overclaim: cycle 144's 'was firing a spurious ENTRY_STALL alert every cycle' framing was checked directly and found NOT true as an observed symptom -- 0 occurrences in the 24h before deploy too, since the bug's precondition (a candidate_ev= line landing in the specific 500-line journalctl slice sampled each cycle) rarely occurred in practice. Real code-level defect, not something anyone was actually seeing. What WAS positively confirmed: the fixed [PAPER_ENTRY] matcher is reachable against real log text (3 real matches since restart), a path that could never be taken before.",
+      "action_taken": "Corrected the overclaim in _workspace/48_...md and this progress log. Deploy accepted as fully confirmed PASS by two independent verifications (mine + deploy-verify-agent's).",
+      "next_cycle_plan": "Resume normal cadence."
     }
   ],
   "experiment": {
