@@ -23,16 +23,26 @@ growth in the ~2h between measurements). Drain rate up to ~17,280/day
 cleanup fires at that theoretical max rate.
 
 **Fixes 1 (firebase_writer.py) and 2 (emergency_health_monitor.py):
-deployed and code-correct, but NOT runtime-verified.** The deploy agent
-pulled a 7-day pre-deploy baseline and found the trigger conditions for
-both bugs (malformed-path errors, false CRASH_DETECTED) occurred **zero
-times** in that baseline too — meaning their post-deploy absence is
-consistent with the fixes working but is not actual evidence, since those
-failure paths were already dormant in the observation window regardless
-of the fix. **Do not record fixes 1/2 as "verified working" until a real
-trigger occurs post-deploy** (e.g., the next time write-quota pressure
-pushes a `learning_update` into the outbox, or the next benign-but-
-exception-mentioning warning line appears).
+deployed and code-correct, but NOT runtime-verified at deploy time.** The
+deploy agent pulled a 7-day pre-deploy baseline and found the trigger
+conditions for both bugs (malformed-path errors, false CRASH_DETECTED)
+occurred **zero times** in that baseline too — meaning their post-deploy
+absence at deploy time was consistent with the fixes working but not
+actual evidence.
+
+**UPDATE (cycle 139, 2026-08-27 ~05:50 UTC): Fix #1 now genuinely
+runtime-confirmed.** A second real daily write-quota exhaustion event
+(same recurring pattern as cycle 123, self-resolving at the 07:00 UTC
+reset) pushed 76 `learning_update` events through the outbox-replay path
+in the ~21h since deploy — the exact trigger condition this fix was
+written for. Checked the full post-deploy window: **zero** "must end on
+doc" errors, despite those 76 real replay attempts. Every failure among
+them was a genuine 429/timeout, never the old path bug. Fix #1 is no
+longer just "deployed and believed correct" — it has now actually been
+exercised under its real trigger condition and held. Fix #2 (false
+CRASH_DETECTED) and Finding C's rsyslog repair are also both still holding
+clean, but fix #2's specific trigger (a benign warning line containing an
+exception class name) still hasn't recurred to test it directly.
 
 ## New finding A (informational, not a bug): my own cycle-123 evidence line is no longer retrievable
 
