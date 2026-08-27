@@ -197,6 +197,20 @@ def detect_entry_stall(last_logs: List[str], current_time: float) -> Tuple[bool,
     """Detect if PAPER entries stuck at zero despite positive EV candidates.
 
     Returns: (is_stalled, reason)
+
+    2026-08-27 FIX: the "entries flowing" check used
+    `"PAPER_ENTRY\\|admission_reason=paper_learning" in log_line` -- a
+    grep-style `\\|` alternation inside a plain Python substring check,
+    which can never match (no log line literally contains that whole
+    string). This permanently disabled the early-return path, dating to
+    the file's original commit. Live log check (2026-08-27) confirmed:
+    the real successful-entry marker is the bare `[PAPER_ENTRY]` line
+    (paper_trade_executor.py, distinct from the `[PAPER_ENTRY_BLOCKED]`/
+    `[PAPER_ENTRY_SKIP]`/`[PAPER_ENTRY_ATTEMPT]` variants, which must NOT
+    count as "flowing"); `admission_reason=paper_learning` does not
+    currently appear anywhere in production logs (kept as a harmless,
+    currently-inert alternative in case another code path emits it).
+    See _workspace/48_deploy_verification_two_new_findings.md Finding B.
     """
     has_ev_candidates = False
     has_entries = False
@@ -204,7 +218,7 @@ def detect_entry_stall(last_logs: List[str], current_time: float) -> Tuple[bool,
     for log_line in last_logs[-200:]:
         if "candidate_ev=" in log_line and ("positive_ev" in log_line or float(log_line.split("candidate_ev=")[1].split()[0]) > 0):
             has_ev_candidates = True
-        if "PAPER_ENTRY\|admission_reason=paper_learning" in log_line:
+        if "PAPER_ENTRY]" in log_line or "admission_reason=paper_learning" in log_line:
             has_entries = True
             _monitor_state["last_entry_rate"] = current_time
             _monitor_state["entry_stall_count"] = 0
