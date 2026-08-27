@@ -198,18 +198,31 @@ def detect_entry_stall(last_logs: List[str], current_time: float) -> Tuple[bool,
 
     Returns: (is_stalled, reason)
 
-    2026-08-27 FIX: the "entries flowing" check used
+    2026-08-27 v1 FIX: the "entries flowing" check used
     `"PAPER_ENTRY\\|admission_reason=paper_learning" in log_line` -- a
     grep-style `\\|` alternation inside a plain Python substring check,
     which can never match (no log line literally contains that whole
     string). This permanently disabled the early-return path, dating to
-    the file's original commit. Live log check (2026-08-27) confirmed:
-    the real successful-entry marker is the bare `[PAPER_ENTRY]` line
-    (paper_trade_executor.py, distinct from the `[PAPER_ENTRY_BLOCKED]`/
-    `[PAPER_ENTRY_SKIP]`/`[PAPER_ENTRY_ATTEMPT]` variants, which must NOT
-    count as "flowing"); `admission_reason=paper_learning` does not
-    currently appear anywhere in production logs (kept as a harmless,
-    currently-inert alternative in case another code path emits it).
+    the file's original commit. Live log check confirmed the real
+    successful-entry marker is the bare `[PAPER_ENTRY]` line
+    (paper_trade_executor.py:2298, `log.warning("[PAPER_ENTRY] symbol=..."`),
+    distinct from the `[PAPER_ENTRY_BLOCKED]`/`[PAPER_ENTRY_SKIP]`/
+    `[PAPER_ENTRY_ATTEMPT]` variants, which must NOT count as "flowing".
+
+    2026-08-27 v2 (after review): v1 additionally kept an
+    `"admission_reason=paper_learning" in log_line` alternative, believing
+    it inert. REJECTED on review -- it is an unterminated prefix that
+    matches the LIVE value `admission_reason=paper_learning_must_continue`
+    (`paper_training_sampler.py`'s recovery-admission path, logged via
+    `[PAPER_ENTRY_ADMISSION_TRUTH]`), which fires when the sampler merely
+    *admits a candidate for consideration* -- before `open_paper_position()`
+    and its ~15 downstream block gates ever run. Treating that as "entries
+    flowing" would have re-introduced exactly the stall-masking failure
+    mode this detector exists to catch (see the 2026-08-17 66h
+    SKIP_SCORE_HARD stall, whose signature was "candidates evaluated, zero
+    entries"), and would fire preferentially during the exact
+    low-throughput regime this detector is meant to protect. Removed
+    entirely -- only the real `[PAPER_ENTRY]` marker counts.
     See _workspace/48_deploy_verification_two_new_findings.md Finding B.
     """
     has_ev_candidates = False
@@ -218,7 +231,7 @@ def detect_entry_stall(last_logs: List[str], current_time: float) -> Tuple[bool,
     for log_line in last_logs[-200:]:
         if "candidate_ev=" in log_line and ("positive_ev" in log_line or float(log_line.split("candidate_ev=")[1].split()[0]) > 0):
             has_ev_candidates = True
-        if "PAPER_ENTRY]" in log_line or "admission_reason=paper_learning" in log_line:
+        if "PAPER_ENTRY]" in log_line:
             has_entries = True
             _monitor_state["last_entry_rate"] = current_time
             _monitor_state["entry_stall_count"] = 0
