@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 143,
+  "cycle": 144,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 143,
+  "total_cycles_completed": 144,
   "current_wr": 22.0,
   "current_pnl": -5.0589,
-  "last_update": "2026-08-27T07:56:00Z",
-  "status": "stable_no_new_blocker",
+  "last_update": "2026-08-27T08:20:00Z",
+  "status": "entry_stall_fix_deploying",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -1785,6 +1785,17 @@
       "investigation": "Routine check. WR dipped to 22% (23/24/22 over cycles 141-143, not monotonic, spiral guard not triggered). No new blocker.",
       "action_taken": "None.",
       "next_cycle_plan": "Continue standard cadence."
+    },
+    {
+      "cycle": 144,
+      "timestamp": "2026-08-27T08:20:00Z",
+      "status": "IMPROVEMENT_CYCLE_ENTRY_STALL_FIX_APPROVED_DEPLOYING",
+      "metrics_snapshot": {
+        "note": "User asked 'if anything can be improved, do it' -- acted on the deferred Finding B from cycle 130 rather than a routine metrics poll this cycle."
+      },
+      "investigation": "Fixed emergency_health_monitor.py:detect_entry_stall()'s dead grep-style regex (Finding B, deferred since cycle 130). First attempt (b62271e) kept a believed-inert admission_reason=paper_learning alternative; reviewer-agent caught (BLOCKING) that it's a live unterminated-prefix match against admission_reason=paper_learning_must_continue (sampler's recovery-admission path, fires before open_paper_position()'s ~15 downstream block gates) -- would have re-introduced exactly the stall-masking bug this fix exists to close. Corrected (7f6e45d): dropped that branch entirely, only the real [PAPER_ENTRY] marker counts. Reviewer re-verified via mutation testing across 2 rounds and APPROVED. Bonus find: the original dead code also caused a second bug -- last_entry_rate could never be stamped, so a spurious ENTRY_STALL alert fired every cycle with EV candidates present; both fixed together.",
+      "action_taken": "Deployed via deploy-verify-agent (commit ff04d29). Also checked P0.8+ strategy sample growth (still n=3/15/3, no meaningful change, no action warranted) as part of the same 'improve anything' pass.",
+      "next_cycle_plan": "Confirm deploy result, resume normal cadence."
     }
   ],
   "experiment": {
