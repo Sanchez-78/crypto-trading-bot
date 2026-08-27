@@ -93,12 +93,31 @@ infrastructure health risk — worth its own dedicated investigation (raise
 the rate limit, reduce log verbosity at the source, or both) in a future
 cycle.
 
-## Recommended next steps (future cycles, not this one)
+## Finding B fixed (2026-08-27, user asked to improve anything found)
 
-1. Finding B: forensic pass on `detect_entry_stall()`'s actual current
-   behavior with the dead branch, then a minimal fix (most likely: split
-   into two separate `in` checks with `or`, matching the evident original
-   intent).
+`detect_entry_stall()`'s dead `\|` alternation fixed to real Python `or`
+logic. First attempt (commit b62271e) kept an
+`"admission_reason=paper_learning" in log_line` alternative, believed
+inert -- `reviewer-agent` caught (BLOCKING) that this is a live,
+unterminated-prefix match against `admission_reason=paper_learning_must_continue`
+(the sampler's recovery-admission path, `[PAPER_ENTRY_ADMISSION_TRUTH]`),
+which fires when a candidate is merely *admitted for consideration*,
+before `open_paper_position()`'s ~15 downstream block gates run --
+treating that as "entries flowing" would have re-introduced exactly the
+stall-masking failure this fix exists to close, and preferentially so
+during the exact low-throughput regime the detector protects (matches
+the 2026-08-17 66h SKIP_SCORE_HARD stall signature). Fixed (commit
+7f6e45d): dropped that branch entirely, only the real `[PAPER_ENTRY]`
+marker (bracket-terminated, verified via `paper_trade_executor.py:2298`
+to exclude the `_BLOCKED`/`_SKIP`/`_ATTEMPT` variants) counts. Bonus find
+from the same review: the dead branch also caused a **second**,
+previously-unnoticed bug -- `last_entry_rate` could never be stamped, so
+`time_since_entry` was always `current_time - 0` (≈ epoch seconds),
+firing a spurious `ENTRY_STALL` alert on every cycle with EV candidates
+present. Both bugs closed by the same fix. 11 tests pass (verified via
+mutation testing by the reviewer, not just run-and-pass).
+
+## Recommended next steps (future cycles, not this one)
 2. ~~Finding C: dedicated rsyslog/journald configuration investigation~~
    — **root-caused and fixed same cycle, see below.**
 3. Continue watching `[AUDIT_CLEANUP_COUNT_REFRESH] total=` over the next
