@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 158,
+  "cycle": 159,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 158,
+  "total_cycles_completed": 159,
   "current_wr": 30.0,
   "current_pnl": -3.1376,
-  "last_update": "2026-08-28T06:07:00Z",
-  "status": "quota_wait_continuing",
+  "last_update": "2026-08-28T06:45:00Z",
+  "status": "audit_throttle_fix_pending_review",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -2058,6 +2058,17 @@
       "investigation": "Still in the daily quota-exhaustion window, waiting for the 07:00 UTC reset. No new blocker. 0 open positions currently (normal fluctuation).",
       "action_taken": "None.",
       "next_cycle_plan": "Confirm reset, resume normal cadence."
+    },
+    {
+      "cycle": 159,
+      "timestamp": "2026-08-28T06:45:00Z",
+      "status": "IMPROVEMENT_CYCLE_AUDIT_WRITE_VOLUME_ROOT_CAUSED_FIX_PENDING_REVIEW",
+      "metrics_snapshot": {
+        "note": "User asked 'proc se tak moc zapisuje? potrebujeme 20000/24h' -- investigated and fixed the root cause rather than a routine metrics poll this cycle."
+      },
+      "investigation": "Live investigation of write-quota consumption: real trade-lifecycle writes (paper_open/close/learning_update) measured at only ~2,400/day (808 closed trades/24h from cache.sqlite x ~3 writes each). Live-sampled the 'audits' Redis channel via redis-cli psubscribe (60s window): ~2.18 messages/sec continuously, almost entirely reason=REJECTED_CORRELATION from execution_engine.py's correlation-shield rejection (fires on any candidate correlated with an already-open position -- common, not rare). audit_worker.py's per-reason throttle was only 1.0s, allowing up to 86,400 writes/day from this single reason alone -- more than the entire 20,000/day budget. Cross-checked against the audits Firestore collection's own growth (92,684 -> 105,933 docs over ~46h via direct .count() query) -- consistent with this being the dominant consumer.",
+      "action_taken": "Raised AUDIT_THROTTLE_PER_REASON_S from 1.0s to 20.0s (commit f89203a), capping this source at ~4,320 writes/day while still giving the Android app a representative audit sample rather than silencing it. 5 new tests, all pass, no regressions in the broader audit_worker sweep. Dispatched reviewer-agent and trading-safety-agent per harness discipline -- NOT yet deployed.",
+      "next_cycle_plan": "Wait for review verdicts, deploy if approved, then verify the audits collection growth rate actually drops over the following days."
     }
   ],
   "experiment": {
