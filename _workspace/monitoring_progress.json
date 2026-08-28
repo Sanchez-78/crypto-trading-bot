@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 157,
+  "cycle": 158,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 157,
+  "total_cycles_completed": 158,
   "current_wr": 30.0,
   "current_pnl": -3.1376,
-  "last_update": "2026-08-28T06:05:00Z",
-  "status": "quota_wait_daily_pattern_fixes_holding",
+  "last_update": "2026-08-28T06:07:00Z",
+  "status": "quota_wait_continuing",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -2040,6 +2040,23 @@
       },
       "investigation": "Long gap since last check (~16.5h). Recurring expected daily write-quota exhaustion, self-resolving at 07:00 UTC reset. Verified across the full 24h gap: 0 'must end on doc' errors (outbox path fix holding), 0 rsyslog permission errors (infra fix holding), service healthy with zero restarts throughout. WR back to normal range (30%) after the earlier temporary uptrend/reversion episode (cycles 147-156) fully played out as expected.",
       "action_taken": "None -- waiting for reset.",
+      "next_cycle_plan": "Confirm reset, resume normal cadence."
+    },
+    {
+      "cycle": 158,
+      "timestamp": "2026-08-28T06:07:00Z",
+      "status": "QUOTA_WAIT_CONTINUING",
+      "metrics_snapshot": {
+        "recent_100_wr_pct": 30.0,
+        "recent_100_pf_pct_basis": 0.689,
+        "recent_100_pf_usd_basis": 0.725,
+        "lifetime_n": 12200,
+        "lifetime_pf": 0.6647784338966741,
+        "firebase_quota": "275/50000 reads, 20010/20000 writes -- still exhausted",
+        "service": "active, 0 errors, degraded=false, 0 open positions"
+      },
+      "investigation": "Still in the daily quota-exhaustion window, waiting for the 07:00 UTC reset. No new blocker. 0 open positions currently (normal fluctuation).",
+      "action_taken": "None.",
       "next_cycle_plan": "Confirm reset, resume normal cadence."
     }
   ],
