@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 156,
+  "cycle": 157,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 156,
-  "current_wr": 35.0,
-  "current_pnl": -3.8119,
-  "last_update": "2026-08-27T13:39:00Z",
-  "status": "stable_no_new_blocker",
+  "total_cycles_completed": 157,
+  "current_wr": 30.0,
+  "current_pnl": -3.1376,
+  "last_update": "2026-08-28T06:05:00Z",
+  "status": "quota_wait_daily_pattern_fixes_holding",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -2021,6 +2021,26 @@
       "investigation": "Routine check, no new blocker. WR continues reverting (39 -> 35), back near the pre-uptrend baseline. Lifetime PF stable at 0.66.",
       "action_taken": "None.",
       "next_cycle_plan": "Continue standard cadence."
+    },
+    {
+      "cycle": 157,
+      "timestamp": "2026-08-28T06:05:00Z",
+      "status": "QUOTA_WAIT_DAILY_PATTERN_ALL_FIXES_STILL_HOLDING",
+      "metrics_snapshot": {
+        "recent_100_wr_pct": 30.0,
+        "recent_100_pf_pct_basis": 0.681,
+        "recent_100_pf_usd_basis": 0.714,
+        "recent_100_net_pnl_pct": -3.1376,
+        "recent_100_net_pnl_usd": -0.182799,
+        "lifetime_n": 12198,
+        "lifetime_pf": 0.6647784338966741,
+        "lifetime_expectancy": -0.028401810542712038,
+        "firebase_quota": "275/50000 reads, 20010/20000 writes -- daily exhaustion pattern, resets ~07:00 UTC",
+        "service": "active, NRestarts=0, 2 open positions"
+      },
+      "investigation": "Long gap since last check (~16.5h). Recurring expected daily write-quota exhaustion, self-resolving at 07:00 UTC reset. Verified across the full 24h gap: 0 'must end on doc' errors (outbox path fix holding), 0 rsyslog permission errors (infra fix holding), service healthy with zero restarts throughout. WR back to normal range (30%) after the earlier temporary uptrend/reversion episode (cycles 147-156) fully played out as expected.",
+      "action_taken": "None -- waiting for reset.",
+      "next_cycle_plan": "Confirm reset, resume normal cadence."
     }
   ],
   "experiment": {
