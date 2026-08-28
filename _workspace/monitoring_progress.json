@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 160,
+  "cycle": 161,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 160,
-  "current_wr": 30.0,
+  "total_cycles_completed": 161,
+  "current_wr": 27.0,
   "current_pnl": -3.1376,
-  "last_update": "2026-08-28T07:00:00Z",
-  "status": "audit_throttle_fix_deploying",
+  "last_update": "2026-08-28T06:39:00Z",
+  "status": "audit_throttle_deployed_resuming_normal_cadence",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -2080,6 +2080,20 @@
       "investigation": "Both review agents responded. trading-safety-agent: PASS (worker is a passive fire-and-forget downstream mirror, zero real-trading exposure, all 5 safety guards re-verified). reviewer-agent: APPROVED WITH CONDITIONS -- found the commit's 86,400/day ceiling figure was 4-12x higher than what the audits collection's own measured growth implied (the real quota cap was likely already limiting it), corrected the per-reason vs channel-wide figures, and surfaced a valuable new finding: audit_worker.py's writes never call _record_write()/_record_read(), so they're invisible to the app's own quota tracking -- meaning this fix's effect can't be confirmed via the app's own quota meter.",
       "action_taken": "Corrected the documentation per both conditions (commit ad715ee, doc-only, no code-behavior change), filed the quota-instrumentation gap as a new deferred finding (_workspace/49_...md). Dispatched deploy-verify-agent.",
       "next_cycle_plan": "Confirm deploy result, resume normal cadence, watch the audits collection growth rate over the following days to verify the fix's real-world effect (since the app's own quota meter can't show it)."
+    },
+    {
+      "cycle": 161,
+      "timestamp": "2026-08-28T06:39:00Z",
+      "status": "AUDIT_THROTTLE_DEPLOYED_INDEPENDENTLY_VERIFIED",
+      "metrics_snapshot": {
+        "deployed_sha": "ad715ee",
+        "service": "active, NRestarts=0, restarted 06:38:43 UTC",
+        "recent_100_wr_pct": 27.0,
+        "firebase_quota": "100/50000 reads, 0/20000 writes -- healthy, fresh post-restart counters"
+      },
+      "investigation": "Independently verified the audit-throttle deploy via direct SSH while waiting for deploy-audit-throttle's formal report: service running commit ad715ee (target), clean single restart, no errors. WR 27%, normal noise.",
+      "action_taken": "Deploy accepted as healthy based on independent verification.",
+      "next_cycle_plan": "Resume normal cadence. Watch the audits Firestore collection growth rate over the following days (separate from routine 30-min checks) to confirm the throttle fix's real-world effect."
     }
   ],
   "experiment": {
