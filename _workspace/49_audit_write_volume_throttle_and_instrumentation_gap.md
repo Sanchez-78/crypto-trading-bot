@@ -92,6 +92,25 @@ non-trivial patch in its own right, not a natural extension of a
 one-line throttle-constant fix. Flagged here as the clear next priority
 if write-quota questions recur.
 
+## Correction (deploy-verify-agent, post-deploy): the "REJECTED_CORRELATION is dominant" attribution may not hold generally
+
+My original 60s sample (pre-deploy) showed the "audits" channel almost
+entirely `REJECTED_CORRELATION`. `deploy-verify-agent`'s independent 30s
+sample taken shortly after deploy showed the **opposite** composition:
+63 `REJECTED_L2_WALL`, 0 `REJECTED_CORRELATION`, at a similar overall
+rate (~3.4 msg/s). **This does not affect the fix's correctness or its
+budget math** — both reasons are throttled identically and independently
+(confirmed exactly 2 publishers exist:
+`execution_engine.py:244`/`REJECTED_CORRELATION`,
+`signal_engine.py:213`/`REJECTED_L2_WALL`), so the ~8,640/day
+channel-wide ceiling holds regardless of which reason dominates at any
+given moment. But **don't treat "REJECTED_CORRELATION is the dominant
+reason" as a settled fact** in a future investigation — which reason
+dominates plausibly depends on which positions happen to be open at
+sample time (correlation rejections need an open, correlated position to
+reject against; L2-wall rejections don't), i.e. it's window-dependent,
+not a fixed property of the system.
+
 ## Verification plan (not yet done — needs time to pass)
 
 Watch the `audits` collection's growth rate (direct `.count()` query,
