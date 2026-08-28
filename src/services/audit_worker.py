@@ -5,8 +5,10 @@ Subscribes to Redis channel "audits", receives rejection/alert events,
 and persists them to Firestore collection "audits" for real-time 
 visibility in the React Native app.
 
-Throttling: 
-  - Max 1 write per second per reason to avoid db hammering.
+Throttling:
+  - Max 1 write per AUDIT_THROTTLE_PER_REASON_S seconds per reason, to
+    avoid db hammering (raised from 1.0s to 20.0s on 2026-08-28 -- see the
+    comment above AUDIT_THROTTLE_PER_REASON_S).
   - Buffers events for up to 3 seconds, then batch-commits.
   - Keeps only the last 50 audits total (circular buffer logic).
 """
@@ -24,6 +26,22 @@ REDIS_URL: str      = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 AUDIT_CHANNEL: str  = "audits"
 MAX_AUDITS: int    = 50
 BATCH_INTERVAL: float = 3.0   # seconds between batch flushes
+# 2026-08-28 (user question "proc se tak moc zapisuje?"): live-measured the
+# actual write-quota consumers. Real trade lifecycle (open/close/learning
+# update) accounts for only ~2,400 writes/day (808 closed trades/24h x ~3).
+# The dominant consumer is THIS worker: live-sampled the "audits" Redis
+# channel at ~2 messages/sec, continuously, almost entirely
+# reason="REJECTED_CORRELATION" (execution_engine.py's correlation-shield
+# rejection -- fires on essentially every candidate correlated with an
+# already-open position, which is common and unremarkable, not a rare
+# edge case worth near-real-time Android visibility). The old 1.0s
+# per-reason throttle still allows up to 86,400 writes/day from this single
+# reason alone -- more than the entire 20,000/day budget. Raised to 20s:
+# still gives the Android app a representative sample (an audit roughly
+# every 20s whenever this reason is firing continuously) while capping
+# this source at ~4,320 writes/day, leaving comfortable headroom alongside
+# the trade-lifecycle and periodic state-snapshot writes.
+AUDIT_THROTTLE_PER_REASON_S: float = 20.0
 # 2026-08-14 (_workspace/26_quota_burn_found_audit_worker_offset.md): the
 # cleanup query below (.offset(MAX_AUDITS)) was running on every single
 # batch flush -- as often as every BATCH_INTERVAL (3s) whenever the buffer
@@ -161,11 +179,13 @@ class AuditWorker:
             self._redis = None
 
     def _buffer_audit(self, data: dict) -> None:
-        """Throttled buffering — skip if same reason was seen < 1s ago."""
+        """Throttled buffering — skip if same reason was seen less than
+        AUDIT_THROTTLE_PER_REASON_S ago (see the 2026-08-28 comment above
+        AUDIT_THROTTLE_PER_REASON_S for why this was raised from 1.0s)."""
         reason = data.get("reason", "unknown")
         now = time.time()
-        
-        if now - self._last_write_ts.get(reason, 0) < 1.0:
+
+        if now - self._last_write_ts.get(reason, 0) < AUDIT_THROTTLE_PER_REASON_S:
             return
             
         self._last_write_ts[reason] = now
