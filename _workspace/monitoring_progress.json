@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 155,
+  "cycle": 156,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 155,
-  "current_wr": 39.0,
-  "current_pnl": -2.5881,
-  "last_update": "2026-08-27T13:08:00Z",
-  "status": "stable_wr_reverted_to_baseline",
+  "total_cycles_completed": 156,
+  "current_wr": 35.0,
+  "current_pnl": -3.8119,
+  "last_update": "2026-08-27T13:39:00Z",
+  "status": "stable_no_new_blocker",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -1999,6 +1999,26 @@
         "service": "active, 0 errors, degraded=false, 3 open positions, closed_today=100"
       },
       "investigation": "Routine check, no new blocker. WR reverted from the 43% peak back to 39% -- confirms the earlier caution not to attribute the uptrend cycles 147-153 to anything structural was correct; it was a temporary favorable window, now reverting toward the historical baseline. Lifetime PF unchanged throughout the whole episode (0.66).",
+      "action_taken": "None.",
+      "next_cycle_plan": "Continue standard cadence."
+    },
+    {
+      "cycle": 156,
+      "timestamp": "2026-08-27T13:39:00Z",
+      "status": "CAUTION_STABLE_NO_NEW_BLOCKER",
+      "metrics_snapshot": {
+        "recent_100_wr_pct": 35.0,
+        "recent_100_pf_pct_basis": 0.632,
+        "recent_100_pf_usd_basis": 0.348,
+        "recent_100_net_pnl_pct": -3.8119,
+        "recent_100_net_pnl_usd": -0.559008,
+        "lifetime_n": 11690,
+        "lifetime_pf": 0.6615901968061574,
+        "lifetime_expectancy": -0.028345353721129347,
+        "firebase_quota": "83/50000 reads, 435/20000 writes -- healthy",
+        "service": "active, 0 errors, degraded=false, 2 open positions, closed_today=100"
+      },
+      "investigation": "Routine check, no new blocker. WR continues reverting (39 -> 35), back near the pre-uptrend baseline. Lifetime PF stable at 0.66.",
       "action_taken": "None.",
       "next_cycle_plan": "Continue standard cadence."
     }
