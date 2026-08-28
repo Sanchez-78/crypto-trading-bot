@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 161,
+  "cycle": 162,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 161,
-  "current_wr": 27.0,
+  "total_cycles_completed": 162,
+  "current_wr": 30.0,
   "current_pnl": -3.1376,
-  "last_update": "2026-08-28T06:39:00Z",
-  "status": "audit_throttle_deployed_resuming_normal_cadence",
+  "last_update": "2026-08-28T07:10:00Z",
+  "status": "stable_audit_fix_early_positive_signal",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -2094,6 +2094,23 @@
       "investigation": "Independently verified the audit-throttle deploy via direct SSH while waiting for deploy-audit-throttle's formal report: service running commit ad715ee (target), clean single restart, no errors. WR 27%, normal noise.",
       "action_taken": "Deploy accepted as healthy based on independent verification.",
       "next_cycle_plan": "Resume normal cadence. Watch the audits Firestore collection growth rate over the following days (separate from routine 30-min checks) to confirm the throttle fix's real-world effect."
+    },
+    {
+      "cycle": 162,
+      "timestamp": "2026-08-28T07:10:00Z",
+      "status": "CAUTION_STABLE_QUOTA_RESET_AUDIT_FIX_EARLY_POSITIVE_SIGNAL",
+      "metrics_snapshot": {
+        "recent_100_wr_pct": 30.0,
+        "recent_100_pf_pct_basis": 0.744,
+        "recent_100_pf_usd_basis": 0.793,
+        "lifetime_n": 12223,
+        "lifetime_pf": 0.6648218670588079,
+        "firebase_quota": "2/50000 reads, 13/20000 writes -- reset confirmed clean",
+        "service": "active, 0 errors, degraded=false, 3 open positions, closed_today=100"
+      },
+      "investigation": "Quota reset confirmed. Per deploy-verify-agent's recommendation, re-queried the real Firestore audits collection doc count directly (since this worker's writes bypass the app's own quota meter, per the known instrumentation gap): 105,834 now vs 105,933 pre-fix (measured ~06:05-06:20 UTC, before the 06:38 deploy) -- a net DECREASE of ~99 docs over ~50-70 minutes, vs the prior trend of steady growth (+264/hour average over the preceding 46h). This is the first real evidence the throttle fix is having its intended effect -- write rate now appears to be below the cleanup drain rate. One data point only, could still be short-window noise (audit event flow may be bursty) -- not declaring victory yet, but directionally very promising.",
+      "action_taken": "None needed -- positive early signal noted, will keep checking the doc count periodically over coming days as planned.",
+      "next_cycle_plan": "Continue standard cadence; periodically re-check the audits doc count (not the app's quota meter) to build confidence the throttle fix's effect is real and sustained, not a one-off dip."
     }
   ],
   "experiment": {
