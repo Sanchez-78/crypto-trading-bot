@@ -30,14 +30,17 @@ BATCH_INTERVAL: float = 3.0   # seconds between batch flushes
 # actual write-quota consumers. Real trade lifecycle (open/close/learning
 # update) accounts for only ~2,400 writes/day (808 closed trades/24h x ~3).
 # The dominant consumer is THIS worker: live-sampled the "audits" Redis
-# channel at ~2 messages/sec, continuously, almost entirely
-# reason="REJECTED_CORRELATION" (execution_engine.py's correlation-shield
-# rejection -- fires on essentially every candidate correlated with an
-# already-open position, which is common and unremarkable, not a rare
-# edge case worth near-real-time Android visibility). Only ONE other
-# reason is ever published to this channel: "REJECTED_L2_WALL"
-# (signal_engine.py) -- each reason gets its own independent throttle
-# budget, so the channel-wide ceiling is ~2x a single reason's figure.
+# channel at ~2-3.4 messages/sec, continuously. Exactly two reasons are
+# ever published to it: "REJECTED_CORRELATION" (execution_engine.py's
+# correlation-shield rejection) and "REJECTED_L2_WALL" (signal_engine.py)
+# -- both common, unremarkable rejections, not rare edge cases worth
+# near-real-time Android visibility. WHICH of the two dominates varies by
+# sample window (correlation rejections need an open, correlated position
+# to reject against; L2-wall rejections don't) -- two independent live
+# samples taken hours apart showed opposite compositions, so don't treat
+# either one as "the" dominant reason. Each reason gets its own
+# independent throttle budget regardless, so the channel-wide ceiling is
+# ~2x a single reason's figure either way.
 #
 # CEILING vs OBSERVED (per reviewer-agent, 2026-08-28): the old 1.0s
 # per-reason throttle's theoretical ceiling was up to 86,400 writes/day
