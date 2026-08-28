@@ -34,13 +34,38 @@ BATCH_INTERVAL: float = 3.0   # seconds between batch flushes
 # reason="REJECTED_CORRELATION" (execution_engine.py's correlation-shield
 # rejection -- fires on essentially every candidate correlated with an
 # already-open position, which is common and unremarkable, not a rare
-# edge case worth near-real-time Android visibility). The old 1.0s
-# per-reason throttle still allows up to 86,400 writes/day from this single
-# reason alone -- more than the entire 20,000/day budget. Raised to 20s:
-# still gives the Android app a representative sample (an audit roughly
-# every 20s whenever this reason is firing continuously) while capping
-# this source at ~4,320 writes/day, leaving comfortable headroom alongside
-# the trade-lifecycle and periodic state-snapshot writes.
+# edge case worth near-real-time Android visibility). Only ONE other
+# reason is ever published to this channel: "REJECTED_L2_WALL"
+# (signal_engine.py) -- each reason gets its own independent throttle
+# budget, so the channel-wide ceiling is ~2x a single reason's figure.
+#
+# CEILING vs OBSERVED (per reviewer-agent, 2026-08-28): the old 1.0s
+# per-reason throttle's theoretical ceiling was up to 86,400 writes/day
+# from REJECTED_CORRELATION alone -- but the audits collection's own
+# measured growth (92,684 -> 105,933 docs over ~46h via direct .count())
+# implies actual net inserts of only ~6,900-24,200/day, i.e. the
+# 20,000/day write quota itself was very likely already the real
+# bottleneck capping it, not this throttle. The 86,400 figure is an
+# honest ceiling, not the observed rate -- don't treat it as "the actual
+# daily write count" in a future investigation.
+#
+# Raised to 20s: still gives the Android app a representative sample (an
+# audit roughly every 20s whenever a reason is firing continuously) while
+# capping a SINGLE reason at ~4,320 writes/day (~8,640/day channel-wide
+# across both known reasons) -- comfortably under budget alongside the
+# trade-lifecycle and periodic state-snapshot writes, with real margin
+# even against the less dramatic actual-observed rate above.
+#
+# KNOWN GAP (not fixed here, flagged as the natural next patch): this
+# worker's Firestore writes (_sync_batch_write's batch.commit(), and the
+# cleanup pass's count()/delete queries below) never call
+# _record_write()/_record_read() -- contrast firebase_client.py's own
+# save functions, which do. This worker's writes are therefore INVISIBLE
+# to the app's own quota-usage tracking/reporting, meaning nobody can
+# confirm THIS fix's effect by watching the app's own quota meter --
+# only by re-querying the real Firestore Console or re-running the same
+# live investigation this fix was based on. Worth instrumenting in a
+# future patch.
 AUDIT_THROTTLE_PER_REASON_S: float = 20.0
 # 2026-08-14 (_workspace/26_quota_burn_found_audit_worker_offset.md): the
 # cleanup query below (.offset(MAX_AUDITS)) was running on every single
