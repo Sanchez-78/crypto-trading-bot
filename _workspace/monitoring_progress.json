@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 172,
+  "cycle": 173,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 172,
+  "total_cycles_completed": 173,
   "current_wr": 30.0,
   "current_pnl": -3.1376,
-  "last_update": "2026-08-28T12:22:00Z",
-  "status": "stable_no_new_blocker",
+  "last_update": "2026-08-31T06:07:00Z",
+  "status": "stable_multi_day_health_confirmed_audit_backlog_draining_fast",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -2281,6 +2281,23 @@
       "investigation": "Routine check, no new blocker. WR 30%, normal noise.",
       "action_taken": "None.",
       "next_cycle_plan": "Continue standard cadence."
+    },
+    {
+      "cycle": 173,
+      "timestamp": "2026-08-31T06:07:00Z",
+      "status": "CAUTION_STABLE_MULTI_DAY_HEALTH_CONFIRMED_AUDIT_BACKLOG_DRAINING_FAST",
+      "metrics_snapshot": {
+        "recent_100_wr_pct": 30.0,
+        "recent_100_pf_pct_basis": 0.579,
+        "recent_100_pf_usd_basis": 0.681,
+        "lifetime_n": 14050,
+        "lifetime_pf": 0.6691614111260044,
+        "firebase_quota": "276/50000 reads, 1909/20000 writes -- healthy, notably lower than typical for this time of day pre-fix",
+        "service": "active, NRestarts=0 for ~2.75 days straight since the audit-throttle deploy (2026-08-28 06:38:43)"
+      },
+      "investigation": "Large gap since last check (~2.75 days). Verified across the full gap: service ran continuously with zero restarts, zero regressions on the outbox-path fix (0 'must end on doc' errors in 3 days) and the rsyslog fix (0 permission errors in 3 days). Best news: the audits Firestore collection dropped from 105,933 (measured just before the throttle fix, 2026-08-28 morning) to 67,057 now -- a decrease of ~38,876 docs (~37%) over ~3 days, far faster than the ~12-day estimate from review. The throttle fix (capping new writes) combined with the existing cleanup-drain mechanism (from cycle 125) are working well together. WR 30%, normal noise, lifetime PF essentially unchanged (0.669).",
+      "action_taken": "None needed -- purely positive confirmation across multiple fronts.",
+      "next_cycle_plan": "Continue standard cadence. Audit backlog recovery looking healthy, worth one more check in a few days to confirm it reaches/stays near the 50-doc target rather than plateauing."
     }
   ],
   "experiment": {
