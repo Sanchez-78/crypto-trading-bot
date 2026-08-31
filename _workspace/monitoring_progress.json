@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 177,
+  "cycle": 178,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 177,
+  "total_cycles_completed": 178,
   "current_wr": 31.0,
   "current_pnl": -3.1376,
-  "last_update": "2026-08-31T07:31:00Z",
-  "status": "stable_waiting_on_review",
+  "last_update": "2026-08-31T07:58:00Z",
+  "status": "review_conditions_addressed_awaiting_final_verdict",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -2360,6 +2360,17 @@
       "investigation": "Routine check, no new blocker. WR 31%, normal noise. Still waiting on reviewer-agent's verdict for the quota-instrumentation commit, several nudges sent without a substantive response yet.",
       "action_taken": "Sent another explicit request for the review agent to complete and send its verdict.",
       "next_cycle_plan": "If still no verdict next cycle, consider re-dispatching a fresh review agent instance."
+    },
+    {
+      "cycle": 178,
+      "timestamp": "2026-08-31T07:58:00Z",
+      "status": "REVIEW_CONDITIONS_ADDRESSED_AWAITING_FINAL_VERDICT",
+      "metrics_snapshot": {
+        "note": "Review-condition-fix cycle, not a routine metrics poll."
+      },
+      "investigation": "reviewer-agent's verdict arrived: APPROVED WITH CONDITIONS, one blocking. Condition 1 (blocking, real risk not just documentation): the new _record_write()/_record_read() calls feed the exact counters _can_read()/_can_write() gate on -- audit_worker never calls those gates itself, so newly-counted (previously invisible) traffic can trip the app's own soft/hard quota gates earlier in wall-clock terms than before, even though real Firestore usage hasn't changed. Conditions 2/3 (test-only): reviewer's own mutation checks found 2 mutations in audit_worker (flat-1 instead of ceiling approximation; write recorded even if commit() fails) and 1 in emergency_health_monitor (gutting the new try/except branch) all survived the original test suites undetected, because no test exercised the relevant code paths (all used total_docs<1000, none made commit() fail, none used a candidate_ev= line without the literal 'positive_ev' substring).",
+      "action_taken": "Addressed all 3: added an explicit comment documenting the quota-gating risk and mitigations at the _record_write() call site (commit 8befc4b), switched count() approximation from floor to ceiling (Firestore rounds up), added 2 new audit_worker tests targeting the exact mutations reviewer found, added 2 new emergency_health_monitor tests covering the previously-uncovered else branch. 37 tests pass, no regressions.",
+      "next_cycle_plan": "Wait for reviewer-agent's final verdict. Given condition 1's real operational risk, plan to watch [QUOTA_SOFT_GATE]/[QUOTA_ATTRIBUTION] closely for 24-48h after deploy rather than treating it as routine."
     }
   ],
   "experiment": {
