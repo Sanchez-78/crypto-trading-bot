@@ -59,16 +59,22 @@ BATCH_INTERVAL: float = 3.0   # seconds between batch flushes
 # trade-lifecycle and periodic state-snapshot writes, with real margin
 # even against the less dramatic actual-observed rate above.
 #
-# KNOWN GAP (not fixed here, flagged as the natural next patch): this
-# worker's Firestore writes (_sync_batch_write's batch.commit(), and the
-# cleanup pass's count()/delete queries below) never call
+# FIXED 2026-08-31 (was: "KNOWN GAP, flagged as the natural next patch"):
+# this worker's Firestore writes (_sync_batch_write's batch.commit()) and
+# reads (the cleanup pass's count()/delete queries) never called
 # _record_write()/_record_read() -- contrast firebase_client.py's own
-# save functions, which do. This worker's writes are therefore INVISIBLE
-# to the app's own quota-usage tracking/reporting, meaning nobody can
-# confirm THIS fix's effect by watching the app's own quota meter --
-# only by re-querying the real Firestore Console or re-running the same
-# live investigation this fix was based on. Worth instrumenting in a
-# future patch.
+# save functions, which do. This worker's activity was therefore
+# INVISIBLE to the app's own quota-usage tracking/reporting -- the
+# throttle fix above had to be verified by re-querying the real Firestore
+# collection directly (this file's earlier live investigation), not via
+# the app's own quota meter. Now instrumented: _sync_batch_write() calls
+# _record_write(len(items)) after each batch commit, and the cleanup pass
+# calls _record_read() for both the count() refresh (approximated at
+# ~1 read per 1,000 index entries, matching Firestore's actual billing
+# model rather than a misleadingly-cheap flat 1) and the drain query
+# (actual documents returned). Deletes are still not recorded -- the
+# app's own quota dashboard only ever displayed reads/writes, never a
+# deletes figure, so there's no existing counter to feed.
 AUDIT_THROTTLE_PER_REASON_S: float = 20.0
 # 2026-08-14 (_workspace/26_quota_burn_found_audit_worker_offset.md): the
 # cleanup query below (.offset(MAX_AUDITS)) was running on every single
@@ -249,11 +255,25 @@ class AuditWorker:
     def _sync_batch_write(self, db: Any, items: list[dict]) -> None:
         """Sync Firestore batch write — runs in executor thread."""
         try:
+            from src.services.firebase_client import _record_write, _record_read
+        except Exception:
+            # Instrumentation must never block the actual writes below.
+            _record_write = _record_read = lambda *a, **kw: None
+
+        try:
             batch = db.batch()
             for data in items:
                 ref = db.collection("audits").document()
                 batch.set(ref, data)
             batch.commit()
+            # 2026-08-31 (reviewer-agent's follow-up from the throttle fix,
+            # _workspace/49_...md "known gap"): this worker's writes/reads
+            # previously never called _record_write()/_record_read(), so
+            # they were invisible to the app's own quota-usage dashboard --
+            # nobody could confirm the throttle fix's effect via the app's
+            # own quota meter, only by re-querying Firestore directly (as
+            # this whole investigation had to). Now instrumented.
+            _record_write(len(items))
 
             log.debug("Audit batch committed: %d events", len(items))
 
@@ -283,6 +303,14 @@ class AuditWorker:
                         count_result = db.collection("audits").count().get()
                         self._cached_audit_count = count_result[0][0].value
                         self._last_count_refresh_ts = now
+                        # Firestore bills count() at ~1 read per 1,000 index
+                        # entries matched (see the v1/v2 comment above), not
+                        # a flat 1 -- approximate that here so the recorded
+                        # figure isn't misleadingly cheap.
+                        _record_read(
+                            max(1, self._cached_audit_count // 1000),
+                            label="audit_cleanup_count",
+                        )
                         log.info(
                             "[AUDIT_CLEANUP_COUNT_REFRESH] total=%d",
                             self._cached_audit_count,
@@ -294,6 +322,7 @@ class AuditWorker:
                         snap = db.collection("audits").order_by(
                             "timestamp", direction="ASCENDING"
                         ).limit(drain_limit).get()
+                        _record_read(max(1, len(snap)), label="audit_cleanup_drain")
                         if snap:
                             del_batch = db.batch()
                             deleted = 0

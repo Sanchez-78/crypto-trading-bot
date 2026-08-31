@@ -225,14 +225,28 @@ def detect_entry_stall(last_logs: List[str], current_time: float) -> Tuple[bool,
     entirely -- only the real `[PAPER_ENTRY]` marker counts.
     See _workspace/48_deploy_verification_two_new_findings.md Finding B.
     """
+    # 2026-08-31: removed a dead `has_entries` local (set on the same
+    # branch that immediately returns, so it was never actually read --
+    # flagged non-blocking by reviewer-agent during the v2 review above).
     has_ev_candidates = False
-    has_entries = False
 
     for log_line in last_logs[-200:]:
-        if "candidate_ev=" in log_line and ("positive_ev" in log_line or float(log_line.split("candidate_ev=")[1].split()[0]) > 0):
-            has_ev_candidates = True
+        if "candidate_ev=" in log_line:
+            if "positive_ev" in log_line:
+                has_ev_candidates = True
+            else:
+                # 2026-08-31: this float() parse was uncaught -- a
+                # malformed candidate_ev= value would raise out of
+                # detect_entry_stall() and abort run_health_check() before
+                # its later crash-detection step (flagged non-blocking by
+                # deploy-verify-agent). A parse failure now just means
+                # "can't tell from this line," not a health-check crash.
+                try:
+                    if float(log_line.split("candidate_ev=")[1].split()[0]) > 0:
+                        has_ev_candidates = True
+                except (IndexError, ValueError):
+                    pass
         if "PAPER_ENTRY]" in log_line:
-            has_entries = True
             _monitor_state["last_entry_rate"] = current_time
             _monitor_state["entry_stall_count"] = 0
             return False, "Entries flowing"
