@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 178,
+  "cycle": 179,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 178,
+  "total_cycles_completed": 179,
   "current_wr": 31.0,
   "current_pnl": -3.1376,
-  "last_update": "2026-08-31T07:58:00Z",
-  "status": "review_conditions_addressed_awaiting_final_verdict",
+  "last_update": "2026-08-31T08:02:00Z",
+  "status": "quota_instrumentation_deploying",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -2371,6 +2371,17 @@
       "investigation": "reviewer-agent's verdict arrived: APPROVED WITH CONDITIONS, one blocking. Condition 1 (blocking, real risk not just documentation): the new _record_write()/_record_read() calls feed the exact counters _can_read()/_can_write() gate on -- audit_worker never calls those gates itself, so newly-counted (previously invisible) traffic can trip the app's own soft/hard quota gates earlier in wall-clock terms than before, even though real Firestore usage hasn't changed. Conditions 2/3 (test-only): reviewer's own mutation checks found 2 mutations in audit_worker (flat-1 instead of ceiling approximation; write recorded even if commit() fails) and 1 in emergency_health_monitor (gutting the new try/except branch) all survived the original test suites undetected, because no test exercised the relevant code paths (all used total_docs<1000, none made commit() fail, none used a candidate_ev= line without the literal 'positive_ev' substring).",
       "action_taken": "Addressed all 3: added an explicit comment documenting the quota-gating risk and mitigations at the _record_write() call site (commit 8befc4b), switched count() approximation from floor to ceiling (Firestore rounds up), added 2 new audit_worker tests targeting the exact mutations reviewer found, added 2 new emergency_health_monitor tests covering the previously-uncovered else branch. 37 tests pass, no regressions.",
       "next_cycle_plan": "Wait for reviewer-agent's final verdict. Given condition 1's real operational risk, plan to watch [QUOTA_SOFT_GATE]/[QUOTA_ATTRIBUTION] closely for 24-48h after deploy rather than treating it as routine."
+    },
+    {
+      "cycle": 179,
+      "timestamp": "2026-08-31T08:02:00Z",
+      "status": "QUOTA_INSTRUMENTATION_FIX_APPROVED_DEPLOYING",
+      "metrics_snapshot": {
+        "note": "Deploy-dispatch entry."
+      },
+      "investigation": "reviewer-agent's final verdict: APPROVED, all 3 conditions closed and independently re-verified via fresh mutation tests (each of the 4 new tests confirmed to fail against the exact defect it targets). No new findings.",
+      "action_taken": "Dispatched deploy-verify-agent for commit 2120bee, with explicit instructions to keep the deploy scoped (working tree has unrelated concurrent-session dirty files) and to specifically report quota-gate behavior post-deploy given the real operational risk reviewer-agent's condition 1 identified.",
+      "next_cycle_plan": "Confirm deploy result and watch [QUOTA_SOFT_GATE]/quota percentage closely for the next 24-48h, not just routine health."
     }
   ],
   "experiment": {
