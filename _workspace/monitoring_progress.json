@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 173,
+  "cycle": 174,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 173,
+  "total_cycles_completed": 174,
   "current_wr": 30.0,
   "current_pnl": -3.1376,
-  "last_update": "2026-08-31T06:07:00Z",
-  "status": "stable_multi_day_health_confirmed_audit_backlog_draining_fast",
+  "last_update": "2026-08-31T06:20:00Z",
+  "status": "quota_instrumentation_and_cleanup_pending_review",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -2298,6 +2298,17 @@
       "investigation": "Large gap since last check (~2.75 days). Verified across the full gap: service ran continuously with zero restarts, zero regressions on the outbox-path fix (0 'must end on doc' errors in 3 days) and the rsyslog fix (0 permission errors in 3 days). Best news: the audits Firestore collection dropped from 105,933 (measured just before the throttle fix, 2026-08-28 morning) to 67,057 now -- a decrease of ~38,876 docs (~37%) over ~3 days, far faster than the ~12-day estimate from review. The throttle fix (capping new writes) combined with the existing cleanup-drain mechanism (from cycle 125) are working well together. WR 30%, normal noise, lifetime PF essentially unchanged (0.669).",
       "action_taken": "None needed -- purely positive confirmation across multiple fronts.",
       "next_cycle_plan": "Continue standard cadence. Audit backlog recovery looking healthy, worth one more check in a few days to confirm it reaches/stays near the 50-doc target rather than plateauing."
+    },
+    {
+      "cycle": 174,
+      "timestamp": "2026-08-31T06:20:00Z",
+      "status": "IMPROVEMENT_CYCLE_QUOTA_INSTRUMENTATION_AND_DEAD_CODE_CLEANUP_PENDING_REVIEW",
+      "metrics_snapshot": {
+        "note": "User asked 'jde neco zlepsit? odstranit nepotrebne casti kodu? WR>50?' -- acted on two already-identified, deferred cleanup items rather than a routine metrics poll this cycle."
+      },
+      "investigation": "Two concrete, already-diagnosed items were still open from prior cycles: (1) audit_worker.py's Firestore writes/reads bypassed the app's own quota-usage dashboard entirely (flagged by reviewer-agent during the cycle-159/160 throttle-fix review, _workspace/49_...md 'known gap') -- meant nobody could confirm that fix's effect via the app's own quota meter. (2) emergency_health_monitor.py had a dead `has_entries` local variable and an uncaught float() parse (both flagged non-blocking during the cycle-144/145 entry-stall-fix review).",
+      "action_taken": "Fixed both: audit_worker.py now calls _record_write()/_record_read() after its Firestore operations, approximating count()'s real ~1-per-1000-index-entries billing rather than a flat 1 (6 new tests). emergency_health_monitor.py: removed the dead local, wrapped the float() parse in try/except so a malformed log line can't abort the health check (no test changes needed, behavior unchanged for well-formed input). 39 tests pass total, no regressions. Dispatched reviewer-agent and trading-safety-agent. On the 'WR>50' question: re-stated the already-established conclusion from cycles 111/113 -- the blocker is signal-generation lacking directional edge, not something a code-cleanup pass can fix; no new evidence changes this.",
+      "next_cycle_plan": "Wait for review verdicts, deploy if approved."
     }
   ],
   "experiment": {
