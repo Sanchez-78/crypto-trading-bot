@@ -1,6 +1,6 @@
 # 50 — Cycle 187-188: confirmed ~90+ min trading stall, root-caused to a missing weak_ev exemption for C_NEG_EV_PROBE
 
-## Status: ROOT-CAUSED AND FIXED (local), NOT YET REVIEWED/DEPLOYED
+## Status: DEPLOYED (901fc39 + f4dd5ee, 2026-08-31 12:25 UTC) — incident resolved, but the fix's own path is UNPROVEN, not "validated." Do not close this as a clean win. See "Deploy verification" section below.
 
 ## Trigger
 
@@ -117,3 +117,77 @@ zero-close stalls should stop recurring during genuine dry spells (though
 the bot's real edge-generation limitation from cycles 111/113 remains
 unfixed — this only restores the intended *safety-valve*, it does not
 create new profitable signal).
+
+## Review (reviewer-agent: APPROVED WITH CONDITIONS)
+
+Source change (901fc39) judged safe/low-risk to deploy as-is (one-line
+allowlist addition, paper-only path). Two conditions, both addressed same
+day: (1) `test_open_paper_position_c_neg_ev_probe_bypasses_weak_ev` was
+vacuous — passed even without the fix present, because it never restored
+`_MIN_EV_THRESHOLD` from the test file's autouse `-inf` fixture the way
+its two sibling exemption tests do; fixed in f4dd5ee, verified directly
+(fails against 901fc39^, passes against 901fc39). (2) 901fc39's commit
+message claimed a pre-existing unrelated test failure
+(`test_strict_take_disabled_for_training`) was "confirmed via git stash"
+— invalid method (stash doesn't touch untracked files); real cause is an
+untracked `.env` with `PAPER_TRAIN_STRICT_TAKE_ENABLED=true`. Conclusion
+(pre-existing/unrelated) still holds, only the stated method was wrong;
+corrected via this note rather than rewriting the pushed commit.
+
+Reviewer also flagged, as a non-blocking risk: bypassing the weak_ev
+floor does not guarantee `C_NEG_EV_PROBE` entries succeed — a later
+gate (`paper_trade_executor.py` ~1751-1818, legacy P0.3B/P0.3C reroute,
+and `_should_skip_segment_by_profitability()` ~1821) is not exempted for
+this bucket either. This turned out to be the right thing to worry
+about — see below.
+
+## Deploy verification (deploy-verify-agent, 2026-08-31 12:25 UTC): PASS, but attribution is NOT clean
+
+Deployed clean (`d8befbb` = `901fc39`+`f4dd5ee`, PLAN+DEPLOY gates all
+OK, fix confirmed live in code at `paper_trade_executor.py:1691`,
+dashboard restart OK). The incident itself resolved:
+`closed_trades` 12969→12977 (+8) in 14 min post-deploy, open positions
+0→4 and cycling, zero real ERROR/CRITICAL, zero `weak_ev`+
+`bucket=C_NEG_EV_PROBE` blocks post-deploy.
+
+**But the resolution cannot be credited to this fix.** Independently
+verified: trading resumed via `bucket=A_STRICT_TAKE`, a bucket this
+patch never touches — and `C_NEG_EV_PROBE` has **never once** opened a
+position: 0 `[PAPER_NEG_EV_PROBE_ACCEPTED]` lines post-deploy, 0 in 7
+days of journal history, 0 of 12,977 closed trades ever tagged
+`bucket=C_NEG_EV_PROBE`. Per `paper_training_sampler.py:951`,
+`C_NEG_EV_PROBE` requires `_is_cold_start_starvation()`; once
+`A_STRICT_TAKE` started flowing again (for reasons unrelated to this
+fix), that precondition stopped holding, so the bucket now emits zero
+candidates — it isn't being blocked downstream, it simply isn't being
+generated. The reviewer's downstream-gate risk (P0.3B/P0.3C reroute,
+`_should_skip_segment_by_profitability()`) is therefore **still
+completely untested in production**, not cleared.
+
+`deploy-verify-agent`'s own words: *"A restart alone is a plausible
+sole cause [of the resolution]."* What the evidence DOES independently
+confirm is the root-cause claim itself — `C_NEG_EV_PROBE` was 100%
+self-blocked since introduction (0 trades, ever, until this fix).
+
+**New open question, not investigated this cycle:** `A_STRICT_TAKE`
+resuming immediately after the restart, following a 2h18m total freeze,
+doesn't obviously look like "market conditions changed" — it looks like
+"something was stuck and a restart unstuck it," which would echo the
+known dashboard in-memory-freeze failure mode already documented in
+`CLAUDE.md` (a separate service, but the same *symptom shape*: long
+flat/frozen state, cleared incidentally by an unrelated deploy restart).
+If total-stall incidents recur on a cadence that correlates with time-
+since-last-restart rather than with genuine market dry spells, that
+would be evidence for a broader stuck-state bug independent of
+`C_NEG_EV_PROBE` — worth a dedicated forensic pass in a future cycle,
+not chased further here.
+
+**Correct status going forward:** treat this fix as *correct and
+harmless but latent* — it only gets exercised the next time genuine
+cold-start starvation recurs, which is exactly when the still-untested
+downstream gates could bite. Watch for: `[PAPER_NEG_EV_PROBE_ACCEPTED]`
+appearing (fix works end-to-end) vs. `C_NEG_EV_PROBE` reappearing in
+`PAPER_ENTRY_BLOCKED` with a **non**-`weak_ev` reason (necessary-but-
+not-sufficient, confirms the downstream-gate risk, needs a fast
+follow-up). `bucket=None` weak_ev blocks were confirmed still present
+post-deploy — still untraced, still deferred (finding #1 above).
