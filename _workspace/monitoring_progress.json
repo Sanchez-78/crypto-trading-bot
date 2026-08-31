@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 180,
+  "cycle": 181,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 180,
-  "current_wr": 31.0,
+  "total_cycles_completed": 181,
+  "current_wr": 30.0,
   "current_pnl": -3.1376,
-  "last_update": "2026-08-31T08:15:00Z",
-  "status": "quota_instrumentation_deployed_pass_resuming_normal_cadence",
+  "last_update": "2026-08-31T07:58:00Z",
+  "status": "stable_quota_gate_watch_healthy",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -2395,6 +2395,23 @@
       "investigation": "deploy-verify-agent: PASS. Reviewer-agent's condition-1 risk (new instrumentation could trip the app's own quota gates earlier) did NOT materialize -- carefully distinguished a misleading first read (one-time post-restart hydration burst, 100->788 reads) from true steady state (788->790 five minutes later). Zero QUOTA_SOFT_GATE/QUOTA_HARD lines since deploy, matching the zero baseline before. Side finding: the deploy's incidental dashboard restart happened to clear a pre-existing dashboard staleness episode (DASHBOARD_ZERO counter at 1801s pre-deploy) -- matches the known dashboard-freeze issue already documented in CLAUDE.md, unrelated to this commit, flagged for a future dedicated session.",
       "action_taken": "Deploy accepted as PASS. Documented the full two-round review + deploy verification in _workspace/49_...md. This closes out the 'jde neco zlepsit?' improvement cycle (audit throttle fix + quota instrumentation + entry-stall dead-code cleanup, all now deployed and verified).",
       "next_cycle_plan": "Resume normal cadence. Continue watching quota gate behavior for the next 24-48h per reviewer-agent's original recommendation, though the first post-deploy reading is already reassuring."
+    },
+    {
+      "cycle": 181,
+      "timestamp": "2026-08-31T07:58:00Z",
+      "status": "CAUTION_STABLE_QUOTA_GATE_WATCH_HEALTHY",
+      "metrics_snapshot": {
+        "recent_100_wr_pct": 30.0,
+        "recent_100_pf_pct_basis": 0.565,
+        "recent_100_pf_usd_basis": 0.644,
+        "lifetime_n": 14099,
+        "lifetime_pf": 0.6675681039429266,
+        "firebase_quota": "851/50000 reads (1.7%), 58/20000 writes -- healthy, part of the post-deploy 24-48h quota-gate watch",
+        "service": "active, 0 errors, degraded=false, 6 open positions, closed_today=100"
+      },
+      "investigation": "First check within the committed 24-48h quota-gate watch window after the quota-instrumentation deploy. Reads at 851/50000 (1.7%), well within budget -- no QUOTA_SOFT_GATE concern. WR 30%, normal noise.",
+      "action_taken": "None needed -- watch continuing as planned.",
+      "next_cycle_plan": "Continue standard cadence with continued light attention to the quota percentage over the next day or so."
     }
   ],
   "experiment": {
