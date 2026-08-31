@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 190,
+  "cycle": 191,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 190,
+  "total_cycles_completed": 191,
   "current_wr": 28.0,
   "current_pnl": -3.1376,
-  "last_update": "2026-08-31T12:15:00Z",
-  "status": "stall_ongoing_fix_pending_review_urgent",
+  "last_update": "2026-08-31T12:45:00Z",
+  "status": "stall_fix_deployed_awaiting_verification",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -2554,6 +2554,17 @@
       "investigation": "Stall continues, exactly as expected without the fix deployed. reviewer-agent still has not responded despite multiple nudges over ~40 min.",
       "action_taken": "Sent an urgent, explicit nudge to reviewer-agent given the time-sensitivity. Will consider re-dispatching a fresh instance if no response by the next cycle.",
       "next_cycle_plan": "If still no verdict, re-dispatch a fresh reviewer-agent instance rather than continuing to wait indefinitely, given the active production impact."
+    },
+    {
+      "cycle": 191,
+      "timestamp": "2026-08-31T12:45:00Z",
+      "status": "REVIEW_RECEIVED_TEST_FIXED_DEPLOY_DISPATCHED",
+      "metrics_snapshot": {
+        "note": "closed_trades still frozen at 14177 as of dispatch time, ~2h38min since last real close -- deploy not yet verified"
+      },
+      "investigation": "review-stall-fix delivered final verdict: APPROVED WITH CONDITIONS on 901fc39 (source fix). Two findings: (1) my new test test_open_paper_position_c_neg_ev_probe_bypasses_weak_ev was vacuous -- passed even without the fix, because it never restored _MIN_EV_THRESHOLD from the module's autouse -inf fixture like its two sibling tests do. (2) my commit message's 'confirmed via git stash' claim for the pre-existing test_strict_take_disabled_for_training failure used an invalid method (stash doesn't touch untracked files); real cause is an untracked .env with PAPER_TRAIN_STRICT_TAKE_ENABLED=true. Conclusion (pre-existing/unrelated) still correct, method was wrong. Reviewer's own explicit judgment: source change is safe to deploy as-is given the active stall; fix the test same-day, not later. Also flagged a real non-blocking risk: a later P0.3B/P0.3C gate (paper_trade_executor.py ~1751-1818) is not exempted for C_NEG_EV_PROBE either, so the weak_ev fix could be necessary but not sufficient.",
+      "action_taken": "1) Fixed the vacuous test (added monkeypatch.setattr(pte, '_MIN_EV_THRESHOLD', 0.01), matching sibling tests). Verified directly: reverted the exemption-tuple fix in a scratch copy, confirmed the test now fails without the fix and passes with it, then restored the original file bit-for-bit. Full suite: 229 passed, 4 skipped, 1 pre-existing unrelated failure (unchanged count). Committed as f4dd5ee (test-only, cleanly isolated -- tests/test_paper_mode.py had no other pending changes) and pushed. 2) Dispatched deploy-verify-agent for current main (901fc39 + f4dd5ee) with explicit non-standard instructions to verify REAL [PAPER_ENTRY]/bucket=C_NEG_EV_PROBE successes post-deploy (not merely the absence of weak_ev errors), given the reviewer's later-gate risk flag.",
+      "next_cycle_plan": "Wait for deploy-verify-agent's verdict. If PASS with confirmed real C_NEG_EV_PROBE entries and closed_trades resuming: stall resolved, log and return to normal 30-min cadence. If PASS-BUT-STALL-PERSISTS: immediately investigate the later P0.3B/P0.3C gate / _should_skip_segment_by_profitability() as next root cause. If FAIL_REVERTED: investigate deploy failure, re-plan. Deferred items still pending a future cycle: bucket=None blocked-entry tracing, detect_recon_failure()'s status=MISMATCH gap."
     }
   ],
   "experiment": {
