@@ -1669,8 +1669,27 @@ def open_paper_position(
     # zero/negative-EV admission like the discovery bucket's. Re-applying
     # this legacy floor to it would reject genuinely-positive-edge signals
     # solely from a unit mismatch, not from any real quality problem.
+    #
+    # 2026-08-31 (user-flagged "WR keeps dropping" -> live forensics found a
+    # confirmed ~90+ min total stall, DB-verified zero closes):
+    # C_NEG_EV_PROBE (paper_training_sampler.py, tag P1.1AO, "cold-start
+    # starvation recovery") is EXACTLY the same class of deliberate, bounded
+    # exploration bucket as PAPER_STARVATION_DISCOVERY -- explicitly meant to
+    # admit a few negative/zero-EV candidates (ev<=0 is its own admission
+    # precondition) when the bot would otherwise be completely idle, capped
+    # at _PROBE_MAX_LIFETIME_CLOSED=20 closes per process lifetime. It was
+    # never added to this exemption tuple, so it has been 100% self-blocking
+    # since it was introduced -- repeating the identical 2026-08-06
+    # PAPER_STARVATION_DISCOVERY incident this comment block already
+    # documents, just for a newer bucket added after that fix. Live-observed:
+    # every C_NEG_EV_PROBE admission attempt in the current stall window was
+    # blocked here with ev=0.0000, and the bucket's own size_mult=0.01 (a
+    # deliberately tiny 1% canary size) was never reached because the
+    # position never opened. See _workspace/50_c_neg_ev_probe_self_blocking_stall.md.
     ev = float(signal.get("ev") or 0.0)
-    if ev < _MIN_EV_THRESHOLD and bucket not in ("PAPER_STARVATION_DISCOVERY", "P0_8_PLUS_EVIDENCE_COLLECTION"):
+    if ev < _MIN_EV_THRESHOLD and bucket not in (
+        "PAPER_STARVATION_DISCOVERY", "P0_8_PLUS_EVIDENCE_COLLECTION", "C_NEG_EV_PROBE"
+    ):
         throttle_key = (symbol, bucket, "weak_ev_rejected")
         now_ts = time.time()
         last_log = _PAPER_ENTRY_BLOCKED_THROTTLE.get(throttle_key, 0.0)

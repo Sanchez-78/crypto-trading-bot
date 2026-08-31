@@ -217,6 +217,31 @@ class TestPaperExecutorBasics:
             f"P0_8_PLUS_EVIDENCE_COLLECTION must bypass the weak_ev floor, got {result}"
         )
 
+    def test_open_paper_position_c_neg_ev_probe_bypasses_weak_ev(self, clean_positions, monkeypatch):
+        """2026-08-31 (user-flagged 'WR keeps dropping' -> live forensics found
+        a confirmed ~90+ min total stall, DB-verified zero closes):
+        C_NEG_EV_PROBE (paper_training_sampler.py, tag P1.1AO, 'cold-start
+        starvation recovery') is the same class of deliberate, bounded
+        exploration bucket as PAPER_STARVATION_DISCOVERY, admitting a few
+        negative/zero-EV candidates (ev<=0 is its own admission precondition)
+        when the bot would otherwise be idle -- but it was never added to
+        this exemption tuple, so it was 100% self-blocking, repeating the
+        identical 2026-08-06 PAPER_STARVATION_DISCOVERY incident for a bucket
+        added after that fix. See
+        _workspace/50_c_neg_ev_probe_self_blocking_stall.md.
+        """
+        signal = {
+            "symbol": "ETHUSDT", "action": "BUY", "ev": 0.0, "score": 0.05,
+            "p": 0.50, "coh": 0.60, "af": 1.00, "regime": "BULL_TREND",
+        }
+        result = open_paper_position(
+            signal, 2500.0, time.time(), "RDE_TAKE",
+            extra={"explore_bucket": "C_NEG_EV_PROBE"},
+        )
+        assert result.get("reason") != "weak_ev_below_0.01", (
+            f"C_NEG_EV_PROBE must bypass the weak_ev floor, got {result}"
+        )
+
     def test_open_paper_position_unrelated_bucket_still_blocked_by_weak_ev(self, clean_positions, monkeypatch):
         """Negative control for the two exemptions above: an unrecognized
         bucket name with the same low ev must still be blocked -- pins that
