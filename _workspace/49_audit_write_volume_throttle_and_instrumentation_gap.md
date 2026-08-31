@@ -111,6 +111,53 @@ sample time (correlation rejections need an open, correlated position to
 reject against; L2-wall rejections don't), i.e. it's window-dependent,
 not a fixed property of the system.
 
+## Quota-instrumentation gap: fixed and deployed (2026-08-31)
+
+The "known gap" flagged above (`audit_worker.py`'s writes/reads invisible
+to the app's own quota dashboard) was fixed and deployed the same day the
+user asked "jde neco zlepsit?" (anything else to improve?). `_sync_batch_write()`
+now calls `_record_write()`/`_record_read()` after its Firestore
+operations, with the `count()` read approximated via ceiling division
+(Firestore rounds up, not down) rather than a flat 1.
+
+**Two-round review, both genuinely productive:**
+- Round 1 (`reviewer-agent`): APPROVED WITH CONDITIONS, one blocking --
+  correctly identified that this is NOT purely observational: the new
+  counters feed the exact gates (`_can_read()`/`_can_write()`, soft-gate
+  75%/hard-block 90%) the app itself uses to throttle. `audit_worker.py`
+  never calls those gates before its own operations, so newly-counting
+  its previously-invisible traffic could trip the app's own gates earlier
+  in wall-clock terms than before -- a real operational risk, not just a
+  documentation gap. Also found, via direct mutation testing, that 2 of
+  the original 6 tests and 1 of the emergency_health_monitor tests didn't
+  actually cover the properties they claimed to (all used inputs too
+  small to distinguish floor from ceiling, none made a write fail, none
+  exercised the new try/except branch).
+- Fixed: added an explicit in-code comment documenting the gating risk
+  and mitigations; switched floor to ceiling division; added 4 new tests
+  targeting the exact mutations found.
+- Round 2 (`reviewer-agent`): APPROVED, all conditions independently
+  re-verified via fresh mutation runs against the fixed code and tests.
+
+**Deploy (`deploy-verify-agent`): PASS.** Reviewer's condition-1 risk did
+**not** materialize in practice -- after correctly identifying and
+discarding a misleading first read (a one-time post-restart hydration
+burst, not a sustained rate: 100→788 reads looked alarming, but a third
+sample 5 minutes later showed 788→790, i.e. steady state), real usage is
+~0.4 reads/min (~600/day) and ~4 writes/min (~5,800/day) -- comfortably
+under both the 50,000/20,000 daily budgets. `QUOTA_SOFT_GATE`/`QUOTA_HARD`
+lines: zero, matching the zero baseline before deploy.
+
+**Side finding (not caused by or fixed by this commit, flagged
+separately):** the deploy's incidental dashboard restart happened to
+clear a pre-existing dashboard staleness episode (`DASHBOARD_ZERO`
+counter had climbed to 1801s in the 30 min before deploy) -- matches the
+known dashboard-freeze failure mode already documented in this project's
+`CLAUDE.md` ("KNOWN GAP... if its in-memory state ever freezes... nothing
+restarts it automatically"). Worth its own dedicated investigation in a
+future session; not pursued here since it's unrelated to the audit-worker
+changeset.
+
 ## Verification plan (not yet done — needs time to pass)
 
 Watch the `audits` collection's growth rate (direct `.count()` query,

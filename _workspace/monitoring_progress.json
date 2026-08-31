@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 179,
+  "cycle": 180,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 179,
+  "total_cycles_completed": 180,
   "current_wr": 31.0,
   "current_pnl": -3.1376,
-  "last_update": "2026-08-31T08:02:00Z",
-  "status": "quota_instrumentation_deploying",
+  "last_update": "2026-08-31T08:15:00Z",
+  "status": "quota_instrumentation_deployed_pass_resuming_normal_cadence",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -2382,6 +2382,19 @@
       "investigation": "reviewer-agent's final verdict: APPROVED, all 3 conditions closed and independently re-verified via fresh mutation tests (each of the 4 new tests confirmed to fail against the exact defect it targets). No new findings.",
       "action_taken": "Dispatched deploy-verify-agent for commit 2120bee, with explicit instructions to keep the deploy scoped (working tree has unrelated concurrent-session dirty files) and to specifically report quota-gate behavior post-deploy given the real operational risk reviewer-agent's condition 1 identified.",
       "next_cycle_plan": "Confirm deploy result and watch [QUOTA_SOFT_GATE]/quota percentage closely for the next 24-48h, not just routine health."
+    },
+    {
+      "cycle": 180,
+      "timestamp": "2026-08-31T08:15:00Z",
+      "status": "QUOTA_INSTRUMENTATION_DEPLOYED_PASS_STEADY_STATE_LOW",
+      "metrics_snapshot": {
+        "deployed_sha": "2120bee",
+        "service": "active, NRestarts=0, restarted 07:39:51 UTC",
+        "note": "audit_worker's real quota usage now visible: ~0.4 reads/min (~600/day), ~4 writes/min (~5800/day) steady state -- comfortably under budget."
+      },
+      "investigation": "deploy-verify-agent: PASS. Reviewer-agent's condition-1 risk (new instrumentation could trip the app's own quota gates earlier) did NOT materialize -- carefully distinguished a misleading first read (one-time post-restart hydration burst, 100->788 reads) from true steady state (788->790 five minutes later). Zero QUOTA_SOFT_GATE/QUOTA_HARD lines since deploy, matching the zero baseline before. Side finding: the deploy's incidental dashboard restart happened to clear a pre-existing dashboard staleness episode (DASHBOARD_ZERO counter at 1801s pre-deploy) -- matches the known dashboard-freeze issue already documented in CLAUDE.md, unrelated to this commit, flagged for a future dedicated session.",
+      "action_taken": "Deploy accepted as PASS. Documented the full two-round review + deploy verification in _workspace/49_...md. This closes out the 'jde neco zlepsit?' improvement cycle (audit throttle fix + quota instrumentation + entry-stall dead-code cleanup, all now deployed and verified).",
+      "next_cycle_plan": "Resume normal cadence. Continue watching quota gate behavior for the next 24-48h per reviewer-agent's original recommendation, though the first post-deploy reading is already reassuring."
     }
   ],
   "experiment": {
