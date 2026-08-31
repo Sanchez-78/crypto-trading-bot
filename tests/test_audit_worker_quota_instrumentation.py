@@ -99,8 +99,47 @@ def test_drain_query_read_matches_documents_actually_returned(record_calls):
     worker._sync_batch_write(db, [{"reason": "x", "timestamp": time.time()}])
 
     # Reads recorded = count() approximation + drain query's actual count.
-    count_reads = max(1, total // 1000)
+    count_reads = max(1, -(-total // 1000))
     assert firebase_client._QUOTA_READS == count_reads + 17
+
+
+def test_count_refresh_uses_ceiling_not_floor_for_large_backlogs(record_calls):
+    """2026-08-31 (reviewer-agent mutation check): replacing the ceiling
+    division with a literal 1 made every prior test in this file pass
+    unchanged, because they all used total_docs < 1000 (only the
+    floored/max(1,...)-to-1 branch was ever exercised) -- this test uses a
+    total picked specifically so floor and ceiling disagree (2500 -> floor
+    2, ceil 3), so a regression back to floor (or to a flat 1) fails it."""
+    worker = audit_worker.AuditWorker()
+    total = 2500
+    db = _make_fake_db(total_docs=total, drain_docs=0)
+
+    worker._sync_batch_write(db, [{"reason": "x", "timestamp": time.time()}])
+
+    # excess = 2500 - 50 > 0, so the drain query also fires (0 docs
+    # returned by this fixture -> max(1, 0) = 1 additional read).
+    assert firebase_client._QUOTA_READS == 3 + 1, (
+        "expected ceil(2500/1000)=3 for the count() read, not "
+        "floor(2500/1000)=2 or a flat 1"
+    )
+
+
+def test_write_is_not_recorded_when_batch_commit_fails(record_calls):
+    """2026-08-31 (reviewer-agent mutation check): moving _record_write()
+    above batch.commit() made every prior test in this file pass
+    unchanged, because none of them made commit() fail -- this test does,
+    and asserts nothing gets recorded for a write that never actually
+    happened."""
+    worker = audit_worker.AuditWorker()
+    db = _make_fake_db(total_docs=0)
+    db.batch.return_value.commit.side_effect = RuntimeError("simulated Firestore failure")
+
+    # _sync_batch_write's outer try/except must swallow this, not raise.
+    worker._sync_batch_write(db, [{"reason": "x"}, {"reason": "y"}])
+
+    assert firebase_client._QUOTA_WRITES == 0, (
+        "a failed commit() must not be recorded as a successful write"
+    )
 
 
 def test_deletes_are_not_recorded_as_writes(record_calls):

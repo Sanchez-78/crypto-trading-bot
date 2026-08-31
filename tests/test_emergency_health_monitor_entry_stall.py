@@ -103,3 +103,44 @@ def test_no_stall_when_no_ev_candidates_at_all():
     is_stalled, reason = ehm.detect_entry_stall(logs, current_time=current_time)
     assert is_stalled is False
     assert reason == "Entry rate OK"
+
+
+def test_numeric_positive_candidate_ev_without_positive_ev_marker_still_counts(monkeypatch):
+    """2026-08-31 (reviewer-agent mutation check): every prior candidate_ev=
+    test line in this file contains the literal 'positive_ev' string, so
+    they only ever exercised the `if "positive_ev" in log_line` branch --
+    the restructured `else` branch (the try/except-wrapped float() parse)
+    had zero coverage, well-formed or malformed. This test exercises the
+    well-formed numeric path with no 'positive_ev' marker present."""
+    _reset_state()
+    ehm._monitor_state["last_entry_rate"] = 0
+    current_time = ehm._ENTRY_STALL_THRESHOLD + 100
+    logs = ["candidate_ev=0.0300 mode=PA"]  # no "positive_ev" substring
+    is_stalled, reason = ehm.detect_entry_stall(logs, current_time=current_time)
+    assert is_stalled is True, (
+        "a positive numeric candidate_ev= value must still count as an EV "
+        "candidate even without the literal 'positive_ev' marker"
+    )
+    assert "Entry stall" in reason
+
+
+def test_malformed_candidate_ev_line_does_not_crash_and_is_not_counted():
+    """2026-08-31: the float() parse in the else branch is now wrapped in
+    try/except (IndexError, ValueError) -- was previously uncaught and
+    would have raised out of detect_entry_stall(), aborting
+    run_health_check() before its later crash-detection step. A malformed
+    line must be silently skipped, not crash, and must not itself count as
+    an EV candidate."""
+    _reset_state()
+    ehm._monitor_state["last_entry_rate"] = 0
+    current_time = ehm._ENTRY_STALL_THRESHOLD + 100
+    logs = ["candidate_ev=not_a_number mode=PA"]
+
+    # Must not raise.
+    is_stalled, reason = ehm.detect_entry_stall(logs, current_time=current_time)
+
+    assert is_stalled is False, (
+        "an unparseable candidate_ev= value must not be treated as a "
+        "positive EV candidate"
+    )
+    assert reason == "Entry rate OK"

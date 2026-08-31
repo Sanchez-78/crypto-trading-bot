@@ -273,6 +273,23 @@ class AuditWorker:
             # nobody could confirm the throttle fix's effect via the app's
             # own quota meter, only by re-querying Firestore directly (as
             # this whole investigation had to). Now instrumented.
+            #
+            # NOT purely observational (reviewer-agent, same review): these
+            # are the exact counters _can_read()/_can_write() gate on in
+            # firebase_client.py (soft-gate at 75%, hard-block at 90%+).
+            # This worker never calls _can_read()/_can_write() before its
+            # own operations, so it's an ungated consumer -- newly counting
+            # its real (previously-invisible) traffic can trip the app's
+            # own quota gates EARLIER in wall-clock terms than before, even
+            # though actual Firestore usage hasn't changed (the counting
+            # was simply wrong before). Mitigated by: the throttle fix
+            # (cycle 159/160) already capped this worker's own write rate;
+            # _QUOTA_READS/_QUOTA_WRITES reset to 0 every process restart
+            # and at the daily quota boundary; the count()-refresh read
+            # cost shrinks and eventually disappears once the backlog
+            # drains to MAX_AUDITS (excess<=0 skips the drain query
+            # entirely). Watch [QUOTA_SOFT_GATE]/[QUOTA_ATTRIBUTION] for
+            # 24-48h after this deploys.
             _record_write(len(items))
 
             log.debug("Audit batch committed: %d events", len(items))
@@ -304,11 +321,15 @@ class AuditWorker:
                         self._cached_audit_count = count_result[0][0].value
                         self._last_count_refresh_ts = now
                         # Firestore bills count() at ~1 read per 1,000 index
-                        # entries matched (see the v1/v2 comment above), not
-                        # a flat 1 -- approximate that here so the recorded
-                        # figure isn't misleadingly cheap.
+                        # entries matched, ROUNDED UP (min 1) -- see the
+                        # v1/v2 comment above. Use ceiling division, not
+                        # floor, so this doesn't under-report (reviewer-agent,
+                        # 2026-08-31: floor(105933/1000)=105 vs the true
+                        # ceil=106 -- immaterial in isolation, but there's no
+                        # reason to be systematically wrong when correct is
+                        # just as cheap).
                         _record_read(
-                            max(1, self._cached_audit_count // 1000),
+                            max(1, -(-self._cached_audit_count // 1000)),
                             label="audit_cleanup_count",
                         )
                         log.info(
