@@ -230,6 +230,10 @@ class TestPaperExecutorBasics:
         added after that fix. See
         _workspace/50_c_neg_ev_probe_self_blocking_stall.md.
         """
+        from src.services import paper_trade_executor as pte
+
+        monkeypatch.setattr(pte, "_MIN_EV_THRESHOLD", 0.01)
+
         signal = {
             "symbol": "ETHUSDT", "action": "BUY", "ev": 0.0, "score": 0.05,
             "p": 0.50, "coh": 0.60, "af": 1.00, "regime": "BULL_TREND",
