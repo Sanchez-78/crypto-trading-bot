@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 187,
+  "cycle": 188,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 187,
+  "total_cycles_completed": 188,
   "current_wr": 28.0,
   "current_pnl": -3.1376,
-  "last_update": "2026-08-31T11:05:00Z",
-  "status": "stable_quiet_period_verified",
+  "last_update": "2026-08-31T11:37:00Z",
+  "status": "real_stall_fix_pending_review",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -2513,6 +2513,17 @@
       "investigation": "closed_trades count unchanged for ~40 min (0 new closes) with 0 open positions -- checked directly whether this was a real stall or a quiet period. Confirmed NOT a stall: service has NRestarts=0 and the same MainPID since the 07:39:51 deploy (no crash loop). Live logs show active decision-making: signals being generated and rejected on genuine grounds (NEGATIVE_EV rejects, edge_generation_failed diagnostics, ADAUSDT hitting its 100/hour rate limit and being skipped). This matches the already-established 'no directional edge in most candidates' finding from cycles 111/113, not a new bug -- the bot is working, just not finding admissible candidates right now.",
       "action_taken": "None -- verified with direct log evidence rather than assuming either explanation.",
       "next_cycle_plan": "Continue standard cadence, quota-gate watch continuing."
+    },
+    {
+      "cycle": 188,
+      "timestamp": "2026-08-31T11:37:00Z",
+      "status": "REAL_STALL_CONFIRMED_ROOT_CAUSED_FIXED_PENDING_REVIEW",
+      "metrics_snapshot": {
+        "note": "User's 'wr stale klesa' concern, combined with subsequent cycle observation, led to discovering a genuine, confirmed, ongoing ~90+ min trading stall."
+      },
+      "investigation": "closed_trades count stayed flat for 3 consecutive 30-min checks. Direct cache.sqlite query (bypassing dashboard) confirmed: 0 real trades closed in over an hour, last close ~90 min prior. Service healthy (no restarts/crash loop), but EMERGENCY_MONITOR was firing REAL alerts (RECON_FAILURE, LEARNING_STALL, DASHBOARD_ZERO) continuously. Traced: 39 TAKE decisions occurred in a 20-min sample, but every single one was blocked downstream at open_paper_position()'s weak_ev floor with 'ev=0.0000 bucket=C_NEG_EV_PROBE'. Root cause: C_NEG_EV_PROBE (paper_training_sampler.py, tag P1.1AO, 'cold-start starvation recovery' -- a deliberate, bounded exploration bucket whose own admission precondition is ev<=0) was never added to the weak_ev floor's exemption tuple, so it has been 100% self-blocking since introduction -- repeating the IDENTICAL 2026-08-06 PAPER_STARVATION_DISCOVERY incident already documented in the same code comment, for a bucket added after that fix.",
+      "action_taken": "Added C_NEG_EV_PROBE to the exemption tuple (commit 901fc39), with a new regression test mirroring the existing exemption tests. Commit deliberately scoped via git hash-object/update-index to exclude unrelated uncommitted STATE-02-CORE changes sitting in the same file's working tree from an earlier session. Dispatched reviewer-agent and trading-safety-agent given this touches the live paper-admission path directly. Documented full forensics in _workspace/50_c_neg_ev_probe_self_blocking_stall.md, including two deferred findings (bucket=None blocked entries not yet traced; detect_recon_failure()'s incomplete MISMATCH-status handling).",
+      "next_cycle_plan": "Wait for review verdicts, deploy if approved, then verify live that C_NEG_EV_PROBE admissions start succeeding and the extended zero-close stalls stop recurring during dry spells."
     }
   ],
   "experiment": {
