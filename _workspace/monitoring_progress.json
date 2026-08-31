@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 188,
+  "cycle": 189,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 188,
+  "total_cycles_completed": 189,
   "current_wr": 28.0,
   "current_pnl": -3.1376,
-  "last_update": "2026-08-31T11:37:00Z",
-  "status": "real_stall_fix_pending_review",
+  "last_update": "2026-08-31T11:59:00Z",
+  "status": "stall_ongoing_fix_pending_review",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -2524,6 +2524,21 @@
       "investigation": "closed_trades count stayed flat for 3 consecutive 30-min checks. Direct cache.sqlite query (bypassing dashboard) confirmed: 0 real trades closed in over an hour, last close ~90 min prior. Service healthy (no restarts/crash loop), but EMERGENCY_MONITOR was firing REAL alerts (RECON_FAILURE, LEARNING_STALL, DASHBOARD_ZERO) continuously. Traced: 39 TAKE decisions occurred in a 20-min sample, but every single one was blocked downstream at open_paper_position()'s weak_ev floor with 'ev=0.0000 bucket=C_NEG_EV_PROBE'. Root cause: C_NEG_EV_PROBE (paper_training_sampler.py, tag P1.1AO, 'cold-start starvation recovery' -- a deliberate, bounded exploration bucket whose own admission precondition is ev<=0) was never added to the weak_ev floor's exemption tuple, so it has been 100% self-blocking since introduction -- repeating the IDENTICAL 2026-08-06 PAPER_STARVATION_DISCOVERY incident already documented in the same code comment, for a bucket added after that fix.",
       "action_taken": "Added C_NEG_EV_PROBE to the exemption tuple (commit 901fc39), with a new regression test mirroring the existing exemption tests. Commit deliberately scoped via git hash-object/update-index to exclude unrelated uncommitted STATE-02-CORE changes sitting in the same file's working tree from an earlier session. Dispatched reviewer-agent and trading-safety-agent given this touches the live paper-admission path directly. Documented full forensics in _workspace/50_c_neg_ev_probe_self_blocking_stall.md, including two deferred findings (bucket=None blocked entries not yet traced; detect_recon_failure()'s incomplete MISMATCH-status handling).",
       "next_cycle_plan": "Wait for review verdicts, deploy if approved, then verify live that C_NEG_EV_PROBE admissions start succeeding and the extended zero-close stalls stop recurring during dry spells."
+    },
+    {
+      "cycle": 189,
+      "timestamp": "2026-08-31T11:59:00Z",
+      "status": "STALL_CONFIRMED_ONGOING_FIX_STILL_PENDING_REVIEW",
+      "metrics_snapshot": {
+        "recent_100_wr_pct": 28.0,
+        "lifetime_n": 14177,
+        "lifetime_pf": 0.6671306410616308,
+        "firebase_quota": "3980/50000 reads (8.0%), 933/20000 writes -- healthy",
+        "service": "active, 0 open positions, closed_trades unchanged at 14177 -- now ~1h52min since last real close"
+      },
+      "investigation": "Confirms the stall is still ongoing exactly as expected (fix not yet deployed). trading-safety-agent: PASS on the fix. Still waiting on reviewer-agent.",
+      "action_taken": "Sent a second status-check nudge to reviewer-agent.",
+      "next_cycle_plan": "Deploy as soon as reviewer-agent's verdict arrives, given the stall is actively ongoing."
     }
   ],
   "experiment": {
