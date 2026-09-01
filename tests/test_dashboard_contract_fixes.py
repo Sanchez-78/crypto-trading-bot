@@ -297,6 +297,68 @@ def test_reader_survives_legacy_db_without_side_column(tmp_path, monkeypatch):
     assert t["pnl_pct"] > 0
 
 
+def test_closed_trades_table_js_only_reads_fields_the_api_actually_sends(tmp_path, monkeypatch):
+    """2026-09-01 (user-flagged "closedtrades nemaji timestamp v dashboard"):
+    the frontend's updateTradesTable() read t.exit_ts, a key the API never
+    actually sent for a real (cache.sqlite-backed) row -- only exit_time
+    (Unix int) and exit_timestamp (ISO string). Every closed-trade row's
+    time column silently rendered '—' in normal operation, with no error
+    anywhere to surface it. Guard against this class of silent backend/
+    frontend field-name drift directly: every t.<field> the embedded JS
+    references in updateTradesTable must exist as a key on a real
+    closed_trades_list row.
+    """
+    _write_learning_state(tmp_path)
+    conn = _make_cache_db(tmp_path, with_side_column=True)
+    now = time.time()
+    conn.execute(
+        "INSERT INTO closed_trades (trade_id, symbol, side, entry_ts, exit_ts,"
+        " entry_price, exit_price, pnl_usd, pnl_pct, win, exit_reason, regime)"
+        " VALUES ('t1','ETHUSDT','BUY',?,?,1866.475,1863.925,-0.000883,-0.1766,0,'SL','TREND')",
+        (now - 90, now - 50))
+    conn.commit()
+    conn.close()
+
+    _hide_opt_cryptomaster(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+    metrics = dashboard_web.get_live_metrics_from_cache()
+    (row,) = metrics["closed_trades_list"]
+
+    html = dashboard_web.HTML_TEMPLATE
+    # Non-greedy up to the closing brace would stop at the first nested '}'
+    # (e.g. the trades.length===0 guard) -- take everything up to the next
+    # top-level function definition instead.
+    fn_match = re.search(
+        r"function updateTradesTable\(trades\)\s*\{(.*?)\n\s*function \w+\(",
+        html, re.DOTALL,
+    )
+    assert fn_match, "updateTradesTable() not found in dashboard source"
+    fn_body = fn_match.group(1)
+    # Strip '//' line comments first -- explanatory comments referencing a
+    # field name in prose (e.g. this fix's own docstring-style comment)
+    # must not be mistaken for a real t.<field> code reference.
+    fn_body_no_comments = "\n".join(
+        line.split("//", 1)[0] for line in fn_body.splitlines()
+    )
+
+    referenced_fields = set(re.findall(r"\bt\.(\w+)", fn_body_no_comments))
+    assert referenced_fields, "regex found no t.<field> references -- test itself is broken"
+    assert "exit_ts" not in referenced_fields, (
+        "updateTradesTable() reads t.exit_ts again -- that key is never sent "
+        "for a real cache.sqlite-backed row (only exit_time/exit_timestamp "
+        "are), so this silently blanks the time column. See this test's "
+        "docstring."
+    )
+    for field in referenced_fields:
+        assert field in row, (
+            f"updateTradesTable() reads t.{field}, but a real closed_trades_list "
+            f"row never sets that key (row keys: {sorted(row)}) -- the time "
+            f"column (or whichever column reads this field) will silently "
+            f"render '—' for every trade."
+        )
+
+
+
 def test_live_metrics_carry_android_contract_fields(tmp_path, monkeypatch):
     _write_learning_state(tmp_path, lifetime_n=7, learning_enabled=True)
     _hide_opt_cryptomaster(monkeypatch)

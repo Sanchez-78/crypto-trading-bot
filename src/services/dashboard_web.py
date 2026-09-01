@@ -917,15 +917,23 @@ HTML_TEMPLATE = r"""
                 const pnlClass = t.pnl_pct >= 0 ? 'positive' : 'negative';
                 const pnlUsdClass = t.pnl_usd >= 0 ? 'positive' : 'negative';
 
-                // Handle both ISO timestamp strings and Unix timestamps
+                // Handle both ISO timestamp strings and Unix timestamps.
+                // 2026-09-01 (user-flagged "closedtrades nemaji timestamp v
+                // dashboard"): this read 't.exit_ts', a key that the API
+                // never actually sends -- the real closed_trades_list rows
+                // carry 'exit_timestamp' (ISO string, both the cache.sqlite
+                // primary path and the rolling-window fallback path) and
+                // 'exit_time' (Unix int, primary path only). Every row's
+                // time column silently rendered '—' in normal operation.
                 let timeStr = '—';
-                if (t.exit_ts) {
-                    if (typeof t.exit_ts === 'string') {
+                const rawTs = t.exit_timestamp !== undefined ? t.exit_timestamp : t.exit_time;
+                if (rawTs) {
+                    if (typeof rawTs === 'string') {
                         // ISO timestamp
-                        timeStr = new Date(t.exit_ts).toLocaleString();
-                    } else if (typeof t.exit_ts === 'number') {
+                        timeStr = new Date(rawTs).toLocaleString();
+                    } else if (typeof rawTs === 'number') {
                         // Unix timestamp
-                        timeStr = new Date(t.exit_ts * (t.exit_ts < 100000000000 ? 1000 : 1)).toLocaleString();
+                        timeStr = new Date(rawTs * (rawTs < 100000000000 ? 1000 : 1)).toLocaleString();
                     }
                 }
 
