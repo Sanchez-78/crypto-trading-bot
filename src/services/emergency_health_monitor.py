@@ -17,6 +17,22 @@ Auto-remediation strategies:
 - Alert operator
 
 Usage: Run periodically (every 60-300 seconds) or on event
+
+2026-09-01: every detector below used to additionally slice its own small
+fixed tail (`last_logs[-50:]`/`[-100:]`/`[-200:]`) on top of whatever
+`get_recent_logs_fn` (bot2/main.py's `_get_recent_logs`) already returned.
+That caller-side fetch was itself a fixed "-n 500" journalctl line count
+against a 60s check interval; live-measured throughput on this service
+(~147 lines/sec) meant 500 lines covered only ~3.4s of real history, and a
+detector's own further-truncated last-50-lines slice covered under half a
+second. Periodic markers each detector looks for (RECON, dashboard-metrics,
+learning-update, etc.) fire roughly every 30-60s, so they were almost never
+actually present in the window checked -- the most likely root cause of the
+RECON_FAILURE/DASHBOARD_ZERO/LEARNING_STALL false positives observed and
+individually dismissed as noise across many monitoring cycles. Fixed at the
+source (bot2/main.py now fetches by time, not line count) and the redundant,
+doubly-wrong tail-slicing below was removed -- each detector now scans the
+full (already time-scoped) `last_logs` it's given.
 """
 import logging
 import time
@@ -74,7 +90,7 @@ def detect_recon_failure(last_logs: List[str]) -> Tuple[bool, str]:
 
     Returns: (is_failure, reason)
     """
-    for log_line in last_logs[-50:]:  # Check last 50 log lines
+    for log_line in last_logs:  # last_logs is already time-scoped by the caller
         if "[V10.13x.1 RECON]" in log_line:
             if "status=WARN" in log_line or "status=FAIL" in log_line:
                 return True, f"RECON non-OK: {log_line[:100]}"
@@ -90,7 +106,7 @@ def detect_outbox_stuck(last_logs: List[str]) -> Tuple[bool, int, str]:
     Returns: (is_stuck, pending_count, reason)
     """
     pending_count = 0
-    for log_line in last_logs[-100:]:
+    for log_line in last_logs:
         if "[V5_BRIDGE_OUTBOX_FLUSH]" in log_line:
             if "pending" in log_line:
                 try:
@@ -114,7 +130,7 @@ def detect_quota_approaching(last_logs: List[str]) -> Tuple[bool, Dict[str, int]
     """
     quota = {"reads": 0, "writes": 0, "max_reads": 50000, "max_writes": 10000}
 
-    for log_line in last_logs[-50:]:
+    for log_line in last_logs:
         if "[V5_BRIDGE_QUOTA_STATE]" in log_line:
             try:
                 # Parse: reads=0/50000 writes=1509/10000
@@ -143,7 +159,7 @@ def detect_learning_stall(last_logs: List[str], current_time: float) -> Tuple[bo
 
     Returns: (is_stalled, reason)
     """
-    for log_line in last_logs[-100:]:
+    for log_line in last_logs:
         if "V5_BRIDGE_LEARNING_UPDATE" in log_line or "PAPER_CANONICAL_LEARNING_UPDATE" in log_line:
             # Found recent learning update
             _monitor_state["last_learning_update"] = current_time
@@ -164,7 +180,7 @@ def detect_dashboard_zero(last_logs: List[str], current_time: float) -> Tuple[bo
 
     Returns: (is_zero, reason)
     """
-    for log_line in last_logs[-50:]:
+    for log_line in last_logs:
         if "[V5_BRIDGE_DASHBOARD_METRICS]" in log_line:
             metrics = {}
             try:
@@ -230,7 +246,7 @@ def detect_entry_stall(last_logs: List[str], current_time: float) -> Tuple[bool,
     # flagged non-blocking by reviewer-agent during the v2 review above).
     has_ev_candidates = False
 
-    for log_line in last_logs[-200:]:
+    for log_line in last_logs:
         if "candidate_ev=" in log_line:
             if "positive_ev" in log_line:
                 has_ev_candidates = True
@@ -288,7 +304,7 @@ def detect_crashes(last_logs: List[str]) -> Tuple[bool, List[str]]:
     """
     crash_lines = []
 
-    for log_line in last_logs[-100:]:
+    for log_line in last_logs:
         if (
             "Traceback (most recent call last)" in log_line
             or "FATAL" in log_line

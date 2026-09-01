@@ -1641,12 +1641,35 @@ def main():
     # EMERGENCY HEALTH MONITOR: Auto-detection & remediation
     # ────────────────────────────────────────────────────────────────────────
     def _get_recent_logs():
-        """Helper to retrieve recent logs for emergency monitor."""
+        """Helper to retrieve recent logs for emergency monitor.
+
+        2026-09-01 (live investigation of a persistent false DASHBOARD_ZERO/
+        LEARNING_STALL alert): this used a FIXED "-n 500" line count against
+        a health-check interval of 60s (emergency_health_monitor.py's
+        _CHECKS_INTERVAL_S). Directly measured live throughput on this
+        service: ~147 log lines/second, i.e. ~4,400-4,600 lines between two
+        consecutive periodic markers (e.g. [V5_BRIDGE_DASHBOARD_METRICS],
+        which fires every ~30s). 500 lines therefore covered only ~3.4
+        seconds of real history per fetch -- a ~1/9 to ~1/18 chance of even
+        containing the marker for the interval being checked, not "missing
+        it sometimes" but structurally almost-always-missing it. This is the
+        most likely root cause of the RECON_FAILURE/DASHBOARD_ZERO/
+        LEARNING_STALL false positives repeatedly observed and individually
+        dismissed as noise across many monitoring cycles.
+
+        Fixed: fetch by TIME window (via --since), sized with margin over
+        the check interval, so the fetch is throughput-independent -- it
+        always covers at least one full interval's worth of real logs
+        regardless of how chatty the service currently is. See the matching
+        fix in emergency_health_monitor.py's detector functions (removed
+        their own additional fixed-size tail slicing, which had the exact
+        same flaw one layer deeper).
+        """
         import subprocess
         try:
             result = subprocess.run(
-                ["journalctl", "-u", "cryptomaster.service", "-n", "500", "--no-pager"],
-                capture_output=True, text=True, timeout=5
+                ["journalctl", "-u", "cryptomaster.service", "--since", "90 seconds ago", "--no-pager"],
+                capture_output=True, text=True, timeout=15
             )
             return result.stdout.split('\n') if result.returncode == 0 else []
         except:
