@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 194,
+  "cycle": 195,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 194,
+  "total_cycles_completed": 195,
   "current_wr": 28.0,
   "current_pnl": -3.1376,
-  "last_update": "2026-08-31T13:48:00Z",
+  "last_update": "2026-09-01T06:05:00Z",
   "status": "monitoring",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -2622,6 +2622,23 @@
       "investigation": "Found one brief blip: EMERGENCY_MONITOR fired RECON_FAILURE at 13:40:14 and RECON_FAILURE+ENTRY_STALL at 13:41:14, then nothing further in the following ~7 min. Checked directly via SQL rather than assuming either way: 11 real closes in the last 15 min, most recent at 13:46:11, i.e. trading resumed normally within ~5 min of the ENTRY_STALL alert. RECON_FAILURE here matches the already-documented false-positive pattern (log-sampling variance on the 'RECON not found in logs' fallback branch, not a real MISMATCH catch -- see the still-deferred detect_recon_failure() status=MISMATCH gap from cycle 187-188). Not a recurrence of the C_NEG_EV_PROBE stall (that pattern was 90+ min total silence, not a 5-min blip).",
       "action_taken": "None -- self-resolved before any action was warranted, consistent with known noisy-alert patterns.",
       "next_cycle_plan": "Continue normal 30-min cadence. If ENTRY_STALL/RECON_FAILURE recurs with an actual sustained zero-close gap (not a 5-min blip), treat as a real incident and investigate per the established evidence-first workflow. Deferred items unchanged from cycle 193."
+    },
+    {
+      "cycle": 195,
+      "timestamp": "2026-09-01T06:05:00Z",
+      "status": "USER_BUG_FOUND_FIXED_TESTED_REVIEW_DISPATCHED",
+      "metrics_snapshot": {
+        "recent_100_wr_pct": 21.0,
+        "recent_100_pf_direction": "still <1, all-TIMEOUT 12/12 exits in last real 30min window (verified via SQL)",
+        "lifetime_pf": 0.6670820083840223,
+        "lifetime_expectancy": -0.028186095021703963,
+        "firebase_quota_reads_pct": 26.6,
+        "firebase_quota_writes_pct": 19.3,
+        "note": "quota % jump vs cycle 194 looked alarming at first glance but is fully explained by audit_cleanup_drain backlog-drain reads (by design, CLEANUP_BATCH_LIMIT=60/300s, confirmed via QUOTA_ATTRIBUTION log line: 12060 of 13301 total reads); no QUOTA_SOFT_GATE/HARD lines, no gating triggered"
+      },
+      "investigation": "Two threads this cycle. (1) Chased an apparent quota/trade-rate spike -- resolved as a non-issue via direct SQL + QUOTA_ATTRIBUTION log parsing: real close rate ~0.4-0.8/min (normal), and the read-quota jump is the audit-backlog drain instrumentation working exactly as designed (deployed cycle 159/49), not a new problem. This does correct my own memory's earlier 'steady-state ~600 reads/day confirmed' claim -- that was evidently too short a sample; real usage clearly varies a lot with backlog-drain phase. (2) User directly flagged a real bug: 'closedtrades nemaji timestamp v dashboard'. Traced it to a field-name mismatch: updateTradesTable()'s JS read t.exit_ts, a key the API's primary (cache.sqlite) code path never sends -- only exit_time/exit_timestamp. Every closed trade's time column silently showed '-' in normal operation.",
+      "action_taken": "Fixed the JS to read exit_timestamp (falling back to exit_time) instead of the nonexistent exit_ts. Added a regression test that extracts the real updateTradesTable() function body from the live HTML_TEMPLATE and asserts every t.<field> it references exists on a real closed_trades_list row -- verified directly via mutation (fails with the original buggy code, passes with the fix; also caught and fixed two of my own test-authoring mistakes along the way: an under-matching regex boundary, and a false match on the literal string 't.exit_ts' inside this fix's own JS comment). Full test_dashboard_contract_fixes.py suite: 12/12 pass. Committed with isolated hash-object/update-index staging (both touched files carry unrelated pre-existing SEC-01/auth-fixture working-tree changes), pushed, dispatched reviewer-agent before deploying -- not yet deployed.",
+      "next_cycle_plan": "Wait for review-dashboard-ts-fix verdict; deploy via deploy-verify-agent if approved, then confirm the fix live (open the dashboard, closed-trades table shows real times, not '-'). Continue watching for C_NEG_EV_PROBE finally firing [PAPER_NEG_EV_PROBE_ACCEPTED] (still 0 since the 2026-08-31 fix, unexercised). Deferred items unchanged: bucket=None weak_ev blocks, detect_recon_failure() status=MISMATCH gap, restart-correlated-stall open question, and now also: reconcile why the dashboard's learning_state.json-sourced lifetime_n and cache.sqlite's row count diverge by 1000+ (noted twice now, cycles 193 and 195, never investigated)."
     }
   ],
   "experiment": {
