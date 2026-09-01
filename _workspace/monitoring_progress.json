@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 196,
+  "cycle": 197,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 196,
+  "total_cycles_completed": 197,
   "current_wr": 28.0,
   "current_pnl": -3.1376,
-  "last_update": "2026-09-01T06:38:00Z",
+  "last_update": "2026-09-01T06:50:00Z",
   "status": "monitoring",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -2653,6 +2653,20 @@
       "investigation": "EMERGENCY_MONITOR fired RECON_FAILURE+LEARNING_STALL+DASHBOARD_ZERO starting 06:27:52, RECON_FAILURE cleared by 06:34 but LEARNING_STALL+DASHBOARD_ZERO persisted continuously through at least 06:37:53 (>10 min, unlike cycle 194's 5-min self-resolved blip). Cross-checked: real trading unaffected (12 closes/30min via direct SQL, matches baseline). This matches the KNOWN, previously-documented dashboard-freeze failure mode (CLAUDE.md 'KNOWN GAP' -- cryptomaster-dashboard.service is a separate unit, not auto-restarted by bot deploys, and its in-memory state can freeze while re-stamping a fresh-looking timestamp).",
       "action_taken": "Applied the documented mitigation directly: `systemctl restart cryptomaster-dashboard`. Verified recovery: service active, /api/dashboard/metrics returns fresh last_update_utc, degraded=false. Did not touch cryptomaster.service (trading) at all -- this was purely the dashboard's own known issue. Also dispatched a background general-purpose agent to execute CLAUDE_EXTERNAL_AUDIT_KOLO10_PROMPT_2026-09-01.md (user-provided, fully-specified extended 2021/22 funding-carry history research task, unrelated to live trading -- a parallel research workstream, not a monitoring-loop action).",
       "next_cycle_plan": "Watch whether DASHBOARD_ZERO/LEARNING_STALL recurs -- if it does on a short cadence now, that would be new information about the freeze's triggering pattern (worth escalating to a real forensic investigation, per the long-deferred 'worth its own future investigation' note from cycle 159/49). Continue standard 30-min WR/PF/P&L monitoring. Separately watch for the Kolo 10 research agent's completion."
+    },
+    {
+      "cycle": 197,
+      "timestamp": "2026-09-01T06:50:00Z",
+      "status": "MAJOR_FINDING_EHM_LOG_WINDOW_TRUNCATION_FIXED_REVIEW_DISPATCHED",
+      "metrics_snapshot": {
+        "recent_100_wr_pct": 22.0,
+        "lifetime_pf": 0.6670862977438821,
+        "open_positions": 2,
+        "note": "no new trading-metric action this cycle -- this cycle's work was entirely about the false-alarm root cause found while investigating the cycle-196 dashboard restart's apparent non-effect"
+      },
+      "investigation": "Followed up on cycle 196's dashboard restart: DASHBOARD_ZERO/LEARNING_STALL kept firing continuously for 9+ minutes AFTER the restart, while [V5_BRIDGE_DASHBOARD_METRICS] log lines were demonstrably still being emitted normally every ~30s the whole time -- proof the restart was the wrong diagnosis. Root-caused via direct measurement: bot2/main.py's _get_recent_logs() fetched a fixed 'journalctl -n 500' every 60s; measured live throughput ~147 lines/sec means 500 lines covers only ~3.4s of real history, structurally almost never containing a periodic marker (RECON, dashboard-metrics, learning-update, etc.) that fires every 30-60s. All 7 detector functions in emergency_health_monitor.py compounded this with their own further fixed-size tail slice ([-50:]/[-100:]/[-200:]). This single root cause plausibly explains the RECON_FAILURE/DASHBOARD_ZERO/LEARNING_STALL false-positive pattern dismissed as unrelated noise across many prior cycles this session (159, 187-188, 194, 196).",
+      "action_taken": "Fixed: bot2/main.py now fetches by time (--since '90 seconds ago') instead of a fixed line count, throughput-independent; removed the redundant tail-slicing in all 7 emergency_health_monitor.py detectors. New test file (7 tests) proves the fix via direct mutation testing -- caught and fixed my own first-draft test construction bug (markers placed at the tail of padding, where even the OLD end-anchored slice would still have caught them) before trusting the result. Full suite 20/20 pass. Committed, pushed, dispatched reviewer-agent (not yet deployed -- advisory-only code, no urgency, but same review discipline as always).",
+      "next_cycle_plan": "Wait for review-ehm-window-fix verdict, then deploy via deploy-verify-agent if approved. Post-deploy: watch for RECON_FAILURE/DASHBOARD_ZERO/LEARNING_STALL alert frequency dropping to near-zero (or only firing for genuine sustained issues) as the real confirmation this was the root cause, not just a plausible theory. Also still watching: kolo10-extended-history background agent (funding-carry 2021/22 research, unrelated to trading), review-dashboard-ts-fix (still pending, low urgency). Continue normal 30-min WR/PF/P&L cadence."
     }
   ],
   "experiment": {
