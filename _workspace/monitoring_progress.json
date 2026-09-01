@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 195,
+  "cycle": 196,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 195,
+  "total_cycles_completed": 196,
   "current_wr": 28.0,
   "current_pnl": -3.1376,
-  "last_update": "2026-09-01T06:05:00Z",
+  "last_update": "2026-09-01T06:38:00Z",
   "status": "monitoring",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -2639,6 +2639,20 @@
       "investigation": "Two threads this cycle. (1) Chased an apparent quota/trade-rate spike -- resolved as a non-issue via direct SQL + QUOTA_ATTRIBUTION log parsing: real close rate ~0.4-0.8/min (normal), and the read-quota jump is the audit-backlog drain instrumentation working exactly as designed (deployed cycle 159/49), not a new problem. This does correct my own memory's earlier 'steady-state ~600 reads/day confirmed' claim -- that was evidently too short a sample; real usage clearly varies a lot with backlog-drain phase. (2) User directly flagged a real bug: 'closedtrades nemaji timestamp v dashboard'. Traced it to a field-name mismatch: updateTradesTable()'s JS read t.exit_ts, a key the API's primary (cache.sqlite) code path never sends -- only exit_time/exit_timestamp. Every closed trade's time column silently showed '-' in normal operation.",
       "action_taken": "Fixed the JS to read exit_timestamp (falling back to exit_time) instead of the nonexistent exit_ts. Added a regression test that extracts the real updateTradesTable() function body from the live HTML_TEMPLATE and asserts every t.<field> it references exists on a real closed_trades_list row -- verified directly via mutation (fails with the original buggy code, passes with the fix; also caught and fixed two of my own test-authoring mistakes along the way: an under-matching regex boundary, and a false match on the literal string 't.exit_ts' inside this fix's own JS comment). Full test_dashboard_contract_fixes.py suite: 12/12 pass. Committed with isolated hash-object/update-index staging (both touched files carry unrelated pre-existing SEC-01/auth-fixture working-tree changes), pushed, dispatched reviewer-agent before deploying -- not yet deployed.",
       "next_cycle_plan": "Wait for review-dashboard-ts-fix verdict; deploy via deploy-verify-agent if approved, then confirm the fix live (open the dashboard, closed-trades table shows real times, not '-'). Continue watching for C_NEG_EV_PROBE finally firing [PAPER_NEG_EV_PROBE_ACCEPTED] (still 0 since the 2026-08-31 fix, unexercised). Deferred items unchanged: bucket=None weak_ev blocks, detect_recon_failure() status=MISMATCH gap, restart-correlated-stall open question, and now also: reconcile why the dashboard's learning_state.json-sourced lifetime_n and cache.sqlite's row count diverge by 1000+ (noted twice now, cycles 193 and 195, never investigated)."
+    },
+    {
+      "cycle": 196,
+      "timestamp": "2026-09-01T06:38:00Z",
+      "status": "DASHBOARD_FREEZE_RECURRED_RESTARTED_KOLO10_DISPATCHED",
+      "metrics_snapshot": {
+        "recent_100_wr_pct": 21.0,
+        "lifetime_pf": 0.6670812553859676,
+        "closed_last_30min_verified_direct_sql": 12,
+        "note": "real trading unaffected throughout -- this was a dashboard-service-only issue"
+      },
+      "investigation": "EMERGENCY_MONITOR fired RECON_FAILURE+LEARNING_STALL+DASHBOARD_ZERO starting 06:27:52, RECON_FAILURE cleared by 06:34 but LEARNING_STALL+DASHBOARD_ZERO persisted continuously through at least 06:37:53 (>10 min, unlike cycle 194's 5-min self-resolved blip). Cross-checked: real trading unaffected (12 closes/30min via direct SQL, matches baseline). This matches the KNOWN, previously-documented dashboard-freeze failure mode (CLAUDE.md 'KNOWN GAP' -- cryptomaster-dashboard.service is a separate unit, not auto-restarted by bot deploys, and its in-memory state can freeze while re-stamping a fresh-looking timestamp).",
+      "action_taken": "Applied the documented mitigation directly: `systemctl restart cryptomaster-dashboard`. Verified recovery: service active, /api/dashboard/metrics returns fresh last_update_utc, degraded=false. Did not touch cryptomaster.service (trading) at all -- this was purely the dashboard's own known issue. Also dispatched a background general-purpose agent to execute CLAUDE_EXTERNAL_AUDIT_KOLO10_PROMPT_2026-09-01.md (user-provided, fully-specified extended 2021/22 funding-carry history research task, unrelated to live trading -- a parallel research workstream, not a monitoring-loop action).",
+      "next_cycle_plan": "Watch whether DASHBOARD_ZERO/LEARNING_STALL recurs -- if it does on a short cadence now, that would be new information about the freeze's triggering pattern (worth escalating to a real forensic investigation, per the long-deferred 'worth its own future investigation' note from cycle 159/49). Continue standard 30-min WR/PF/P&L monitoring. Separately watch for the Kolo 10 research agent's completion."
     }
   ],
   "experiment": {
