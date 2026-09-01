@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 197,
+  "cycle": 198,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 197,
+  "total_cycles_completed": 198,
   "current_wr": 28.0,
   "current_pnl": -3.1376,
-  "last_update": "2026-09-01T06:50:00Z",
+  "last_update": "2026-09-01T07:28:00Z",
   "status": "monitoring",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -2667,6 +2667,20 @@
       "investigation": "Followed up on cycle 196's dashboard restart: DASHBOARD_ZERO/LEARNING_STALL kept firing continuously for 9+ minutes AFTER the restart, while [V5_BRIDGE_DASHBOARD_METRICS] log lines were demonstrably still being emitted normally every ~30s the whole time -- proof the restart was the wrong diagnosis. Root-caused via direct measurement: bot2/main.py's _get_recent_logs() fetched a fixed 'journalctl -n 500' every 60s; measured live throughput ~147 lines/sec means 500 lines covers only ~3.4s of real history, structurally almost never containing a periodic marker (RECON, dashboard-metrics, learning-update, etc.) that fires every 30-60s. All 7 detector functions in emergency_health_monitor.py compounded this with their own further fixed-size tail slice ([-50:]/[-100:]/[-200:]). This single root cause plausibly explains the RECON_FAILURE/DASHBOARD_ZERO/LEARNING_STALL false-positive pattern dismissed as unrelated noise across many prior cycles this session (159, 187-188, 194, 196).",
       "action_taken": "Fixed: bot2/main.py now fetches by time (--since '90 seconds ago') instead of a fixed line count, throughput-independent; removed the redundant tail-slicing in all 7 emergency_health_monitor.py detectors. New test file (7 tests) proves the fix via direct mutation testing -- caught and fixed my own first-draft test construction bug (markers placed at the tail of padding, where even the OLD end-anchored slice would still have caught them) before trusting the result. Full suite 20/20 pass. Committed, pushed, dispatched reviewer-agent (not yet deployed -- advisory-only code, no urgency, but same review discipline as always).",
       "next_cycle_plan": "Wait for review-ehm-window-fix verdict, then deploy via deploy-verify-agent if approved. Post-deploy: watch for RECON_FAILURE/DASHBOARD_ZERO/LEARNING_STALL alert frequency dropping to near-zero (or only firing for genuine sustained issues) as the real confirmation this was the root cause, not just a plausible theory. Also still watching: kolo10-extended-history background agent (funding-carry 2021/22 research, unrelated to trading), review-dashboard-ts-fix (still pending, low urgency). Continue normal 30-min WR/PF/P&L cadence."
+    },
+    {
+      "cycle": 198,
+      "timestamp": "2026-09-01T07:28:00Z",
+      "status": "STABLE_QUOTA_RESET_OBSERVED_AWAITING_3_BACKGROUND_WORKSTREAMS",
+      "metrics_snapshot": {
+        "recent_100_wr_pct": 25.0,
+        "lifetime_pf": 0.6670306109598436,
+        "firebase_quota": "299/50000 reads (0.6%), 83/20000 writes (0.4%) -- daily 07:00 UTC reset observed, expected/healthy",
+        "open_positions": 2
+      },
+      "investigation": "Quota counters dropped sharply (13844->299 reads, 4033->83 writes) matching the expected daily 07:00 UTC reset -- not an anomaly. EMERGENCY_MONITOR still firing RECON_FAILURE continuously (30x in 15 min) as expected -- the window-truncation fix from cycle 197 is committed/pushed but NOT yet deployed, so live behavior is unchanged for now, consistent with the theory.",
+      "action_taken": "Nudged review-dashboard-ts-fix (2nd check-in, ~1h pending) and review-ehm-window-fix (1st check-in, ~35min pending). Not nudging kolo10-extended-history yet -- multi-year multi-symbol data download is legitimately long-running.",
+      "next_cycle_plan": "Continue watching for any of the 3 background workstreams to complete. Standard 30-min WR/PF/P&L cadence otherwise."
     }
   ],
   "experiment": {
