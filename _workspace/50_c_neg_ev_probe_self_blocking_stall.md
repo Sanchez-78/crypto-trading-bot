@@ -2,6 +2,9 @@
 
 ## Status: DEPLOYED (901fc39 + f4dd5ee, 2026-08-31 12:25 UTC) — incident resolved, but the fix's own path is UNPROVEN, not "validated." Do not close this as a clean win. See "Deploy verification" section below.
 
+## Unrelated addendum (2026-09-02): two more fixes deployed same-day as this file's last edit's follow-up work
+Not part of this incident, noted here only because monitoring_progress.json's cycle log references it: the dashboard timestamp fix (8f1b3e0) and the EMERGENCY_MONITOR log-window-truncation fix (cycle 197) were both deployed 2026-09-02 06:16 UTC (commit f3967fe), user-authorized without waiting for their formal reviews (which became unreachable due to an Anthropic account spend limit hitting the two background review agents). Both verified live post-deploy. See cycle 204 in monitoring_progress.json for full detail.
+
 ## Trigger
 
 User said "wr stale klesa" (WR keeps dropping). Checked immediately: WR was

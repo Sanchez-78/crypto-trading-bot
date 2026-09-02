@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 203,
+  "cycle": 204,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 203,
+  "total_cycles_completed": 204,
   "current_wr": 28.0,
   "current_pnl": -3.1376,
-  "last_update": "2026-09-02T06:10:00Z",
+  "last_update": "2026-09-02T06:20:00Z",
   "status": "monitoring_degraded_no_subagents",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -2749,6 +2749,18 @@
       "investigation": "kolo10-extended-history and bot-audit-a2-a1 both failed with 'You've hit your monthly spend limit' -- an Anthropic account-level Claude usage limit, unrelated to Firebase quota or trading logic. Not retried (would hit the same limit). The other two dispatched agents (review-dashboard-ts-fix, review-ehm-window-fix) have not sent an explicit failure notification but are very likely blocked by the same account-wide limit -- not proactively nudged this cycle to avoid burning further attempts against the same wall. Live bot metrics checked directly via SSH (no subagent needed): no new incident, WR dip to 14% and quota rise are both explained by already-understood patterns (starvation-discovery-only trading hour; audit_cleanup_drain backlog read cost).",
       "action_taken": "None beyond direct SSH monitoring. Flagged the spend-limit blocker to the user, including the open decision of whether to deploy the two already-committed, already-self-tested-via-mutation-testing, low-risk fixes (dashboard timestamp, EHM window truncation) without their formal review verdicts, given the reviewers may be unreachable indefinitely.",
       "next_cycle_plan": "Continue standard 30-min live monitoring via direct SSH (no new agent dispatches) until the user either raises the spend limit or gives another instruction. Re-check background agent reachability opportunistically, not by repeated dispatch attempts."
+    },
+    {
+      "cycle": 204,
+      "timestamp": "2026-09-02T06:20:00Z",
+      "status": "BOTH_PENDING_FIXES_DEPLOYED_VERIFIED_LIVE",
+      "metrics_snapshot": {
+        "deployed_sha": "f3967fe8701e683347d34fe6accd511e055e1414",
+        "previous_sha": "d8befbb31d7991f2d04a1735c29daa650b86136e"
+      },
+      "investigation": "User explicitly authorized deploying both pending fixes without waiting for the (now-unreachable, spend-limited) formal review verdicts, given both were already self-tested via direct mutation testing and are low-risk (non-trading: dashboard display, advisory-only monitoring). Since deploy-verify-agent would also be blocked by the same spend limit, ran the gated deploy myself directly via `gh` CLI (already authenticated) instead of dispatching a subagent -- PLAN then DEPLOY, matching the standard workflow exactly.",
+      "action_taken": "gh workflow run 'Hetzner Deploy Apply (manual, gated)' -f confirm=PLAN -> all gates passed (run 33598004260). Then -f confirm=DEPLOY -> [DEPLOY_OK] live now f3967fe8..., service active, READY converged, [DASHBOARD_RESTART_OK] (run 33598077127). Verified BOTH fixes live: (1) dashboard timestamp fix -- API response and served HTML both show the fixed 'rawTs' JS variable and real exit_timestamp data; (2) EMERGENCY_MONITOR window fix -- post-restart alert pattern changed from continuous multi-alert every single 60s cycle to intermittent single alerts and 'All checks passed' cycles within the first ~4 minutes -- early evidence supports the fix, full confirmation next cycle.",
+      "next_cycle_plan": "Confirm sustained EMERGENCY_MONITOR alert-frequency improvement over a full 30-min window (not just the first few minutes). Continue direct-SSH-only monitoring (no subagent dispatches) given the spend-limit blocker. Kolo10/A2-A1 background research remains stalled pending the user raising the limit or further instruction."
     }
   ],
   "experiment": {
