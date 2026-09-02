@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 206,
+  "cycle": 207,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 206,
+  "total_cycles_completed": 207,
   "current_wr": 28.0,
   "current_pnl": -3.1376,
-  "last_update": "2026-09-02T07:22:00Z",
+  "last_update": "2026-09-02T07:53:00Z",
   "status": "monitoring",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -2791,6 +2791,20 @@
       "investigation": "No new incident. EHM fix continues to hold cleanly (2nd consecutive 30-min window, 0 false alerts).",
       "action_taken": "Sent a resume probe to kolo10-extended-history (real unfinished work, natural test) to check if the spend limit is resolved, per plan from cycle 205. Did not dispatch any new agent -- only resumed an existing named one.",
       "next_cycle_plan": "Check whether the probe succeeded or failed again. If succeeded, consider resuming bot-audit-a2-a1 and the two reviewers too."
+    },
+    {
+      "cycle": 207,
+      "timestamp": "2026-09-02T07:53:00Z",
+      "status": "SPEND_LIMIT_RESOLVED_ALL_4_AGENTS_RESUMED",
+      "metrics_snapshot": {
+        "recent_100_wr_pct": 23.0,
+        "lifetime_pf": 0.6601460155167928,
+        "open_positions": 3,
+        "emergency_monitor_30min_window": "18/18 'All checks passed' -- 3rd consecutive clean window"
+      },
+      "investigation": "Spend-limit probe on kolo10 succeeded -- it's back, now on 'round 2 review of corrected final report' per its own idle_notification. Confirms the account limit is resolved.",
+      "action_taken": "Resumed all 3 remaining stalled agents: bot-audit-a2-a1 (real unfinished SSH-informed forensics work), review-dashboard-ts-fix and review-ehm-window-fix (both now retrospective since their fixes are already deployed+verified, but still valuable for post-hoc scrutiny).",
+      "next_cycle_plan": "Watch for completions from kolo10, bot-audit-a2-a1, and the two retrospective reviews. Continue standard 30-min cadence."
     }
   ],
   "experiment": {
