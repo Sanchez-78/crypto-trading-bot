@@ -5,14 +5,14 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 202,
+  "cycle": 203,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 202,
+  "total_cycles_completed": 203,
   "current_wr": 28.0,
   "current_pnl": -3.1376,
-  "last_update": "2026-09-01T11:24:00Z",
-  "status": "monitoring",
+  "last_update": "2026-09-02T06:10:00Z",
+  "status": "monitoring_degraded_no_subagents",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
     "Metrics source: hetzner-fetch-health artifact trading_metrics.txt + dashboard_metrics.json",
@@ -2734,6 +2734,21 @@
       "investigation": "No new incident. kolo10 cache growth nearly stalled (1591->1594 files over ~30+min) after ~4.5h running -- could be legitimate (heavy block-bootstrap computation, B=5000 resamples) or genuinely stuck.",
       "action_taken": "Nudged kolo10-extended-history for a real status check. No other action needed.",
       "next_cycle_plan": "Continue standard cadence, watch for kolo10's response and the other 3 background workstreams."
+    },
+    {
+      "cycle": 203,
+      "timestamp": "2026-09-02T06:10:00Z",
+      "status": "TWO_BACKGROUND_AGENTS_FAILED_MONTHLY_SPEND_LIMIT",
+      "metrics_snapshot": {
+        "recent_100_wr_pct": 14.0,
+        "lifetime_pf": 0.660932394109237,
+        "closed_last_60min_verified_direct_sql": 25,
+        "closed_last_60min_bucket_breakdown": "100% PAPER_STARVATION_DISCOVERY, 5/25 wins -- matches already-documented exploration-bucket noise pattern, not a new incident",
+        "firebase_quota": "17667/50000 reads (audit_cleanup_drain, expected/by-design), 5160/20000 writes"
+      },
+      "investigation": "kolo10-extended-history and bot-audit-a2-a1 both failed with 'You've hit your monthly spend limit' -- an Anthropic account-level Claude usage limit, unrelated to Firebase quota or trading logic. Not retried (would hit the same limit). The other two dispatched agents (review-dashboard-ts-fix, review-ehm-window-fix) have not sent an explicit failure notification but are very likely blocked by the same account-wide limit -- not proactively nudged this cycle to avoid burning further attempts against the same wall. Live bot metrics checked directly via SSH (no subagent needed): no new incident, WR dip to 14% and quota rise are both explained by already-understood patterns (starvation-discovery-only trading hour; audit_cleanup_drain backlog read cost).",
+      "action_taken": "None beyond direct SSH monitoring. Flagged the spend-limit blocker to the user, including the open decision of whether to deploy the two already-committed, already-self-tested-via-mutation-testing, low-risk fixes (dashboard timestamp, EHM window truncation) without their formal review verdicts, given the reviewers may be unreachable indefinitely.",
+      "next_cycle_plan": "Continue standard 30-min live monitoring via direct SSH (no new agent dispatches) until the user either raises the spend limit or gives another instruction. Re-check background agent reachability opportunistically, not by repeated dispatch attempts."
     }
   ],
   "experiment": {
