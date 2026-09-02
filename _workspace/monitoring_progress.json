@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 205,
+  "cycle": 206,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 205,
+  "total_cycles_completed": 206,
   "current_wr": 28.0,
   "current_pnl": -3.1376,
-  "last_update": "2026-09-02T06:50:00Z",
+  "last_update": "2026-09-02T07:22:00Z",
   "status": "monitoring",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -2777,6 +2777,20 @@
       "investigation": "Full 30-min post-deploy confirmation of the EHM window-truncation fix: every single health check in the window passed cleanly, zero RECON_FAILURE/LEARNING_STALL/DASHBOARD_ZERO false positives -- a complete reversal from the near-continuous multi-alert pattern observed across many prior cycles (159, 187-188, 194, 196-198, 200-203). Root cause and fix both now independently confirmed correct by live behavior, not just by unit tests. Trading metrics noisy but within established range, no new incident.",
       "action_taken": "None needed -- confirmation-only cycle. Noted the user ran /model (usage top-up page opened) but have no confirmation the spend limit is actually resolved yet -- not assuming subagent dispatches will succeed; will only resume background-agent work once there's real evidence (e.g. a successful dispatch) rather than optimistically retrying.",
       "next_cycle_plan": "Continue direct-SSH monitoring. Opportunistically test whether subagent dispatch works again (low-stakes probe, e.g. resuming one of the stalled reviewers) next time there's a natural reason to, rather than a dedicated retry attempt."
+    },
+    {
+      "cycle": 206,
+      "timestamp": "2026-09-02T07:22:00Z",
+      "status": "STABLE_PROBED_SPEND_LIMIT_RECOVERY",
+      "metrics_snapshot": {
+        "recent_100_wr_pct": 24.0,
+        "lifetime_pf": 0.6609658670585373,
+        "open_positions": 6,
+        "emergency_monitor_30min_window": "15/15 'All checks passed' -- second consecutive clean window, fix holding"
+      },
+      "investigation": "No new incident. EHM fix continues to hold cleanly (2nd consecutive 30-min window, 0 false alerts).",
+      "action_taken": "Sent a resume probe to kolo10-extended-history (real unfinished work, natural test) to check if the spend limit is resolved, per plan from cycle 205. Did not dispatch any new agent -- only resumed an existing named one.",
+      "next_cycle_plan": "Check whether the probe succeeded or failed again. If succeeded, consider resuming bot-audit-a2-a1 and the two reviewers too."
     }
   ],
   "experiment": {
