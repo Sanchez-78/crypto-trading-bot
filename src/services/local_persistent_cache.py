@@ -20,6 +20,7 @@ import os
 from typing import Optional, List, Dict, Any
 from threading import Lock
 
+from src.core import test_sink_guard as _sink_guard
 from src.core.trade_metrics_contract import (
     METRICS_CONTRACT_VERSION,
     classify_outcome,
@@ -39,10 +40,11 @@ _log = logging.getLogger(__name__)
 # The directory is now resolvable from an env override so a test session can
 # redirect the whole sink in one place, and _assert_not_production_sink()
 # below makes writing the production sink from a test run fail closed.
-STORAGE_DIR_ENV_VAR = "CRYPTOMASTER_LEARNING_STORAGE_DIR"
-_PRODUCTION_CACHE_DIR_NAME = "local_learning_storage"
+SINK_DIR_ENV_VAR = "CRYPTOMASTER_LEARNING_STORAGE_DIR"
+# Back-compat alias: the first iteration of this fix exported this name.
+STORAGE_DIR_ENV_VAR = SINK_DIR_ENV_VAR
 
-LOCAL_CACHE_DIR = os.getenv(STORAGE_DIR_ENV_VAR, "").strip() or _PRODUCTION_CACHE_DIR_NAME
+LOCAL_CACHE_DIR = _sink_guard.resolve_dir(SINK_DIR_ENV_VAR, "local_learning_storage")
 LOCAL_DB_PATH = f"{LOCAL_CACHE_DIR}/cache.sqlite"
 LOCAL_STATE_DIR = f"{LOCAL_CACHE_DIR}/state"
 
@@ -55,21 +57,12 @@ def _assert_not_production_sink():
     Per-test monkeypatch discipline is not sufficient on its own: several
     suites already redirect correctly and the contamination happened anyway,
     because the suites that forget are precisely the ones that cause it. This
-    is the structural backstop -- under pytest, a write whose target directory
-    is literally named `local_learning_storage` is refused rather than
-    silently performed.
+    is the structural backstop; the rule itself lives in one shared place
+    (src.core.test_sink_guard) so the four guarded sinks cannot drift apart.
 
     Normal production runs are unaffected: PYTEST_CURRENT_TEST is unset there.
     """
-    if not os.getenv("PYTEST_CURRENT_TEST"):
-        return
-    target_dir = os.path.basename(os.path.dirname(os.path.abspath(LOCAL_DB_PATH)))
-    if target_dir == _PRODUCTION_CACHE_DIR_NAME:
-        raise RuntimeError(
-            "refusing to write the production learning sink from a test run: "
-            f"LOCAL_DB_PATH={LOCAL_DB_PATH!r}. Redirect it via the "
-            f"{STORAGE_DIR_ENV_VAR} env var or monkeypatch LOCAL_DB_PATH."
-        )
+    _sink_guard.assert_not_production_sink(LOCAL_DB_PATH)
 
 
 def _ensure_dirs():

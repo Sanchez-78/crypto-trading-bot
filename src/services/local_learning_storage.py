@@ -38,7 +38,20 @@ STORAGE_PATH = None
 
 # V10.27 FIX: Try network first, but fallback to local immediately if in development
 import os
-if os.getenv("FORCE_LOCAL_STORAGE") or not any(Path(p).exists() for p in NETWORK_PATHS):
+
+from src.core import test_sink_guard as _sink_guard
+
+# Test-sink separation (2026-09-14). This sink is NOT merely CWD-relative: it
+# probes NETWORK_PATHS first, so on a developer machine where the NAS share is
+# mounted it resolves to SHARED NETWORK STORAGE. A test writing the learning
+# database there would corrupt data other machines read. The override is
+# checked before the network probe so a redirected session never touches it.
+SINK_DIR_ENV_VAR = "CRYPTOMASTER_LEARNING_STORAGE_DIR"
+_sink_override = _sink_guard.resolve_dir(SINK_DIR_ENV_VAR, "")
+if _sink_override:
+    STORAGE_PATH = Path(_sink_override)
+    STORAGE_PATH.mkdir(parents=True, exist_ok=True)
+elif os.getenv("FORCE_LOCAL_STORAGE") or not any(Path(p).exists() for p in NETWORK_PATHS):
     # Use local directory (development mode, or network unavailable)
     STORAGE_PATH = Path("local_learning_storage")
     STORAGE_PATH.mkdir(parents=True, exist_ok=True)
@@ -58,6 +71,8 @@ if not STORAGE_PATH:
     log.warning(f"[LOCAL_STORAGE] Network share unavailable, using local fallback: {STORAGE_PATH}")
 
 DB_PATH = STORAGE_PATH / "learning_database.sqlite"
+# Fail closed if a test session somehow reached a production/network sink.
+_sink_guard.assert_not_production_sink(DB_PATH)
 BACKUP_DIR = STORAGE_PATH / "backups"
 BACKUP_DIR.mkdir(exist_ok=True)
 

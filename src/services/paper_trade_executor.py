@@ -28,6 +28,7 @@ except ImportError:
                     if k not in os.environ:  # P0.1: do not override existing systemd env
                         os.environ[k] = v
 
+from src.core import test_sink_guard as _sink_guard
 from src.core.event_bus import subscribe_once
 from src.core.trade_metrics_contract import classify_outcome
 
@@ -181,7 +182,12 @@ _MIN_ENTRY_CONFIDENCE = float(os.getenv("PAPER_MIN_ENTRY_CONFIDENCE", "0.50"))  
 # State
 _POSITIONS = {}  # position_id -> position_dict
 _POSITION_LOCK = __import__("threading").RLock()
-_STATE_FILE = "data/paper_open_positions.json"
+# Test-sink separation (2026-09-14): CWD-relative, so under pytest this
+# resolved to the repo's real data/ directory and a test save overwrote the
+# bot's open-position state. See src/core/test_sink_guard.py.
+SINK_DIR_ENV_VAR = "CRYPTOMASTER_PAPER_STATE_DIR"
+_STATE_DIR = _sink_guard.resolve_dir(SINK_DIR_ENV_VAR, "data")
+_STATE_FILE = f"{_STATE_DIR}/paper_open_positions.json"
 
 # P0-FIX (2026-08-05): Single source of truth for the TP/SL fallback bps.
 # Previously _normalize_position_for_loading() (legacy/corrupted-state

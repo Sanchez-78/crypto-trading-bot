@@ -8,6 +8,21 @@ import time
 import os
 from unittest.mock import patch, MagicMock
 
+
+def _state_file():
+    """The paper state file the executor actually writes.
+
+    These tests used to hardcode the literal data/ state-file path, which
+    resolved against the CWD to the REPO's real data/ directory -- so running
+    them deleted and rewrote the bot's live open-position state, bypassing the
+    _STATE_FILE redirect entirely (tests/conftest.py). Reading the constant
+    keeps the assertions identical while following the redirect.
+    """
+    from src.services import paper_trade_executor as _pte
+    return _pte._STATE_FILE
+
+
+
 # Suppress Firebase/async errors during import
 with patch.dict(os.environ, {"FIREBASE_PROJECT_ID": "test-project"}):
     from src.services.paper_exploration import (
@@ -478,8 +493,8 @@ class TestPaperStatePersistence:
         import json
 
         # Remove state file if it exists
-        if os.path.exists("data/paper_open_positions.json"):
-            os.remove("data/paper_open_positions.json")
+        if os.path.exists(_state_file()):
+            os.remove(_state_file())
 
         signal = {
             "symbol": "XRPUSDT",
@@ -505,8 +520,8 @@ class TestPaperStatePersistence:
         assert result["status"] == "opened"
 
         # Verify file exists and contains the position
-        assert os.path.exists("data/paper_open_positions.json")
-        with open("data/paper_open_positions.json", "r") as f:
+        assert os.path.exists(_state_file())
+        with open(_state_file(), "r") as f:
             saved_positions = json.load(f)
         assert len(saved_positions) == 1
         assert list(saved_positions.values())[0]["symbol"] == "XRPUSDT"
@@ -518,8 +533,8 @@ class TestPaperStatePersistence:
         import os
 
         # Remove state file if it exists
-        if os.path.exists("data/paper_open_positions.json"):
-            os.remove("data/paper_open_positions.json")
+        if os.path.exists(_state_file()):
+            os.remove(_state_file())
 
         signal = {
             "symbol": "XRPUSDT",
@@ -544,7 +559,7 @@ class TestPaperStatePersistence:
 
         # Verify position removed from disk
         import json
-        with open("data/paper_open_positions.json", "r") as f:
+        with open(_state_file(), "r") as f:
             saved_positions = json.load(f)
         assert len(saved_positions) == 0
 
@@ -555,8 +570,8 @@ class TestBucketMetrics:
     def test_bucket_metrics_updates_after_closed_trade(self):
         """Bucket metrics update after closed exploration trade"""
         import os
-        if os.path.exists("data/paper_open_positions.json"):
-            os.remove("data/paper_open_positions.json")
+        if os.path.exists(_state_file()):
+            os.remove(_state_file())
 
         from src.services.bucket_metrics import update_bucket_metrics, get_bucket_metrics, reset_bucket_metrics
 
@@ -830,8 +845,8 @@ class TestCWeakEVTuning:
         )
 
         reset_paper_positions()
-        if os.path.exists("data/paper_open_positions.json"):
-            os.remove("data/paper_open_positions.json")
+        if os.path.exists(_state_file()):
+            os.remove(_state_file())
 
         signal = {
             "symbol": "DOGEUSDT",
@@ -870,12 +885,12 @@ class TestRobustStateLoader:
         import json
 
         reset_paper_positions()
-        if os.path.exists("data/paper_open_positions.json"):
-            os.remove("data/paper_open_positions.json")
+        if os.path.exists(_state_file()):
+            os.remove(_state_file())
 
         # Write empty list to state file
         os.makedirs("data", exist_ok=True)
-        with open("data/paper_open_positions.json", "w") as f:
+        with open(_state_file(), "w") as f:
             json.dump([], f)
 
         # Load should not crash
@@ -892,8 +907,8 @@ class TestRobustStateLoader:
         import json
 
         reset_paper_positions()
-        if os.path.exists("data/paper_open_positions.json"):
-            os.remove("data/paper_open_positions.json")
+        if os.path.exists(_state_file()):
+            os.remove(_state_file())
 
         # Write list format state
         legacy_list = [
@@ -920,7 +935,7 @@ class TestRobustStateLoader:
         ]
 
         os.makedirs("data", exist_ok=True)
-        with open("data/paper_open_positions.json", "w") as f:
+        with open(_state_file(), "w") as f:
             json.dump(legacy_list, f)
 
         # Load should convert to dict
@@ -941,8 +956,8 @@ class TestRobustStateLoader:
         import json
 
         reset_paper_positions()
-        if os.path.exists("data/paper_open_positions.json"):
-            os.remove("data/paper_open_positions.json")
+        if os.path.exists(_state_file()):
+            os.remove(_state_file())
 
         # Write canonical dict format
         canonical_dict = {
@@ -959,7 +974,7 @@ class TestRobustStateLoader:
         }
 
         os.makedirs("data", exist_ok=True)
-        with open("data/paper_open_positions.json", "w") as f:
+        with open(_state_file(), "w") as f:
             json.dump(canonical_dict, f)
 
         from src.services.paper_trade_executor import _load_paper_state, get_paper_trade_by_id
@@ -975,12 +990,12 @@ class TestRobustStateLoader:
         import json
 
         reset_paper_positions()
-        if os.path.exists("data/paper_open_positions.json"):
-            os.remove("data/paper_open_positions.json")
+        if os.path.exists(_state_file()):
+            os.remove(_state_file())
 
         # Write invalid JSON
         os.makedirs("data", exist_ok=True)
-        with open("data/paper_open_positions.json", "w") as f:
+        with open(_state_file(), "w") as f:
             f.write("{invalid json]")
 
         from src.services.paper_trade_executor import _load_paper_state, get_paper_open_positions
@@ -995,8 +1010,8 @@ class TestRobustStateLoader:
         import json
 
         reset_paper_positions()
-        if os.path.exists("data/paper_open_positions.json"):
-            os.remove("data/paper_open_positions.json")
+        if os.path.exists(_state_file()):
+            os.remove(_state_file())
 
         signal = {
             "symbol": "DOGEUSDT",
@@ -1020,7 +1035,7 @@ class TestRobustStateLoader:
         assert result["status"] == "opened"
 
         # Check saved file is dict, not list
-        with open("data/paper_open_positions.json", "r") as f:
+        with open(_state_file(), "r") as f:
             saved = json.load(f)
 
         assert isinstance(saved, dict), "Saved state should be dict, not list"
@@ -1031,8 +1046,8 @@ class TestRobustStateLoader:
         import json
 
         reset_paper_positions()
-        if os.path.exists("data/paper_open_positions.json"):
-            os.remove("data/paper_open_positions.json")
+        if os.path.exists(_state_file()):
+            os.remove(_state_file())
 
         # Write list with position missing both trade_id and id
         # Use recent entry_ts so position doesn't get closed as stale during reconciliation
@@ -1048,7 +1063,7 @@ class TestRobustStateLoader:
         ]
 
         os.makedirs("data", exist_ok=True)
-        with open("data/paper_open_positions.json", "w") as f:
+        with open(_state_file(), "w") as f:
             json.dump(legacy_list, f)
 
         from src.services.paper_trade_executor import _load_paper_state, get_paper_open_positions
@@ -1071,8 +1086,8 @@ class TestMaxHoldWindow:
         reset_paper_positions()
 
         # Remove state file
-        if os.path.exists("data/paper_open_positions.json"):
-            os.remove("data/paper_open_positions.json")
+        if os.path.exists(_state_file()):
+            os.remove(_state_file())
 
         signal = {
             "symbol": "XRPUSDT",
@@ -1125,8 +1140,8 @@ class TestMaxHoldWindow:
 
         # Reset and remove state file
         reset_paper_positions()
-        if os.path.exists("data/paper_open_positions.json"):
-            os.remove("data/paper_open_positions.json")
+        if os.path.exists(_state_file()):
+            os.remove(_state_file())
 
         # Create a legacy position on disk (missing max_hold_s)
         legacy_positions = {
@@ -1145,7 +1160,7 @@ class TestMaxHoldWindow:
 
         # Write to disk
         os.makedirs("data", exist_ok=True)
-        with open("data/paper_open_positions.json", "w") as f:
+        with open(_state_file(), "w") as f:
             json.dump(legacy_positions, f)
 
         # Now load the state - migration should happen
@@ -1164,8 +1179,8 @@ class TestMaxHoldWindow:
         import json
 
         reset_paper_positions()
-        if os.path.exists("data/paper_open_positions.json"):
-            os.remove("data/paper_open_positions.json")
+        if os.path.exists(_state_file()):
+            os.remove(_state_file())
 
         # Create legacy B_RECOVERY_READY position
         legacy_positions = {
@@ -1182,7 +1197,7 @@ class TestMaxHoldWindow:
         }
 
         os.makedirs("data", exist_ok=True)
-        with open("data/paper_open_positions.json", "w") as f:
+        with open(_state_file(), "w") as f:
             json.dump(legacy_positions, f)
 
         # Load and migrate
@@ -1197,8 +1212,8 @@ class TestMaxHoldWindow:
         import json
         reset_paper_positions()
 
-        if os.path.exists("data/paper_open_positions.json"):
-            os.remove("data/paper_open_positions.json")
+        if os.path.exists(_state_file()):
+            os.remove(_state_file())
 
         signal = {
             "symbol": "BNBUSDT",

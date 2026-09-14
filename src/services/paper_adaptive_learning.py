@@ -36,8 +36,20 @@ except ImportError:
     record_paper_exit = None
     record_learning_update = None
 
-# Persistent state file
-_STATE_FILE = "server_local_backups/paper_adaptive_learning_state.json"
+# Persistent state file.
+#
+# Test-sink separation (2026-09-14): this was CWD-relative, so under pytest it
+# resolved to the repo's real server_local_backups/ and a single test save
+# overwrote the bot's DURABLE LEARNED PARAMETERS (~70 KB locally) -- the state
+# the dashboard reads for lifetime metrics. A prior audit left a
+# `state_hash_before_tests.txt` and a `.before_validation.json` copy beside it,
+# i.e. this was previously handled by hashing and restoring the file by hand.
+# See src/core/test_sink_guard.py.
+from src.core import test_sink_guard as _sink_guard
+
+SINK_DIR_ENV_VAR = "CRYPTOMASTER_BACKUP_STATE_DIR"
+_STATE_DIR = _sink_guard.resolve_dir(SINK_DIR_ENV_VAR, "server_local_backups")
+_STATE_FILE = f"{_STATE_DIR}/paper_adaptive_learning_state.json"
 
 # Rolling window sizes
 ROLLING_SIZES = {
