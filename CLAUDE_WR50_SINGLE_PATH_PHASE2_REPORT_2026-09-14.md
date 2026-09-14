@@ -1,8 +1,9 @@
 # CLAUDE — WR >50 single-path implementation, Phase 0–3/5/6 report (2026-09-14)
 
-> **Round 2 doplněk** (test-sink separace, schema migrace, Fáze 3) je v sekci
-> „Round 2“ na konci dokumentu. Terminální stav cíle se **nezměnil**:
-> `NOT_ACHIEVED`.
+> **Round 2** (test-sink separace `cache.sqlite`, schema migrace, Fáze 3) a
+> **Round 3** (všechny zbývající sinky, závislost na pořadí testů) jsou
+> v sekcích na konci dokumentu. Terminální stav cíle se ani v jednom kole
+> **nezměnil**: `NOT_ACHIEVED`.
 
 ## Terminální stav
 
@@ -518,6 +519,168 @@ production SQLite writes            = 1 accidental + 1 corrective revert
 4. Teprve pak Fáze 4 shadow kohorta s předem zafixovaným
    `code_version`/`config_version`, minimální velikostí vzorku, holdout oknem
    a max-loss capem.
+
+Cíl WR >50 zůstává `NOT_ACHIEVED`. Tento dokument není potvrzení production
+safety ani GO pro REAL trading.
+
+---
+---
+
+# Round 3 — všechny zbývající sinky + závislost na pořadí testů
+
+Terminální stav cíle **beze změny**: `WR >50 = NOT_ACHIEVED`.
+Release gate: `NOT_READY_FOR_DEPLOYMENT`. Deploy/restart/SSH/REAL orders: `0`.
+
+## R3-A — `cache.sqlite` nebyl zdaleka jediný sink
+
+Stejný vzorec (cesta rozhodnutá z module-level konstanty při importu) platil
+ještě pro tři další sinky:
+
+| Modul | Sink | Riziko |
+|---|---|---|
+| `local_learning_storage` | `learning_database.sqlite` | **síťový disk**, viz R3-B |
+| `paper_trade_executor` | `data/paper_open_positions.json` | živý stav otevřených pozic |
+| `paper_adaptive_learning` | `server_local_backups/paper_adaptive_learning_state.json` | **durable naučené parametry** (~70 kB), z nichž dashboard počítá lifetime metriky |
+
+Že šlo o známý hazard, leží přímo na disku: dřívější audit vedle toho souboru
+nechal `o1a1b_audit_20260525T082414Z/state_hash_before_tests.txt` a kopii
+`.before_validation.json` — tedy někdo si před spuštěním testů stav
+**ručně hashoval a obnovoval**. Tato změna ten rituál nahrazuje strukturální
+zárukou.
+
+## R3-B — `local_learning_storage` nebyl CWD-relativní, ale síťový
+
+Nález, který změnil podobu opravy: tento modul nejdřív **prohledává
+`NETWORK_PATHS`**, a na tomto stroji je `\\MYCLOUD-G07Y2M\Public\Cryptomaster`
+skutečně připojen — takže `DB_PATH` se rozhodoval na **sdílené síťové úložiště**,
+nikoli do repa. Test zapisující tento sink by poškodil data, která čtou jiné
+stroje.
+
+Otázka „je to uvnitř repa?“ je proto příliš slabá. Vynucovaný invariant je
+silnější:
+
+> pod pytestem musí **každý** sink vycházet uvnitř dočasného session rootu
+
+To platí bez ohledu na to, zda je produkční cíl podadresář repa, absolutní
+`/opt` cesta nebo připojený UNC share.
+
+## R3-C — Jedno pravidlo, ne N kopií
+
+Guard žije v jediném místě `src/core/test_sink_guard.py`. Tento projekt má
+zdokumentovanou regresi způsobenou tím, že dvě funkce četly stejný parametr
+s odlišnými defaulty (WR 57 % → 0 %); N ručně opsaných kopií bezpečnostního
+guardu je tentýž hazard s horšími následky.
+
+Produkční běh není dotčen: `PYTEST_CURRENT_TEST` tam není nastaven, takže každé
+volání guardu je no-op. `local_learning_storage` override se navíc čte **před**
+network probe, takže přesměrovaná session se síťového disku nedotkne.
+
+## R3-D — Přesměrování konstant bylo nutné, ale NEdostatečné
+
+`tests/test_p1_paper_exploration.py` pracoval se stavovým souborem přes
+**39 natvrdo zapsaných literálů** `"data/paper_open_positions.json"`, čímž
+`_STATE_FILE` obcházel úplně.
+
+> **DISCLOSURE — druhá vlastní kontaminace.** Právě tyto literály během
+> celosuitového běhu v této relaci **smazaly** reálný
+> `data/paper_open_positions.json`. Soubor byl obnoven do pozorovaného
+> původního stavu (`{}`) a hash ověřen zpět na `44136fa355b3678a`.
+> Je gitignorovaný, takže smazání se neprojevilo v `git status` — nalezeno
+> pouze proto, že se před i po běhu porovnávaly SHA-256 produkčních souborů.
+
+Literály nyní čtou přesměrovanou konstantu; všechny assertions zůstávají
+identické (jde o tentýž soubor, který executor zapisuje).
+
+**Poučení:** sink separace na úrovni modulových konstant nechrání před
+natvrdo zapsanými cestami v testech. Proto je fail-closed guard nutný jako
+druhá vrstva, ne jako zdvojení té první.
+
+## R3-E — Závislost na pořadí testů (falešná zeleň)
+
+`open_paper_position()` je fail-closed, dokud `_PAPER_STATE_STATUS` není
+`READY`, a modul se záměrně neinicializuje při importu
+(`test_state_01_import_purity` to vynucuje). Status tedy byl tím, co po sobě
+nechal předchozí test.
+
+Devět testů proto **procházelo v kombinovaném běhu a selhávalo samostatně** —
+falešná zeleň: kombinovaný průchod nedokazoval nic o testovaném kódu, jen
+o pořadí kolekce.
+
+Autouse fixture nyní fixuje výchozí bod na `READY`, což je stav, se kterým
+produkce reálně běží (`_init_paper_state_once()` tam běží při startu). Import
+purity zůstává zachována: fixture modul **nikdy neimportuje** a je no-op,
+pokud si jej test sám nenaimportoval. Testy not-ready cest si status nadále
+monkeypatchují samy.
+
+## R3-F — Baseline změřen, nikoli odhadnut
+
+Aby bylo poctivě rozlišeno „pre-existing“ od „způsobeno mnou“, byl vytvořen
+git worktree na commitu `f01b19f` a spuštěn s `FORCE_LOCAL_STORAGE`, takže
+nemohl sáhnout ani na NAS, ani na tento repozitář:
+
+| Běh (identická dvojice souborů) | failed | passed |
+|---|---|---|
+| baseline `f01b19f` | **30** | 45 |
+| tato větev | **24** | 51 |
+
+**Šest opraveno, žádná regrese.** Zbývajících 24 je pre-existing.
+Worktree byl poté odstraněn; produkční soubory hlavního repa ověřeny jako
+nedotčené.
+
+## R3-G — Mutation-kill (Round 3)
+
+| # | Mutace | Výsledek | Zabito assertion |
+|---|---|---|---|
+| M6 | `assert_not_production_sink()` degradován na no-op | **KILLED** (2 nezávislé sady) | `DID NOT RAISE <class 'RuntimeError'>` |
+
+Dokazuje, že guard není vacuous. Po revertu ověřeno, že `git diff HEAD` pro
+dotčené zdroje je prázdný.
+
+## R3-H — Testy a důkaz nekontaminace
+
+```text
+207 passed, 2 failed, 9 skipped
+```
+
+Obě selhání jsou pre-existing v nedotčených souborech
+(`test_f8b_integration` substring probe do `signal_generator.py`,
+`test_sec_01_dashboard_boundary` bytes/str).
+`tests/test_state_01_import_purity.py` **prochází** — fixture import purity
+neporušila.
+
+SHA-256 všech tří produkčních datových souborů ověřeny **před i po** běhu:
+
+| Soubor | SHA-256 (prefix) | Stav |
+|---|---|---|
+| `local_learning_storage/cache.sqlite` | `d0dd9e8a2348754f` | UNCHANGED |
+| `server_local_backups/paper_adaptive_learning_state.json` | `9263583f87369276` | UNCHANGED |
+| `data/paper_open_positions.json` | `44136fa355b3678a` | UNCHANGED |
+
+## R3-I — Počty (kumulativně za celou relaci)
+
+```text
+REAL orders                         = 0
+deployments / restarts / kills      = 0
+SSH commands                        = 0   (live identity NOT_VERIFIED)
+external/network calls              = 0
+git push                            = 0
+git reset --hard / git checkout <path> = 0
+local commits                       = 7 (větev, ne main)
+git worktree                        = 1 vytvořen a odstraněn (read-only baseline)
+production data writes              = 2 accidental, obě revertovány a hash-ověřeny
+                                      (R2-A jeden řádek v cache.sqlite;
+                                       R3-D smazaný paper_open_positions.json)
+```
+
+## R3-J — Zbývá otevřené
+
+1. **24 pre-existing selhání** v `test_p1_paper_exploration.py` (ověřeno jako
+   pre-existing proti baseline). Nejde o blokátor Fáze 4, ale je to reálný dluh.
+2. Fáze 4 stále čeká na akumulaci nových closes s vyplněným
+   `code_version`/`config_version`. **Nelze uspíšit.**
+3. Ostatní testy mohou obsahovat další natvrdo zapsané produkční cesty;
+   auditován byl pouze `data/paper_open_positions.json` vzorec. Guard je proti
+   nim fail-closed, ale samotný sken proveden nebyl.
 
 Cíl WR >50 zůstává `NOT_ACHIEVED`. Tento dokument není potvrzení production
 safety ani GO pro REAL trading.
