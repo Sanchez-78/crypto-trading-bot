@@ -171,6 +171,30 @@ def _init_db():
         except sqlite3.OperationalError:
             pass  # column already exists
 
+    # Phase 2 canonical-admission attribution (2026-09-14). canonical_admit()
+    # stamps all six of these onto the position at open time, but the schema
+    # had no columns for them, so they were dropped at persistence -- the same
+    # class of bug as the 2026-08-18 attribution write bug above.
+    #
+    # These are what make a cohort *versionable*: without code_version /
+    # config_version there is no way to separate a post-fix cohort from the
+    # mixed history, and no WR claim computed over the blend can be trusted.
+    # Additive + idempotent, same ADD-COLUMN-if-missing pattern; legacy rows
+    # keep NULL and are treated as UNQUALIFIED, never back-filled by estimate.
+    _canonical_admission_cols = (
+        ("code_version", "code_version TEXT"),
+        ("config_version", "config_version TEXT"),
+        ("segment_key", "segment_key TEXT"),
+        ("admission_route", "admission_route TEXT"),
+        ("admission_reason", "admission_reason TEXT"),
+        ("effective_hold_s", "effective_hold_s REAL"),
+    )
+    for _col, _decl in _canonical_admission_cols:
+        try:
+            cursor.execute(f"ALTER TABLE closed_trades ADD COLUMN {_decl}")
+        except sqlite3.OperationalError:
+            pass  # column already exists
+
     # Learning metrics (cumulative)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS learning_metrics (
@@ -370,9 +394,12 @@ def save_closed_trade(trade: Dict[str, Any]):
                  paper_source, learning_source, readiness_eligible,
                  real_readiness_eligible, paper_learning_only, learning_shadow_only,
                  tags_json,
+                 code_version, config_version, segment_key,
+                 admission_route, admission_reason, effective_hold_s,
                  synced_to_firebase)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?, ?, 0)
             """, (
                 trade.get("trade_id"),
                 trade.get("symbol"),
@@ -412,6 +439,16 @@ def save_closed_trade(trade: Dict[str, Any]):
                 _bool_to_int(trade.get("paper_learning_only")),
                 _bool_to_int(trade.get("learning_shadow_only")),
                 _tags_json,
+                # Phase 2 canonical-admission attribution. Written verbatim:
+                # a missing value stays NULL (UNQUALIFIED) rather than being
+                # defaulted to the current build, which would silently credit
+                # legacy rows to a code version that never produced them.
+                trade.get("code_version"),
+                trade.get("config_version"),
+                trade.get("segment_key"),
+                trade.get("admission_route"),
+                trade.get("admission_reason"),
+                trade.get("effective_hold_s"),
             ))
             conn.commit()
             conn.close()

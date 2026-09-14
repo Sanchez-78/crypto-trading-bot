@@ -2280,6 +2280,18 @@ def open_paper_position(
         "admission_reason": extra.get("admission_reason") if extra else None,
         "historical_health": extra.get("historical_health") if extra else None,
         "expected_move_src": extra.get("expected_move_src") if extra else None,
+        # Phase 2 canonical-admission attribution (2026-09-14). This dict is an
+        # explicit allowlist of `extra` keys, so anything canonical_admit()
+        # stamps but does not name HERE is silently dropped at the position
+        # boundary and can never reach the close writer -- the same shape as
+        # the 2026-08-18 attribution write bug. close_paper_position() builds
+        # the closed trade as {**pos, ...}, so naming them here is what makes
+        # them persistable. `segment_key` is already carried above from the
+        # signal. Missing values stay None (UNQUALIFIED), never defaulted.
+        "admission_route": extra.get("admission_route") if extra else None,
+        "code_version": extra.get("code_version") if extra else None,
+        "config_version": extra.get("config_version") if extra else None,
+        "effective_hold_s": extra.get("effective_hold_s") if extra else None,
     }
 
     # P0.3F GUARD: Fail-closed check — all positions MUST have P0 metadata
