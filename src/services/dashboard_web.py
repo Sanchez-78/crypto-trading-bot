@@ -398,10 +398,22 @@ def _qualified_window_metrics(cache_path, limit=100):
             return None
         conn = sqlite3.connect(f"file:{cache_path}?mode=ro", uri=True, timeout=2)
         try:
-            rows = conn.execute(
-                "SELECT pnl_usd, pnl_pct, exit_reason FROM closed_trades "
-                "ORDER BY exit_ts DESC LIMIT ?", (int(limit),)
-            ).fetchall()
+            try:
+                rows = conn.execute(
+                    "SELECT pnl_usd, pnl_pct, exit_reason, outcome FROM closed_trades "
+                    "ORDER BY exit_ts DESC LIMIT ?", (int(limit),)
+                ).fetchall()
+            except sqlite3.OperationalError:
+                # Legacy cache.sqlite predating the `outcome` column. Fall back
+                # to exit_reason-only classification rather than returning None
+                # and blanking the whole metric (never-500 / never-blank).
+                rows = [
+                    (usd, pct, reason, None)
+                    for usd, pct, reason in conn.execute(
+                        "SELECT pnl_usd, pnl_pct, exit_reason FROM closed_trades "
+                        "ORDER BY exit_ts DESC LIMIT ?", (int(limit),)
+                    ).fetchall()
+                ]
         finally:
             conn.close()
     except Exception:
@@ -418,8 +430,14 @@ def _qualified_window_metrics(cache_path, limit=100):
 
     excluded_by_reason = {}
     qualified = []
-    for usd, pct, exit_reason in rows:
+    for usd, pct, exit_reason, outcome in rows:
+        # Two equivalent signals for the same fact. exit_reason is the legacy
+        # marker (and the only one historical rows carry); outcome=VOID is the
+        # explicit state written since 2026-09-14. Checking both means a VOID
+        # row is excluded even if a future exit reason is not in the map.
         reason = _NON_TRADE_EXIT_REASONS.get(exit_reason)
+        if reason is None and str(outcome or "").upper() == "VOID":
+            reason = "void_no_fill_price"
         if reason:
             excluded_by_reason[reason] = excluded_by_reason.get(reason, 0) + 1
             continue

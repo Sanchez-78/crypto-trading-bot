@@ -412,7 +412,11 @@ def save_closed_trade(trade: Dict[str, Any]):
                 # C8: executor emits net_pnl_pct (side-aware, cost-inclusive);
                 # a bare pnl_pct key historically did not exist -> column was NULL
                 net_pct,
-                1 if trade.get("win") else 0,
+                # NULL-preserving: `1 if trade.get("win") else 0` turned an
+                # UNKNOWN outcome into a recorded loss. A VOID close (no fill
+                # price) has no win/loss value, and writing 0 there is what
+                # made 106 stale-feed non-events read as 106 defeats.
+                (None if trade.get("win") is None else (1 if trade.get("win") else 0)),
                 trade.get("exit_reason"),
                 trade.get("regime"),
                 trade.get("mfe"),

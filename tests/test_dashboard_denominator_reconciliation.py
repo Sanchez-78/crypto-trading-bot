@@ -30,20 +30,34 @@ import pytest
 from src.services import dashboard_web
 
 
-def _make_cache(tmp_path, rows):
-    """Create a minimal closed_trades cache with the columns the reader uses."""
+def _make_cache(tmp_path, rows, with_outcome=True):
+    """Create a minimal closed_trades cache with the columns the reader uses.
+
+    `with_outcome=False` reproduces a legacy cache.sqlite predating the
+    `outcome` column, so the reader's fallback path stays covered.
+    """
     db = tmp_path / "cache.sqlite"
     conn = sqlite3.connect(str(db))
+    outcome_col = ", outcome TEXT" if with_outcome else ""
     conn.execute(
         "CREATE TABLE closed_trades ("
         "id INTEGER PRIMARY KEY, exit_ts REAL, pnl_usd REAL, pnl_pct REAL, "
-        "exit_reason TEXT, source TEXT)"
+        f"exit_reason TEXT, source TEXT{outcome_col})"
     )
-    conn.executemany(
-        "INSERT INTO closed_trades (id, exit_ts, pnl_usd, pnl_pct, exit_reason, source) "
-        "VALUES (?,?,?,?,?,?)",
-        rows,
-    )
+    if with_outcome:
+        conn.executemany(
+            "INSERT INTO closed_trades "
+            "(id, exit_ts, pnl_usd, pnl_pct, exit_reason, source, outcome) "
+            "VALUES (?,?,?,?,?,?,?)",
+            [r + (("VOID" if r[4] == "TIMEOUT_NO_PRICE" else None),) for r in rows],
+        )
+    else:
+        conn.executemany(
+            "INSERT INTO closed_trades "
+            "(id, exit_ts, pnl_usd, pnl_pct, exit_reason, source) "
+            "VALUES (?,?,?,?,?,?)",
+            rows,
+        )
     conn.commit()
     conn.close()
     return str(db)
@@ -113,3 +127,47 @@ def test_excluded_rows_are_never_silently_dropped(tmp_path):
     # No qualified rows means no defensible win rate -- report None, not 0.0,
     # so the dashboard cannot render an invented "0%" as if it were measured.
     assert m["qualified_win_rate_pct"] is None
+
+
+def test_legacy_cache_without_outcome_column_still_reconciles(tmp_path):
+    """A cache.sqlite predating the `outcome` column must not blank the metric.
+
+    The reader classifies on exit_reason alone there; returning None instead
+    would take the whole qualified cohort off the dashboard.
+    """
+    cache = _make_cache(tmp_path, _ROWS, with_outcome=False)
+    m = dashboard_web._qualified_window_metrics(cache, 100)
+
+    assert m is not None, "legacy schema blanked the qualified metric"
+    assert m["raw_n"] == 10
+    assert m["qualified_n"] == 5
+    assert m["excluded_n"] == 5
+    assert m["excluded_by_reason"] == {"timeout_no_price_invalid": 5}
+
+
+def test_void_outcome_is_excluded_even_with_an_unmapped_exit_reason(tmp_path):
+    """outcome=VOID alone is enough to keep a row out of the qualified cohort."""
+    rows = [
+        (1, 1001.0, 1.0, 0.5, "TP", "rde_take"),
+        (2, 1002.0, 0.0, 0.0, "SOME_FUTURE_REASON", "rde_take"),
+    ]
+    db = tmp_path / "cache.sqlite"
+    conn = sqlite3.connect(str(db))
+    conn.execute(
+        "CREATE TABLE closed_trades ("
+        "id INTEGER PRIMARY KEY, exit_ts REAL, pnl_usd REAL, pnl_pct REAL, "
+        "exit_reason TEXT, source TEXT, outcome TEXT)"
+    )
+    conn.executemany(
+        "INSERT INTO closed_trades "
+        "(id, exit_ts, pnl_usd, pnl_pct, exit_reason, source, outcome) "
+        "VALUES (?,?,?,?,?,?,?)",
+        [rows[0] + (None,), rows[1] + ("VOID",)],
+    )
+    conn.commit()
+    conn.close()
+
+    m = dashboard_web._qualified_window_metrics(str(db), 100)
+    assert m["raw_n"] == 2
+    assert m["qualified_n"] == 1
+    assert m["excluded_by_reason"] == {"void_no_fill_price": 1}

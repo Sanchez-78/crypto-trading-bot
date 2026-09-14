@@ -47,6 +47,16 @@ class TradeOutcome(str, Enum):
     WIN = "WIN"
     LOSS = "LOSS"
     FLAT = "FLAT"
+    # VOID is NOT a fourth outcome band -- it is the absence of a measurable
+    # outcome. A position closed without ever obtaining a market price
+    # (exit_reason=TIMEOUT_NO_PRICE, i.e. the feed went stale) has no fill and
+    # therefore no P&L to classify. It is distinct from FLAT: FLAT is a real
+    # trade that landed inside the deadband, VOID never became a trade at all.
+    #
+    # Before this existed, such closes were persisted as win=0 / exit_price=0.0
+    # and counted as losses -- 106 of 472 rows (22.5%) in the 2026-09-14 local
+    # cohort, so a stale price feed read as 106 defeats.
+    VOID = "VOID"
 
 
 # ── Outcome classification ────────────────────────────────────────────────────
@@ -114,11 +124,18 @@ def compute_win_rate(outcomes: Sequence[TradeOutcome | str]) -> float:
     FLAT trades are kept in the denominator — this matches the existing paper
     adaptive-learning window definition, so adopting the contract does not shift
     the metric. Returns 0.0 for an empty set.
+
+    VOID is excluded from the denominator because it is not a trade: it is a
+    position that never obtained a fill price, so it has no outcome to average.
+    This is emphatically NOT "drop the losers" — VOID rows carry no P&L in
+    either direction, and every real trade, including every FLAT and every
+    LOSS, stays in the denominator.
     """
-    total = len(outcomes)
+    countable = [o for o in outcomes if _as_outcome(o) is not TradeOutcome.VOID]
+    total = len(countable)
     if total == 0:
         return 0.0
-    wins = sum(1 for o in outcomes if _as_outcome(o) is TradeOutcome.WIN)
+    wins = sum(1 for o in countable if _as_outcome(o) is TradeOutcome.WIN)
     return wins / total
 
 

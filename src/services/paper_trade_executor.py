@@ -2638,14 +2638,30 @@ def check_and_close_timeout_positions(now: Optional[float] = None) -> List[dict]
                 pos = _POSITIONS.pop(trade_id)
             closed_trade = {
                 **pos,
-                "exit_price": 0.0,
+                # 2026-09-14 (Phase 3): this close has NO fill price. It used to
+                # be written as exit_price=0.0 / outcome=FLAT and, because
+                # save_closed_trade coerced a missing `win` to 0, it landed in
+                # SQLite as a LOSS. That made a stale price feed read as real
+                # defeats -- 106 of 472 rows (22.5%) in the local cohort.
+                #
+                # exit_price/win are recorded as UNKNOWN (None), not as zero:
+                # 0.0 asserts the market printed a price of zero, which is
+                # false. outcome=VOID is the explicit "never became a trade"
+                # state, distinct from FLAT (a real trade inside the deadband).
+                "exit_price": None,
+                "win": None,
                 "exit_ts": now,
                 "exit_reason": "TIMEOUT_NO_PRICE",
                 "duration_s": age_s,
                 "hold_s": age_s,  # V10.48: Add hold_s field for dashboard (was missing)
+                # P&L stays 0.0 rather than None: in paper accounting nothing
+                # was ever booked for this position, and downstream PF/net-sum
+                # arithmetic relies on a number here. The row is kept out of
+                # win-rate denominators by outcome=VOID and exit_reason, not by
+                # its P&L value.
                 "gross_pnl_pct": 0.0,
                 "net_pnl_pct": 0.0,
-                "outcome": "FLAT",
+                "outcome": "VOID",
                 "unit_pnl": 0.0,
                 "weighted_pnl": 0.0,
                 "learning_skipped": True,
