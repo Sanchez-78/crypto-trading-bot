@@ -27,15 +27,54 @@ from src.core.trade_metrics_contract import (
 
 _log = logging.getLogger(__name__)
 
-# Local storage paths
-LOCAL_CACHE_DIR = "local_learning_storage"
+# Local storage paths.
+#
+# This was a bare relative constant resolved against the process CWD, with no
+# override. pytest runs from the repo root, so every test that closed a paper
+# position wrote into the SAME cache.sqlite the dashboard reads. Phase 0
+# forensics (2026-09-14) found that had contaminated 116 of 472 rows (24.6%):
+# 76 with a fake 1970 clock, 35 TEST/MANUAL exits that are all wins (so they
+# inflate every WR read from this file), and 3 SYM0/1/2 rows.
+#
+# The directory is now resolvable from an env override so a test session can
+# redirect the whole sink in one place, and _assert_not_production_sink()
+# below makes writing the production sink from a test run fail closed.
+STORAGE_DIR_ENV_VAR = "CRYPTOMASTER_LEARNING_STORAGE_DIR"
+_PRODUCTION_CACHE_DIR_NAME = "local_learning_storage"
+
+LOCAL_CACHE_DIR = os.getenv(STORAGE_DIR_ENV_VAR, "").strip() or _PRODUCTION_CACHE_DIR_NAME
 LOCAL_DB_PATH = f"{LOCAL_CACHE_DIR}/cache.sqlite"
 LOCAL_STATE_DIR = f"{LOCAL_CACHE_DIR}/state"
 
 _lock = Lock()
 
+
+def _assert_not_production_sink():
+    """Refuse to write the production cache from inside a test run.
+
+    Per-test monkeypatch discipline is not sufficient on its own: several
+    suites already redirect correctly and the contamination happened anyway,
+    because the suites that forget are precisely the ones that cause it. This
+    is the structural backstop -- under pytest, a write whose target directory
+    is literally named `local_learning_storage` is refused rather than
+    silently performed.
+
+    Normal production runs are unaffected: PYTEST_CURRENT_TEST is unset there.
+    """
+    if not os.getenv("PYTEST_CURRENT_TEST"):
+        return
+    target_dir = os.path.basename(os.path.dirname(os.path.abspath(LOCAL_DB_PATH)))
+    if target_dir == _PRODUCTION_CACHE_DIR_NAME:
+        raise RuntimeError(
+            "refusing to write the production learning sink from a test run: "
+            f"LOCAL_DB_PATH={LOCAL_DB_PATH!r}. Redirect it via the "
+            f"{STORAGE_DIR_ENV_VAR} env var or monkeypatch LOCAL_DB_PATH."
+        )
+
+
 def _ensure_dirs():
     """Create local cache directories."""
+    _assert_not_production_sink()
     os.makedirs(LOCAL_CACHE_DIR, exist_ok=True)
     os.makedirs(LOCAL_STATE_DIR, exist_ok=True)
 
@@ -288,6 +327,10 @@ def get_learning_metrics() -> Optional[Dict]:
 
 def save_closed_trade(trade: Dict[str, Any]):
     """Save closed trade to local disk immediately (syncs to Firebase later)."""
+    # Guard OUTSIDE the try: a production-sink violation must propagate and
+    # fail the offending test, not be swallowed by the except below (which
+    # exists to keep a cache hiccup from killing a live close).
+    _assert_not_production_sink()
     with _lock:
         try:
             conn = sqlite3.connect(LOCAL_DB_PATH, timeout=2)
