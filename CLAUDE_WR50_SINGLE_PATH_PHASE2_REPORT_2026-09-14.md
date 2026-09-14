@@ -1,11 +1,15 @@
-# CLAUDE — WR >50 single-path implementation, Phase 0–2/5/6 report (2026-09-14)
+# CLAUDE — WR >50 single-path implementation, Phase 0–3/5/6 report (2026-09-14)
+
+> **Round 2 doplněk** (test-sink separace, schema migrace, Fáze 3) je v sekci
+> „Round 2“ na konci dokumentu. Terminální stav cíle se **nezměnil**:
+> `NOT_ACHIEVED`.
 
 ## Terminální stav
 
 | Rozměr | Stav |
 |---|---|
 | Cíl `WR > 50 %` (paper, čistý post-fix kohort) | **`NOT_ACHIEVED`** |
-| Engineering (Fáze 0–2, 5, 6 částečně) | **`PARTIAL`** |
+| Engineering (Fáze 0–3, 5, 6 částečně) | **`PARTIAL`** |
 | Release gate | **`NOT_READY_FOR_DEPLOYMENT`** |
 | Live host identity / runtime content | **`NOT_VERIFIED`** (v této relaci žádné SSH) |
 | REAL trading | `ABSOLUTE NO-GO` — nedotčeno |
@@ -330,6 +334,190 @@ zůstávají **OPEN** a mimo rozsah této relace, dle zadání.
 3. Teprve s (1) a (2) živě běžícími začít Fázi 4 shadow kohortu s předem
    zafixovaným `code_version`/`config_version`, minimální velikostí vzorku a
    holdout oknem — to je jediná cesta, jak lze WR >50 legitimně tvrdit.
+
+Cíl WR >50 zůstává `NOT_ACHIEVED`. Tento dokument není potvrzení production
+safety ani GO pro REAL trading.
+
+---
+---
+
+# Round 2 — test-sink separace, schema migrace, Fáze 3
+
+Terminální stav cíle **beze změny**: `WR >50 = NOT_ACHIEVED`.
+Engineering: `PARTIAL` (nově uzavřena Fáze 3 a persistence Fáze 2).
+Release gate: `NOT_READY_FOR_DEPLOYMENT`. Deploy/restart/SSH/REAL orders: `0`.
+
+## R2-A — Separace testovacího sinku (příčina kontaminace z Fáze 0)
+
+**Root cause:** `local_persistent_cache.LOCAL_DB_PATH` byl module-level
+**relativní** konstanta (`local_learning_storage/cache.sqlite`) rozhodovaná
+podle CWD procesu, bez jakéhokoli override. pytest běží z kořene repa, takže
+každý test, který uzavřel paper pozici, zapisoval přímo do téže databáze,
+kterou čte dashboard a ze které se počítá každá WR analýza.
+
+**Oprava — dvě vrstvy:**
+
+1. Adresář se řeší z `CRYPTOMASTER_LEARNING_STORAGE_DIR`; `tests/conftest.py`
+   přesměruje celou session do dočasného adresáře už v okamžiku importu
+   conftestu (dřív, než kterýkoli testový modul importuje cache modul).
+2. `_assert_not_production_sink()` jako **strukturální fail-closed pojistka**:
+   pod pytestem je zápis do adresáře jménem `local_learning_storage` odmítnut,
+   ne tiše proveden. Volá se **mimo** `try` blok v `save_closed_trade()`, aby
+   porušení shodilo příslušný test a nebylo spolknuto handlerem na cache výpadky.
+
+Produkční běh nedotčen (`PYTEST_CURRENT_TEST` tam není nastaven).
+
+**Důkaz účinnosti:** produkční `cache.sqlite` má **472 řádků před i po**
+každém dalším testovém běhu v této relaci, včetně sad, které ji dříve
+kontaminovaly.
+
+> **DISCLOSURE — vlastní kontaminace během ověřování RED stavu.**
+> Můj vlastní probe test (`RED-4`) zapsal do produkční `cache.sqlite` jeden
+> řádek (`id=58840`, `trade_id=paper_sinkprobe01`) — tedy přesně ten bug, který
+> opravuji, reprodukovaný nedopatřením na sobě. Řádek byl odstraněn přesným
+> párováním `id` + `trade_id`, počet ověřen zpět na 472. **Žádný jiný řádek
+> nebyl dotčen.** Historická kontaminace (116 řádků z Fáze 0) byla ponechána
+> beze změny — nic se nemazalo ani nebackfillovalo.
+
+## R2-B — Schema migrace + persistence attribution (uzavírá Fázi 2 bod 2)
+
+Fáze 0 zjistila, že šest Phase-2 sloupců ve schématu **vůbec neexistuje**,
+takže `canonical_admit()` razítkoval attribution, která neměla kam přistát.
+Musely se zavřít **dvě** mezery, ne jedna:
+
+1. **Schema + INSERT**: `code_version`, `config_version`, `segment_key`,
+   `admission_route`, `admission_reason`, `effective_hold_s` přidány stávajícím
+   aditivním idempotentním ADD-COLUMN-if-missing vzorem a zapisovány v
+   `save_closed_trade()`. Chybějící hodnota zůstává `NULL` (UNQUALIFIED),
+   nikdy se nedoplňuje aktuálním buildem.
+2. **Hranice pozice**: position dict v `open_paper_position()` je **explicitní
+   allowlist** klíčů z `extra` — čtyři z razítkovaných polí se tam tiše
+   zahazovaly a nikdy nemohly dorazit ke close writeru. Totožný tvar jako
+   attribution write bug z 2026-08-18. `close_paper_position()` staví closed
+   trade jako `{**pos, ...}`, takže pojmenování v tom dictu je to, co je činí
+   persistovatelnými.
+
+Poznámka k `segment_key`: executor jej na P0.3C evidence reroute
+**deterministicky přepočítává** na
+`f"{symbol}_{side}_{regime}_{source}_{tp_sl_profile}"`.
+Tento přepočet JE kanonická forma, takže end-to-end test tvrdí „jeden neprázdný
+symbol-scoped segment_key“, nikoli „vyhrává hodnota volajícího“.
+
+## R2-C — Fáze 3: no-price expiry je VOID, ne prohra
+
+**Nález Fáze 0:** 106 z 472 řádků (22,5 %) má `exit_reason=TIMEOUT_NO_PRICE`
+a **bez výjimky** `exit_price=0.0`, `pnl_pct=0.0`, `win=0`.
+
+Obchodní kód je už považoval za ne-obchody (`learning_skipped=True`, žádný
+`record_close`, odmítnuto jako `timeout_no_price_invalid`). Persistovaný řádek
+tvrdil opak, takže **zamrzlý price feed se četl jako 106 proher**.
+
+**Oprava je distinktní stav, nikoli post-hoc filtr:**
+
+| Změna | Proč |
+|---|---|
+| `TradeOutcome.VOID` | absence měřitelného výsledku; odlišné od `FLAT` (reálný obchod uvnitř ±0,05 pp deadbandu). VOID se obchodem nikdy nestal. |
+| `exit_price=None`, `win=None` | `0.0` tvrdí, že trh vytiskl nulovou cenu — to je nepravda. Neznámé se zapisuje jako neznámé. |
+| `save_closed_trade` NULL-preserving | `1 if trade.get("win") else 0` byl přesně ten řádek, který z UNKNOWN udělal zaznamenanou prohru. |
+| `compute_win_rate` vylučuje VOID | VOID nenese P&L ani v jednom směru. **Každý reálný obchod — každý FLAT i každá LOSS — v denominátoru zůstává.** |
+| `_qualified_window_metrics` čte i `outcome=VOID` | dva ekvivalentní signály téhož faktu; legacy řádky nesou jen `exit_reason`. |
+
+`gross/net_pnl_pct` zůstává `0.0` (nikoli `None`) — vědomé, disclosnuté
+rozhodnutí: v paper účetnictví se nic nezaúčtovalo a navazující PF/net-sum
+aritmetika potřebuje číslo. Řádek je z denominátorů držen přes
+`outcome`/`exit_reason`, ne přes hodnotu P&L.
+
+**Žádný backfill.** Ověřeno na reálné DB: všech 106 historických řádků má
+stále `win=0` a `outcome != VOID`. Oprava působí pouze na nové closy.
+Vyloučení historických řádků nadále funguje přes legacy `exit_reason` marker —
+právě proto jsou v readeru ponechány oba signály.
+
+## R2-D — Mutation-kill (Round 2)
+
+| # | Mutace | Výsledek | Zabito assertion |
+|---|---|---|---|
+| M4 | **anti-gaming**: vyřadit z denominátoru i `LOSS` | **KILLED** | `assert 0.5 == 0.333…` (WR by vyskočila 33 % → 50 %) |
+| M5 | vrátit `1 if trade.get("win") else 0` | **KILLED** | `unknown win was coerced to 0` |
+
+M4 je klíčový: dokazuje, že kontrakt `compute_win_rate` nelze rozšířit z
+„vyluč ne-obchody“ na „vyluč prohry“, aniž to test okamžitě chytí.
+Po každém mutantu ověřeno, že `git diff HEAD` pro dotčené zdroje je prázdný.
+
+## R2-E — Testy
+
+```text
+199 passed, 2 failed, 9 skipped
+```
+
+Obě selhání jsou **pre-existing** a v souborech, kterých se tato práce
+nedotkla: `test_f8b_integration::test_tick_hook_before_blacklist_gate_and_gated`
+(substring probe do `signal_generator.py`) a
+`test_sec_01_dashboard_boundary::test_spa_handler_only_serves_fixed_index`
+(`bytes` vs `str`).
+
+> **NEOPRAVENO — zaznamenáno poctivě.** Devět selhání
+> (`test_observe_gate_choke` ×5, `test_learning_hook_evidence_collection` ×4)
+> v kombinovaném běhu **prochází**, ale samostatně stále **selhává**
+> (`paper_state_not_ready`). Jde o pre-existing **závislost na pořadí testů** —
+> dřívější test nechá `_PAPER_STATE_STATUS` v READY — nikoli o něco, co tato
+> změna opravila. Ověřeno samostatným spuštěním obou souborů.
+
+## R2-F — Aktuální evidence (nezměněná interpretace)
+
+| Okno | raw n / WR | qualified n / WR | excluded | reconciles |
+|---|---|---|---|---|
+| recent-100 | 100 / **48,00 %** | 75 / **64,00 %** | 25 | `100 == 75+25` ✓ |
+| celá DB | 472 / **48,73 %** | 366 / **62,84 %** | 106 | `472 == 366+106` ✓ |
+
+Varování z hlavní části platí beze změny: **64 % NENÍ splnění cíle.** Kohort je
+39,8 dne starý, obsahuje 116 syntetických řádků, předchází všem opravám této
+relace a není versionově homogenní. Podmínky Fáze 4 (1), (3) a (5) nejsou
+splněny. Nově zavedené `code_version`/`config_version` sloupce jsou u všech
+472 historických řádků `NULL` — teprve budoucí closy je ponesou, což je právě
+ten důvod, proč versionově homogenní kohort zatím **neexistuje**.
+
+## R2-G — Commity (větev `wr50/canonical-single-path-phase2`, nepushnuto)
+
+| Commit | Obsah |
+|---|---|
+| `2d68876` | Fáze 2 canonical admission wrapper (9 call-siteů) |
+| `b35caf8` | Report Round 1 |
+| `6fcfee8` | Separace testovacího sinku |
+| `3be656a` | Schema migrace + end-to-end persistence attribution |
+| `f01b19f` | Fáze 3 — VOID stav |
+
+Ownership caveat z hlavní části stále platí pro `paper_trade_executor.py`,
+`realtime_decision_engine.py`, `trade_executor.py` a `dashboard_web.py`.
+Nově dotčené `src/core/trade_metrics_contract.py`,
+`src/services/local_persistent_cache.py` a `tests/conftest.py` obsahují
+**pouze** práci této relace.
+
+## R2-H — Počty (kumulativně za celou relaci)
+
+```text
+REAL orders                         = 0
+deployments / restarts / kills      = 0
+SSH commands                        = 0   (live identity NOT_VERIFIED)
+external/network calls              = 0
+git push                            = 0
+git reset --hard / git checkout <path> = 0
+local commits                       = 5 (větev, ne main)
+production SQLite writes            = 1 accidental + 1 corrective revert
+                                      (disclosed in R2-A; net zero, 472 -> 472)
+```
+
+## R2-I — Přesný další krok
+
+1. **Fáze 4 nelze začít hned**: versionově homogenní kohort vznikne teprve poté,
+   co poběží nové closy nesoucí `code_version`/`config_version`. Do té doby
+   je jakékoli tvrzení o WR >50 nepodložitelné.
+2. Zbývá **oddělit testovací sink i pro `learning_database.sqlite`** a
+   `paper_open_positions.json` — tato relace uzavřela pouze `cache.sqlite`.
+3. Opravit pre-existing závislost na pořadí testů (`_PAPER_STATE_STATUS`
+   leak), jinak zůstane 9 testů falešně zelených v kombinovaném běhu.
+4. Teprve pak Fáze 4 shadow kohorta s předem zafixovaným
+   `code_version`/`config_version`, minimální velikostí vzorku, holdout oknem
+   a max-loss capem.
 
 Cíl WR >50 zůstává `NOT_ACHIEVED`. Tento dokument není potvrzení production
 safety ani GO pro REAL trading.
