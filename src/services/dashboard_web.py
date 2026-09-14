@@ -4,14 +4,137 @@ CryptoMaster Modern Web Dashboard (V10.25)
 Complete responsive dashboard with live metrics and charts
 """
 
-from flask import Flask, render_template_string, jsonify
+from flask import Flask, render_template_string, jsonify, send_file
 import sqlite3
 import json
 import time
 import logging
 import os
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 log = logging.getLogger(__name__)
+
+
+_WINDOWS_RESERVED_BASENAMES = {
+    "con",
+    "prn",
+    "aux",
+    "nul",
+    *(f"com{number}" for number in range(1, 10)),
+    *(f"lpt{number}" for number in range(1, 10)),
+}
+
+
+def _dashboard_dist_directories():
+    """Trusted React distribution roots, in deployment-preference order."""
+    return (
+        Path("/opt/cryptomaster/dashboard_modern/dist"),
+        Path.cwd() / "dashboard_modern" / "dist",
+    )
+
+
+def _dashboard_asset_directories():
+    """Trusted React asset roots, in deployment-preference order.
+
+    Historical note (SEC-01-A): kept only because tests still monkeypatch it
+    directly; production code no longer resolves this independently of a
+    canonicalized dist root -- see _resolve_confined_subdirectory().
+    """
+    return tuple(root / "assets" for root in _dashboard_dist_directories())
+
+
+def _first_existing_directory(candidates):
+    for candidate in candidates:
+        try:
+            resolved = Path(candidate).resolve(strict=True)
+            if resolved.is_dir():
+                return resolved
+        except (OSError, RuntimeError):
+            continue
+    return None
+
+
+def _resolve_confined_subdirectory(canonical_base, subdir_name):
+    """SEC-01-A fix: derive+canonicalize a subdirectory of an ALREADY
+    canonical trusted base, and require the result stay contained within
+    that base.
+
+    Prior behavior resolved `dist/assets` independently via
+    `_first_existing_directory(_dashboard_asset_directories())`, with no
+    check that the resolved `assets` directory was actually inside the
+    resolved `dist` directory. If `assets` itself (or any path component of
+    it) were a symlink pointing outside `dist`, that external target would
+    silently become the new trusted asset root -- every subsequent
+    containment check in `_resolve_confined_regular_file()` would then
+    correctly confine requests to that WRONG root, but the root itself was
+    never validated. This closes that gap: canonicalize `canonical_base`
+    (the caller must already have done this), derive `subdir_name` from it,
+    canonicalize the result, and require
+    `canonical_subdir.relative_to(canonical_base)` to hold. Any failure --
+    missing, not a directory, resolve error, or escape -- returns None,
+    which callers must map to a uniform 404 (no disclosure).
+    """
+    try:
+        base = Path(canonical_base)
+        candidate = (base / subdir_name).resolve(strict=True)
+        candidate.relative_to(base)
+        if not candidate.is_dir():
+            return None
+        return candidate
+    except (OSError, RuntimeError, ValueError):
+        return None
+
+
+def _resolve_confined_regular_file(base_dir, requested_path):
+    """Resolve an untrusted relative path inside a trusted directory.
+
+    The checks are deliberately host-independent: a Linux deployment must still
+    reject Windows drive, UNC, separator, device-name, and ADS syntax.  A second
+    URL decode is never performed; a residual ``%`` is rejected instead.
+    Canonical containment blocks both lexical traversal and symlink escape.
+    """
+    if not isinstance(requested_path, str) or not requested_path:
+        return None
+    if len(requested_path) > 4096:
+        return None
+    if any(character in requested_path for character in ("\x00", "\\", ":", "%")):
+        return None
+
+    posix_path = PurePosixPath(requested_path)
+    windows_path = PureWindowsPath(requested_path)
+    if posix_path.is_absolute() or windows_path.is_absolute() or windows_path.drive:
+        return None
+    if not posix_path.parts:
+        return None
+
+    for part in posix_path.parts:
+        if part in {"", ".", ".."} or part != part.rstrip(" ."):
+            return None
+        windows_basename = part.split(".", 1)[0].casefold()
+        if windows_basename in _WINDOWS_RESERVED_BASENAMES:
+            return None
+
+    try:
+        base = Path(base_dir).resolve(strict=True)
+        if not base.is_dir():
+            return None
+        candidate = base.joinpath(*posix_path.parts).resolve(strict=True)
+        candidate.relative_to(base)
+        if not candidate.is_file():
+            return None
+        return candidate
+    except (OSError, RuntimeError, ValueError):
+        return None
+
+
+def _send_dashboard_file(path, mimetype):
+    """Stream one already-confined file with a non-sniffable content type."""
+    try:
+        response = send_file(path, mimetype=mimetype, conditional=True)
+    except (OSError, RuntimeError, ValueError):
+        return "", 404
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
 
 def load_lifetime_metrics():
     """Load lifetime metrics from learning state file."""
@@ -216,6 +339,122 @@ def _rolling_window_metrics(cache_path, limit=100):
     }
 
 
+def _canonical_recent_metrics(cache_path, limit=100):
+    """Return recent metrics for attributable trading sources only."""
+    allowed = ("rde_take", "training_sampler", "normal_rde_take", "strict_take")
+    try:
+        conn = sqlite3.connect(f"file:{cache_path}?mode=ro", uri=True, timeout=2)
+        try:
+            rows = conn.execute(
+                "SELECT pnl_usd, pnl_pct FROM closed_trades "
+                "WHERE source IN (?,?,?,?) ORDER BY exit_ts DESC LIMIT ?",
+                (*allowed, int(limit)),
+            ).fetchall()
+        finally:
+            conn.close()
+        if not rows:
+            return None
+        wins = sum(1 for usd, pct in rows if (float(usd or 0) if usd else float(pct or 0)) > 0)
+        net = sum(float(usd or 0) if usd else float(pct or 0) for usd, pct in rows)
+        return {"n": len(rows), "wins": wins, "win_rate_pct": round(wins / len(rows) * 100.0, 2), "net_pnl": round(net, 6)}
+    except Exception:
+        return None
+
+
+# Exit reasons that are NOT trade outcomes. This mirrors the trading code's
+# OWN eligibility contract -- paper_trade_executor stamps learning_skipped=True
+# on the TIMEOUT_NO_PRICE branch, skips record_close for it, and
+# paper_close_pipeline.canonical_learning_eligibility() rejects it with exactly
+# this reason. Keep this dict in lockstep with that predicate; it must never
+# grow an entry merely because that entry loses money.
+_NON_TRADE_EXIT_REASONS = {
+    "TIMEOUT_NO_PRICE": "timeout_no_price_invalid",
+}
+
+
+def _qualified_window_metrics(cache_path, limit=100):
+    """Reconcile the recent window into mutually-exclusive qualified/non-trade buckets.
+
+    A TIMEOUT_NO_PRICE row is a position the executor closed without ever
+    obtaining a market price (exit_price=0.0, pnl=0.0). The learning system
+    already excludes those as `timeout_no_price_invalid`; the raw dashboard WR
+    nonetheless books each one as a LOSS, because 0.0 is not > 0. That makes the
+    dashboard denominator disagree with the canonical learning denominator.
+
+    This reports BOTH, so the two can be compared instead of silently differing:
+    the all-source headline is left exactly as it was, and the qualified cohort
+    is published beside it with its own explicit denominator and the excluded
+    count broken out by reason, such that
+
+        raw_n == qualified_n + excluded_n
+
+    holds by construction (Phase 4's reconciliation invariant).
+
+    Returns None on any error / empty cache -- callers must preserve
+    never-500 / never-blank. Uses a read-only sqlite connection.
+    """
+    try:
+        if not cache_path or not os.path.exists(cache_path):
+            return None
+        conn = sqlite3.connect(f"file:{cache_path}?mode=ro", uri=True, timeout=2)
+        try:
+            rows = conn.execute(
+                "SELECT pnl_usd, pnl_pct, exit_reason FROM closed_trades "
+                "ORDER BY exit_ts DESC LIMIT ?", (int(limit),)
+            ).fetchall()
+        finally:
+            conn.close()
+    except Exception:
+        return None
+
+    if not rows:
+        return None
+
+    def _num(x):
+        try:
+            return float(x)
+        except (TypeError, ValueError):
+            return None
+
+    excluded_by_reason = {}
+    qualified = []
+    for usd, pct, exit_reason in rows:
+        reason = _NON_TRADE_EXIT_REASONS.get(exit_reason)
+        if reason:
+            excluded_by_reason[reason] = excluded_by_reason.get(reason, 0) + 1
+            continue
+        qualified.append((_num(usd), _num(pct)))
+
+    wins = 0
+    net = 0.0
+    for u, p in qualified:
+        if u is not None and u != 0.0:
+            is_win = u > 0
+            net += u
+        else:
+            is_win = p is not None and p > 0
+            net += p if p is not None else 0.0
+        if is_win:
+            wins += 1
+
+    excluded_n = sum(excluded_by_reason.values())
+    qualified_n = len(qualified)
+
+    return {
+        'raw_n': len(rows),
+        'qualified_n': qualified_n,
+        'qualified_wins': wins,
+        # None, not 0.0: with no qualified rows there is no measured win rate,
+        # and rendering an invented "0%" would read as a real measurement.
+        'qualified_win_rate_pct': (
+            round(wins / qualified_n * 100.0, 2) if qualified_n else None
+        ),
+        'qualified_net_pnl': round(net, 6),
+        'excluded_n': excluded_n,
+        'excluded_by_reason': excluded_by_reason,
+    }
+
+
 def get_live_metrics_from_cache():
     """Return LIVE, restart-durable metrics for the dashboard/API.
 
@@ -389,6 +628,7 @@ def get_live_metrics_from_cache():
         # the recent closed trades. Fall back to the old learning-state values ONLY
         # when the cache is empty/unavailable, so never-500 / never-blank is kept.
         rolling_hdr = _rolling_window_metrics(cache_path, 100)
+        canonical_hdr = _canonical_recent_metrics(cache_path, 100)
         if rolling_hdr:
             headline_pf = round(float(rolling_hdr['profit_factor']), 3)
             headline_wr = round(float(rolling_hdr['win_rate_pct']), 2)
@@ -399,6 +639,32 @@ def get_live_metrics_from_cache():
             headline_wr = round(win_rate, 2)
             headline_window = roll_n
             net_pnl_window = round(session_net, 6)
+
+        canonical_fields = {
+            "canonical_win_rate_pct": canonical_hdr["win_rate_pct"] if canonical_hdr else None,
+            "canonical_win_rate_window": canonical_hdr["n"] if canonical_hdr else 0,
+            "canonical_net_pnl_window": canonical_hdr["net_pnl"] if canonical_hdr else None,
+            "canonical_metrics_scope": "recent_100_sources_rde_training_normal_strict",
+        }
+
+        # Qualified cohort, published BESIDE the all-source headline -- never
+        # instead of it. `win_rate_pct` above still counts every row, including
+        # the TIMEOUT_NO_PRICE non-trades; these fields make the disagreement
+        # between the dashboard and learning denominators visible and
+        # arithmetically checkable rather than silent.
+        qualified_hdr = _qualified_window_metrics(cache_path, 100)
+        qualified_fields = {
+            "qualified_win_rate_pct": qualified_hdr["qualified_win_rate_pct"] if qualified_hdr else None,
+            "qualified_win_rate_denominator": qualified_hdr["qualified_n"] if qualified_hdr else 0,
+            "qualified_net_pnl_window": qualified_hdr["qualified_net_pnl"] if qualified_hdr else None,
+            "qualified_excluded_non_trades": qualified_hdr["excluded_n"] if qualified_hdr else 0,
+            "qualified_excluded_by_reason": qualified_hdr["excluded_by_reason"] if qualified_hdr else {},
+            "qualified_metrics_scope": "recent_100_excluding_non_trade_exits",
+            "qualified_reconciles": (
+                qualified_hdr["raw_n"] == qualified_hdr["qualified_n"] + qualified_hdr["excluded_n"]
+                if qualified_hdr else None
+            ),
+        }
 
         iso = datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
         return {
@@ -413,8 +679,13 @@ def get_live_metrics_from_cache():
             'profit_factor': headline_pf,
             'win_rate_pct': headline_wr,
             'win_rate_window': headline_window,
+            'win_rate_basis': 'recent_closed_trades',
+            'win_rate_scope': 'all_sources_recent_window',
+            'win_rate_denominator': headline_window,
             'net_pnl': round(session_net, 6),
             'net_pnl_window': net_pnl_window,
+            **canonical_fields,
+            **qualified_fields,
             'exit_distribution': exits,
             'timestamp': iso,
             'last_update': iso,
@@ -1147,6 +1418,7 @@ def dashboard():
     return render_template_string(HTML_TEMPLATE)
 
 @app.route('/api/dashboard/metrics')
+@app.route('/api/metrics')
 def metrics():
     """Primary Android metrics via the single dashboard read model (audit PR4)."""
     from src.services.dashboard_read_model import get_metrics
@@ -1167,52 +1439,47 @@ def recent_trades():
 @app.route('/v2/', methods=['GET'])
 @app.route('/v2/<path:path>', methods=['GET'])
 def react_dashboard(path=''):
-    """Serve React SPA at /v2/"""
-    import os
-    print(f"[REACT_DASHBOARD] path='{path}'")
-    # Try both relative (from project root when run locally) and absolute (Hetzner deployment)
-    for dist_base in ['/opt/cryptomaster/dashboard_modern/dist', os.path.join(os.getcwd(), 'dashboard_modern', 'dist')]:
-        if os.path.isdir(dist_base):
-            dist_dir = dist_base
-            print(f"[REACT_DASHBOARD] Using dist_dir={dist_dir}")
-            break
-    else:
-        print(f"[REACT_DASHBOARD] Dashboard not found in any location")
-        return 'Dashboard not found', 404
-
-    if path and not path.startswith('assets/'):
-        path = ''  # Client-side routing: serve index.html for all routes
-    index_file = os.path.join(dist_dir, path or 'index.html')
-    try:
-        with open(index_file, 'r') as f:
-            return f.read(), 200, {'Content-Type': 'text/html; charset=utf-8'}
-    except FileNotFoundError:
-        with open(os.path.join(dist_dir, 'index.html'), 'r') as f:
-            return f.read(), 200, {'Content-Type': 'text/html; charset=utf-8'}
+    """Serve only the fixed React SPA index for client-side routes."""
+    # This rule overlaps the more-specific assets rule. It must never become a
+    # fallback filesystem sink if routing behavior changes or a path is encoded.
+    if path == "assets" or path.startswith("assets/"):
+        return "", 404
+    dist_dir = _first_existing_directory(_dashboard_dist_directories())
+    if dist_dir is None:
+        return "", 404
+    index_file = _resolve_confined_regular_file(dist_dir, "index.html")
+    if index_file is None:
+        return "", 404
+    return _send_dashboard_file(index_file, "text/html; charset=utf-8")
 
 @app.route('/v2/assets/<path:filename>', methods=['GET'])
 def react_assets(filename):
-    """Serve React assets (JS/CSS/fonts)"""
-    import os
-    # Try both relative (from project root when run locally) and absolute (Hetzner deployment)
-    for dist_base in ['/opt/cryptomaster/dashboard_modern/dist/assets', os.path.join(os.getcwd(), 'dashboard_modern', 'dist', 'assets')]:
-        if os.path.isdir(dist_base):
-            dist_dir = dist_base
-            break
-    else:
+    """Serve one canonical regular file confined to the React assets root."""
+    # SEC-01-A: derive `assets` from an already-canonical `dist`, not
+    # independently -- see _resolve_confined_subdirectory()'s docstring.
+    dist_dir = _first_existing_directory(_dashboard_dist_directories())
+    if dist_dir is None:
+        return '', 404
+    asset_dir = _resolve_confined_subdirectory(dist_dir, "assets")
+    if asset_dir is None:
+        return '', 404
+    try:
+        asset_file = _resolve_confined_regular_file(asset_dir, filename)
+    except (OSError, RuntimeError, ValueError):
+        # Security-boundary failures are intentionally indistinguishable to the
+        # client and never include the request or a local filesystem path.
+        return '', 404
+    if asset_file is None:
         return '', 404
 
-    try:
-        with open(os.path.join(dist_dir, filename), 'rb') as f:
-            content = f.read()
-        if filename.endswith('.js'):
-            return content, 200, {'Content-Type': 'application/javascript; charset=utf-8'}
-        elif filename.endswith('.css'):
-            return content, 200, {'Content-Type': 'text/css; charset=utf-8'}
-        else:
-            return content, 200, {'Content-Type': 'application/octet-stream'}
-    except FileNotFoundError:
-        return '', 404
+    suffix = asset_file.suffix.casefold()
+    if suffix == '.js':
+        mimetype = 'application/javascript; charset=utf-8'
+    elif suffix == '.css':
+        mimetype = 'text/css; charset=utf-8'
+    else:
+        mimetype = 'application/octet-stream'
+    return _send_dashboard_file(asset_file, mimetype)
 
 
 @app.route('/api/dashboard/readiness')
@@ -1239,7 +1506,7 @@ def readiness_check():
     except Exception as e:
         log.error(f"[READINESS_CHECK_ERROR] {e}", exc_info=True)
         # Never-500 (dashboard_audit 2026-07-14, Fix 5): degrade with HTTP 200.
-        return jsonify({"error": str(e), "readiness_score": 0, "is_ready_for_trading": False,
+        return jsonify({"error": "readiness_unavailable", "readiness_score": 0, "is_ready_for_trading": False,
                         "blocker_reasons": ["service_degraded"]}), 200
 
 
@@ -1253,7 +1520,7 @@ def readiness_status():
     except Exception as e:
         log.error(f"[READINESS_STATUS_ERROR] {e}", exc_info=True)
         # Never-500 (dashboard_audit 2026-07-14, Fix 5): degrade with HTTP 200.
-        return jsonify({"error": str(e), "status": "degraded"}), 200
+        return jsonify({"error": "readiness_status_unavailable", "status": "degraded"}), 200
 
 
 @app.route('/api/dashboard/learning-state')
@@ -1322,17 +1589,12 @@ def learning_state():
     except Exception as e:
         log.error(f"[LEARNING_STATE_ERROR] {e}", exc_info=True)
         # Never-500 (dashboard_audit 2026-07-14, Fix 5): degrade with HTTP 200.
-        return jsonify({"error": str(e), "status": "error", "learning_enabled": False,
+        return jsonify({"error": "learning_state_unavailable", "status": "error", "learning_enabled": False,
                         "regime_tp_strategy": {}, "lifetime_closes": 0}), 200
 
 
 if __name__ == '__main__':
-    # Ship-dark (hotfix 2026-07-17): localhost bind is the default only when
-    # DASHBOARD_SECURITY_ENABLED=1; otherwise 0.0.0.0 (prior behaviour) so the
-    # autodeployed dashboard keeps serving the Android app until security is
-    # explicitly enabled. DASHBOARD_BIND_HOST always overrides.
-    from src.services.dashboard_auth import security_enabled
-    _default_host = "127.0.0.1" if security_enabled() else "0.0.0.0"
-    _host = os.getenv("DASHBOARD_BIND_HOST", _default_host)
+    from src.services.dashboard_auth import resolve_bind_host
+    _host = resolve_bind_host()
     _port = int(os.getenv("DASHBOARD_PORT", "5001"))
     app.run(host=_host, port=_port, debug=False)

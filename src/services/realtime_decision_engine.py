@@ -3025,7 +3025,7 @@ def _try_discovery_admission(
     # P0 approved: proceed to sampler with routed metadata
     try:
         from src.services.paper_training_sampler import maybe_open_training_sample
-        from src.services.paper_trade_executor import open_paper_position
+        from src.services.paper_trade_executor import canonical_admit
 
         sampler_result = maybe_open_training_sample(
             signal=routed_signal,
@@ -3063,13 +3063,16 @@ def _try_discovery_admission(
                 "p0_gate_reason": routed_signal.get("p0_gate_reason"),
             }
 
-            open_paper_position(
+            _paper_open_result = canonical_admit(
                 signal=routed_signal,
                 price=routed_signal.get("price", 0),
                 ts=_time.time(),
+                route="PAPER_TRAINING",
                 reason="PAPER_TRAINING",
                 extra=extra,
             )
+            if _paper_open_result.get("status") != "opened":
+                log.warning("[PAPER_TRAINING_BLOCKED] reason=%s", _paper_open_result.get("reason"))
     except Exception:
         pass  # Graceful degrade if training sampler unavailable
 
@@ -4106,7 +4109,7 @@ def evaluate_signal(signal):
                 # P0 approved: proceed to sampler with routed metadata
                 try:
                     from src.services.paper_training_sampler import maybe_open_training_sample
-                    from src.services.paper_trade_executor import open_paper_position
+                    from src.services.paper_trade_executor import canonical_admit
 
                     sampler_result = maybe_open_training_sample(
                         signal=routed_signal,
@@ -4144,13 +4147,16 @@ def evaluate_signal(signal):
                             "p0_gate_reason": routed_signal.get("p0_gate_reason"),  # P0.4: audit trail
                         }
 
-                        open_paper_position(
+                        _paper_open_result = canonical_admit(
                             signal=routed_signal,
                             price=routed_signal.get("price", 0),
                             ts=_time.time(),
+                            route="PAPER_TRAINING",
                             reason="PAPER_TRAINING",
                             extra=extra,
                         )
+                        if _paper_open_result.get("status") != "opened":
+                            log.warning("[PAPER_TRAINING_BLOCKED] reason=%s", _paper_open_result.get("reason"))
                 except Exception:
                     pass  # Graceful degrade if training sampler unavailable
 
@@ -4188,7 +4194,7 @@ def evaluate_signal(signal):
             # P0 approved: proceed to sampler with routed metadata
             try:
                 from src.services.paper_training_sampler import maybe_open_training_sample
-                from src.services.paper_trade_executor import open_paper_position
+                from src.services.paper_trade_executor import canonical_admit
 
                 sampler_result = maybe_open_training_sample(
                     signal=routed_signal,
@@ -4226,13 +4232,16 @@ def evaluate_signal(signal):
                         "p0_gate_reason": routed_signal.get("p0_gate_reason"),  # P0.4: audit trail
                     }
 
-                    open_paper_position(
+                    _paper_open_result = canonical_admit(
                         signal=routed_signal,
                         price=routed_signal.get("price", 0),
                         ts=_time.time(),
+                        route="PAPER_TRAINING",
                         reason="PAPER_TRAINING",
                         extra=extra,
                     )
+                    if _paper_open_result.get("status") != "opened":
+                        log.warning("[PAPER_TRAINING_BLOCKED] reason=%s", _paper_open_result.get("reason"))
             except Exception:
                 pass  # Graceful degrade if training sampler unavailable
 

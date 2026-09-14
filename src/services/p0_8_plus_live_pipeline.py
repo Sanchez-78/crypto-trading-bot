@@ -230,7 +230,7 @@ def run_live_tick(
     Never raises -- one symbol's or one candidate's failure is logged and
     skipped, matching evaluate_symbol()'s own per-strategy exception
     discipline (§8.1 spirit)."""
-    from src.services.paper_trade_executor import open_paper_position
+    from src.services.paper_trade_executor import canonical_admit
 
     # 2026-08-17 (reviewer-agent finding C2): the shadow evaluator's own
     # run_shadow_tick() calls this before its loop (p0_8_plus_shadow_
@@ -292,8 +292,11 @@ def run_live_tick(
             price = live_quote.ask if _normalize_side(r.side) == "BUY" else live_quote.bid
             try:
                 signal_dict, extra = _map_to_legacy_signal(r, price)
-                result = open_paper_position(
-                    signal_dict, price, time.time(),
+                result = canonical_admit(
+                    signal=signal_dict,
+                    price=price,
+                    ts=time.time(),
+                    route="P0_8_PLUS_EVIDENCE_COLLECTION",
                     reason="P0_8_PLUS_EVIDENCE_COLLECTION",
                     extra=extra,
                 )
@@ -306,7 +309,7 @@ def run_live_tick(
                     opened.append(result)
             except Exception as exc:
                 log.warning(
-                    "[P0_8_PLUS_LIVE] open_paper_position failed for %s/%s: %r",
+                    "[P0_8_PLUS_LIVE] canonical_admit failed for %s/%s: %r",
                     symbol, r.strategy_id, exc,
                 )
                 continue

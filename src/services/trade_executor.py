@@ -119,11 +119,12 @@ def live_trading_allowed():
 
 try:
     from src.services.paper_trade_executor import (
-        open_paper_position, update_paper_positions, close_paper_position
+        canonical_admit, update_paper_positions, close_paper_position
     )
 except ImportError:
-    def open_paper_position(*args, **kwargs):
-        return {"status": "error", "reason": "paper_trade_executor not available"}
+    def canonical_admit(*args, **kwargs):
+        return {"status": "error", "outcome": "BLOCKED",
+                "reason": "paper_trade_executor not available"}
     def update_paper_positions(*args, **kwargs):
         return []
     def close_paper_position(*args, **kwargs):
@@ -1870,10 +1871,11 @@ def _maybe_route_to_paper_training(signal: dict, current_price: float, reject_re
                     extra["admission_reason"] = "paper_learning_must_continue"
                     extra["historical_health"] = "BAD"
 
-                open_result = open_paper_position(
+                open_result = canonical_admit(
                     signal=trade_signal,
                     price=current_price,
                     ts=time.time(),
+                    route="TRAINING_SAMPLER",
                     reason=f"TRAINING_SAMPLER:{reject_reason}",
                     extra=extra,
                 )
@@ -2286,11 +2288,11 @@ def handle_signal(signal):
                                 sym, reason
                             )
                         else:
-                            _explored = True
-                            open_paper_position(
-                                signal,
+                            _explore_result = canonical_admit(
+                                signal=signal,
                                 price=entry_price,
                                 ts=time.time(),
+                                route="PAPER_EXPLORE",
                                 reason="PAPER_EXPLORE",
                                 extra={
                                     "paper_source": "exploration_reject",
@@ -2304,6 +2306,13 @@ def handle_signal(signal):
                                     "score_final": signal.get("score_final", signal.get("score", None)),
                                 },
                             )
+                            if _explore_result.get("status") == "opened":
+                                _explored = True
+                            else:
+                                log.warning(
+                                    "[PAPER_EXPLORE_BLOCKED] symbol=%s reason=%s",
+                                    sym, _explore_result.get("reason", "unknown"),
+                                )
                             log.warning(
                                 "[PAPER_EXPLORE_ENTRY] bucket=%s symbol=%s side=%s original_decision=REJECT "
                                 "ev=%.4f score=%.3f price=%.8f reason=%s",
@@ -2998,7 +3007,14 @@ def handle_signal(signal):
                 "tp_from_executor": tp,  # V10.22: Pass pre-computed TP from trade_executor
                 "sl_from_executor": sl,  # V10.22: Pass pre-computed SL from trade_executor
             }
-            _paper_result = open_paper_position(signal, actual_entry, time.time(), "RDE_TAKE", extra=extra_meta)
+            _paper_result = canonical_admit(
+                signal=signal,
+                price=actual_entry,
+                ts=time.time(),
+                route="RDE_TAKE",
+                reason="RDE_TAKE",
+                extra=extra_meta,
+            )
             if _paper_result.get("status") == "opened":
                 log.warning(
                     f"[PAPER_ROUTED] symbol={sym} side={signal['action']} "

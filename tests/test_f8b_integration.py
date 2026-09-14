@@ -26,14 +26,17 @@ def test_tick_hook_before_blacklist_gate_and_gated():
 
 def test_entry_diversion_records_and_skips_open_when_enabled():
     """In _on_signal_created, when data-collection is enabled the signal is recorded
-    and the function RETURNS before open_paper_position — no position is opened."""
+    and the function RETURNS before the admission call — no position is opened."""
     t = EXEC.read_text(encoding="utf-8")
     hook = t.index("shadow_excursion_recorder")
     record = t.index("_shadow.record_signal(", hook)
     ret = t.index("return", record)
-    open_call = t.index("open_paper_position(\n", hook)  # the real open call site
+    # Phase 2 single-path policy: this call site now reaches the open choke via
+    # the canonical admission wrapper, so the real open call site is
+    # canonical_admit(). The ordering contract asserted here is unchanged.
+    open_call = t.index("canonical_admit(\n", hook)  # the real open call site
     # record_signal + return must both precede the open call
-    assert record < ret < open_call, "record + return must come before open_paper_position"
+    assert record < ret < open_call, "record + return must come before canonical_admit"
     # the diversion is gated by enabled()
     assert "_shadow.enabled()" in t[hook:open_call]
     # observation path marks the signal handled so RDE won't double-process it
@@ -42,12 +45,12 @@ def test_entry_diversion_records_and_skips_open_when_enabled():
 
 def test_entry_diversion_fail_closed_on_recorder_error():
     """Both gates: when data-collection is enabled, a recorder error must NOT fall
-    through to open_paper_position (that would open a paper position while observing
+    through to the admission call (that would open a paper position while observing
     and pollute the E1–E4 dataset). The except path re-checks the env flag and
     returns, so the enabled branch is fail-closed on error too."""
     t = EXEC.read_text(encoding="utf-8")
     hook = t.index("shadow_excursion_recorder")
-    open_call = t.index("open_paper_position(\n", hook)
+    open_call = t.index("canonical_admit(\n", hook)
     block = t[hook:open_call]
     assert "except Exception" in block
     # the env flag is re-read in the except (the recorder itself may be what raised)

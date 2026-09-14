@@ -767,8 +767,16 @@ def _log_quality_exit_once(closed_trade: dict, position: dict, path: str = "unkn
             _QUALITY_EXIT_LOGGED.add(trade_id)
 
 
-def _save_paper_state() -> None:
-    """Save open paper positions to disk with atomic writes."""
+def _save_paper_state() -> bool:
+    """Save open paper positions to disk with atomic writes.
+
+    STATE-02-CORE (2026-08-24): now returns True/False instead of always
+    None. Every existing caller that ignores the return value is
+    unaffected (Python allows discarding a return value); the one caller
+    that now checks it is open_paper_position()'s single acknowledged
+    save point (see there) so a save failure can be distinguished from
+    success instead of both looking identical to every caller.
+    """
     try:
         import json
         with _POSITION_LOCK:
@@ -794,6 +802,7 @@ def _save_paper_state() -> None:
             len(positions_snapshot),
             _STATE_FILE,
         )
+        return True
     except PermissionError as e:
         log.error(
             "[PAPER_STATE_SAVE_ERROR] permission path=%s uid=%s euid=%s err=%s",
@@ -802,8 +811,10 @@ def _save_paper_state() -> None:
             os.geteuid() if hasattr(os, "geteuid") else "N/A",
             str(e),
         )
+        return False
     except Exception as e:
         log.warning("[PAPER_STATE_SAVE_ERROR] err=%s", str(e))
+        return False
 
 
 def _migrate_legacy_position(pos: dict) -> dict:
@@ -1071,15 +1082,24 @@ def _load_paper_state() -> None:
             )
         except Exception as e:
             log.exception("[PAPER_STATE_RECONCILE_ERROR] source=%s err=%s", _STATE_FILE, str(e))
+            raise
+
+        if reconcile_result.get("pending", 0):
+            raise RuntimeError(
+                f"paper state reconcile incomplete: pending={reconcile_result.get('pending', 0)}"
+            )
 
         # If we did a list->dict conversion, save back in canonical format
         if list_to_dict_count > 0:
-            _save_paper_state()
+            if not _save_paper_state():
+                raise IOError("paper state migration persistence failed")
 
     except json.JSONDecodeError as e:
         log.warning("[PAPER_STATE_LOAD_ERROR] source=%s err=json_decode err_detail=%s", _STATE_FILE, str(e))
+        raise
     except Exception as e:
         log.warning("[PAPER_STATE_LOAD_ERROR] source=%s err=%s", _STATE_FILE, str(e))
+        raise
 
 
 def _normalize_side(side_raw: str) -> tuple[str, str]:
@@ -1539,6 +1559,95 @@ def _check_training_sampler_caps(symbol: str, bucket: Optional[str]) -> Optional
     return None
 
 
+# ── Canonical admission wrapper (Phase 2, single-path policy) ────────────────
+# `CLAUDE_SINGLE_PATH_POLICY_2026-09-14.md`: the bot must have exactly ONE
+# trading flow —
+#     signal -> canonical admission -> open_paper_position -> one close writer
+# Every signal source (`rde_take`, `training_sampler`, exploration, P0.8+
+# evidence collection, the legacy P0_GATE caller) is a LABEL on that one flow,
+# never its own decision branch. Historically each caller built its own `extra`
+# dict and called the choke directly, so attribution was whatever that caller
+# happened to remember to set — which is why 204/472 local closed rows carry a
+# NULL bucket and 459/472 carry tp_sl_profile="unknown".
+#
+# This wrapper deliberately contains NO admission logic. It does exactly three
+# things:
+#   1. stamps the immutable attribution Phase 2 requires at open time;
+#   2. delegates verbatim to open_paper_position() (the authoritative choke);
+#   3. normalises the result to OPENED/BLOCKED carrying the choke's own reason.
+# It must never re-decide, override, allowlist, retry or soften an admission —
+# any of those would recreate precisely the second branch this policy removes.
+CANONICAL_ADMISSION_CONTRACT_VERSION = 1
+
+
+def canonical_admit(
+    *,
+    signal: dict,
+    price: float,
+    ts: float,
+    route: str,
+    reason: str,
+    extra: Optional[dict] = None,
+) -> dict:
+    """Single canonical admission entry point for every paper signal source.
+
+    Args:
+        signal: The signal dict, passed through untouched.
+        price: Real market price (the choke still rejects non-positive prices).
+        ts: Entry timestamp.
+        route: Admission route label, persisted as `admission_route`.
+        reason: Entry reason handed to the choke unchanged.
+        extra: Caller metadata; copied, never mutated in place.
+
+    Returns:
+        The choke's own result dict plus a normalised `outcome` key that is
+        exactly "OPENED" or "BLOCKED".
+    """
+    stamped = dict(extra or {})
+
+    # Attribution is RECORDED, never guessed. An unknown version stays
+    # "UNKNOWN" so the metrics layer buckets it honestly rather than silently
+    # crediting it to the current build (Phase 2 rule 4: missing attribution is
+    # UNQUALIFIED, never back-filled by estimate).
+    stamped["admission_route"] = route
+    stamped.setdefault("admission_reason", reason)
+    stamped["code_version"] = os.getenv("BOT_CODE_VERSION", "").strip() or "UNKNOWN"
+    stamped["config_version"] = os.getenv("BOT_CONFIG_VERSION", "").strip() or "UNKNOWN"
+    stamped["admission_contract_version"] = CANONICAL_ADMISSION_CONTRACT_VERSION
+
+    # ONE effective_hold_s contract for tick and scanner alike: reuse the
+    # existing resolver instead of introducing a second hold rule.
+    stamped["effective_hold_s"] = float(_effective_paper_hold_s(stamped))
+
+    result = open_paper_position(
+        signal=signal,
+        price=price,
+        ts=ts,
+        reason=reason,
+        extra=stamped,
+    )
+
+    # Fail-closed: an unrecognised return is never reported as an open.
+    if not isinstance(result, dict):
+        log.error(
+            "[CANONICAL_ADMIT_INVALID_RESULT] route=%s symbol=%s type=%s",
+            route, (signal or {}).get("symbol", "UNKNOWN"), type(result).__name__,
+        )
+        return {
+            "outcome": "BLOCKED",
+            "status": "blocked",
+            "reason": "canonical_admit_invalid_result",
+            "admission_route": route,
+        }
+
+    normalised = dict(result)
+    normalised["outcome"] = "OPENED" if result.get("status") == "opened" else "BLOCKED"
+    normalised["admission_route"] = route
+    if normalised["outcome"] == "BLOCKED":
+        normalised.setdefault("reason", "unknown")
+    return normalised
+
+
 def open_paper_position(
     signal: dict,
     price: float,
@@ -1558,6 +1667,17 @@ def open_paper_position(
     Returns:
         dict: {"trade_id": ..., "status": "opened", "symbol": ..., ...}
     """
+    # STATE-02-CORE: direct callers must not admit while state hydration,
+    # reconciliation or subscription readiness is incomplete.  This guard is
+    # intentionally first so no admission/cooldown/metric side effect can run
+    # against UNINITIALIZED, INITIALIZING or FAILED state.
+    if globals().get("_PAPER_STATE_STATUS") != "READY":
+        return {
+            "status": "blocked",
+            "reason": "paper_state_not_ready",
+            "state": globals().get("_PAPER_STATE_STATUS", "UNINITIALIZED"),
+        }
+
     # OBSERVE / data-collection gate — AUTHORITATIVE CHOKE (2026-07-20).
     # This is the single function that creates a paper position, so gating HERE
     # closes EVERY path — including the realtime_decision_engine and trade_executor
@@ -2313,6 +2433,34 @@ def open_paper_position(
         reason,
     )
 
+    # STATE-02-CORE (2026-08-24): single acknowledged persistence point.
+    # Previously _save_paper_state() was called TWICE (once here, once
+    # again after the rate-slot commit below) and its return value was
+    # never checked -- record_paper_entry(), the V5 bridge open_event,
+    # and the training-sampler rate-slot commit ALL fired unconditionally
+    # BEFORE either save, and the function unconditionally returned
+    # status="opened" regardless of whether the position was ever
+    # actually persisted to disk. A permission/IO failure in
+    # _save_paper_state() was therefore indistinguishable from success to
+    # every caller and every downstream metric/event consumer.
+    #
+    # Now: exactly one save, right here, before any external-facing side
+    # effect. On failure, roll back the in-memory insert (this trade_id
+    # is not yet visible to any other admission-cap counter or TP/SL scan
+    # outside this function, so removing it here is safe) and return
+    # blocked -- no metric, bridge event, quality-diagnostic log, or
+    # rate-slot commit fires for a position that was never durably
+    # recorded.
+    if not _save_paper_state():
+        with _POSITION_LOCK:
+            _POSITIONS.pop(trade_id, None)
+        log.error(
+            "[PAPER_STATE_PERSIST_FAILED] trade_id=%s symbol=%s side=%s -- rolled back "
+            "in-memory position; no metric/bridge/rate-slot side effect emitted",
+            trade_id, symbol, side,
+        )
+        return {"status": "blocked", "reason": "paper_state_persist_failed", "trade_id": trade_id}
+
     # Phase 4C: Record PAPER entry metric
     if record_paper_entry:
         try:
@@ -2349,9 +2497,6 @@ def open_paper_position(
     if paper_source == "training_sampler":
         _log_paper_train_quality_entry(position, signal)
 
-    # Persist state after opening position
-    _save_paper_state()
-
     # P1.1AT: Commit rate-cap slot ONLY after successful entry creation and persistence
     # This ensures rate-cap accounting reflects real paper training entries, not phantom attempts
     if paper_source == "training_sampler":
@@ -2360,9 +2505,6 @@ def open_paper_position(
             commit_training_sampler_rate_slot(now=ts)
         except Exception as e:
             log.warning("[PAPER_TRAIN_RATE_SLOT_COMMIT_ERROR] trade_id=%s err=%s", trade_id, str(e))
-
-    # Persist state after opening new position
-    _save_paper_state()
 
     return {
         "status": "opened",
@@ -2536,7 +2678,8 @@ def check_and_close_timeout_positions(now: Optional[float] = None) -> List[dict]
             else:
                 log.error(f"[LEARNING_NOT_WIRED_TIMEOUT_PATH] _learning_instance is None for {trade_id}! Learning disabled.")
 
-            _save_paper_state()
+            if not _save_paper_state():
+                raise IOError(f"paper state timeout persistence failed: {trade_id}")
             closed_trades.append(closed_trade)
 
     return closed_trades
@@ -3315,7 +3458,8 @@ def close_paper_position(
         # Mark trade as quarantined so downstream handlers (e.g., _save_paper_trade_closed) skip learning updates
         closed_trade["quarantined"] = True
         # Skip all quality/econ/learning logs and return early
-        _save_paper_state()
+        if not _save_paper_state():
+            raise IOError(f"paper state quarantine persistence failed: {position_id}")
         return closed_trade
 
     # P1.1AF: Log canonical bucket field (set from training_bucket or explore_bucket)
@@ -3450,7 +3594,8 @@ def close_paper_position(
     # behavior change: this branch never executed.
 
     # Persist state after closing position
-    _save_paper_state()
+    if not _save_paper_state():
+        raise IOError(f"paper state close persistence failed: {position_id}")
 
     # P1.1AG: Check if we should log summary
     _maybe_log_paper_quality_summary()
@@ -3470,7 +3615,10 @@ def close_paper_position(
         _POSITIONS.pop(position_id, None)
 
     # V10.17 FIX: Persist state after removal so JSON file reflects actual open positions
-    _save_paper_state()
+    if not _save_paper_state():
+        with _POSITION_LOCK:
+            _POSITIONS[position_id] = pos
+        raise IOError(f"paper state removal persistence failed: {position_id}")
 
     # V10.27: Update canonical_state with win/loss count for persistent WR calculation
     try:
@@ -4529,23 +4677,55 @@ def _log_paper_train_quality_exit(closed_trade: dict, position: dict) -> None:
 # P1.1Z2: Startup initialization — load paper state after all functions are defined
 _PAPER_STATE_INITIALIZED = False
 
+# STATE-02-CORE (2026-08-24, CLAUDE_FULL_STATUS_REPORT_REMEDIATION_PROMPT_2026-08-24.md):
+# `_PAPER_STATE_INITIALIZED` above is preserved EXACTLY as-is (same name, same
+# meaning -- "an initialize attempt has been made" -- same position in
+# `_init_paper_state_once()` below) because `tests/test_state_01_import_purity.py`
+# asserts `is False` on bare import; this session deliberately does not touch
+# that file. It is NOT sufficient on its own to answer "is paper state actually
+# usable": before this fix it was set True unconditionally BEFORE
+# `_load_paper_state()` was even attempted, and a raised exception was caught,
+# logged, and silently left `_PAPER_STATE_INITIALIZED=True` forever -- so a
+# load failure was indistinguishable from a successful empty-state load, and a
+# second `_init_paper_state_once()` call after a failure would short-circuit
+# on the old `if _PAPER_STATE_INITIALIZED: return` guard and never retry.
+# `_PAPER_STATE_STATUS` is the new, additive source of truth for readiness.
+_PAPER_STATE_STATUS = "UNINITIALIZED"  # UNINITIALIZED | INITIALIZING | READY | FAILED
+_PAPER_STATE_INIT_LOCK = __import__("threading").RLock()  # serializes concurrent initialize() attempts
+
 
 def _init_paper_state_once() -> None:
     """Initialize paper state once at module load time.
 
     Called at module bottom after all helper functions are defined.
     Prevents NameError for _reconcile_stale_paper_positions() and other helpers.
+
+    STATE-02-CORE: a failed `_load_paper_state()` now leaves
+    `_PAPER_STATE_STATUS="FAILED"` (not silently treated as ready-with-empty-
+    state) and does NOT block a later retry -- only a CONFIRMED "READY"
+    status short-circuits. `_PAPER_STATE_INIT_LOCK` (an RLock, so this
+    function's own reentrant re-entry -- e.g. if `_load_paper_state()` itself
+    ever called back into this function -- would not deadlock) serializes
+    concurrent callers: the second of two truly-concurrent callers blocks on
+    the lock until the first finishes, then observes the FINAL status (READY
+    -> idempotent no-op; FAILED -> its own retry attempt) rather than racing
+    the first call's partially-applied state.
     """
-    global _PAPER_STATE_INITIALIZED
-    log.info("[INIT_PAPER_STATE_CALLED] _PAPER_STATE_INITIALIZED=%s", _PAPER_STATE_INITIALIZED)
-    if _PAPER_STATE_INITIALIZED:
-        return
-    _PAPER_STATE_INITIALIZED = True
-    try:
-        log.info("[INIT_PAPER_STATE_LOADING] About to call _load_paper_state()")
-        _load_paper_state()
-    except Exception as e:
-        log.exception("[PAPER_STATE_LOAD_ERROR] source=%s err=%s", _STATE_FILE, e)
+    global _PAPER_STATE_INITIALIZED, _PAPER_STATE_STATUS
+    with _PAPER_STATE_INIT_LOCK:
+        log.info("[INIT_PAPER_STATE_CALLED] status=%s", _PAPER_STATE_STATUS)
+        if _PAPER_STATE_STATUS == "READY":
+            return
+        _PAPER_STATE_INITIALIZED = True
+        _PAPER_STATE_STATUS = "INITIALIZING"
+        try:
+            log.info("[INIT_PAPER_STATE_LOADING] About to call _load_paper_state()")
+            _load_paper_state()
+        except Exception as e:
+            log.exception("[PAPER_STATE_LOAD_ERROR] source=%s err=%s", _STATE_FILE, e)
+            _PAPER_STATE_STATUS = "FAILED"
+            return
+        _PAPER_STATE_STATUS = "READY"
 
 
 # P0.6 FIX: Wire signal_created event to P0 gate
@@ -4628,10 +4808,11 @@ def _on_signal_created(signal: dict) -> None:
                     return
 
             log.info("[SIGNAL_OPENING] %s %s price=%s ts=%s", symbol, action, price, ts)
-            _open_result = open_paper_position(
+            _open_result = canonical_admit(
                 signal=signal,
                 price=price,
                 ts=ts,
+                route="P0_GATE",
                 reason="P0_GATE",
                 extra={"p0_decision": decision.reason}
             )
@@ -4685,6 +4866,7 @@ def _on_signal_created(signal: dict) -> None:
 # Idempotent (still guarded by _PAPER_STATE_INITIALIZED) -- calling it more
 # than once, or not at all in a test process, is always safe.
 _PAPER_TRADE_EXECUTOR_SUBSCRIBED = False
+_PAPER_TRADE_EXECUTOR_SUBSCRIBE_LOCK = __import__("threading").RLock()
 
 
 def initialize_paper_trade_executor() -> None:
@@ -4693,29 +4875,51 @@ def initialize_paper_trade_executor() -> None:
     module import, a test fixture default, or any other implicit trigger.
 
     Performs, in order:
-    1. Live event-bus subscription (signal_created -> _on_signal_created)
-       -- previously happened unconditionally at import time.
-    2. One-time paper-position state load + stale-position reconciliation
-       (_init_paper_state_once(), itself still guarded by
-       _PAPER_STATE_INITIALIZED) -- previously happened unconditionally at
+    1. One-time paper-position state load + stale-position reconciliation
+       (_init_paper_state_once()) -- previously happened unconditionally at
        import time, including inside test processes that only meant to
        import a function reference.
-    """
-    global _PAPER_TRADE_EXECUTOR_SUBSCRIBED
-    if not _PAPER_TRADE_EXECUTOR_SUBSCRIBED:
-        subscribe_once("signal_created", _on_signal_created)
-        _PAPER_TRADE_EXECUTOR_SUBSCRIBED = True
-        log.info("[PAPER_TRADE_EXECUTOR_INIT] subscribed to signal_created")
+    2. Live event-bus subscription (signal_created -> _on_signal_created)
+       -- ONLY once state load succeeded (see STATE-02-CORE note below).
 
-    # Exception handling deliberately matches the ORIGINAL module-bottom
-    # code's behavior exactly (catch, log, do not propagate) -- this patch
-    # is scoped to STATE-01 (import-time side effects) only. Whether a
-    # state-load failure should instead halt startup is a separate,
-    # legitimate question (OPS-02 territory) intentionally not bundled
-    # into this change.
-    try:
-        log.info("[PAPER_TRADE_EXECUTOR_INIT] initializing paper state")
-        _init_paper_state_once()
-        log.info("[PAPER_TRADE_EXECUTOR_INIT] paper state initialized")
-    except Exception as e:
-        log.exception("[PAPER_TRADE_EXECUTOR_INIT_ERROR] %s", e)
+    STATE-02-CORE (2026-08-24): order 1/2 was previously REVERSED --
+    subscription happened unconditionally, BEFORE state load was even
+    attempted. That meant a live `signal_created` event could reach
+    `_on_signal_created()` -> `open_paper_position()` before mandatory
+    state load/reconcile had even started, let alone succeeded -- exactly
+    the "event subscription before mandatory hydration" pattern this fix
+    targets (H6 in the governing report-reconciliation contract). Now:
+    subscription is withheld entirely while state is not READY. Calling
+    this function again later (e.g. from a future OPS-02-HEALTH retry
+    path -- NOT implemented by this session, `bot2/main.py` is read-only
+    here) will retry the load and, if it then succeeds, subscribe at that
+    point -- `_init_paper_state_once()`'s own retry-after-failure fix
+    (above) makes that safe. Until then, the P0_GATE admission path stays
+    entirely unreachable rather than risk admitting against unreconciled
+    state -- a stalled admission is recoverable; a corrupted learner
+    state (the STATE-01 precedent) is not.
+    """
+    global _PAPER_TRADE_EXECUTOR_SUBSCRIBED, _PAPER_STATE_STATUS
+    log.info("[PAPER_TRADE_EXECUTOR_INIT] initializing paper state")
+    _init_paper_state_once()  # never raises -- catches and records FAILED internally
+    if _PAPER_STATE_STATUS != "READY":
+        log.error(
+            "[PAPER_TRADE_EXECUTOR_INIT_NOT_READY] status=%s -- signal_created "
+            "subscription withheld; P0_GATE admission path stays inactive until "
+            "a future initialize_paper_trade_executor() retry succeeds",
+            _PAPER_STATE_STATUS,
+        )
+        return
+    log.info("[PAPER_TRADE_EXECUTOR_INIT] paper state hydrated")
+    with _PAPER_TRADE_EXECUTOR_SUBSCRIBE_LOCK:
+        if not _PAPER_TRADE_EXECUTOR_SUBSCRIBED:
+            _PAPER_STATE_STATUS = "SUBSCRIBING"
+            try:
+                subscribe_once("signal_created", _on_signal_created)
+            except Exception:
+                _PAPER_STATE_STATUS = "FAILED"
+                log.exception("[PAPER_TRADE_EXECUTOR_SUBSCRIBE_ERROR]")
+                return
+            _PAPER_TRADE_EXECUTOR_SUBSCRIBED = True
+            _PAPER_STATE_STATUS = "READY"
+            log.info("[PAPER_TRADE_EXECUTOR_INIT] subscribed to signal_created")

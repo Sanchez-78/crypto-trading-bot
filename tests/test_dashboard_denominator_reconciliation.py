@@ -1,0 +1,115 @@
+"""Production-linked RED gate for the Phase 4/5 denominator reconciliation.
+
+Phase 0 evidence (local `cache.sqlite`, 472 closed rows, read-only):
+
+    exit_reason=TIMEOUT_NO_PRICE   n=106   exit_price=0.0   pnl_pct=0.0   win=0
+
+Those rows are positions the executor closed WITHOUT ever obtaining a market
+price.  The trading code already treats them as non-trades everywhere it
+matters -- `paper_trade_executor` stamps `learning_skipped=True`, skips
+`record_close`, and `canonical_learning_eligibility()` rejects them with the
+explicit reason `timeout_no_price_invalid`.
+
+The dashboard, however, reads the same rows out of `closed_trades` and books
+each one as a LOSS (`pnl_pct=0.0` is not `> 0`).  So two denominators in one
+system disagree about what counts as a trade.
+
+Phase 4 requires "raw input count == the sum of all mutually-exclusive
+buckets" and Phase 5 requires the qualified cohort be shown SEPARATELY from
+the all-source headline.  These tests assert exactly that, and -- critically --
+that the all-source headline is NOT quietly redefined to raise the number.
+
+PAPER-only: builds a throwaway SQLite file in tmp_path; touches no runtime or
+production database.
+"""
+
+import sqlite3
+
+import pytest
+
+from src.services import dashboard_web
+
+
+def _make_cache(tmp_path, rows):
+    """Create a minimal closed_trades cache with the columns the reader uses."""
+    db = tmp_path / "cache.sqlite"
+    conn = sqlite3.connect(str(db))
+    conn.execute(
+        "CREATE TABLE closed_trades ("
+        "id INTEGER PRIMARY KEY, exit_ts REAL, pnl_usd REAL, pnl_pct REAL, "
+        "exit_reason TEXT, source TEXT)"
+    )
+    conn.executemany(
+        "INSERT INTO closed_trades (id, exit_ts, pnl_usd, pnl_pct, exit_reason, source) "
+        "VALUES (?,?,?,?,?,?)",
+        rows,
+    )
+    conn.commit()
+    conn.close()
+    return str(db)
+
+
+# 3 real wins, 2 real losses, 5 TIMEOUT_NO_PRICE non-trades.
+_ROWS = (
+    [(i, 1000.0 + i, 1.0, 0.5, "TP", "rde_take") for i in range(1, 4)]
+    + [(i, 1000.0 + i, -1.0, -0.5, "TIMEOUT", "rde_take") for i in range(4, 6)]
+    + [(i, 1000.0 + i, 0.0, 0.0, "TIMEOUT_NO_PRICE", "rde_take") for i in range(6, 11)]
+)
+
+
+def test_qualified_window_metrics_reconciles_exactly(tmp_path):
+    """RED-1: raw == qualified + excluded, with the excluded reason named."""
+    assert hasattr(dashboard_web, "_qualified_window_metrics"), \
+        "_qualified_window_metrics() is not defined"
+
+    cache = _make_cache(tmp_path, _ROWS)
+    m = dashboard_web._qualified_window_metrics(cache, 100)
+    assert m is not None
+
+    assert m["raw_n"] == 10
+    assert m["excluded_n"] == 5
+    assert m["qualified_n"] == 5
+    # The Phase 4 invariant, asserted literally.
+    assert m["raw_n"] == m["qualified_n"] + m["excluded_n"]
+    assert m["excluded_by_reason"] == {"timeout_no_price_invalid": 5}
+
+
+def test_qualified_win_rate_uses_only_the_qualified_denominator(tmp_path):
+    """RED-2: 3 wins of 5 real trades = 60%, not 3 of 10 = 30%."""
+    cache = _make_cache(tmp_path, _ROWS)
+    m = dashboard_web._qualified_window_metrics(cache, 100)
+
+    assert m["qualified_wins"] == 3
+    assert m["qualified_win_rate_pct"] == pytest.approx(60.0)
+
+
+def test_all_source_headline_is_not_redefined(tmp_path):
+    """RED-3: the raw all-source WR must still count non-trades as losses.
+
+    This is the anti-gaming assertion.  Exposing a qualified cohort is only
+    legitimate while the unfiltered headline stays exactly as it was -- 3 wins
+    out of all 10 rows = 30%.  If this ever starts reporting 60%, the headline
+    denominator has been silently narrowed to hit the WR target.
+    """
+    cache = _make_cache(tmp_path, _ROWS)
+    raw = dashboard_web._rolling_window_metrics(cache, 100)
+
+    assert raw["n"] == 10
+    assert raw["wins"] == 3
+    assert raw["win_rate_pct"] == pytest.approx(30.0)
+
+
+def test_excluded_rows_are_never_silently_dropped(tmp_path):
+    """RED-4: a cohort of nothing but non-trades reports 0 qualified, not None."""
+    cache = _make_cache(
+        tmp_path,
+        [(i, 1000.0 + i, 0.0, 0.0, "TIMEOUT_NO_PRICE", "rde_take") for i in range(1, 4)],
+    )
+    m = dashboard_web._qualified_window_metrics(cache, 100)
+
+    assert m["raw_n"] == 3
+    assert m["qualified_n"] == 0
+    assert m["excluded_n"] == 3
+    # No qualified rows means no defensible win rate -- report None, not 0.0,
+    # so the dashboard cannot render an invented "0%" as if it were measured.
+    assert m["qualified_win_rate_pct"] is None

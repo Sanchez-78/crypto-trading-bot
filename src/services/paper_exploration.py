@@ -706,15 +706,16 @@ def maybe_open_paper_exploration_from_reject(
             return False
 
         # Open paper position with exploration metadata
-        from src.services.paper_trade_executor import open_paper_position, _POSITION_SIZE
+        from src.services.paper_trade_executor import canonical_admit, _POSITION_SIZE
 
         base_size_usd = _POSITION_SIZE
         final_size_usd = base_size_usd * ov["size_mult"]
 
-        result = open_paper_position(
-            signal,
+        result = canonical_admit(
+            signal=signal,
             price=price,
             ts=time.time(),
+            route="PAPER_EXPLORE",
             reason="PAPER_EXPLORE",
             extra={
                 "paper_source": "exploration_reject",
