@@ -94,3 +94,103 @@ def _deterministic_paper_state():
     finally:
         mod._PAPER_STATE_STATUS = previous
         mod._PAPER_STATE_INITIALIZED = previous_init
+
+
+# ── Production data integrity backstop (2026-09-15, external audit Q3) ───────
+# The env-var guard in src/core/test_sink_guard.py is necessary but bypassable:
+# a subprocess spawned without the inherited environment, a multiprocessing
+# worker, a fixture that clears os.environ, or a hardcoded absolute path that
+# never consults the redirected constant at all will all slip past it.
+#
+# Both real contamination incidents in this work (a row written into
+# cache.sqlite, and a deleted data/paper_open_positions.json) were caught only
+# because an operator happened to be hashing these files by hand before and
+# after runs. That proves the DISCIPLINE worked, not that the system was safe.
+#
+# This makes that discipline automatic and unconditional. It observes the
+# filesystem directly, so it does not care HOW a write happened -- subprocess,
+# multiprocessing, absolute path or otherwise. It is a backstop layered on top
+# of the env guard, not a replacement for it: the guard prevents, this detects.
+#
+# Deliberately NOT watched: the NAS share. Hashing a network path can stall the
+# whole session, and the env guard already refuses it by directory name.
+
+_PRODUCTION_WATCH = (
+    "local_learning_storage/cache.sqlite",
+    "local_learning_storage/learning_database.sqlite",
+    "local_learning_storage/learning_database.sqlite-wal",
+    "local_learning_storage/learning_database.sqlite-shm",
+    "server_local_backups/paper_adaptive_learning_state.json",
+    "server_local_backups/learning_state_phase1.json",
+    "data/paper_open_positions.json",
+    "data/paper_trades.db",
+)
+
+_integrity_baseline = {}
+
+
+def _snapshot_production_files():
+    """Map watched path -> sha256, or None when absent. Absence is a state."""
+    import hashlib
+
+    # Root is overridable ONLY so this backstop can prove it actually fires,
+    # against a throwaway tree instead of real bot data -- an untested safety
+    # net is the same unverified claim the audit objected to. Production and
+    # ordinary test runs never set it and always watch the real repository.
+    _override = (os.environ.get("CRYPTOMASTER_INTEGRITY_ROOT") or "").strip()
+    root = Path(_override) if _override else project_root
+
+    snapshot = {}
+    for rel in _PRODUCTION_WATCH:
+        target = root / rel
+        try:
+            snapshot[rel] = hashlib.sha256(target.read_bytes()).hexdigest()
+        except (FileNotFoundError, NotADirectoryError):
+            snapshot[rel] = None
+        except OSError as exc:  # locked/unreadable -- record, don't crash
+            snapshot[rel] = f"UNREADABLE:{exc.__class__.__name__}"
+    return snapshot
+
+
+def pytest_sessionstart(session):
+    _integrity_baseline.update(_snapshot_production_files())
+
+
+def pytest_sessionfinish(session, exitstatus):
+    after = _snapshot_production_files()
+    violations = []
+    for rel, before in _integrity_baseline.items():
+        now = after.get(rel)
+        if before == now:
+            continue
+        if before is None:
+            violations.append(f"{rel}: CREATED by the test run")
+        elif now is None:
+            violations.append(f"{rel}: DELETED by the test run")
+        else:
+            violations.append(
+                f"{rel}: MODIFIED ({before[:12]} -> "
+                f"{(now or 'None')[:12]})"
+            )
+
+    if not violations:
+        return
+
+    # Fail the session hard. A contaminated production file is not a warning:
+    # every downstream WR number is computed from these, and a corrupted
+    # adaptive-learning state changes what the bot trades.
+    session.exitstatus = 1
+    banner = "=" * 70
+    print(f"\n{banner}", file=sys.stderr)
+    print("PRODUCTION DATA INTEGRITY VIOLATION -- the test run wrote real bot data",
+          file=sys.stderr)
+    for v in violations:
+        print(f"  * {v}", file=sys.stderr)
+    print(
+        "\nThe env-var sink guard was bypassed (subprocess, multiprocessing, "
+        "cleared environment, or a hardcoded absolute path).\n"
+        "Restore the affected file(s) before trusting any metric derived from "
+        "them, then fix the offending test to use the redirected sink.",
+        file=sys.stderr,
+    )
+    print(banner, file=sys.stderr)

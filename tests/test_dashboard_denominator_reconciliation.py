@@ -171,3 +171,111 @@ def test_void_outcome_is_excluded_even_with_an_unmapped_exit_reason(tmp_path):
     assert m["raw_n"] == 2
     assert m["qualified_n"] == 1
     assert m["excluded_by_reason"] == {"void_no_fill_price": 1}
+
+
+# ── Mixed old/new semantics + client-field stability (audit 2026-09-15) ──────
+
+def test_mixed_void_and_legacy_timeout_no_price_in_one_window(tmp_path):
+    """A single window holding BOTH marker generations must reconcile.
+
+    The VOID fix only affects closes written after it shipped. Every row that
+    already existed keeps the legacy shape -- `exit_reason=TIMEOUT_NO_PRICE`
+    with `win=0` and no VOID outcome (verified on the real cohort: all 106
+    historical rows are still legacy, deliberately not backfilled). So for the
+    entire lifetime of this database a recent window will straddle BOTH
+    semantics.
+
+    Earlier evidence only covered each generation in isolation, which is
+    exactly where a reconciliation bug hides: double-counting a row matched by
+    both rules, or missing one matched by neither.
+    """
+    rows = [
+        # 2 genuine wins and 1 genuine loss -- the real trades.
+        (1, 1001.0, 1.0, 0.5, "TP", "rde_take", "WIN"),
+        (2, 1002.0, 1.0, 0.5, "TP", "rde_take", "WIN"),
+        (3, 1003.0, -1.0, -0.5, "TIMEOUT", "rde_take", "LOSS"),
+        # LEGACY pre-fix non-trades: exit_reason marker only, booked win=0.
+        (4, 1004.0, 0.0, 0.0, "TIMEOUT_NO_PRICE", "rde_take", None),
+        (5, 1005.0, 0.0, 0.0, "TIMEOUT_NO_PRICE", "rde_take", "FLAT"),
+        # NEW post-fix non-trades: explicit VOID outcome.
+        (6, 1006.0, None, None, "TIMEOUT_NO_PRICE", "rde_take", "VOID"),
+        (7, 1007.0, None, None, "SOME_FUTURE_REASON", "rde_take", "VOID"),
+    ]
+    db = tmp_path / "cache.sqlite"
+    conn = sqlite3.connect(str(db))
+    conn.execute(
+        "CREATE TABLE closed_trades ("
+        "id INTEGER PRIMARY KEY, exit_ts REAL, pnl_usd REAL, pnl_pct REAL, "
+        "exit_reason TEXT, source TEXT, outcome TEXT)"
+    )
+    conn.executemany(
+        "INSERT INTO closed_trades "
+        "(id, exit_ts, pnl_usd, pnl_pct, exit_reason, source, outcome) "
+        "VALUES (?,?,?,?,?,?,?)",
+        rows,
+    )
+    conn.commit()
+    conn.close()
+
+    m = dashboard_web._qualified_window_metrics(str(db), 100)
+
+    assert m["raw_n"] == 7
+    # 4 excluded: 2 legacy + 2 VOID. A row matched by BOTH rules (id 6, which
+    # carries the legacy exit_reason AND outcome=VOID) must be counted once.
+    assert m["excluded_n"] == 4
+    assert m["qualified_n"] == 3
+    assert m["raw_n"] == m["qualified_n"] + m["excluded_n"]
+
+    # Each generation is attributed to its own reason, and they sum to the total.
+    assert m["excluded_by_reason"] == {
+        "timeout_no_price_invalid": 3,   # ids 4, 5, 6 (exit_reason matched first)
+        "void_no_fill_price": 1,         # id 7 (VOID with an unmapped reason)
+    }
+    assert sum(m["excluded_by_reason"].values()) == m["excluded_n"]
+
+    # 2 wins out of the 3 real trades.
+    assert m["qualified_wins"] == 2
+    assert m["qualified_win_rate_pct"] == pytest.approx(66.67, abs=0.01)
+
+
+def test_headline_win_rate_field_name_is_structurally_pinned():
+    """Guard against a client silently reading a different WR field.
+
+    Three win-rate families are published side by side -- the all-source
+    headline, `canonical_*`, and `qualified_*`. They legitimately differ (48%
+    vs 64% on the real cohort), so a client that quietly switched which one it
+    renders would change the reported number without any calculation changing.
+    That is the exact failure mode the anti-gaming rules exist to prevent, and
+    it would not show up as a test failure anywhere else.
+
+    This is structural rather than a value assertion: it reads the shipped
+    dashboard source and pins BOTH the emitted key set and the key the client
+    actually renders. Adding, renaming or re-pointing a field then requires a
+    deliberate edit here.
+    """
+    import re
+    from pathlib import Path
+
+    src = (Path(__file__).parents[1] / "src/services/dashboard_web.py").read_text(
+        encoding="utf-8"
+    )
+
+    emitted = set(re.findall(r"""['"]([a-z_]*win_rate[a-z_]*)['"]\s*:""", src))
+    assert emitted == {
+        "win_rate_pct",
+        "win_rate_window",
+        "win_rate_basis",
+        "win_rate_scope",
+        "win_rate_denominator",
+        "canonical_win_rate_pct",
+        "canonical_win_rate_window",
+        "qualified_win_rate_pct",
+        "qualified_win_rate_denominator",
+    }, f"win-rate field set changed: {sorted(emitted)}"
+
+    # The browser client must render the all-source headline and nothing else.
+    client_reads = set(re.findall(r"data\.([a-z_]*win_rate[a-z_]*)", src))
+    assert client_reads == {"win_rate_pct"}, (
+        "the dashboard client reads a non-canonical win-rate field: "
+        f"{sorted(client_reads)}"
+    )
