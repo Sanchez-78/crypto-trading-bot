@@ -1,0 +1,47 @@
+WR>50 single-path refactor (wr50/canonical-single-path-phase2) — PAPER-only smoke evidence
+Commit: b15033f83ed14136300447689787b723ad63cc68
+Date: 2026-09-15
+
+=== Scope confirmation: zero real-trading-path changes ===
+Command: git diff --stat main...HEAD -- 'src/services/*execution*' 'src/services/*order*'
+Result: no output (no diff) -- this branch touches zero files matching
+execution/order-path naming patterns relative to main.
+
+=== Targeted contract suite (this session's fresh run) ===
+Command: python -m pytest tests/test_canonical_admission_contract.py \
+  tests/test_dashboard_denominator_reconciliation.py \
+  tests/test_dashboard_metrics_contract.py tests/test_dashboard_contract_fixes.py \
+  tests/test_route_open_result_contract.py tests/test_trade_executor_open_result_contract.py \
+  tests/test_state_02_loader_production_red.py tests/test_state_02_save_ack_contract.py \
+  tests/test_state_02_subscription_boundary_red.py tests/test_state_02_subscription_runtime.py \
+  tests/test_audit_p0_correctness.py tests/test_hotfix_paper_state_wrapper.py \
+  -p no:cacheprovider -q
+Result: 61 passed, exit 0
+
+=== Full broad paper-only suite (from CLAUDE_WR50_SINGLE_PATH_PHASE2_REPORT_2026-09-14.md, Round 3, reproduced here as the authoritative reference rather than re-run verbatim) ===
+Command (as recorded in that report, section R3-H):
+  python -m pytest [broad paper-only node id list, see report] -p no:cacheprovider -q
+Result: 207 passed, 2 failed, 9 skipped
+  - Both failures independently confirmed pre-existing, in files untouched by
+    this branch (test_f8b_integration substring probe into signal_generator.py;
+    test_sec_01_dashboard_boundary bytes/str TypeError, itself uncommitted work
+    from an earlier, unrelated session).
+  - test_state_01_import_purity passes -- the order-dependence fix's autouse
+    fixture does not violate import purity.
+  - SHA-256 of all three production data files (cache.sqlite,
+    paper_adaptive_learning_state.json, paper_open_positions.json) verified
+    identical before and after this run.
+
+=== Mutation-kill evidence (from the same report, all rounds) ===
+6 mutants introduced and killed (M1-M6), each reverted afterward with `git diff
+HEAD` confirmed empty for the affected source files. M3 and M4 specifically
+prove the WR>50 anti-gaming contract: neither silently dropping losing rows nor
+excluding LOSS from the denominator survives the test suite.
+
+=== What this evidence does NOT claim ===
+This is PAPER-only engineering/contract verification, not a live production
+smoke test and not proof that WR>50 is achieved. The goal remains
+NOT_ACHIEVED (see CLAUDE_WR50_SINGLE_PATH_PHASE2_REPORT_2026-09-14.md) --
+a version-homogeneous Phase 4 cohort does not yet exist because no closes
+have run yet carrying this branch's code_version/config_version columns.
+REAL trading = ABSOLUTE NO-GO, unaffected by any of the above.

@@ -1,0 +1,65 @@
+[Unit]
+Description=CryptoMaster Dashboard Web Server
+After=network-online.target cryptomaster.service
+Wants=network-online.target
+# The dashboard is intentionally independent from cryptomaster.service. Bot
+# restart bursts must not consume the dashboard's restart budget.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+
+# SEC-01: use the named account when it is provisioned, otherwise systemd
+# allocates the same dedicated identity dynamically. This avoids both root and
+# the historical "missing static user" startup failure.
+DynamicUser=true
+User=cryptomaster-dashboard
+Group=cryptomaster-dashboard
+
+WorkingDirectory=/opt/cryptomaster
+Environment="PYTHONUNBUFFERED=1"
+Environment="PYTHONDONTWRITEBYTECODE=1"
+Environment="DASHBOARD_SECURITY_ENABLED=1"
+Environment="DASHBOARD_BIND_HOST=127.0.0.1"
+Environment="DASHBOARD_PORT=5001"
+
+# Search systemd's inherited credential/credential stores for this ID. If it is
+# absent, the service remains loopback-only and protected endpoints return 503;
+# it never falls back to an unauthenticated API.
+LoadCredential=dashboard_api_token
+
+# Preserve the documented direct-Flask architecture. The venv is outside the
+# repository because deployment resets the repository working tree.
+ExecStart=/opt/dashboard_venv/bin/python3 -u /opt/cryptomaster/start_flask_dashboard.py
+Restart=always
+RestartSec=10
+
+# Read-only reporting service: no filesystem write capability is required.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/opt/cryptomaster /opt/dashboard_venv
+PrivateTmp=true
+PrivateDevices=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+LockPersonality=true
+SystemCallArchitectures=native
+UMask=0077
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=dashboard-web
+
+[Install]
+WantedBy=multi-user.target

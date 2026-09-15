@@ -1,0 +1,27 @@
+{
+  "artifact_type": "immutable_release_manifest",
+  "created_utc": "2026-09-15",
+  "branch": "wr50/canonical-single-path-phase2",
+  "commit_sha": "b15033f83ed14136300447689787b723ad63cc68",
+  "commit_subject": "Prepare external audit prompt for WR50 single-path refactor (3 rounds)",
+  "protected_path_hashes_sha256": {
+    "src/services/dashboard_web.py": "854058962387bca3e613e2b0c8ac2b9861123e8a40c79d9f0a2d3cc8b1292da9",
+    "src/services/paper_trade_executor.py": "f1cd7206e88146c1239f661d400f2ff9089e174bb19f0f0336778adcfec3b60e",
+    "src/services/realtime_decision_engine.py": "94d730681529e5507d52cd2f0ca4786270af4d4d30258d0a884e5f503123b4bf",
+    "src/services/trade_executor.py": "dec895b4be1b619f6af02060c35a8ac75a8b3452d105c9d04dec960abfc46315",
+    "systemd/cryptomaster-dashboard.service": "0eb16d0633e16ce77075b5ab7ca242d0988ee8d4ced3ba32eb1ce1dc7caf888e"
+  },
+  "hash_source": "tools/release_gate.py --json (authoritative, reproduced verbatim above)",
+  "scope": "WR>50 single-path refactor, Phases 0-3/5/6 partial. Canonical admission wrapper (canonical_admit()), TIMEOUT_NO_PRICE -> TradeOutcome.VOID fix, dashboard qualified/raw denominator split, test-sink separation (cache.sqlite, learning_database.sqlite, paper_open_positions.json, paper_adaptive_learning_state.json), test-order-dependence fix.",
+  "explicitly_excluded_from_this_artifact": {
+    "systemd/cryptomaster-dashboard.service_hardening_draft": "An uncommitted working-tree hardening of this unit (DASHBOARD_SECURITY_ENABLED=1, DASHBOARD_BIND_HOST=127.0.0.1, DynamicUser, bearer-token auth, systemd sandboxing) was found alongside this branch's other dirty files. It was deliberately NOT included in this commit/artifact -- git history shows an earlier, closely related hardening (commit c664f3d, 'audit(PR5/P1.6): dashboard auth + localhost bind + non-root hardening') was later reverted by commit fbcd709 ('stop recurring Android API outage'), meaning this exact class of change previously broke live Android app connectivity. Preserved verbatim at _workspace/52_uncommitted_dashboard_hardening_preserved_20260915.service.txt for a future, separately-scoped, separately-reviewed deployment decision -- per this project's own release-gate wording ('dashboard auth/bind/systemd hardening je overeno odděleně')."
+  },
+  "not_authorized_by_this_artifact": [
+    "REAL trading (absolute NO-GO, unaffected)",
+    "Merge to origin/main",
+    "Push to origin (any branch)",
+    "Any production host deployment, restart, or SSH write",
+    "The dashboard hardening change described above"
+  ],
+  "test_evidence_reference": "release_artifacts/wr50_phase2_paper_smoke_evidence_2026-09-15.txt"
+}
