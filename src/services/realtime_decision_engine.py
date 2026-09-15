@@ -3034,45 +3034,48 @@ def _try_discovery_admission(
             current_price=routed_signal.get("price") if routed_signal else None,
         )
 
-        if sampler_result.get("allowed"):
-            # Open paper training position with P0-routed metadata
-            extra = {
-                "paper_source": routed_signal.get("paper_source", "paper_evidence_collection"),
-                "training_bucket": sampler_result.get("bucket"),
-                "explore_bucket": sampler_result.get("bucket"),
-                "original_decision": route_reason,
-                "reject_reason": reject_reason,
-                "side_inferred": sampler_result.get("side_inferred", False),
-                "cost_edge_ok": sampler_result.get("cost_edge_ok", False),
-                "expected_move_pct": sampler_result.get("expected_move_pct", 0.0),
-                "expected_move_src": sampler_result.get("expected_move_src", ""),
-                "required_move_pct": sampler_result.get("required_move_pct", 0.0),
-                "size_mult": sampler_result.get("size_mult", 1.0),
-                "max_hold_s": sampler_result.get("max_hold_s", 300),
-                "tags": sampler_result.get("tags", []),
-                "score_raw": round(score_before_adj, 6),
-                "score_final": round(score_adj, 6),
-                "decision_score": round(score_adj, 6),
-                "recovery_admission": sampler_result.get("recovery_admission", False),
-                "learning_source": routed_signal.get("learning_source", "paper_evidence_collection"),
-                "admission_reason": sampler_result.get("admission_reason"),
-                "historical_health": sampler_result.get("historical_health"),
-                "cost_edge_bypassed": sampler_result.get("cost_edge_bypassed", False),
-                "cost_edge_bypass_reason": sampler_result.get("cost_edge_bypass_reason", "none"),
-                "segment_key": routed_signal.get("segment_key"),
-                "p0_gate_reason": routed_signal.get("p0_gate_reason"),
-            }
+        # Open paper training position with P0-routed metadata
+        extra = {
+            "paper_source": routed_signal.get("paper_source", "paper_evidence_collection"),
+            "training_bucket": sampler_result.get("bucket"),
+            "explore_bucket": sampler_result.get("bucket"),
+            "original_decision": route_reason,
+            "reject_reason": reject_reason,
+            "side_inferred": sampler_result.get("side_inferred", False),
+            "cost_edge_ok": sampler_result.get("cost_edge_ok", False),
+            "expected_move_pct": sampler_result.get("expected_move_pct", 0.0),
+            "expected_move_src": sampler_result.get("expected_move_src", ""),
+            "required_move_pct": sampler_result.get("required_move_pct", 0.0),
+            "size_mult": sampler_result.get("size_mult", 1.0),
+            "max_hold_s": sampler_result.get("max_hold_s", 300),
+            "tags": sampler_result.get("tags", []),
+            "score_raw": round(score_before_adj, 6),
+            "score_final": round(score_adj, 6),
+            "decision_score": round(score_adj, 6),
+            "recovery_admission": sampler_result.get("recovery_admission", False),
+            "learning_source": routed_signal.get("learning_source", "paper_evidence_collection"),
+            "admission_reason": sampler_result.get("admission_reason"),
+            "historical_health": sampler_result.get("historical_health"),
+            "cost_edge_bypassed": sampler_result.get("cost_edge_bypassed", False),
+            "cost_edge_bypass_reason": sampler_result.get("cost_edge_bypass_reason", "none"),
+            "segment_key": routed_signal.get("segment_key"),
+            "p0_gate_reason": routed_signal.get("p0_gate_reason"),
+        }
 
-            _paper_open_result = canonical_admit(
-                signal=routed_signal,
-                price=routed_signal.get("price", 0),
-                ts=_time.time(),
-                route="PAPER_TRAINING",
-                reason="PAPER_TRAINING",
-                extra=extra,
-            )
-            if _paper_open_result.get("status") != "opened":
-                log.warning("[PAPER_TRAINING_BLOCKED] reason=%s", _paper_open_result.get("reason"))
+        _paper_open_result = canonical_admit(
+            signal=routed_signal,
+            price=routed_signal.get("price", 0),
+            ts=_time.time(),
+            route="PAPER_TRAINING",
+            reason="PAPER_TRAINING",
+            extra=extra,
+            gate=sampler_result,
+        )
+        # gate_rejected blocks were previously silent (the sampler
+        # declines most ticks); keep that log volume.
+        if (_paper_open_result.get("status") != "opened"
+                and not _paper_open_result.get("gate_rejected")):
+            log.warning("[PAPER_TRAINING_BLOCKED] reason=%s", _paper_open_result.get("reason"))
     except Exception:
         pass  # Graceful degrade if training sampler unavailable
 
@@ -4118,45 +4121,48 @@ def evaluate_signal(signal):
                         current_price=routed_signal.get("price") if routed_signal else None,
                     )
 
-                    if sampler_result.get("allowed"):
-                        # Open paper training position with P0-routed metadata
-                        extra = {
-                            "paper_source": routed_signal.get("paper_source", "paper_evidence_collection"),
-                            "training_bucket": sampler_result.get("bucket"),
-                            "explore_bucket": sampler_result.get("bucket"),
-                            "original_decision": "REJECT_ECON_BAD_ENTRY",
-                            "reject_reason": _econ_bad_reason,
-                            "side_inferred": sampler_result.get("side_inferred", False),
-                            "cost_edge_ok": sampler_result.get("cost_edge_ok", False),
-                            "expected_move_pct": sampler_result.get("expected_move_pct", 0.0),
-                            "expected_move_src": sampler_result.get("expected_move_src", ""),
-                            "required_move_pct": sampler_result.get("required_move_pct", 0.0),
-                            "size_mult": sampler_result.get("size_mult", 1.0),
-                            "max_hold_s": sampler_result.get("max_hold_s", 300),
-                            "tags": sampler_result.get("tags", []),
-                            "score_raw": round(_score_before_adj, 6),
-                            "score_final": round(_score_adj, 6),
-                            "decision_score": round(_score_adj, 6),
-                            "recovery_admission": sampler_result.get("recovery_admission", False),
-                            "learning_source": routed_signal.get("learning_source", "paper_evidence_collection"),  # P0.4: from routed signal
-                            "admission_reason": sampler_result.get("admission_reason"),
-                            "historical_health": sampler_result.get("historical_health"),
-                            "cost_edge_bypassed": sampler_result.get("cost_edge_bypassed", False),
-                            "cost_edge_bypass_reason": sampler_result.get("cost_edge_bypass_reason", "none"),
-                            "segment_key": routed_signal.get("segment_key"),  # P0.4: segment tracking
-                            "p0_gate_reason": routed_signal.get("p0_gate_reason"),  # P0.4: audit trail
-                        }
+                    # Open paper training position with P0-routed metadata
+                    extra = {
+                        "paper_source": routed_signal.get("paper_source", "paper_evidence_collection"),
+                        "training_bucket": sampler_result.get("bucket"),
+                        "explore_bucket": sampler_result.get("bucket"),
+                        "original_decision": "REJECT_ECON_BAD_ENTRY",
+                        "reject_reason": _econ_bad_reason,
+                        "side_inferred": sampler_result.get("side_inferred", False),
+                        "cost_edge_ok": sampler_result.get("cost_edge_ok", False),
+                        "expected_move_pct": sampler_result.get("expected_move_pct", 0.0),
+                        "expected_move_src": sampler_result.get("expected_move_src", ""),
+                        "required_move_pct": sampler_result.get("required_move_pct", 0.0),
+                        "size_mult": sampler_result.get("size_mult", 1.0),
+                        "max_hold_s": sampler_result.get("max_hold_s", 300),
+                        "tags": sampler_result.get("tags", []),
+                        "score_raw": round(_score_before_adj, 6),
+                        "score_final": round(_score_adj, 6),
+                        "decision_score": round(_score_adj, 6),
+                        "recovery_admission": sampler_result.get("recovery_admission", False),
+                        "learning_source": routed_signal.get("learning_source", "paper_evidence_collection"),  # P0.4: from routed signal
+                        "admission_reason": sampler_result.get("admission_reason"),
+                        "historical_health": sampler_result.get("historical_health"),
+                        "cost_edge_bypassed": sampler_result.get("cost_edge_bypassed", False),
+                        "cost_edge_bypass_reason": sampler_result.get("cost_edge_bypass_reason", "none"),
+                        "segment_key": routed_signal.get("segment_key"),  # P0.4: segment tracking
+                        "p0_gate_reason": routed_signal.get("p0_gate_reason"),  # P0.4: audit trail
+                    }
 
-                        _paper_open_result = canonical_admit(
-                            signal=routed_signal,
-                            price=routed_signal.get("price", 0),
-                            ts=_time.time(),
-                            route="PAPER_TRAINING",
-                            reason="PAPER_TRAINING",
-                            extra=extra,
-                        )
-                        if _paper_open_result.get("status") != "opened":
-                            log.warning("[PAPER_TRAINING_BLOCKED] reason=%s", _paper_open_result.get("reason"))
+                    _paper_open_result = canonical_admit(
+                        signal=routed_signal,
+                        price=routed_signal.get("price", 0),
+                        ts=_time.time(),
+                        route="PAPER_TRAINING",
+                        reason="PAPER_TRAINING",
+                        extra=extra,
+                        gate=sampler_result,
+                    )
+                    # gate_rejected blocks were previously silent (the sampler
+                    # declines most ticks); keep that log volume.
+                    if (_paper_open_result.get("status") != "opened"
+                            and not _paper_open_result.get("gate_rejected")):
+                        log.warning("[PAPER_TRAINING_BLOCKED] reason=%s", _paper_open_result.get("reason"))
                 except Exception:
                     pass  # Graceful degrade if training sampler unavailable
 
@@ -4203,45 +4209,48 @@ def evaluate_signal(signal):
                     current_price=routed_signal.get("price") if routed_signal else None,
                 )
 
-                if sampler_result.get("allowed"):
-                    # Open paper training position with P0-routed metadata
-                    extra = {
-                        "paper_source": routed_signal.get("paper_source", "paper_evidence_collection"),
-                        "training_bucket": sampler_result.get("bucket"),
-                        "explore_bucket": sampler_result.get("bucket"),
-                        "original_decision": "REJECT_ECON_BAD_FORCED",
-                        "reject_reason": _forced_reason,
-                        "side_inferred": sampler_result.get("side_inferred", False),
-                        "cost_edge_ok": sampler_result.get("cost_edge_ok", False),
-                        "expected_move_pct": sampler_result.get("expected_move_pct", 0.0),
-                        "expected_move_src": sampler_result.get("expected_move_src", ""),
-                        "recovery_admission": sampler_result.get("recovery_admission", False),
-                        "learning_source": routed_signal.get("learning_source", "paper_evidence_collection"),  # P0.4: from routed signal
-                        "admission_reason": sampler_result.get("admission_reason"),
-                        "historical_health": sampler_result.get("historical_health"),
-                        "cost_edge_bypassed": sampler_result.get("cost_edge_bypassed", False),
-                        "cost_edge_bypass_reason": sampler_result.get("cost_edge_bypass_reason", "none"),
-                        "required_move_pct": sampler_result.get("required_move_pct", 0.0),
-                        "size_mult": sampler_result.get("size_mult", 1.0),
-                        "max_hold_s": sampler_result.get("max_hold_s", int(os.getenv("PAPER_MAX_POSITION_AGE_S", "600"))),
-                        "tags": sampler_result.get("tags", []),
-                        "score_raw": round(_score_before_adj, 6),
-                        "score_final": round(_score_adj, 6),
-                        "decision_score": round(_score_adj, 6),
-                        "segment_key": routed_signal.get("segment_key"),  # P0.4: segment tracking
-                        "p0_gate_reason": routed_signal.get("p0_gate_reason"),  # P0.4: audit trail
-                    }
+                # Open paper training position with P0-routed metadata
+                extra = {
+                    "paper_source": routed_signal.get("paper_source", "paper_evidence_collection"),
+                    "training_bucket": sampler_result.get("bucket"),
+                    "explore_bucket": sampler_result.get("bucket"),
+                    "original_decision": "REJECT_ECON_BAD_FORCED",
+                    "reject_reason": _forced_reason,
+                    "side_inferred": sampler_result.get("side_inferred", False),
+                    "cost_edge_ok": sampler_result.get("cost_edge_ok", False),
+                    "expected_move_pct": sampler_result.get("expected_move_pct", 0.0),
+                    "expected_move_src": sampler_result.get("expected_move_src", ""),
+                    "recovery_admission": sampler_result.get("recovery_admission", False),
+                    "learning_source": routed_signal.get("learning_source", "paper_evidence_collection"),  # P0.4: from routed signal
+                    "admission_reason": sampler_result.get("admission_reason"),
+                    "historical_health": sampler_result.get("historical_health"),
+                    "cost_edge_bypassed": sampler_result.get("cost_edge_bypassed", False),
+                    "cost_edge_bypass_reason": sampler_result.get("cost_edge_bypass_reason", "none"),
+                    "required_move_pct": sampler_result.get("required_move_pct", 0.0),
+                    "size_mult": sampler_result.get("size_mult", 1.0),
+                    "max_hold_s": sampler_result.get("max_hold_s", int(os.getenv("PAPER_MAX_POSITION_AGE_S", "600"))),
+                    "tags": sampler_result.get("tags", []),
+                    "score_raw": round(_score_before_adj, 6),
+                    "score_final": round(_score_adj, 6),
+                    "decision_score": round(_score_adj, 6),
+                    "segment_key": routed_signal.get("segment_key"),  # P0.4: segment tracking
+                    "p0_gate_reason": routed_signal.get("p0_gate_reason"),  # P0.4: audit trail
+                }
 
-                    _paper_open_result = canonical_admit(
-                        signal=routed_signal,
-                        price=routed_signal.get("price", 0),
-                        ts=_time.time(),
-                        route="PAPER_TRAINING",
-                        reason="PAPER_TRAINING",
-                        extra=extra,
-                    )
-                    if _paper_open_result.get("status") != "opened":
-                        log.warning("[PAPER_TRAINING_BLOCKED] reason=%s", _paper_open_result.get("reason"))
+                _paper_open_result = canonical_admit(
+                    signal=routed_signal,
+                    price=routed_signal.get("price", 0),
+                    ts=_time.time(),
+                    route="PAPER_TRAINING",
+                    reason="PAPER_TRAINING",
+                    extra=extra,
+                    gate=sampler_result,
+                )
+                # gate_rejected blocks were previously silent (the sampler
+                # declines most ticks); keep that log volume.
+                if (_paper_open_result.get("status") != "opened"
+                        and not _paper_open_result.get("gate_rejected")):
+                    log.warning("[PAPER_TRAINING_BLOCKED] reason=%s", _paper_open_result.get("reason"))
             except Exception:
                 pass  # Graceful degrade if training sampler unavailable
 

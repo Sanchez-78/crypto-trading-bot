@@ -1878,6 +1878,14 @@ def _maybe_route_to_paper_training(signal: dict, current_price: float, reject_re
                     route="TRAINING_SAMPLER",
                     reason=f"TRAINING_SAMPLER:{reject_reason}",
                     extra=extra,
+                    # The enclosing `if result.get("allowed")` is retained ONLY
+                    # to skip the expensive signal preparation above it for
+                    # rejected candidates; it is not a second admission policy
+                    # (the training sampler is the single decider). Passing the
+                    # verdict in means the wrapper acts under an explicit
+                    # decision it can record, instead of an implicit one the
+                    # caller already consumed and discarded.
+                    gate=result,
                 )
                 if open_result.get("status") == "opened":
                     # P1.1AB: Record successful entry
@@ -2305,6 +2313,11 @@ def handle_signal(signal):
                                     "score_raw": signal.get("score_raw", signal.get("score", None)),
                                     "score_final": signal.get("score_final", signal.get("score", None)),
                                 },
+                                # See the TRAINING_SAMPLER call site above: the
+                                # enclosing `if ov.get("allowed")` skips prep,
+                                # it is not a second policy. paper_exploration_
+                                # override() is the single decider here.
+                                gate=ov,
                             )
                             if _explore_result.get("status") == "opened":
                                 _explored = True

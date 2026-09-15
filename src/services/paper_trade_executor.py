@@ -1594,6 +1594,7 @@ def canonical_admit(
     route: str,
     reason: str,
     extra: Optional[dict] = None,
+    gate: Optional[dict] = None,
 ) -> dict:
     """Single canonical admission entry point for every paper signal source.
 
@@ -1604,11 +1605,39 @@ def canonical_admit(
         route: Admission route label, persisted as `admission_route`.
         reason: Entry reason handed to the choke unchanged.
         extra: Caller metadata; copied, never mutated in place.
+        gate: An upstream component's admission verdict, e.g. the training
+            sampler's `{"allowed": bool, "reason": str}`. The component still
+            DECIDES; this wrapper is the single place that ACTS on the verdict.
 
     Returns:
         The choke's own result dict plus a normalised `outcome` key that is
         exactly "OPENED" or "BLOCKED".
     """
+    # External audit 2026-09-15 (Q1): routing every call-site *through* this
+    # wrapper did not make it the single decision point. Six call-sites still
+    # wrote `if sampler_result.get("allowed"): canonical_admit(...)`, so the
+    # real yes/no happened upstream in six places -- and a rejected candidate
+    # never reached here at all, producing no BLOCKED record, no reason and no
+    # attribution. It was invisible to the path that is meant to be
+    # authoritative.
+    #
+    # The verdict is now passed IN rather than acted on outside. This does not
+    # re-derive or second-guess the upstream decision (that would change which
+    # candidates are admitted); it relocates where the decision takes effect,
+    # so every candidate leaves exactly one canonical record either way.
+    if gate is not None and not gate.get("allowed"):
+        blocked_reason = gate.get("reason") or "upstream_gate_rejected"
+        return {
+            "outcome": "BLOCKED",
+            "status": "blocked",
+            "reason": blocked_reason,
+            "admission_route": route,
+            # Lets callers keep their existing log volume: these rejections
+            # were previously silent, and the common case (a sampler declining
+            # most ticks) would otherwise turn into per-tick log spam.
+            "gate_rejected": True,
+        }
+
     stamped = dict(extra or {})
 
     # Attribution is RECORDED, never guessed. An unknown version stays
@@ -4795,7 +4824,17 @@ def _on_signal_created(signal: dict) -> None:
         # Blocked = quarantined, not_in_evidence_scope, or regime_quarantined
         is_blocked = ("quarantined" in decision.reason.lower() or "not_in_evidence_scope" in decision.reason.lower())
 
-        if decision.strict_ev_allowed or not is_blocked:
+        # The P0 segment gate's verdict as an explicit object, so the admission
+        # wrapper is handed the decision rather than inferring that one was
+        # already made. The branch below is retained only to skip the
+        # observation/preparation work for rejected candidates; P0SegmentEVGate
+        # remains the single decider (external audit 2026-09-15, Q1).
+        _p0_verdict = {
+            "allowed": bool(decision.strict_ev_allowed or not is_blocked),
+            "reason": decision.reason,
+        }
+
+        if _p0_verdict["allowed"]:
             # F8b observation-only (audit v5 §7/§8): when data-collection mode is on,
             # the signal that WOULD open a position is instead recorded for the
             # offline E1–E4 counterfactual and NO position is opened — no learning,
@@ -4848,7 +4887,8 @@ def _on_signal_created(signal: dict) -> None:
                 ts=ts,
                 route="P0_GATE",
                 reason="P0_GATE",
-                extra={"p0_decision": decision.reason}
+                extra={"p0_decision": decision.reason},
+                gate=_p0_verdict,
             )
             # Mark signal as handled by paper regardless of outcome -- the
             # paper routing logic already made a final decision (open OR
