@@ -32,13 +32,28 @@ nezávisle na čemkoli níže.
 ```text
 Engineering:        PARTIAL (Fáze 0-3, 5, 6 částečně; Fáze 4, 7 neuzavřeny)
 Cíl WR > 50 %:       NOT_ACHIEVED (a nemohl být v tomto běhu — chybí post-fix kohort)
-Release gate:        reasons=[] (všechny 3 původní blokátory vyřešeny),
-                      ALE ready=false kvůli podezřelému `return False` natvrdo
-                      v tools/release_gate.py — NEOPRAVENO záměrně (konflikt zájmů)
-Merge do main:        NEPROVEDENO
+Release gate:        ready=true, reasons=[] — NEZÁVISLE ověřeno v izolovaném
+                      git worktree (2026-09-15, po opravě gate skriptu a jeho
+                      prvním vůbec commitnutí — viz Sekce 0.2 níže)
+Merge do main:        NEPROVEDENO (gate splněn, ale merge/deploy je samostatné
+                      rozhodnutí — viz doporučení v Sekci 0.2)
 Nasazení:             NEPROVEDENO
 REAL trading:         ABSOLUTE NO-GO
 ```
+
+**Update 2026-09-15 (druhé kolo, po reconciliační relaci):** nezávislá
+reconciliační relace (`CLAUDE_EXTERNAL_AUDIT_PACKAGE_RECONCILIATION_
+2026-09-15.md`) našla zásadní věc: **`tools/release_gate.py` nebyl nikdy
+commitnutý na žádné větvi** — existoval jen jako netrackovaný soubor ve
+sdíleném pracovním adresáři. Fresh clone by neměl gate vůbec. Ta relace
+skript zároveň opravila (`len(reasons) == 0` místo natvrdo `False`) —
+nezávisle, disinterested, přesně to rozhodnutí, které předchozí kolo této
+práce záměrně nechalo na někom jiném. Skript byl nyní commitnut na `main`
+i na `wr50/canonical-single-path-phase2` (přes izolovaný git worktree, aby
+se nesáhlo na rozdělanou práci jiné souběžné relace v `main`'s working
+tree). **Gate ověřen `ready:true` v čistém worktree** (ne ve sdíleném
+adresáři se všemi cizími necommitnutými soubory) — je to teď skutečný,
+reprodukovatelný výsledek, ne artefakt lokálního nepořádku.
 
 **Klíčová zjištění:**
 1. Předchozí tvrzení "rde_take 75 % vs training_sampler 30 %" bylo z
