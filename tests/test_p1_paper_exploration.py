@@ -985,25 +985,47 @@ class TestRobustStateLoader:
         assert pos["symbol"] == "BTCUSDT"
         assert pos["max_hold_s"] == 600
 
-    def test_corrupt_json_logs_error_and_starts_empty(self):
-        """Corrupt JSON logs error and starts with empty state"""
+    def test_corrupt_json_propagates_and_never_silently_starts_empty(self):
+        """Corrupt state JSON must FAIL CLOSED, not start with empty state.
+
+        Renamed and inverted on 2026-09-15. This previously asserted the
+        pre-STATE-02 contract: corrupt JSON logged an error and the executor
+        carried on with empty state. That is exactly the bug STATE-02-A fixed
+        -- silently starting empty means real open positions vanish from state
+        while the executor reaches READY believing it has none.
+
+        It directly contradicted
+        tests/test_state_02_loader_production_red.py::
+        test_load_paper_state_propagates_malformed_json, which asserts
+        `pytest.raises(json.JSONDecodeError)` against the same function. Two
+        tests in one suite encoded opposite contracts; this older one was
+        simply never updated when the loader was fixed.
+
+        Surfaced by re-running the R3-F baseline against actual main instead of
+        an intermediate branch commit (external audit 2026-09-15, item 4): the
+        earlier f01b19f baseline already contained the loader fix, so this
+        looked "pre-existing" rather than like a real branch-vs-main delta.
+        """
         import json
+
+        import pytest as _pytest
 
         reset_paper_positions()
         if os.path.exists(_state_file()):
             os.remove(_state_file())
 
-        # Write invalid JSON
-        os.makedirs("data", exist_ok=True)
+        # Use the redirected sink's own directory, never a literal "data".
+        os.makedirs(os.path.dirname(_state_file()), exist_ok=True)
         with open(_state_file(), "w") as f:
             f.write("{invalid json]")
 
         from src.services.paper_trade_executor import _load_paper_state, get_paper_open_positions
-        _load_paper_state()
 
-        # Should start with empty state
-        positions = get_paper_open_positions()
-        assert len(positions) == 0
+        with _pytest.raises(json.JSONDecodeError):
+            _load_paper_state()
+
+        # ...and nothing may have been half-applied on the way out.
+        assert len(get_paper_open_positions()) == 0
 
     def test_save_writes_canonical_dict_format(self):
         """Saved state always uses canonical dict format, never list"""
