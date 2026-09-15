@@ -684,3 +684,191 @@ production data writes              = 2 accidental, obě revertovány a hash-ov�
 
 Cíl WR >50 zůstává `NOT_ACHIEVED`. Tento dokument není potvrzení production
 safety ani GO pro REAL trading.
+
+---
+---
+
+# Round 4 — odpověď na externí audit (2026-09-15)
+
+Verdikt `EXTERNAL_AUDIT_WR50_VERDICT_2026-09-15.md`: **MERGE REJECTED**,
+podmíněně, s 5 podmínkami. Body 1–4 zpracovány níže; bod 5 (nezávislý
+re-review) organizuje orchestrující relace.
+
+Terminální stav cíle **beze změny**: `WR >50 = NOT_ACHIEVED`.
+REAL trading: `ABSOLUTE NO-GO`. Deploy/SSH/REAL orders: `0`. Push: `0`.
+
+## R4-0 — Oprava mého vlastního chybného tvrzení
+
+V úvodní zprávě jsem uvedl, že `tools/release_gate.py:60` obsahuje natvrdo
+`return False`. **To bylo nesprávné.** Ověřeno ve všech třech kopiích (větev
+přes `git show`, worktree na disku, hlavní repo):
+
+```
+60: return len(reasons) == 0, reasons, hashes
+```
+
+Oprava tam je. Nedokážu zrekonstruovat, proč můj tehdejší read ukázal jinou
+hodnotu, a nebudu to racionalizovat — tvrzení bylo chybné a tímto se stahuje.
+Worktree sanity check proveden: `HEAD=6caa494`, čistý strom.
+
+## R4-1 (audit Q1) — Rozhodnutí o admission přesunuto DO wrapperu
+
+Audit měl pravdu a nerozporuji to. Provedení call-siteů *přes* wrapper z něj
+neudělalo jediné rozhodovací místo.
+
+**Ověřená inventura** (AST proti této větvi, ne proti číslům řádků z auditu —
+nalezeno o **dva call-sitey víc**, než audit uvádí):
+
+| Soubor:řádek | Gate | Řešení |
+|---|---|---|
+| `realtime_decision_engine.py:3066` | `if sampler_result.get("allowed")` (3037) | **větev odstraněna** |
+| `realtime_decision_engine.py:4150` | `if sampler_result.get("allowed")` (4121) | **větev odstraněna** |
+| `realtime_decision_engine.py:4150` | `if override["allowed"]` (4038) | vnější routing, ponecháno |
+| `realtime_decision_engine.py:4235` | `if sampler_result.get("allowed")` (4206) | **větev odstraněna** |
+| `paper_trade_executor.py:4845` | `if decision.strict_ev_allowed or not is_blocked` (4798) | verdikt hoisted + předán |
+| `trade_executor.py:1874` | `if result.get("allowed")` (1790) | verdikt předán |
+| `trade_executor.py:2291` | `if ov.get("allowed")` (2283) | verdikt předán |
+
+**Kontrakt:** `canonical_admit(gate=...)`. Komponenta stále **ROZHODUJE**
+(re-derivace politiky uvnitř wrapperu by změnila, které kandidáty přijímáme);
+wrapper je jediné místo, které na verdikt **JEDNÁ**, takže každý kandidát
+vyprodukuje právě jeden kanonický záznam.
+
+Dva výsledné tvary jsou záměrné:
+
+- **Tři RDE tréninkové sitey**: větev zcela odstraněna. Tělo byla čistá
+  příprava metadat, takže nyní běží bezpodmínečně a wrapper jedná na
+  `gate=sampler_result`. Callery přeskakují svůj blocked-log pro
+  `gate_rejected`, takže **objem logů zůstává identický** — sampler odmítá
+  většinu ticků a tato odmítnutí byla dosud tichá.
+- **`trade_executor` ×2 a P0 gate**: větev ponechána, protože tam chrání
+  skutečně nákladnou přípravu signálu; verdikt se nyní předává dovnitř.
+  U P0 gate byl výraz hoistnut do explicitního `_p0_verdict` objektu.
+
+**Druhou skupinu jsem do tvaru první NENUTIL.** Buď by to znamenalo spouštět
+nákladnou přípravu pro každého odmítnutého kandidáta, nebo přidat no-op volání
+existující jen kvůli splnění assertion — což je test-gaming, který pravidla
+tohoto projektu vylučují. Strukturální test proto kóduje poctivý kontrakt:
+*verdikt smí gateovat volání pouze tehdy, je-li týž verdikt předán jako
+`gate=`* — nemůže být tedy callerem spotřebován a tiše zahozen.
+
+**Zachování chování, měřeno nikoli předpokládáno:** worktree na `45d1964` a
+tento strom přes stejných 14 souborů. Obojí `31 failed`; množiny selhání
+**identické** (`comm` neukazuje žádné regrese ani náhodné opravy). Jediná
+změna: +6 passes z nového test souboru.
+
+## R4-2 (audit Q3) — Automatický integrity backstop
+
+Env-var guard je obejitelný a spoléhání na operátora není vlastnost systému.
+Oba reálné incidenty v této práci byly zachyceny jen proto, že někdo náhodou
+kontroloval.
+
+`tests/conftest.py` nyní snapshotuje sledované produkční soubory v
+`pytest_sessionstart` a re-kontroluje v `pytest_sessionfinish`; jakýkoli
+create/modify/delete **tvrdě shodí session**. Pozoruje filesystem přímo, takže
+je mu jedno, JAK zápis vznikl. Je vrstven **nad** env guardem, nenahrazuje ho:
+guard předchází, tohle detekuje.
+
+Bezpečnostní síť, kterou nikdo neviděl spadnout, je další neověřené tvrzení,
+proto `test_production_integrity_backstop.py` spouští **vnořené pytest
+sessiony** řízené skutečnými conftest hooky a dokazuje všechny tři chování:
+
+| Scénář | Výsledek |
+|---|---|
+| modifikace subprocessem s vymazaným `PYTEST_CURRENT_TEST` (přesně Q3 bypass) | **zachyceno** |
+| smazání souboru (incident, který `git status` nikdy nemohl ukázat — je gitignorovaný) | **zachyceno** |
+| čistý běh | **ticho**, žádné false positives |
+
+Vnořené běhy sledují throwaway strom přes `CRYPTOMASTER_INTEGRITY_ROOT`,
+nikdy reálná data.
+
+## R4-3 (audit Q2) — Mixed semantics + stabilita klientského pole
+
+**Smíšené okno.** VOID oprava působí jen na nové closy; všech 106 historických
+řádků záměrně drží legacy tvar, takže po celou životnost této databáze bude
+recent okno obsahovat **obě generace** zároveň. Dosavadní důkaz pokrýval každou
+izolovaně — právě tam se reconciliation bug schová. Nový test dá do jednoho
+okna legacy `TIMEOUT_NO_PRICE` řádky, řádek nesoucí **oba** markery, a VOID
+řádek s nezmapovaným exit reason, a fixuje že
+`raw == qualified + excluded` s dvojitě-matchnutým řádkem započteným **jednou**.
+
+Mutace readeru (VOID přebíjí místo fallbacku) test **zabije** (M7) → není
+vacuous.
+
+**Stabilita klientského pole.** Tři win-rate rodiny se publikují vedle sebe a
+legitimně se liší (48 % headline vs 64 % qualified na reálném kohortu). Klient,
+který by tiše přepnul, kterou renderuje, by změnil vykazované číslo, aniž by se
+změnil jakýkoli výpočet — přesně to selhání, kterému mají anti-gaming pravidla
+bránit, a pro všechny ostatní testy neviditelné. Guard je **strukturální**:
+čte shipped dashboard zdroj a fixuje jak množinu emitovaných klíčů, tak jediný
+klíč, který prohlížeč renderuje (`win_rate_pct`).
+
+## R4-4 (audit item 4) — Re-baseline proti skutečnému main odhalil regresi
+
+Audit měl pravdu, že porovnání proti `f01b19f` nemohlo čistě izolovat
+branch-vs-main rozdíly. Re-run proti skutečnému `main` (`a613174`) to prokázal.
+
+Metodika beze změny: detached worktree na main, `FORCE_LOCAL_STORAGE`, takže
+nedosáhne ani na NAS, ani na hlavní repo.
+
+| Běh (stejná dvojice souborů) | failed | passed |
+|---|---|---|
+| **main (`a613174`)** | **23** | 52 |
+| větev (před opravou) | 24 | 51 |
+| *starý baseline `f01b19f`* | *30* | *45* |
+
+Staré „šest opraveno, žádná regrese" bylo měřeno proti špatné referenci.
+Diff **množin** (ne počtů) ukázal přesně jeden test selhávající na větvi a
+procházející na main:
+
+`test_p1_paper_exploration.py::TestRobustStateLoader::test_corrupt_json_logs_error_and_starts_empty`
+
+**Root cause:** tento test tvrdil **pre-STATE-02** kontrakt — poškozený JSON
+zaloguje chybu a executor pokračuje s prázdným stavem. To je přesně ten bug,
+který STATE-02-A opravil: tiché nastartování naprázdno znamená, že reálné
+otevřené pozice zmizí ze stavu, zatímco executor dosáhne READY v domnění, že
+žádné nemá. Test **přímo si odporoval** s
+`test_state_02_loader_production_red.py::test_load_paper_state_propagates_malformed_json`,
+který na téže funkci tvrdí `pytest.raises(json.JSONDecodeError)`.
+
+Dva testy v jedné sadě kódovaly opačné kontrakty; starší nebyl nikdy
+aktualizován. Vyřešeno **invertováním zastaralého testu** na záměrný
+fail-closed kontrakt (a přejmenováním), nikoli oslabením loaderu. Zároveň
+odstraněn zbylý natvrdo zapsaný `os.makedirs("data")`.
+
+**Po opravě: větev 23 failed / 52 passed, množina selhání IDENTICKÁ s main.**
+
+## R4-5 — Testy a commity
+
+```text
+targeted regression: 30 failed / 130 passed
+```
+(bylo 31/124 — o jedno selhání méně z R4-4 opravy, o šest passes víc z nových
+testů). Integrity banner **nevyskočil**; všechny tři produkční soubory
+nezávisle re-ověřeny SHA-256 jako nezměněné.
+
+| Commit | Obsah |
+|---|---|
+| `6caa494` | Q1 — admission decision do `canonical_admit()` |
+| `123c539` | item 4 — re-baseline proti main + oprava odhalené regrese |
+| `4e56031` | Q3/Q2 — integrity backstop + mixed-semantics + field guard |
+
+Větev `wr50/canonical-single-path-phase2`. **Nepushnuto touto relací.**
+
+## R4-6 — Co zůstává otevřené
+
+1. **Q4 priorita auditu**: P0/P1 bezpečnost produkčního hostu (dashboard
+   `0.0.0.0:5001` bez efektivní auth jako root, disk) je auditem označena jako
+   **NAD** dokončením WR50. Mimo můj rozsah (žádné SSH).
+2. **23 pre-existing selhání**, nyní prokazatelně shodných s `main` — tedy
+   nikoli dluh této větve, ale dluh repozitáře.
+3. **Fáze 4** stále čeká na akumulaci nových closes s vyplněným
+   `code_version`/`config_version`. Nelze uspíšit.
+4. Sweep dalších natvrdo zapsaných produkčních cest v testech; backstop je
+   proti nim nyní fail-closed, ale systematický sken proveden nebyl.
+5. Audit Q5 podmínky pro budoucí WR tvrzení (≥500 kvalifikovaných post-fix
+   obchodů, Wilson dolní mez >50 %, bootstrap P&L dolní mez >0) **nejsou**
+   splněny a historická čísla 99/118 a 57/221 nesmí sloužit jako důkaz.
+
+Cíl WR >50 zůstává `NOT_ACHIEVED`. Tento dokument není potvrzení production
+safety ani GO pro REAL trading.
