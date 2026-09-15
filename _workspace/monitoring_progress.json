@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 214,
+  "cycle": 215,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 214,
+  "total_cycles_completed": 215,
   "current_wr": 28.0,
   "current_pnl": -3.1376,
-  "last_update": "2026-09-15T09:56:00Z",
+  "last_update": "2026-09-15T10:03:00Z",
   "status": "monitoring",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -2905,6 +2905,21 @@
       "investigation": "wr50-single-path hit the monthly spend limit again, but left real progress: commit 6caa494 'Audit Q1: move the admission decision into canonical_admit()'. Found 7 pre-wrapper admission decision sites (2 more than the external audit cited), fixed via a new gate= parameter on canonical_admit() -- upstream component still decides, wrapper is the one place that acts, producing a real BLOCKED record with reason for every rejected candidate (fixes a real bug: rejections were previously invisible, no record at all). Measured behavior preservation via identical before/after failure sets (31 failed both ways, only +6 new passing tests).",
       "action_taken": "Independently verified this myself before trusting it: read the new AST-based structural test, the actual RDE diff (branch removal matches description), and canonical_admit()'s new gate= handling (correctly returns a BLOCKED record with reason, doesn't re-derive the upstream decision). All checks out. Pushed to origin (was local-only per my own instruction to hold it for review first).",
       "next_cycle_plan": "Continue standard cadence. wr50 still has 4 more audit prerequisites pending (sink-guard hardening, mixed VOID/legacy test, R3-F re-baseline against main, re-review) -- will resume once the agent is available again."
+    },
+    {
+      "cycle": 215,
+      "timestamp": "2026-09-15T10:03:00Z",
+      "status": "STABLE_PROBED_AGENT_RESUME",
+      "metrics_snapshot": {
+        "recent_100_wr_pct": 25.0,
+        "lifetime_pf": 0.6333655123402863,
+        "open_positions": 3,
+        "emergency_monitor_30min_window": "24/24 'All checks passed'",
+        "disk_usage": "45%, stable"
+      },
+      "investigation": "No new incident.",
+      "action_taken": "Probed wr50-single-path to check if the spend limit resolved, given 4 real prerequisites remain.",
+      "next_cycle_plan": "Check probe result. Continue standard cadence."
     }
   ],
   "experiment": {
