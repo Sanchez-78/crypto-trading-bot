@@ -9,10 +9,59 @@ posture (`EXTERNAL_AUDIT_CODE_SSH_REPORT_2026-09-02.md`). This round covers a
 different track: an architecture-consolidation + measurement-integrity refactor
 aimed at honestly earning `WR > 50%` (paper-only), not a new trading strategy.
 
-The work under audit lives entirely on an **unpushed local branch**
-(`wr50/canonical-single-path-phase2`, 8 commits, latest `b9b21f8`), never merged to
-`main`, never deployed. `REAL trading = ABSOLUTE NO-GO` regardless of any verdict
-below. Nothing here authorizes deployment, a restart, or a REAL order.
+The work under audit lives on branch `wr50/canonical-single-path-phase2`
+(now **pushed to origin**, 10 commits, latest `15d4870`), never merged to `main`,
+never deployed. `REAL trading = ABSOLUTE NO-GO` regardless of any verdict below.
+Nothing here authorizes deployment, a restart, or a REAL order.
+
+### 0.1 Update (2026-09-15) — gate work since the 3 rounds above, and two new findings
+
+Following the 3 rounds documented in the full report, the orchestrating session
+(not a dispatched agent — the spend limit blocking background agents recurred)
+worked the release gate directly:
+
+- **`protected_paths_dirty` resolved.** Of the 5 protected paths, 4 were already
+  clean on this branch; only `systemd/cryptomaster-dashboard.service` was dirty.
+- **New finding: an uncommitted dashboard-hardening draft was sitting in that
+  file** (`DASHBOARD_SECURITY_ENABLED=1`, bind `127.0.0.1`, `DynamicUser`,
+  bearer-token auth via `LoadCredential`, extensive systemd sandboxing) —
+  directly addressing the P0/P1 exposure `EXTERNAL_AUDIT_CODE_SSH_REPORT_
+  2026-09-02.md` flagged (dashboard on `0.0.0.0:5001`, unauthenticated, root).
+  **Deliberately NOT committed as part of this gate resolution**: `git log`
+  shows this exact class of change was already tried once (commit `c664f3d`,
+  "audit(PR5/P1.6): dashboard auth + localhost bind + non-root hardening") and
+  later reverted (commit `fbcd709`, "stop recurring Android API outage") — i.e.
+  binding the dashboard to loopback previously broke live Android app
+  connectivity. The draft was reverted to HEAD to unblock this gate cleanly and
+  preserved verbatim at `_workspace/52_uncommitted_dashboard_hardening_
+  preserved_20260915.service.txt` for its own separately-scoped decision.
+  **Audit this call**: was reverting-and-deferring the right choice, or should
+  the hardening have shipped alongside a check for whether the Android app's
+  connectivity story has changed since the `fbcd709` incident?
+- **Both remaining artifacts attached**: `release_artifacts/wr50_phase2_
+  manifest_2026-09-15.json` (SHA-256 manifest, commit identity, explicit
+  scope/exclusions) and `release_artifacts/wr50_phase2_paper_smoke_evidence_
+  2026-09-15.txt` (fresh 61-test run + reference to the already-verified
+  207-test/6-mutant evidence from the full report).
+- **New finding: `tools/release_gate.py` appears to have a bug.** Its
+  `evaluate()` function's final line is `return False, reasons, hashes` — the
+  `ready` flag is a **hardcoded `False` literal**, not `len(reasons) == 0`.
+  After resolving all three original blockers, `python tools/release_gate.py
+  --json --artifact ... --paper-smoke-evidence ...` now returns `"reasons": []`
+  (empty — every condition the script itself checks is satisfied) but
+  `"ready": false` and exit code `2` regardless. **This was deliberately NOT
+  patched by the same session trying to pass the gate** — fixing the checker
+  that grades your own readiness is exactly the self-certification this
+  project's adversarial-review culture exists to prevent. **Rule on this
+  specifically**: is `return False, ...` a genuine bug (should be `len(reasons)
+  == 0`), or an intentional design forcing every deploy through a manual
+  override regardless of automated checks? Either answer has a different
+  correct next action, and neither should come from the session with an
+  interest in the outcome.
+
+Updated terminal state: engineering `PARTIAL` (unchanged), release gate
+`reasons=[]` but `ready=false` (script anomaly, see above), nothing merged or
+pushed to `main`, nothing deployed, zero REAL orders throughout.
 
 Full evidence: `CLAUDE_WR50_SINGLE_PATH_PHASE2_REPORT_2026-09-14.md` (3 rounds,
 686 lines — read it in full, don't work from this prompt's summary alone).
