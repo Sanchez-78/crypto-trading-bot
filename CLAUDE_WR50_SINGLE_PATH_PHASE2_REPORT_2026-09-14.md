@@ -872,3 +872,189 @@ Větev `wr50/canonical-single-path-phase2`. **Nepushnuto touto relací.**
 
 Cíl WR >50 zůstává `NOT_ACHIEVED`. Tento dokument není potvrzení production
 safety ani GO pro REAL trading.
+
+---
+---
+
+# Round 5 — odpověď na re-review (2026-09-16)
+
+Verdikt `EXTERNAL_AUDIT_WR50_REREVIEW_VERDICT_2026-09-16.md`: **MERGE STILL
+REJECTED**, 4 konkrétní body. Recenzent měl pravdu ve všech bodech; nic z toho
+nerozporuji.
+
+Terminální stav cíle **beze změny**: `WR >50 = NOT_ACHIEVED`.
+REAL trading: `ABSOLUTE NO-GO`. Deploy/SSH/REAL orders: `0`. Push: `0`.
+
+## R5-0 — Tři přiznání na úvod
+
+### (a) „Ověřená inventura" nebyla nadmnožina, ale jiná množina
+
+Můj AST inventář prohledával **pouze ancestor `if`** uzly, takže byl
+strukturálně slepý vůči guard-clause/early-return vzoru — přesně tomu, který
+používají obě chybějící místa:
+
+```python
+if not ov.get("allowed"):      # paper_exploration.py
+    ...
+    return False
+
+if not r.evaluation.admitted:  # p0_8_plus_live_pipeline.py
+    continue
+```
+
+Obě reálná produkční místa z inventury **tiše vypadla**, zatímco se objevila
+dvě jiná, a já to prezentoval jako „o dva víc, než audit uvádí". To nebyla
+nadmnožina. Formulace byla nesprávná a beru ji zpět.
+
+### (b) Vlastní strukturální test byl vacuous — zjištěno mutací, ne čtením
+
+Tři nezávislé defekty, každý potvrzen mutací:
+
+| Defekt | Důkaz |
+|---|---|
+| kontroloval jen že *nějaký* `gate=` existuje, ne že jde o ten verdikt | `gate={"allowed": True}` procházel identicky |
+| guard-clause detektor vyžadoval, aby **každý** příkaz v těle byl exit — reálné guardy ale logují a throttlují před returnem | mutace `gate=ov` → `gate={"allowed": True}` **prošla** |
+| `.admitted` úplně chybělo ve verdict patterns | smazání `gate=` z P0.8 site → test **zůstal zelený** |
+
+Všechny tři mutanty nyní **zabíjí**; ověřeno jednotlivě a vráceno.
+
+### (c) TŘETÍ nechtěný produkční zápis — a tenhle je nevratný
+
+Během této práce **backstop sám vyskočil**:
+
+```
+PRODUCTION DATA INTEGRITY VIOLATION
+  * server_local_backups/learning_state_phase1.json: MODIFIED (7ae2ef3f110a -> d3d611a19ae7)
+```
+
+Root cause: `firebase_learning_persistence.py:71` měl **čtvrtý** natvrdo
+zapsaný CWD-relativní default, o kterém nikdo nevěděl.
+
+Horší část: mtime téhož souboru v **hlavním repu** je
+`2026-09-14 07:19:35 UTC` — uvnitř mého Round 1–3 sezení, kdy jsem ještě
+pouštěl testy přímo v hlavním repu a tento soubor nebyl na žádném watch-listu.
+Na rozdíl od prvních dvou incidentů **nemám baseline hash**, takže jej nemohu
+obnovit ani dokázat, že je nedotčený. Soubor je gitignorovaný, takže neexistuje
+ani git evidence. Uvádím to jako **nevyřešené**, nikoli jako vyřešené.
+
+To je přesně ta „stejná třída incidentu, jiný soubor", kterou recenzent
+předpověděl — a stalo se to i mně.
+
+## R5-1 — Q1 dokončeno na všech místech
+
+| Site | Vzor | Řešení |
+|---|---|---|
+| `paper_exploration.py:714` | guard clause `return False` | **`gate=ov` doplněn** |
+| `p0_8_plus_live_pipeline.py:295` | guard clause `continue` | **`gate={allowed, reason}` doplněn** |
+| `realtime_decision_engine.py:4152` | **dva** verdikty (ECON_BAD override + sampler) | předává se **konjunkce** |
+| RDE ×3 | větev odstraněna (Round 4) | beze změny |
+| `trade_executor.py` ×2, P0 gate | retained-branch | beze změny |
+
+**„Mrtvý gate" vyřešen:** na třech retained-branch místech je gate prokazatelně
+vždy `allowed=True`, takže jeho předání nemělo žádný efekt. `canonical_admit()`
+nyní persistuje `admission_gate_reason` — otevřený řádek tedy nese **důvod
+svého přijetí**, takže „proč byl tenhle kandidát přijat" je zodpověditelné
+z dat, ne re-čtením calleru. Tím je gate load-bearing i na admitted cestě.
+
+## R5-2 — Sedm regresí, reprodukováno nezávisle
+
+| Test | Příčina | Oprava |
+|---|---|---|
+| `test_p0_8_plus_live_pipeline` ×2 | `call_args.args[1]` — průchod přes `canonical_admit` udělal volání keyword-only → `IndexError` místo kontroly fillu | čte `kwargs["price"]` |
+| `test_paper_mode` routing | patch target přejmenován s importem | `canonical_admit` |
+| `test_v3_1_hotfix` ×3 | stub `_save_paper_state = lambda: None` (falsy) → nová fail-closed cesta to čte jako selhání | stub vrací `True`; **fail-closed cesta NEoslabena** |
+| `test_observe_gate_choke[1]` | díra v **mé vlastní** fixture | přesunuto na `pytest_runtest_call` hookwrapper |
+
+**Bezpečnostně relevantní:** ty dva fill-price testy ověřují, že BUY se bookuje
+na **ask**, ne na candle close. Byly rozbité od **úplně prvního commitu této
+větve** (`2d68876`) a přežily tři kola mé vlastní revize i jeden externí audit —
+protože žádný baseline nikdy nepokryl tento soubor. To je přímý důsledek toho,
+že jsem měřil na dvou souborech a tvrdil z toho závěr o větvi.
+
+**Díra ve fixture:** autouse fixture běžela **před** fixtures testu, takže když
+byla modulová `executor` fixture tím, kdo executor poprvé importoval, modul
+ještě nebyl v `sys.modules` a fixture tiše no-opla. Selhával proto přesně
+**první** test takového souboru, zatímco sourozenci procházeli — díra v tom
+samém mechanismu, který měl order-dependence odstranit.
+
+## R5-3 — Integrity backstop: tři chybějící soubory + čtvrtý sink
+
+Doplněno do watch-listu: `runtime/v5_quota_usage.sqlite`,
+`runtime/v5_trade_outbox.sqlite`, `src/runtime/v5_quota_usage.sqlite`.
+`quota_guard.py` a `outbox.py` dostaly `CRYPTOMASTER_RUNTIME_DIR`.
+`"runtime"` přidáno mezi produkční jména adresářů ve sdíleném guardu.
+
+Dva sinky, které volaly jen `resolve_dir()`
+(`paper_trade_executor.py`, `paper_adaptive_learning.py`), nyní volají i
+`assert_not_production_sink()`.
+
+Čtvrtý sink (`firebase_learning_persistence.py`) přesměrován a zaguardován —
+viz R5-0(c).
+
+## R5-4 — Dvě bundlované změny produkčního chování (explicitní disclosure)
+
+Recenzent správně uvádí, že tyto byly rámovány jako „už hotová oprava", nikoli
+jako **delta této větve**. Ověřeno AST porovnáním proti `main`:
+
+| Změna | `main` | tato větev |
+|---|---|---|
+| **Corrupt state JSON** | `_load_paper_state` má 3 `except` handlery a **0 `raise`** — zaloguje a pokračuje s prázdným stavem | re-raisuje ve všech třech |
+| **Timeout-close persistence** | řetězec `paper state timeout persistence failed` **neexistuje** | `if not _save_paper_state(): raise IOError(...)` |
+
+Obě jsou fail-closed a podle mého názoru správné, ale jsou to **reálné změny
+produkčního chování mimo deklarovaný single-path rozsah** a jako takové je zde
+pojmenovávám. Pocházejí z necommitovaných prací dřívějších relací, které se
+staly součástí této větve.
+
+## R5-5 — Netrackovaný test, který jsem citoval jako důkaz
+
+`tests/test_state_02_loader_production_red.py` — citovaný jako autoritativní
+kontrakt ospravedlňující inverzi testu v Round 4 — byl **netrackovaný v gitu na
+obou větvích**, tedy nikdy neběžel v žádném baseline srovnání. Citovat ho jako
+důkaz byla chyba.
+
+Nyní **trackován** (ověřeno: `3 passed`).
+
+Širší nález: ve stejném stavu je celá rodina souborů —
+`state02_isolation_bootstrap.py`, `test_dashboard_metrics_contract.py`,
+`test_route_open_result_contract.py`, `test_sec_01_dashboard_boundary.py`,
+`test_state_02_paper_state_fail_closed.py`, `test_state_02_save_ack_contract.py`,
+`test_state_02_subscription_boundary_red.py`,
+`test_state_02_subscription_runtime.py`,
+`test_trade_executor_open_result_contract.py`.
+**Hlásím to, nepřidávám je hromadně** — nevalidoval jsem je, a přidat
+netrackované testy bez ověření by opakovalo tutéž chybu v jiné formě.
+
+## R5-6 — Baseline na plném rozsahu repozitáře
+
+Metodika: per-file běh s OS timeoutem (aby jeden zaseknutý soubor nezabil
+sweep), detached worktree na `main` (`2b1e922`), `FORCE_LOCAL_STORAGE=1`.
+
+| | **rozsah** | failures |
+|---|---|---|
+| `main` (`2b1e922`) | **121 test souborů** | 73 |
+| větev (`9a2519c`) | **131 test souborů** | 72 |
+| timeouts | 0 / 0 | |
+
+- **Branch-only regrese: 0** (všech 7 opraveno)
+- **Main-only selhání: 1** — `test_phase4b_starvation_paper_flow.py::TestStarvationAdmissionBypass::test_starvation_bypass_accepts_paper_training_sample`, tedy větev jej opravuje.
+
+Rozsah je uveden vedle čísla, jak recenzent žádal. Předchozí „23 vs 24" bylo
+měřeno na **dvou souborech** a nemělo se prezentovat jako závěr o větvi.
+
+## R5-7 — Co zůstává otevřené
+
+1. **Nevratné:** `learning_state_phase1.json` v hlavním repu — nelze ověřit ani
+   obnovit (R5-0c).
+2. **72 pre-existing selhání** na větvi, prakticky shodných s main (73).
+   Dluh repozitáře, ne této větve — ale nyní změřený na plném rozsahu.
+3. **Rodina netrackovaných testů** (R5-5) — nevalidováno.
+4. **Q4 auditu**: P0/P1 bezpečnost hostu je **NAD** dokončením WR50. Mimo
+   můj rozsah (žádné SSH).
+5. **Q5 podmínky** pro WR tvrzení (≥500 kvalifikovaných post-fix obchodů,
+   Wilson dolní mez >50 %, bootstrap P&L dolní mez >0) nesplněny.
+   Historická čísla 99/118 a 57/221 nesmí sloužit jako důkaz.
+6. Client-field guard pokrývá jen browser klienta, ne Android appku (jiné repo).
+
+Cíl WR >50 zůstává `NOT_ACHIEVED`. Tento dokument není potvrzení production
+safety ani GO pro REAL trading.
