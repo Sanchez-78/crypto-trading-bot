@@ -8,6 +8,8 @@ Circuit breaker pattern for CRITICAL and HARD_STOP states.
 import sqlite3
 import os
 from pathlib import Path
+
+from src.core import test_sink_guard as _sink_guard
 from datetime import datetime
 from typing import Optional, Tuple
 import pytz
@@ -22,7 +24,11 @@ logger = logging.getLogger(__name__)
 class QuotaLedger:
     """SQLite-backed quota counter for a single day."""
 
-    DB_PATH = Path("runtime/v5_quota_usage.sqlite")
+    # Test-sink separation (2026-09-16, re-review item 3). This was a bare
+    # CWD-relative path with no redirect and no guard, so a test run wrote
+    # the real runtime ledger -- found because the reviewer's own run
+    # silently modified/deleted these files with no banner firing.
+    DB_PATH = Path(_sink_guard.resolve_dir("CRYPTOMASTER_RUNTIME_DIR", "runtime")) / "v5_quota_usage.sqlite"
     SCHEMA_VERSION = 1
 
     def __init__(self):

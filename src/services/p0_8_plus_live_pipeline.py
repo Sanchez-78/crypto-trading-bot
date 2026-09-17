@@ -299,6 +299,16 @@ def run_live_tick(
                     route="P0_8_PLUS_EVIDENCE_COLLECTION",
                     reason="P0_8_PLUS_EVIDENCE_COLLECTION",
                     extra=extra,
+                    # `if not r.evaluation.admitted: continue` above is a guard
+                    # clause, not a second policy -- signal_router's evaluation
+                    # is the single decider. The first structural test searched
+                    # only ancestor `if` statements, so it was blind to this
+                    # continue-guard shape and silently dropped this site from
+                    # the "fixed" list (re-review 2026-09-16, Q1.2).
+                    gate={
+                        "allowed": bool(r.evaluation.admitted),
+                        "reason": r.evaluation.decision_code,
+                    },
                 )
                 log.warning(
                     "[P0_8_PLUS_LIVE_OPEN] %s %s strategy=%s status=%s reason=%s",

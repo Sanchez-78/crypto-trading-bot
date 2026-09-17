@@ -712,6 +712,13 @@ def maybe_open_paper_exploration_from_reject(
         final_size_usd = base_size_usd * ov["size_mult"]
 
         result = canonical_admit(
+            # `if not ov.get("allowed"): ... return False` above is a guard
+            # clause, not a second policy -- paper_exploration_override() is
+            # the single decider. The first structural test only searched
+            # ancestor `if` statements, so it was blind to this early-return
+            # shape and silently dropped this site from the "fixed" list
+            # (re-review 2026-09-16, Q1.2).
+            gate=ov,
             signal=signal,
             price=price,
             ts=time.time(),

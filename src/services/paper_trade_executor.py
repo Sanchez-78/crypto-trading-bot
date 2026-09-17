@@ -188,6 +188,7 @@ _POSITION_LOCK = __import__("threading").RLock()
 SINK_DIR_ENV_VAR = "CRYPTOMASTER_PAPER_STATE_DIR"
 _STATE_DIR = _sink_guard.resolve_dir(SINK_DIR_ENV_VAR, "data")
 _STATE_FILE = f"{_STATE_DIR}/paper_open_positions.json"
+_sink_guard.assert_not_production_sink(_STATE_FILE)
 
 # P0-FIX (2026-08-05): Single source of truth for the TP/SL fallback bps.
 # Previously _normalize_position_for_loading() (legacy/corrupted-state
@@ -1649,6 +1650,19 @@ def canonical_admit(
     stamped["code_version"] = os.getenv("BOT_CODE_VERSION", "").strip() or "UNKNOWN"
     stamped["config_version"] = os.getenv("BOT_CONFIG_VERSION", "").strip() or "UNKNOWN"
     stamped["admission_contract_version"] = CANONICAL_ADMISSION_CONTRACT_VERSION
+
+    # Record WHICH verdict admitted this position, not merely that something
+    # did. Re-review 2026-09-16 (Q1.1) observed that at the three retained-
+    # branch call-sites the gate is provably always allowed=True, so passing it
+    # had no effect whatsoever -- dead code. Persisting the verdict's own
+    # reason makes it load-bearing on the admitted path too: an opened row now
+    # carries the decider's reason, so "why was this admitted" is answerable
+    # from the data rather than by re-reading the caller.
+    if gate is not None:
+        _gate_reason = gate.get("reason")
+        if _gate_reason:
+            stamped["admission_gate_reason"] = _gate_reason
+        stamped["admission_gate_allowed"] = bool(gate.get("allowed"))
 
     # ONE effective_hold_s contract for tick and scanner alike: reuse the
     # existing resolver instead of introducing a second hold rule.

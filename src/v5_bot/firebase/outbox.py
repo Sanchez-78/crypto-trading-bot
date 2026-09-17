@@ -7,6 +7,8 @@ If Firebase write fails, outbox holds the outcome until next successful flush.
 import json
 import sqlite3
 from pathlib import Path
+
+from src.core import test_sink_guard as _sink_guard
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 import logging
@@ -19,7 +21,11 @@ logger = logging.getLogger(__name__)
 class TradeOutbox:
     """SQLite-backed WAL for trade outcomes."""
 
-    DB_PATH = Path("runtime/v5_trade_outbox.sqlite")
+    # Test-sink separation (2026-09-16, re-review item 3). This was a bare
+    # CWD-relative path with no redirect and no guard, so a test run wrote
+    # the real runtime ledger -- found because the reviewer's own run
+    # silently modified/deleted these files with no banner firing.
+    DB_PATH = Path(_sink_guard.resolve_dir("CRYPTOMASTER_RUNTIME_DIR", "runtime")) / "v5_trade_outbox.sqlite"
 
     def __init__(self):
         """Initialize trade outbox."""

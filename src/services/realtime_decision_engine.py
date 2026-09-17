@@ -4156,7 +4156,20 @@ def evaluate_signal(signal):
                         route="PAPER_TRAINING",
                         reason="PAPER_TRAINING",
                         extra=extra,
-                        gate=sampler_result,
+                        # TWO verdicts gate this call: the ECON_BAD recovery
+                        # override decides whether a weak-EV candidate may be
+                        # probed at all, and the sampler then decides this
+                        # specific candidate. Passing only the sampler's left
+                        # the outer one invisible to the wrapper. The
+                        # conjunction is behaviourally identical here (we are
+                        # already inside `if override["allowed"]`) but it is
+                        # what actually gated the call.
+                        gate={
+                            "allowed": bool(override["allowed"])
+                            and bool(sampler_result.get("allowed")),
+                            "reason": sampler_result.get("reason")
+                            or override.get("reason"),
+                        },
                     )
                     # gate_rejected blocks were previously silent (the sampler
                     # declines most ticks); keep that log volume.

@@ -37,6 +37,7 @@ _PRODUCTION_DIR_NAMES = frozenset({
     "server_local_backups",
     "data",
     "network_cache",
+    "runtime",
     "cryptomaster",  # the \\MYCLOUD-...\Public\Cryptomaster network share root
 })
 

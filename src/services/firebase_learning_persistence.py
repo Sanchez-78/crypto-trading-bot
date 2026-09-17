@@ -16,6 +16,8 @@ import os
 from typing import Optional, Dict, Any
 from datetime import datetime
 
+from src.core import test_sink_guard as _sink_guard
+
 log = logging.getLogger(__name__)
 
 # Async Firebase sync thread (background, non-blocking)
@@ -68,7 +70,22 @@ def start_async_firebase_sync():
 class FirebaseLearningPersistence:
     """Simplified learning persistence: Local JSON + async Firebase backup."""
 
-    def __init__(self, state_file: str = "server_local_backups/learning_state_phase1.json"):
+    # Test-sink separation (2026-09-16). This default was CWD-relative with no
+    # redirect, so a test run wrote the REAL learning state. Found when the
+    # integrity backstop fired on
+    # server_local_backups/learning_state_phase1.json -- the fourth sink of
+    # this class, after cache.sqlite, the learning DB and the adaptive-learning
+    # state. Exactly the "same class of incident, different file" the
+    # 2026-09-16 re-review predicted.
+    SINK_DIR_ENV_VAR = "CRYPTOMASTER_BACKUP_STATE_DIR"
+
+    def __init__(self, state_file: Optional[str] = None):
+        if state_file is None:
+            _dir = _sink_guard.resolve_dir(
+                self.SINK_DIR_ENV_VAR, "server_local_backups"
+            )
+            state_file = f"{_dir}/learning_state_phase1.json"
+        _sink_guard.assert_not_production_sink(state_file)
         self.state_file = state_file
         self.last_save_ts = 0
         start_async_firebase_sync()

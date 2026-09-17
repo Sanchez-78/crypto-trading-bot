@@ -2959,7 +2959,7 @@ class TestP1W1RoutingAndThrottling(unittest.TestCase):
             "features": {"test": 1},
         }
 
-        with mock.patch.object(trade_executor, "open_paper_position") as mock_paper:
+        with mock.patch.object(trade_executor, "canonical_admit") as mock_paper:
             with mock.patch.object(trade_executor, "_positions") as mock_pos:
                 with mock.patch.object(trade_executor, "live_trading_allowed", return_value=False):
                     mock_paper.return_value = {"status": "opened"}
@@ -2970,7 +2970,7 @@ class TestP1W1RoutingAndThrottling(unittest.TestCase):
                     trade_executor._LIVE_ORDER_DISABLED_THROTTLE.clear()
 
                     # Call open_paper_position path
-                    result = trade_executor.open_paper_position(signal, 45000.0, time.time(), "RDE_TAKE")
+                    result = trade_executor.canonical_admit(signal, 45000.0, time.time(), "RDE_TAKE")
                     assert result.get("status") == "opened"
                     # Verify that live_positions dict was NOT updated (would happen in live code path)
                     mock_pos.__setitem__.assert_not_called()

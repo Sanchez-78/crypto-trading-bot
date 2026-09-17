@@ -47,6 +47,7 @@ for _var, _sub in (
     ("CRYPTOMASTER_LEARNING_STORAGE_DIR", "learning_sink"),
     ("CRYPTOMASTER_PAPER_STATE_DIR", "paper_state_sink"),
     ("CRYPTOMASTER_BACKUP_STATE_DIR", "backup_state_sink"),
+    ("CRYPTOMASTER_RUNTIME_DIR", "runtime_sink"),
 ):
     if not os.environ.get(_var, "").strip():
         _target = os.path.join(_sink_root, _sub)
@@ -57,8 +58,8 @@ for _var, _sub in (
 import pytest  # noqa: E402  (must follow the env setup above)
 
 
-@pytest.fixture(autouse=True)
-def _deterministic_paper_state():
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_call(item):
     """Give every test the same paper-state starting point.
 
     `open_paper_position()` fails closed unless `_PAPER_STATE_STATUS` is
@@ -74,11 +75,22 @@ def _deterministic_paper_state():
 
     This pins the starting point to READY, which is what production actually
     runs with (`_init_paper_state_once()` runs at startup there). Tests that
-    exercise the not-ready paths still monkeypatch the status themselves, and
-    that continues to work because this only sets the value at setup.
+    exercise the not-ready paths still set the status themselves inside the
+    test body, which continues to work because this only applies just before
+    that body runs.
+
+    A `pytest_runtest_call` hookwrapper rather than an autouse fixture: the
+    fixture version ran BEFORE the test's own fixtures, so when a module-level
+    `executor` fixture was what first imported the executor, the module was not
+    yet in sys.modules and the fixture silently no-opped. That left exactly the
+    FIRST test of such a file failing while its siblings passed -- the
+    `test_observe_gate_choke.py::...[1]` regression the 2026-09-16 re-review
+    found, a hole in the very mechanism meant to remove order-dependence. This
+    hook runs after all fixture setup and immediately before the test body, so
+    the import has already happened.
 
     Import purity is preserved: the module is never imported here. If a test
-    has not (yet) imported it, the fixture is a no-op.
+    genuinely never imports it, this is a no-op.
     """
     mod = sys.modules.get("src.services.paper_trade_executor")
     if mod is None:
@@ -124,6 +136,12 @@ _PRODUCTION_WATCH = (
     "server_local_backups/learning_state_phase1.json",
     "data/paper_open_positions.json",
     "data/paper_trades.db",
+    # Added 2026-09-16 (re-review item 3): the reviewer's own run silently
+    # modified/deleted these three with no banner, because they were not
+    # watched at all. Same incident class, different files.
+    "runtime/v5_quota_usage.sqlite",
+    "runtime/v5_trade_outbox.sqlite",
+    "src/runtime/v5_quota_usage.sqlite",
 )
 
 _integrity_baseline = {}

@@ -261,7 +261,13 @@ def test_run_live_tick_books_buy_at_ask_not_candle_close():
          patch("src.services.paper_trade_executor.open_paper_position") as mock_open:
         mock_open.return_value = {"status": "opened", "trade_id": "t1"}
         live.run_live_tick(symbols=["ETHUSDT"])
-    booked_price = mock_open.call_args.args[1]
+    # canonical_admit() calls the choke with keyword arguments, so the
+    # booked price arrives as kwargs["price"], not args[1]. Reading the
+    # positional slot made this assertion raise IndexError instead of
+    # checking the fill -- it had been broken since the branch's first
+    # commit (2d68876) and was never caught, because no baseline run had
+    # covered this file (re-review 2026-09-16, item 2).
+    booked_price = mock_open.call_args.kwargs["price"]
     assert booked_price == 2010.0  # ask, not candidate.signal.reference_price (2000.0)
 
 
@@ -274,7 +280,13 @@ def test_run_live_tick_books_sell_at_bid_not_candle_close():
          patch("src.services.paper_trade_executor.open_paper_position") as mock_open:
         mock_open.return_value = {"status": "opened", "trade_id": "t1"}
         live.run_live_tick(symbols=["ETHUSDT"])
-    booked_price = mock_open.call_args.args[1]
+    # canonical_admit() calls the choke with keyword arguments, so the
+    # booked price arrives as kwargs["price"], not args[1]. Reading the
+    # positional slot made this assertion raise IndexError instead of
+    # checking the fill -- it had been broken since the branch's first
+    # commit (2d68876) and was never caught, because no baseline run had
+    # covered this file (re-review 2026-09-16, item 2).
+    booked_price = mock_open.call_args.kwargs["price"]
     assert booked_price == 1990.0  # bid, not candidate.signal.reference_price
 
 

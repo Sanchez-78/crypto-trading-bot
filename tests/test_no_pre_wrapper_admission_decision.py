@@ -50,6 +50,12 @@ _VERDICT_PATTERNS = (
     re.compile(r"\[\s*['\"]allowed['\"]\s*\]"),
     re.compile(r"\.strict_ev_allowed\b"),
     re.compile(r"\bis_blocked\b"),
+    # signal_router's evaluation names its verdict `admitted`, not `allowed`.
+    # Omitting it meant p0_8_plus_live_pipeline's gate was not recognised as a
+    # verdict at all, so that call-site was skipped entirely -- proven by
+    # deleting its gate= and watching this test still pass.
+    re.compile(r"\.admitted\b"),
+    re.compile(r"\[\s*['\"]admitted['\"]\s*\]"),
 )
 
 
@@ -67,26 +73,104 @@ def _ancestors(node):
         cur = getattr(cur, "_parent", None)
 
 
-def test_a_gated_canonical_admit_call_must_receive_the_verdict():
-    """RED-1: a verdict may gate a call only if it is PASSED IN as gate=.
+def _enclosing_function(tree, node):
+    """The FunctionDef lexically containing `node`, or None."""
+    for anc in _ancestors(node):
+        if isinstance(anc, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            return anc
+    return None
 
-    Two shapes are acceptable, and this asserts the boundary between them:
 
-    * no verdict gate at all -- the RDE training sites, where the branch was
-      removed outright and the wrapper now acts on `gate=sampler_result`;
-    * a verdict gate retained purely to skip expensive preparation, PROVIDED
-      the same verdict is handed to `canonical_admit(gate=...)`.
+def _verdict_gates_for(tree, node):
+    """Every verdict branch that can prevent `node` from being reached.
 
-    What it forbids is the original defect: branching on a component's verdict,
-    consuming it in the caller, and calling the wrapper as though no decision
-    had been made. In that shape the verdict can silently drift from what the
-    wrapper acts on, and a rejection leaves no canonical trace.
+    Covers BOTH shapes, which is the correction the re-review forced:
 
-    This is deliberately NOT "no `if` may exist". Demanding that would either
-    run costly signal preparation for every rejected candidate or invite a
-    no-op call added solely to satisfy the assertion -- test-gaming, which this
-    project's evidence-first rules exclude. Each retained gate is inventoried
-    with its justification in the accompanying report.
+    * ancestor `if <verdict>:` -- the call sits inside the positive branch;
+    * guard clause -- `if not <verdict>: return/continue/raise` appearing
+      EARLIER in the same function, which is what `paper_exploration.py` and
+      `p0_8_plus_live_pipeline.py` use. The first version of this test searched
+      only ancestors, so it was blind to guard clauses and silently dropped two
+      real production sites from the "fixed" inventory while reporting two
+      different ones as a supposed superset.
+    """
+    gates = []
+
+    for anc in _ancestors(node):
+        if isinstance(anc, ast.If):
+            src = ast.unparse(anc.test)
+            if any(pat.search(src) for pat in _VERDICT_PATTERNS):
+                gates.append((anc.lineno, src))
+
+    fn = _enclosing_function(tree, node)
+    if fn is not None:
+        for stmt in ast.walk(fn):
+            if not isinstance(stmt, ast.If) or stmt.lineno >= node.lineno:
+                continue
+            # A guard clause is one whose body always leaves: its LAST
+            # statement is an exit. Requiring every statement to be an exit
+            # was wrong -- real guards log, throttle and branch before
+            # returning, which is precisely the shape of
+            # paper_exploration.py's `if not ov.get("allowed")`. That mistake
+            # made this test silently vacuous for the two sites it exists to
+            # cover (caught by mutating gate=ov to gate={"allowed": True} and
+            # seeing it still pass).
+            if not stmt.body:
+                continue
+            if not isinstance(
+                stmt.body[-1], (ast.Return, ast.Continue, ast.Break, ast.Raise)
+            ):
+                continue
+            src = ast.unparse(stmt.test)
+            if any(pat.search(src) for pat in _VERDICT_PATTERNS):
+                gates.append((stmt.lineno, src))
+
+    return gates
+
+
+# Identifiers too generic to prove two expressions refer to the same verdict.
+_TRIVIAL_NAMES = frozenset({
+    "allowed", "get", "bool", "True", "False", "None", "not", "reason",
+    "str", "int", "float", "dict", "is_blocked",
+})
+
+
+def _identifiers(expr_src):
+    try:
+        tree = ast.parse(expr_src, mode="eval")
+    except SyntaxError:  # pragma: no cover
+        return set()
+    names = set()
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Name):
+            names.add(n.id)
+        elif isinstance(n, ast.Attribute):
+            names.add(n.attr)
+    return {n for n in names if n not in _TRIVIAL_NAMES}
+
+
+def test_a_gated_canonical_admit_call_must_receive_the_same_verdict():
+    """RED-1: a verdict may gate a call only if THAT verdict is passed in.
+
+    Strengthened after the 2026-09-16 re-review, which found two defects in the
+    first version of this test:
+
+    1. It searched only ancestor `if` statements, so guard-clause/early-return
+       gates were invisible. Two real production sites were silently absent
+       from the inventory while two different ones were reported, and the
+       result was presented as a superset of the audit's list. It was not --
+       it was a different set.
+    2. It only checked that SOME `gate=` keyword existed, never that the value
+       was the verdict that did the gating. `gate={"allowed": True}` would have
+       satisfied it identically, which is no contract at all.
+
+    So this now requires the gate= expression to share a non-trivial identifier
+    with the gating expression -- `ov` with `not ov.get("allowed")`,
+    `r.evaluation.admitted` with `not r.evaluation.admitted`, and so on.
+
+    Still deliberately NOT "no `if` may exist": demanding that would run costly
+    signal preparation for every rejected candidate, or invite a no-op call
+    added solely to satisfy an assertion.
     """
     offenders = []
     for path in sorted(SRC.rglob("*.py")):
@@ -101,27 +185,31 @@ def test_a_gated_canonical_admit_call_must_receive_the_verdict():
                     and node.func.id == "canonical_admit"):
                 continue
 
-            gating = [
-                (anc.lineno, ast.unparse(anc.test))
-                for anc in _ancestors(node)
-                if isinstance(anc, ast.If)
-                and any(p.search(ast.unparse(anc.test)) for p in _VERDICT_PATTERNS)
-            ]
-            if not gating:
+            gates = _verdict_gates_for(tree, node)
+            if not gates:
                 continue
 
-            passes_gate = any(kw.arg == "gate" for kw in node.keywords)
-            if not passes_gate:
-                for lineno, test_src in gating:
+            gate_kw = next((kw for kw in node.keywords if kw.arg == "gate"), None)
+            where = f"{path.relative_to(SRC.parent)}:{node.lineno}"
+            if gate_kw is None:
+                for lineno, src in gates:
                     offenders.append(
-                        f"{path.relative_to(SRC.parent)}:{node.lineno} "
-                        f"gated by `if {test_src}` (line {lineno}) "
-                        "but does not pass gate="
+                        f"{where} gated by `{src}` (line {lineno}) "
+                        "but passes no gate="
                     )
+                continue
+
+            gate_ids = _identifiers(ast.unparse(gate_kw.value))
+            if not any(gate_ids & _identifiers(src) for _, src in gates):
+                offenders.append(
+                    f"{where} passes gate={ast.unparse(gate_kw.value)!r} which "
+                    "shares no identifier with the verdict that gated it: "
+                    + "; ".join(f"`{src}` (line {ln})" for ln, src in gates)
+                )
 
     assert not offenders, (
-        "a verdict decides admission before canonical_admit() and is then "
-        "dropped instead of being handed to it:\n  " + "\n  ".join(offenders)
+        "admission verdicts are decided before canonical_admit() and not "
+        "handed to it:\n  " + "\n  ".join(offenders)
     )
 
 

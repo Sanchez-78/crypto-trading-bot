@@ -99,7 +99,11 @@ def test_timeout_close_no_price_does_not_learning_update(monkeypatch):
     close_called = []
     monkeypatch.setattr(pte, "close_paper_position",
                         lambda *a, **kw: close_called.append(a) or None)
-    monkeypatch.setattr(pte, "_save_paper_state", lambda: None)
+    monkeypatch.setattr(pte, "_save_paper_state", lambda: True)  # True == saved OK;
+    # the timeout-close path now fail-closes on a falsy return (STATE-02-C/D
+    # save acknowledgement), and this stub predates that -- `None` read as
+    # "persistence failed" and raised. These tests are about the NO_PRICE
+    # log/learning/cap behaviour, not about persistence failure.
 
     result = pte.check_and_close_timeout_positions(now_ts)
 
@@ -126,7 +130,11 @@ def test_timeout_close_no_price_frees_or_quarantines_cap_safely(monkeypatch):
         pte._POSITIONS["t_cap_free"] = pos
 
     monkeypatch.setattr(pte, "close_paper_position", lambda *a, **kw: None)
-    monkeypatch.setattr(pte, "_save_paper_state", lambda: None)
+    monkeypatch.setattr(pte, "_save_paper_state", lambda: True)  # True == saved OK;
+    # the timeout-close path now fail-closes on a falsy return (STATE-02-C/D
+    # save acknowledgement), and this stub predates that -- `None` read as
+    # "persistence failed" and raised. These tests are about the NO_PRICE
+    # log/learning/cap behaviour, not about persistence failure.
 
     pte.check_and_close_timeout_positions(now_ts)
 
@@ -151,7 +159,11 @@ def test_timeout_close_logs_no_price(monkeypatch, caplog):
         pte._POSITIONS["t_log_check"] = pos
 
     monkeypatch.setattr(pte, "close_paper_position", lambda *a, **kw: None)
-    monkeypatch.setattr(pte, "_save_paper_state", lambda: None)
+    monkeypatch.setattr(pte, "_save_paper_state", lambda: True)  # True == saved OK;
+    # the timeout-close path now fail-closes on a falsy return (STATE-02-C/D
+    # save acknowledgement), and this stub predates that -- `None` read as
+    # "persistence failed" and raised. These tests are about the NO_PRICE
+    # log/learning/cap behaviour, not about persistence failure.
 
     with caplog.at_level(logging.WARNING, logger="src.services.paper_trade_executor"):
         pte.check_and_close_timeout_positions(now_ts)

@@ -50,6 +50,7 @@ from src.core import test_sink_guard as _sink_guard
 SINK_DIR_ENV_VAR = "CRYPTOMASTER_BACKUP_STATE_DIR"
 _STATE_DIR = _sink_guard.resolve_dir(SINK_DIR_ENV_VAR, "server_local_backups")
 _STATE_FILE = f"{_STATE_DIR}/paper_adaptive_learning_state.json"
+_sink_guard.assert_not_production_sink(_STATE_FILE)
 
 # Rolling window sizes
 ROLLING_SIZES = {
