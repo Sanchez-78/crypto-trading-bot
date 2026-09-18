@@ -119,8 +119,20 @@ class StrategyConfig:
 # ==================== Paths ====================
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
-RUNTIME_DIR = PROJECT_ROOT / "runtime"
-DATA_DIR = PROJECT_ROOT / "data"
+
+# Test-sink separation (2026-09-17). These were repo-root-derived paths with no
+# redirect, and the loop below CREATES them at import time. Sealing
+# quota_guard/outbox's own DB_PATH defaults was NOT enough: these constants
+# hand the same sinks to every other caller, so test runs still wrote the real
+# runtime ledgers. Found by noticing src/runtime/v5_quota_usage.sqlite modified
+# in a worktree AFTER item 3 was reported complete -- the recurring pattern of
+# fixing the instance rather than the class.
+from src.core import test_sink_guard as _sink_guard  # noqa: E402
+
+RUNTIME_DIR = Path(_sink_guard.resolve_dir(
+    "CRYPTOMASTER_RUNTIME_DIR", str(PROJECT_ROOT / "runtime")))
+DATA_DIR = Path(_sink_guard.resolve_dir(
+    "CRYPTOMASTER_PAPER_STATE_DIR", str(PROJECT_ROOT / "data")))
 LOGS_DIR = PROJECT_ROOT / "logs"
 
 # Create directories if needed

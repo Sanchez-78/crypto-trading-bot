@@ -61,7 +61,17 @@ QUOTA_SNAPSHOT_INTERVAL_S = 300  # Publish quota every 5 minutes
 # RUNTIME PATHS
 # ════════════════════════════════════════════════════════════════════════════
 
-RUNTIME_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "runtime")
+# Test-sink separation (2026-09-17). This resolves to `src/runtime`, which is
+# what wrote src/runtime/v5_quota_usage.sqlite during test runs -- a SECOND
+# runtime sink, distinct from the repo-root `runtime/` one in
+# src/v5_bot/config.py. Sealing quota_guard/outbox's own DB_PATH defaults
+# covered neither, because these constants hand the paths to other callers.
+from src.core import test_sink_guard as _sink_guard  # noqa: E402
+
+RUNTIME_DIR = _sink_guard.resolve_dir(
+    "CRYPTOMASTER_RUNTIME_DIR",
+    os.path.join(os.path.dirname(__file__), "..", "..", "runtime"),
+)
 V5_QUOTA_DB_PATH = os.path.join(RUNTIME_DIR, "v5_quota_usage.sqlite")
 V5_OUTBOX_DB_PATH = os.path.join(RUNTIME_DIR, "v5_trade_outbox.sqlite")
 
