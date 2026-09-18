@@ -5,13 +5,13 @@
     "pnl_positive": true,
     "mode": "paper_only"
   },
-  "cycle": 242,
+  "cycle": 243,
   "start_time": "2026-07-14T14:25:00Z",
   "goal_reached": false,
-  "total_cycles_completed": 242,
+  "total_cycles_completed": 243,
   "current_wr": 28.0,
   "current_pnl": -3.1376,
-  "last_update": "2026-09-17T09:08:00Z",
+  "last_update": "2026-09-18T06:48:00Z",
   "status": "monitoring",
   "notes": [
     "Run 1 (July 1, old goal WR>50) archived to monitoring_progress_run1_archived.json",
@@ -3314,6 +3314,21 @@
       "investigation": "wr50-single-path found item 3 (sink isolation) was NOT fully complete -- 2 more RUNTIME_DIR definitions (src/v5_bot/config.py:122, src/services/v5_legacy_bridge/config.py:64) feed paths its fix didn't touch. Also honestly flagged its own sweep script discarded stdout/stderr, so the earlier 'no banner fired' claim was unverifiable and not actually made in the committed report.",
       "action_taken": "Confirmed for the agent (from this session's own history) that the runtime/v5_quota_usage.sqlite files were already dirty at the very start of this whole engagement, unrelated to its testing. Agent continuing to finish item 3.",
       "next_cycle_plan": "Continue standard cadence, waiting for item-3 completion."
+    },
+    {
+      "cycle": 243,
+      "timestamp": "2026-09-18T06:48:00Z",
+      "status": "STABLE_LOGROTATE_HARDENED_AGENTS_SPEND_LIMIT_AGAIN",
+      "metrics_snapshot": {
+        "recent_100_wr_pct": 32.0,
+        "lifetime_pf": 0.6423530279486644,
+        "open_positions": 3,
+        "emergency_monitor_30min_window": "25/25 'All checks passed'",
+        "disk_usage": "62% at detection, syslog actively rotated -- pressure relieved, will drop further once delaycompress kicks in next cycle"
+      },
+      "investigation": "Both wr50 agents hit the spend limit again, no new branch commits. Separately: disk had grown to 62% (syslog regrown to 6.5GB in 3 days) -- the weekly rotation schedule (next due 2026-09-22) would not have caught this in time given the growth rate, risking another full-disk emergency before then.",
+      "action_taken": "Added a 'size 1G' trigger to /etc/logrotate.d/rsyslog (alongside the existing weekly schedule) so rotation happens whichever comes first. Backed up the original config first. Hit one issue: placed the backup inside /etc/logrotate.d/ itself, which got scanned as a duplicate config and made the first rotation attempt fail -- moved the backup to /root/ and re-ran cleanly. Verified all services (cryptomaster, dashboard, rsyslog) active throughout.",
+      "next_cycle_plan": "Watch disk trend over the coming days to confirm the size trigger keeps it in check going forward."
     }
   ],
   "experiment": {
