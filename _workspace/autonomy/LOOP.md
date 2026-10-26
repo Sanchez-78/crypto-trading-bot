@@ -31,7 +31,7 @@ SSH: `ssh -i ~/.ssh/hetzner_root -o ConnectTimeout=15 root@78.47.2.198`
    `project_docs_state_20261002.md`, commit + push, `finished=true`, notifikace, smaž cron.
 6. GOAL_CANDIDATE → notifikace (jen jednou: `goal_notified=true`), nic neměň.
 7. Bez přechodu a bez problému: jen jednovětý souhrn, bez notifikace.
-8. Obnova cronu: pokud `cron_created` ve state.json je starší než 6 dní, vytvoř nový
+8. Obnova cronu: pokud od `cron_created` ve state.json uplynulo 5 a více dní (cron vyprší po 7), vytvoř nový
    denní cron (`13 19 * * *`, prompt: „Proveď _workspace/autonomy/LOOP.md“), smaž starý,
    ulož nové `cron_id` a `cron_created`.
 
