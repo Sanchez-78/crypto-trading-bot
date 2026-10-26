@@ -1,0 +1,14 @@
+[Unit]
+Description=CryptoMaster offline learning-experiment evaluation (read-only, PAPER)
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /opt/cryptomaster_research/run_eval.sh
+Nice=19
+IOSchedulingClass=idle
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/cryptomaster_research
+TimeoutStartSec=15min
