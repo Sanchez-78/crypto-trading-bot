@@ -15,6 +15,9 @@ KEEP_DAYS=45
 day="$(date -u +%F)"
 out="$BASE/reports/$day"
 since="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["started_at"])' "$EPOCH")"
+# After an autonomous stage change, evaluate only trades opened under that stage.
+[ -s "$BASE/since_override" ] && since="$(cat "$BASE/since_override")"
+stage="$(cat "$BASE/stage" 2>/dev/null || echo S1)"
 
 ok=0
 for attempt in 1 2 3; do
@@ -30,19 +33,22 @@ if [ "$ok" != 1 ]; then
 fi
 ln -sfn "$out" "$BASE/latest"
 
-python3 - "$out/report.json" "$POLICY" "$BASE" <<'PY' >> "$BASE/verdict.log"
+python3 - "$out/report.json" "$POLICY" "$BASE" "$stage" <<'PY' >> "$BASE/verdict.log"
 import json, sys, datetime, pathlib
 report, policy, base = json.load(open(sys.argv[1])), sys.argv[2], pathlib.Path(sys.argv[3])
+stage = sys.argv[4]
+budget = report["total"].get("evidence_budget") or {}
 total = report["total"]
 exp = report["experiments"].get(policy, {}).get("verdict")
 fmt = lambda v: "NA" if v is None else f"{v:+.2f}"
 ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 if exp is None:
-    print(f"{ts} total_n={total.get('n')} {policy}=NO_DATA")
+    print(f"{ts} stage={stage} total_n={total.get('n')} total_upper={fmt(budget.get('upper_bound_bps'))} {policy}=NO_DATA")
     sys.exit(0)
 a, c = exp["adaptive"], exp["control"]
-print(f"{ts} total_n={total.get('n')} total_mean={fmt(total.get('mean_net_bps'))} "
-      f"codes={','.join(exp['codes'])} adaptive_n={a['n']} adaptive_mean={fmt(a['mean_bps'])} "
+print(f"{ts} stage={stage} total_n={total.get('n')} total_mean={fmt(total.get('mean_net_bps'))} "
+      f"total_lower={fmt(budget.get('lower_bound_bps'))} total_upper={fmt(budget.get('upper_bound_bps'))} "
+      f"total_budget={budget.get('code')} codes={','.join(exp['codes'])} adaptive_n={a['n']} adaptive_mean={fmt(a['mean_bps'])} "
       f"control_n={c['n']} control_mean={fmt(c['mean_bps'])} diff={fmt(exp['diff_bps'])} "
       f"ci=[{fmt(exp['diff_low_bps'])},{fmt(exp['diff_high_bps'])}]")
 marker = base / "DECISION_READY"

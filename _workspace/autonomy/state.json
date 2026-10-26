@@ -1,0 +1,10 @@
+{
+  "stage": "S1",
+  "stage_changed_at": "2026-10-23T12:27:12Z",
+  "s1_deadline": "2026-11-09",
+  "finished": false,
+  "blocked": false,
+  "goal_notified": false,
+  "cron_id": "ead0400d",
+  "cron_created": "2026-10-26"
+}
