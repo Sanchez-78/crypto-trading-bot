@@ -48,6 +48,12 @@ generátory dál určují, co vstoupí.
   `funnel/YYYYMMDD.jsonl`; bez cen a výsledků (bezpečné pro slepou fázi). Řádek `FUNNEL`
   ve `verdict.log` = posledních 12 h. Důvod: journal bota drží jen ~15 min (objem logu).
 - **Mezera:** žádný kanál, který by operátora upozornil bez sezení Claude (otázka 4 níže).
+- **Riziko 2026-11-09 10:09 UTC:** disk 88 % (87 %→88 % za ~93 min), `shadow_excursion.sqlite`
+  (11,1 GiB, 69,1 M řádků `shadow_path_1s`, bez retence v kódu) roste tempem, který by
+  mohl zaplnit zbývajících ~4,4 GiB řádově za hodiny až ~2 dny — dřív než konec C1
+  (~16. 11.). Zápisy jsou obalené `try/except` (nerozbije živou PAPER cestu), ale ztratí
+  se tiše sbíraná shadow evidence a zasáhne i jiné služby na disku. Žádný zásah neproveden
+  (runtime data, mimo rozsah bez operátora). Detail a možnosti: `_workspace/61_disk_shadow_excursion_growth_risk.md`.
 
 ## Povolené akce agenta
 
