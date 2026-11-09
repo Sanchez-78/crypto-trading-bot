@@ -1,0 +1,358 @@
+diff --git a/src/services/LOGIC.md b/src/services/LOGIC.md
+index 8fc559f..4481bfd 100644
+--- a/src/services/LOGIC.md
++++ b/src/services/LOGIC.md
+@@ -273,3 +273,29 @@ do té doby `PENDING` bez výsledků; potvrzení vyžaduje Welch i blokový boot
+ (6h okna, ≥ 16 bloků). Během slepé fáze report (`--until`) i exploratorní replay
+ používají jen obchody vstoupené do cutoffu; první závěrečný výsledek se zmrazí
+ (`--prereg-result`).
++
++## Obnova dokončených svíček podle UTC minuty (2026-11-09, pouze lokální oprava)
++
++`candle_cache_v1.CandleCache` čte při vytvoření příznak
++`PAPER_COMPLETED_CANDLE_PHASE_REFRESH_ENABLED` (výchozí `false`). Při zapnutí
++a `completed_only=True` rozhoduje o obnově změna `floor(now / 60)` vůči času
++posledního pokusu téhož symbolu. Po úspěchu tedy jde o nejvýše jeden běžný
++REST pokus za UTC minutu i při jitteru symbolů nebo BTC neuronových probuzeních.
++Příznak vypnutý a legacy pohled zachovávají původní klouzavé `refresh_seconds`.
++
++V zapnutém completed režimu `refresh_seconds` již není TTL úspěšných dat;
++po výjimce, prázdné odpovědi nebo `None` se další pokus povolí až po
++`max(60, refresh_seconds)` sekundách a v nové minutě. Nepřebírá se nový cutoff
++bez úspěšného fetch. Filtrace dokončených svíček stále používá minimum aktuálního
++času a času zahájení posledního úspěšného požadavku. Částečná svíčka se tedy
++nepovýší pouhým plynutím času ani při překročení hranice minuty během požadavku.
++`force_refresh=True` je stávající explicitní výjimka; živý evaluátor ji nepoužívá.
++Přes hranici minuty mohou být dva úspěšné požadavky blízko sebe, dlouhodobě
++nejvýše jeden na minutu a symbol. Při výpadku zůstává ochrana stáří 90 000 ms.
++
++`[P0_8_PLUS_LIVE]` doplňuje `data_age_ms` z času skutečného vyhodnocení routerem
++minus čas market inputu (nikoli čas pozdějšího logování); platí i pro záporné
++stáří při timestampu z budoucnosti. Rozhodnutí se nemění a nepřidává se další
++řádek na kandidáta. Zapnutí mění dostupnou populaci kandidátů, nikoli prahy nebo
++ekonomiku strategií. Během C1 nezapínat ani nenasazovat: až po zmrazeném výsledku
++a nezávislém review, viz `docs/OPERATING_STATE.md`.
+diff --git a/src/services/candle_cache_v1.py b/src/services/candle_cache_v1.py
+index d577067..40f3359 100644
+--- a/src/services/candle_cache_v1.py
++++ b/src/services/candle_cache_v1.py
+@@ -14,10 +14,17 @@ matching the 1m candle interval) is not "high-frequency" -- same order of
+ magnitude as the existing one-shot `signal_generator.warmup()` call this
+ codebase already makes at startup. Bounded to `max_candles` per symbol so
+ memory cannot grow unbounded (§8.4).
++
++Opt-in PAPER_COMPLETED_CANDLE_PHASE_REFRESH_ENABLED replaces the rolling TTL
++for completed 1m views with one attempt per UTC minute. Failed attempts still
++back off for at least max(60, refresh_seconds) seconds; legacy views keep their
++rolling TTL. Explicit force_refresh remains an administrative/test override.
+ """
+ from __future__ import annotations
+ 
+ import logging
++import math
++import os
+ import threading
+ import time
+ from typing import Callable, Dict, List, Mapping, Optional
+@@ -26,6 +33,7 @@ log = logging.getLogger(__name__)
+ 
+ DEFAULT_INTERVAL = "1m"
+ DEFAULT_REFRESH_SECONDS = 60.0
++COMPLETED_PHASE_REFRESH_FLAG = "PAPER_COMPLETED_CANDLE_PHASE_REFRESH_ENABLED"
+ # Generous headroom above every current P0.8+ strategy's own MIN_CANDLES
+ # (trend_cost_aware_v1: 200, sideways_mean_reversion_v1: 90,
+ # volatility_breakout_v1: 81) plus room for a future strategy needing more,
+@@ -70,6 +78,9 @@ class CandleCache:
+         self._fetch_fn = fetch_fn if fetch_fn is not None else _make_default_fetch(max_candles)
+         self._interval = interval
+         self._refresh_seconds = refresh_seconds
++        self._completed_minute_refresh = os.getenv(COMPLETED_PHASE_REFRESH_FLAG, "false").strip().lower() in (
++            "1", "true", "yes", "on",
++        )
+         self._max_candles = max_candles
+         self._now_fn = now_fn
+         self._lock = threading.RLock()
+@@ -77,7 +88,8 @@ class CandleCache:
+         self._last_attempt: Dict[str, float] = {}
+         self._last_success: Dict[str, float] = {}
+ 
+-    def get_candles(self, symbol: str, *, force_refresh: bool = False) -> List[Mapping]:
++    def get_candles(self, symbol: str, *, force_refresh: bool = False,
++                    completed_only: bool = False) -> List[Mapping]:
+         """Returns the cached candle window for `symbol` (oldest first,
+         bounded to max_candles), refreshing from the fetch function if the
+         cache is missing or stale. On fetch failure, serves the last known
+@@ -86,10 +98,20 @@ class CandleCache:
+         strategy crashing the caller's loop over a transient network blip;
+         callers that need freshness guarantees check `last_success_age_s()`
+         themselves. Never raises."""
++        if completed_only and self._interval != "1m":
++            raise ValueError("completed candles require the supported 1m interval")
+         with self._lock:
+             now = self._now_fn()
+             last_attempt = self._last_attempt.get(symbol, 0.0)
+             needs_refresh = force_refresh or symbol not in self._data or (now - last_attempt) >= self._refresh_seconds
++            if completed_only and self._completed_minute_refresh and not force_refresh and symbol in self._data:
++                # Jitter or BTC wakes must not postpone the next closed minute.
++                # An unsuccessful request keeps its elapsed-time backoff even
++                # across a minute boundary; success/cutoff only advance below.
++                new_minute = math.floor(now / 60) > math.floor(last_attempt / 60)
++                last_attempt_succeeded = self._last_success.get(symbol) == last_attempt
++                retry_ready = now - last_attempt >= max(60.0, self._refresh_seconds)
++                needs_refresh = new_minute and (last_attempt_succeeded or retry_ready)
+             if needs_refresh:
+                 self._last_attempt[symbol] = now  # mark attempted even on failure -- avoids retry-hammering
+                 try:
+@@ -102,7 +124,29 @@ class CandleCache:
+                     self._last_success[symbol] = now
+                 elif symbol not in self._data:
+                     self._data[symbol] = []
+-            return list(self._data.get(symbol, []))
++            candles = list(self._data.get(symbol, []))
++            if not completed_only:
++                return candles
++            fetched_at = self._last_success.get(symbol)
++            if fetched_at is None:
++                return []
++            if not math.isfinite(now) or not math.isfinite(fetched_at):
++                raise ValueError("invalid candle snapshot time")
++            # A partial bar captured by REST never becomes final just because
++            # wall time passed. Only a later successful fetch can finalize it.
++            # The pre-request timestamp is deliberately conservative when the
++            # request straddles a minute boundary. Snapshot/cutoff share a lock.
++            cutoff_ms = int(min(now, fetched_at) * 1000)
++            previous = -1
++            completed = []
++            for candle in candles:
++                stamp = candle.get("open_time")
++                if type(stamp) is not int or stamp < 0 or stamp % 60_000 or stamp <= previous:
++                    raise ValueError("invalid completed candle chronology")
++                previous = stamp
++                if stamp + 60_000 <= cutoff_ms:
++                    completed.append(candle)
++            return completed
+ 
+     def last_success_age_s(self, symbol: str) -> Optional[float]:
+         """Seconds since the last successful fetch for `symbol`, or None if
+diff --git a/src/services/p0_8_plus_live_pipeline.py b/src/services/p0_8_plus_live_pipeline.py
+index 47b95f3..b8ca996 100644
+--- a/src/services/p0_8_plus_live_pipeline.py
++++ b/src/services/p0_8_plus_live_pipeline.py
+@@ -74,6 +74,7 @@ What is NOT wired by this module (disclosed gaps, not oversights):
+ from __future__ import annotations
+ 
+ import logging
++import math
+ import os
+ import threading
+ import time
+@@ -149,6 +150,9 @@ def _map_to_legacy_signal(candidate: CandidateEvaluation, booked_price: float) -
+     sig = candidate.signal
+     ev = candidate.evaluation
+     side = _normalize_side(sig.side)
++    from src.services import paper_source_learning as learning, cost_model
++    is_probe = sig.learning_source in learning.PROBE_SOURCES
++    cost_ok = bool(ev.net_expected_edge_bps > max(cost_model.MINIMUM_NET_EDGE_BPS, cost_model.MINIMUM_EDGE_BUFFER_BPS))
+ 
+     signal_dict = {
+         "symbol": candidate.symbol,
+@@ -173,7 +177,7 @@ def _map_to_legacy_signal(candidate: CandidateEvaluation, booked_price: float) -
+         # the smallest 0.3x multiplier. Conservative, not unsafe, but
+         # deliberate and disclosed here rather than an accidental side
+         # effect of the unit conversion.
+-        "ev": max(0.0, ev.net_expected_edge_bps / 10000.0),
++        "ev": ev.net_expected_edge_bps / 10000.0 if is_probe else max(0.0, ev.net_expected_edge_bps / 10000.0),
+         "score": sig.confidence,
+         "learning_source": sig.learning_source,
+         "strict_ev": ev.p0_strict_ev,
+@@ -197,6 +201,12 @@ def _map_to_legacy_signal(candidate: CandidateEvaluation, booked_price: float) -
+         "strategy_version": sig.strategy_version,
+         "quote_source": candidate.quote_source,
+     }
++    if is_probe:
++        extra.update(cost_edge_ok=cost_ok, cost_edge_bypassed=not cost_ok,
++                     cost_edge_bypass_reason="bounded_paper_cost_learning" if not cost_ok else "none")
++    if ev.learning_metadata:
++        from src.services.paper_source_learning import encode_tag
++        extra["tags"] = [encode_tag(ev.learning_metadata)]
+     # Only pass strategy-supplied TP/SL through when BOTH are present --
+     # open_paper_position() only honors this pair when both keys exist
+     # together (paper_trade_executor.py); a lone target with no stop (or
+@@ -213,6 +223,43 @@ def _map_to_legacy_signal(candidate: CandidateEvaluation, booked_price: float) -
+     return signal_dict, extra
+ 
+ 
++def _revalidate_paper_probe(candidate, quote, *, now_ms: int):
++    """Final budget/cost check in the sole entry owner, immediately before open."""
++    from dataclasses import replace
++    import math
++    from src.services import paper_source_learning as learning, paper_learning_budget, cost_model
++    signal = candidate.signal
++    if signal.learning_source not in learning.PROBE_SOURCES:
++        return candidate
++    started = time.monotonic()
++    if (not learning.probe_signal_valid(signal) or not candidate.evaluation.admitted
++            or candidate.evaluation.p0_strict_ev or candidate.evaluation.p0_readiness_eligible
++            or not candidate.evaluation.learning_metadata
++            or not 0 <= now_ms - signal.market_data_event_time_ms <= live_evaluator.SHADOW_MAX_DATA_AGE_MS):
++        raise ValueError("paper_probe_final_invariant")
++    reason = paper_learning_budget.current_reason(signal.symbol, now_ms=now_ms)
++    if reason != "allow":
++        raise ValueError("paper_probe_" + reason)
++    checked_ms = now_ms + int(max(0.0, time.monotonic() - started) * 1000)
++    quote_time = getattr(quote, "received_at_s", None)
++    if (type(quote_time) not in (float, int) or not math.isfinite(quote_time)
++            or not 0 <= checked_ms - quote_time * 1000 <= 5000
++            or not 0 <= checked_ms - signal.market_data_event_time_ms <= live_evaluator.SHADOW_MAX_DATA_AGE_MS):
++        raise ValueError("paper_probe_final_freshness")
++    edge = cost_model.evaluate_edge(
++        side=signal.side, gross_expected_move_bps=signal.gross_expected_move_bps,
++        best_bid=quote.bid, best_ask=quote.ask, requested_notional=25.0,
++        visible_top_notional=1000.0, realized_volatility_bps=10.0,
++        realized_volatility_bps_per_second=0.1, decision_latency_ms=50.0,
++        expected_horizon_seconds=float(signal.expected_horizon_seconds),
++        uncertainty_buffer_bps=signal.uncertainty_buffer_bps,
++    )
++    if not learning.probe_cost_allowed(signal, edge):
++        raise ValueError("paper_probe_final_cost_budget")
++    return replace(candidate, evaluation=replace(candidate.evaluation,
++        expected_cost_bps=edge.all_in_cost_bps, net_expected_edge_bps=edge.net_expected_edge_bps))
++
++
+ def run_live_tick(
+     symbols: Optional[Sequence[str]] = None,
+     *,
+@@ -251,9 +298,10 @@ def run_live_tick(
+             continue
+         for r in results:
+             log.info(
+-                "[P0_8_PLUS_LIVE] %s %s %s regime=%s quote=%s admitted=%s code=%s net_edge=%.2fbps",
++                "[P0_8_PLUS_LIVE] %s %s %s regime=%s quote=%s admitted=%s code=%s net_edge=%.2fbps data_age_ms=%d",
+                 r.symbol, r.strategy_id, r.side, r.regime, r.quote_source,
+                 r.evaluation.admitted, r.evaluation.decision_code, r.evaluation.net_expected_edge_bps,
++                r.evaluation.evaluated_at_ms - r.signal.market_data_event_time_ms,
+             )
+             if not r.evaluation.admitted:
+                 continue
+@@ -291,6 +339,11 @@ def run_live_tick(
+                 continue
+             price = live_quote.ask if _normalize_side(r.side) == "BUY" else live_quote.bid
+             try:
++                if r.evaluation.learning_metadata.get("neural_version"):
++                    from src.services.paper_neural_context import FIELDS, revalidate
++                    revalidate({key: r.evaluation.learning_metadata[key] for key in FIELDS},
++                               quote=live_quote, now_ms=int(time.time() * 1000))
++                r = _revalidate_paper_probe(r, live_quote, now_ms=int(time.time() * 1000))
+                 signal_dict, extra = _map_to_legacy_signal(r, price)
+                 result = open_paper_position(
+                     signal_dict, price, time.time(),
+@@ -328,6 +381,46 @@ def run_live_tick(
+     return opened
+ 
+ 
++def _run_neural_scheduler(symbols, interval_s: float, *, run_tick=run_live_tick,
++                          monotonic=time.monotonic, sleep=time.sleep, wait_fn=None) -> None:
++    """One entry owner, fixed regular deadlines, coalesced BTC notifications."""
++    if not math.isfinite(interval_s) or interval_s <= 0:
++        raise ValueError("invalid_paper_scheduler_interval")
++    from src.services.paper_neural_context import wait
++    wait_fn = wait_fn or wait
++    deadline = monotonic()
++    last_neural = -float("inf")
++    while True:
++        now = monotonic()
++        if now >= deadline:
++            try:
++                run_tick(symbols=symbols)
++            except Exception as exc:
++                log.warning("[P0_8_PLUS_LIVE] tick failed type=%s", type(exc).__name__)
++            now = monotonic()
++            # Skip missed slots without a backlog; neural wakes never defer other symbols.
++            deadline += (math.floor(max(0, now - deadline) / interval_s) + 1) * interval_s
++        try:
++            awakened = wait_fn(max(0, deadline - monotonic()))
++        except Exception as exc:
++            log.warning("[STONKFLY_CONTEXT] wake unavailable type=%s", type(exc).__name__)
++            sleep(max(0, deadline - monotonic()))
++            continue
++        now = monotonic()
++        if not awakened or now >= deadline:
++            continue
++        if now - last_neural < 1:
++            sleep(min(1 - (now - last_neural), max(0, deadline - now)))
++            continue
++        if "BTCUSDT" not in (tuple(symbols) if symbols is not None else _env_symbols()):
++            continue
++        last_neural = now
++        try:
++            run_tick(symbols=("BTCUSDT",))
++        except Exception as exc:
++            log.warning("[STONKFLY_CONTEXT] decision tick failed type=%s", type(exc).__name__)
++
++
+ def start_live_pipeline_thread(
+     interval_s: float = 60.0,
+     symbols: Optional[Sequence[str]] = None,
+@@ -350,6 +443,14 @@ def start_live_pipeline_thread(
+         return None
+ 
+     def _loop() -> None:
++        from src.services import paper_neural_context
++        if paper_neural_context.enabled():
++            try:
++                paper_neural_context.initialize()
++            except Exception as exc:
++                log.warning("[STONKFLY_CONTEXT] startup unavailable type=%s", type(exc).__name__)
++            else:
++                return _run_neural_scheduler(symbols, interval_s)
+         while True:
+             try:
+                 run_live_tick(symbols=symbols)
+diff --git a/tests/test_p0_8_plus_live_pipeline.py b/tests/test_p0_8_plus_live_pipeline.py
+index 5abd322..c898d8d 100644
+--- a/tests/test_p0_8_plus_live_pipeline.py
++++ b/tests/test_p0_8_plus_live_pipeline.py
+@@ -5,6 +5,7 @@ and open_paper_position() -- none touch real Binance, Firestore, the live
+ position store, or the real candle cache.
+ """
+ import threading
++from dataclasses import replace
+ from unittest.mock import patch
+ 
+ import pytest
+@@ -207,6 +208,27 @@ def test_run_live_tick_skips_non_admitted_candidate():
+     assert opened == []
+ 
+ 
++@pytest.mark.parametrize("age_ms", [107_250, 90_001, -100])
++def test_run_live_tick_logs_stale_age_at_evaluation_without_opening(age_ms, caplog):
++    candidate = _candidate(admitted=False)
++    candidate = replace(candidate, evaluation=_evaluation(
++        admitted=False, code=sc.REJECT_STALE_MARKET_DATA,
++        evaluated_at_ms=candidate.signal.market_data_event_time_ms + age_ms))
++    with patch.object(live, "evaluate_symbol", return_value=[candidate]), \
++         patch.object(live, "ensure_registered"), \
++         patch.object(live.live_quote_cache_v1, "ensure_subscribed"), \
++         patch.object(live.time, "time", return_value=9_999_999_999), \
++         patch("src.services.paper_trade_executor.open_paper_position") as mock_open, \
++         caplog.at_level("INFO", logger=live.__name__):
++        assert live.run_live_tick(symbols=[candidate.symbol]) == []
++    mock_open.assert_not_called()
++    line = next(record.getMessage() for record in caplog.records
++                if "code=REJECT_STALE_MARKET_DATA" in record.getMessage())
++    assert "[P0_8_PLUS_LIVE] ETHUSDT trend_cost_aware BUY" in line
++    assert "admitted=False" in line
++    assert f"data_age_ms={age_ms}" in line
++
++
+ def test_run_live_tick_skips_synthetic_quote_even_if_admitted():
+     candidate = _candidate(admitted=True, quote_source="synthetic")
+     with patch.object(live, "evaluate_symbol", return_value=[candidate]), \
+@@ -453,3 +475,7 @@ def test_live_pipeline_tp_sl_currently_superseded_by_env_override_in_production(
+         f"expected the env override to dominate, got tp={stored['tp']} "
+         f"(too close to the strategy's own re-anchored 2040.0)"
+     )
++
++
++import pytest
++pytestmark = pytest.mark.usefixtures("initialized_paper_executor")

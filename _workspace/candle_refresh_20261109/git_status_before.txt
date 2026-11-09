@@ -1,0 +1,972 @@
+ M .claude/settings.local.json
+ M .github/workflows/hetzner-repair-autodeploy.yml
+ M .github/workflows/hetzner-restore-dashboard.yml
+ M CryptoMaster_FULL_STATUS_REPORT_2026-08-24.md
+ D RUNTIME_VALIDATION.sh
+ M audit/entry_paths.json
+ M bot2/main.py
+ M docs/remediation/AUDIT_REMEDIATION_REPORT.md
+ M docs/remediation/ROLLBACK.md
+ M runtime/v5_quota_usage.sqlite
+ D runtime/v5_trade_outbox.sqlite
+ M scripts/e1_e4_counterfactual.py
+ D src/clean_core/__init__.py
+ D src/clean_core/config.py
+ D src/clean_core/domain.py
+ D src/clean_core/execution/__init__.py
+ D src/clean_core/execution/fees.py
+ D src/clean_core/execution/funding.py
+ D src/clean_core/execution/paper_accounting.py
+ D src/clean_core/market/__init__.py
+ D src/clean_core/market/binance_usdm_routes.py
+ D src/clean_core/market/local_book.py
+ D src/clean_core/provenance/__init__.py
+ D src/clean_core/provenance/eligibility.py
+ D src/clean_core/provenance/epoch.py
+ D src/clean_core/provenance/journal.py
+ D src/clean_core/runner/__init__.py
+ D src/clean_core/runner/binance_usdm_public_feed.py
+ D src/clean_core/runner/cli.py
+ D src/clean_core/runner/forward_paper_runner.py
+ D src/clean_core/runner/public_futures_feed.py
+ D src/clean_core/runner/recorded_futures_feed.py
+ D src/clean_core/runner/simulated_futures_feed.py
+ D src/clean_core/strategy/__init__.py
+ D src/clean_core/strategy/fixed_strategy.py
+ D src/clean_core/strategy/offline_replay.py
+ D src/clean_core/strategy/paper_position.py
+ M src/core/runtime_mode.py
+ M src/core/trade_metrics_contract.py
+ M src/runtime/v5_quota_usage.sqlite
+ M src/services/bucket_metrics.py
+ M src/services/candle_cache_v1.py
+ M src/services/canonical_metrics.py
+ M src/services/canonical_state.py
+ M src/services/cost_model.py
+ M src/services/dashboard_auth.py
+ M src/services/dashboard_read_model.py
+ M src/services/dashboard_web.py
+ M src/services/firebase_client.py
+ M src/services/local_learning_storage.py
+ M src/services/local_persistent_cache.py
+ M src/services/metrics_engine.py
+ M src/services/p0_8_plus_config_validation.py
+ M src/services/p0_8_plus_live_pipeline.py
+ M src/services/p0_8_plus_shadow_evaluator.py
+ M src/services/p0_segment_ev_gate.py
+ M src/services/paper_adaptive_learning.py
+ M src/services/paper_close_pipeline.py
+ M src/services/paper_exploration.py
+ M src/services/paper_trade_executor.py
+ M src/services/paper_training_sampler.py
+ M src/services/realtime_decision_engine.py
+ M src/services/shadow_excursion_recorder.py
+ M src/services/signal_generator.py
+ M src/services/signal_router.py
+ M src/services/strategy_contracts.py
+ M src/services/strategy_registry.py
+ M src/services/strategy_sideways_mean_reversion_v1.py
+ M src/services/strategy_trend_cost_aware_v1.py
+ M src/services/strategy_volatility_breakout_v1.py
+ M src/services/trade_executor.py
+ M src/services/v5_legacy_bridge/__init__.py
+ M src/services/v5_legacy_bridge/firebase_writer.py
+ M src/services/v5_legacy_bridge/learning_bridge.py
+ M src/services/v5_legacy_bridge/metrics_publisher.py
+ M src/services/v5_legacy_bridge/outbox_flush_worker.py
+ D src/v5_bot/__init__.py
+ D src/v5_bot/api/__init__.py
+ D src/v5_bot/api/http_server.py
+ D src/v5_bot/api/metrics_api.py
+ D src/v5_bot/cli.py
+ D src/v5_bot/config.py
+ D src/v5_bot/execution/__init__.py
+ D src/v5_bot/execution/accounting.py
+ D src/v5_bot/execution/fees.py
+ D src/v5_bot/execution/funding.py
+ D src/v5_bot/firebase/__init__.py
+ D src/v5_bot/firebase/outbox.py
+ D src/v5_bot/firebase/quota_guard.py
+ D src/v5_bot/firebase/repository.py
+ D src/v5_bot/firebase/schema.py
+ D src/v5_bot/learning/__init__.py
+ D src/v5_bot/learning/eligibility.py
+ D src/v5_bot/learning/learner.py
+ D src/v5_bot/learning/policy_state.py
+ D src/v5_bot/learning/readiness.py
+ D src/v5_bot/market/__init__.py
+ D src/v5_bot/market/binance_usdm_feed.py
+ D src/v5_bot/market/local_book.py
+ D src/v5_bot/paper/__init__.py
+ D src/v5_bot/paper/__main__.py
+ D src/v5_bot/paper/exits.py
+ D src/v5_bot/paper/paper_broker.py
+ D src/v5_bot/paper/runner.py
+ D src/v5_bot/strategy/__init__.py
+ D src/v5_bot/strategy/baseline_policies.py
+ D src/v5_bot/strategy/candidate.py
+ D src/v5_bot/strategy/cost_edge_gate.py
+ D src/v5_bot/strategy/feature_engine.py
+ D src/v5_bot/strategy/policy_selector.py
+ D src/v5_bot/util/__init__.py
+ D src/v5_bot/util/czech_dashboard.py
+ D src/v5_bot/util/datetime_utils.py
+ M start.py
+ M start_flask_dashboard.py
+ D step6a_firebase_validation.py
+ M systemd/cryptomaster-dashboard.service
+ D tests/clean_core/__init__.py
+ D tests/clean_core/conftest.py
+ D tests/clean_core/test_accounting.py
+ D tests/clean_core/test_aggtrade_dispatch.py
+ D tests/clean_core/test_forward_runner_simulated_feed.py
+ D tests/clean_core/test_live_feed_integration.py
+ D tests/clean_core/test_local_book.py
+ D tests/clean_core/test_market_routes.py
+ D tests/clean_core/test_mvp_end_to_end.py
+ D tests/clean_core/test_no_legacy_runtime_wiring.py
+ D tests/clean_core/test_non_wiring.py
+ D tests/clean_core/test_provenance.py
+ D tests/clean_core/test_taker_fee_mvp.py
+ D tests/clean_core/test_truth_semantics.py
+ M tests/conftest.py
+ M tests/test_audit_p0_correctness.py
+ M tests/test_cost_model.py
+ M tests/test_dashboard_auth.py
+ M tests/test_dashboard_contract_fixes.py
+ M tests/test_deploy_marker.py
+ M tests/test_e1_e4_counterfactual.py
+ M tests/test_f8b_integration.py
+ M tests/test_firebase_quota.py
+ M tests/test_learning_hook_evidence_collection.py
+ M tests/test_local_persistent_cache_attribution.py
+ M tests/test_observe_gate_choke.py
+ M tests/test_p0_3_paper_integration.py
+ D tests/test_p0_4_rde_routing.py
+ M tests/test_p0_8_integration.py
+ M tests/test_p0_8_plus_document_invariants.py
+ M tests/test_p0_8_plus_live_pipeline.py
+ M tests/test_p0_8_plus_shadow_evaluator.py
+ M tests/test_p0_8_plus_shadow_evaluator_bypass.py
+ M tests/test_p0_segment_ev_gate.py
+ M tests/test_p11_admission_gates_part2.py
+ M tests/test_p11ab_stale_position_quarantine.py
+ M tests/test_p11ap_android_snapshot_audit.py
+ M tests/test_p11ap_n2_recovery_admission.py
+ M tests/test_p11ap_o1a_completion.py
+ M tests/test_p11ap_o2_fixes.py
+ M tests/test_p11ap_o2_starvation_discovery.py
+ M tests/test_p1_paper_exploration.py
+ M tests/test_paper_adaptive_learning.py
+ M tests/test_paper_mode.py
+ M tests/test_paper_mode_p1_1ai.py
+ D tests/test_paper_training_sampler_segment_skip.py
+ M tests/test_phase3a_implementation.py
+ D tests/test_phase4a_implementation.py
+ M tests/test_phase4b_starvation_paper_flow.py
+ M tests/test_phase4c_paper_dashboard_metrics.py
+ M tests/test_phase4d_outbox_flush_worker.py
+ D tests/test_rde_discovery_admission_extraction.py
+ M tests/test_shadow_excursion_recorder.py
+ M tests/test_signal_router.py
+ M tests/test_strategy_trend_cost_aware_v1.py
+ M tests/test_v3_1_hotfix.py
+ M tests/test_v5_legacy_bridge_hooks.py
+ M tests/test_v5_legacy_bridge_learning_metrics.py
+ D tests/v5_bot/__init__.py
+ D tests/v5_bot/test_android_metrics_coverage.py
+ D tests/v5_bot/test_futures_feed.py
+ D tests/v5_bot/test_internal_quota_caps.py
+ D tests/v5_bot/test_learning.py
+ D tests/v5_bot/test_metrics_publish_regression.py
+ D tests/v5_bot/test_outbox.py
+ D tests/v5_bot/test_paper_lifecycle.py
+ D tests/v5_bot/test_quota_guard.py
+ D tests/v5_bot/test_strategy.py
+?? CLAUDE_AUTONOMOUS_AUDIT_STATUS_2026-09-03.md
+?? CLAUDE_AUTONOMOUS_AUDIT_STATUS_2026-09-14.md
+?? CLAUDE_AUTONOMOUS_EXECUTION_PLAN_2026-09-02.md
+?? CLAUDE_BOT_AUDIT_A2_A1_REPORT_2026-09-01.md
+?? CLAUDE_BOT_AUDIT_PATH_TO_GOAL_PROMPT_2026-09-01.md
+?? CLAUDE_COMPREHENSIVE_REMEDIATION_PROMPT_2026-08-18.md
+?? CLAUDE_EXTERNAL_AUDIT_KOLO10_PROMPT_2026-09-01.md
+?? CLAUDE_EXTERNAL_AUDIT_PACKAGE_RECONCILIATION_2026-09-15.md
+?? CLAUDE_FULL_CODE_AND_SSH_AUDIT_PROMPT_2026-09-02.md
+?? CLAUDE_FULL_STATUS_REPORT_REMEDIATION_PROMPT_2026-08-24.md
+?? CLAUDE_HOST_SECURITY_PRIORITY_2026-09-15.md
+?? CLAUDE_MERGE_DECISION_2026-09-15.md
+?? CLAUDE_PAPER_VALIDATION_2026-09-14.md
+?? CLAUDE_PROGRESS_LOG_2026-09-03.md
+?? CLAUDE_RELEASE_GATE_STATUS_2026-09-03.md
+?? CLAUDE_RELEASE_MANIFEST_2026-09-03.md
+?? CLAUDE_SEC01_EVIDENCE_CLOSURE_FINAL_GAPS_2026-08-19.md
+?? CLAUDE_SEC01_EVIDENCE_CLOSURE_PROMPT_2026-08-19.md
+?? CLAUDE_SEC01_REMEDIATION_PROMPT_2026-08-18.md
+?? CLAUDE_SINGLE_PATH_POLICY_2026-09-14.md
+?? CLAUDE_STATE02_PHASE1_HARNESS_PROMPT_2026-08-24.md
+?? CLAUDE_STATE02_PHASE1_MANDATORY_GATE_INTEGRATION_PROMPT_2026-08-25.md
+?? CLAUDE_STATE02_PHASE1_REPAIR_COMPLETION_PROMPT_2026-08-25.md
+?? CLAUDE_STATE02_PRODUCTION_FIX_PROMPT_2026-08-24.md
+?? CLAUDE_WR50_SINGLE_PATH_IMPLEMENTATION_PROMPT_2026-09-14.md
+?? EXTERNAL_AUDIT_CODE_SSH_REPORT_2026-09-02.md
+?? EXTERNAL_AUDIT_K10_REPORT_2026-09-01.md
+?? WR_TARGET_ANALYSIS_2026-09-14.md
+?? _workspace/11_wr_collapse_forensics.md
+?? _workspace/12_supervisor_bypass_safety_audit.md
+?? _workspace/13_quota_exhaustion_audit.md
+?? _workspace/14_patch_quota_reset.md
+?? _workspace/16_review.md
+?? _workspace/51_unified_engine_report_20261009.md
+?? _workspace/52_paired_stonkfly_report_20261013.md
+?? _workspace/53_decision_status_and_learning_audit_20261016.md
+?? _workspace/54_paper_adaptive_learning_20261019.md
+?? _workspace/55_stonkfly_main_decision_20261021.md
+?? _workspace/56_paper_probes_20261023.md
+?? _workspace/audit-20260923.tar.gz
+?? _workspace/before_entry_consolidation_20260921/
+?? _workspace/candle_refresh_20261109/
+?? _workspace/close-metadata-20261006-audit.json
+?? _workspace/close-metadata-20261006-manifest.json
+?? _workspace/close-metadata-20261006-performance-1791267745.json
+?? _workspace/close-metadata-20261006-status-1791267596.json
+?? _workspace/close-metadata-20261006.tar.gz
+?? _workspace/code_audit_20260921_053ki_65_results.xml
+?? _workspace/code_audit_20260921_0py1amqy_results.xml
+?? _workspace/code_audit_20260921_1ebznz2h_results.xml
+?? _workspace/code_audit_20260921_1hk_lega_results.xml
+?? _workspace/code_audit_20260921_2abi0rhj_results.xml
+?? _workspace/code_audit_20260921_2avlbyun_results.xml
+?? _workspace/code_audit_20260921_2qypkqka_results.xml
+?? _workspace/code_audit_20260921_2ut3lz1t_results.xml
+?? _workspace/code_audit_20260921_2yfqkbqm_results.xml
+?? _workspace/code_audit_20260921_4b56oqc5_results.xml
+?? _workspace/code_audit_20260921_4d72rkrv_results.xml
+?? _workspace/code_audit_20260921_4hz41rcz_results.xml
+?? _workspace/code_audit_20260921_4ytaujz4_results.xml
+?? _workspace/code_audit_20260921_53k8a5x4_results.xml
+?? _workspace/code_audit_20260921_5am6yeyx_results.xml
+?? _workspace/code_audit_20260921_61p_caop_results.xml
+?? _workspace/code_audit_20260921_659frfdl_results.xml
+?? _workspace/code_audit_20260921_6d_ubfsh_results.xml
+?? _workspace/code_audit_20260921_6yjynd6l_results.xml
+?? _workspace/code_audit_20260921_76e4exlg_results.xml
+?? _workspace/code_audit_20260921_7ags8529_results.xml
+?? _workspace/code_audit_20260921_7mcxke3y_results.xml
+?? _workspace/code_audit_20260921_7t_b2pal_results.xml
+?? _workspace/code_audit_20260921_85_erw9c_results.xml
+?? _workspace/code_audit_20260921_8ekrurik_results.xml
+?? _workspace/code_audit_20260921_8jfp2g28_results.xml
+?? _workspace/code_audit_20260921_8n9ox8hg_results.xml
+?? _workspace/code_audit_20260921_9woch7ql_results.xml
+?? _workspace/code_audit_20260921__7n8o4e4_results.xml
+?? _workspace/code_audit_20260921__bvb7qde_results.xml
+?? _workspace/code_audit_20260921__h1zu1z2_results.xml
+?? _workspace/code_audit_20260921__q3vesw3_results.xml
+?? _workspace/code_audit_20260921__rf9qda4_results.xml
+?? _workspace/code_audit_20260921_a6yuwwr7_results.xml
+?? _workspace/code_audit_20260921_a8m011ub_results.xml
+?? _workspace/code_audit_20260921_a_wgnwrq_results.xml
+?? _workspace/code_audit_20260921_ammxuhme_results.xml
+?? _workspace/code_audit_20260921_aolbxe52_results.xml
+?? _workspace/code_audit_20260921_aqqiw1wf_results.xml
+?? _workspace/code_audit_20260921_ax7e_hjp_results.xml
+?? _workspace/code_audit_20260921_ayohq32__results.xml
+?? _workspace/code_audit_20260921_bgtcnzol_results.xml
+?? _workspace/code_audit_20260921_brfgxd9t_results.xml
+?? _workspace/code_audit_20260921_cpgv3eu9_results.xml
+?? _workspace/code_audit_20260921_cpqly71f_results.xml
+?? _workspace/code_audit_20260921_crpztb7t_results.xml
+?? _workspace/code_audit_20260921_d685y4b6_results.xml
+?? _workspace/code_audit_20260921_d9708rj2_results.xml
+?? _workspace/code_audit_20260921_dcj8kw_6_results.xml
+?? _workspace/code_audit_20260921_do3pdfwh_results.xml
+?? _workspace/code_audit_20260921_du0egef1_results.xml
+?? _workspace/code_audit_20260921_du2wkdhm_results.xml
+?? _workspace/code_audit_20260921_efmpkfa4_results.xml
+?? _workspace/code_audit_20260921_ene2yn2d_results.xml
+?? _workspace/code_audit_20260921_es4ad8cc_results.xml
+?? _workspace/code_audit_20260921_fb58w13w_results.xml
+?? _workspace/code_audit_20260921_fbb7c3vq_results.xml
+?? _workspace/code_audit_20260921_fuzqwuty_results.xml
+?? _workspace/code_audit_20260921_g4qrww6l_results.xml
+?? _workspace/code_audit_20260921_g57vxshu_results.xml
+?? _workspace/code_audit_20260921_g8ksnri__results.xml
+?? _workspace/code_audit_20260921_ga0xhsm7_results.xml
+?? _workspace/code_audit_20260921_gi6oa64k_results.xml
+?? _workspace/code_audit_20260921_gigx5o1a_results.xml
+?? _workspace/code_audit_20260921_gxltgyr1_results.xml
+?? _workspace/code_audit_20260921_hc4zepn1_results.xml
+?? _workspace/code_audit_20260921_hdh82yrl_results.xml
+?? _workspace/code_audit_20260921_hea7c1cn_results.xml
+?? _workspace/code_audit_20260921_hg1yomc__results.xml
+?? _workspace/code_audit_20260921_i1wvnck9_results.xml
+?? _workspace/code_audit_20260921_i6cvve9o_results.xml
+?? _workspace/code_audit_20260921_ihcbm_eg_results.xml
+?? _workspace/code_audit_20260921_iuledgg0_results.xml
+?? _workspace/code_audit_20260921_jchf5_kk_results.xml
+?? _workspace/code_audit_20260921_jh___wob_results.xml
+?? _workspace/code_audit_20260921_jnsg4bpi_results.xml
+?? _workspace/code_audit_20260921_jws75rbj_results.xml
+?? _workspace/code_audit_20260921_k1s993rd_results.xml
+?? _workspace/code_audit_20260921_k6c2lsf0_results.xml
+?? _workspace/code_audit_20260921_k84h54n3_results.xml
+?? _workspace/code_audit_20260921_kng91f43_results.xml
+?? _workspace/code_audit_20260921_ko849oc0_results.xml
+?? _workspace/code_audit_20260921_kqz81nin_results.xml
+?? _workspace/code_audit_20260921_ktkest69_results.xml
+?? _workspace/code_audit_20260921_kwn45ts3_results.xml
+?? _workspace/code_audit_20260921_l15rhcwz_results.xml
+?? _workspace/code_audit_20260921_l7ru51p4_results.xml
+?? _workspace/code_audit_20260921_lgkl09e7_results.xml
+?? _workspace/code_audit_20260921_ln9pe49y_results.xml
+?? _workspace/code_audit_20260921_mnhkc7ou_results.xml
+?? _workspace/code_audit_20260921_n8cvw6z8_results.xml
+?? _workspace/code_audit_20260921_n9an4c8m_results.xml
+?? _workspace/code_audit_20260921_nd2qzjwk_results.xml
+?? _workspace/code_audit_20260921_ndibd5_t_results.xml
+?? _workspace/code_audit_20260921_nkat6ar7_results.xml
+?? _workspace/code_audit_20260921_nr67guvl_results.xml
+?? _workspace/code_audit_20260921_nx_61e4__results.xml
+?? _workspace/code_audit_20260921_ocpo24nd_results.xml
+?? _workspace/code_audit_20260921_od_4566__results.xml
+?? _workspace/code_audit_20260921_orvyel3m_results.xml
+?? _workspace/code_audit_20260921_oyr4f0ke_results.xml
+?? _workspace/code_audit_20260921_oz8lfg7d_results.xml
+?? _workspace/code_audit_20260921_pnjz8yg3_results.xml
+?? _workspace/code_audit_20260921_pryb5qd5_results.xml
+?? _workspace/code_audit_20260921_pvo3qsjv_results.xml
+?? _workspace/code_audit_20260921_pyxqp2u8_results.xml
+?? _workspace/code_audit_20260921_q6y23nka_results.xml
+?? _workspace/code_audit_20260921_qm4yz16q_results.xml
+?? _workspace/code_audit_20260921_qyy8_qrh_results.xml
+?? _workspace/code_audit_20260921_rrj4xa3j_results.xml
+?? _workspace/code_audit_20260921_rs46kgb9_results.xml
+?? _workspace/code_audit_20260921_runner.py
+?? _workspace/code_audit_20260921_s4dgketv_results.xml
+?? _workspace/code_audit_20260921_sptfdjwz_results.xml
+?? _workspace/code_audit_20260921_sqb0pmr4_results.xml
+?? _workspace/code_audit_20260921_swnvwl8p_results.xml
+?? _workspace/code_audit_20260921_swy_qrfq_results.xml
+?? _workspace/code_audit_20260921_t1gvdaco_results.xml
+?? _workspace/code_audit_20260921_t6d6e7zi_results.xml
+?? _workspace/code_audit_20260921_tdzimq6q_results.xml
+?? _workspace/code_audit_20260921_to6evgkw_results.xml
+?? _workspace/code_audit_20260921_tq1mjn0__results.xml
+?? _workspace/code_audit_20260921_ttf_7xf0_results.xml
+?? _workspace/code_audit_20260921_tz1avqbg_results.xml
+?? _workspace/code_audit_20260921_u0kndppr_results.xml
+?? _workspace/code_audit_20260921_u9fhcben_results.xml
+?? _workspace/code_audit_20260921_uet_ngcn_results.xml
+?? _workspace/code_audit_20260921_uknfnm1__results.xml
+?? _workspace/code_audit_20260921_vav4e70x_results.xml
+?? _workspace/code_audit_20260921_vfgwwcem_results.xml
+?? _workspace/code_audit_20260921_vlaawhd6_results.xml
+?? _workspace/code_audit_20260921_vmrb4q3s_results.xml
+?? _workspace/code_audit_20260921_vnty5_sp_results.xml
+?? _workspace/code_audit_20260921_w5i484ky_results.xml
+?? _workspace/code_audit_20260921_w5tbaaem_results.xml
+?? _workspace/code_audit_20260921_wb7xatr4_results.xml
+?? _workspace/code_audit_20260921_wdifxyn1_results.xml
+?? _workspace/code_audit_20260921_widblx8h_results.xml
+?? _workspace/code_audit_20260921_wouj8qr4_results.xml
+?? _workspace/code_audit_20260921_wtnflr7w_results.xml
+?? _workspace/code_audit_20260921_wuo2p3pu_results.xml
+?? _workspace/code_audit_20260921_wyn_m5j2_results.xml
+?? _workspace/code_audit_20260921_xco8yyj6_results.xml
+?? _workspace/code_audit_20260921_y2utvtsi_results.xml
+?? _workspace/code_audit_20260921_yin0ek9__results.xml
+?? _workspace/code_audit_20260921_ywqtqdjt_results.xml
+?? _workspace/code_audit_20260921_yz_uqu_m_results.xml
+?? _workspace/code_audit_20260921_zgkzgfv2_results.xml
+?? _workspace/dashboard-decision-20261014-before/
+?? _workspace/dashboard-decision-20261014-result.json
+?? _workspace/dashboard-decision-20261014.patch
+?? _workspace/decision-deploy-20261015-before/
+?? _workspace/decision-deploy-20261015-result.json
+?? _workspace/decision-deploy-20261015.patch
+?? _workspace/decision-final-20261016.patch
+?? _workspace/decision-final-checks-20261016.json
+?? _workspace/decision-final-local-branch.txt
+?? _workspace/decision-final-local-diff.txt
+?? _workspace/decision-final-local-diff_check.txt
+?? _workspace/decision-final-local-diff_stat.txt
+?? _workspace/decision-final-local-head.txt
+?? _workspace/decision-final-local-status.txt
+?? _workspace/decision-final-remote-branch.txt
+?? _workspace/decision-final-remote-diff.txt
+?? _workspace/decision-final-remote-diff_check.txt
+?? _workspace/decision-final-remote-diff_check_returncode.txt
+?? _workspace/decision-final-remote-diff_stat.txt
+?? _workspace/decision-final-remote-head.txt
+?? _workspace/decision-final-remote-status.txt
+?? _workspace/decision-monitor-1792067065.jsonl
+?? _workspace/decision-monitor-1792067085.jsonl
+?? _workspace/decision-mutation-api.txt
+?? _workspace/decision-mutation-budget_time.txt
+?? _workspace/decision-mutation-default.txt
+?? _workspace/decision-mutation-future.txt
+?? _workspace/decision-mutation-neural_age.txt
+?? _workspace/decision-mutation-reader_group.txt
+?? _workspace/decision-mutation-stale.txt
+?? _workspace/decision-mutation-throttle.txt
+?? _workspace/decision-mutations-20261014.json
+?? _workspace/decision-public-1792131002.json
+?? _workspace/decision-public-1792131809.json
+?? _workspace/decision-public-1792412735.json
+?? _workspace/decision-public-1792476511.json
+?? _workspace/decision-public-1792585011.json
+?? _workspace/decision-public-1792658589.json
+?? _workspace/decision-public-1792757180.json
+?? _workspace/decision-public-1792998831.json
+?? _workspace/decision-public-script-1.js
+?? _workspace/decision-recovery-1792131101.json
+?? _workspace/decision-rollback-fixtures-20261015.json
+?? _workspace/decision-status-20261014-before/
+?? _workspace/decision-status-20261015-audit.json
+?? _workspace/decision-status-20261015-manifest.json
+?? _workspace/decision-status-20261015-rollback-fixtures.json
+?? _workspace/decision-status-20261015-verify-1792067070.json
+?? _workspace/decision-status-20261015-verify-1792131027.json
+?? _workspace/decision-status-20261015.patch
+?? _workspace/decision-status-20261015.tar.gz
+?? _workspace/decision-ui-proof-20261015.json
+?? _workspace/decision_monitor_20261015.py
+?? _workspace/decision_public_check_20261015.py
+?? _workspace/decision_recovery_evidence_20261016.py
+?? _workspace/decision_rollback_fixture_20261015.py
+?? _workspace/decision_status_evidence_20261014.py
+?? _workspace/decision_status_mutation_20261014.py
+?? _workspace/decision_ui_proof_20261015.py
+?? _workspace/deploy_audit_20260923.py
+?? _workspace/deploy_external_20260925.json
+?? _workspace/deploy_manifest_20260923.json
+?? _workspace/deploy_paper_btc_learning_20261023.py
+?? _workspace/deploy_paper_probes_json_20261023.py
+?? _workspace/deploy_preflight_20260923.json
+?? _workspace/deploy_remote_20260923.py
+?? _workspace/deploy_status_1790316233.json
+?? _workspace/deploy_status_1790316562.json
+?? _workspace/deploy_status_1790316809.json
+?? _workspace/deploy_status_1790316854.json
+?? _workspace/deploy_status_1790336471.json
+?? _workspace/deploy_status_1790662028.json
+?? _workspace/deploy_stonkfly_20260929.py
+?? _workspace/deploy_stonkfly_remote_20260929.py
+?? _workspace/engine-20261008-before/
+?? _workspace/engine-20261008-firebase-attribution-result.json
+?? _workspace/engine-20261008-firebase-attribution.patch
+?? _workspace/engine-20261008-learning-attribution-result.json
+?? _workspace/engine-20261008-learning-attribution.patch
+?? _workspace/engine_root_baseline_20261008.py
+?? _workspace/external_audit_20261109/
+?? _workspace/fetch_pinned_neural_20261012.py
+?? _workspace/final_admission_cleanup_20260923.py
+?? _workspace/finalize_decision_status_20261016.py
+?? _workspace/finalize_paired_stonkfly_20261013.py
+?? _workspace/finalize_unified_engine_20261009.py
+?? _workspace/learning-cadence-20261022-before/
+?? _workspace/learning-cadence-market-1792660237.json
+?? _workspace/learning-cadence-probe-replay-20261023.json
+?? _workspace/learning-cadence-replay-20261022.json
+?? _workspace/learning-cadence-review-20261023-before-runtime.json
+?? _workspace/learning-eval-20261026-before/
+?? _workspace/learning-eval-20261026-integrity.json
+?? _workspace/learning-eval-20261026-scoped.patch
+?? _workspace/learning-eval-final-git-diff.txt
+?? _workspace/learning-eval-final-git-stat.txt
+?? _workspace/learning-eval-final-git-status.txt
+?? _workspace/learning-eval-mutations-20261026.json
+?? _workspace/learning-eval-phase-a-20261026.json
+?? _workspace/learning-experiment-eval-20261026/
+?? _workspace/learning-reset-audit-1792044395.json
+?? _workspace/learning_cadence_audit_20261022.py
+?? _workspace/learning_cadence_replay_20261022.py
+?? _workspace/learning_eval_audit_20261026.py
+?? _workspace/learning_eval_findings_20261026.py
+?? _workspace/learning_eval_mutations_20261026.py
+?? _workspace/learning_reset_audit_20261015.py
+?? _workspace/loss-audit-1791958224.json
+?? _workspace/loss-audit-1791958291.json
+?? _workspace/loss-epoch-report-20261014/
+?? _workspace/loss_audit_20261014.py
+?? _workspace/monitor_stonkfly_release_20261006.py
+?? _workspace/monitor_unified_engine_20261009.py
+?? _workspace/neural-context-independent-mutations-20261021/
+?? _workspace/neural-context-independent-review-20261021.md
+?? _workspace/neural-wakeup-runtime-before-20261020.json
+?? _workspace/neural_context_deploy_review_20261021.md
+?? _workspace/neural_context_monitor_fixture_20261021.py
+?? _workspace/neural_context_review_mutations_20261021.py
+?? _workspace/no-trades-audit-1792131897.json
+?? _workspace/no-trades-audit-1792132054.json
+?? _workspace/no-trades-audit-1792390091.json
+?? _workspace/no_trades_audit_20261016.py
+?? _workspace/outbox-20260930-audit.json
+?? _workspace/outbox-20260930-manifest.json
+?? _workspace/outbox-20260930-status-1790834368.json
+?? _workspace/outbox-20260930-status-1790852661.json
+?? _workspace/outbox-20260930.tar.gz
+?? _workspace/paired-20261012-before/
+?? _workspace/paired-20261012.patch
+?? _workspace/paired-cloud-1791890124.json
+?? _workspace/paired-cloud-1791890483.json
+?? _workspace/paired-cloud-1791958168.json
+?? _workspace/paired-cloud-1792044300.json
+?? _workspace/paired-cloud-1792131026.json
+?? _workspace/paired-documentation-20261013.json
+?? _workspace/paired-final-20261013.patch
+?? _workspace/paired-final-checks-20261013.json
+?? _workspace/paired-final-local-branch.txt
+?? _workspace/paired-final-local-diff.txt
+?? _workspace/paired-final-local-diff_stat.txt
+?? _workspace/paired-final-local-head.txt
+?? _workspace/paired-final-local-status.txt
+?? _workspace/paired-final-remote-branch.txt
+?? _workspace/paired-final-remote-diff.txt
+?? _workspace/paired-final-remote-diff_stat.txt
+?? _workspace/paired-final-remote-head.txt
+?? _workspace/paired-final-remote-status.txt
+?? _workspace/paired-mutation-20261013.txt
+?? _workspace/paired-operator-1791872320.json
+?? _workspace/paired-operator-1791890084.json
+?? _workspace/paired-poststats-1791890125.json
+?? _workspace/paired-pulse-1791890123.json
+?? _workspace/paired-pulse-1791890481.json
+?? _workspace/paired-pulse-1791893872.json
+?? _workspace/paired-pulse-1791958168.json
+?? _workspace/paired-pulse-1792044299.json
+?? _workspace/paired-release-evidence-1791890122.json
+?? _workspace/paired-resources-1791890320.json
+?? _workspace/paired-resources-1792131025.json
+?? _workspace/paired-window-1791890208.json
+?? _workspace/paired_control_20261013.py
+?? _workspace/paired_local_evidence_20261012.py
+?? _workspace/paired_logic_documentation_20261013.py
+?? _workspace/paired_mutation_20261013.py
+?? _workspace/paper-btc-learning-20261023-audit.json
+?? _workspace/paper-btc-learning-20261023-decision_status-1792758516.json
+?? _workspace/paper-btc-learning-20261023-decision_status-1792998651.json
+?? _workspace/paper-btc-learning-20261023-manifest.json
+?? _workspace/paper-btc-learning-20261023-monitor-1792758522.jsonl
+?? _workspace/paper-btc-learning-20261023-rollback-fixtures.json
+?? _workspace/paper-btc-learning-20261023-verify-1792998682.json
+?? _workspace/paper-btc-learning-20261023.tar.gz
+?? _workspace/paper-cloud-attribution-1792998892.json
+?? _workspace/paper-cloud-attribution-1792998912.json
+?? _workspace/paper-forward-analysis-20261026.json
+?? _workspace/paper-learning-20261016-before/
+?? _workspace/paper-learning-20261019-audit.json
+?? _workspace/paper-learning-20261019-checks.json
+?? _workspace/paper-learning-20261019-incremental.patch
+?? _workspace/paper-learning-20261019-manifest.json
+?? _workspace/paper-learning-20261019-monitor-1792412708.jsonl
+?? _workspace/paper-learning-20261019-performance-1792408400.json
+?? _workspace/paper-learning-20261019-rollback-fixtures.json
+?? _workspace/paper-learning-20261019-status-1792408464.json
+?? _workspace/paper-learning-20261019-status-1792408617.json
+?? _workspace/paper-learning-20261019-verify-1792412720.json
+?? _workspace/paper-learning-20261019-verify-1792476339.json
+?? _workspace/paper-learning-20261019.tar.gz
+?? _workspace/paper-learning-attempt1-restored-20261019.json
+?? _workspace/paper-learning-bridge-20261019-results.json
+?? _workspace/paper-learning-bridge-20261019.patch
+?? _workspace/paper-learning-forward-1792412735.json
+?? _workspace/paper-learning-forward-1792413074.json
+?? _workspace/paper-learning-forward-1792476312.json
+?? _workspace/paper-learning-forward-1792476511.json
+?? _workspace/paper-learning-forward-1792585774.json
+?? _workspace/paper-learning-forward-1792658609.json
+?? _workspace/paper-learning-forward-proof-20261020.json
+?? _workspace/paper-learning-lifecycle-mutation-20261019.xml
+?? _workspace/paper-learning-mutations-20261019.json
+?? _workspace/paper-learning-startup-identity-fixtures-20261019.json
+?? _workspace/paper-learning-ui-proof-20261019.json
+?? _workspace/paper-probes-20261023-audit.json
+?? _workspace/paper-probes-20261023-decision_status-1792756730.json
+?? _workspace/paper-probes-20261023-manifest.json
+?? _workspace/paper-probes-20261023-monitor-1792756718.jsonl
+?? _workspace/paper-probes-20261023-performance-1792756536.json
+?? _workspace/paper-probes-20261023-rollback-fixtures.json
+?? _workspace/paper-probes-20261023-verify-1792756740.json
+?? _workspace/paper-probes-20261023.tar.gz
+?? _workspace/paper-probes-final-audit-1792757156/
+?? _workspace/paper-probes-final-audit-1792998832/
+?? _workspace/paper-probes-forward-1792757178.json
+?? _workspace/paper-probes-forward-1792757244.json
+?? _workspace/paper-probes-forward-1792757427.json
+?? _workspace/paper-probes-forward-1792757484.json
+?? _workspace/paper-probes-forward-1792757691.json
+?? _workspace/paper-probes-forward-1792757805.json
+?? _workspace/paper-probes-forward-1792757893.json
+?? _workspace/paper-probes-forward-1792758001.json
+?? _workspace/paper-probes-forward-1792758295.json
+?? _workspace/paper-probes-forward-1792998653.json
+?? _workspace/paper-probes-independent-review-20261023.md
+?? _workspace/paper-probes-json-20261023-audit.json
+?? _workspace/paper-probes-json-20261023-decision_status-1792757110.json
+?? _workspace/paper-probes-json-20261023-manifest.json
+?? _workspace/paper-probes-json-20261023-monitor-1792757167.jsonl
+?? _workspace/paper-probes-json-20261023-performance-1792757249.json
+?? _workspace/paper-probes-json-20261023-rollback-fixtures.json
+?? _workspace/paper-probes-json-20261023-verify-1792757724.json
+?? _workspace/paper-probes-json-20261023.tar.gz
+?? _workspace/paper-probes-mutations-20261023/
+?? _workspace/paper-probes-operator-20261023-before/
+?? _workspace/paper-probes-reviewer-hourly_limit-20261023.xml
+?? _workspace/paper-probes-reviewer-missing_final_recheck-20261023.xml
+?? _workspace/paper-probes-reviewer-mutations-20261023.json
+?? _workspace/paper_btc_learning_rollback_20261023.py
+?? _workspace/paper_cloud_attribution_20261026.py
+?? _workspace/paper_empty_window_20261023.py
+?? _workspace/paper_forward_analysis_20261026.py
+?? _workspace/paper_learning_checks_20261019.py
+?? _workspace/paper_learning_forward_proof_20261020.py
+?? _workspace/paper_learning_mutations_20261019.py
+?? _workspace/paper_learning_observe_20261019.py
+?? _workspace/paper_learning_restore_audit_20261019.py
+?? _workspace/paper_learning_startup_identity_fixture_20261019.py
+?? _workspace/paper_learning_ui_proof_20261019.py
+?? _workspace/paper_probes_fault_injection_20261023.py
+?? _workspace/paper_probes_final_audit_20261023.py
+?? _workspace/paper_probes_json_rollback_20261023.py
+?? _workspace/paper_probes_mutations_20261023.py
+?? _workspace/paper_probes_observe_20261023.py
+?? _workspace/paper_probes_rollback_fixture_20261023.py
+?? _workspace/pin_stonkfly_sources.py
+?? _workspace/pinned-neural-20261012/
+?? _workspace/prepare_paper_learning_20261016.py
+?? _workspace/prepare_stonkfly_local.py
+?? _workspace/preserve_syslog_20261006.py
+?? _workspace/preserve_syslog_remote_20261006.py
+?? _workspace/read_server_audit_20260921.py
+?? _workspace/read_syslog_rotation_20261006.py
+?? _workspace/refresh_entry_inventory_20260922.py
+?? _workspace/retired_reject_apis_20260921.json
+?? _workspace/retired_training_gate_20260922.json
+?? _workspace/server_audit_20260921.json
+?? _workspace/server_audit_20260922.json
+?? _workspace/server_code_20260921/
+?? _workspace/server_forensics_20260921.json
+?? _workspace/server_host_20260922.json
+?? _workspace/server_research_20260923.json
+?? _workspace/stonkfly-20260929-audit.json
+?? _workspace/stonkfly-20260929-manifest.json
+?? _workspace/stonkfly-20260929-outcomes-1790753372.json
+?? _workspace/stonkfly-20260929-performance-1790687565.json
+?? _workspace/stonkfly-20260929-performance-1790753053.json
+?? _workspace/stonkfly-20260929-performance-1790753214.json
+?? _workspace/stonkfly-20260929-status-1790753100.json
+?? _workspace/stonkfly-20260929-status-1790771024.json
+?? _workspace/stonkfly-20260929-verify-1790753167.json
+?? _workspace/stonkfly-20260929-verify-1790753419.json
+?? _workspace/stonkfly-20260929.tar.gz
+?? _workspace/stonkfly-4gb-20261001-audit.json
+?? _workspace/stonkfly-4gb-20261001-manifest.json
+?? _workspace/stonkfly-4gb-20261001-performance-1790935330.json
+?? _workspace/stonkfly-4gb-20261001-performance-1791188380.json
+?? _workspace/stonkfly-4gb-20261001-status-1790935843.json
+?? _workspace/stonkfly-4gb-20261001.tar.gz
+?? _workspace/stonkfly-bias-audit-1792044900415591700.json
+?? _workspace/stonkfly-bias-findings-20261015.md
+?? _workspace/stonkfly-build-requirements.txt
+?? _workspace/stonkfly-context-20261020-audit.json
+?? _workspace/stonkfly-context-20261020-before/
+?? _workspace/stonkfly-context-20261020-decision_status-1792584918.json
+?? _workspace/stonkfly-context-20261020-decision_status-1792658650.json
+?? _workspace/stonkfly-context-20261020-final-evidence.json
+?? _workspace/stonkfly-context-20261020-incremental.patch
+?? _workspace/stonkfly-context-20261020-manifest.json
+?? _workspace/stonkfly-context-20261020-monitor-1792584991.jsonl
+?? _workspace/stonkfly-context-20261020-performance-1792563331.json
+?? _workspace/stonkfly-context-20261020-performance-1792586191.json
+?? _workspace/stonkfly-context-20261020-rollback-fixtures.json
+?? _workspace/stonkfly-context-20261020-verify-1792585013.json
+?? _workspace/stonkfly-context-20261020-verify-1792658593.json
+?? _workspace/stonkfly-context-20261020.tar.gz
+?? _workspace/stonkfly-context-final-git-diff.txt
+?? _workspace/stonkfly-context-final-git-stat.txt
+?? _workspace/stonkfly-context-final-git-status.txt
+?? _workspace/stonkfly-context-forward-1792585012.json
+?? _workspace/stonkfly-context-forward-1792585582.json
+?? _workspace/stonkfly-context-forward-1792585593.json
+?? _workspace/stonkfly-context-forward-1792658594.json
+?? _workspace/stonkfly-context-forward-1792659973.json
+?? _workspace/stonkfly-context-forward-1792735526.json
+?? _workspace/stonkfly-context-forward-1792757245.json
+?? _workspace/stonkfly-context-forward-1792998678.json
+?? _workspace/stonkfly-context-forward-1792998958.json
+?? _workspace/stonkfly-context-forward-1792998985.json
+?? _workspace/stonkfly-context-incremental.diff
+?? _workspace/stonkfly-context-monitor-fixtures-20261021.json
+?? _workspace/stonkfly-context-ui-proof-20261020.json
+?? _workspace/stonkfly-evidence-20261006-audit.json
+?? _workspace/stonkfly-evidence-20261006-manifest.json
+?? _workspace/stonkfly-evidence-20261006-performance-1791285587.json
+?? _workspace/stonkfly-evidence-20261006-verify-1791285559.json
+?? _workspace/stonkfly-evidence-20261006.tar.gz
+?? _workspace/stonkfly-feature-audit-1791285760.json
+?? _workspace/stonkfly-model-activate-1790936000.json
+?? _workspace/stonkfly-model-benchmark-frozen-1790935753.json
+?? _workspace/stonkfly-model-benchmark-plastic-1790935808.json
+?? _workspace/stonkfly-model-close-incident-1791267632.json
+?? _workspace/stonkfly-model-cloud-health-1791188563.json
+?? _workspace/stonkfly-model-cloud-health-1791285466.json
+?? _workspace/stonkfly-model-cloud-health-1791285836.json
+?? _workspace/stonkfly-model-cloud-health-1791353260.json
+?? _workspace/stonkfly-model-compress-archived-log-1791267377.json
+?? _workspace/stonkfly-model-dependency-1790852903.json
+?? _workspace/stonkfly-model-diagnose-1790935571.json
+?? _workspace/stonkfly-model-diagnose-1790935613.json
+?? _workspace/stonkfly-model-disk-usage-1791188791.json
+?? _workspace/stonkfly-model-forensics-1791188425.json
+?? _workspace/stonkfly-model-forensics-1791267609.json
+?? _workspace/stonkfly-model-health-1790936017.json
+?? _workspace/stonkfly-model-health-1790936049.json
+?? _workspace/stonkfly-model-health-1790936083.json
+?? _workspace/stonkfly-model-health-1791188376.json
+?? _workspace/stonkfly-model-health-1791267614.json
+?? _workspace/stonkfly-model-health-1791267948.json
+?? _workspace/stonkfly-model-health-1791285434.json
+?? _workspace/stonkfly-model-health-1791285528.json
+?? _workspace/stonkfly-model-health-1791285803.json
+?? _workspace/stonkfly-model-health-1791353241.json
+?? _workspace/stonkfly-model-inspect-1790852852.json
+?? _workspace/stonkfly-model-install-1790935217.json
+?? _workspace/stonkfly-model-log-size-1791188827.json
+?? _workspace/stonkfly-model-log-size-1791267288.json
+?? _workspace/stonkfly-model-log-size-1791285465.json
+?? _workspace/stonkfly-model-reclaim-transfer-1791188787.json
+?? _workspace/stonkfly-model-storage-size-1791188729.json
+?? _workspace/stonkfly-model-tmp-size-1791267289.json
+?? _workspace/stonkfly-model-transfer.json
+?? _workspace/stonkfly-paired-20261012-audit.json
+?? _workspace/stonkfly-paired-20261012-manifest.json
+?? _workspace/stonkfly-paired-20261012-performance-1791803489.json
+?? _workspace/stonkfly-paired-20261012-performance-1791890214.json
+?? _workspace/stonkfly-paired-20261012-performance-1791890327.json
+?? _workspace/stonkfly-paired-20261012-verify-1791890210.json
+?? _workspace/stonkfly-paired-20261012.tar.gz
+?? _workspace/stonkfly-window-1791285902.json
+?? _workspace/stonkfly-window-1791285964.json
+?? _workspace/stonkfly-window-1791286025.json
+?? _workspace/stonkfly-window-1791286087.json
+?? _workspace/stonkfly-window-1791286149.json
+?? _workspace/stonkfly-window-1791286211.json
+?? _workspace/stonkfly-window-1791286273.json
+?? _workspace/stonkfly-window-1791286335.json
+?? _workspace/stonkfly-window-1791286396.json
+?? _workspace/stonkfly-window-1791286458.json
+?? _workspace/stonkfly-window-1791286520.json
+?? _workspace/stonkfly-window-1791286582.json
+?? _workspace/stonkfly-window-1791286644.json
+?? _workspace/stonkfly-window-1791286705.json
+?? _workspace/stonkfly-window-1791286767.json
+?? _workspace/stonkfly-window-1791286829.json
+?? _workspace/stonkfly-window-1791286891.json
+?? _workspace/stonkfly-window-1791286953.json
+?? _workspace/stonkfly-window-1791287014.json
+?? _workspace/stonkfly-window-1791287076.json
+?? _workspace/stonkfly-window-1791287138.json
+?? _workspace/stonkfly-window-1791287200.json
+?? _workspace/stonkfly-window-1791287262.json
+?? _workspace/stonkfly-window-1791287322.json
+?? _workspace/stonkfly-window-passed-20261006.json
+?? _workspace/stonkfly_bias_audit_20261015.py
+?? _workspace/stonkfly_context_audit_20261020.py
+?? _workspace/stonkfly_context_final_evidence_20261021.py
+?? _workspace/stonkfly_context_observe_20261021.py
+?? _workspace/stonkfly_context_ui_proof_20261020.py
+?? _workspace/stonkfly_feature_audit_20261006.py
+?? _workspace/stonkfly_model_20261001.py
+?? _workspace/stonkfly_model_remote_20261001.py
+?? _workspace/stonkfly_preimplementation_audit.json
+?? _workspace/stonkfly_upstream_pins.json
+?? _workspace/strategy-learning-baseline-20261007.json
+?? _workspace/strategy-learning-epoch-report-20261007/
+?? _workspace/strategy-learning-final-branch-20261007.txt
+?? _workspace/strategy-learning-final-checks-20261007.json
+?? _workspace/strategy-learning-final-diff-20261007.json
+?? _workspace/strategy-learning-final-diff_stat-20261007.txt
+?? _workspace/strategy-learning-final-head-20261007.txt
+?? _workspace/strategy-learning-final-status-20261007.txt
+?? _workspace/strategy-learning-mutation-task1-20261007.txt
+?? _workspace/strategy-learning-mutation-task2-20261007.txt
+?? _workspace/strategy-learning-phase-a-20261007.md
+?? _workspace/strategy-learning-phase-a-arithmetic-20261007.json
+?? _workspace/strategy-learning-task1-20261007.patch
+?? _workspace/strategy-learning-task2-20261007.patch
+?? _workspace/strategy-learning-task3-20261007.patch
+?? _workspace/strategy-learning-task4-20261007.patch
+?? _workspace/strategy-learning-taskdocs-20261007.patch
+?? _workspace/strategy_learning_diff_20261007.py
+?? _workspace/strategy_learning_finalize_20261007.py
+?? _workspace/strategy_learning_guard_20261007.py
+?? _workspace/strategy_learning_mutation_20261007.py
+?? _workspace/strategy_learning_phase_a_20261007.py
+?? _workspace/summarize_test_results.py
+?? _workspace/syslog-rotation-inspect-20261006.json
+?? _workspace/test_preserve_syslog_20261006.py
+?? _workspace/unified-engine-20261008-audit.json
+?? _workspace/unified-engine-20261008-manifest.json
+?? _workspace/unified-engine-20261008-performance-1791526266.json
+?? _workspace/unified-engine-20261008-performance-1791526551.json
+?? _workspace/unified-engine-20261008-performance-1791544118.json
+?? _workspace/unified-engine-20261008-verify-1791526345.json
+?? _workspace/unified-engine-20261008.tar.gz
+?? _workspace/unified-engine-audit-1791439378.json
+?? _workspace/unified-engine-audit-1791457532.json
+?? _workspace/unified-engine-audit-1791526056.json
+?? _workspace/unified-engine-cloud-1791526345.json
+?? _workspace/unified-engine-cloud-1791526399.json
+?? _workspace/unified-engine-cloud-1791526460.json
+?? _workspace/unified-engine-cloud-1791526786.json
+?? _workspace/unified-engine-cloud-1791527119.json
+?? _workspace/unified-engine-cloud-1791527446.json
+?? _workspace/unified-engine-cloud-1791527771.json
+?? _workspace/unified-engine-cloud-1791528097.json
+?? _workspace/unified-engine-cloud-1791544116.json
+?? _workspace/unified-engine-cloud-1791785840.json
+?? _workspace/unified-engine-cloud-1792585042.json
+?? _workspace/unified-engine-cloud-1792658610.json
+?? _workspace/unified-engine-cloud-1792757212.json
+?? _workspace/unified-engine-epoch-report-1791526511.json
+?? _workspace/unified-engine-final-branch.txt
+?? _workspace/unified-engine-final-checks-20261009.json
+?? _workspace/unified-engine-final-diff.txt
+?? _workspace/unified-engine-final-diff_stat.txt
+?? _workspace/unified-engine-final-head.txt
+?? _workspace/unified-engine-final-status.txt
+?? _workspace/unified-engine-final.patch
+?? _workspace/unified-engine-monitor-20261009.json
+?? _workspace/unified-engine-monitor-passed-20261009.json
+?? _workspace/unified-engine-mutation-20261008.txt
+?? _workspace/unified-engine-poststats-1791544175.json
+?? _workspace/unified-engine-pulse-1791526344.json
+?? _workspace/unified-engine-pulse-1791526395.json
+?? _workspace/unified-engine-pulse-1791526456.json
+?? _workspace/unified-engine-pulse-1791526506.json
+?? _workspace/unified-engine-pulse-1791526553.json
+?? _workspace/unified-engine-pulse-1791526599.json
+?? _workspace/unified-engine-pulse-1791526645.json
+?? _workspace/unified-engine-pulse-1791526692.json
+?? _workspace/unified-engine-pulse-1791526738.json
+?? _workspace/unified-engine-pulse-1791526784.json
+?? _workspace/unified-engine-pulse-1791526833.json
+?? _workspace/unified-engine-pulse-1791526880.json
+?? _workspace/unified-engine-pulse-1791526927.json
+?? _workspace/unified-engine-pulse-1791526975.json
+?? _workspace/unified-engine-pulse-1791527022.json
+?? _workspace/unified-engine-pulse-1791527070.json
+?? _workspace/unified-engine-pulse-1791527117.json
+?? _workspace/unified-engine-pulse-1791527166.json
+?? _workspace/unified-engine-pulse-1791527212.json
+?? _workspace/unified-engine-pulse-1791527258.json
+?? _workspace/unified-engine-pulse-1791527305.json
+?? _workspace/unified-engine-pulse-1791527351.json
+?? _workspace/unified-engine-pulse-1791527397.json
+?? _workspace/unified-engine-pulse-1791527444.json
+?? _workspace/unified-engine-pulse-1791527493.json
+?? _workspace/unified-engine-pulse-1791527539.json
+?? _workspace/unified-engine-pulse-1791527585.json
+?? _workspace/unified-engine-pulse-1791527631.json
+?? _workspace/unified-engine-pulse-1791527677.json
+?? _workspace/unified-engine-pulse-1791527723.json
+?? _workspace/unified-engine-pulse-1791527770.json
+?? _workspace/unified-engine-pulse-1791527818.json
+?? _workspace/unified-engine-pulse-1791527864.json
+?? _workspace/unified-engine-pulse-1791527910.json
+?? _workspace/unified-engine-pulse-1791527956.json
+?? _workspace/unified-engine-pulse-1791528003.json
+?? _workspace/unified-engine-pulse-1791528049.json
+?? _workspace/unified-engine-pulse-1791528095.json
+?? _workspace/unified-engine-pulse-1791544113.json
+?? _workspace/unified-engine-pulse-1791544440.json
+?? _workspace/unified-engine-pulse-1791785433.json
+?? _workspace/unified-engine-pulse-1791871738.json
+?? _workspace/unified-engine-release-evidence-1791526592.json
+?? _workspace/unified-engine-sources-1791457351.json
+?? _workspace/unified_engine_20261008.py
+?? _workspace/unified_engine_mutation_20261008.py
+?? _workspace/unified_engine_remote_20261008.py
+?? audit_k10_cache_20260901/
+?? audit_pytest/
+?? audit_state02_run_20260902.md
+?? audit_state02_run_20260902_b.md
+?? docs/remediation/CODE_AUDIT_2026-09-22.md
+?? docs/remediation/DASHBOARD_DEPLOYMENT.md
+?? docs/remediation/DECISION_STATUS_2026-10-15.md
+?? docs/remediation/DEPLOYMENT_2026-09-25.md
+?? docs/remediation/PAPER_LEARNING_2026-10-19.md
+?? docs/remediation/PAPER_PROBES_2026-10-23.md
+?? docs/remediation/STONKFLY_2026-09-25.md
+?? docs/remediation/STONKFLY_CONTEXT_2026-10-20.md
+?? docs/remediation/STONKFLY_DEPLOYMENT_2026-09-30.md
+?? docs/remediation/STONKFLY_LIVE_2026-10-02.md
+?? docs/remediation/STONKFLY_PAIRED_2026-10-12.md
+?? docs/remediation/STONKFLY_RESOURCE_ADAPTATION_2026-10-01.md
+?? docs/remediation/UNIFIED_ENGINE_2026-10-08.md
+?? local_learning_storage/learning_database.sqlite-shm
+?? local_learning_storage/learning_database.sqlite-wal
+?? scripts/dashboard_service.py
+?? scripts/prepare_stonkfly_data.py
+?? scripts/stonkfly_research.py
+?? src/services/decision_metrics_snapshot.py
+?? src/services/paper_close_journal.py
+?? src/services/paper_neural_context.py
+?? src/services/stonkfly/
+?? src/services/strategy_safety.py
+?? tests/state02_isolation_bootstrap.py
+?? tests/test_bridge_readiness_cohort.py
+?? tests/test_broker_segment_admission.py
+?? tests/test_btc_probe_activation.py
+?? tests/test_bucket_metrics_numerics.py
+?? tests/test_canonical_metrics_unification.py
+?? tests/test_completed_candle_cache.py
+?? tests/test_completed_strategy_pipeline.py
+?? tests/test_dashboard_decision_status.py
+?? tests/test_dashboard_metrics_contract.py
+?? tests/test_dashboard_service_deployment.py
+?? tests/test_decision_metrics_snapshot.py
+?? tests/test_history_cache_scope.py
+?? tests/test_metrics_engine_numerics.py
+?? tests/test_neural_decision_wakeup.py
+?? tests/test_neural_scheduler.py
+?? tests/test_p0_segment_numeric_integrity.py
+?? tests/test_paper_close_integrity.py
+?? tests/test_paper_close_journal_recovery.py
+?? tests/test_paper_cost_exploration.py
+?? tests/test_paper_decision_idempotency.py
+?? tests/test_paper_learning_budget.py
+?? tests/test_paper_neural_context.py
+?? tests/test_paper_source_learning.py
+?? tests/test_paper_source_learning_bridge.py
+?? tests/test_paper_source_learning_lifecycle.py
+?? tests/test_paper_source_learning_router.py
+?? tests/test_paper_source_learning_wiring.py
+?? tests/test_paper_state_durability.py
+?? tests/test_performance_epoch.py
+?? tests/test_quota_snapshot_heartbeat.py
+?? tests/test_route_open_result_contract.py
+?? tests/test_sec_01_dashboard_boundary.py
+?? tests/test_single_entry_dispatch.py
+?? tests/test_state_02_loader_production_red.py
+?? tests/test_state_02_paper_state_fail_closed.py
+?? tests/test_state_02_save_ack_contract.py
+?? tests/test_state_02_subscription_boundary_red.py
+?? tests/test_state_02_subscription_runtime.py
+?? tests/test_stonkfly_artifacts.py
+?? tests/test_stonkfly_benchmark.py
+?? tests/test_stonkfly_evidence_recovery.py
+?? tests/test_stonkfly_integration.py
+?? tests/test_stonkfly_paired_backend.py
+?? tests/test_stonkfly_paired_runtime.py
+?? tests/test_stonkfly_research.py
+?? tests/test_stonkfly_resource_profile.py
+?? tests/test_stonkfly_resources.py
+?? tests/test_stonkfly_spawn_entrypoint.py
+?? tests/test_trade_executor_open_result_contract.py
+?? tests/test_unified_decision_engine.py
+?? tests/test_unified_learning_attribution.py
+?? tests/test_v5_learning_attribution.py
+?? tests/test_v5_outbox_single_flush.py
+?? tools/audit_metrics_snapshot.py

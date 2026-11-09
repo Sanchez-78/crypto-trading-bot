@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="12" skipped="0" tests="12" time="1.534" timestamp="2026-11-09T11:47:24.204609+01:00" hostname="Muj"><testcase classname="tests.test_completed_candle_cache" name="test_phase_refresh_failure_keeps_snapshot_and_backoff[exception-1]" time="0.002"><failure message="AssertionError: assert 3 == 2&#10; +  where 3 = &lt;Mock id='2049725066480'&gt;.call_count">tests\test_completed_candle_cache.py:308: in test_phase_refresh_failure_keeps_snapshot_and_backoff
+    assert fetch.call_count == 2
+E   AssertionError: assert 3 == 2
+E    +  where 3 = &lt;Mock id='2049725066480'&gt;.call_count</failure></testcase><testcase classname="tests.test_completed_candle_cache" name="test_phase_refresh_failure_keeps_snapshot_and_backoff[exception-60]" time="0.001"><failure message="AssertionError: assert 3 == 2&#10; +  where 3 = &lt;Mock id='2049432727440'&gt;.call_count">tests\test_completed_candle_cache.py:308: in test_phase_refresh_failure_keeps_snapshot_and_backoff
+    assert fetch.call_count == 2
+E   AssertionError: assert 3 == 2
+E    +  where 3 = &lt;Mock id='2049432727440'&gt;.call_count</failure></testcase><testcase classname="tests.test_completed_candle_cache" name="test_phase_refresh_failure_keeps_snapshot_and_backoff[exception-600]" time="0.001"><failure message="AssertionError: assert 3 == 2&#10; +  where 3 = &lt;Mock id='2049725069840'&gt;.call_count">tests\test_completed_candle_cache.py:308: in test_phase_refresh_failure_keeps_snapshot_and_backoff
+    assert fetch.call_count == 2
+E   AssertionError: assert 3 == 2
+E    +  where 3 = &lt;Mock id='2049725069840'&gt;.call_count</failure></testcase><testcase classname="tests.test_completed_candle_cache" name="test_phase_refresh_failure_keeps_snapshot_and_backoff[empty-1]" time="0.001"><failure message="AssertionError: assert 3 == 2&#10; +  where 3 = &lt;Mock id='2049725070176'&gt;.call_count">tests\test_completed_candle_cache.py:308: in test_phase_refresh_failure_keeps_snapshot_and_backoff
+    assert fetch.call_count == 2
+E   AssertionError: assert 3 == 2
+E    +  where 3 = &lt;Mock id='2049725070176'&gt;.call_count</failure></testcase><testcase classname="tests.test_completed_candle_cache" name="test_phase_refresh_failure_keeps_snapshot_and_backoff[empty-60]" time="0.001"><failure message="AssertionError: assert 3 == 2&#10; +  where 3 = &lt;Mock id='2049725070512'&gt;.call_count">tests\test_completed_candle_cache.py:308: in test_phase_refresh_failure_keeps_snapshot_and_backoff
+    assert fetch.call_count == 2
+E   AssertionError: assert 3 == 2
+E    +  where 3 = &lt;Mock id='2049725070512'&gt;.call_count</failure></testcase><testcase classname="tests.test_completed_candle_cache" name="test_phase_refresh_failure_keeps_snapshot_and_backoff[empty-600]" time="0.001"><failure message="AssertionError: assert 3 == 2&#10; +  where 3 = &lt;Mock id='2049725070848'&gt;.call_count">tests\test_completed_candle_cache.py:308: in test_phase_refresh_failure_keeps_snapshot_and_backoff
+    assert fetch.call_count == 2
+E   AssertionError: assert 3 == 2
+E    +  where 3 = &lt;Mock id='2049725070848'&gt;.call_count</failure></testcase><testcase classname="tests.test_completed_candle_cache" name="test_phase_refresh_failure_keeps_snapshot_and_backoff[none-1]" time="0.001"><failure message="AssertionError: assert 3 == 2&#10; +  where 3 = &lt;Mock id='2049726021712'&gt;.call_count">tests\test_completed_candle_cache.py:308: in test_phase_refresh_failure_keeps_snapshot_and_backoff
+    assert fetch.call_count == 2
+E   AssertionError: assert 3 == 2
+E    +  where 3 = &lt;Mock id='2049726021712'&gt;.call_count</failure></testcase><testcase classname="tests.test_completed_candle_cache" name="test_phase_refresh_failure_keeps_snapshot_and_backoff[none-60]" time="0.002"><failure message="AssertionError: assert 3 == 2&#10; +  where 3 = &lt;Mock id='2049726022048'&gt;.call_count">tests\test_completed_candle_cache.py:308: in test_phase_refresh_failure_keeps_snapshot_and_backoff
+    assert fetch.call_count == 2
+E   AssertionError: assert 3 == 2
+E    +  where 3 = &lt;Mock id='2049726022048'&gt;.call_count</failure></testcase><testcase classname="tests.test_completed_candle_cache" name="test_phase_refresh_failure_keeps_snapshot_and_backoff[none-600]" time="0.001"><failure message="AssertionError: assert 3 == 2&#10; +  where 3 = &lt;Mock id='2049726022384'&gt;.call_count">tests\test_completed_candle_cache.py:308: in test_phase_refresh_failure_keeps_snapshot_and_backoff
+    assert fetch.call_count == 2
+E   AssertionError: assert 3 == 2
+E    +  where 3 = &lt;Mock id='2049726022384'&gt;.call_count</failure></testcase><testcase classname="tests.test_completed_candle_cache" name="test_phase_refresh_cold_failure_across_boundary_is_throttled[response0]" time="0.001"><failure message="AssertionError: Expected 'mock' to have been called once. Called 2 times.&#10;Calls: [call('ETHUSDT', '1m'), call('ETHUSDT', '1m')].">tests\test_completed_candle_cache.py:332: in test_phase_refresh_cold_failure_across_boundary_is_throttled
+    fetch.assert_called_once()
+C:\Python314\Lib\unittest\mock.py:964: in assert_called_once
+    raise AssertionError(msg)
+E   AssertionError: Expected 'mock' to have been called once. Called 2 times.
+E   Calls: [call('ETHUSDT', '1m'), call('ETHUSDT', '1m')].</failure></testcase><testcase classname="tests.test_completed_candle_cache" name="test_phase_refresh_cold_failure_across_boundary_is_throttled[None]" time="0.001"><failure message="AssertionError: Expected 'mock' to have been called once. Called 2 times.&#10;Calls: [call('ETHUSDT', '1m'), call('ETHUSDT', '1m')].">tests\test_completed_candle_cache.py:332: in test_phase_refresh_cold_failure_across_boundary_is_throttled
+    fetch.assert_called_once()
+C:\Python314\Lib\unittest\mock.py:964: in assert_called_once
+    raise AssertionError(msg)
+E   AssertionError: Expected 'mock' to have been called once. Called 2 times.
+E   Calls: [call('ETHUSDT', '1m'), call('ETHUSDT', '1m')].</failure></testcase><testcase classname="tests.test_completed_candle_cache" name="test_phase_refresh_cold_failure_across_boundary_is_throttled[response2]" time="0.001"><failure message="AssertionError: Expected 'mock' to have been called once. Called 2 times.&#10;Calls: [call('ETHUSDT', '1m'), call('ETHUSDT', '1m')].">tests\test_completed_candle_cache.py:332: in test_phase_refresh_cold_failure_across_boundary_is_throttled
+    fetch.assert_called_once()
+C:\Python314\Lib\unittest\mock.py:964: in assert_called_once
+    raise AssertionError(msg)
+E   AssertionError: Expected 'mock' to have been called once. Called 2 times.
+E   Calls: [call('ETHUSDT', '1m'), call('ETHUSDT', '1m')].</failure></testcase></testsuite></testsuites>

@@ -58,8 +58,17 @@ generátory dál určují, co vstoupí.
   vstupů za 07:30–10:16 (předchozí 2 dny 0×), od začátku populace C1. Příčina ověřena:
   fáze 60s plánovače po restartu (:44–:50 místo :15–:19) + přeskočený refresh cache svíček.
   **Během C1 bota nerestartovat** — nová fáze by náhodně změnila podíl ztracených kandidátů.
-  Oprava zadána Codexu (`docs/codex_prompts/CODEX_CANDLE_REFRESH_PHASE_FIX_2026-11-09.md`),
-  nasazení po výsledku C1 a review. Detail: `_workspace/62_stale_market_data_rejections_since_restart.md`.
+  Oprava hotová lokálně (Codex, `_workspace/63_codex_candle_refresh_fix.md`, přesný diff
+  `_workspace/candle_refresh_20261109/task.diff`): `candle_cache_v1` obnovuje dokončené
+  svíčky jednou za UTC minutu za příznakem `PAPER_COMPLETED_CANDLE_PHASE_REFRESH_ENABLED`
+  (výchozí vypnuto) + `data_age_ms` v řádku `[P0_8_PLUS_LIVE]`. Kontrola agentem 9. 11.:
+  112 cílených testů prošlo i při nezávislém opakování, mutace zachyceny, diff přečten
+  (výpočet `data_age_ms` nemůže selhat — router stejný rozdíl počítá dřív). **Nenasazeno.**
+  Po zmrazeném výsledku C1: nezávislé review přesného diffu → `deploy_bot_files.sh`
+  (`candle_cache_v1.py`, `p0_8_plus_live_pipeline.py`, drop-in s příznakem) → restart →
+  ověřit v syslogu `data_age_ms` < 90 000 a nulové `REJECT_STALE_MARKET_DATA`. Serverová
+  verze `candle_cache_v1.py` před opravou: SHA-256 začíná `23a9068111012aac`.
+  Detail příčiny: `_workspace/62_stale_market_data_rejections_since_restart.md`.
 - Záloha `/opt/cryptomaster_deploy_backups/audit-20260923` (8,4 GB) smazána na pokyn
   operátora 2026-11-09 ~10:35 UTC → disk 60 %.
 - **Disk 2026-11-09 (opraveno 10:18 UTC):** růst ~3,6 GiB/den způsobuje `/var/log/syslog`

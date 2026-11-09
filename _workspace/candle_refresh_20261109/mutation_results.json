@@ -1,0 +1,62 @@
+[
+  {
+    "case": "revert_cache",
+    "exit_code": 1,
+    "tests": 7,
+    "failures": 6,
+    "errors": 0,
+    "skipped": 0,
+    "failed_tests": [
+      "test_phase_refresh_handles_symbol_jitter_and_neural_wakes[0.1]",
+      "test_phase_refresh_handles_symbol_jitter_and_neural_wakes[15.1]",
+      "test_phase_refresh_handles_symbol_jitter_and_neural_wakes[47.1]",
+      "test_phase_refresh_handles_symbol_jitter_and_neural_wakes[59.1]",
+      "test_phase_refresh_btc_wake_before_regular_tick_shares_latest_closed_bar",
+      "test_phase_refresh_reaches_real_router_with_new_candle_identity[True]"
+    ]
+  },
+  {
+    "case": "revert_diagnostic",
+    "exit_code": 1,
+    "tests": 3,
+    "failures": 3,
+    "errors": 0,
+    "skipped": 0,
+    "failed_tests": [
+      "test_run_live_tick_logs_stale_age_at_evaluation_without_opening[107250]",
+      "test_run_live_tick_logs_stale_age_at_evaluation_without_opening[90001]",
+      "test_run_live_tick_logs_stale_age_at_evaluation_without_opening[-100]"
+    ]
+  },
+  {
+    "case": "remove_failure_backoff",
+    "exit_code": 1,
+    "tests": 12,
+    "failures": 12,
+    "errors": 0,
+    "skipped": 0,
+    "failed_tests": [
+      "test_phase_refresh_failure_keeps_snapshot_and_backoff[exception-1]",
+      "test_phase_refresh_failure_keeps_snapshot_and_backoff[exception-60]",
+      "test_phase_refresh_failure_keeps_snapshot_and_backoff[exception-600]",
+      "test_phase_refresh_failure_keeps_snapshot_and_backoff[empty-1]",
+      "test_phase_refresh_failure_keeps_snapshot_and_backoff[empty-60]",
+      "test_phase_refresh_failure_keeps_snapshot_and_backoff[empty-600]",
+      "test_phase_refresh_failure_keeps_snapshot_and_backoff[none-1]",
+      "test_phase_refresh_failure_keeps_snapshot_and_backoff[none-60]",
+      "test_phase_refresh_failure_keeps_snapshot_and_backoff[none-600]",
+      "test_phase_refresh_cold_failure_across_boundary_is_throttled[response0]",
+      "test_phase_refresh_cold_failure_across_boundary_is_throttled[None]",
+      "test_phase_refresh_cold_failure_across_boundary_is_throttled[response2]"
+    ]
+  },
+  {
+    "case": "restored",
+    "exit_code": 0,
+    "tests": 22,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "failed_tests": []
+  }
+]

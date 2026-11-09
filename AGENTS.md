@@ -5,9 +5,7 @@ Komunikace s uživatelem a reporty: **česky**. Identifikátory a kód: anglicky
 
 ## Aktuální zadání
 
-**Otevřené zadání:** `docs/codex_prompts/CODEX_CANDLE_REFRESH_PHASE_FIX_2026-11-09.md`
-→ report `_workspace/63_codex_candle_refresh_fix.md`.
-Aktuální stav a autorita: `docs/OPERATING_STATE.md`.
+**Žádné otevřené zadání.** Aktuální stav a autorita: `docs/OPERATING_STATE.md`.
 Podkladová data: `docs/codex_prompts/evidence/` (soubory jsou jen ke čtení).
 
 Hotová zadání (nezpracovávat znovu):
@@ -15,6 +13,8 @@ Hotová zadání (nezpracovávat znovu):
 - `CODEX_LEARNING_EXPERIMENT_EVAL_2026-10-26.md` → `_workspace/57_codex_learning_experiment_eval.md`.
 - `EXTERNAL_AUDIT_LEARNING_PROCESS_2026-11-09.md` → `_workspace/59_external_audit_learning_process.md`
   (nálezy zapracovány, viz `docs/OPERATING_STATE.md` a `_workspace/60_audit_remediation.md`).
+- `CODEX_CANDLE_REFRESH_PHASE_FIX_2026-11-09.md` → `_workspace/63_codex_candle_refresh_fix.md`
+  (lokální oprava za příznakem, výchozí vypnuto; nasazení až po C1 a review).
 
 Offline vyhodnocení experimentu nad novým exportem:
 `python -B scripts/research/p0_8_plus_epoch_report.py --json <export.json> --out <adresář>`

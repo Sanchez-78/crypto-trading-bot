@@ -1,0 +1,35 @@
+[
+  {
+    "stage": "baseline",
+    "name": "pytest",
+    "errors": "0",
+    "failures": "0",
+    "skipped": "0",
+    "tests": "84",
+    "time": "5.608",
+    "timestamp": "2026-11-09T11:36:35.962272+01:00",
+    "hostname": "Muj"
+  },
+  {
+    "stage": "red",
+    "name": "pytest",
+    "errors": "0",
+    "failures": "7",
+    "skipped": "0",
+    "tests": "7",
+    "time": "1.337",
+    "timestamp": "2026-11-09T11:38:13.377933+01:00",
+    "hostname": "Muj"
+  },
+  {
+    "stage": "final",
+    "name": "pytest",
+    "errors": "0",
+    "failures": "0",
+    "skipped": "0",
+    "tests": "112",
+    "time": "5.039",
+    "timestamp": "2026-11-09T11:42:21.947070+01:00",
+    "hostname": "Muj"
+  }
+]
