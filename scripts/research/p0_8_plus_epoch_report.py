@@ -30,6 +30,7 @@ if __package__ in (None, ""):
 from src.core.trade_metrics_contract import classify_outcome
 from src.services.evidence_budget import decide_evidence_budget
 from src.services.learning_experiment_verdict import evaluate_selection_experiment
+from src.services.learning_diagnostics import Observation, diagnose
 
 BOOTSTRAP_SEED = 20261002
 BOOTSTRAP_REPLICATES = 2000
@@ -84,6 +85,23 @@ def parse_policy_tag(tags_json: Any) -> dict:
         return dict(status="OK", policy_version=prefix, policy_action=action, policy_probability=probability)
     except (ValueError, TypeError, RecursionError):
         return absent("INVALID_TAG")
+
+
+def learning_observation(row: dict) -> tuple[str, Observation] | None:
+    """Learner context/estimate at decision time for a row with a valid policy tag."""
+    policy = parse_policy_tag(row.get("tags_json"))
+    if policy["status"] != "OK" or policy["policy_action"] == "HOLD":
+        return None
+    payload = json.loads(row["tags_json"])
+    data = json.loads(next(t for t in payload if t.startswith("paper_source_learning")).partition(":")[2])
+    context, estimate = data.get("policy_context"), _number(data.get("policy_mean_net_bps"))
+    entry_ts, net = _number(row.get("entry_ts")), _number(row.get("pnl_pct"))
+    if not isinstance(context, str) or estimate is None or entry_ts is None or net is None:
+        return None
+    return policy["policy_version"], Observation(
+        context=context, action=policy["policy_action"], estimate_bps=estimate,
+        probability=float(policy["policy_probability"]), net_bps=net * 100,
+        gross_bps=_gross_move_bps(row), entry_ts=entry_ts)
 
 
 def learning_profile(source: str) -> str:
@@ -356,6 +374,12 @@ def build_report(rows: Sequence[dict], *, since: float | None = None) -> dict:
             versions.add(policy["policy_version"])
         daily[row["exit_day_utc"]].append(row["pnl_pct"] * 100)
         daily_actions[row["exit_day_utc"]][policy["policy_action"]].append(row["pnl_pct"] * 100)
+    observations = defaultdict(list)
+    for row in rows:
+        found = learning_observation(row)
+        if found:
+            observations[found[0]].append(found[1])
+    diagnostics = {version: diagnose(items) for version, items in sorted(observations.items())}
     experiments = {}
     for version in sorted(versions):
         adaptive, control = (policies[version].get(action, []) for action in ("ADAPTIVE", "CONTROL"))
@@ -388,7 +412,7 @@ def build_report(rows: Sequence[dict], *, since: float | None = None) -> dict:
         total=summarize(rows), by_learning_source={source: summarize(group) for source, group in sorted(grouped.items())},
         by_profile={profile: summarize(group) for profile, group in sorted(profiles.items())},
         policy_tag_counts={key: tag_counts[key] for key in ("OK", "NO_POLICY", "INVALID_TAG")},
-        by_policy=policy_groups, experiments=experiments,
+        by_policy=policy_groups, experiments=experiments, learning_diagnostics=diagnostics,
         daily=[dict(day_utc=day, n=len(values), mean_net_bps=statistics.mean(values),
                     by_policy_action={action: dict(n=len(items), mean_net_bps=statistics.mean(items))
                                       for action, items in sorted(daily_actions[day].items())})
@@ -468,6 +492,26 @@ def render_markdown(report: dict) -> str:
                   f"dnů={bootstrap['blocks']}, společných={bootstrap['shared_blocks']}, "
                   f"platných replikací={bootstrap['valid_replicates']}/{bootstrap['replicates']}, "
                   f"vynechaných={bootstrap['skipped_replicates']}, omezené bloky={bootstrap['limited_blocks']}.", ""]
+    lines += ["## Proč se učení zlepšuje / nezlepšuje", "",
+              "Předpoklady učení: signál má hrubý edge → kontexty se liší víc než šum → rozdíly trvají → "
+              "odhad učení řadí výsledky → ADAPTIVE předstihuje CONTROL. Testy: chí-kvadrát homogenity průměrů kontextů (p<0,05), jednostranná kritická ρ=1,645/√(n−1); obchody nejsou nezávislé, výklad je orientační.", ""]
+    for version, diag in report.get("learning_diagnostics", {}).items():
+        signal, disp, pers = diag["signal_gross"], diag["context_dispersion"], diag["context_persistence"]
+        est, prob = diag["estimate_vs_outcome"], diag["adaptive_probability"]
+        lines += [f"### {version}", "", "Kódy: " + ", ".join(diag["reasons"]),
+                  f"- Hrubý pohyb po vstupu: {_fmt(signal['mean_bps'])} ± {_fmt(signal['half_width_bps'])} bps (n={signal['n']}).",
+                  "- Rozptyl kontextů: " + (NO_DATA if disp is None else
+                      f"SD průměrů {_fmt(disp['observed_sd_of_means_bps'])} vs šum {_fmt(disp['noise_sd_bps'])} bps, "
+                      f"poměr {_fmt(disp['ratio'])}, χ²={_fmt(disp['chi2'])} (df={disp['dof']}), p={_fmt(disp['p_value'])} ({disp['contexts']} kontextů)."),
+                  "- Stálost kontextů (1. vs 2. polovina): " + (NO_DATA if pers is None else
+                      f"Spearman {_fmt(pers['spearman'])}, Pearson {_fmt(pers['pearson'])} ({pers['contexts']} kontextů)."),
+                  f"- Odhad učení vs výsledek: Spearman {_fmt(est['spearman'])}, Pearson {_fmt(est['pearson'])} (n={est['n']}).",
+                  "- Pravděpodobnost ADAPTIVE: " + (NO_DATA if prob is None else
+                      f"{_fmt(prob['min'])} / {_fmt(prob['mean'])} / {_fmt(prob['max'])}, SD {_fmt(prob['sd'])}."),
+                  "", "| Čtvrtina experimentu | ADAPTIVE n | CONTROL n | Rozdíl bps |", "|---:|---:|---:|---:|"]
+        for index, quarter in enumerate(diag["learning_curve"], 1):
+            lines.append(f"| {index} | {quarter['adaptive_n']} | {quarter['control_n']} | {_fmt(quarter['diff_bps'])} |")
+        lines.append("")
     lines += ["## Časová řada podle UTC dne uzavření", "", "| Den UTC | Akce | n | Průměr net bps |", "|---|---|---:|---:|"]
     for day in report["daily"]:
         lines.append(f"| {day['day_utc']} | CELKEM | {day['n']} | {_fmt(day['mean_net_bps'])} |")

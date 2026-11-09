@@ -1,11 +1,10 @@
 {
-  "stage": "S2",
-  "stage_changed_at": "2026-11-09T07:01:41Z",
-  "s1_deadline": "2026-11-09",
-  "s2_deadline": "2026-11-30",
-  "finished": false,
-  "blocked": false,
-  "goal_notified": false,
+  "mode": "MAX_DATA",
+  "mode_since": "2026-11-09",
+  "stage": "S1",
+  "stage_note": "S2/S3 cancelled by operator 2026-11-09; stage timer disabled",
+  "probe_limits": {"daily": 480, "hourly": 30, "symbol_cooldown_s": 300, "min_net_bps": -25, "symbol_blacklist": ""},
+  "notified_codes": [],
   "cron_id": "ff18c5e8",
   "cron_created": "2026-11-09"
 }

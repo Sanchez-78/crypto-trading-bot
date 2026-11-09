@@ -1,5 +1,14 @@
 # Autonomní PAPER smyčka učení — předem stanovená pravidla (2026-10-26)
 
+> **ZMĚNA OPERÁTOREM 2026-11-09:** „imaginární ztráta nevadí, potřebujeme co nejvíce
+> obchodů pro proces učení a metriky, proč se učení zlepšuje/nezlepšuje.“
+> Stupně S2/S3 (omezují nebo zastavují obchody) jsou **zrušeny**. Bot vrácen na S1
+> (07:08 UTC), `cryptomaster-research-stage.timer` vypnut. Objem zvýšen přes
+> `deploy_probe_volume.sh` (limity průzkumu 480/den, 30/h, cooldown 300 s,
+> min. modelovaný net −25 bps, prázdný blacklist symbolů). Diagnostika předpokladů
+> učení: `src/services/learning_diagnostics.py`, řádek `LEARN` ve `verdict.log`.
+> Text níže je historický záznam původních pravidel.
+
 Operátor 26. 10. povolil autonomní nasazování změn k cíli (WR > 50 % a kladné
 P/L) bez své přítomnosti. Tento dokument určuje **jediné** změny, které smí
 smyčka provést, a podmínky pro ně. Pravidla jsou zapsaná **před** vyhodnocením;

@@ -2,7 +2,8 @@
 # Apply one pre-declared PAPER learning stage (see
 # docs/remediation/AUTONOMOUS_LEARNING_LOOP_2026-10-26.md) as a systemd drop-in,
 # restart only with zero open paper positions, verify READY, roll back on failure.
-# Usage: apply_stage.sh S2|S3 [check]   ("check" validates only, changes nothing)
+# Usage: apply_stage.sh S1|S2|S3 [check]   ("check" validates only, changes nothing)
+# S1 removes the managed drop-in (back to the operator baseline).
 # Never touches code, TP/SL, costs or REAL flags.
 set -euo pipefail
 
@@ -17,9 +18,10 @@ LOG="$BASE/stage.log"
 log() { echo "$(date -u +%FT%TZ) $STAGE $*" | tee -a "$LOG"; }
 
 case "$STAGE" in
+  S1) VARS="" ;;
   S2) VARS="PAPER_COST_EXPLORATION_ENABLED=false" ;;
   S3) VARS="PAPER_COST_EXPLORATION_ENABLED=false PAPER_COMPLETED_CANDLE_LEARNING_ENABLED=false PAPER_STONKFLY_CONTEXT_ENABLED=false PAPER_ADAPTIVE_EXPLORATION_ENABLED=false PAPER_EVIDENCE_STOP_RULE_ENABLED=true" ;;
-  *) echo "usage: $0 S2|S3 [check]" >&2; exit 2 ;;
+  *) echo "usage: $0 S1|S2|S3 [check]" >&2; exit 2 ;;
 esac
 
 # Effective environment (.env < systemd < new stage) must be PAPER-only and
@@ -69,9 +71,13 @@ rollback() {
   exit 1
 }
 
-{ echo "# Managed by $BASE/apply_stage.sh - autonomous learning stage $STAGE"
-  echo "[Service]"
-  for kv in $VARS; do echo "Environment=\"$kv\""; done; } > "$DROPIN"
+if [ -z "$VARS" ]; then
+  rm -f "$DROPIN"
+else
+  { echo "# Managed by $BASE/apply_stage.sh - autonomous learning stage $STAGE"
+    echo "[Service]"
+    for kv in $VARS; do echo "Environment=\"$kv\""; done; } > "$DROPIN"
+fi
 systemctl daemon-reload
 
 t0="$(date +%s)"

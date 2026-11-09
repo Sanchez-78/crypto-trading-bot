@@ -42,6 +42,15 @@ total = report["total"]
 exp = report["experiments"].get(policy, {}).get("verdict")
 fmt = lambda v: "NA" if v is None else f"{v:+.2f}"
 ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+diag = report.get("learning_diagnostics", {}).get(policy)
+if diag:
+    est, disp, pers = diag["estimate_vs_outcome"], diag["context_dispersion"], diag["context_persistence"]
+    curve = ",".join(fmt(q["diff_bps"]) for q in diag["learning_curve"])
+    ctx_p = "NA" if disp is None else f"{disp['p_value']:.3f}"
+    persist = "NA" if pers is None else fmt(pers["spearman"])
+    print(f"{ts} LEARN stage={stage} codes={','.join(diag['reasons'])} "
+          f"gross={fmt(diag['signal_gross']['mean_bps'])} ctx_p={ctx_p} persist_rho={persist} "
+          f"estimate_rho={fmt(est['spearman'])} curve=[{curve}]")
 since_file = base / "since_override"
 if stage == "S2" and since_file.exists():
     # Pre-declared rule S2 (docs/remediation/AUTONOMOUS_LEARNING_LOOP_2026-10-26.md).

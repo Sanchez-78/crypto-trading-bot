@@ -223,3 +223,24 @@ Spuštění z kořene (zápis pouze atomicky pod `--out`; `--since` filtruje ent
 ```text
 python -B scripts/research/p0_8_plus_epoch_report.py --json docs/codex_prompts/evidence/epoch_20260925_closed_trades_20261026.json --out _workspace/learning-experiment-eval-20261026
 ```
+
+## Objem PAPER průzkumu a diagnostika učení (2026-11-09)
+
+Limity průzkumu (`paper_learning_budget.limits`) a spodní mez modelovaného net
+(`paper_source_learning.min_probe_net_bps`) lze přepsat env proměnnými
+`PAPER_PROBE_HOURLY_ENTRIES` (1–600), `PAPER_PROBE_DAILY_ENTRIES` (1–900, strop
+kvůli limitu 1000 řádků v `read_entries`), `PAPER_PROBE_SYMBOL_COOLDOWN_S`
+(0–86400) a `PAPER_PROBE_MIN_NET_BPS` (−100 až 0). Nenastaveno = 6/48/1800 s/−15.
+Neplatná hodnota selže už ve `validate_config` při startu. Strop nákladů 20 bps
+a `profile_signature` se nemění, takže kohorta učení pokračuje.
+
+`learning_diagnostics.py` testuje pět předpokladů, bez kterých filtr nemůže
+zlepšit výsledek: (1) hrubý pohyb po vstupu (side-aware entry/exit) má 95% CI nad
+nulou; (2) průměry kontextů (`policy_context`, n ≥ 20) se liší víc než šum —
+chí-kvadrát homogenity s inverzními váhami rozptylu, p < 0,05 (Wilson–Hilferty);
+(3) pořadí kontextů v první a druhé chronologické polovině koreluje (Spearman nad
+jednostrannou kritickou hodnotou 1,645/√(k−1)); (4) odhad učení v okamžiku
+rozhodnutí (`policy_mean_net_bps`) řadí realizovaný net u ADAPTIVE/CONTROL/PROBE
+(stejný práh); (5) rozdíl ADAPTIVE−CONTROL roste po chronologických čtvrtinách.
+Na čistém šumu (200 simulací) jsou falešné poplachy cca 8 % / 5 % / 2,5 %.
+Obchody nejsou nezávislé, proto jde o orientační diagnostiku, ne o důkaz.
