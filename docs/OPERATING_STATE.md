@@ -9,6 +9,12 @@ dokumenty; starší dokumenty jsou historický záznam. Kdo mění stav, aktuali
 proč se učení zlepšuje/nezlepšuje.“ Bot je **PAPER only**. Virtuální ztráta není důvod
 k zastavení. Cíl WR > 50 % / kladné P/L z `CLAUDE.md` není aktuální měřítko práce.
 
+**Doplněno operátorem 2026-11-09 ~10:00 UTC:** „pokračuj autonomně, cíl P/L+, WR > 50 a
+dokonalý a zlepšující se proces učení.“ Výklad agenta: P/L+ a WR > 50 % jsou konečný cíl,
+cestou k němu je proces učení; C1 je test, zda učení vůbec nese signál, takže zmrazení
+sběru platí dál (operátor C1 nezrušil). Pozor: při TP 35 / SL 25 bps a nákladech 9 bps
+je bod zvratu WR ≈ 56,7 % (výhra +26, ztráta −34 bps), takže WR > 50 % samo P/L+ nezaručí.
+
 ## Aktivní konfigurace (server `/opt/cryptomaster`, nasazeno souborově, ne z gitu)
 
 | Položka | Hodnota | Zdroj |
@@ -48,6 +54,9 @@ generátory dál určují, co vstoupí.
   `funnel/YYYYMMDD.jsonl`; bez cen a výsledků (bezpečné pro slepou fázi). Řádek `FUNNEL`
   ve `verdict.log` = posledních 12 h. Důvod: journal bota drží jen ~15 min (objem logu).
 - **Mezera:** žádný kanál, který by operátora upozornil bez sezení Claude (otázka 4 níže).
+- **Ztráta kandidátů od 07:30 UTC 2026-11-09:** `REJECT_STALE_MARKET_DATA` 118× vs. 87
+  vstupů za 07:30–10:16 (předchozí 2 dny 0×), od začátku populace C1. Oprava odložena
+  po výsledku C1. Detail a fronta: `_workspace/62_stale_market_data_rejections_since_restart.md`.
 - **Disk 2026-11-09 (opraveno 10:18 UTC):** růst ~3,6 GiB/den způsobuje `/var/log/syslog`
   (rsyslog kopíruje ~13 000 řádků/min stdout bota; pravidlo `30-cryptomaster-stop.conf`
   je mrtvé, bot loguje jako `python3`), ne `shadow_excursion.sqlite` (~50 MiB/den).
