@@ -118,3 +118,40 @@ def test_validate_config_rejects_invalid_overrides_at_startup():
         learning.validate_config(_paper_env(PAPER_PROBE_DAILY_ENTRIES="5000"))
     with pytest.raises(ValueError, match="invalid_paper_probe_min_net"):
         learning.validate_config(_paper_env(PAPER_PROBE_MIN_NET_BPS="5"))
+
+
+def _ctx():
+    return learning.LearningContext("trend_cost_aware_v1", "1", "dynamic_trend_exit_v1",
+                                    "a" * 64, "ETHUSDT", "BULL_TREND", "BUY")
+
+
+def _losses(ctx, n=20, value=-30.0):
+    return [learning.ClosedOutcome(f"t{i}", ctx.key, NOW_MS - 100000 + i * 1000,
+                                   NOW_MS - 50000 + i * 1000, value) for i in range(n)]
+
+
+def test_control_fraction_default_and_validation(monkeypatch):
+    monkeypatch.delenv("PAPER_LEARNING_CONTROL_FRACTION", raising=False)
+    assert learning.control_fraction({}) == 0.2
+    assert learning.control_fraction({"PAPER_LEARNING_CONTROL_FRACTION": "1"}) == 1.0
+    for bad in ("-0.1", "1.01", "nan", "x"):
+        with pytest.raises(ValueError, match="invalid_paper_learning_control_fraction"):
+            learning.control_fraction({"PAPER_LEARNING_CONTROL_FRACTION": bad})
+    with pytest.raises(ValueError, match="invalid_paper_learning_control_fraction"):
+        learning.validate_config(_paper_env(PAPER_LEARNING_CONTROL_FRACTION="2"))
+
+
+def test_full_control_admits_every_candidate_and_keeps_estimate(monkeypatch):
+    ctx = _ctx()
+    rows = _losses(ctx)
+    held = [learning.decide(ctx, rows, decision_id=str(i), as_of_ms=NOW_MS) for i in range(200)]
+    assert any(d.action == "HOLD" for d in held)
+    monkeypatch.setenv("PAPER_LEARNING_CONTROL_FRACTION", "1")
+    full = [learning.decide(ctx, rows, decision_id=str(i), as_of_ms=NOW_MS) for i in range(200)]
+    assert all(d.allowed and d.action == "CONTROL" for d in full)
+    # The learner estimate is logged unchanged; only the admission action differs.
+    assert [d.mean_net_bps for d in full] == [d.mean_net_bps for d in held]
+    assert all(d.mean_net_bps < -20 for d in full)
+    monkeypatch.setenv("PAPER_LEARNING_CONTROL_FRACTION", "0")
+    none = [learning.decide(ctx, rows, decision_id=str(i), as_of_ms=NOW_MS) for i in range(200)]
+    assert not any(d.action == "CONTROL" for d in none)

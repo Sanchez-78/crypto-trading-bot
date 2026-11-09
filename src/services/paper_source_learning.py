@@ -87,6 +87,25 @@ def probe_signal_valid(signal) -> bool:
             and signal.evidence_only is True and signal.shadow_only is False)
 
 
+def control_fraction(env: Mapping[str, str] | None = None) -> float:
+    """Operator override PAPER_LEARNING_CONTROL_FRACTION in [0, 1]; invalid fails closed.
+
+    1.0 admits every candidate unfiltered (estimate still logged) so offline replay
+    can evaluate any learner on selection-free data.
+    """
+    values = os.environ if env is None else env
+    raw = values.get("PAPER_LEARNING_CONTROL_FRACTION", "").strip()
+    if not raw:
+        return CONTROL_FRACTION
+    try:
+        value = float(raw)
+    except ValueError as exc:
+        raise ValueError("invalid_paper_learning_control_fraction") from exc
+    if not math.isfinite(value) or not 0.0 <= value <= 1.0:
+        raise ValueError("invalid_paper_learning_control_fraction")
+    return value
+
+
 def min_probe_net_bps(env: Mapping[str, str] | None = None) -> float:
     """Operator override PAPER_PROBE_MIN_NET_BPS in [-100, 0]; invalid fails closed."""
     values = os.environ if env is None else env
@@ -126,6 +145,7 @@ def validate_config(env: Mapping[str, str] | None = None) -> None:
         raise ValueError("completed_candle_learning_requires_adaptive_learning")
     if not enabled(values):
         return
+    control_fraction(values)
     if values.get("PAPER_EVIDENCE_STOP_RULE_ENABLED", "false").strip().lower() in TRUTHY:
         raise ValueError("paper_learning_and_permanent_stop_are_mutually_exclusive")
     if (values.get("TRADING_MODE") != "paper_train"
@@ -304,7 +324,7 @@ def decide(context: LearningContext, outcomes: Sequence[ClosedOutcome], *,
     draw = int(_hash((VERSION, "admission", identity))[:13], 16) / 16**13
     control_draw = int(_hash((VERSION, "control", identity))[:13], 16) / 16**13
     last_close = max((row.exit_ms for row in rows), default=0)
-    if control_draw < CONTROL_FRACTION:
+    if control_draw < control_fraction():
         action, probability = "CONTROL", 1.0
     elif len(rows) < WARMUP_CLOSES:
         action, probability = "WARMUP", 1.0

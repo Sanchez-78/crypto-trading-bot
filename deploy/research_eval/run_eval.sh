@@ -73,4 +73,15 @@ if "EFFECT_INSUFFICIENT_DATA" not in exp["codes"] and not marker.exists():
     marker.write_text(f"{ts} {','.join(exp['codes'])}\n")
 PY
 
+# Walk-forward learner replay (+ preregistered hypothesis on fresh data only).
+prereg=()
+[ -s "$BASE/prereg_after" ] && prereg=(--prereg-after "$(cat "$BASE/prereg_after")")
+if line="$(python3 -B "$BASE/code/scripts/research/learner_replay_report.py" \
+    --db "$DB" --since "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["started_at"])' "$EPOCH")" \
+    "${prereg[@]}" --out "$out")"; then
+  echo "$(date -u +%FT%TZ) REPLAY $line" >> "$BASE/verdict.log"
+else
+  echo "$(date -u +%FT%TZ) ERROR replay failed" >> "$BASE/verdict.log"
+fi
+
 find "$BASE/reports" -mindepth 1 -maxdepth 1 -type d -mtime +"$KEEP_DAYS" -exec rm -rf {} +

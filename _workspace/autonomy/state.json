@@ -1,9 +1,12 @@
 {
-  "mode": "MAX_DATA",
+  "mode": "MAX_DATA_COLLECT",
   "mode_since": "2026-11-09",
   "stage": "S1",
   "stage_note": "S2/S3 cancelled by operator 2026-11-09; stage timer disabled",
   "probe_limits": {"daily": 480, "hourly": 30, "symbol_cooldown_s": 300, "min_net_bps": -25, "symbol_blacklist": ""},
+  "control_fraction": 1.0,
+  "preregistration": "docs/remediation/LEARNER_PREREGISTRATION_2026-11-09.md",
+  "prereg_hypothesis": "C1_contrarian",
   "notified_codes": [],
   "cron_id": "ff18c5e8",
   "cron_created": "2026-11-09"

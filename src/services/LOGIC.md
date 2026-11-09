@@ -244,3 +244,14 @@ rozhodnutí (`policy_mean_net_bps`) řadí realizovaný net u ADAPTIVE/CONTROL/P
 (stejný práh); (5) rozdíl ADAPTIVE−CONTROL roste po chronologických čtvrtinách.
 Na čistém šumu (200 simulací) jsou falešné poplachy cca 8 % / 5 % / 2,5 %.
 Obchody nejsou nezávislé, proto jde o orientační diagnostiku, ne o důkaz.
+
+`PAPER_LEARNING_CONTROL_FRACTION` (0–1, výchozí 0,2) určuje podíl CONTROL. Hodnota
+1,0 = sběrný režim: všichni kandidáti vstupují, odhad učení (`policy_mean_net_bps`)
+se jen loguje. Data pak nejsou zkreslena živým filtrem a offline replay může férově
+porovnat libovolné pravidlo.
+
+`learner_replay.py` přehrává pevný seznam variant (klíče kontextu, paměť,
+empirický Bayes) chronologicky: odhad obchodu používá jen obchody uzavřené před jeho
+vstupem. Lift = průměr net horní poloviny podle odhadu minus dolní. Varianta se volí
+jen na prvních 60 % a jednou testuje na zbytku. Nové hypotézy se předregistrují a
+hodnotí jen na obchodech po čase registrace (`evaluate_preregistered`, min. 300).

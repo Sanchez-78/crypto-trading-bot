@@ -13,6 +13,15 @@ Odpovídat česky. SSH: `ssh -i ~/.ssh/hetzner_root -o ConnectTimeout=15 root@78
      nebo méně než 20 obchodů za 24 h → PushNotification, zjisti příčinu (jen čtením).
 2. Zapiš řádek do `_workspace/autonomy/daily.md`: datum, obchody/24 h, kódy `LEARN`,
    `estimate_rho`, `ctx_p`, `persist_rho`, křivka, verdikt ADAPTIVE−CONTROL.
+2b. Z řádku `REPLAY` zapiš verdikt replaye a `prereg=… fresh_n=…`. Sběrný režim:
+   `PAPER_LEARNING_CONTROL_FRACTION=1.0` (všichni kandidáti vstupují, odhad se jen loguje).
+   - `prereg=CONTRARIAN_CONFIRMED` → podle `docs/remediation/LEARNER_PREREGISTRATION_2026-11-09.md`
+     implementuj C1 jako `paper_source_learning_v2` za příznakem (testy + mutace), nasaď přes
+     `deploy_bot_files.sh` a CONTROL vrať na 0,2. Notifikace.
+   - `CONTRARIAN_REFUTED` / `CONTRARIAN_NOT_SHOWN` → beze změny živého pravidla; zapiš do
+     daily.md; nová hypotéza jen novou předregistrací (nový dokument + nový `prereg_after`).
+   - Replay `HOLDOUT_LIFT_CONFIRMED` na datech po `prereg_after` je kandidát na další
+     předregistraci, ne na přímé nasazení.
 3. Pokud se v řádku `LEARN` poprvé objeví `CONTEXTS_DIFFER`, `CONTEXTS_PERSIST`,
    `ESTIMATE_RANKS_OUTCOMES`, `CURVE_IMPROVING` nebo `SIGNAL_HAS_GROSS_EDGE` → notifikace (jednou).
 4. Commitni jen `_workspace/autonomy/` a pushni.
