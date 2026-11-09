@@ -5,7 +5,8 @@ Komunikace s uživatelem a reporty: **česky**. Identifikátory a kód: anglicky
 
 ## Aktuální zadání
 
-Žádné otevřené zadání. Čekej na nové zadání od operátora.
+`docs/codex_prompts/EXTERNAL_AUDIT_LEARNING_PROCESS_2026-11-09.md` — externí audit
+vyhodnocování učení a procesu agenta (jen čtení, výstup `_workspace/59_external_audit_learning_process.md`).
 Podkladová data: `docs/codex_prompts/evidence/` (soubory jsou jen ke čtení).
 
 Hotová zadání (nezpracovávat znovu):
