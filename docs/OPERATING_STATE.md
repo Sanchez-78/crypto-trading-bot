@@ -55,8 +55,13 @@ generátory dál určují, co vstoupí.
   ve `verdict.log` = posledních 12 h. Důvod: journal bota drží jen ~15 min (objem logu).
 - **Mezera:** žádný kanál, který by operátora upozornil bez sezení Claude (otázka 4 níže).
 - **Ztráta kandidátů od 07:30 UTC 2026-11-09:** `REJECT_STALE_MARKET_DATA` 118× vs. 87
-  vstupů za 07:30–10:16 (předchozí 2 dny 0×), od začátku populace C1. Oprava odložena
-  po výsledku C1. Detail a fronta: `_workspace/62_stale_market_data_rejections_since_restart.md`.
+  vstupů za 07:30–10:16 (předchozí 2 dny 0×), od začátku populace C1. Příčina ověřena:
+  fáze 60s plánovače po restartu (:44–:50 místo :15–:19) + přeskočený refresh cache svíček.
+  **Během C1 bota nerestartovat** — nová fáze by náhodně změnila podíl ztracených kandidátů.
+  Oprava zadána Codexu (`docs/codex_prompts/CODEX_CANDLE_REFRESH_PHASE_FIX_2026-11-09.md`),
+  nasazení po výsledku C1 a review. Detail: `_workspace/62_stale_market_data_rejections_since_restart.md`.
+- Záloha `/opt/cryptomaster_deploy_backups/audit-20260923` (8,4 GB) smazána na pokyn
+  operátora 2026-11-09 ~10:35 UTC → disk 60 %.
 - **Disk 2026-11-09 (opraveno 10:18 UTC):** růst ~3,6 GiB/den způsobuje `/var/log/syslog`
   (rsyslog kopíruje ~13 000 řádků/min stdout bota; pravidlo `30-cryptomaster-stop.conf`
   je mrtvé, bot loguje jako `python3`), ne `shadow_excursion.sqlite` (~50 MiB/den).
@@ -108,4 +113,4 @@ mimo PAPER, změna TP/SL nebo nákladů.
 4. Alert mimo sezení: **neřešeno** — potřeba kanál od operátora (e-mail/Telegram/jiný).
 5. Autorita: `manifest.json` každého běhu + `POSTIMAGE.sha256` každého deploye.
 6. 9 bps zůstává primární měřítko učení; realistické poplatky (15–20 bps) vykazovat zvlášť.
-7. Zdroje: sledovat disk (83 % po opravě rotace syslogu 2026-11-09), RAM a Firebase kvóty při vyšším objemu.
+7. Zdroje: sledovat disk (60 % po opravě rotace syslogu a smazání zálohy 2026-11-09), RAM a Firebase kvóty při vyšším objemu.

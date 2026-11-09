@@ -30,6 +30,7 @@ Záměrně NEprovedeno:
   zmizela forenzní stopa.
 - Snížení objemu logu v kódu bota: vyžaduje restart a deploy během C1.
 - Smazání staré zálohy `audit-20260923` (8,4 GB): destruktivní, rozhodne operátor.
+  → Operátor rozhodl; smazáno 2026-11-09 ~10:35 UTC, disk 83 % → 60 %.
 
 Možnosti 1–4 níže už nejsou naléhavé.
 

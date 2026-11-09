@@ -3,6 +3,40 @@
 Autorita: `docs/OPERATING_STATE.md`. Nález z monitoringu (SSH read-only), žádný zásah.
 Oprava je odložena až po zmrazeném výsledku C1 (viz níže proč).
 
+## KOŘENOVÁ PŘÍČINA (ověřeno 2026-11-09 ~10:45 UTC) — fáze plánovače po restartu
+
+Hypotézy 1–3 níže jsou překonané. Mechanismus:
+
+1. `p0_8_plus_live_pipeline._run_neural_scheduler` (`:383-420`) tiká s pevnými deadliny
+   po 60 s; fáze v minutě je dána okamžikem startu procesu.
+2. `candle_cache_v1.get_candles` (`:94-98`) obnoví data jen při
+   `now − last_attempt >= refresh_seconds` (60 s). Symboly se vyhodnocují postupně, takže
+   čas fetch symbolu v ticku kolísá; když je rozdíl o kousek pod 60 s, obnova se přeskočí
+   a použije se snapshot z předchozího ticku.
+3. Poslední dokončená svíčka v tom snapshotu má stáří ≈ (sekunda fáze v minutě) + 60 s.
+   Limit je 90 s (`SHADOW_MAX_DATA_AGE_MS`), takže přeskočená obnova vede ke stale
+   zamítnutí právě tehdy, když fáze > ~30 s.
+
+Důkaz (sekunda v minutě v razítkách syslogu):
+
+| Období | Řádky `[P0_8_PLUS_LIVE] tick complete` | Stale |
+|---|---|---|
+| 11-07 – 11-09 00:00 (předchozí proces) | :15–:19 (stáří při přeskoku ≈ 75–79 s < 90) | 0 |
+| 11-09 od 07:31 (restart 07:30:41) | :44–:50 (stáří ≈ 104–110 s > 90) | 118, vše na :44–:48 |
+
+Kódová změna z 07:16/07:30 (`paper_learning_budget.py`, `paper_source_learning.py`,
+diff proti `/opt/cryptomaster_deploy_backups/probe-volume-20261109T071608Z/`) jen čte
+limity a CONTROL podíl z env; s časováním nesouvisí.
+
+Důsledky:
+- **Pro C1:** podíl ztracených kandidátů závisí na náhodné fázi restartu. Každý restart bota
+  během C1 by náhodně změnil složení populace → **během C1 bota nerestartovat**.
+- I při „dobré“ fázi (před restartem) přeskočený tick znovu vyhodnotí předchozí svíčku
+  místo nové, takže nová svíčka toho symbolu se v tu minutu nevyhodnotí vůbec. Ztráta
+  kandidátů tedy existovala i dřív, jen nebyla vidět jako stale kód.
+- Oprava zadána Codexu: `docs/codex_prompts/CODEX_CANDLE_REFRESH_PHASE_FIX_2026-11-09.md`.
+  Nasazení až po zmrazeném výsledku C1 a po nezávislém review diffu.
+
 ## Ověřeno (syslog, `[P0_8_PLUS_LIVE] … admitted=… code=…`)
 
 | Kód | 2026-11-09 00:00–10:16 UTC | 2026-11-07 00:00 – 11-09 00:00 (`syslog.1.gz`) |
