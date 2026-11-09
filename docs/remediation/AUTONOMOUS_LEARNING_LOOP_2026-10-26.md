@@ -56,6 +56,14 @@ S3 je konečný stav smyčky.
   `systemctl daemon-reload && systemctl restart cryptomaster`, smazat
   `/opt/cryptomaster_research/{stage,since_override}`.
 
+## Průběh
+
+- 2026-10-28 17:47 UTC: `DECISION_READY` — `SELECTION_EFFECT_NOT_SHOWN` (S1.3).
+- 2026-11-09 07:01 UTC: S2 nasazen (zpoždění: cron v sezení Claude neběžel).
+- Od 2026-11-09 provádí pravidlo S2 → S3 **server sám**: `run_eval.sh` zapíše
+  `next_action=S3`, `cryptomaster-research-stage.timer` (06:07/18:07 UTC) spustí
+  `stage_step.sh` → `apply_stage.sh S3`. Po úspěchu `FINISHED`, po rollbacku `BLOCKED`.
+
 ## Soubory
 
 - `deploy/research_eval/` — `run_eval.sh` (časovač 05:47/17:47 UTC), `apply_stage.sh`, unit soubory.

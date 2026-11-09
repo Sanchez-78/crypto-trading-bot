@@ -5,6 +5,10 @@ Uživatel není u konzole. Odpovídat česky. Pravidla:
 
 SSH: `ssh -i ~/.ssh/hetzner_root -o ConnectTimeout=15 root@78.47.2.198`
 
+0. Od 2026-11-09 přechod S2 → S3 provádí server sám (`cryptomaster-research-stage.timer`).
+   Pokud stupeň je S2: přechod sám nespouštěj; jen zkontroluj `stage`, `FINISHED`, `BLOCKED`
+   na serveru a pokud server S3 nasadil (`FINISHED`), proveď bod 5 (záznam, FINAL.md, paměť).
+   `BLOCKED` → notifikace.
 1. Načti `_workspace/autonomy/state.json`. Pokud `finished=true`: smaž svůj cron
    job (CronList/CronDelete) a skonči.
 2. Server (jen čtení): `tail -2 /opt/cryptomaster_research/verdict.log`,

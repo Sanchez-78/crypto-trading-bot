@@ -42,6 +42,14 @@ total = report["total"]
 exp = report["experiments"].get(policy, {}).get("verdict")
 fmt = lambda v: "NA" if v is None else f"{v:+.2f}"
 ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+since_file = base / "since_override"
+if stage == "S2" and since_file.exists():
+    # Pre-declared rule S2 (docs/remediation/AUTONOMOUS_LEARNING_LOOP_2026-10-26.md).
+    lower = budget.get("lower_bound_bps")
+    deadline = float(since_file.read_text().strip()) + 21 * 86400
+    goal = exp is not None and "ADAPTIVE_POSITIVE" in exp["codes"] and lower is not None and lower > 0
+    if not goal and (budget.get("code") == "STOP_NO_EDGE" or datetime.datetime.now().timestamp() >= deadline):
+        (base / "next_action").write_text("S3\n")
 if exp is None:
     print(f"{ts} stage={stage} total_n={total.get('n')} total_upper={fmt(budget.get('upper_bound_bps'))} {policy}=NO_DATA")
     sys.exit(0)

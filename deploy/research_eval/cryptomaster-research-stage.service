@@ -1,0 +1,10 @@
+[Unit]
+Description=CryptoMaster pre-declared PAPER learning stage step (S2 -> S3 only)
+After=cryptomaster-research-eval.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /opt/cryptomaster_research/stage_step.sh
+SuccessExitStatus=3
+NoNewPrivileges=true
+TimeoutStartSec=50min
