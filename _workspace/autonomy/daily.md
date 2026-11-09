@@ -6,3 +6,7 @@
 
 07:17 UTC nasazeno zvýšení objemu (480/den, 30/h, cooldown 300 s, min. net −25 bps, bez blacklistu).
 První 3 minuty: 3 vstupy (ETH, BTC, SOL).
+
+07:31 UTC sběrný režim `PAPER_LEARNING_CONTROL_FRACTION=1.0` (všichni kandidáti vstupují, odhad učení se jen loguje);
+předregistrace C1_contrarian, `prereg_after=1794209516`. Replay na 915 starších obchodech: všech 10 variant
+záporný holdout lift (V0 −3,50 [−7,52; +0,51]). Tempo po zvýšení limitů ~18 obchodů/h.
