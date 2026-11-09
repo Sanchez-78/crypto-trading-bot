@@ -5,7 +5,9 @@ Komunikace s uživatelem a reporty: **česky**. Identifikátory a kód: anglicky
 
 ## Aktuální zadání
 
-**Žádné otevřené zadání.** Aktuální stav a autorita: `docs/OPERATING_STATE.md`.
+**Otevřené zadání:** `docs/codex_prompts/CODEX_NEW_SIGNAL_SOURCE_SCREEN_2026-11-09.md`
+→ report `_workspace/64_codex_new_signal_source_screen.md` (jen offline výzkum, bot se nemění).
+Aktuální stav a autorita: `docs/OPERATING_STATE.md`.
 Podkladová data: `docs/codex_prompts/evidence/` (soubory jsou jen ke čtení).
 
 Hotová zadání (nezpracovávat znovu):

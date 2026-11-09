@@ -98,6 +98,16 @@ zůstávají:
 obchodů a 7 dní), agent nemění konfiguraci sběru (limity, cooldown, min. net, symboly,
 CONTROL podíl, generátory) — změnila by cílovou populaci předregistrace.
 
+**Reset P/L / DB / Firebase:** operátor 2026-11-09 povolil („pokud je třeba reset PL nebo
+firebase atd., proveď“). Během C1 se reset **neprovádí**: C1 se vyhodnocuje z `closed_trades`
+v `cache.sqlite` po cutoffu a reset by test zničil. Použít až po zmrazeném výsledku C1, a to jen
+pokud nová fáze potřebuje čistou epochu (předtím záloha DB).
+
+**Nový zdroj signálu:** funding carry uzavřen (audit v9 NO-GO). Offline screen dat z futures
+(OI, long/short, taker ratio, funding, taker imbalance, BTC→alty) na horizontu bota
+zadán Codexu (`docs/codex_prompts/CODEX_NEW_SIGNAL_SOURCE_SCREEN_2026-11-09.md`,
+předregistrace TRAIN/TEST/HOLDOUT). Případný LEAD → nová předregistrace až po C1.
+
 ## Vyžaduje operátora
 
 Nová hypotéza mimo předregistraci, změna cíle, trvalá změna politiky učení, cokoli
