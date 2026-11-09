@@ -11,8 +11,9 @@ Odpovídat česky. SSH (jen čtení): `ssh -i ~/.ssh/hetzner_root -o ConnectTime
    - `STATUS` není `OK`, nový řádek v `ALERT`, služba/timer neaktivní, poslední běh starší
      než 14 h, nebo < 20 obchodů/24 h → PushNotification + zjistit příčinu čtením. Opravu
      výzkumné části smíš udělat s testy; změnu bota jen podle `OPERATING_STATE.md`.
+   Také `systemctl is-active cryptomaster-research-funnel` (neaktivní → stejné upozornění).
 2. Zapiš řádek do `_workspace/autonomy/daily.md`: run ID, obchody/24 h, `COHORT_BLIND`
-   počty, `REPLAY` stav C1 (`fresh_n/final_n`, `days`). Během slepé fáze nečti ani
+   počty, `FUNNEL` (kandidáti P0.8+ a hlavní kódy odmítnutí), `REPLAY` stav C1 (`fresh_n/final_n`, `days`). Během slepé fáze nečti ani
    nepočítej žádné výsledky (P/L, korelace) čerstvých obchodů po cutoffu — jen počty.
    Uváděj n a CI; `*_NOT_SHOWN` popisuj jako „neprokázáno“, nikdy jako „neexistuje“.
 3. C1: dokud `prereg=PENDING`, nic neinterpretuj. Až bude jiný verdikt, zapiš ho a pošli

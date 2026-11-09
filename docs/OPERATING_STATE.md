@@ -43,19 +43,29 @@ generátory dál určují, co vstoupí.
 - `prereg_result.json` (neměnný) vzniká uvnitř běhu při prvním závěrečném verdiktu C1;
   když pak selže zbytek běhu, výsledek už zmrazený je (vyhodnocení proběhlo právě jednou).
   Souběžný běh odmítnutý zámkem skončí tiše (exit 0).
+- `cryptomaster-research-funnel.service` (od 9. 11.): čte journal bota a ukládá hodinové
+  počty fáze funnelu (kandidáti P0.8+ podle kódu, vstupy, pacing, skipy) do
+  `funnel/YYYYMMDD.jsonl`; bez cen a výsledků (bezpečné pro slepou fázi). Řádek `FUNNEL`
+  ve `verdict.log` = posledních 12 h. Důvod: journal bota drží jen ~15 min (objem logu).
 - **Mezera:** žádný kanál, který by operátora upozornil bez sezení Claude (otázka 4 níže).
 
-## Povolené akce agenta — výklad agenta, čeká na výslovné potvrzení operátora
+## Povolené akce agenta
 
 Operátor opakovaně autorizoval autonomní práci („pokračuj autonomně“, „po automatické
 analýze nasaď vše potřebné“, „pracuj autonomně“, 26. 10.–9. 11.) a commit/push po každém
-commitu. Konkrétní rozsah níže je **výklad agenta**, ne operátorem schválený seznam:
+commitu. **2026-11-09 ~09:55 UTC operátor potvrdil: „dělej vše bez ptaní“.** Rozsah níže
+tím platí bez dalších dotazů; bezpečnostní hranice (sekce „Vyžaduje operátora“, PAPER only)
+zůstávají:
 
 - Čtení serveru (SSH read-only), výpočty, reporty, dokumentace, commit a push.
 - PAPER změny výzkumné části (`/opt/cryptomaster_research`) s testy.
 - PAPER změny bota jen přes `deploy/research_eval/deploy_bot_files.sh` (allowlist,
   zámek, záloha, rollback) a **po nezávislém review přesného diffu**, pokud mění
   rozhodovací politiku, protokol experimentu nebo nasazovací skripty.
+
+**Zmrazení sběru během C1:** dokud není hodnocená množina C1 kompletní (≥ 1 000 čerstvých
+obchodů a 7 dní), agent nemění konfiguraci sběru (limity, cooldown, min. net, symboly,
+CONTROL podíl, generátory) — změnila by cílovou populaci předregistrace.
 
 ## Vyžaduje operátora
 
@@ -72,7 +82,7 @@ mimo PAPER, změna TP/SL nebo nákladů.
 | `CLAUDE.md` — CORE ARCHITECTURE, autonomní 30min smyčka do WR > 50 % | zastaralé pro současnou PAPER cestu |
 | `AGENTS.md` — zákaz commit/deploy | psáno pro Codex/externí agenty; uplatnění na Claude je výklad agenta (čeká na potvrzení) |
 
-## Výchozí odpovědi na otevřené otázky auditu (agent, čeká na potvrzení operátora)
+## Výchozí odpovědi na otevřené otázky auditu (agent; platí na základě „dělej vše bez ptaní“)
 
 1. Hlavní výsledek: více kvalitně atribuovaných vzorků + měření, zda pořadí učení
    předpovídá výsledek. Net na obchod je sekundární.

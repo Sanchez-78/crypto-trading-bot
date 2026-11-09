@@ -24,7 +24,7 @@ Autorita aktuálního stavu: `docs/OPERATING_STATE.md`. Tento soubor mapuje nál
 | F18 stará stage logika | `apply_stage.sh`, `stage_step.sh`, stage units odstraněny z repa i serveru | HOTOVO po nasazení |
 | F19 validace replaye | Duplicitní ID / nekladná délka selžou; close jen přísně před vstupem | HOTOVO |
 | F20 913/915 | Snapshot ID uveden v errata a manifestech | HOTOVO |
-| Funnel telemetrie kandidátů | Nezahájeno — vyžaduje změnu bota a review | OTEVŘENÉ |
+| Funnel telemetrie kandidátů | Bez změny bota: `scripts/research/funnel_tap.py` + `cryptomaster-research-funnel.service` (hodinové počty z journalu, bez výsledků), řádek `FUNNEL` | HOTOVO 9. 11. |
 | Pevné horizonty / BBO | Nezahájeno | OTEVŘENÉ |
 | Alert mimo sezení | Potřeba kanál od operátora | OTEVŘENÉ (otázka operátorovi) |
 
@@ -36,3 +36,13 @@ Nasazení výzkumné části 2026-11-09 08:55 UTC (bot nerestartován): slepý b
 `20261109T085520Z` — epocha a replay jen do cutoffu (n = 921), C1 `PENDING` bez výsledků,
 `COHORT_BLIND fresh_closed=11`; alert cesta otestována; timer znovu zapnut (17:47 UTC).
 Časovač byl 08:45–08:56 UTC zastaven, aby starý kód nepočítal statistiky čerstvých dat.
+
+Funnel 2026-11-09 ~09:40–09:55 UTC (z journalu, který drží jen ~15 min kvůli
+~240 řádkům/s, z toho ~70 % `ECON_BAD_ENTRY_RETURN_TRACE`): vázající je **počet kandidátů**,
+ne limity. Za ~15 min ~3 800 × `PAPER_EXPLORE_SKIP no_side/no_candidate_pattern`; P0.8+
+kandidáti jen jednotky (převážně `trend_cost_aware`). Odmítnutí: `symbol_cooldown`
+(opakovaný signál téhož symbolu do 300 s, `P0_REJECT_PAPER_LEARNING`),
+`REJECT_STALE_MARKET_DATA`, DOT `REJECT_NEGATIVE_NET_EDGE` při net ≈ −23 bps (> −25 bps,
+tedy nejspíš náklad > `MAX_PROBE_COST_BPS` 20 — proto DOT za 24 h nemá obchod).
+Konfiguraci sběru během C1 neměním (cílová populace předregistrace); kandidáty pro příští
+předregistraci: kratší cooldown, cost cap pro DOT, utlumení spamu v logu (změna bota).

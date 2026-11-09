@@ -1,0 +1,21 @@
+[Unit]
+Description=CryptoMaster PAPER candidate-funnel counter (read-only journal tap, counts only)
+After=cryptomaster.service
+OnFailure=cryptomaster-research-alert.service
+
+[Service]
+Type=simple
+ExecStart=/bin/bash -c 'set -o pipefail; journalctl -f -n 0 -u cryptomaster -o cat | python3 -u -B /opt/cryptomaster_research/code/scripts/research/funnel_tap.py tap --out /opt/cryptomaster_research/funnel'
+Restart=always
+RestartSec=30
+Nice=19
+IOSchedulingClass=idle
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/cryptomaster_research
+MemoryMax=200M
+
+[Install]
+WantedBy=multi-user.target

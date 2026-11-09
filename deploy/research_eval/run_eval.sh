@@ -62,6 +62,8 @@ PY
 )" || fail cohort_count
   fi
 fi
+# Candidate funnel (counts only, from the journal tap); never fails the run.
+funnel_line="$(python3 -B "$CODE/scripts/research/funnel_tap.py" summary --out "$BASE/funnel" --hours 12 2>/dev/null || echo "FUNNEL error")"
 
 # Manifest: what exactly this run saw.
 python3 - "$out" "$snapshot" "$CODE" "$APP" "$run_id" "$prereg_after" <<'PY' || fail manifest
@@ -119,6 +121,7 @@ print("\n".join(result))
 PY
 echo "$(date -u +%FT%TZ) REPLAY run=$run_id $replay_line" >> "$BASE/verdict.log"
 [ -n "$cohort_line" ] && echo "$(date -u +%FT%TZ) $cohort_line run=$run_id" >> "$BASE/verdict.log"
+echo "$(date -u +%FT%TZ) $funnel_line run=$run_id" >> "$BASE/verdict.log"
 
 find "$BASE/reports" -mindepth 1 -maxdepth 1 -type d -mtime +"$KEEP_DAYS" -exec rm -rf {} + || fail retention
 ln -sfn "$out" "$BASE/latest"
