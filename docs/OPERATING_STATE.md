@@ -48,12 +48,14 @@ generátory dál určují, co vstoupí.
   `funnel/YYYYMMDD.jsonl`; bez cen a výsledků (bezpečné pro slepou fázi). Řádek `FUNNEL`
   ve `verdict.log` = posledních 12 h. Důvod: journal bota drží jen ~15 min (objem logu).
 - **Mezera:** žádný kanál, který by operátora upozornil bez sezení Claude (otázka 4 níže).
-- **Riziko 2026-11-09 10:09 UTC:** disk 88 % (87 %→88 % za ~93 min), `shadow_excursion.sqlite`
-  (11,1 GiB, 69,1 M řádků `shadow_path_1s`, bez retence v kódu) roste tempem, který by
-  mohl zaplnit zbývajících ~4,4 GiB řádově za hodiny až ~2 dny — dřív než konec C1
-  (~16. 11.). Zápisy jsou obalené `try/except` (nerozbije živou PAPER cestu), ale ztratí
-  se tiše sbíraná shadow evidence a zasáhne i jiné služby na disku. Žádný zásah neproveden
-  (runtime data, mimo rozsah bez operátora). Detail a možnosti: `_workspace/61_disk_shadow_excursion_growth_risk.md`.
+- **Disk 2026-11-09 (opraveno 10:18 UTC):** růst ~3,6 GiB/den způsobuje `/var/log/syslog`
+  (rsyslog kopíruje ~13 000 řádků/min stdout bota; pravidlo `30-cryptomaster-stop.conf`
+  je mrtvé, bot loguje jako `python3`), ne `shadow_excursion.sqlite` (~50 MiB/den).
+  Zásah: zkomprimován uzavřený `syslog.1` a z `/etc/logrotate.d/rsyslog` odstraněno
+  `delaycompress` (záloha `/root/logrotate.d-rsyslog.bak-20261109`) → 88 % → 83 %,
+  minimum volného místa před denní rotací ~4 GiB. Syslog bota záměrně NEvypnut: journald
+  je jen v RAM, takže `/var/log/syslog*` je jediná trvalá historie logů bota.
+  Detail: `_workspace/61_disk_shadow_excursion_growth_risk.md` (errata nahoře).
 
 ## Povolené akce agenta
 
@@ -97,4 +99,4 @@ mimo PAPER, změna TP/SL nebo nákladů.
 4. Alert mimo sezení: **neřešeno** — potřeba kanál od operátora (e-mail/Telegram/jiný).
 5. Autorita: `manifest.json` každého běhu + `POSTIMAGE.sha256` každého deploye.
 6. 9 bps zůstává primární měřítko učení; realistické poplatky (15–20 bps) vykazovat zvlášť.
-7. Zdroje: sledovat disk (87 %), RAM a Firebase kvóty při vyšším objemu.
+7. Zdroje: sledovat disk (83 % po opravě rotace syslogu 2026-11-09), RAM a Firebase kvóty při vyšším objemu.

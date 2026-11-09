@@ -1,5 +1,38 @@
 # Riziko zaplnění disku — `shadow_excursion.sqlite` bez retence (2026-11-09)
 
+## ERRATA 10:18 UTC — příčina níže je chybná; vyřešeno
+
+Měření (SSH, 2026-11-09 10:12–10:18 UTC):
+- Za 90 s se `shadow_excursion.sqlite` ani jeho `-wal` nezměnily (mtime 10:03:53 /
+  10:11:56), obsazený disk přitom vzrostl o 4,06 MB. Od zálohy 2026-09-25
+  (`/opt/cryptomaster_deploy_backups/audit-20260923/…`, 8,95 GB) narostl soubor o
+  ~2,2 GB za 45 dní ≈ 50 MiB/den. Odhad „240–250 MiB/h ze shadow DB“ níže neplatí.
+- Skutečný zdroj: `/var/log/syslog` rostl o 2 525 777 B/min (~3,6 GiB/den). Bot
+  vypisuje ~13 000 řádků/min (`SCORE_THRESHOLD`, `RDE[v10.10b]`, `coherence`,
+  `REJECT_ECON_BAD_ENTRY`) a rsyslog je kopíruje z journaldu. Pravidlo
+  `/etc/rsyslog.d/30-cryptomaster-stop.conf` (`$programname == 'cryptomaster'`) nic
+  nefiltruje: unit nemá `SyslogIdentifier`, bot loguje jako `python3`.
+- Logrotate měl `delaycompress`, takže den starý `syslog.1` ležel nekomprimovaný (2,0 GB).
+
+Provedeno (jen systémové logy, žádný kód, runtime data ani konfigurace sběru):
+1. Záloha `/etc/logrotate.d/rsyslog` → `/root/logrotate.d-rsyslog.bak-20261109`,
+   odstraněn řádek `delaycompress`; ověřeno `logrotate -d /etc/logrotate.conf` bez chyb.
+2. `gzip` uzavřeného `/var/log/syslog.1` (nikým neotevřený, `fuser`/`lsof` prázdné):
+   2,0 GB → 118 MB. Bezztrátové.
+3. Výsledek: disk 88 % → 83 % (volno 4,4 → 6,2 GiB). Syslog se dál zapisuje, služby
+   `cryptomaster` i `rsyslog` aktivní. Ustálený stav: dnešní `syslog` dosáhne ~3,6 GiB
+   před půlnoční rotací, pak se zkomprimuje na ~0,2 GiB → minimum volna ~4 GiB.
+
+Záměrně NEprovedeno:
+- Oprava rsyslog pravidla (`python3`): journald je jen v RAM (`/var/log/journal`
+  neexistuje, `RuntimeMaxUse=100M`, celý journal začínal v 10:03 při běhu bota od
+  07:30), takže `/var/log/syslog*` je jediná trvalá historie logů bota. Vypnutím by
+  zmizela forenzní stopa.
+- Snížení objemu logu v kódu bota: vyžaduje restart a deploy během C1.
+- Smazání staré zálohy `audit-20260923` (8,4 GB): destruktivní, rozhodne operátor.
+
+Možnosti 1–4 níže už nejsou naléhavé.
+
 Autorita aktuálního stavu: `docs/OPERATING_STATE.md`. Tento report je nález z
 rutinního monitoringu (SSH read-only), ne zásah — žádný kód ani runtime data
 nebyly měněny.
