@@ -1,0 +1,6 @@
+[Unit]
+Description=Record a failed CryptoMaster research evaluation (local alert marker)
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'echo "$$(date -u +%%FT%%TZ) research-eval FAILED" >> /opt/cryptomaster_research/ALERT; logger -p user.err -t cryptomaster-research "research evaluation failed; see /opt/cryptomaster_research/STATUS"'

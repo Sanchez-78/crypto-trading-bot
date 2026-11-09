@@ -40,25 +40,25 @@ def structured(seed=2, contexts=10, per=40):
 
 def test_pure_noise_fails_every_precondition():
     result = diagnose(noise_only(seed=2))
-    assert result["reasons"][0] == "SIGNAL_NO_GROSS_EDGE"
-    assert "CONTEXTS_NOISE_ONLY" in result["reasons"]
-    assert "CONTEXTS_DO_NOT_PERSIST" in result["reasons"]
-    assert "ESTIMATE_UNINFORMATIVE" in result["reasons"]
+    assert result["reasons"][0] == "POSITIVE_GROSS_NOT_SHOWN"
+    assert "CONTEXT_DIFFERENCE_NOT_SHOWN" in result["reasons"]
+    assert "POSITIVE_PERSISTENCE_NOT_SHOWN" in result["reasons"]
+    assert "POSITIVE_RANKING_NOT_SHOWN" in result["reasons"]
     assert result["context_dispersion"]["p_value"] > 0.05
 
 
 def test_false_positive_rates_stay_near_five_percent():
     runs = [diagnose(noise_only(seed=s))["reasons"] for s in range(100, 200)]
-    assert sum("CONTEXTS_DIFFER" in r for r in runs) <= 15
-    assert sum("CONTEXTS_PERSIST" in r for r in runs) <= 12
-    assert sum("ESTIMATE_RANKS_OUTCOMES" in r for r in runs) <= 12
+    assert sum("CONTEXT_DIFFERENCE_SHOWN" in r for r in runs) <= 15
+    assert sum("POSITIVE_PERSISTENCE_SHOWN" in r for r in runs) <= 12
+    assert sum("POSITIVE_RANKING_SHOWN" in r for r in runs) <= 12
 
 
 def test_real_structure_is_detected():
     result = diagnose(structured())
-    assert "CONTEXTS_DIFFER" in result["reasons"]
-    assert "CONTEXTS_PERSIST" in result["reasons"]
-    assert "ESTIMATE_RANKS_OUTCOMES" in result["reasons"]
+    assert "CONTEXT_DIFFERENCE_SHOWN" in result["reasons"]
+    assert "POSITIVE_PERSISTENCE_SHOWN" in result["reasons"]
+    assert "POSITIVE_RANKING_SHOWN" in result["reasons"]
     assert result["context_dispersion"]["ratio"] > 5
     assert result["context_dispersion"]["p_value"] < 1e-6
     assert result["estimate_vs_outcome"]["spearman"] > 0.8
@@ -67,16 +67,16 @@ def test_real_structure_is_detected():
 def test_gross_edge_codes():
     positive = [obs("a", 5.0 + (i % 3), gross=20.0 + (i % 5), ts=i) for i in range(50)]
     negative = [obs("a", -5.0, gross=-20.0 - (i % 5), ts=i) for i in range(50)]
-    assert diagnose(positive)["reasons"][0] == "SIGNAL_HAS_GROSS_EDGE"
-    assert diagnose(negative)["reasons"][0] == "SIGNAL_NEGATIVE_GROSS"
-    assert diagnose([obs("a", 1.0)])["reasons"][0] == "SIGNAL_INSUFFICIENT_DATA"
+    assert diagnose(positive)["reasons"][0] == "POSITIVE_GROSS_SHOWN"
+    assert diagnose(negative)["reasons"][0] == "NEGATIVE_GROSS_SHOWN"
+    assert diagnose([obs("a", 1.0)])["reasons"][0] == "GROSS_INSUFFICIENT_DATA"
 
 
 def test_small_contexts_are_insufficient_not_noise():
     rows = [obs(f"c{i % 30}", float(i % 7), ts=i) for i in range(60)]
     result = diagnose(rows)
     assert result["context_dispersion"] is None
-    assert "CONTEXTS_INSUFFICIENT_DATA" in result["reasons"]
+    assert "CONTEXT_DIFFERENCE_INSUFFICIENT_DATA" in result["reasons"]
     assert "PERSISTENCE_INSUFFICIENT_DATA" in result["reasons"]
 
 
@@ -90,9 +90,8 @@ def test_learning_curve_quarters_and_trend():
     result = diagnose(rows)
     diffs = [q["diff_bps"] for q in result["learning_curve"]]
     assert len(diffs) == 4 and diffs == pytest.approx([0, 4, 8, 12])
-    assert "CURVE_IMPROVING" in result["reasons"]
-    flat = [obs("c", -10, action=a, ts=i) for i, a in enumerate(["ADAPTIVE", "CONTROL"] * 40)]
-    assert "CURVE_FLAT_OR_WORSE" in diagnose(flat)["reasons"]
+    # descriptive only: no curve code may appear among the reasons
+    assert not any(code.startswith("CURVE") for code in result["reasons"])
 
 
 def test_probe_and_warmup_handling():
@@ -113,3 +112,21 @@ def test_order_independent():
     shuffled = rows[:]
     random.Random(9).shuffle(shuffled)
     assert diagnose(rows) == diagnose(shuffled)
+
+
+def test_negative_ranking_is_reported_as_informative():
+    rng = random.Random(3)
+    rows = []
+    for i in range(400):
+        est = rng.gauss(-9, 5)
+        rows.append(obs(f"c{i % 8}", -est + rng.gauss(0, 3), estimate=est, ts=i))
+    assert "NEGATIVE_RANKING_SHOWN" in diagnose(rows)["reasons"]
+
+
+def test_zero_aggregate_gross_does_not_claim_impossibility():
+    """Audit counterexample: +20/-20 separable groups -> aggregate 0, filter could help."""
+    rows = [obs("good" if i % 2 else "bad", (11 if i % 2 else -29) + (i % 3),
+                gross=(20 if i % 2 else -20) + (i % 3), ts=i) for i in range(400)]
+    reasons = diagnose(rows)["reasons"]
+    assert reasons[0] == "POSITIVE_GROSS_NOT_SHOWN"
+    assert not any("IMPOSSIBLE" in r or "NOISE_ONLY" in r or "UNINFORMATIVE" in r for r in reasons)

@@ -1,5 +1,19 @@
 # Proč se robot nezlepšuje — vyhodnocení strategií a učení (2026-11-09)
 
+> **Errata (externí audit `_workspace/59_…`, 2026-11-09):**
+> - „Robot se nemá z čeho učit / učení nemůže fungovat / signály nemají žádnou
+>   předpovědní hodnotu“ — **příliš silné**. Data ukazují jen, že přínos současného
+>   filtru **nebyl prokázán** a souhrnný hrubý pohyb je statisticky nerozlišitelný od nuly.
+>   Nulový souhrn nevylučuje užitečný výběr (opačně orientované, rozlišitelné podskupiny).
+> - „Všechny intervaly hrubého pohybu obsahují 0“ — **nepravda**: `sideways_mean_reversion_v1`
+>   BUY −8,31 bps [−16,40; −0,21], BTCUSDT +2,35 [+0,06; +4,64]. Po mnoha prohlížených
+>   podskupinách to není objev, ale tvrzení bylo chybné.
+> - „Přesně nula“ — správně „+0,02 ± 1,34 bps“. Hrubý pohyb je z paper cen (vstup přes
+>   spread, výstup na midpointu), není to čistý mid-to-mid signál.
+> - Report míchá snapshoty 913/915 obchodů; reprodukovatelný snapshot je
+>   `docs/codex_prompts/evidence/epoch_20260925_closed_trades_20261109.json`.
+> - Sekce „Autonomní smyčka“ (S3, termín 30. 11.) je zrušena — viz `docs/OPERATING_STATE.md`.
+
 Data: `closed_trades` epochy od 2026-09-25 (server, read-only export), 913–915 obchodů,
 report `/opt/cryptomaster_research/latest/report.md` z 2026-11-09 05:47 UTC.
 Náklady v paper modelu: 9 bps na obchod (fee 0,08 % + slippage 0,01 %).

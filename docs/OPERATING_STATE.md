@@ -1,0 +1,84 @@
+# Aktuální provozní stav — jediný index autority
+
+Aktualizováno: 2026-11-09. Při rozporu má tento soubor přednost před staršími
+dokumenty; starší dokumenty jsou historický záznam. Kdo mění stav, aktualizuje tento soubor.
+
+## Cíl (operátor, 2026-11-09)
+
+„Imaginární ztráta nevadí, potřebujeme co nejvíce obchodů pro proces učení a metriky,
+proč se učení zlepšuje/nezlepšuje.“ Bot je **PAPER only**. Virtuální ztráta není důvod
+k zastavení. Cíl WR > 50 % / kladné P/L z `CLAUDE.md` není aktuální měřítko práce.
+
+## Aktivní konfigurace (server `/opt/cryptomaster`, nasazeno souborově, ne z gitu)
+
+| Položka | Hodnota | Zdroj |
+|---|---|---|
+| Limity průzkumu | 480/den, 30/h, cooldown 300 s, min. modelovaný net −25 bps | drop-in `zzzzzzzzzz-probe-volume.conf` |
+| Symboly | všech 7 (blacklist prázdný) | tamtéž |
+| CONTROL podíl | 1,0 (sběr: adaptivní odmítání vypnuto, odhad se loguje) | drop-in `zzzzzzzzzzz-learning-collect.conf` |
+| TP/SL, náklady | beze změny (35/25 bps, fee 8 + slippage 1 bps) | `/opt/cryptomaster/.env`, overlay |
+| Stupně S2/S3 | **zrušeny**, stage timer a skripty odstraněny | — |
+
+„Všichni kandidáti“ znamená jen bez adaptivního odmítnutí; pacing, risk, kvóty, data a
+generátory dál určují, co vstoupí.
+
+## Aktivní experiment
+
+- **C1_contrarian**, předregistrace `docs/remediation/LEARNER_PREREGISTRATION_2026-11-09.md`
+  včetně dodatku 1: cutoff `prereg_after=1794209516`; jediné vyhodnocení prvních 1 000
+  čerstvých obchodů, nejdřív po 7 UTC dnech (~2026-11-16). Do té doby `PENDING`, výsledky skryté.
+- Historický experiment ADAPTIVE vs CONTROL (do 9. 11.): `SELECTION_EFFECT_NOT_SHOWN`,
+  uzavřen — při CONTROL = 1 nová ramena nevznikají.
+
+## Měření (server, nezávislé na sezení Claude)
+
+- `cryptomaster-research-eval.timer` 05:47 a 17:47 UTC → `/opt/cryptomaster_research/run_eval.sh`.
+- Každý běh: `reports/<UTC run ID>/` s `manifest.json` (SHA snapshotu, kódu, env),
+  `report.*` (epocha do cutoffu), `replay.*`; zámek proti souběžným během.
+- `verdict.log`: řádky `EPOCH`, `LEARN_EPOCH` (obojí jen do cutoffu C1), `REPLAY`
+  (exploratorní jen do cutoffu + stav C1) a `COHORT_BLIND` (jen počty čerstvých obchodů).
+  Plný report MAX_DATA kohorty (`cohort/`) až po zmrazeném výsledku C1.
+- `STATUS` = poslední výsledek (`OK` / `FAILED:<krok>`); selhání spustí
+  `cryptomaster-research-alert.service` → `ALERT` soubor a journal (priorita err).
+- `prereg_result.json` (neměnný) vzniká uvnitř běhu při prvním závěrečném verdiktu C1;
+  když pak selže zbytek běhu, výsledek už zmrazený je (vyhodnocení proběhlo právě jednou).
+  Souběžný běh odmítnutý zámkem skončí tiše (exit 0).
+- **Mezera:** žádný kanál, který by operátora upozornil bez sezení Claude (otázka 4 níže).
+
+## Povolené akce agenta — výklad agenta, čeká na výslovné potvrzení operátora
+
+Operátor opakovaně autorizoval autonomní práci („pokračuj autonomně“, „po automatické
+analýze nasaď vše potřebné“, „pracuj autonomně“, 26. 10.–9. 11.) a commit/push po každém
+commitu. Konkrétní rozsah níže je **výklad agenta**, ne operátorem schválený seznam:
+
+- Čtení serveru (SSH read-only), výpočty, reporty, dokumentace, commit a push.
+- PAPER změny výzkumné části (`/opt/cryptomaster_research`) s testy.
+- PAPER změny bota jen přes `deploy/research_eval/deploy_bot_files.sh` (allowlist,
+  zámek, záloha, rollback) a **po nezávislém review přesného diffu**, pokud mění
+  rozhodovací politiku, protokol experimentu nebo nasazovací skripty.
+
+## Vyžaduje operátora
+
+Nová hypotéza mimo předregistraci, změna cíle, trvalá změna politiky učení, cokoli
+mimo PAPER, změna TP/SL nebo nákladů.
+
+## Nahrazené / historické dokumenty
+
+| Dokument | Stav |
+|---|---|
+| `docs/remediation/AUTONOMOUS_LEARNING_LOOP_2026-10-26.md` | S1→S2→S3 zrušeno 9. 11. |
+| `_workspace/autonomy/2026-11-09_S2.md` | historický; S2 vrácen na S1 o 7 min později |
+| `_workspace/58_why_bot_does_not_improve.md` | část závěrů opravena (viz Errata v souboru) |
+| `CLAUDE.md` — CORE ARCHITECTURE, autonomní 30min smyčka do WR > 50 % | zastaralé pro současnou PAPER cestu |
+| `AGENTS.md` — zákaz commit/deploy | psáno pro Codex/externí agenty; uplatnění na Claude je výklad agenta (čeká na potvrzení) |
+
+## Výchozí odpovědi na otevřené otázky auditu (agent, čeká na potvrzení operátora)
+
+1. Hlavní výsledek: více kvalitně atribuovaných vzorků + měření, zda pořadí učení
+   předpovídá výsledek. Net na obchod je sekundární.
+2. C1 = jednorázový test s pevným koncem (dodatek 1), celková chybovost 5 %.
+3. Po potvrzení jen omezená replikační PAPER fáze po review; trvalou změnu schvaluje operátor.
+4. Alert mimo sezení: **neřešeno** — potřeba kanál od operátora (e-mail/Telegram/jiný).
+5. Autorita: `manifest.json` každého běhu + `POSTIMAGE.sha256` každého deploye.
+6. 9 bps zůstává primární měřítko učení; realistické poplatky (15–20 bps) vykazovat zvlášť.
+7. Zdroje: sledovat disk (87 %), RAM a Firebase kvóty při vyšším objemu.

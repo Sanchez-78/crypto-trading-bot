@@ -232,26 +232,44 @@ Limity průzkumu (`paper_learning_budget.limits`) a spodní mez modelovaného ne
 kvůli limitu 1000 řádků v `read_entries`), `PAPER_PROBE_SYMBOL_COOLDOWN_S`
 (0–86400) a `PAPER_PROBE_MIN_NET_BPS` (−100 až 0). Nenastaveno = 6/48/1800 s/−15.
 Neplatná hodnota selže už ve `validate_config` při startu. Strop nákladů 20 bps
-a `profile_signature` se nemění, takže kohorta učení pokračuje.
+a `profile_signature` se nemění, takže **cohort podpis učení zůstává stejný i po změně
+populace** (frekvence, symboly, min. net, CONTROL podíl). Reporty proto MAX_DATA
+kohortu od `prereg_after` vykazují zvlášť (`cohort/`), aby se historické a nové
+populace nemíchaly.
 
-`learning_diagnostics.py` testuje pět předpokladů, bez kterých filtr nemůže
-zlepšit výsledek: (1) hrubý pohyb po vstupu (side-aware entry/exit) má 95% CI nad
-nulou; (2) průměry kontextů (`policy_context`, n ≥ 20) se liší víc než šum —
-chí-kvadrát homogenity s inverzními váhami rozptylu, p < 0,05 (Wilson–Hilferty);
-(3) pořadí kontextů v první a druhé chronologické polovině koreluje (Spearman nad
-jednostrannou kritickou hodnotou 1,645/√(k−1)); (4) odhad učení v okamžiku
-rozhodnutí (`policy_mean_net_bps`) řadí realizovaný net u ADAPTIVE/CONTROL/PROBE
-(stejný práh); (5) rozdíl ADAPTIVE−CONTROL roste po chronologických čtvrtinách.
-Na čistém šumu (200 simulací) jsou falešné poplachy cca 8 % / 5 % / 2,5 %.
-Obchody nejsou nezávislé, proto jde o orientační diagnostiku, ne o důkaz.
+`learning_diagnostics.py` testuje předpoklady **současného** pravidla učení:
+(1) souhrnný hrubý pohyb po vstupu (side-aware paper entry/exit; vstup přes spread,
+výstup na midpointu, takže nejde o čistý mid-to-mid signál); (2) průměry kontextů
+(`policy_context`, n ≥ 20) se liší víc než šum — chí-kvadrát homogenity s odhadnutými
+rozptyly (Wilson–Hilferty); při malém n je falešná pozitivita vyšší než 5 %
+(audit: 9,4 / 6,8 / 5,8 % při n = 20 / 40 / 100 na kontext); (3) pořadí kontextů v první
+a druhé chronologické polovině (Spearman proti velkovýběrové kritické hodnotě
+1,645/√(k−1), přesné není pro malé k); (4) odhad učení v okamžiku rozhodnutí
+(`policy_mean_net_bps`) řadí realizovaný net u ADAPTIVE/CONTROL/PROBE.
+Kódy `*_NOT_SHOWN` znamenají jen nezamítnutí nulové hypotézy, ne důkaz absence;
+`NEGATIVE_*_SHOWN` je informace v opačném směru (kritická hodnota 1,645 v obou
+směrech, tedy dohromady 10 % oboustranně). **Nulový souhrnný hrubý pohyb
+nevylučuje užitečný výběr** (opačně orientované, předem rozlišitelné podskupiny).
+Rozdíl ADAPTIVE−CONTROL po čtvrtinách je jen popisný: srovnání poslední a první
+čtvrtiny označilo 36 % čistě náhodných běhů jako „zlepšení“, proto nemá kód.
+Obchody nejsou nezávislé; diagnostika je orientační.
 
 `PAPER_LEARNING_CONTROL_FRACTION` (0–1, výchozí 0,2) určuje podíl CONTROL. Hodnota
-1,0 = sběrný režim: všichni kandidáti vstupují, odhad učení (`policy_mean_net_bps`)
-se jen loguje. Data pak nejsou zkreslena živým filtrem a offline replay může férově
-porovnat libovolné pravidlo.
+1,0 = sběrný režim: žádný kandidát není odmítnut adaptivním pravidlem a odhad učení
+(`policy_mean_net_bps`) se jen loguje. Pacing, risk, kvóty, dostupnost dat a generátory
+ale dál určují, co vstoupí; „všichni kandidáti“ znamená „všichni přípustní kandidáti“.
+Offline replay pak hodnotí pořadí uvnitř této populace, ne libovolnou politiku.
 
 `learner_replay.py` přehrává pevný seznam variant (klíče kontextu, paměť,
-empirický Bayes) chronologicky: odhad obchodu používá jen obchody uzavřené před jeho
-vstupem. Lift = průměr net horní poloviny podle odhadu minus dolní. Varianta se volí
-jen na prvních 60 % a jednou testuje na zbytku. Nové hypotézy se předregistrují a
-hodnotí jen na obchodech po čase registrace (`evaluate_preregistered`, min. 300).
+empirický Bayes) chronologicky: odhad obchodu používá jen obchody uzavřené přísně
+před jeho vstupem; duplicitní ID a nekladná délka selžou. V0 je aproximace živého
+pravidla (globální prior, bez cohort/provenance filtru a limitu 500). Lift = průměr
+net horní poloviny podle odhadu minus dolní (popisná rank metrika, ne účinek
+admission politiky ani portfolia). Varianta se volí jen na prvních 60 % a jednou
+testuje na zbytku; tento holdout je historický a exploratorní. Předregistrované
+hypotézy (`evaluate_preregistered`) mají jediné pevné vyhodnocení: prvních
+`PREREGISTERED_FINAL_N` čerstvých obchodů po alespoň `PREREGISTERED_MIN_DAYS` dnech,
+do té doby `PENDING` bez výsledků; potvrzení vyžaduje Welch i blokový bootstrap
+(6h okna, ≥ 16 bloků). Během slepé fáze report (`--until`) i exploratorní replay
+používají jen obchody vstoupené do cutoffu; první závěrečný výsledek se zmrazí
+(`--prereg-result`).

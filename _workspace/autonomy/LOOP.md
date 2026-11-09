@@ -1,32 +1,27 @@
-# Jeden běh autonomní smyčky (od 2026-11-09)
+# Jeden běh session smyčky (od 2026-11-09, po externím auditu)
 
-Cíl operátora (2026-11-09): co nejvíce PAPER obchodů pro učení a metriky, proč se
-učení zlepšuje/nezlepšuje. Imaginární ztráta nevadí. Stupně S2/S3 zrušeny.
-Odpovídat česky. SSH: `ssh -i ~/.ssh/hetzner_root -o ConnectTimeout=15 root@78.47.2.198`
+Autorita: `docs/OPERATING_STATE.md`. Tato smyčka **nic nerozhoduje ani nenasazuje**:
+měření a protokol běží na serveru. Úkolem je zápis, kontrola zdraví a upozornění.
+Odpovídat česky. SSH (jen čtení): `ssh -i ~/.ssh/hetzner_root -o ConnectTimeout=15 root@78.47.2.198`
 
-1. Server (jen čtení): `tail -4 /opt/cryptomaster_research/verdict.log`,
-   `tail -3 /opt/cryptomaster_research/stage.log`,
-   `systemctl is-active cryptomaster cryptomaster-research-eval.timer`,
-   počet obchodů za 24 h (na serveru není `sqlite3` CLI):
+1. Server: `cat /opt/cryptomaster_research/STATUS; tail -3 /opt/cryptomaster_research/ALERT 2>/dev/null;
+   tail -6 /opt/cryptomaster_research/verdict.log; systemctl is-active cryptomaster cryptomaster-research-eval.timer`
+   a obchody za 24 h:
    `python3 -c "import sqlite3,time;c=sqlite3.connect('file:/opt/cryptomaster/local_learning_storage/cache.sqlite?mode=ro',uri=True);print(c.execute('select count(*),group_concat(distinct symbol) from closed_trades where entry_ts>?',(time.time()-86400,)).fetchone())"`.
-   - Služba nebo časovač neaktivní, `ERROR` ve verdict.log, poslední řádek starší než 14 h,
-     nebo méně než 20 obchodů za 24 h → PushNotification, zjisti příčinu (jen čtením).
-2. Zapiš řádek do `_workspace/autonomy/daily.md`: datum, obchody/24 h, kódy `LEARN`,
-   `estimate_rho`, `ctx_p`, `persist_rho`, křivka, verdikt ADAPTIVE−CONTROL.
-2b. Z řádku `REPLAY` zapiš verdikt replaye a `prereg=… fresh_n=…`. Sběrný režim:
-   `PAPER_LEARNING_CONTROL_FRACTION=1.0` (všichni kandidáti vstupují, odhad se jen loguje).
-   - `prereg=CONTRARIAN_CONFIRMED` → podle `docs/remediation/LEARNER_PREREGISTRATION_2026-11-09.md`
-     implementuj C1 jako `paper_source_learning_v2` za příznakem (testy + mutace), nasaď přes
-     `deploy_bot_files.sh` a CONTROL vrať na 0,2. Notifikace.
-   - `CONTRARIAN_REFUTED` / `CONTRARIAN_NOT_SHOWN` → beze změny živého pravidla; zapiš do
-     daily.md; nová hypotéza jen novou předregistrací (nový dokument + nový `prereg_after`).
-   - Replay `HOLDOUT_LIFT_CONFIRMED` na datech po `prereg_after` je kandidát na další
-     předregistraci, ne na přímé nasazení.
-3. Pokud se v řádku `LEARN` poprvé objeví `CONTEXTS_DIFFER`, `CONTEXTS_PERSIST`,
-   `ESTIMATE_RANKS_OUTCOMES`, `CURVE_IMPROVING` nebo `SIGNAL_HAS_GROSS_EDGE` → notifikace (jednou).
+   - `STATUS` není `OK`, nový řádek v `ALERT`, služba/timer neaktivní, poslední běh starší
+     než 14 h, nebo < 20 obchodů/24 h → PushNotification + zjistit příčinu čtením. Opravu
+     výzkumné části smíš udělat s testy; změnu bota jen podle `OPERATING_STATE.md`.
+2. Zapiš řádek do `_workspace/autonomy/daily.md`: run ID, obchody/24 h, `COHORT_BLIND`
+   počty, `REPLAY` stav C1 (`fresh_n/final_n`, `days`). Během slepé fáze nečti ani
+   nepočítej žádné výsledky (P/L, korelace) čerstvých obchodů po cutoffu — jen počty.
+   Uváděj n a CI; `*_NOT_SHOWN` popisuj jako „neprokázáno“, nikdy jako „neexistuje“.
+3. C1: dokud `prereg=PENDING`, nic neinterpretuj. Až bude jiný verdikt, zapiš ho a pošli
+   notifikaci; další krok jen podle dodatku 1 předregistrace (replikační fáze po review,
+   trvalá změna jen s operátorem).
 4. Commitni jen `_workspace/autonomy/` a pushni.
-5. Obnova cronu: pokud od `cron_created` ve state.json uplynulo 5+ dní, vytvoř nový denní cron
-   (`13 19 * * *`, prompt „Proveď _workspace/autonomy/LOOP.md“), smaž starý, ulož `cron_id`, `cron_created`.
+5. Obnova cronu: pokud od `cron_created` v `state.json` uplynulo 5+ dní, vytvoř nový denní
+   cron (`13 19 * * *`, prompt „Proveď _workspace/autonomy/LOOP.md“), smaž starý, ulož
+   `cron_id`, `cron_created`. (Cron v sezení je jen pomocník; měření na něm nezávisí.)
 
-Nikdy: REAL příznaky, TP/SL, náklady; zastavení obchodování; změny kódu bez testů a
-zálohy (vzor `deploy/research_eval/deploy_probe_volume.sh`).
+Nikdy: REAL příznaky, TP/SL, náklady, zastavení sběru kvůli virtuální ztrátě, nová
+hypotéza bez nové předregistrace, interpretace C1 před pevným koncem.

@@ -7,7 +7,9 @@
 > `deploy_probe_volume.sh` (limity průzkumu 480/den, 30/h, cooldown 300 s,
 > min. modelovaný net −25 bps, prázdný blacklist symbolů). Diagnostika předpokladů
 > učení: `src/services/learning_diagnostics.py`, řádek `LEARN` ve `verdict.log`.
-> Text níže je historický záznam původních pravidel.
+> Text níže je historický záznam původních pravidel. Aktuální stav: `docs/OPERATING_STATE.md`.
+> Skripty `apply_stage.sh`, `stage_step.sh` a stage unit soubory byly po externím auditu
+> odstraněny, aby nešly omylem znovu aktivovat.
 
 Operátor 26. 10. povolil autonomní nasazování změn k cíli (WR > 50 % a kladné
 P/L) bez své přítomnosti. Tento dokument určuje **jediné** změny, které smí

@@ -1,9 +1,11 @@
 """Pure diagnostics answering why PAPER learning does or does not improve.
 
-Learning can only help if (1) entries carry pre-cost information, (2) learner
-contexts differ by more than noise, (3) those differences persist, (4) the
-learner's own estimate ranks future outcomes, and (5) selection beats CONTROL
-over time. Each check is descriptive; trades are not independent. No I/O.
+Checks whether the current learner's preconditions are supported by the data:
+(1) unconditional pre-cost move, (2) context means differ beyond noise,
+(3) differences persist, (4) the learner's estimate ranks outcomes. A failed
+check means "not shown", not "impossible": a filter can still help when the
+aggregate gross is zero (opposite-signed, separable subgroups). The ADAPTIVE-
+CONTROL curve is reported descriptively. Trades are not independent. No I/O.
 """
 from __future__ import annotations
 
@@ -143,33 +145,43 @@ def diagnose(observations: Sequence[Observation], *, min_context_n: int = MIN_CO
 
 def reasons(signal: dict, dispersion: dict | None, persistence: dict | None,
             estimate: dict, curve: list) -> list[str]:
-    """Plain codes naming which precondition for learning holds or fails."""
+    """Cautious codes: *_NOT_SHOWN means the test did not reject its null, never absence.
+
+    The learning curve is descriptive only (no code): a last-vs-first comparison
+    flagged ~36 % of pure-noise runs in the 2026-11-09 external audit.
+    """
     out = []
     if signal["half_width_bps"] is None:
-        out.append("SIGNAL_INSUFFICIENT_DATA")
+        out.append("GROSS_INSUFFICIENT_DATA")
     elif signal["mean_bps"] - signal["half_width_bps"] > 0:
-        out.append("SIGNAL_HAS_GROSS_EDGE")
+        out.append("POSITIVE_GROSS_SHOWN")
     elif signal["mean_bps"] + signal["half_width_bps"] < 0:
-        out.append("SIGNAL_NEGATIVE_GROSS")
+        out.append("NEGATIVE_GROSS_SHOWN")
     else:
-        out.append("SIGNAL_NO_GROSS_EDGE")
+        out.append("POSITIVE_GROSS_NOT_SHOWN")
     if dispersion is None:
-        out.append("CONTEXTS_INSUFFICIENT_DATA")
+        out.append("CONTEXT_DIFFERENCE_INSUFFICIENT_DATA")
     else:
-        out.append("CONTEXTS_DIFFER" if dispersion["p_value"] < 0.05 else "CONTEXTS_NOISE_ONLY")
+        out.append("CONTEXT_DIFFERENCE_SHOWN" if dispersion["p_value"] < 0.05 else "CONTEXT_DIFFERENCE_NOT_SHOWN")
     if persistence is None or persistence["spearman"] is None:
         out.append("PERSISTENCE_INSUFFICIENT_DATA")
     else:
-        persists = persistence["spearman"] > _critical_rho(persistence["contexts"])
-        out.append("CONTEXTS_PERSIST" if persists else "CONTEXTS_DO_NOT_PERSIST")
+        critical = _critical_rho(persistence["contexts"])
+        if persistence["spearman"] > critical:
+            out.append("POSITIVE_PERSISTENCE_SHOWN")
+        elif persistence["spearman"] < -critical:
+            out.append("NEGATIVE_PERSISTENCE_SHOWN")
+        else:
+            out.append("POSITIVE_PERSISTENCE_NOT_SHOWN")
     if estimate["spearman"] is None or estimate["n"] < 100:
-        out.append("ESTIMATE_INSUFFICIENT_DATA")
+        out.append("RANKING_INSUFFICIENT_DATA")
     else:
-        ranks = estimate["spearman"] > _critical_rho(estimate["n"])
-        out.append("ESTIMATE_RANKS_OUTCOMES" if ranks else "ESTIMATE_UNINFORMATIVE")
-    diffs = [q["diff_bps"] for q in curve if q["diff_bps"] is not None]
-    if len(diffs) >= 3:
-        out.append("CURVE_IMPROVING" if diffs[-1] > diffs[0] and diffs[-1] > 0 else "CURVE_FLAT_OR_WORSE")
-    else:
-        out.append("CURVE_INSUFFICIENT_DATA")
+        critical = _critical_rho(estimate["n"])
+        if estimate["spearman"] > critical:
+            out.append("POSITIVE_RANKING_SHOWN")
+        elif estimate["spearman"] < -critical:
+            # Informative in the opposite direction; not evidence of a usable rule by itself.
+            out.append("NEGATIVE_RANKING_SHOWN")
+        else:
+            out.append("POSITIVE_RANKING_NOT_SHOWN")
     return out

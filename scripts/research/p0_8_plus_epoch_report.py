@@ -122,7 +122,7 @@ def _number(value: Any) -> float | None:
 
 
 def load_rows(*, db: Path | None = None, json_path: Path | None = None,
-              since: float | None = None) -> list[dict]:
+              since: float | None = None, until: float | None = None) -> list[dict]:
     """--since selects entry time, matching the canonical performance epoch.
 
     Without --since, report all supplied rows; never guess a live epoch or load
@@ -132,6 +132,8 @@ def load_rows(*, db: Path | None = None, json_path: Path | None = None,
         raise ValueError("Select exactly one of --db / --json")
     if since is not None and _number(since) is None:
         raise ValueError("--since must be finite")
+    if until is not None and _number(until) is None:
+        raise ValueError("--until must be finite")
     if db is not None:
         connection = sqlite3.connect(db.resolve().as_uri() + "?mode=ro", uri=True, timeout=2)
         try:
@@ -154,6 +156,9 @@ def load_rows(*, db: Path | None = None, json_path: Path | None = None,
         if entry is None:
             raise ValueError("Invalid entry timestamp")
         if since is not None and entry < since:
+            continue
+        # --until keeps blinded preregistration data (entered after it) out of the report.
+        if until is not None and entry > until:
             continue
         exit_ts, pnl = _number(row.get("exit_ts")), _number(row.get("pnl_pct"))
         if exit_ts is None or exit_ts < entry or pnl is None or not math.isfinite(pnl * 100):
@@ -493,8 +498,8 @@ def render_markdown(report: dict) -> str:
                   f"platných replikací={bootstrap['valid_replicates']}/{bootstrap['replicates']}, "
                   f"vynechaných={bootstrap['skipped_replicates']}, omezené bloky={bootstrap['limited_blocks']}.", ""]
     lines += ["## Proč se učení zlepšuje / nezlepšuje", "",
-              "Předpoklady učení: signál má hrubý edge → kontexty se liší víc než šum → rozdíly trvají → "
-              "odhad učení řadí výsledky → ADAPTIVE předstihuje CONTROL. Testy: chí-kvadrát homogenity průměrů kontextů (p<0,05), jednostranná kritická ρ=1,645/√(n−1); obchody nejsou nezávislé, výklad je orientační.", ""]
+              "Předpoklady současného pravidla učení (kód *_NOT_SHOWN = test nezamítl nulovou hypotézu, ne důkaz absence; "
+              "nulový souhrnný hrubý pohyb nevylučuje užitečný výběr). Křivka ADAPTIVE−CONTROL je jen popisná. Testy: chí-kvadrát homogenity průměrů kontextů (p<0,05), jednostranná kritická ρ=1,645/√(n−1); obchody nejsou nezávislé, výklad je orientační.", ""]
     for version, diag in report.get("learning_diagnostics", {}).items():
         signal, disp, pers = diag["signal_gross"], diag["context_dispersion"], diag["context_persistence"]
         est, prob = diag["estimate_vs_outcome"], diag["adaptive_probability"]
@@ -544,10 +549,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     source.add_argument("--db", type=Path)
     source.add_argument("--json", dest="json_path", type=Path)
     parser.add_argument("--since", type=float)
+    parser.add_argument("--until", type=float, help="include only entry_ts <= until (blinding)")
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
-        rows = load_rows(db=args.db, json_path=args.json_path, since=args.since)
+        rows = load_rows(db=args.db, json_path=args.json_path, since=args.since, until=args.until)
         report = build_report(rows, since=args.since)
         encoded = json.dumps(report, indent=2, ensure_ascii=False, allow_nan=False)
         markdown = render_markdown(report)

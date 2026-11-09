@@ -1,5 +1,6 @@
 [Unit]
 Description=CryptoMaster offline learning-experiment evaluation (read-only, PAPER)
+OnFailure=cryptomaster-research-alert.service
 
 [Service]
 Type=oneshot
@@ -11,4 +12,4 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/opt/cryptomaster_research
-TimeoutStartSec=15min
+TimeoutStartSec=20min

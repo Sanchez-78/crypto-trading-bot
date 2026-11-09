@@ -5,13 +5,14 @@ Komunikace s uživatelem a reporty: **česky**. Identifikátory a kód: anglicky
 
 ## Aktuální zadání
 
-`docs/codex_prompts/EXTERNAL_AUDIT_LEARNING_PROCESS_2026-11-09.md` — externí audit
-vyhodnocování učení a procesu agenta (jen čtení, výstup `_workspace/59_external_audit_learning_process.md`).
+Žádné otevřené zadání. Aktuální stav a autorita: `docs/OPERATING_STATE.md`.
 Podkladová data: `docs/codex_prompts/evidence/` (soubory jsou jen ke čtení).
 
 Hotová zadání (nezpracovávat znovu):
 - `CODEX_STRATEGY_LEARNING_TASKS_2026-10-02.md` → `_workspace/50_codex_strategy_learning_report.md`.
 - `CODEX_LEARNING_EXPERIMENT_EVAL_2026-10-26.md` → `_workspace/57_codex_learning_experiment_eval.md`.
+- `EXTERNAL_AUDIT_LEARNING_PROCESS_2026-11-09.md` → `_workspace/59_external_audit_learning_process.md`
+  (nálezy zapracovány, viz `docs/OPERATING_STATE.md` a `_workspace/60_audit_remediation.md`).
 
 Offline vyhodnocení experimentu nad novým exportem:
 `python -B scripts/research/p0_8_plus_epoch_report.py --json <export.json> --out <adresář>`

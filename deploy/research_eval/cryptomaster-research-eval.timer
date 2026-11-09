@@ -2,8 +2,8 @@
 Description=Run CryptoMaster learning-experiment evaluation twice a day
 
 [Timer]
-OnCalendar=*-*-* 05:47:00
-OnCalendar=*-*-* 17:47:00
+OnCalendar=*-*-* 05:47:00 UTC
+OnCalendar=*-*-* 17:47:00 UTC
 Persistent=true
 
 [Install]

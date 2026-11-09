@@ -51,14 +51,31 @@ VARIANTS: tuple[Variant, ...] = (
 
 # Pre-registered 2026-11-09 (docs/remediation/LEARNER_PREREGISTRATION_2026-11-09.md),
 # after the anti-persistence was seen on older data; judged ONLY on trades entered
-# after the registration timestamp, on all such trades, with no variant search.
+# after the registration timestamp, with no variant search. V0 here is an
+# approximation of the live rule (global prior, no cohort/provenance filter).
 PREREGISTERED_HYPOTHESIS = "C1_contrarian"
 PREREGISTERED: tuple[Variant, ...] = (
     Variant("V0_current", BASE_KEYS, 16.0),
     Variant("V2_no_decay", BASE_KEYS, None),
     Variant("C1_contrarian", BASE_KEYS, None, sign=-1.0),
 )
-PREREGISTERED_MIN_N = 300
+# Amendment 1 (2026-11-09, external audit F02/F11, before any fresh result was read):
+# one fixed look. Scored set = the first FINAL_N fresh trades, evaluated only once at
+# least FINAL_N fresh trades exist AND FINAL_MIN_DAYS UTC days have elapsed since the
+# cutoff. Until then results are withheld (PENDING), so repeated runs cannot peek.
+PREREGISTERED_FINAL_N = 1000
+PREREGISTERED_MIN_DAYS = 7
+BOOTSTRAP_SEED = 20261109
+BOOTSTRAP_REPLICATES = 2000
+DAY_MS = 86_400_000
+# Amendment 1b (same day, after independent review, still before any fresh result):
+# - the scored set is taken only when every earlier trade must already be closed
+#   (snapshot time >= last scored entry + COMPLETE_MARGIN_MS; max hold is 900 s);
+# - bootstrap blocks are 6-hour UTC windows and at least MIN_BLOCKS are required,
+#   otherwise INSUFFICIENT_DATA (1 000 trades at ~220/day span only ~5 days).
+COMPLETE_MARGIN_MS = 6 * 3_600_000
+BLOCK_MS = 6 * 3_600_000
+MIN_BLOCKS = 16
 
 
 class _Stat:
@@ -84,7 +101,8 @@ def replay(trades: Sequence[Trade], variant: Variant) -> list[float]:
     pointer, estimates = 0, []
     key = lambda t: tuple(t.features.get(k, "") for k in variant.keys)
     for trade in trades:
-        while pointer < len(closes) and trades[closes[pointer]].exit_ms <= trade.entry_ms:
+        # Strictly earlier closes only: a close at the same millisecond has no defined order.
+        while pointer < len(closes) and trades[closes[pointer]].exit_ms < trade.entry_ms:
             done = trades[closes[pointer]]
             contexts[key(done)].add(done.net_bps, decay)
             total += done.net_bps
@@ -157,11 +175,19 @@ def score(estimates: Sequence[float], nets: Sequence[float]) -> dict:
             "upper_n": len(upper), "lower_n": len(lower)}
 
 
+def validate(trades: Sequence[Trade]) -> list[Trade]:
+    """Fail closed on duplicate IDs, non-finite outcomes or non-positive durations."""
+    ids = [t.trade_id for t in trades]
+    if len(set(ids)) != len(ids):
+        raise ValueError("duplicate_replay_trade_id")
+    if any(not math.isfinite(t.net_bps) or t.exit_ms <= t.entry_ms for t in trades):
+        raise ValueError("invalid_replay_trade")
+    return sorted(trades, key=lambda t: (t.entry_ms, t.trade_id))
+
+
 def evaluate(trades: Sequence[Trade], variants: Sequence[Variant] = VARIANTS,
              dev_fraction: float = DEV_FRACTION) -> dict:
-    trades = sorted(trades, key=lambda t: (t.entry_ms, t.trade_id))
-    if any(not math.isfinite(t.net_bps) or t.exit_ms < t.entry_ms for t in trades):
-        raise ValueError("invalid_replay_trade")
+    trades = validate(trades)
     split = int(len(trades) * dev_fraction)
     nets = [t.net_bps for t in trades]
     results = {}
@@ -185,25 +211,71 @@ def evaluate(trades: Sequence[Trade], variants: Sequence[Variant] = VARIANTS,
             "chosen_on_dev": chosen, "verdict": verdict, "variants": results}
 
 
-def evaluate_preregistered(trades: Sequence[Trade], *, scored_after_ms: int) -> dict:
-    """Score PREREGISTERED variants on trades entered after `scored_after_ms`.
+def bootstrap_lift(estimates: Sequence[float], nets: Sequence[float], days: Sequence[int], *,
+                   seed: int = BOOTSTRAP_SEED, replicates: int | None = None) -> dict:
+    """Block bootstrap of the median-split lift over the given block labels (6 h UTC windows)."""
+    import random
+    replicates = BOOTSTRAP_REPLICATES if replicates is None else replicates
+    blocks: dict[int, list[int]] = defaultdict(list)
+    for index, day in enumerate(days):
+        blocks[day].append(index)
+    keys = sorted(blocks)
+    rng = random.Random(seed)
+    lifts = []
+    for _ in range(replicates):
+        idx = [i for _k in keys for i in blocks[rng.choice(keys)]]
+        result = score([estimates[i] for i in idx], [nets[i] for i in idx])
+        if result["lift_bps"] is not None:
+            lifts.append(result["lift_bps"])
+    if len(keys) < MIN_BLOCKS or len(lifts) < replicates * 0.9:
+        return {"blocks": len(keys), "valid": len(lifts), "lower_bps": None, "upper_bps": None}
+    lifts.sort()
+    return {"blocks": len(keys), "valid": len(lifts),
+            "lower_bps": lifts[int(0.025 * len(lifts))], "upper_bps": lifts[int(0.975 * len(lifts)) - 1]}
 
-    Earlier trades still feed the estimates (history), but are never scored.
+
+def scored_count(trades: Sequence[Trade], fresh: Sequence[int]) -> int | None:
+    """Amendment 1c: max(FINAL_N, trades needed to cover MIN_BLOCKS 6 h blocks); None = not yet."""
+    blocks: set[int] = set()
+    for count, index in enumerate(fresh, 1):
+        blocks.add(trades[index].entry_ms // BLOCK_MS)
+        if count >= PREREGISTERED_FINAL_N and len(blocks) >= MIN_BLOCKS:
+            return count
+    return None
+
+
+def evaluate_preregistered(trades: Sequence[Trade], *, scored_after_ms: int, now_ms: int) -> dict:
+    """Single fixed look for the PREREGISTERED hypothesis (amendment 1).
+
+    Earlier trades feed the estimates but are never scored. Before the fixed end
+    the variant results are withheld (verdict PENDING).
     """
-    trades = sorted(trades, key=lambda t: (t.entry_ms, t.trade_id))
+    trades = validate(trades)
     fresh = [i for i, t in enumerate(trades) if t.entry_ms > scored_after_ms]
+    days_elapsed = (now_ms - scored_after_ms) / DAY_MS
+    base = {"scored_after_ms": scored_after_ms, "fresh_n": len(fresh), "final_n": PREREGISTERED_FINAL_N,
+            "min_days": PREREGISTERED_MIN_DAYS, "days_elapsed": round(days_elapsed, 2)}
+    needed = scored_count(trades, fresh)
+    if (needed is None or days_elapsed < PREREGISTERED_MIN_DAYS
+            or now_ms < trades[fresh[needed - 1]].entry_ms + COMPLETE_MARGIN_MS):
+        return {**base, "verdict": "PENDING", "variants": None}
+    scored = fresh[:needed]
+    nets = [trades[i].net_bps for i in scored]
+    days = [trades[i].entry_ms // BLOCK_MS for i in scored]
     results = {}
     for variant in PREREGISTERED:
         est = replay(trades, variant)
-        results[variant.name] = score([est[i] for i in fresh], [trades[i].net_bps for i in fresh])
+        picked = [est[i] for i in scored]
+        results[variant.name] = {**score(picked, nets), "day_bootstrap": bootstrap_lift(picked, nets, days)}
     hypothesis = results[PREREGISTERED_HYPOTHESIS]
-    if len(fresh) < PREREGISTERED_MIN_N or hypothesis["lift_low_bps"] is None:
+    boot = hypothesis["day_bootstrap"]
+    if hypothesis["lift_low_bps"] is None or boot["lower_bps"] is None:
         verdict = "INSUFFICIENT_DATA"
-    elif hypothesis["lift_low_bps"] > 0:
+    elif hypothesis["lift_low_bps"] > 0 and boot["lower_bps"] > 0:
         verdict = "CONTRARIAN_CONFIRMED"
-    elif hypothesis["lift_high_bps"] < 0:
+    elif hypothesis["lift_high_bps"] < 0 and boot["upper_bps"] < 0:
         verdict = "CONTRARIAN_REFUTED"
     else:
         verdict = "CONTRARIAN_NOT_SHOWN"
-    return {"scored_after_ms": scored_after_ms, "fresh_n": len(fresh), "min_n": PREREGISTERED_MIN_N,
-            "verdict": verdict, "variants": results}
+    return {**base, "scored_last_entry_ms": trades[scored[-1]].entry_ms, "verdict": verdict, "variants": results,
+            "scored_trade_ids": [trades[i].trade_id for i in scored]}

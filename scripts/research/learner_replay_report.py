@@ -13,6 +13,7 @@ import json
 import math
 from pathlib import Path
 import sqlite3
+import time
 from typing import Sequence
 
 if __package__ in (None, ""):
@@ -32,14 +33,18 @@ def to_trade(row: dict) -> Trade | None:
         entry, exit_, net = float(row["entry_ts"]), float(row["exit_ts"]), float(row["pnl_pct"]) * 100
     except (KeyError, TypeError, ValueError):
         return None
-    if not all(math.isfinite(v) for v in (entry, exit_, net)) or exit_ < entry:
+    # Non-positive durations are excluded here; the replay API itself fails closed on them.
+    if not all(math.isfinite(v) for v in (entry, exit_, net)) or exit_ <= entry:
         return None
     side = {"LONG": "BUY", "SHORT": "SELL"}.get(str(row.get("side")).upper(), str(row.get("side")).upper())
     hour = datetime.fromtimestamp(entry, timezone.utc).hour
     features = {"source": str(row.get("learning_source") or row.get("source")), "symbol": str(row.get("symbol")),
                 "regime": str(row.get("regime")), "side": side, "hour6": str(hour // 6),
                 "pred_bucket": _pred_bucket(row.get("predicted_gross_move_bps"))}
-    return Trade(str(row.get("trade_id") or row.get("id")), round(entry * 1000), round(exit_ * 1000), net, features)
+    trade_id = row.get("trade_id") or row.get("id")
+    if trade_id in (None, ""):
+        return None
+    return Trade(str(trade_id), round(entry * 1000), round(exit_ * 1000), net, features)
 
 
 def load(db: Path | None, json_path: Path | None, since: float | None) -> list[dict]:
@@ -70,7 +75,38 @@ def render(result: dict) -> str:
         d, h = item["dev"], item["holdout"]
         lines.append(f"| {name} | {fmt(d['lift_bps'])} | {fmt(d['spearman'])} | "
                      f"{fmt(h['lift_bps'])} [{fmt(h['lift_low_bps'])}; {fmt(h['lift_high_bps'])}] | {fmt(h['spearman'])} |")
+    lines += ["", "Tento holdout je z historických dat (exploratorní), nikoli test předregistrované hypotézy."
+              + (" Obsahuje jen obchody vstoupené do cutoffu předregistrace." if result.get("exploratory_until_ms") else "")]
+    pre = result.get("preregistered")
+    if pre:
+        lines += ["", "## Předregistrovaná hypotéza C1 (jen čerstvá data, jediné pevné vyhodnocení)", "",
+                  f"Cutoff {pre['scored_after_ms']} ms; čerstvých obchodů {pre['fresh_n']}/{pre['final_n']}, "
+                  f"dnů {pre['days_elapsed']}/{pre['min_days']}: **{pre['verdict']}**"]
+        if pre["variants"] is None:
+            lines.append("Výsledky jsou do pevného konce skryté (amendment 1), aby opakované běhy nemohly nahlížet.")
+        else:
+            lines += ["", "| Varianta | lift [Welch 95% CI] | denní bootstrap 95% | ρ |", "|---|---|---|---:|"]
+            for name, h in pre["variants"].items():
+                b = h["day_bootstrap"]
+                lines.append(f"| {name} | {fmt(h['lift_bps'])} [{fmt(h['lift_low_bps'])}; {fmt(h['lift_high_bps'])}] | "
+                             f"[{fmt(b['lower_bps'])}; {fmt(b['upper_bps'])}] ({b['blocks']} dnů) | {fmt(h['spearman'])} |")
     return "\n".join(lines) + "\n"
+
+
+def frozen_preregistered(trades: list[Trade], cutoff_ms: int, path: Path | None) -> dict:
+    if path is not None and path.exists():
+        frozen = json.loads(path.read_text(encoding="utf-8"))
+        if frozen.get("scored_after_ms") != cutoff_ms:
+            raise ValueError("prereg_result_cutoff_mismatch")
+        return frozen
+    result = evaluate_preregistered(trades, scored_after_ms=cutoff_ms, now_ms=round(time.time() * 1000))
+    # Only conclusive verdicts are frozen; INSUFFICIENT_DATA stays recomputable.
+    if path is not None and result["verdict"] in {"CONTRARIAN_CONFIRMED", "CONTRARIAN_REFUTED", "CONTRARIAN_NOT_SHOWN"}:
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(json.dumps(result, indent=2, sort_keys=True), encoding="utf-8")
+        tmp.replace(path)
+        path.chmod(0o444)
+    return result
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -80,19 +116,28 @@ def main(argv: Sequence[str] | None = None) -> int:
     source.add_argument("--json", dest="json_path", type=Path)
     parser.add_argument("--since", type=float)
     parser.add_argument("--prereg-after", type=float, help="unix seconds; score preregistered variants after it")
+    parser.add_argument("--prereg-result", type=Path,
+                        help="immutable file: written on the first non-PENDING result, returned unchanged afterwards")
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args(argv)
     trades = [t for t in (to_trade(r) for r in load(args.db, args.json_path, args.since)) if t]
-    result = evaluate(trades, VARIANTS)
-    if args.prereg_after is not None:
-        result["preregistered"] = evaluate_preregistered(trades, scored_after_ms=round(args.prereg_after * 1000))
+    if args.prereg_after is None:
+        result = evaluate(trades, VARIANTS)
+    else:
+        cutoff_ms = round(args.prereg_after * 1000)
+        # Blinding: exploratory variants see only pre-cutoff trades (C1 = -V2 on any shared set).
+        result = evaluate([t for t in trades if t.entry_ms <= cutoff_ms], VARIANTS)
+        result["exploratory_until_ms"] = cutoff_ms
+        result["preregistered"] = frozen_preregistered(trades, cutoff_ms, args.prereg_result)
     args.out.mkdir(parents=True, exist_ok=True)
     for name, content in (("replay.json", json.dumps(result, indent=2, sort_keys=True)), ("replay.md", render(result))):
         tmp = args.out / (name + ".tmp")
         tmp.write_text(content, encoding="utf-8")
         tmp.replace(args.out / name)
     pre = result.get("preregistered")
-    print(f"{result['chosen_on_dev']} {result['verdict']}" + (f" prereg={pre['verdict']} fresh_n={pre['fresh_n']}" if pre else ""))
+    print(f"{result['chosen_on_dev']} {result['verdict']}"
+          + (f" prereg={pre['verdict']} fresh_n={pre['fresh_n']}/{pre['final_n']} days={pre['days_elapsed']}/{pre['min_days']}"
+             if pre else ""))
     return 0
 
 
