@@ -110,6 +110,10 @@ předregistrace TRAIN/TEST/HOLDOUT). **Výsledek 2026-11-10: všech 7 NO_EDGE** 
 vs. náklad 9 bps; `RESEARCH_FUTURES_FLOW_FINDINGS.md`). Celkem 17 rodin bez edge; levné
 veřejné zdroje na horizontu bota jsou vyčerpané. P/L+ vyžaduje rozhodnutí operátora (jiný
 trh, jiná nákladová struktura nebo jiný cíl); agent do té doby nestaví nové strategie.
+Pozor (review 2026-11-10): „vyčerpané“ je přehnané. NO_EDGE platí jen pro testované
+konfigurace, 17 rodin nejsou nezávislé důkazy a report 64 přehlíží chybějící futures data
+z 2026-10-28. Errata a audit skutečných nákladů (fee na stranu vs. round trip, spread ve fill
+ceně) má Codex v `CODEX_POST_C1_COST_AND_LEARNING_REVIEW_2026-11-10.md`.
 
 ## Vyžaduje operátora
 

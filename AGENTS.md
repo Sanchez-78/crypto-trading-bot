@@ -5,7 +5,9 @@ Komunikace s uživatelem a reporty: **česky**. Identifikátory a kód: anglicky
 
 ## Aktuální zadání
 
-**Žádné otevřené zadání.** Aktuální stav a autorita: `docs/OPERATING_STATE.md`.
+**Otevřené zadání:** `docs/codex_prompts/CODEX_POST_C1_COST_AND_LEARNING_REVIEW_2026-11-10.md`
+→ report `_workspace/65_codex_cost_and_learning_review.md` (fáze A teď; B/C jen při zmrazeném C1).
+Aktuální stav a autorita: `docs/OPERATING_STATE.md`.
 Podkladová data: `docs/codex_prompts/evidence/` (soubory jsou jen ke čtení).
 
 Hotová zadání (nezpracovávat znovu):
