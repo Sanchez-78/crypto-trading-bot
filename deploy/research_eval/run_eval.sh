@@ -43,7 +43,7 @@ until_args=()
 # Historical epoch is frozen at the preregistration cutoff while C1 is blind.
 python3 -B "$CODE/scripts/research/p0_8_plus_epoch_report.py" --db "$snapshot" --since "$epoch_since" "${until_args[@]}" --out "$out"   || fail epoch_report
 replay_args=(--db "$snapshot" --since "$epoch_since" --out "$out")
-[ -n "$prereg_after" ] && replay_args+=(--prereg-after "$prereg_after" --prereg-result "$PRERESULT")
+[ -n "$prereg_after" ] && replay_args+=(--prereg-after "$prereg_after" --prereg-result "$PRERESULT" --run-id "$run_id")
 replay_line="$(python3 -B "$CODE/scripts/research/learner_replay_report.py" "${replay_args[@]}")" || fail replay
 cohort_line=""
 if [ -n "$prereg_after" ]; then

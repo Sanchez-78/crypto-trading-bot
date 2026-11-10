@@ -121,6 +121,15 @@ spreadu) a 8 bps je za celý obchod (4 na stranu), zatímco spot VIP0 má 10 bps
 výpočty zatím beze změny. Po C1 se oprava cache nasadí jako **nová kohorta** a replikace
 proběhne jen při CONTRARIAN_CONFIRMED (osnova v reportu 65).
 
+**Původ výsledku C1 (2026-11-10):** offline nástroj `cost_and_learning_review.py` přijme
+skutečný C1 jen s manifestem `c1_provenance_v1` zapsaným při zmrazení. Producer je
+připravený lokálně (`learner_replay_report.py` + `run_eval.sh --run-id`, testy, 6/6 mutací)
+a čeká na audit Codexu (`CODEX_AUDIT_C1_PROVENANCE_PRODUCER_2026-11-10.md`). **Nasadit do
+`/opt/cryptomaster_research` před prvním možným zmrazením 2026-11-16 17:47 UTC**, jinak zůstane
+skutečný C1 v nástroji NOT_VERIFIED. Bot se nerestartuje, evaluator ani kritéria se nemění.
+Hash manifestu se při zmrazení objeví v řádce REPLAY ve `verdict.log`
+(`provenance_sha256=`). Agent ho pak zapíše sem jako důvěryhodnou referenci.
+
 ## Vyžaduje operátora
 
 Nová hypotéza mimo předregistraci, změna cíle, trvalá změna politiky učení, cokoli

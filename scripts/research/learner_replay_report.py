@@ -1,6 +1,7 @@
 """Walk-forward replay of PAPER learner variants; offline, read-only.
 
-Writes only replay.json/replay.md under --out. Never changes the live learner.
+Writes replay.json/replay.md under --out and, once, the frozen --prereg-result together with
+its provenance manifest (prereg_provenance.json). Never changes the live learner.
 """
 from __future__ import annotations
 
@@ -9,6 +10,7 @@ sys.dont_write_bytecode = True
 
 import argparse
 from datetime import datetime, timezone
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -93,20 +95,47 @@ def render(result: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-def frozen_preregistered(trades: list[Trade], cutoff_ms: int, path: Path | None) -> dict:
+# Provenance written at the moment of freezing (contract checked by
+# scripts/research/cost_and_learning_review.py; keep these literals in sync).
+PROVENANCE_CONTRACT = "c1_provenance_v1"
+ID_HASH_CONVENTION = "sha256(utf8(json.dumps(ids, separators=(',', ':'))))"
+
+
+def provenance_path(result_path: Path) -> Path:
+    return result_path.with_name("prereg_provenance.json")
+
+
+def _write_frozen(path: Path, payload: bytes) -> None:
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_bytes(payload)
+    tmp.replace(path)
+    path.chmod(0o444)
+
+
+def frozen_preregistered(trades: list[Trade], cutoff_ms: int, path: Path | None,
+                         run_id: str | None = None) -> tuple[dict, str | None]:
+    """Return (result, provenance manifest sha256 if frozen by THIS call, else None)."""
     if path is not None and path.exists():
         frozen = json.loads(path.read_text(encoding="utf-8"))
         if frozen.get("scored_after_ms") != cutoff_ms:
             raise ValueError("prereg_result_cutoff_mismatch")
-        return frozen
-    result = evaluate_preregistered(trades, scored_after_ms=cutoff_ms, now_ms=round(time.time() * 1000))
+        return frozen, None
+    now_ms = round(time.time() * 1000)
+    result = evaluate_preregistered(trades, scored_after_ms=cutoff_ms, now_ms=now_ms)
     # Only conclusive verdicts are frozen; INSUFFICIENT_DATA stays recomputable.
     if path is not None and result["verdict"] in {"CONTRARIAN_CONFIRMED", "CONTRARIAN_REFUTED", "CONTRARIAN_NOT_SHOWN"}:
-        tmp = path.with_name(path.name + ".tmp")
-        tmp.write_text(json.dumps(result, indent=2, sort_keys=True), encoding="utf-8")
-        tmp.replace(path)
-        path.chmod(0o444)
-    return result
+        payload = json.dumps(result, indent=2, sort_keys=True).encode("utf-8")
+        manifest = json.dumps({
+            "contract": PROVENANCE_CONTRACT, "hypothesis": "C1_contrarian", "scored_after_ms": cutoff_ms,
+            "run_id": run_id or "unspecified", "evaluated_at_ms": now_ms,
+            "result_sha256": hashlib.sha256(payload).hexdigest(), "id_hash_convention": ID_HASH_CONVENTION,
+        }, indent=2, sort_keys=True).encode("utf-8")
+        # Provenance first: the result file is the freeze marker, so a crash in between
+        # only leaves an orphan manifest that the next (re-)evaluation replaces.
+        _write_frozen(provenance_path(path), manifest)
+        _write_frozen(path, payload)
+        return result, hashlib.sha256(manifest).hexdigest()
+    return result, None
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -118,9 +147,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--prereg-after", type=float, help="unix seconds; score preregistered variants after it")
     parser.add_argument("--prereg-result", type=Path,
                         help="immutable file: written on the first non-PENDING result, returned unchanged afterwards")
+    parser.add_argument("--run-id", help="evaluation run ID recorded in the provenance manifest at freeze")
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args(argv)
     trades = [t for t in (to_trade(r) for r in load(args.db, args.json_path, args.since)) if t]
+    provenance_sha = None
     if args.prereg_after is None:
         result = evaluate(trades, VARIANTS)
     else:
@@ -128,7 +159,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         # Blinding: exploratory variants see only pre-cutoff trades (C1 = -V2 on any shared set).
         result = evaluate([t for t in trades if t.entry_ms <= cutoff_ms], VARIANTS)
         result["exploratory_until_ms"] = cutoff_ms
-        result["preregistered"] = frozen_preregistered(trades, cutoff_ms, args.prereg_result)
+        result["preregistered"], provenance_sha = frozen_preregistered(trades, cutoff_ms, args.prereg_result,
+                                                                       args.run_id)
     args.out.mkdir(parents=True, exist_ok=True)
     for name, content in (("replay.json", json.dumps(result, indent=2, sort_keys=True)), ("replay.md", render(result))):
         tmp = args.out / (name + ".tmp")
@@ -137,7 +169,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     pre = result.get("preregistered")
     print(f"{result['chosen_on_dev']} {result['verdict']}"
           + (f" prereg={pre['verdict']} fresh_n={pre['fresh_n']}/{pre['final_n']} days={pre['days_elapsed']}/{pre['min_days']}"
-             if pre else ""))
+             if pre else "")
+          # Printed only by the run that froze the result; run_eval.sh appends this line to
+          # the append-only verdict.log, which is the trusted reference for the manifest.
+          + (f" provenance_sha256={provenance_sha}" if provenance_sha else ""))
     return 0
 
 

@@ -83,6 +83,80 @@ def test_epoch_report_until_excludes_later_entries(tmp_path):
         epoch.load_rows(json_path=write(tmp_path, data), until=float("nan"))
 
 
+def _freeze(tmp_path, monkeypatch, capsys, data, cutoff, run_id="20261116T174700Z", out="a"):
+    frozen = tmp_path / "prereg_result.json"
+    args = ["--json", str(write(tmp_path, data)), "--prereg-after", str(cutoff),
+            "--prereg-result", str(frozen), "--out", str(tmp_path / out)]
+    if run_id is not None:
+        args += ["--run-id", run_id]
+    cli.main(args)
+    return frozen, capsys.readouterr().out
+
+
+def test_freeze_writes_provenance_bound_to_exact_result_bytes(tmp_path, monkeypatch, capsys):
+    import hashlib
+    data = rows(2600)
+    cutoff = data[999]["entry_ts"]
+    now_s = data[-1]["entry_ts"] + 30 * 86400
+    monkeypatch.setattr(cli.time, "time", lambda: now_s)
+    frozen, line = _freeze(tmp_path, monkeypatch, capsys, data, cutoff)
+    prov_path = cli.provenance_path(frozen)
+    manifest = json.loads(prov_path.read_text(encoding="utf-8"))
+    assert manifest == {"contract": "c1_provenance_v1", "hypothesis": "C1_contrarian",
+                        "scored_after_ms": round(cutoff * 1000), "run_id": "20261116T174700Z",
+                        "evaluated_at_ms": round(now_s * 1000),
+                        "result_sha256": hashlib.sha256(frozen.read_bytes()).hexdigest(),
+                        "id_hash_convention": cli.ID_HASH_CONVENTION}
+    assert f"provenance_sha256={hashlib.sha256(prov_path.read_bytes()).hexdigest()}" in line
+    import os
+    import stat
+    if os.name != "nt":
+        assert not (prov_path.stat().st_mode & stat.S_IWUSR)
+
+
+def test_provenance_hash_printed_only_by_the_freezing_run(tmp_path, monkeypatch, capsys):
+    data = rows(2600)
+    cutoff = data[999]["entry_ts"]
+    monkeypatch.setattr(cli.time, "time", lambda: data[-1]["entry_ts"] + 30 * 86400)
+    frozen, first = _freeze(tmp_path, monkeypatch, capsys, data, cutoff)
+    before = cli.provenance_path(frozen).read_bytes()
+    monkeypatch.setattr(cli.time, "time", lambda: data[-1]["entry_ts"] + 40 * 86400)
+    _, second = _freeze(tmp_path, monkeypatch, capsys, data, cutoff, run_id="later", out="b")
+    assert "provenance_sha256=" in first and "provenance_sha256=" not in second
+    assert cli.provenance_path(frozen).read_bytes() == before
+
+
+def test_pending_or_insufficient_writes_no_provenance(tmp_path, monkeypatch, capsys):
+    data = rows(1200)
+    frozen, line = _freeze(tmp_path, monkeypatch, capsys, data, data[999]["entry_ts"])
+    assert not cli.provenance_path(frozen).exists() and "provenance_sha256" not in line
+
+
+def test_produced_manifest_is_accepted_by_cost_review(tmp_path, monkeypatch, capsys):
+    """End-to-end on synthetic data at the real C1 cutoff with the real 2 000 replicates."""
+    import hashlib
+    from scripts.research import cost_and_learning_review as review
+    monkeypatch.setattr(lr, "BOOTSTRAP_REPLICATES", 2000)
+    cutoff = review.C1_CUTOFF_MS / 1000
+    data = rows(2600, start=cutoff - 999 * 600.0, step=600.0)
+    assert data[999]["entry_ts"] == cutoff
+    monkeypatch.setattr(cli.time, "time", lambda: data[-1]["entry_ts"] + 30 * 86400)
+    frozen, line = _freeze(tmp_path, monkeypatch, capsys, data, cutoff)
+    reference = line.split("provenance_sha256=")[1].split()[0]
+    report = review.build(_review_report(tmp_path), frozen, provenance_path=cli.provenance_path(frozen),
+                          provenance_sha=reference)
+    assert report["c1"]["status"] in review.C1_FINAL
+    assert report["inputs"]["c1_provenance_verified"] and report["inputs"]["c1_result_verified"]
+    assert report["inputs"]["c1_result_sha256_observed"] == hashlib.sha256(frozen.read_bytes()).hexdigest()
+
+
+def _review_report(tmp_path):
+    from tests import test_cost_and_learning_review as fixtures
+    path = tmp_path / "futures.json"
+    path.write_text(json.dumps(fixtures._report()), encoding="utf-8")
+    return path
+
+
 def test_insufficient_data_is_never_frozen(tmp_path, monkeypatch):
     data = rows(2600)
     cutoff = data[999]["entry_ts"]
@@ -95,3 +169,4 @@ def test_insufficient_data_is_never_frozen(tmp_path, monkeypatch):
     cli.main(["--json", str(write(tmp_path, data)), "--prereg-after", str(cutoff),
               "--prereg-result", str(frozen), "--out", str(tmp_path / "o")])
     assert not frozen.exists()
+    assert not cli.provenance_path(frozen).exists()

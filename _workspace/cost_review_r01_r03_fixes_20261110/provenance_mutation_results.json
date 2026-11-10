@@ -1,0 +1,42 @@
+{
+  "baseline": {
+    "exit_code": 0,
+    "summary": "4 passed, 5 deselected in 18.77s",
+    "import_error": false
+  },
+  "result_hash_of_other_bytes": {
+    "exit_code": 1,
+    "summary": "1 failed, 3 passed, 5 deselected in 19.76s",
+    "import_error": false
+  },
+  "evaluation_time_recomputed": {
+    "exit_code": 1,
+    "summary": "1 failed, 3 passed, 5 deselected in 19.53s",
+    "import_error": false
+  },
+  "hash_printed_on_every_run": {
+    "exit_code": 1,
+    "summary": "1 failed, 3 passed, 5 deselected in 18.54s",
+    "import_error": false
+  },
+  "no_provenance_written": {
+    "exit_code": 1,
+    "summary": "2 failed, 2 passed, 5 deselected in 18.65s",
+    "import_error": false
+  },
+  "provenance_for_non_final": {
+    "exit_code": 1,
+    "summary": "1 failed, 3 passed, 5 deselected in 18.99s",
+    "import_error": false
+  },
+  "run_id_dropped": {
+    "exit_code": 1,
+    "summary": "1 failed, 3 passed, 5 deselected in 19.06s",
+    "import_error": false
+  },
+  "restored": {
+    "exit_code": 0,
+    "summary": "4 passed, 5 deselected in 18.57s",
+    "import_error": false
+  }
+}
