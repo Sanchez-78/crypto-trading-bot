@@ -1,0 +1,186 @@
+{
+  "cells": 42,
+  "identical": 42,
+  "different": 0,
+  "compared_fields": [
+    "n",
+    "gross_bps",
+    "gross_ci95",
+    "net",
+    "breakeven_cost_bps",
+    "cost_budget_with_reserve_bps",
+    "conservative_budget_from_ci_low_bps",
+    "derivation"
+  ],
+  "new_field": "status (OK)",
+  "rows": [
+    {
+      "cell": "H1/HOLDOUT/r15",
+      "identical": true
+    },
+    {
+      "cell": "H1/HOLDOUT/tpsl",
+      "identical": true
+    },
+    {
+      "cell": "H1/TEST/r15",
+      "identical": true
+    },
+    {
+      "cell": "H1/TEST/tpsl",
+      "identical": true
+    },
+    {
+      "cell": "H1/TRAIN/r15",
+      "identical": true
+    },
+    {
+      "cell": "H1/TRAIN/tpsl",
+      "identical": true
+    },
+    {
+      "cell": "H2/HOLDOUT/r15",
+      "identical": true
+    },
+    {
+      "cell": "H2/HOLDOUT/tpsl",
+      "identical": true
+    },
+    {
+      "cell": "H2/TEST/r15",
+      "identical": true
+    },
+    {
+      "cell": "H2/TEST/tpsl",
+      "identical": true
+    },
+    {
+      "cell": "H2/TRAIN/r15",
+      "identical": true
+    },
+    {
+      "cell": "H2/TRAIN/tpsl",
+      "identical": true
+    },
+    {
+      "cell": "H3/HOLDOUT/r15",
+      "identical": true
+    },
+    {
+      "cell": "H3/HOLDOUT/tpsl",
+      "identical": true
+    },
+    {
+      "cell": "H3/TEST/r15",
+      "identical": true
+    },
+    {
+      "cell": "H3/TEST/tpsl",
+      "identical": true
+    },
+    {
+      "cell": "H3/TRAIN/r15",
+      "identical": true
+    },
+    {
+      "cell": "H3/TRAIN/tpsl",
+      "identical": true
+    },
+    {
+      "cell": "H4/HOLDOUT/r15",
+      "identical": true
+    },
+    {
+      "cell": "H4/HOLDOUT/tpsl",
+      "identical": true
+    },
+    {
+      "cell": "H4/TEST/r15",
+      "identical": true
+    },
+    {
+      "cell": "H4/TEST/tpsl",
+      "identical": true
+    },
+    {
+      "cell": "H4/TRAIN/r15",
+      "identical": true
+    },
+    {
+      "cell": "H4/TRAIN/tpsl",
+      "identical": true
+    },
+    {
+      "cell": "H5/HOLDOUT/r15",
+      "identical": true
+    },
+    {
+      "cell": "H5/HOLDOUT/tpsl",
+      "identical": true
+    },
+    {
+      "cell": "H5/TEST/r15",
+      "identical": true
+    },
+    {
+      "cell": "H5/TEST/tpsl",
+      "identical": true
+    },
+    {
+      "cell": "H5/TRAIN/r15",
+      "identical": true
+    },
+    {
+      "cell": "H5/TRAIN/tpsl",
+      "identical": true
+    },
+    {
+      "cell": "H6/HOLDOUT/r15",
+      "identical": true
+    },
+    {
+      "cell": "H6/HOLDOUT/tpsl",
+      "identical": true
+    },
+    {
+      "cell": "H6/TEST/r15",
+      "identical": true
+    },
+    {
+      "cell": "H6/TEST/tpsl",
+      "identical": true
+    },
+    {
+      "cell": "H6/TRAIN/r15",
+      "identical": true
+    },
+    {
+      "cell": "H6/TRAIN/tpsl",
+      "identical": true
+    },
+    {
+      "cell": "H7/HOLDOUT/r15",
+      "identical": true
+    },
+    {
+      "cell": "H7/HOLDOUT/tpsl",
+      "identical": true
+    },
+    {
+      "cell": "H7/TEST/r15",
+      "identical": true
+    },
+    {
+      "cell": "H7/TEST/tpsl",
+      "identical": true
+    },
+    {
+      "cell": "H7/TRAIN/r15",
+      "identical": true
+    },
+    {
+      "cell": "H7/TRAIN/tpsl",
+      "identical": true
+    }
+  ]
+}

@@ -1,0 +1,99 @@
+{
+  "code_sha256": "dc4041064d9151c4b15ba0d115c224389a40b862aa54f9d1da8413f7d34ae0e1",
+  "synthetic_only": true,
+  "real_c1_data_read": false,
+  "pending_reads_mu": {
+    "load_order": [
+      "synthetic_report",
+      "synthetic_pending",
+      "synthetic_mu"
+    ],
+    "status": "PENDING",
+    "declared_outcomes_opened": false,
+    "mu_sha_recorded": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
+  "missing_c1_reads_mu_before_error": {
+    "load_order": [
+      "synthetic_report",
+      "synthetic_mu"
+    ],
+    "error_after_mu_read": "mu input requires a frozen C1 result"
+  },
+  "invalid_c1_accepted": {
+    "status": "CONTRARIAN_CONFIRMED",
+    "lift_bps": null,
+    "lift_ci95_welch": [
+      null,
+      null
+    ],
+    "lift_ci95_block_bootstrap": [
+      null,
+      null
+    ],
+    "bootstrap_unit": "6h UTC blocks",
+    "bootstrap_blocks": 0,
+    "upper_n": 520,
+    "lower_n": 480,
+    "scored_n": 2,
+    "scored_set_sha256": "c9513df0e02968c43134c476e1190a736a9fc629be100dbecb4576d60c9b171e",
+    "post_cutoff_outcomes_opened": false,
+    "profitability": "NOT_VERIFIED"
+  },
+  "empty_report": {
+    "cost_table": {},
+    "health": {
+      "question": "Jsou data použitelná?",
+      "status": "OK",
+      "evidence": "0 mezer v pokrytí futures screenu; checksum != coverage"
+    }
+  },
+  "reversed_ci_and_zero_n_accepted": {
+    "n": 0,
+    "gross_bps": 1.0,
+    "gross_ci95": [
+      14.0,
+      -1.0
+    ],
+    "net": {
+      "0": {
+        "mean_bps": 1.0,
+        "ci95": [
+          14.0,
+          -1.0
+        ]
+      },
+      "9": {
+        "mean_bps": -8.0,
+        "ci95": [
+          5.0,
+          -10.0
+        ]
+      },
+      "15": {
+        "mean_bps": -14.0,
+        "ci95": [
+          -1.0,
+          -16.0
+        ]
+      },
+      "18": {
+        "mean_bps": -17.0,
+        "ci95": [
+          -4.0,
+          -19.0
+        ]
+      },
+      "20": {
+        "mean_bps": -19.0,
+        "ci95": [
+          -6.0,
+          -21.0
+        ]
+      }
+    },
+    "breakeven_cost_bps": 1.0,
+    "cost_budget_with_reserve_bps": -2.0,
+    "conservative_budget_from_ci_low_bps": 11.0,
+    "derivation": "net(c) = gross - c; CI shifted by c; budgets are arithmetic derivations, not new tests"
+  }
+}

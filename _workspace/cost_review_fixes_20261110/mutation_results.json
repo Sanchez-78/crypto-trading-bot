@@ -1,0 +1,62 @@
+{
+  "baseline": {
+    "exit_code": 0,
+    "summary": "85 passed in 1.75s"
+  },
+  "F01_read_mu_before_c1_check": {
+    "exit_code": 1,
+    "summary": "7 failed, 78 passed in 2.16s"
+  },
+  "F01_mu_not_refused": {
+    "exit_code": 1,
+    "summary": "5 failed, 80 passed in 1.90s"
+  },
+  "F02_result_read_without_provenance": {
+    "exit_code": 1,
+    "summary": "2 failed, 83 passed in 1.88s"
+  },
+  "F02_duplicate_ids_accepted": {
+    "exit_code": 1,
+    "summary": "2 failed, 83 passed in 1.90s"
+  },
+  "F02_counts_not_checked": {
+    "exit_code": 1,
+    "summary": "1 failed, 84 passed in 1.78s"
+  },
+  "F02_cutoff_from_input": {
+    "exit_code": 1,
+    "summary": "1 failed, 84 passed in 1.74s"
+  },
+  "F02_blocks_not_checked": {
+    "exit_code": 1,
+    "summary": "1 failed, 84 passed in 1.99s"
+  },
+  "F02_time_margin_not_checked": {
+    "exit_code": 1,
+    "summary": "1 failed, 84 passed in 1.82s"
+  },
+  "F03_missing_coverage_ok": {
+    "exit_code": 1,
+    "summary": "4 failed, 81 passed in 1.81s"
+  },
+  "F03_hypotheses_not_required": {
+    "exit_code": 1,
+    "summary": "2 failed, 83 passed in 1.77s"
+  },
+  "F03_nested_n_conflict_ignored": {
+    "exit_code": 1,
+    "summary": "1 failed, 84 passed in 1.78s"
+  },
+  "F04_reversed_interval_accepted": {
+    "exit_code": 1,
+    "summary": "2 failed, 83 passed in 1.83s"
+  },
+  "F04_zero_n_budgets": {
+    "exit_code": 1,
+    "summary": "1 failed, 84 passed in 1.91s"
+  },
+  "restored": {
+    "exit_code": 0,
+    "summary": "85 passed in 1.58s"
+  }
+}

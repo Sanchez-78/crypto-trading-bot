@@ -1,5 +1,29 @@
 # Náklady, učení a ziskovost: review a plán po C1 (2026-11-10)
 
+> **Erratum (2026-11-10, po auditu `_workspace/66_codex_cost_review_audit_20261110.md`,
+> opravy v `_workspace/67_cost_review_audit_fixes_20261110.md`; historická čísla níže beze změny):**
+> - Tvrzení o ochraně C1 a validaci v sekci A3 byla silnější než implementace. Nástroj
+>   načítal mu před kontrolou finálního C1 (F01), přijal libovolný řetězec CONFIRMED bez
+>   doloženého původu (F02), vykázal chybějící coverage jako OK (F03) a z obráceného
+>   intervalu nebo n = 0 vyráběl rozpočty (F04). Opraveno a regresně doloženo ve verzi
+>   schématu 2. Nákladová aritmetika 42 buněk se nezměnila.
+> - Skutečný `prereg_result.json` z dnešního serveru zůstane v nástroji NOT_VERIFIED: běh
+>   nezapisuje manifest původu (`c1_provenance_v1`).
+> - **Maker:** stejný maker/taker poplatek na spotu znamená jen to, že se neušetří na
+>   poplatku. Nevylučuje rozdíl ve fill cenách (zachycení spreadu, adverse selection,
+>   čekání, nevyplnění). Věta „maker má smysl jen na futures“ v C3 je přehnaná. Důkaz
+>   kladné maker ekonomiky ale stále chybí.
+> - **Shadow data:** spot shadow data neprokazují futures fill rate, frontu ani adverse
+>   selection. Jsou jen orientační.
+> - **WR:** `src/core/trade_metrics_contract.py:20-22` počítá WIN až při net > +0,05 p. b.
+>   (+5 bps), pásmo ±5 bps je FLAT. Futures screen
+>   (`scripts/research/futures_flow_screen.py:631-633`) bere WR jako net > 0. Nejde o
+>   stejnou metriku. Během C1 se nic nepřepočítává ani nemění.
+> - **C2:** před startem je nutné definovat jmenovatel primární metriky (analýza podle
+>   původní randomizace příležitostí), nepřijaté příležitosti a sdílenou kapacitu
+>   portfolia; net na fill se uvádí zvlášť. Odmítnutí kandidáti se nesmějí vydávat za
+>   obchody. Osnova v C2 není hotový protokol ke spuštění.
+
 Zadání: `docs/codex_prompts/CODEX_POST_C1_COST_AND_LEARNING_REVIEW_2026-11-10.md`.
 Provedl Claude podle pokynu operátora („proveď vše, Codex pouze doporučuje“). Jde jen o
 lokální práci: bot, server, konfigurace, runtime data ani C1 se neměnily. Žádný reset.
