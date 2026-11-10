@@ -28,29 +28,47 @@ def _sens(gross, lo9, hi9, n=300):
     return review.sensitivity({"n": n, **_stats(gross, lo9, hi9)}, "x")
 
 
-def _source(expected=100, missing=0):
-    gaps = [{"count": missing, "start_ms": 0, "end_exclusive_ms": 60_000 * missing}] if missing else []
+BLOCK_START = 1_700_000_100_000  # synthetic, deliberately not aligned to a minute boundary
+BLOCK_SPAN = 500 * 60_000       # 500 one-minute rows, 100 five-minute rows
+STEP = {"futures": 60_000, "spot": 60_000, "metrics": 300_000}
+
+
+def _source(kind="futures", missing=0, offset_steps=10):
+    """Coverage entry in futures_flow_screen.source_coverage format, one gap run if missing."""
+    step = STEP[kind]
+    expected = BLOCK_SPAN // step
+    start = BLOCK_START + offset_steps * step
+    gaps = [{"start_ms": start, "end_exclusive_ms": start + missing * step, "count": missing}] if missing else []
     return {"expected_rows": expected, "rows": expected - missing, "missing_rows": missing, "missing_ranges": gaps}
 
 
-def _coverage(gap_symbol=None):
+def _coverage(gap_symbol=None, gap_kind="futures"):
     out = []
     for sym in review.UNIVERSE:
-        missing = 5 if sym == gap_symbol else 0
-        out.append({"symbol": sym, "sources": {"futures": _source(missing=missing), "spot": _source(),
-                                               "metrics": _source(), "funding": {"rows": 10}}})
+        sources = {kind: _source(kind, missing=5 if sym == gap_symbol and kind == gap_kind else 0)
+                   for kind in STEP}
+        sources["funding"] = {"rows": 10}  # irregular calendar: presence only
+        out.append({"symbol": sym, "sources": sources})
     return out
 
 
-def _report(gross=1.0, gap_symbol=None):
+def _report(gross=1.0, gap_symbol=None, gap_kind="futures", bounds=True):
     stats = {h: {"n": 300, "r15": _stats(gross, -9.5, -6.5), "tpsl": _stats(0.2, -9.2, -8.4)}
              for h in review.HYPOTHESES}
-    return {b: {"coverage": _coverage(gap_symbol), "statistics": copy.deepcopy(stats)} for b in review.BLOCKS}
+    report = {b: {"coverage": _coverage(gap_symbol, gap_kind), "statistics": copy.deepcopy(stats)}
+              for b in review.BLOCKS}
+    if bounds:  # the real frozen summary stores bounds for TEST/HOLDOUT only
+        for b in ("TEST", "HOLDOUT"):
+            report[b].update(start_ms=BLOCK_START, end_ms=BLOCK_START + BLOCK_SPAN)
+    return report
 
 
-def _c1(verdict="CONTRARIAN_CONFIRMED", n=1000, upper_n=None):
-    """Internally consistent synthetic final C1 (format of learner_replay.evaluate_preregistered)."""
-    upper_n = upper_n if upper_n is not None else n // 2 + 20
+def _c1(verdict="CONTRARIAN_CONFIRMED", n=1000, upper_n=None, blocks=16, valid=2000):
+    """Internally consistent synthetic final C1 (format of learner_replay.evaluate_preregistered).
+
+    upper = estimate > median can never exceed n // 2; 16 blocks fit in cutoff + 5 days (max 21).
+    """
+    upper_n = upper_n if upper_n is not None else 480
     welch, boot = {"CONTRARIAN_CONFIRMED": ((0.5, 7.5), (0.3, 7.9)),
                    "CONTRARIAN_REFUTED": ((-7.5, -0.5), (-7.9, -0.3)),
                    "CONTRARIAN_NOT_SHOWN": ((-1.0, 6.0), (-1.2, 6.5))}[verdict]
@@ -62,7 +80,7 @@ def _c1(verdict="CONTRARIAN_CONFIRMED", n=1000, upper_n=None):
             "variants": {"C1_contrarian": {"n": n, "lift_bps": lift, "lift_low_bps": welch[0],
                                            "lift_high_bps": welch[1], "upper_n": upper_n, "lower_n": n - upper_n,
                                            "spearman": 0.1,
-                                           "day_bootstrap": {"blocks": 28, "valid": 2000,
+                                           "day_bootstrap": {"blocks": blocks, "valid": valid,
                                                              "lower_bps": boot[0], "upper_bps": boot[1]}}}}
 
 
@@ -314,7 +332,7 @@ def test_f01_read_order_and_exposure_after_valid_c1(tmp_path):
     assert spy.reads == ["r.json", "provenance.json", "prereg_result.json", "mu.json"]
     assert out["exposure"] == {"raw_post_cutoff_trades_read": False, "frozen_c1_result_read": True,
                                "frozen_c1_mu_read": True}
-    assert out["c1"]["split"]["q"] == pytest.approx(520 / 1000)
+    assert out["c1"]["split"]["q"] == pytest.approx(480 / 1000)
 
 
 def test_f01_json_and_markdown_report_same_exposure(tmp_path):
@@ -348,12 +366,12 @@ def test_f02_each_final_verdict_accepted_when_consistent(tmp_path, verdict):
 
 
 def test_f02_prefix_longer_than_1000_and_unequal_groups(tmp_path):
-    result = _c1(n=1137, upper_n=601)
+    result = _c1(n=1137, upper_n=551)
     paths, ref = _final_set(tmp_path, result=result, mu=_mu_for(result))
     out = review.build(_write(tmp_path, "r.json", _report()), paths["result"], paths["mu"],
                        provenance_path=paths["provenance"], provenance_sha=ref)
     assert out["c1"]["scored_n"] == 1137
-    assert out["c1"]["split"]["q"] == pytest.approx(601 / 1137)
+    assert out["c1"]["split"]["q"] == pytest.approx(551 / 1137)
 
 
 def _broken(mutator):
@@ -448,6 +466,205 @@ def test_positive_lift_never_marks_profitability_pass(tmp_path):
 
 def test_id_hash_convention_is_stable():
     assert review.id_hash(["a", "b"]) == hashlib.sha256(b'["a","b"]').hexdigest()
+
+
+# ------------------------------------------------------------------ R01 protocol consistency of C1
+
+def _boot(r):
+    return r["variants"]["C1_contrarian"]["day_bootstrap"]
+
+
+def _groups(r, upper, lower):
+    r["variants"]["C1_contrarian"].update(upper_n=upper, lower_n=lower)
+
+
+@pytest.mark.parametrize("name,mutator", [
+    ("valid_0", lambda r: _boot(r).__setitem__("valid", 0)),
+    ("valid_1799", lambda r: _boot(r).__setitem__("valid", 1799)),
+    ("valid_2001", lambda r: _boot(r).__setitem__("valid", 2001)),
+    ("valid_missing", lambda r: _boot(r).pop("valid")),
+    ("valid_bool", lambda r: _boot(r).__setitem__("valid", True)),
+    ("blocks_exceed_time_span", lambda r: _boot(r).__setitem__("blocks", 22)),  # max 21 in 5 days
+    ("blocks_exceed_trades", lambda r: (r.__setitem__("scored_last_entry_ms", CUTOFF + 300 * 24 * HOUR),
+                                        _boot(r).__setitem__("blocks", 1001))),
+    ("upper_more_than_half", lambda r: _groups(r, 501, 499)),
+    ("group_below_five", lambda r: _groups(r, 4, 996)),
+    ("empty_id", lambda r: r["scored_trade_ids"].__setitem__(7, "")),
+    ("int_id", lambda r: r["scored_trade_ids"].__setitem__(7, 7)),
+])
+def test_r01_impossible_final_rejected_and_mu_unopened(tmp_path, name, mutator):
+    result = _c1()
+    mutator(result)
+    if name == "blocks_exceed_trades":  # keep the evaluation 6 h after the moved last entry
+        overrides = {"evaluated_at_ms": CUTOFF + 301 * 24 * HOUR}
+    else:
+        overrides = None
+    paths, ref = _final_set(tmp_path, result=result, prov_overrides=overrides, mu={"mu_bps": -9.0})
+    spy = SpyLoader(forbidden=[paths["mu"]])
+    with pytest.raises(review.ReviewError) as exc:
+        review.build(_write(tmp_path, "r.json", _report()), paths["result"], paths["mu"],
+                     provenance_path=paths["provenance"], provenance_sha=ref, loader=spy)
+    assert "SENTINEL" not in str(exc.value) and "mu.json" not in spy.reads
+
+
+@pytest.mark.parametrize("kwargs", [
+    {"valid": 1800}, {"valid": 2000}, {"blocks": 21}, {"upper_n": 500}, {"upper_n": 5},
+])
+def test_r01_boundary_values_accepted(tmp_path, kwargs):
+    paths, ref = _final_set(tmp_path, result=_c1(**kwargs))
+    out = review.build(_write(tmp_path, "r.json", _report()), paths["result"],
+                       provenance_path=paths["provenance"], provenance_sha=ref)
+    assert out["c1"]["status"] == "CONTRARIAN_CONFIRMED"
+
+
+def test_r01_split_means_stays_generic():
+    # Protocol limits belong to C1 validation, not to the arithmetic helper.
+    assert review.split_means(-9.0, 4.0, 900, 100)["q"] == pytest.approx(0.9)
+
+
+# ------------------------------------------------------------------ R02 coverage consistency
+
+def _cov(report, block="HOLDOUT", symbol=0, kind="futures"):
+    return report[block]["coverage"][symbol]["sources"][kind]
+
+
+def _gap(start_steps, count, kind="futures"):
+    start = BLOCK_START + start_steps * STEP[kind]
+    return {"start_ms": start, "end_exclusive_ms": start + count * STEP[kind], "count": count}
+
+
+R02_INVALID = [
+    ("rows_zero_no_missing", lambda s: s.update(rows=0)),
+    ("missing_gt_expected", lambda s: s.update(missing_rows=s["expected_rows"] + 1, rows=0,
+                                               missing_ranges=[_gap(0, s["expected_rows"] + 1)])),
+    ("range_count_missing", lambda s: s.update(rows=495, missing_rows=5,
+                                               missing_ranges=[{"start_ms": BLOCK_START,
+                                                                "end_exclusive_ms": BLOCK_START + 300_000}])),
+    ("range_reversed", lambda s: s.update(rows=495, missing_rows=5,
+                                          missing_ranges=[{"start_ms": BLOCK_START + 300_000,
+                                                           "end_exclusive_ms": BLOCK_START, "count": 5}])),
+    ("count_vs_length", lambda s: s.update(rows=495, missing_rows=5,
+                                           missing_ranges=[{"start_ms": BLOCK_START,
+                                                            "end_exclusive_ms": BLOCK_START + 240_000, "count": 5}])),
+    ("sum_vs_missing", lambda s: s.update(rows=494, missing_rows=6, missing_ranges=[_gap(0, 5)])),
+    ("overlap", lambda s: s.update(rows=492, missing_rows=8, missing_ranges=[_gap(0, 5), _gap(2, 3)])),
+    ("duplicate", lambda s: s.update(rows=490, missing_rows=10, missing_ranges=[_gap(0, 5), _gap(0, 5)])),
+    ("bool_rows", lambda s: s.update(rows=True)),
+    ("negative_missing", lambda s: s.update(missing_rows=-1, rows=501)),
+    ("off_grid_range", lambda s: s.update(rows=495, missing_rows=5,
+                                          missing_ranges=[{"start_ms": BLOCK_START + 1,
+                                                           "end_exclusive_ms": BLOCK_START + 300_001, "count": 5}])),
+    ("expected_vs_span", lambda s: s.update(expected_rows=499, rows=499)),
+]
+
+
+@pytest.mark.parametrize("name,mutator", R02_INVALID)
+def test_r02_inconsistent_coverage_rejected_on_cli(tmp_path, name, mutator):
+    report = _report()
+    mutator(_cov(report))
+    out = tmp_path / "o"
+    assert review.cli(["--futures-report", str(_write(tmp_path, "r.json", report)), "--out", str(out)]) == 2
+    assert not out.exists()
+
+
+def test_r02_missing_rows_field_is_not_verified(tmp_path):
+    report = _report()
+    _cov(report).pop("rows")
+    out = tmp_path / "o"
+    assert review.cli(["--futures-report", str(_write(tmp_path, "r.json", report)), "--out", str(out)]) == 0
+    data = json.loads((out / "review.json").read_text(encoding="utf-8"))
+    assert data["coverage"]["status"] == "NOT_VERIFIED"
+
+
+@pytest.mark.parametrize("kind", ["futures", "metrics"])
+def test_r02_documented_gap_1m_and_5m_is_partial(kind):
+    out = review.coverage_review(_report(gap_symbol="SOLUSDT", gap_kind=kind))
+    assert out["status"] == "PARTIAL"
+    assert out["missing_range_count"] == 3 and out["missing_rows_by_source_interval"] == 15
+
+
+def test_r02_entirely_missing_source_is_no_data_not_ok():
+    report = _report()
+    src = _cov(report, kind="metrics")
+    src.update(rows=0, missing_rows=src["expected_rows"], missing_ranges=[_gap(0, src["expected_rows"], "metrics")])
+    assert review.coverage_review(report)["status"] == "NO_DATA"
+
+
+def test_r02_funding_irregular_and_missing_bounds_tolerated():
+    report = _report(bounds=False)
+    report["TEST"]["coverage"][0]["sources"]["funding"] = {"rows": 3, "first_ms": 5, "last_ms": 7_777_777}
+    out = review.coverage_review(report)
+    assert out["status"] == "OK"
+    assert all(b["grid_bounds_checked"] is False for b in out["blocks"].values())
+    assert review.coverage_review(_report())["blocks"]["HOLDOUT"]["grid_bounds_checked"] is True
+
+
+# ------------------------------------------------------------------ R03 input identity
+
+def test_r03_mu_hash_tracks_the_bytes_used(tmp_path):
+    result = _c1()
+    outs = []
+    for i, value in enumerate((-9.0, 9.0)):
+        d = tmp_path / f"run{i}"
+        d.mkdir()
+        paths, ref = _final_set(d, result=result, mu=_mu_for(result, mu_bps=value))
+        outs.append(review.build(_write(d, "r.json", _report()), paths["result"], paths["mu"],
+                                 provenance_path=paths["provenance"], provenance_sha=ref))
+        assert outs[-1]["inputs"]["c1_mu_sha256_observed"] == hashlib.sha256(paths["mu"].read_bytes()).hexdigest()
+    a, b = (o["inputs"] for o in outs)
+    assert a["c1_mu_sha256_observed"] != b["c1_mu_sha256_observed"]
+    assert {k: v for k, v in a.items() if k != "c1_mu_sha256_observed"} == \
+           {k: v for k, v in b.items() if k != "c1_mu_sha256_observed"}
+
+
+def test_r03_identical_bytes_identical_report(tmp_path):
+    result = _c1()
+    paths, ref = _final_set(tmp_path, result=result, mu=_mu_for(result))
+    report = _write(tmp_path, "r.json", _report())
+    args = ["--futures-report", str(report), "--c1-result", str(paths["result"]), "--c1-provenance",
+            str(paths["provenance"]), "--c1-provenance-sha256", ref, "--c1-mu", str(paths["mu"])]
+    assert review.cli(args + ["--out", str(tmp_path / "a")]) == 0
+    assert review.cli(args + ["--out", str(tmp_path / "b")]) == 0
+    assert (tmp_path / "a" / "review.json").read_bytes() == (tmp_path / "b" / "review.json").read_bytes()
+    data = json.loads((tmp_path / "a" / "review.json").read_text(encoding="utf-8"))["inputs"]
+    assert data["c1_provenance_sha256_expected"] == ref == data["c1_provenance_sha256_observed"]
+    assert data["c1_provenance_verified"] is True and data["c1_result_verified"] is True
+    assert data["c1_result_sha256_observed"] == data["c1_result_sha256_expected"]
+    assert data["c1_run_id"] == "20261116T174700Z"
+    assert ref in (tmp_path / "a" / "review.md").read_text(encoding="utf-8")
+
+
+def test_r03_mismatch_keeps_observed_apart_from_expected(tmp_path):
+    paths, _ = _final_set(tmp_path)
+    spy = SpyLoader(forbidden=[paths["result"]])
+    out = review.build(_write(tmp_path, "r.json", _report()), paths["result"],
+                       provenance_path=paths["provenance"], provenance_sha="0" * 64, loader=spy)
+    ids = out["inputs"]
+    assert ids["c1_provenance_sha256_expected"] == "0" * 64
+    assert ids["c1_provenance_sha256_observed"] == hashlib.sha256(paths["provenance"].read_bytes()).hexdigest()
+    assert ids["c1_provenance_verified"] is False and ids["c1_result_sha256_observed"] is None
+
+
+def test_r03_reference_without_reading_is_not_reported_as_observed(tmp_path):
+    out = review.build(_write(tmp_path, "r.json", _report()), _write(tmp_path, "c1.json", _c1()),
+                       provenance_path=None, provenance_sha="a" * 64)
+    ids = out["inputs"]
+    assert ids["c1_provenance_sha256_expected"] == "a" * 64 and ids["c1_provenance_sha256_observed"] is None
+    assert ids["c1_mu_sha256_observed"] is None and ids["c1_result_sha256_observed"] is None
+
+
+def test_r03_no_mu_hash_without_permission(tmp_path):
+    result = {"verdict": "PENDING", "scored_after_ms": CUTOFF, "final_n": 1000, "min_days": 7, "fresh_n": 204,
+              "variants": None}
+    paths, ref = _final_set(tmp_path, result=result, mu={"mu_bps": -9.0})
+    spy = SpyLoader(forbidden=[paths["mu"]])
+    out = review.build(_write(tmp_path, "r.json", _report()), paths["result"],
+                       provenance_path=paths["provenance"], provenance_sha=ref, loader=spy)
+    assert out["inputs"]["c1_mu_sha256_observed"] is None and out["exposure"]["frozen_c1_mu_read"] is False
+    with pytest.raises(review.BlindingRefusal):
+        review.build(_write(tmp_path, "r2.json", _report()), paths["result"], paths["mu"],
+                     provenance_path=paths["provenance"], provenance_sha=ref, loader=spy)
+    assert spy.reads.count("mu.json") == 0
 
 
 # ------------------------------------------------------------------ regression / I/O safety

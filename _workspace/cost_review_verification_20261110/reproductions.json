@@ -1,0 +1,379 @@
+{
+  "valid_synthetic_baseline": {
+    "reads": [
+      "futures",
+      "manifest",
+      "result",
+      "mu"
+    ],
+    "c1": {
+      "status": "CONTRARIAN_CONFIRMED",
+      "lift_bps": 4.0,
+      "lift_ci95_welch": [
+        0.5,
+        7.5
+      ],
+      "lift_ci95_block_bootstrap": [
+        0.3,
+        7.9
+      ],
+      "bootstrap_unit": "6h UTC blocks",
+      "bootstrap_blocks": 16,
+      "upper_n": 480,
+      "lower_n": 520,
+      "scored_n": 1000,
+      "scored_set_sha256": "0b1576123fc97932a092c51460323c672c45ba7cd920f4461995b2a75f546326",
+      "id_hash_convention": "sha256(utf8(json.dumps(ids, separators=(',', ':'))))",
+      "run_id": "SYNTHETIC-AUDIT",
+      "result_sha256": "afc9ef43f9dc14d0cb20e3595f6ae5624eb6fbf9b7f5d0de872be7bf3db90748",
+      "profitability": "NOT_VERIFIED",
+      "split": {
+        "q": 0.48,
+        "mean_upper_bps": -6.92,
+        "mean_lower_bps": -10.92,
+        "status": "DERIVED_POINT_ESTIMATE_NO_CI"
+      }
+    },
+    "inputs": {
+      "futures_report_sha256": "f12740da104c5477573f8c99f15279cf017d4758484792b2740ec3496a1bbfa4",
+      "c1_result_sha256": "afc9ef43f9dc14d0cb20e3595f6ae5624eb6fbf9b7f5d0de872be7bf3db90748",
+      "c1_run_id": "SYNTHETIC-AUDIT"
+    },
+    "exposure": {
+      "raw_post_cutoff_trades_read": false,
+      "frozen_c1_result_read": true,
+      "frozen_c1_mu_read": true
+    },
+    "manifest_sha256": "ad5c7d5e95ef449bc2f28bfd067bdf1c13bead0ff529958c1bd78d10a634dfd0",
+    "mu_sha256": "2739bf0236ce87fd8fbb7dca0bc2eaa00608870ecf1c24d53805557468073db3"
+  },
+  "bootstrap_valid_zero": {
+    "reads": [
+      "futures",
+      "manifest",
+      "result",
+      "mu"
+    ],
+    "c1": {
+      "status": "CONTRARIAN_CONFIRMED",
+      "lift_bps": 4.0,
+      "lift_ci95_welch": [
+        0.5,
+        7.5
+      ],
+      "lift_ci95_block_bootstrap": [
+        0.3,
+        7.9
+      ],
+      "bootstrap_unit": "6h UTC blocks",
+      "bootstrap_blocks": 16,
+      "upper_n": 480,
+      "lower_n": 520,
+      "scored_n": 1000,
+      "scored_set_sha256": "0b1576123fc97932a092c51460323c672c45ba7cd920f4461995b2a75f546326",
+      "id_hash_convention": "sha256(utf8(json.dumps(ids, separators=(',', ':'))))",
+      "run_id": "SYNTHETIC-AUDIT",
+      "result_sha256": "a3eec11d11969f999cb6760ff542038a2e312defbf87fea235c1e0de41c0f0ad",
+      "profitability": "NOT_VERIFIED",
+      "split": {
+        "q": 0.48,
+        "mean_upper_bps": -6.92,
+        "mean_lower_bps": -10.92,
+        "status": "DERIVED_POINT_ESTIMATE_NO_CI"
+      }
+    },
+    "inputs": {
+      "futures_report_sha256": "f12740da104c5477573f8c99f15279cf017d4758484792b2740ec3496a1bbfa4",
+      "c1_result_sha256": "a3eec11d11969f999cb6760ff542038a2e312defbf87fea235c1e0de41c0f0ad",
+      "c1_run_id": "SYNTHETIC-AUDIT"
+    },
+    "exposure": {
+      "raw_post_cutoff_trades_read": false,
+      "frozen_c1_result_read": true,
+      "frozen_c1_mu_read": true
+    },
+    "manifest_sha256": "bcedb438fabd31573b6b44fc3c1f33dae4f1e87e6beab02f7f6834f9d08634d4",
+    "mu_sha256": "4f2806df292e64e6774f9064e9212ef21d7afd30a935dd5faf06e3a3ba85fec8"
+  },
+  "blocks_impossible_in_time_span": {
+    "reads": [
+      "futures",
+      "manifest",
+      "result",
+      "mu"
+    ],
+    "c1": {
+      "status": "CONTRARIAN_CONFIRMED",
+      "lift_bps": 4.0,
+      "lift_ci95_welch": [
+        0.5,
+        7.5
+      ],
+      "lift_ci95_block_bootstrap": [
+        0.3,
+        7.9
+      ],
+      "bootstrap_unit": "6h UTC blocks",
+      "bootstrap_blocks": 28,
+      "upper_n": 480,
+      "lower_n": 520,
+      "scored_n": 1000,
+      "scored_set_sha256": "0b1576123fc97932a092c51460323c672c45ba7cd920f4461995b2a75f546326",
+      "id_hash_convention": "sha256(utf8(json.dumps(ids, separators=(',', ':'))))",
+      "run_id": "SYNTHETIC-AUDIT",
+      "result_sha256": "f254a800352dbd01f9a445f2296183fe0a4a9c7fe585bb0f323ce40ce3088563",
+      "profitability": "NOT_VERIFIED",
+      "split": {
+        "q": 0.48,
+        "mean_upper_bps": -6.92,
+        "mean_lower_bps": -10.92,
+        "status": "DERIVED_POINT_ESTIMATE_NO_CI"
+      }
+    },
+    "inputs": {
+      "futures_report_sha256": "f12740da104c5477573f8c99f15279cf017d4758484792b2740ec3496a1bbfa4",
+      "c1_result_sha256": "f254a800352dbd01f9a445f2296183fe0a4a9c7fe585bb0f323ce40ce3088563",
+      "c1_run_id": "SYNTHETIC-AUDIT"
+    },
+    "exposure": {
+      "raw_post_cutoff_trades_read": false,
+      "frozen_c1_result_read": true,
+      "frozen_c1_mu_read": true
+    },
+    "manifest_sha256": "c4ac7db47f5ca3ed33732f2b7b98d84899ad7f9dcb72f07460fb24844d9b32fb",
+    "mu_sha256": "a40f589cc6f571ec39894f97b48c696b74b6d2f729313d2326d208470fc1788f"
+  },
+  "upper_group_exceeds_median_limit": {
+    "reads": [
+      "futures",
+      "manifest",
+      "result",
+      "mu"
+    ],
+    "c1": {
+      "status": "CONTRARIAN_CONFIRMED",
+      "lift_bps": 4.0,
+      "lift_ci95_welch": [
+        0.5,
+        7.5
+      ],
+      "lift_ci95_block_bootstrap": [
+        0.3,
+        7.9
+      ],
+      "bootstrap_unit": "6h UTC blocks",
+      "bootstrap_blocks": 16,
+      "upper_n": 520,
+      "lower_n": 480,
+      "scored_n": 1000,
+      "scored_set_sha256": "0b1576123fc97932a092c51460323c672c45ba7cd920f4461995b2a75f546326",
+      "id_hash_convention": "sha256(utf8(json.dumps(ids, separators=(',', ':'))))",
+      "run_id": "SYNTHETIC-AUDIT",
+      "result_sha256": "1c18617532f44bc469ea080b667cb7b3443d1b39d0506822d62f29347d5fc82c",
+      "profitability": "NOT_VERIFIED",
+      "split": {
+        "q": 0.52,
+        "mean_upper_bps": -7.08,
+        "mean_lower_bps": -11.08,
+        "status": "DERIVED_POINT_ESTIMATE_NO_CI"
+      }
+    },
+    "inputs": {
+      "futures_report_sha256": "f12740da104c5477573f8c99f15279cf017d4758484792b2740ec3496a1bbfa4",
+      "c1_result_sha256": "1c18617532f44bc469ea080b667cb7b3443d1b39d0506822d62f29347d5fc82c",
+      "c1_run_id": "SYNTHETIC-AUDIT"
+    },
+    "exposure": {
+      "raw_post_cutoff_trades_read": false,
+      "frozen_c1_result_read": true,
+      "frozen_c1_mu_read": true
+    },
+    "manifest_sha256": "f99b99091737d40488727af89a0394b324aef111cb25a1860e64c7a07f7f2236",
+    "mu_sha256": "ca512bf70dd9b3835b82e9ca2a974dfb6795acd1708fae822a44de3a7d7ed7f5"
+  },
+  "empty_trade_id": {
+    "reads": [
+      "futures",
+      "manifest",
+      "result",
+      "mu"
+    ],
+    "c1": {
+      "status": "CONTRARIAN_CONFIRMED",
+      "lift_bps": 4.0,
+      "lift_ci95_welch": [
+        0.5,
+        7.5
+      ],
+      "lift_ci95_block_bootstrap": [
+        0.3,
+        7.9
+      ],
+      "bootstrap_unit": "6h UTC blocks",
+      "bootstrap_blocks": 16,
+      "upper_n": 480,
+      "lower_n": 520,
+      "scored_n": 1000,
+      "scored_set_sha256": "aff812411022fdef94248eed4d3bac2a8e224a6ffe1a31b8095653c4369316dd",
+      "id_hash_convention": "sha256(utf8(json.dumps(ids, separators=(',', ':'))))",
+      "run_id": "SYNTHETIC-AUDIT",
+      "result_sha256": "89b666ba4c0bb5195ceadc03d903060a079a0e46eeb53cd11c2e3299009704c6",
+      "profitability": "NOT_VERIFIED",
+      "split": {
+        "q": 0.48,
+        "mean_upper_bps": -6.92,
+        "mean_lower_bps": -10.92,
+        "status": "DERIVED_POINT_ESTIMATE_NO_CI"
+      }
+    },
+    "inputs": {
+      "futures_report_sha256": "f12740da104c5477573f8c99f15279cf017d4758484792b2740ec3496a1bbfa4",
+      "c1_result_sha256": "89b666ba4c0bb5195ceadc03d903060a079a0e46eeb53cd11c2e3299009704c6",
+      "c1_run_id": "SYNTHETIC-AUDIT"
+    },
+    "exposure": {
+      "raw_post_cutoff_trades_read": false,
+      "frozen_c1_result_read": true,
+      "frozen_c1_mu_read": true
+    },
+    "manifest_sha256": "e4f55cb2570669c18935c7d12c47b2998c494278bfdd34520fc4211a51bd7524",
+    "mu_sha256": "5f787bf7741df2f7cfce71d8edc499b23640bc85dd53f6ef9fdaacb8a6c744b3"
+  },
+  "max_possible_blocks_in_fixture": 21,
+  "coverage_zero_observed_rows": {
+    "status": "OK",
+    "blocks": {
+      "TRAIN": {
+        "status": "OK",
+        "missing_range_count": 0,
+        "missing_rows_by_source_interval": 0,
+        "problems": []
+      },
+      "TEST": {
+        "status": "OK",
+        "missing_range_count": 0,
+        "missing_rows_by_source_interval": 0,
+        "problems": []
+      },
+      "HOLDOUT": {
+        "status": "OK",
+        "missing_range_count": 0,
+        "missing_rows_by_source_interval": 0,
+        "problems": []
+      }
+    },
+    "missing_range_count": 0,
+    "missing_rows_by_source_interval": 0,
+    "note": "ranges != minutes; rows are in each source's own interval (1m futures/spot, 5m metrics); funding is checked for presence only"
+  },
+  "coverage_missing_observed_rows": {
+    "status": "OK",
+    "blocks": {
+      "TRAIN": {
+        "status": "OK",
+        "missing_range_count": 0,
+        "missing_rows_by_source_interval": 0,
+        "problems": []
+      },
+      "TEST": {
+        "status": "OK",
+        "missing_range_count": 0,
+        "missing_rows_by_source_interval": 0,
+        "problems": []
+      },
+      "HOLDOUT": {
+        "status": "OK",
+        "missing_range_count": 0,
+        "missing_rows_by_source_interval": 0,
+        "problems": []
+      }
+    },
+    "missing_range_count": 0,
+    "missing_rows_by_source_interval": 0,
+    "note": "ranges != minutes; rows are in each source's own interval (1m futures/spot, 5m metrics); funding is checked for presence only"
+  },
+  "coverage_impossible_missing_count": {
+    "status": "PARTIAL",
+    "blocks": {
+      "TRAIN": {
+        "status": "PARTIAL",
+        "missing_range_count": 21,
+        "missing_rows_by_source_interval": 2121,
+        "problems": []
+      },
+      "TEST": {
+        "status": "PARTIAL",
+        "missing_range_count": 21,
+        "missing_rows_by_source_interval": 2121,
+        "problems": []
+      },
+      "HOLDOUT": {
+        "status": "PARTIAL",
+        "missing_range_count": 21,
+        "missing_rows_by_source_interval": 2121,
+        "problems": []
+      }
+    },
+    "missing_range_count": 63,
+    "missing_rows_by_source_interval": 6363,
+    "note": "ranges != minutes; rows are in each source's own interval (1m futures/spot, 5m metrics); funding is checked for presence only"
+  },
+  "mu_provenance_omitted": {
+    "same_report_inputs": true,
+    "same_manifest": true,
+    "different_mu_sha": true,
+    "first_split": {
+      "q": 0.48,
+      "mean_upper_bps": -6.92,
+      "mean_lower_bps": -10.92,
+      "status": "DERIVED_POINT_ESTIMATE_NO_CI"
+    },
+    "second_split": {
+      "q": 0.48,
+      "mean_upper_bps": 11.08,
+      "mean_lower_bps": 7.08,
+      "status": "DERIVED_POINT_ESTIMATE_NO_CI"
+    },
+    "mu_hash_in_output_inputs": false,
+    "provenance_hash_in_output_inputs": false
+  },
+  "frozen_aggregate_smoke": {
+    "cells_matched": 42,
+    "c1": {
+      "status": "PENDING",
+      "reason": "no frozen prereg_result.json supplied"
+    },
+    "exposure": {
+      "raw_post_cutoff_trades_read": false,
+      "frozen_c1_result_read": false,
+      "frozen_c1_mu_read": false
+    },
+    "coverage": {
+      "status": "PARTIAL",
+      "blocks": {
+        "TRAIN": {
+          "status": "PARTIAL",
+          "missing_range_count": 14,
+          "missing_rows_by_source_interval": 889,
+          "problems": []
+        },
+        "TEST": {
+          "status": "PARTIAL",
+          "missing_range_count": 7,
+          "missing_rows_by_source_interval": 21,
+          "problems": []
+        },
+        "HOLDOUT": {
+          "status": "PARTIAL",
+          "missing_range_count": 7,
+          "missing_rows_by_source_interval": 10080,
+          "problems": []
+        }
+      },
+      "missing_range_count": 28,
+      "missing_rows_by_source_interval": 10990,
+      "note": "ranges != minutes; rows are in each source's own interval (1m futures/spot, 5m metrics); funding is checked for presence only"
+    }
+  },
+  "syntax_python312": "PASS"
+}

@@ -1,5 +1,12 @@
 # Opravy auditu cost/learning review (F01–F04), 2026-11-10
 
+> **Dodatek (2026-11-10):** nezávislé ověření `_workspace/68_codex_cost_review_verification_20261110.md`
+> potvrdilo F01 a F04. U F02 a F03 našlo zbývající mezery (R01 vnitřní konzistence C1,
+> R02 skutečné řádky a rozsahy pokrytí) a ztrátu identity vstupu mu (R03). Tvrzení níže, že
+> jsou vstupní vady uzavřené, bylo předčasné. Pozitivní fixture C1 (upper 520 z 1 000,
+> 28 bloků za 5 dní) nebyla dosažitelná evaluatorem. Opravy jsou v
+> `_workspace/69_cost_review_r01_r03_fixes_20261110.md`.
+
 Zadání: `docs/codex_prompts/CLAUDE_COST_REVIEW_AUDIT_FIXES_2026-11-10.md`. Audit:
 `_workspace/66_codex_cost_review_audit_20261110.md` (nezměněn). Implementoval Claude.
 Výchozí stav: HEAD `1758da85a29107d34eaf0f39539391aba5e4025d`, větev `main`; HEAD

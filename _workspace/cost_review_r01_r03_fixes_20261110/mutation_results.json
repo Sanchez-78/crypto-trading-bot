@@ -1,0 +1,117 @@
+{
+  "baseline": {
+    "exit_code": 0,
+    "summary": "124 passed in 4.57s",
+    "collection_or_import_error": false
+  },
+  "R01_valid_not_checked": {
+    "exit_code": 1,
+    "summary": "3 failed, 121 passed in 4.52s",
+    "collection_or_import_error": false
+  },
+  "R01_valid_missing_or_bool_accepted": {
+    "exit_code": 1,
+    "summary": "1 failed, 123 passed in 4.56s",
+    "collection_or_import_error": false
+  },
+  "R01_block_time_bound": {
+    "exit_code": 1,
+    "summary": "1 failed, 123 passed in 4.29s",
+    "collection_or_import_error": false
+  },
+  "R01_block_trade_bound": {
+    "exit_code": 1,
+    "summary": "1 failed, 123 passed in 4.49s",
+    "collection_or_import_error": false
+  },
+  "R01_upper_half": {
+    "exit_code": 1,
+    "summary": "1 failed, 123 passed in 4.45s",
+    "collection_or_import_error": false
+  },
+  "R01_min_group": {
+    "exit_code": 1,
+    "summary": "1 failed, 123 passed in 4.55s",
+    "collection_or_import_error": false
+  },
+  "R01_empty_id": {
+    "exit_code": 1,
+    "summary": "1 failed, 123 passed in 4.61s",
+    "collection_or_import_error": false
+  },
+  "R02_rows_ignored": {
+    "exit_code": 1,
+    "summary": "1 failed, 123 passed in 4.44s",
+    "collection_or_import_error": false
+  },
+  "R02_counts_unchecked": {
+    "exit_code": 1,
+    "summary": "1 failed, 123 passed in 4.31s",
+    "collection_or_import_error": false
+  },
+  "R02_missing_rows_field_ok": {
+    "exit_code": 1,
+    "summary": "1 failed, 123 passed in 4.24s",
+    "collection_or_import_error": false
+  },
+  "R02_range_length": {
+    "exit_code": 1,
+    "summary": "1 failed, 123 passed in 4.34s",
+    "collection_or_import_error": false
+  },
+  "R02_range_reversed_or_length": {
+    "exit_code": 1,
+    "summary": "2 failed, 122 passed in 4.49s",
+    "collection_or_import_error": false
+  },
+  "R02_overlap": {
+    "exit_code": 1,
+    "summary": "2 failed, 122 passed in 4.44s",
+    "collection_or_import_error": false
+  },
+  "R02_sum": {
+    "exit_code": 1,
+    "summary": "1 failed, 123 passed in 4.24s",
+    "collection_or_import_error": false
+  },
+  "R02_grid": {
+    "exit_code": 1,
+    "summary": "1 failed, 123 passed in 4.30s",
+    "collection_or_import_error": false
+  },
+  "R02_expected_span": {
+    "exit_code": 1,
+    "summary": "1 failed, 123 passed in 4.53s",
+    "collection_or_import_error": false
+  },
+  "R02_no_data_reported_ok": {
+    "exit_code": 1,
+    "summary": "1 failed, 123 passed in 4.51s",
+    "collection_or_import_error": false
+  },
+  "R03_mu_hash_dropped": {
+    "exit_code": 1,
+    "summary": "1 failed, 123 passed in 4.45s",
+    "collection_or_import_error": false
+  },
+  "R03_manifest_hash_dropped": {
+    "exit_code": 1,
+    "summary": "2 failed, 122 passed in 4.51s",
+    "collection_or_import_error": false
+  },
+  "R03_reference_reported_as_observed": {
+    "exit_code": 1,
+    "summary": "1 failed, 123 passed in 4.21s",
+    "collection_or_import_error": false
+  },
+  "R03_verified_flag_dropped": {
+    "exit_code": 1,
+    "summary": "1 failed, 123 passed in 4.51s",
+    "collection_or_import_error": false
+  },
+  "restored": {
+    "exit_code": 0,
+    "summary": "124 passed in 4.34s",
+    "collection_or_import_error": false
+  }
+}

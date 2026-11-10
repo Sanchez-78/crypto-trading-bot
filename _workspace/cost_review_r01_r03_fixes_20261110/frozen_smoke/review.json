@@ -1,0 +1,2286 @@
+{
+  "breakeven_wr": [
+    {
+      "cost_bps": 0.0,
+      "invalid_with_timeouts": true,
+      "status": "APPROXIMATION_TWO_POINT",
+      "wr_be": 0.4166666666666667
+    },
+    {
+      "cost_bps": 9.0,
+      "invalid_with_timeouts": true,
+      "status": "APPROXIMATION_TWO_POINT",
+      "wr_be": 0.5666666666666667
+    },
+    {
+      "cost_bps": 15.0,
+      "invalid_with_timeouts": true,
+      "status": "APPROXIMATION_TWO_POINT",
+      "wr_be": 0.6666666666666666
+    },
+    {
+      "cost_bps": 18.0,
+      "invalid_with_timeouts": true,
+      "status": "APPROXIMATION_TWO_POINT",
+      "wr_be": 0.7166666666666667
+    },
+    {
+      "cost_bps": 20.0,
+      "invalid_with_timeouts": true,
+      "status": "APPROXIMATION_TWO_POINT",
+      "wr_be": 0.75
+    }
+  ],
+  "c1": {
+    "reason": "no frozen prereg_result.json supplied",
+    "status": "PENDING"
+  },
+  "code_sha256": "53933ebe294227e1f9fe5e7c944f3281bd45d9518a4989182bc38f6446504b7b",
+  "coverage": {
+    "blocks": {
+      "HOLDOUT": {
+        "grid_bounds_checked": true,
+        "missing_range_count": 7,
+        "missing_rows_by_source_interval": 10080,
+        "problems": [],
+        "status": "PARTIAL"
+      },
+      "TEST": {
+        "grid_bounds_checked": true,
+        "missing_range_count": 7,
+        "missing_rows_by_source_interval": 21,
+        "problems": [],
+        "status": "PARTIAL"
+      },
+      "TRAIN": {
+        "grid_bounds_checked": false,
+        "missing_range_count": 14,
+        "missing_rows_by_source_interval": 889,
+        "problems": [],
+        "status": "PARTIAL"
+      }
+    },
+    "missing_range_count": 28,
+    "missing_rows_by_source_interval": 10990,
+    "note": "ranges != minutes; rows are in each source's own interval (1m futures/spot, 5m metrics); funding is checked for presence only; grid bounds are checked only where the frozen block stores start_ms/end_ms",
+    "status": "PARTIAL"
+  },
+  "exposure": {
+    "frozen_c1_mu_read": false,
+    "frozen_c1_result_read": false,
+    "raw_post_cutoff_trades_read": false
+  },
+  "fee_scenarios": {
+    "binance_spot_vip0": {
+      "bnb_discount_bps_per_side": 7.5,
+      "maker_bps_per_side": 10.0,
+      "source": "https://www.binance.com/en/fee/trading",
+      "taker_bps_per_side": 10.0
+    },
+    "binance_usdm_regular": {
+      "bnb_discount": "10 %",
+      "maker_bps_per_side": 2.0,
+      "source": "https://www.binance.com/support/faq/360033544231",
+      "taker_bps_per_side": 5.0
+    },
+    "effective_date": "2026-11-10",
+    "paper_settlement": {
+      "fee_round_trip_bps": 8.0,
+      "slippage_round_trip_bps": 1.0,
+      "source": "PAPER_FEE_PCT=0.0008, PAPER_SLIPPAGE_PCT=0.0001 (server env)"
+    }
+  },
+  "four_questions": [
+    {
+      "evidence": "28 rozsah\u016f mezer v pokryt\u00ed futures screenu; checksum != coverage",
+      "question": "Jsou data pou\u017eiteln\u00e1?",
+      "status": "PARTIAL"
+    },
+    {
+      "evidence": "jen ov\u011b\u0159en\u00fd zmrazen\u00fd verdikt C1",
+      "question": "Um\u00ed learner l\u00e9pe se\u0159adit kandid\u00e1ty?",
+      "status": "PENDING"
+    },
+    {
+      "evidence": "kladn\u00fd lift nen\u00ed d\u016fkaz kladn\u00e9ho post-cost v\u00fdsledku",
+      "question": "M\u00e1 vybran\u00e1 politika kladn\u00fd net?",
+      "status": "NOT_VERIFIED"
+    },
+    {
+      "evidence": "vy\u017eaduje nov\u00fd protokol, review a autorizovanou replikaci",
+      "question": "Je p\u0159ipravena zm\u011bna bota?",
+      "status": "NO"
+    }
+  ],
+  "futures_cost_table": {
+    "H1": {
+      "HOLDOUT": {
+        "r15": {
+          "breakeven_cost_bps": 0.7431394399558342,
+          "conservative_budget_from_ci_low_bps": -3.2396771755326874,
+          "cost_budget_with_reserve_bps": -2.256860560044166,
+          "derivation": "net(c) = gross - c; CI shifted by c; budgets are arithmetic derivations, not new tests",
+          "gross_bps": 0.7431394399558342,
+          "gross_ci95": [
+            -0.23967717553268741,
+            1.8522937259934968
+          ],
+          "n": 9026,
+          "net": {
+            "0": {
+              "ci95": [
+                -0.23967717553268741,
+                1.8522937259934968
+              ],
+              "mean_bps": 0.7431394399558342
+            },
+            "15": {
+              "ci95": [
+                -15.239677175532687,
+                -13.147706274006502
+              ],
+              "mean_bps": -14.256860560044165
+            },
+            "18": {
+              "ci95": [
+                -18.239677175532687,
+                -16.147706274006502
+              ],
+              "mean_bps": -17.256860560044167
+            },
+            "20": {
+              "ci95": [
+                -20.239677175532687,
+                -18.147706274006502
+              ],
+              "mean_bps": -19.256860560044167
+            },
+            "9": {
+              "ci95": [
+                -9.239677175532687,
+                -7.147706274006503
+              ],
+              "mean_bps": -8.256860560044165
+            }
+          },
+          "status": "OK"
+        },
+        "tpsl": {
+          "breakeven_cost_bps": -0.0427540623981802,
+          "conservative_budget_from_ci_low_bps": -3.4819040593873414,
+          "cost_budget_with_reserve_bps": -3.0427540623981804,
+          "derivation": "net(c) = gross - c; CI shifted by c; budgets are arithmetic derivations, not new tests",
+          "gross_bps": -0.0427540623981802,
+          "gross_ci95": [
+            -0.4819040593873414,
+            0.4199104705950276
+          ],
+          "n": 9026,
+          "net": {
+            "0": {
+              "ci95": [
+                -0.4819040593873414,
+                0.4199104705950276
+              ],
+              "mean_bps": -0.0427540623981802
+            },
+            "15": {
+              "ci95": [
+                -15.481904059387341,
+                -14.580089529404972
+              ],
+              "mean_bps": -15.04275406239818
+            },
+            "18": {
+              "ci95": [
+                -18.48190405938734,
+                -17.580089529404972
+              ],
+              "mean_bps": -18.04275406239818
+            },
+            "20": {
+              "ci95": [
+                -20.48190405938734,
+                -19.580089529404972
+              ],
+              "mean_bps": -20.04275406239818
+            },
+            "9": {
+              "ci95": [
+                -9.481904059387341,
+                -8.580089529404972
+              ],
+              "mean_bps": -9.04275406239818
+            }
+          },
+          "status": "OK"
+        }
+      },
+      "TEST": {
+        "r15": {
+          "breakeven_cost_bps": 0.9128144283997242,
+          "conservative_budget_from_ci_low_bps": -3.506202554421934,
+          "cost_budget_with_reserve_bps": -2.087185571600276,
+          "derivation": "net(c) = gross - c; CI shifted by c; budgets are arithmetic derivations, not new tests",
+          "gross_bps": 0.9128144283997242,
+          "gross_ci95": [
+            -0.5062025544219342,
+            2.5107192518275303
+          ],
+          "n": 12126,
+          "net": {
+            "0": {
+              "ci95": [
+                -0.5062025544219342,
+                2.5107192518275303
+              ],
+              "mean_bps": 0.9128144283997242
+            },
+            "15": {
+              "ci95": [
+                -15.506202554421934,
+                -12.489280748172469
+              ],
+              "mean_bps": -14.087185571600276
+            },
+            "18": {
+              "ci95": [
+                -18.506202554421932,
+                -15.489280748172469
+              ],
+              "mean_bps": -17.087185571600276
+            },
+            "20": {
+              "ci95": [
+                -20.506202554421932,
+                -17.48928074817247
+              ],
+              "mean_bps": -19.087185571600276
+            },
+            "9": {
+              "ci95": [
+                -9.506202554421934,
+                -6.48928074817247
+              ],
+              "mean_bps": -8.087185571600276
+            }
+          },
+          "status": "OK"
+        },
+        "tpsl": {
+          "breakeven_cost_bps": -0.15463125977727243,
+          "conservative_budget_from_ci_low_bps": -3.6778530706840904,
+          "cost_budget_with_reserve_bps": -3.1546312597772723,
+          "derivation": "net(c) = gross - c; CI shifted by c; budgets are arithmetic derivations, not new tests",
+          "gross_bps": -0.15463125977727243,
+          "gross_ci95": [
+            -0.6778530706840904,
+            0.34340616169416904
+          ],
+          "n": 12126,
+          "net": {
+            "0": {
+              "ci95": [
+                -0.6778530706840904,
+                0.34340616169416904
+              ],
+              "mean_bps": -0.15463125977727243
+            },
+            "15": {
+              "ci95": [
+                -15.67785307068409,
+                -14.656593838305831
+              ],
+              "mean_bps": -15.154631259777272
+            },
+            "18": {
+              "ci95": [
+                -18.67785307068409,
+                -17.65659383830583
+              ],
+              "mean_bps": -18.154631259777272
+            },
+            "20": {
+              "ci95": [
+                -20.67785307068409,
+                -19.65659383830583
+              ],
+              "mean_bps": -20.154631259777272
+            },
+            "9": {
+              "ci95": [
+                -9.67785307068409,
+                -8.656593838305831
+              ],
+              "mean_bps": -9.154631259777272
+            }
+          },
+          "status": "OK"
+        }
+      },
+      "TRAIN": {
+        "r15": {
+          "breakeven_cost_bps": 1.0093956684287833,
+          "conservative_budget_from_ci_low_bps": -3.010400344202596,
+          "cost_budget_with_reserve_bps": -1.9906043315712167,
+          "derivation": "net(c) = gross - c; CI shifted by c; budgets are arithmetic derivations, not new tests",
+          "gross_bps": 1.0093956684287833,
+          "gross_ci95": [
+            -0.010400344202595946,
+            2.0737198430228228
+          ],
+          "n": 24140,
+          "net": {
+            "0": {
+              "ci95": [
+                -0.010400344202595946,
+                2.0737198430228228
+              ],
+              "mean_bps": 1.0093956684287833
+            },
+            "15": {
+              "ci95": [
+                -15.010400344202596,
+                -12.926280156977178
+              ],
+              "mean_bps": -13.990604331571216
+            },
+            "18": {
+              "ci95": [
+                -18.010400344202594,
+                -15.926280156977178
+              ],
+              "mean_bps": -16.990604331571216
+            },
+            "20": {
+              "ci95": [
+                -20.010400344202594,
+                -17.926280156977178
+              ],
+              "mean_bps": -18.990604331571216
+            },
+            "9": {
+              "ci95": [
+                -9.010400344202596,
+                -6.926280156977177
+              ],
+              "mean_bps": -7.990604331571217
+            }
+          },
+          "status": "OK"
+        },
+        "tpsl": {
+          "breakeven_cost_bps": 0.11384611283263073,
+          "conservative_budget_from_ci_low_bps": -3.243888819194739,
+          "cost_budget_with_reserve_bps": -2.886153887167369,
+          "derivation": "net(c) = gross - c; CI shifted by c; budgets are arithmetic derivations, not new tests",
+          "gross_bps": 0.11384611283263073,
+          "gross_ci95": [
+            -0.24388881919473882,
+            0.46203794780340246
+          ],
+          "n": 24140,
+          "net": {
+            "0": {
+              "ci95": [
+                -0.24388881919473882,
+                0.46203794780340246
+              ],
+              "mean_bps": 0.11384611283263073
+            },
+            "15": {
+              "ci95": [
+                -15.243888819194739,
+                -14.537962052196598
+              ],
+              "mean_bps": -14.886153887167369
+            },
+            "18": {
+              "ci95": [
+                -18.243888819194737,
+                -17.537962052196598
+              ],
+              "mean_bps": -17.88615388716737
+            },
+            "20": {
+              "ci95": [
+                -20.243888819194737,
+                -19.537962052196598
+              ],
+              "mean_bps": -19.88615388716737
+            },
+            "9": {
+              "ci95": [
+                -9.243888819194739,
+                -8.537962052196598
+              ],
+              "mean_bps": -8.886153887167369
+            }
+          },
+          "status": "OK"
+        }
+      }
+    },
+    "H2": {
+      "HOLDOUT": {
+        "r15": {
+          "breakeven_cost_bps": 0.2715090853275495,
+          "conservative_budget_from_ci_low_bps": -3.19826023005961,
+          "cost_budget_with_reserve_bps": -2.7284909146724505,
+          "derivation": "net(c) = gross - c; CI shifted by c; budgets are arithmetic derivations, not new tests",
+          "gross_bps": 0.2715090853275495,
+          "gross_ci95": [
+            -0.1982602300596099,
+            0.6900265312602727
+          ],
+          "n": 19097,
+          "net": {
+            "0": {
+              "ci95": [
+                -0.1982602300596099,
+                0.6900265312602727
+              ],
+              "mean_bps": 0.2715090853275495
+            },
+            "15": {
+              "ci95": [
+                -15.19826023005961,
+                -14.309973468739727
+              ],
+              "mean_bps": -14.72849091467245
+            },
+            "18": {
+              "ci95": [
+                -18.19826023005961,
+                -17.309973468739727
+              ],
+              "mean_bps": -17.72849091467245
+            },
+            "20": {
+              "ci95": [
+                -20.19826023005961,
+                -19.309973468739727
+              ],
+              "mean_bps": -19.72849091467245
+            },
+            "9": {
+              "ci95": [
+                -9.19826023005961,
+                -8.309973468739727
+              ],
+              "mean_bps": -8.72849091467245
+            }
+          },
+          "status": "OK"
+        },
+        "tpsl": {
+          "breakeven_cost_bps": 0.5147376473428427,
+          "conservative_budget_from_ci_low_bps": -2.840802079295754,
+          "cost_budget_with_reserve_bps": -2.4852623526571573,
+          "derivation": "net(c) = gross - c; CI shifted by c; budgets are arithmetic derivations, not new tests",
+          "gross_bps": 0.5147376473428427,
+          "gross_ci95": [
+            0.159197920704246,
+            0.8424909443715229
+          ],
+          "n": 19097,
+          "net": {
+            "0": {
+              "ci95": [
+                0.159197920704246,
+                0.8424909443715229
+              ],
+              "mean_bps": 0.5147376473428427
+            },
+            "15": {
+              "ci95": [
+                -14.840802079295754,
+                -14.157509055628477
+              ],
+              "mean_bps": -14.485262352657157
+            },
+            "18": {
+              "ci95": [
+                -17.840802079295756,
+                -17.157509055628477
+              ],
+              "mean_bps": -17.48526235265716
+            },
+            "20": {
+              "ci95": [
+                -19.840802079295756,
+                -19.157509055628477
+              ],
+              "mean_bps": -19.48526235265716
+            },
+            "9": {
+              "ci95": [
+                -8.840802079295754,
+                -8.157509055628477
+              ],
+              "mean_bps": -8.485262352657157
+            }
+          },
+          "status": "OK"
+        }
+      },
+      "TEST": {
+        "r15": {
+          "breakeven_cost_bps": 0.4092993538291624,
+          "conservative_budget_from_ci_low_bps": -3.0518970232061573,
+          "cost_budget_with_reserve_bps": -2.5907006461708377,
+          "derivation": "net(c) = gross - c; CI shifted by c; budgets are arithmetic derivations, not new tests",
+          "gross_bps": 0.4092993538291624,
+          "gross_ci95": [
+            -0.0518970232061573,
+            0.8717451986680747
+          ],
+          "n": 28207,
+          "net": {
+            "0": {
+              "ci95": [
+                -0.0518970232061573,
+                0.8717451986680747
+              ],
+              "mean_bps": 0.4092993538291624
+            },
+            "15": {
+              "ci95": [
+                -15.051897023206157,
+                -14.128254801331925
+              ],
+              "mean_bps": -14.590700646170838
+            },
+            "18": {
+              "ci95": [
+                -18.05189702320616,
+                -17.128254801331927
+              ],
+              "mean_bps": -17.590700646170838
+            },
+            "20": {
+              "ci95": [
+                -20.05189702320616,
+                -19.128254801331927
+              ],
+              "mean_bps": -19.590700646170838
+            },
+            "9": {
+              "ci95": [
+                -9.051897023206157,
+                -8.128254801331925
+              ],
+              "mean_bps": -8.590700646170838
+            }
+          },
+          "status": "OK"
+        },
+        "tpsl": {
+          "breakeven_cost_bps": 0.3727994453502761,
+          "conservative_budget_from_ci_low_bps": -2.9140649287136853,
+          "cost_budget_with_reserve_bps": -2.6272005546497237,
+          "derivation": "net(c) = gross - c; CI shifted by c; budgets are arithmetic derivations, not new tests",
+          "gross_bps": 0.3727994453502761,
+          "gross_ci95": [
+            0.08593507128631472,
+            0.6868525492631097
+          ],
+          "n": 28207,
+          "net": {
+            "0": {
+              "ci95": [
+                0.08593507128631472,
+                0.6868525492631097
+              ],
+              "mean_bps": 0.3727994453502761
+            },
+            "15": {
+              "ci95": [
+                -14.914064928713685,
+                -14.31314745073689
+              ],
+              "mean_bps": -14.627200554649724
+            },
+            "18": {
+              "ci95": [
+                -17.914064928713685,
+                -17.313147450736892
+              ],
+              "mean_bps": -17.627200554649725
+            },
+            "20": {
+              "ci95": [
+                -19.914064928713685,
+                -19.313147450736892
+              ],
+              "mean_bps": -19.627200554649725
+            },
+            "9": {
+              "ci95": [
+                -8.914064928713685,
+                -8.31314745073689
+              ],
+              "mean_bps": -8.627200554649724
+            }
+          },
+          "status": "OK"
+        }
+      },
+      "TRAIN": {
+        "r15": {
+          "breakeven_cost_bps": 0.2765370814418015,
+          "conservative_budget_from_ci_low_bps": -3.103123879180183,
+          "cost_budget_with_reserve_bps": -2.7234629185581984,
+          "derivation": "net(c) = gross - c; CI shifted by c; budgets are arithmetic derivations, not new tests",
+          "gross_bps": 0.2765370814418015,
+          "gross_ci95": [
+            -0.10312387918018295,
+            0.6496767827981635
+          ],
+          "n": 60795,
+          "net": {
+            "0": {
+              "ci95": [
+                -0.10312387918018295,
+                0.6496767827981635
+              ],
+              "mean_bps": 0.2765370814418015
+            },
+            "15": {
+              "ci95": [
+                -15.103123879180183,
+                -14.350323217201836
+              ],
+              "mean_bps": -14.723462918558198
+            },
+            "18": {
+              "ci95": [
+                -18.10312387918018,
+                -17.350323217201836
+              ],
+              "mean_bps": -17.723462918558198
+            },
+            "20": {
+              "ci95": [
+                -20.10312387918018,
+                -19.350323217201836
+              ],
+              "mean_bps": -19.723462918558198
+            },
+            "9": {
+              "ci95": [
+                -9.103123879180183,
+                -8.350323217201836
+              ],
+              "mean_bps": -8.723462918558198
+            }
+          },
+          "status": "OK"
+        },
+        "tpsl": {
+          "breakeven_cost_bps": 0.17011406886987177,
+          "conservative_budget_from_ci_low_bps": -3.049288829537181,
+          "cost_budget_with_reserve_bps": -2.829885931130128,
+          "derivation": "net(c) = gross - c; CI shifted by c; budgets are arithmetic derivations, not new tests",
+          "gross_bps": 0.17011406886987177,
+          "gross_ci95": [
+            -0.049288829537180945,
+            0.3774376203359804
+          ],
+          "n": 60795,
+          "net": {
+            "0": {
+              "ci95": [
+                -0.049288829537180945,
+                0.3774376203359804
+              ],
+              "mean_bps": 0.17011406886987177
+            },
+            "15": {
+              "ci95": [
+                -15.049288829537181,
+                -14.62256237966402
+              ],
+              "mean_bps": -14.829885931130129
+            },
+            "18": {
+              "ci95": [
+                -18.049288829537183,
+                -17.622562379664018
+              ],
+              "mean_bps": -17.82988593113013
+            },
+            "20": {
+              "ci95": [
+                -20.049288829537183,
+                -19.622562379664018
+              ],
+              "mean_bps": -19.82988593113013
+            },
+            "9": {
+              "ci95": [
+                -9.049288829537181,
+                -8.62256237966402
+              ],
+              "mean_bps": -8.829885931130129
+            }
+          },
+          "status": "OK"
+        }
+      }
+    },
+    "H3": {
+      "HOLDOUT": {
+        "r15": {
+          "breakeven_cost_bps": 0.15381506768457956,
+          "conservative_budget_from_ci_low_bps": -3.468086074644482,
+          "cost_budget_with_reserve_bps": -2.8461849323154205,
+          "derivation": "net(c) = gross - c; CI shifted by c; budgets are arithmetic derivations, not new tests",
+          "gross_bps": 0.15381506768457956,
+          "gross_ci95": [
+            -0.46808607464448215,
+            0.8005962036869061
+          ],
+          "n": 16825,
+          "net": {
+            "0": {
+              "ci95": [
+                -0.46808607464448215,
+                0.8005962036869061
+              ],
+              "mean_bps": 0.15381506768457956
+            },
+            "15": {
+              "ci95": [
+                -15.468086074644482,
+                -14.199403796313094
+              ],
+              "mean_bps": -14.84618493231542
+            },
+            "18": {
+              "ci95": [
+                -18.468086074644482,
+                -17.199403796313092
+              ],
+              "mean_bps": -17.84618493231542
+            },
+            "20": {
+              "ci95": [
+                -20.468086074644482,
+                -19.199403796313092
+              ],
+              "mean_bps": -19.84618493231542
+            },
+            "9": {
+              "ci95": [
+                -9.468086074644482,
+                -8.199403796313094
+              ],
+              "mean_bps": -8.84618493231542
+            }
+          },
+          "status": "OK"
+        },
+        "tpsl": {
+          "breakeven_cost_bps": -0.03849888117449776,
+          "conservative_budget_from_ci_low_bps": -3.406839806309746,
+          "cost_budget_with_reserve_bps": -3.038498881174498,
+          "derivation": "net(c) = gross - c; CI shifted by c; budgets are arithmetic derivations, not new tests",
+          "gross_bps": -0.03849888117449776,
+          "gross_ci95": [
+            -0.4068398063097458,
+            0.32900118302213244
+          ],
+          "n": 16825,
+          "net": {
+            "0": {
+              "ci95": [
+                -0.4068398063097458,
+                0.32900118302213244
+              ],
+              "mean_bps": -0.03849888117449776
+            },
+            "15": {
+              "ci95": [
+                -15.406839806309746,
+                -14.670998816977868
+              ],
+              "mean_bps": -15.038498881174498
+            },
+            "18": {
+              "ci95": [
+                -18.406839806309748,
+                -17.670998816977868
+              ],
+              "mean_bps": -18.038498881174498
+            },
+            "20": {
+              "ci95": [
+                -20.406839806309748,
+                -19.670998816977868
+              ],
+              "mean_bps": -20.038498881174498
+            },
+            "9": {
+              "ci95": [
+                -9.406839806309746,
+                -8.670998816977868
+              ],
+              "mean_bps": -9.038498881174498
+            }
+          },
+          "status": "OK"
+        }
+      },
+      "TEST": {
+        "r15": {
+          "breakeven_cost_bps": 0.23522516834528298,
+          "conservative_budget_from_ci_low_bps": -3.3950429773865736,
+          "cost_budget_with_reserve_bps": -2.764774831654717,
+          "derivation": "net(c) = gross - c; CI shifted by c; budgets are arithmetic derivations, not new tests",
+          "gross_bps": 0.23522516834528298,
+          "gross_ci95": [
+            -0.39504297738657357,
+            0.895493292552402
+          ],
+          "n": 22423,
+          "net": {
+            "0": {
+              "ci95": [
+                -0.39504297738657357,
+                0.895493292552402
+              ],
+              "mean_bps": 0.23522516834528298
+            },
+            "15": {
+              "ci95": [
+                -15.395042977386574,
+                -14.104506707447598
+              ],
+              "mean_bps": -14.764774831654718
+            },
+            "18": {
+              "ci95": [
+                -18.395042977386574,
+                -17.104506707447598
+              ],
+              "mean_bps": -17.764774831654716
+            },
+            "20": {
+              "ci95": [
+                -20.395042977386574,
+                -19.104506707447598
+              ],
+              "mean_bps": -19.764774831654716
+            },
+            "9": {
+              "ci95": [
+                -9.395042977386574,
+                -8.104506707447598
+              ],
+              "mean_bps": -8.764774831654718
+            }
+          },
+          "status": "OK"
+        },
+        "tpsl": {
+          "breakeven_cost_bps": 0.16210923349391848,
+          "conservative_budget_from_ci_low_bps": -3.203405242300068,
+          "cost_budget_with_reserve_bps": -2.8378907665060815,
+          "derivation": "net(c) = gross - c; CI shifted by c; budgets are arithmetic derivations, not new tests",
+          "gross_bps": 0.16210923349391848,
+          "gross_ci95": [
+            -0.20340524230006807,
+            0.5060626942120283
+          ],
+          "n": 22423,
+          "net": {
+            "0": {
+              "ci95": [
+                -0.20340524230006807,
+                0.5060626942120283
+              ],
+              "mean_bps": 0.16210923349391848
+            },
+            "15": {
+              "ci95": [
+                -15.203405242300068,
+                -14.493937305787972
+              ],
+              "mean_bps": -14.837890766506082
+            },
+            "18": {
+              "ci95": [
+                -18.203405242300068,
+                -17.493937305787973
+              ],
+              "mean_bps": -17.83789076650608
+            },
+            "20": {
+              "ci95": [
+                -20.203405242300068,
+                -19.493937305787973
+              ],
+              "mean_bps": -19.83789076650608
+            },
+            "9": {
+              "ci95": [
+                -9.203405242300068,
+                -8.493937305787972
+              ],
+              "mean_bps": -8.837890766506082
+            }
+          },
+          "status": "OK"
+        }
+      },
+      "TRAIN": {
+        "r15": {
+          "breakeven_cost_bps": 0.7635296113958161,
+          "conservative_budget_from_ci_low_bps": -2.7351904709707835,
+          "cost_budget_with_reserve_bps": -2.236470388604184,
+          "derivation": "net(c) = gross - c; CI shifted by c; budgets are arithmetic derivations, not new tests",
+          "gross_bps": 0.7635296113958161,
+          "gross_ci95": [
+            0.2648095290292165,
+            1.294791855175383
+          ],
+          "n": 43096,
+          "net": {
+            "0": {
+              "ci95": [
+                0.2648095290292165,
+                1.294791855175383
+              ],
+              "mean_bps": 0.7635296113958161
+            },
+            "15": {
+              "ci95": [
+                -14.735190470970783,
+                -13.705208144824617
+              ],
+              "mean_bps": -14.236470388604184
+            },
+            "18": {
+              "ci95": [
+                -17.735190470970785,
+                -16.705208144824617
+              ],
+              "mean_bps": -17.236470388604182
+            },
+            "20": {
+              "ci95": [
+                -19.735190470970785,
+                -18.705208144824617
+              ],
+              "mean_bps": -19.236470388604182
+            },
+            "9": {
+              "ci95": [
+                -8.735190470970783,
+                -7.705208144824617
+              ],
+              "mean_bps": -8.236470388604184
+            }
+          },
+          "status": "OK"
+        },
+        "tpsl": {
+          "breakeven_cost_bps": 0.4361916655976777,
+          "conservative_budget_from_ci_low_bps": -2.821096507836076,
+          "cost_budget_with_reserve_bps": -2.563808334402322,
+          "derivation": "net(c) = gross - c; CI shifted by c; budgets are arithmetic derivations, not new tests",
+          "gross_bps": 0.4361916655976777,
+          "gross_ci95": [
+            0.17890349216392387,
+            0.6955493204799055
+          ],
+          "n": 43096,
+          "net": {
+            "0": {
+              "ci95": [
+                0.17890349216392387,
+                0.6955493204799055
+              ],
+              "mean_bps": 0.4361916655976777
+            },
+            "15": {
+              "ci95": [
+                -14.821096507836076,
+                -14.304450679520095
+              ],
+              "mean_bps": -14.563808334402323
+            },
+            "18": {
+              "ci95": [
+                -17.821096507836074,
+                -17.304450679520095
+              ],
+              "mean_bps": -17.56380833440232
+            },
+            "20": {
+              "ci95": [
+                -19.821096507836074,
+                -19.304450679520095
+              ],
+              "mean_bps": -19.56380833440232
+            },
+            "9": {
+              "ci95": [
+                -8.821096507836076,
+                -8.304450679520095
+              ],
+              "mean_bps": -8.563808334402323
+            }
+          },
+          "status": "OK"
+        }
+      }
+    },
+    "H4": {
+      "HOLDOUT": {
+        "r15": {
+          "breakeven_cost_bps": 0.406246023791715,
+          "conservative_budget_from_ci_low_bps": -3.075805509169303,
+          "cost_budget_with_reserve_bps": -2.593753976208285,
+          "derivation": "net(c) = gross - c; CI shifted by c; budgets are arithmetic derivations, not new tests",
+          "gross_bps": 0.406246023791715,
+          "gross_ci95": [
+            -0.07580550916930306,
+            0.8762449137387769
+          ],
+          "n": 17562,
+          "net": {
+            "0": {
+              "ci95": [
+                -0.07580550916930306,
+                0.8762449137387769
+              ],
+              "mean_bps": 0.406246023791715
+            },
+            "15": {
+              "ci95": [
+                -15.075805509169303,
+                -14.123755086261223
+              ],
+              "mean_bps": -14.593753976208285
+            },
+            "18": {
+              "ci95": [
+                -18.075805509169303,
+                -17.123755086261223
+              ],
+              "mean_bps": -17.593753976208284
+            },
+            "20": {
+              "ci95": [
+                -20.075805509169303,
+                -19.123755086261223
+              ],
+              "mean_bps": -19.593753976208284
+            },
+            "9": {
+              "ci95": [
+                -9.075805509169303,
+                -8.123755086261223
+              ],
+              "mean_bps": -8.593753976208285
+            }
+          },
+          "status": "OK"
+        },
+        "tpsl": {
+          "breakeven_cost_bps": 0.409748306939676,
+          "conservative_budget_from_ci_low_bps": -2.913215436157458,
+          "cost_budget_with_reserve_bps": -2.590251693060324,
+          "derivation": "net(c) = gross - c; CI shifted by c; budgets are arithmetic derivations, not new tests",
+          "gross_bps": 0.409748306939676,
+          "gross_ci95": [
+            0.08678456384254218,
+            0.729903021903489
+          ],
+          "n": 17562,
+          "net": {
+            "0": {
+              "ci95": [
+                0.08678456384254218,
+                0.729903021903489
+              ],
+              "mean_bps": 0.409748306939676
+            },
+            "15": {
+              "ci95": [
+                -14.913215436157458,
+                -14.270096978096511
+              ],
+              "mean_bps": -14.590251693060324
+            },
+            "18": {
+              "ci95": [
+                -17.913215436157458,
+                -17.27009697809651
+              ],
+              "mean_bps": -17.590251693060324
+            },
+            "20": {
+              "ci95": [
+                -19.913215436157458,
+                -19.27009697809651
+              ],
+              "mean_bps": -19.590251693060324
+            },
+            "9": {
+              "ci95": [
+                -8.913215436157458,
+                -8.270096978096511
+              ],
+              "mean_bps": -8.590251693060324
+            }
+          },
+          "status": "OK"
+        }
+      },
+      "TEST": {
+        "r15": {
+          "breakeven_cost_bps": 0.3818042024278809,
+          "conservative_budget_from_ci_low_bps": -3.047720424359918,
+          "cost_budget_with_reserve_bps": -2.618195797572119,
+          "derivation": "net(c) = gross - c; CI shifted by c; budgets are arithmetic derivations, not new tests",
+          "gross_bps": 0.3818042024278809,
+          "gross_ci95": [
+            -0.04772042435991786,
+            0.84176944336137
+          ],
+          "n": 24389,
+          "net": {
+            "0": {
+              "ci95": [
+                -0.04772042435991786,
+                0.84176944336137
+              ],
+              "mean_bps": 0.3818042024278809
+            },
+            "15": {
+              "ci95": [
+                -15.047720424359918,
+                -14.15823055663863
+              ],
+              "mean_bps": -14.618195797572119
+            },
+            "18": {
+              "ci95": [
+                -18.047720424359916,
+                -17.158230556638628
+              ],
+              "mean_bps": -17.61819579757212
+            },
+            "20": {
+              "ci95": [
+                -20.047720424359916,
+                -19.158230556638628
+              ],
+              "mean_bps": -19.61819579757212
+            },
+            "9": {
+              "ci95": [
+                -9.047720424359918,
+                -8.15823055663863
+              ],
+              "mean_bps": -8.618195797572119
+            }
+          },
+          "status": "OK"
+        },
+        "tpsl": {
+          "breakeven_cost_bps": 0.2311797750365858,
+          "conservative_budget_from_ci_low_bps": -3.081120485909082,
+          "cost_budget_with_reserve_bps": -2.7688202249634144,
+          "derivation": "net(c) = gross - c; CI shifted by c; budgets are arithmetic derivations, not new tests",
+          "gross_bps": 0.2311797750365858,
+          "gross_ci95": [
+            -0.08112048590908216,
+            0.5566126641721567
+          ],
+          "n": 24389,
+          "net": {
+            "0": {
+              "ci95": [
+                -0.08112048590908216,
+                0.5566126641721567
+              ],
+              "mean_bps": 0.2311797750365858
+            },
+            "15": {
+              "ci95": [
+                -15.081120485909082,
+                -14.443387335827843
+              ],
+              "mean_bps": -14.768820224963415
+            },
+            "18": {
+              "ci95": [
+                -18.081120485909082,
+                -17.443387335827843
+              ],
+              "mean_bps": -17.768820224963413
+            },
+            "20": {
+              "ci95": [
+                -20.081120485909082,
+                -19.443387335827843
+              ],
+              "mean_bps": -19.768820224963413
+            },
+            "9": {
+              "ci95": [
+                -9.081120485909082,
+                -8.443387335827843
+              ],
+              "mean_bps": -8.768820224963415
+            }
+          },
+          "status": "OK"
+        }
+      },
+      "TRAIN": {
+        "r15": {
+          "breakeven_cost_bps": 0.381049743897425,
+          "conservative_budget_from_ci_low_bps": -2.997047900465981,
+          "cost_budget_with_reserve_bps": -2.618950256102575,
+          "derivation": "net(c) = gross - c; CI shifted by c; budgets are arithmetic derivations, not new tests",
+          "gross_bps": 0.381049743897425,
+          "gross_ci95": [
+            0.0029520995340188705,
+            0.7589777802375401
+          ],
+          "n": 53145,
+          "net": {
+            "0": {
+              "ci95": [
+                0.0029520995340188705,
+                0.7589777802375401
+              ],
+              "mean_bps": 0.381049743897425
+            },
+            "15": {
+              "ci95": [
+                -14.997047900465981,
+                -14.24102221976246
+              ],
+              "mean_bps": -14.618950256102575
+            },
+            "18": {
+              "ci95": [
+                -17.99704790046598,
+                -17.24102221976246
+              ],
+              "mean_bps": -17.618950256102575
+            },
+            "20": {
+              "ci95": [
+                -19.99704790046598,
+                -19.24102221976246
+              ],
+              "mean_bps": -19.618950256102575
+            },
+            "9": {
+              "ci95": [
+                -8.997047900465981,
+                -8.24102221976246
+              ],
+              "mean_bps": -8.618950256102575
+            }
+          },
+          "status": "OK"
+        },
+        "tpsl": {
+          "breakeven_cost_bps": 0.31172947061572936,
+          "conservative_budget_from_ci_low_bps": -2.908955442647951,
+          "cost_budget_with_reserve_bps": -2.688270529384271,
+          "derivation": "net(c) = gross - c; CI shifted by c; budgets are arithmetic derivations, not new tests",
+          "gross_bps": 0.31172947061572936,
+          "gross_ci95": [
+            0.09104455735204908,
+            0.5286139034646613
+          ],
+          "n": 53145,
+          "net": {
+            "0": {
+              "ci95": [
+                0.09104455735204908,
+                0.5286139034646613
+              ],
+              "mean_bps": 0.31172947061572936
+            },
+            "15": {
+              "ci95": [
+                -14.908955442647951,
+                -14.471386096535339
+              ],
+              "mean_bps": -14.68827052938427
+            },
+            "18": {
+              "ci95": [
+                -17.90895544264795,
+                -17.47138609653534
+              ],
+              "mean_bps": -17.68827052938427
+            },
+            "20": {
+              "ci95": [
+                -19.90895544264795,
+                -19.47138609653534
+              ],
+              "mean_bps": -19.68827052938427
+            },
+            "9": {
+              "ci95": [
+                -8.908955442647951,
+                -8.471386096535339
+              ],
+              "mean_bps": -8.68827052938427
+            }
+          },
+          "status": "OK"
+        }
+      }
+    },
+    "H5": {
+      "HOLDOUT": {
+        "r15": {
+          "breakeven_cost_bps": -0.23190967793076306,
+          "conservative_budget_from_ci_low_bps": -3.7332192500628434,
+          "cost_budget_with_reserve_bps": -3.231909677930763,
+          "derivation": "net(c) = gross - c; CI shifted by c; budgets are arithmetic derivations, not new tests",
+          "gross_bps": -0.23190967793076306,
+          "gross_ci95": [
+            -0.7332192500628434,
+            0.2590294158897297
+          ],
+          "n": 37723,
+          "net": {
+            "0": {
+              "ci95": [
+                -0.7332192500628434,
+                0.2590294158897297
+              ],
+              "mean_bps": -0.23190967793076306
+            },
+            "15": {
+              "ci95": [
+                -15.733219250062843,
+                -14.74097058411027
+              ],
+              "mean_bps": -15.231909677930764
+            },
+            "18": {
+              "ci95": [
+                -18.733219250062845,
+                -17.740970584110272
+              ],
+              "mean_bps": -18.231909677930762
+            },
+            "20": {
+              "ci95": [
+                -20.733219250062845,
+                -19.740970584110272
+              ],
+              "mean_bps": -20.231909677930762
+            },
+            "9": {
+              "ci95": [
+                -9.733219250062843,
+                -8.74097058411027
+              ],
+              "mean_bps": -9.231909677930764
+            }
+          },
+          "status": "OK"
+        },
+        "tpsl": {
+          "breakeven_cost_bps": 0.0509338062653565,
+          "conservative_budget_from_ci_low_bps": -3.2429121565646355,
+          "cost_budget_with_reserve_bps": -2.9490661937346436,
+          "derivation": "net(c) = gross - c; CI shifted by c; budgets are arithmetic derivations, not new tests",
+          "gross_bps": 0.0509338062653565,
+          "gross_ci95": [
+            -0.2429121565646355,
+            0.3548086273684472
+          ],
+          "n": 37723,
+          "net": {
+            "0": {
+              "ci95": [
+                -0.2429121565646355,
+                0.3548086273684472
+              ],
+              "mean_bps": 0.0509338062653565
+            },
+            "15": {
+              "ci95": [
+                -15.242912156564635,
+                -14.645191372631553
+              ],
+              "mean_bps": -14.949066193734643
+            },
+            "18": {
+              "ci95": [
+                -18.242912156564635,
+                -17.64519137263155
+              ],
+              "mean_bps": -17.949066193734645
+            },
+            "20": {
+              "ci95": [
+                -20.242912156564635,
+                -19.64519137263155
+              ],
+              "mean_bps": -19.949066193734645
+            },
+            "9": {
+              "ci95": [
+                -9.242912156564635,
+                -8.645191372631553
+              ],
+              "mean_bps": -8.949066193734643
+            }
+          },
+          "status": "OK"
+        }
+      },
+      "TEST": {
+        "r15": {
+          "breakeven_cost_bps": 0.39959042763587066,
+          "conservative_budget_from_ci_low_bps": -3.0578032031119964,
+          "cost_budget_with_reserve_bps": -2.6004095723641294,
+          "derivation": "net(c) = gross - c; CI shifted by c; budgets are arithmetic derivations, not new tests",
+          "gross_bps": 0.39959042763587066,
+          "gross_ci95": [
+            -0.05780320311199638,
+            0.8765442607815803
+          ],
+          "n": 41914,
+          "net": {
+            "0": {
+              "ci95": [
+                -0.05780320311199638,
+                0.8765442607815803
+              ],
+              "mean_bps": 0.39959042763587066
+            },
+            "15": {
+              "ci95": [
+                -15.057803203111996,
+                -14.12345573921842
+              ],
+              "mean_bps": -14.600409572364129
+            },
+            "18": {
+              "ci95": [
+                -18.057803203111995,
+                -17.12345573921842
+              ],
+              "mean_bps": -17.60040957236413
+            },
+            "20": {
+              "ci95": [
+                -20.057803203111995,
+                -19.12345573921842
+              ],
+              "mean_bps": -19.60040957236413
+            },
+            "9": {
+              "ci95": [
+                -9.057803203111996,
+                -8.12345573921842
+              ],
+              "mean_bps": -8.600409572364129
+            }
+          },
+          "status": "OK"
+        },
+        "tpsl": {
+          "breakeven_cost_bps": 0.05689450461465787,
+          "conservative_budget_from_ci_low_bps": -3.20185825179278,
+          "cost_budget_with_reserve_bps": -2.943105495385342,
+          "derivation": "net(c) = gross - c; CI shifted by c; budgets are arithmetic derivations, not new tests",
+          "gross_bps": 0.05689450461465787,
+          "gross_ci95": [
+            -0.20185825179278005,
+            0.3384314285297716
+          ],
+          "n": 41914,
+          "net": {
+            "0": {
+              "ci95": [
+                -0.20185825179278005,
+                0.3384314285297716
+              ],
+              "mean_bps": 0.05689450461465787
+            },
+            "15": {
+              "ci95": [
+                -15.20185825179278,
+                -14.661568571470228
+              ],
+              "mean_bps": -14.943105495385343
+            },
+            "18": {
+              "ci95": [
+                -18.20185825179278,
+                -17.661568571470227
+              ],
+              "mean_bps": -17.943105495385343
+            },
+            "20": {
+              "ci95": [
+                -20.20185825179278,
+                -19.661568571470227
+              ],
+              "mean_bps": -19.943105495385343
+            },
+            "9": {
+              "ci95": [
+                -9.20185825179278,
+                -8.661568571470228
+              ],
+              "mean_bps": -8.943105495385343
+            }
+          },
+          "status": "OK"
+        }
+      },
+      "TRAIN": {
+        "r15": {
+          "breakeven_cost_bps": 0.11079313668857377,
+          "conservative_budget_from_ci_low_bps": -3.3176860191978914,
+          "cost_budget_with_reserve_bps": -2.889206863311426,
+          "derivation": "net(c) = gross - c; CI shifted by c; budgets are arithmetic derivations, not new tests",
+          "gross_bps": 0.11079313668857377,
+          "gross_ci95": [
+            -0.3176860191978914,
+            0.5404225349054101
+          ],
+          "n": 76255,
+          "net": {
+            "0": {
+              "ci95": [
+                -0.3176860191978914,
+                0.5404225349054101
+              ],
+              "mean_bps": 0.11079313668857377
+            },
+            "15": {
+              "ci95": [
+                -15.317686019197891,
+                -14.45957746509459
+              ],
+              "mean_bps": -14.889206863311426
+            },
+            "18": {
+              "ci95": [
+                -18.317686019197893,
+                -17.45957746509459
+              ],
+              "mean_bps": -17.889206863311426
+            },
+            "20": {
+              "ci95": [
+                -20.317686019197893,
+                -19.45957746509459
+              ],
+              "mean_bps": -19.889206863311426
+            },
+            "9": {
+              "ci95": [
+                -9.317686019197891,
+                -8.45957746509459
+              ],
+              "mean_bps": -8.889206863311426
+            }
+          },
+          "status": "OK"
+        },
+        "tpsl": {
+          "breakeven_cost_bps": 0.06761686056208702,
+          "conservative_budget_from_ci_low_bps": -3.142444994591024,
+          "cost_budget_with_reserve_bps": -2.932383139437913,
+          "derivation": "net(c) = gross - c; CI shifted by c; budgets are arithmetic derivations, not new tests",
+          "gross_bps": 0.06761686056208702,
+          "gross_ci95": [
+            -0.142444994591024,
+            0.28742199686361936
+          ],
+          "n": 76255,
+          "net": {
+            "0": {
+              "ci95": [
+                -0.142444994591024,
+                0.28742199686361936
+              ],
+              "mean_bps": 0.06761686056208702
+            },
+            "15": {
+              "ci95": [
+                -15.142444994591024,
+                -14.71257800313638
+              ],
+              "mean_bps": -14.932383139437913
+            },
+            "18": {
+              "ci95": [
+                -18.142444994591024,
+                -17.71257800313638
+              ],
+              "mean_bps": -17.932383139437913
+            },
+            "20": {
+              "ci95": [
+                -20.142444994591024,
+                -19.71257800313638
+              ],
+              "mean_bps": -19.932383139437913
+            },
+            "9": {
+              "ci95": [
+                -9.142444994591024,
+                -8.71257800313638
+              ],
+              "mean_bps": -8.932383139437913
+            }
+          },
+          "status": "OK"
+        }
+      }
+    },
+    "H6": {
+      "HOLDOUT": {
+        "r15": {
+          "breakeven_cost_bps": 0.2875796051328182,
+          "conservative_budget_from_ci_low_bps": -3.2814333189736313,
+          "cost_budget_with_reserve_bps": -2.712420394867182,
+          "derivation": "net(c) = gross - c; CI shifted by c; budgets are arithmetic derivations, not new tests",
+          "gross_bps": 0.2875796051328182,
+          "gross_ci95": [
+            -0.28143331897363133,
+            0.8290986875508839
+          ],
+          "n": 66876,
+          "net": {
+            "0": {
+              "ci95": [
+                -0.28143331897363133,
+                0.8290986875508839
+              ],
+              "mean_bps": 0.2875796051328182
+            },
+            "15": {
+              "ci95": [
+                -15.281433318973631,
+                -14.170901312449116
+              ],
+              "mean_bps": -14.712420394867182
+            },
+            "18": {
+              "ci95": [
+                -18.281433318973633,
+                -17.170901312449118
+              ],
+              "mean_bps": -17.71242039486718
+            },
+            "20": {
+              "ci95": [
+                -20.281433318973633,
+                -19.170901312449118
+              ],
+              "mean_bps": -19.71242039486718
+            },
+            "9": {
+              "ci95": [
+                -9.281433318973631,
+                -8.170901312449116
+              ],
+              "mean_bps": -8.712420394867182
+            }
+          },
+          "status": "OK"
+        },
+        "tpsl": {
+          "breakeven_cost_bps": 0.5518603841105434,
+          "conservative_budget_from_ci_low_bps": -2.830180145168695,
+          "cost_budget_with_reserve_bps": -2.4481396158894566,
+          "derivation": "net(c) = gross - c; CI shifted by c; budgets are arithmetic derivations, not new tests",
+          "gross_bps": 0.5518603841105434,
+          "gross_ci95": [
+            0.1698198548313048,
+            0.9397645677149029
+          ],
+          "n": 66876,
+          "net": {
+            "0": {
+              "ci95": [
+                0.1698198548313048,
+                0.9397645677149029
+              ],
+              "mean_bps": 0.5518603841105434
+            },
+            "15": {
+              "ci95": [
+                -14.830180145168695,
+                -14.060235432285097
+              ],
+              "mean_bps": -14.448139615889456
+            },
+            "18": {
+              "ci95": [
+                -17.830180145168697,
+                -17.060235432285097
+              ],
+              "mean_bps": -17.448139615889456
+            },
+            "20": {
+              "ci95": [
+                -19.830180145168697,
+                -19.060235432285097
+              ],
+              "mean_bps": -19.448139615889456
+            },
+            "9": {
+              "ci95": [
+                -8.830180145168695,
+                -8.060235432285097
+              ],
+              "mean_bps": -8.448139615889456
+            }
+          },
+          "status": "OK"
+        }
+      },
+      "TEST": {
+        "r15": {
+          "breakeven_cost_bps": 0.04973959691850576,
+          "conservative_budget_from_ci_low_bps": -3.735357050444529,
+          "cost_budget_with_reserve_bps": -2.950260403081494,
+          "derivation": "net(c) = gross - c; CI shifted by c; budgets are arithmetic derivations, not new tests",
+          "gross_bps": 0.04973959691850576,
+          "gross_ci95": [
+            -0.735357050444529,
+            0.78588035047588
+          ],
+          "n": 89256,
+          "net": {
+            "0": {
+              "ci95": [
+                -0.735357050444529,
+                0.78588035047588
+              ],
+              "mean_bps": 0.04973959691850576
+            },
+            "15": {
+              "ci95": [
+                -15.735357050444529,
+                -14.21411964952412
+              ],
+              "mean_bps": -14.950260403081494
+            },
+            "18": {
+              "ci95": [
+                -18.735357050444527,
+                -17.21411964952412
+              ],
+              "mean_bps": -17.950260403081494
+            },
+            "20": {
+              "ci95": [
+                -20.735357050444527,
+                -19.21411964952412
+              ],
+              "mean_bps": -19.950260403081494
+            },
+            "9": {
+              "ci95": [
+                -9.735357050444529,
+                -8.21411964952412
+              ],
+              "mean_bps": -8.950260403081494
+            }
+          },
+          "status": "OK"
+        },
+        "tpsl": {
+          "breakeven_cost_bps": 0.03757021078914023,
+          "conservative_budget_from_ci_low_bps": -3.315824823950738,
+          "cost_budget_with_reserve_bps": -2.96242978921086,
+          "derivation": "net(c) = gross - c; CI shifted by c; budgets are arithmetic derivations, not new tests",
+          "gross_bps": 0.03757021078914023,
+          "gross_ci95": [
+            -0.31582482395073797,
+            0.3930355537039638
+          ],
+          "n": 89256,
+          "net": {
+            "0": {
+              "ci95": [
+                -0.31582482395073797,
+                0.3930355537039638
+              ],
+              "mean_bps": 0.03757021078914023
+            },
+            "15": {
+              "ci95": [
+                -15.315824823950738,
+                -14.606964446296036
+              ],
+              "mean_bps": -14.96242978921086
+            },
+            "18": {
+              "ci95": [
+                -18.315824823950738,
+                -17.606964446296036
+              ],
+              "mean_bps": -17.96242978921086
+            },
+            "20": {
+              "ci95": [
+                -20.315824823950738,
+                -19.606964446296036
+              ],
+              "mean_bps": -19.96242978921086
+            },
+            "9": {
+              "ci95": [
+                -9.315824823950738,
+                -8.606964446296036
+              ],
+              "mean_bps": -8.96242978921086
+            }
+          },
+          "status": "OK"
+        }
+      },
+      "TRAIN": {
+        "r15": {
+          "breakeven_cost_bps": 0.6358529373542876,
+          "conservative_budget_from_ci_low_bps": -2.8648147856200055,
+          "cost_budget_with_reserve_bps": -2.3641470626457126,
+          "derivation": "net(c) = gross - c; CI shifted by c; budgets are arithmetic derivations, not new tests",
+          "gross_bps": 0.6358529373542876,
+          "gross_ci95": [
+            0.13518521437999453,
+            1.1584620471559157
+          ],
+          "n": 175290,
+          "net": {
+            "0": {
+              "ci95": [
+                0.13518521437999453,
+                1.1584620471559157
+              ],
+              "mean_bps": 0.6358529373542876
+            },
+            "15": {
+              "ci95": [
+                -14.864814785620005,
+                -13.841537952844085
+              ],
+              "mean_bps": -14.364147062645712
+            },
+            "18": {
+              "ci95": [
+                -17.864814785620005,
+                -16.841537952844085
+              ],
+              "mean_bps": -17.364147062645714
+            },
+            "20": {
+              "ci95": [
+                -19.864814785620005,
+                -18.841537952844085
+              ],
+              "mean_bps": -19.364147062645714
+            },
+            "9": {
+              "ci95": [
+                -8.864814785620005,
+                -7.841537952844084
+              ],
+              "mean_bps": -8.364147062645712
+            }
+          },
+          "status": "OK"
+        },
+        "tpsl": {
+          "breakeven_cost_bps": 0.26350662080025195,
+          "conservative_budget_from_ci_low_bps": -2.9595791520525925,
+          "cost_budget_with_reserve_bps": -2.736493379199748,
+          "derivation": "net(c) = gross - c; CI shifted by c; budgets are arithmetic derivations, not new tests",
+          "gross_bps": 0.26350662080025195,
+          "gross_ci95": [
+            0.04042084794740752,
+            0.48322968263096655
+          ],
+          "n": 175290,
+          "net": {
+            "0": {
+              "ci95": [
+                0.04042084794740752,
+                0.48322968263096655
+              ],
+              "mean_bps": 0.26350662080025195
+            },
+            "15": {
+              "ci95": [
+                -14.959579152052592,
+                -14.516770317369033
+              ],
+              "mean_bps": -14.736493379199748
+            },
+            "18": {
+              "ci95": [
+                -17.95957915205259,
+                -17.516770317369033
+              ],
+              "mean_bps": -17.736493379199747
+            },
+            "20": {
+              "ci95": [
+                -19.95957915205259,
+                -19.516770317369033
+              ],
+              "mean_bps": -19.736493379199747
+            },
+            "9": {
+              "ci95": [
+                -8.959579152052592,
+                -8.516770317369033
+              ],
+              "mean_bps": -8.736493379199748
+            }
+          },
+          "status": "OK"
+        }
+      }
+    },
+    "H7": {
+      "HOLDOUT": {
+        "r15": {
+          "breakeven_cost_bps": 0.8753366660209166,
+          "conservative_budget_from_ci_low_bps": -3.242119201974946,
+          "cost_budget_with_reserve_bps": -2.1246633339790835,
+          "derivation": "net(c) = gross - c; CI shifted by c; budgets are arithmetic derivations, not new tests",
+          "gross_bps": 0.8753366660209166,
+          "gross_ci95": [
+            -0.24211920197494585,
+            1.9372286682260302
+          ],
+          "n": 13310,
+          "net": {
+            "0": {
+              "ci95": [
+                -0.24211920197494585,
+                1.9372286682260302
+              ],
+              "mean_bps": 0.8753366660209166
+            },
+            "15": {
+              "ci95": [
+                -15.242119201974946,
+                -13.06277133177397
+              ],
+              "mean_bps": -14.124663333979083
+            },
+            "18": {
+              "ci95": [
+                -18.242119201974944,
+                -16.06277133177397
+              ],
+              "mean_bps": -17.124663333979083
+            },
+            "20": {
+              "ci95": [
+                -20.242119201974944,
+                -18.06277133177397
+              ],
+              "mean_bps": -19.124663333979083
+            },
+            "9": {
+              "ci95": [
+                -9.242119201974946,
+                -7.06277133177397
+              ],
+              "mean_bps": -8.124663333979083
+            }
+          },
+          "status": "OK"
+        },
+        "tpsl": {
+          "breakeven_cost_bps": 0.7455291758581806,
+          "conservative_budget_from_ci_low_bps": -2.794585335721342,
+          "cost_budget_with_reserve_bps": -2.254470824141819,
+          "derivation": "net(c) = gross - c; CI shifted by c; budgets are arithmetic derivations, not new tests",
+          "gross_bps": 0.7455291758581806,
+          "gross_ci95": [
+            0.20541466427865807,
+            1.3440744367629165
+          ],
+          "n": 13310,
+          "net": {
+            "0": {
+              "ci95": [
+                0.20541466427865807,
+                1.3440744367629165
+              ],
+              "mean_bps": 0.7455291758581806
+            },
+            "15": {
+              "ci95": [
+                -14.794585335721342,
+                -13.655925563237084
+              ],
+              "mean_bps": -14.25447082414182
+            },
+            "18": {
+              "ci95": [
+                -17.794585335721344,
+                -16.655925563237084
+              ],
+              "mean_bps": -17.25447082414182
+            },
+            "20": {
+              "ci95": [
+                -19.794585335721344,
+                -18.655925563237084
+              ],
+              "mean_bps": -19.25447082414182
+            },
+            "9": {
+              "ci95": [
+                -8.794585335721342,
+                -7.6559255632370835
+              ],
+              "mean_bps": -8.25447082414182
+            }
+          },
+          "status": "OK"
+        }
+      },
+      "TEST": {
+        "r15": {
+          "breakeven_cost_bps": -1.5403232915368077,
+          "conservative_budget_from_ci_low_bps": -7.088950697109619,
+          "cost_budget_with_reserve_bps": -4.540323291536808,
+          "derivation": "net(c) = gross - c; CI shifted by c; budgets are arithmetic derivations, not new tests",
+          "gross_bps": -1.5403232915368077,
+          "gross_ci95": [
+            -4.088950697109619,
+            0.6450753809285938
+          ],
+          "n": 18570,
+          "net": {
+            "0": {
+              "ci95": [
+                -4.088950697109619,
+                0.6450753809285938
+              ],
+              "mean_bps": -1.5403232915368077
+            },
+            "15": {
+              "ci95": [
+                -19.088950697109617,
+                -14.354924619071406
+              ],
+              "mean_bps": -16.540323291536808
+            },
+            "18": {
+              "ci95": [
+                -22.088950697109617,
+                -17.354924619071404
+              ],
+              "mean_bps": -19.540323291536808
+            },
+            "20": {
+              "ci95": [
+                -24.088950697109617,
+                -19.354924619071404
+              ],
+              "mean_bps": -21.540323291536808
+            },
+            "9": {
+              "ci95": [
+                -13.088950697109619,
+                -8.354924619071406
+              ],
+              "mean_bps": -10.540323291536808
+            }
+          },
+          "status": "OK"
+        },
+        "tpsl": {
+          "breakeven_cost_bps": -0.23461975875979127,
+          "conservative_budget_from_ci_low_bps": -3.815595666509415,
+          "cost_budget_with_reserve_bps": -3.2346197587597914,
+          "derivation": "net(c) = gross - c; CI shifted by c; budgets are arithmetic derivations, not new tests",
+          "gross_bps": -0.23461975875979127,
+          "gross_ci95": [
+            -0.8155956665094148,
+            0.37431133956164686
+          ],
+          "n": 18570,
+          "net": {
+            "0": {
+              "ci95": [
+                -0.8155956665094148,
+                0.37431133956164686
+              ],
+              "mean_bps": -0.23461975875979127
+            },
+            "15": {
+              "ci95": [
+                -15.815595666509415,
+                -14.625688660438353
+              ],
+              "mean_bps": -15.234619758759791
+            },
+            "18": {
+              "ci95": [
+                -18.815595666509417,
+                -17.625688660438353
+              ],
+              "mean_bps": -18.23461975875979
+            },
+            "20": {
+              "ci95": [
+                -20.815595666509417,
+                -19.625688660438353
+              ],
+              "mean_bps": -20.23461975875979
+            },
+            "9": {
+              "ci95": [
+                -9.815595666509415,
+                -8.625688660438353
+              ],
+              "mean_bps": -9.234619758759791
+            }
+          },
+          "status": "OK"
+        }
+      },
+      "TRAIN": {
+        "r15": {
+          "breakeven_cost_bps": -0.1620994753954411,
+          "conservative_budget_from_ci_low_bps": -4.749177960526682,
+          "cost_budget_with_reserve_bps": -3.1620994753954412,
+          "derivation": "net(c) = gross - c; CI shifted by c; budgets are arithmetic derivations, not new tests",
+          "gross_bps": -0.1620994753954411,
+          "gross_ci95": [
+            -1.7491779605266817,
+            1.3161493942034568
+          ],
+          "n": 27755,
+          "net": {
+            "0": {
+              "ci95": [
+                -1.7491779605266817,
+                1.3161493942034568
+              ],
+              "mean_bps": -0.1620994753954411
+            },
+            "15": {
+              "ci95": [
+                -16.74917796052668,
+                -13.683850605796543
+              ],
+              "mean_bps": -15.162099475395442
+            },
+            "18": {
+              "ci95": [
+                -19.74917796052668,
+                -16.683850605796543
+              ],
+              "mean_bps": -18.16209947539544
+            },
+            "20": {
+              "ci95": [
+                -21.74917796052668,
+                -18.683850605796543
+              ],
+              "mean_bps": -20.16209947539544
+            },
+            "9": {
+              "ci95": [
+                -10.749177960526682,
+                -7.683850605796543
+              ],
+              "mean_bps": -9.162099475395442
+            }
+          },
+          "status": "OK"
+        },
+        "tpsl": {
+          "breakeven_cost_bps": -0.1657454547800635,
+          "conservative_budget_from_ci_low_bps": -3.627757995952699,
+          "cost_budget_with_reserve_bps": -3.1657454547800636,
+          "derivation": "net(c) = gross - c; CI shifted by c; budgets are arithmetic derivations, not new tests",
+          "gross_bps": -0.1657454547800635,
+          "gross_ci95": [
+            -0.6277579959526989,
+            0.28335687058874726
+          ],
+          "n": 27755,
+          "net": {
+            "0": {
+              "ci95": [
+                -0.6277579959526989,
+                0.28335687058874726
+              ],
+              "mean_bps": -0.1657454547800635
+            },
+            "15": {
+              "ci95": [
+                -15.627757995952699,
+                -14.716643129411253
+              ],
+              "mean_bps": -15.165745454780064
+            },
+            "18": {
+              "ci95": [
+                -18.6277579959527,
+                -17.716643129411253
+              ],
+              "mean_bps": -18.165745454780062
+            },
+            "20": {
+              "ci95": [
+                -20.6277579959527,
+                -19.716643129411253
+              ],
+              "mean_bps": -20.165745454780062
+            },
+            "9": {
+              "ci95": [
+                -9.627757995952699,
+                -8.716643129411253
+              ],
+              "mean_bps": -9.165745454780064
+            }
+          },
+          "status": "OK"
+        }
+      }
+    }
+  },
+  "inputs": {
+    "c1_mu_sha256_observed": null,
+    "c1_provenance_sha256_expected": null,
+    "c1_provenance_sha256_observed": null,
+    "c1_provenance_verified": false,
+    "c1_result_sha256_expected": null,
+    "c1_result_sha256_observed": null,
+    "c1_result_verified": false,
+    "c1_run_id": null,
+    "futures_report_sha256": "3016358974bd7e4c137257991e3ccf6e7781e8d83cc122c6e59db3d24451e77a"
+  },
+  "schema_version": 3,
+  "units": "bps; 1 bps = 0.01 % = 0.0001 fraction; costs are round-trip unless named per_side"
+}

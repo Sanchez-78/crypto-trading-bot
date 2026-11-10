@@ -1,0 +1,29 @@
+{
+  "before": {
+    "local_learning_storage/cache.sqlite": "31767b56391e77b4143c1e1129b7fa2a4447f4c71f931469e512a4f01ed17646",
+    "data/paper_open_positions.json": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+    "server_local_backups/paper_adaptive_learning_state.json": "9263583f87369276b82646e80d85e92433e6602858b0551204983d064a27c93c",
+    "server_local_backups/learning_state_phase1.json": "fbf592e2fb30a6d0a1da4d2050c1136dc9718665653a28b498fa2163eaabf5e6",
+    "runtime/v5_quota_usage.sqlite": "0a3bf519ac254cb670486ff3c9539ccf55385c9f1a17fe8b516f34cf79161b03",
+    "src/runtime/v5_quota_usage.sqlite": "8b65fbaaccdc984882e1dacc112cbbd16c544fc3c36d58630684205e213f81e1",
+    "scripts/research/cost_and_learning_review.py": "e8e882563fed907153db8c906d057219c7ef7a3d333270271574a6440ab0bd6e",
+    "tests/test_cost_and_learning_review.py": "53b813dc7b9cfcdbf235d7a1e610836d8d3348f0e316edf3eaf1354ce173ea4c",
+    "_workspace/futures_flow_20261109/screen/report.json": "3016358974bd7e4c137257991e3ccf6e7781e8d83cc122c6e59db3d24451e77a",
+    "_workspace/66_codex_cost_review_audit_20261110.md": "0ea326a59e7abc3c9a54dee21c79126f32ed01fc3a959213b36107d5478b9e13",
+    "_workspace/67_cost_review_audit_fixes_20261110.md": "8160888e1304c6d78402eb11fcb324a8b6d2089acffba5bd9a433954487f5857"
+  },
+  "after": {
+    "local_learning_storage/cache.sqlite": "31767b56391e77b4143c1e1129b7fa2a4447f4c71f931469e512a4f01ed17646",
+    "data/paper_open_positions.json": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+    "server_local_backups/paper_adaptive_learning_state.json": "9263583f87369276b82646e80d85e92433e6602858b0551204983d064a27c93c",
+    "server_local_backups/learning_state_phase1.json": "fbf592e2fb30a6d0a1da4d2050c1136dc9718665653a28b498fa2163eaabf5e6",
+    "runtime/v5_quota_usage.sqlite": "0a3bf519ac254cb670486ff3c9539ccf55385c9f1a17fe8b516f34cf79161b03",
+    "src/runtime/v5_quota_usage.sqlite": "8b65fbaaccdc984882e1dacc112cbbd16c544fc3c36d58630684205e213f81e1",
+    "scripts/research/cost_and_learning_review.py": "e8e882563fed907153db8c906d057219c7ef7a3d333270271574a6440ab0bd6e",
+    "tests/test_cost_and_learning_review.py": "53b813dc7b9cfcdbf235d7a1e610836d8d3348f0e316edf3eaf1354ce173ea4c",
+    "_workspace/futures_flow_20261109/screen/report.json": "3016358974bd7e4c137257991e3ccf6e7781e8d83cc122c6e59db3d24451e77a",
+    "_workspace/66_codex_cost_review_audit_20261110.md": "0ea326a59e7abc3c9a54dee21c79126f32ed01fc3a959213b36107d5478b9e13",
+    "_workspace/67_cost_review_audit_fixes_20261110.md": "8160888e1304c6d78402eb11fcb324a8b6d2089acffba5bd9a433954487f5857"
+  },
+  "all_equal": true
+}
