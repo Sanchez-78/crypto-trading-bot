@@ -114,6 +114,12 @@ Pozor (review 2026-11-10): „vyčerpané“ je přehnané. NO_EDGE platí jen p
 konfigurace, 17 rodin nejsou nezávislé důkazy a report 64 přehlíží chybějící futures data
 z 2026-10-28. Errata a audit skutečných nákladů (fee na stranu vs. round trip, spread ve fill
 ceně) má Codex v `CODEX_POST_C1_COST_AND_LEARNING_REVIEW_2026-11-10.md`.
+**Provedeno agentem 2026-11-10** (`_workspace/65_codex_cost_and_learning_review.md`): spread se
+dvakrát nepočítá. Paper náklady jsou naopak **podhodnocené**: výstup se plní na mid (chybí půl
+spreadu) a 8 bps je za celý obchod (4 na stranu), zatímco spot VIP0 má 10 bps na stranu a futures
+5 bps taker. Shorty nad spotovými cenami nemají reálný produkt (marže/futures). Produkční
+výpočty zatím beze změny. Po C1 se oprava cache nasadí jako **nová kohorta** a replikace
+proběhne jen při CONTRARIAN_CONFIRMED (osnova v reportu 65).
 
 ## Vyžaduje operátora
 

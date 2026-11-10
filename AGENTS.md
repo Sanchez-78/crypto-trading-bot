@@ -5,9 +5,8 @@ Komunikace s uživatelem a reporty: **česky**. Identifikátory a kód: anglicky
 
 ## Aktuální zadání
 
-**Otevřené zadání:** `docs/codex_prompts/CODEX_POST_C1_COST_AND_LEARNING_REVIEW_2026-11-10.md`
-→ report `_workspace/65_codex_cost_and_learning_review.md` (fáze A teď; B/C jen při zmrazeném C1).
-Aktuální stav a autorita: `docs/OPERATING_STATE.md`.
+**Žádné otevřené zadání.** Od 2026-11-10 implementaci dělá Claude. Codex dostává jen
+zadání na audit nebo radu. Aktuální stav a autorita: `docs/OPERATING_STATE.md`.
 Podkladová data: `docs/codex_prompts/evidence/` (soubory jsou jen ke čtení).
 
 Hotová zadání (nezpracovávat znovu):
@@ -20,6 +19,8 @@ Hotová zadání (nezpracovávat znovu):
 - `CODEX_NEW_SIGNAL_SOURCE_SCREEN_2026-11-09.md` → `_workspace/64_codex_new_signal_source_screen.md`
   (všech 7 hypotéz NO_EDGE, shrnutí `RESEARCH_FUTURES_FLOW_FINDINGS.md`; HOLDOUT je spotřebovaný,
   znovu nevyhodnocovat).
+- `CODEX_POST_C1_COST_AND_LEARNING_REVIEW_2026-11-10.md` → `_workspace/65_codex_cost_and_learning_review.md`
+  (fázi A provedl Claude; fáze B/C až po zmrazeném C1).
 
 Offline vyhodnocení experimentu nad novým exportem:
 `python -B scripts/research/p0_8_plus_epoch_report.py --json <export.json> --out <adresář>`
