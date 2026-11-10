@@ -16,3 +16,4 @@ Od 08:55 UTC slepá fáze C1 — z čerstvých obchodů jen počty.
 | Čas (UTC) | Poslední běh / STATUS | Obchody/24 h | Čerstvé (COHORT_BLIND) | C1 | Funnel |
 |---|---|---:|---|---|---|
 | 2026-11-09 09:59 | 20261109T085520Z OK | 66 (6 symbolů, DOT 0) | 18 / 6 symbolů (~7,3/h → 1 000 za ~5,7 dne) | PENDING | vázající je počet kandidátů (`no_candidate_pattern`), ne limity; tap nasazen 09:57 |
+| 2026-11-10 07:01 | 20261110T054710Z OK, ALERT prázdný, disk 58 % | 218 (všech 7, i DOT) | 204 / 7 symbolů (~220/den → 1 000 za ~4,5 dne; pevný konec až po 7 dnech, ~16. 11. 13:31 UTC) | PENDING (`fresh_n=204/1000`, `days=0.93/7`) | 12 h: 993 kandidátů P0.8+ → 259 přijato, 415 `REJECT_STALE_MARKET_DATA` (42 %), 173 learning/cooldown, 87 záporný net, 59 risk; 103 vstupů |
