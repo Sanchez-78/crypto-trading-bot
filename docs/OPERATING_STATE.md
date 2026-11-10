@@ -106,7 +106,10 @@ pokud nová fáze potřebuje čistou epochu (předtím záloha DB).
 **Nový zdroj signálu:** funding carry uzavřen (audit v9 NO-GO). Offline screen dat z futures
 (OI, long/short, taker ratio, funding, taker imbalance, BTC→alty) na horizontu bota
 zadán Codexu (`docs/codex_prompts/CODEX_NEW_SIGNAL_SOURCE_SCREEN_2026-11-09.md`,
-předregistrace TRAIN/TEST/HOLDOUT). Případný LEAD → nová předregistrace až po C1.
+předregistrace TRAIN/TEST/HOLDOUT). **Výsledek 2026-11-10: všech 7 NO_EDGE** (hrubě 0–1 bps
+vs. náklad 9 bps; `RESEARCH_FUTURES_FLOW_FINDINGS.md`). Celkem 17 rodin bez edge; levné
+veřejné zdroje na horizontu bota jsou vyčerpané. P/L+ vyžaduje rozhodnutí operátora (jiný
+trh, jiná nákladová struktura nebo jiný cíl); agent do té doby nestaví nové strategie.
 
 ## Vyžaduje operátora
 

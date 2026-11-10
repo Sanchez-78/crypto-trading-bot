@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="2" time="1.149" timestamp="2026-11-10T08:15:14.648462+01:00" hostname="Muj"><testcase classname="tests.test_futures_flow_screen" name="test_same_bar_tp_and_sl_is_stop_loss[-1]" time="0.034"><failure message="assert np.float32(35.0) == -25 ± 2.5e-05&#10;  &#10;  comparison failed&#10;  Obtained: 35.0&#10;  Expected: -25 ± 2.5e-05">tests\test_futures_flow_screen.py:125: in test_same_bar_tp_and_sl_is_stop_loss
+    assert screen.make_targets(full)[f"tpsl_{name}"].iloc[0] == pytest.approx(-25)
+E   assert np.float32(35.0) == -25 ± 2.5e-05
+E     
+E     comparison failed
+E     Obtained: 35.0
+E     Expected: -25 ± 2.5e-05</failure></testcase><testcase classname="tests.test_futures_flow_screen" name="test_same_bar_tp_and_sl_is_stop_loss[1]" time="0.034"><failure message="assert np.float32(35.0) == -25 ± 2.5e-05&#10;  &#10;  comparison failed&#10;  Obtained: 35.0&#10;  Expected: -25 ± 2.5e-05">tests\test_futures_flow_screen.py:125: in test_same_bar_tp_and_sl_is_stop_loss
+    assert screen.make_targets(full)[f"tpsl_{name}"].iloc[0] == pytest.approx(-25)
+E   assert np.float32(35.0) == -25 ± 2.5e-05
+E     
+E     comparison failed
+E     Obtained: 35.0
+E     Expected: -25 ± 2.5e-05</failure></testcase></testsuite></testsuites>

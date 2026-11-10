@@ -1,0 +1,17 @@
+{
+  "end_month": "2026-10",
+  "manifest_sha256": "08e8895aed77a47ebb36e85209cb8867dc7d658bdab25dccd202e7eef427e294",
+  "protocol": {
+    "bootstrap": 2000,
+    "holdout_start": "2026-04-02",
+    "horizon_minutes": 15,
+    "seed": 20261109,
+    "sl_bps": 25.0,
+    "start": "2024-01-01",
+    "test_end": "2026-04-01",
+    "test_start": "2025-07-02",
+    "tp_bps": 35.0,
+    "train_end": "2025-07-01"
+  },
+  "source_sha256": "a393d07682630136efd5c29ed6cd6bafbd0cf9b595b32b5c5fff9b5eb1c1328f"
+}

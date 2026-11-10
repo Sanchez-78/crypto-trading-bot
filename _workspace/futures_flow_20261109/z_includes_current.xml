@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="1.148" timestamp="2026-11-10T08:15:22.568757+01:00" hostname="Muj"><testcase classname="tests.test_futures_flow_screen" name="test_z_score_uses_strictly_prior_seven_days" time="0.010"><failure message="assert np.float64(81.87331233877386) == 141.4773088986278 ± 1.4e-04&#10;  &#10;  comparison failed&#10;  Obtained: 81.87331233877386&#10;  Expected: 141.4773088986278 ± 1.4e-04">tests\test_futures_flow_screen.py:109: in test_z_score_uses_strictly_prior_seven_days
+    assert z.iloc[point] == pytest.approx((100 - past.mean()) / past.std(ddof=1))
+E   assert np.float64(81.87331233877386) == 141.4773088986278 ± 1.4e-04
+E     
+E     comparison failed
+E     Obtained: 81.87331233877386
+E     Expected: 141.4773088986278 ± 1.4e-04</failure></testcase></testsuite></testsuites>

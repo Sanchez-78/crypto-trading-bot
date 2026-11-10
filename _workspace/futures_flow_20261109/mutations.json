@@ -1,0 +1,74 @@
+[
+  {
+    "case": "metrics_early",
+    "exit_code": 1,
+    "tests": 1,
+    "errors": 0,
+    "failures": 1,
+    "skipped": 0
+  },
+  {
+    "case": "funding_early",
+    "exit_code": 1,
+    "tests": 1,
+    "errors": 0,
+    "failures": 1,
+    "skipped": 0
+  },
+  {
+    "case": "tp_before_sl",
+    "exit_code": 1,
+    "tests": 2,
+    "errors": 0,
+    "failures": 2,
+    "skipped": 0
+  },
+  {
+    "case": "overlapping",
+    "exit_code": 1,
+    "tests": 1,
+    "errors": 0,
+    "failures": 1,
+    "skipped": 0
+  },
+  {
+    "case": "no_purge",
+    "exit_code": 1,
+    "tests": 1,
+    "errors": 0,
+    "failures": 1,
+    "skipped": 0
+  },
+  {
+    "case": "early_holdout",
+    "exit_code": 1,
+    "tests": 1,
+    "errors": 0,
+    "failures": 1,
+    "skipped": 0
+  },
+  {
+    "case": "z_includes_current",
+    "exit_code": 1,
+    "tests": 1,
+    "errors": 0,
+    "failures": 1,
+    "skipped": 0
+  },
+  {
+    "case": "btc_self_lead",
+    "exit_code": 1,
+    "tests": 1,
+    "errors": 0,
+    "failures": 1,
+    "skipped": 0
+  },
+  {
+    "case": "restored",
+    "exit_code": 0,
+    "tests": 29,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0
+  }
+]

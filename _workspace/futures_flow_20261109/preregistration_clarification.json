@@ -1,0 +1,5 @@
+{
+  "reason": "Pre-TEST implementation review: H6 BTC-to-alts must be neutral on BTC also in pooled H7, per task restriction; no parameter selection or TEST/HOLDOUT computation performed",
+  "before_sha256": "38625eaf7b8bfc14045115f0c0b5daa62c43bfc32ed7a0c1f79e00dd95533bd9",
+  "after_sha256": "8cda441b79a62725ab0b492e23f4b702620c117b45bb2f000897b255b8d3f881"
+}

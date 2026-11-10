@@ -1,0 +1,14 @@
+{
+  "complete_features": 732322,
+  "complete_targets": 787664,
+  "period": "TRAIN_ONLY",
+  "rows": {
+    "funding": 1641,
+    "futures": 787680,
+    "metrics": 157409,
+    "spot": 787680
+  },
+  "seconds": 24.72145660035312,
+  "source_sha256": "f6d7c4ad81d88945878aa7eafcc871a74bf240d300a6b4e7cd1314896620ebf0",
+  "symbol": "BTCUSDT"
+}

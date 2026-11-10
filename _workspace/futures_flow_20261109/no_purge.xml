@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="1.076" timestamp="2026-11-10T08:15:18.606073+01:00" hostname="Muj"><testcase classname="tests.test_futures_flow_screen" name="test_embargo_and_label_purge_at_split_boundaries" time="0.002"><failure message="assert [True, True, ... False, False] == [True, False,... False, False]&#10;  &#10;  At index 1 diff: True != False&#10;  Use -v to get more diff">tests\test_futures_flow_screen.py:185: in test_embargo_and_label_purge_at_split_boundaries
+    assert screen.embargo_mask(times, screen.stamp("2024-01-01"), cut).tolist() == [True, False, False, False, False]
+E   assert [True, True, ... False, False] == [True, False,... False, False]
+E     
+E     At index 1 diff: True != False
+E     Use -v to get more diff</failure></testcase></testsuite></testsuites>

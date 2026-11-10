@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="0.960" timestamp="2026-11-10T08:15:20.613373+01:00" hostname="Muj"><testcase classname="tests.test_futures_flow_screen" name="test_stage_barrier_prevents_early_holdout_and_second_evaluation" time="0.016"><failure message="Failed: DID NOT RAISE &lt;class 'ValueError'&gt;">tests\test_futures_flow_screen.py:195: in test_stage_barrier_prevents_early_holdout_and_second_evaluation
+    with pytest.raises(ValueError, match="previous stage"):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE &lt;class 'ValueError'&gt;</failure></testcase></testsuite></testsuites>

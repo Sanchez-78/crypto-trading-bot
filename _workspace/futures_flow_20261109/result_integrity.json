@@ -1,0 +1,16 @@
+{
+  "status": "PASS",
+  "target_summaries_checked": 42,
+  "stage_sha256": {
+    "TRAIN": "bd1ae74301995fd8971543339da9e3fdce6551725ccee3b9e915fb118328875c",
+    "TEST": "a225bf5ed1c382f473d8865fd488147425d81945a71e617f476cb9016a4e041b",
+    "HOLDOUT": "7c3ac715108bb9e877b96da91f7f960d030f0eb01b011dc64d0c2cb3bb0d0aa0"
+  },
+  "started_utc": [
+    "2026-11-10T07:05:14.413544+00:00",
+    "2026-11-10T07:09:07.807978+00:00",
+    "2026-11-10T07:10:28.906430+00:00"
+  ],
+  "no_market_data_read": true,
+  "no_re_evaluation": true
+}

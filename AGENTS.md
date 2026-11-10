@@ -5,9 +5,7 @@ Komunikace s uživatelem a reporty: **česky**. Identifikátory a kód: anglicky
 
 ## Aktuální zadání
 
-**Otevřené zadání:** `docs/codex_prompts/CODEX_NEW_SIGNAL_SOURCE_SCREEN_2026-11-09.md`
-→ report `_workspace/64_codex_new_signal_source_screen.md` (jen offline výzkum, bot se nemění).
-Aktuální stav a autorita: `docs/OPERATING_STATE.md`.
+**Žádné otevřené zadání.** Aktuální stav a autorita: `docs/OPERATING_STATE.md`.
 Podkladová data: `docs/codex_prompts/evidence/` (soubory jsou jen ke čtení).
 
 Hotová zadání (nezpracovávat znovu):
@@ -17,6 +15,9 @@ Hotová zadání (nezpracovávat znovu):
   (nálezy zapracovány, viz `docs/OPERATING_STATE.md` a `_workspace/60_audit_remediation.md`).
 - `CODEX_CANDLE_REFRESH_PHASE_FIX_2026-11-09.md` → `_workspace/63_codex_candle_refresh_fix.md`
   (lokální oprava za příznakem, výchozí vypnuto; nasazení až po C1 a review).
+- `CODEX_NEW_SIGNAL_SOURCE_SCREEN_2026-11-09.md` → `_workspace/64_codex_new_signal_source_screen.md`
+  (všech 7 hypotéz NO_EDGE, shrnutí `RESEARCH_FUTURES_FLOW_FINDINGS.md`; HOLDOUT je spotřebovaný,
+  znovu nevyhodnocovat).
 
 Offline vyhodnocení experimentu nad novým exportem:
 `python -B scripts/research/p0_8_plus_epoch_report.py --json <export.json> --out <adresář>`

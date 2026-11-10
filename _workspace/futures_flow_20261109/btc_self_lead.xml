@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="1.303" timestamp="2026-11-10T08:15:24.634171+01:00" hostname="Muj"><testcase classname="tests.test_futures_flow_screen" name="test_pooled_model_does_not_turn_alt_lead_into_btc_momentum" time="0.285"><failure message="assert np.False_&#10; +  where np.False_ = all()&#10; +    where all = H6_1    False\nH6_5    False\ndtype: bool.all&#10; +      where H6_1    False\nH6_5    False\ndtype: bool = all()&#10; +        where all =                                H6_1      H6_5\n2024-01-01 00:01:00+00:00       NaN       NaN\n2024-01-01 00:02:00+00:00 ...5\n2024-01-12 23:42:00+00:00 -1.284488 -1.367196\n2024-01-12 23:43:00+00:00 -1.237108 -1.328061\n\n[17263 rows x 2 columns] == 0.all">tests\test_futures_flow_screen.py:88: in test_pooled_model_does_not_turn_alt_lead_into_btc_momentum
+    assert (panels["BTCUSDT"][["H6_1", "H6_5"]] == 0).all().all()
+E   assert np.False_
+E    +  where np.False_ = all()
+E    +    where all = H6_1    False\nH6_5    False\ndtype: bool.all
+E    +      where H6_1    False\nH6_5    False\ndtype: bool = all()
+E    +        where all =                                H6_1      H6_5\n2024-01-01 00:01:00+00:00       NaN       NaN\n2024-01-01 00:02:00+00:00 ...5\n2024-01-12 23:42:00+00:00 -1.284488 -1.367196\n2024-01-12 23:43:00+00:00 -1.237108 -1.328061\n\n[17263 rows x 2 columns] == 0.all</failure></testcase></testsuite></testsuites>
