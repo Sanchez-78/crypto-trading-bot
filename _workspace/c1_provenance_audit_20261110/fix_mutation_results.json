@@ -1,0 +1,67 @@
+{
+  "baseline": {
+    "exit_code": 0,
+    "summary": "11 passed, 4 deselected in 25.74s",
+    "import_error": false
+  },
+  "A1_log_after_marker": {
+    "exit_code": 1,
+    "summary": "1 failed, 10 passed, 4 deselected in 25.85s",
+    "import_error": false
+  },
+  "A1_no_log_line": {
+    "exit_code": 1,
+    "summary": "3 failed, 8 passed, 4 deselected in 27.54s",
+    "import_error": false
+  },
+  "A1_log_without_run_id": {
+    "exit_code": 1,
+    "summary": "1 failed, 10 passed, 4 deselected in 31.77s",
+    "import_error": false
+  },
+  "A1_log_wrong_result_hash": {
+    "exit_code": 1,
+    "summary": "1 failed, 10 passed, 4 deselected in 24.77s",
+    "import_error": false
+  },
+  "A2_cli_check_removed": {
+    "exit_code": 1,
+    "summary": "2 failed, 9 passed, 4 deselected in 29.27s",
+    "import_error": false
+  },
+  "A2_library_check_removed": {
+    "exit_code": 1,
+    "summary": "1 failed, 10 passed, 4 deselected in 32.06s",
+    "import_error": false
+  },
+  "result_hash_of_other_bytes": {
+    "exit_code": 1,
+    "summary": "2 failed, 9 passed, 4 deselected in 31.47s",
+    "import_error": false
+  },
+  "evaluation_time_shifted": {
+    "exit_code": 1,
+    "summary": "1 failed, 10 passed, 4 deselected in 32.25s",
+    "import_error": false
+  },
+  "hash_printed_on_every_run": {
+    "exit_code": 1,
+    "summary": "1 failed, 10 passed, 4 deselected in 31.12s",
+    "import_error": false
+  },
+  "no_manifest_written": {
+    "exit_code": 1,
+    "summary": "3 failed, 8 passed, 4 deselected in 28.74s",
+    "import_error": false
+  },
+  "provenance_for_non_final": {
+    "exit_code": 1,
+    "summary": "1 failed, 10 passed, 4 deselected in 24.97s",
+    "import_error": false
+  },
+  "restored": {
+    "exit_code": 0,
+    "summary": "11 passed, 4 deselected in 25.00s",
+    "import_error": false
+  }
+}

@@ -127,8 +127,12 @@ připravený lokálně (`learner_replay_report.py` + `run_eval.sh --run-id`, tes
 a čeká na audit Codexu (`CODEX_AUDIT_C1_PROVENANCE_PRODUCER_2026-11-10.md`). **Nasadit do
 `/opt/cryptomaster_research` před prvním možným zmrazením 2026-11-16 17:47 UTC**, jinak zůstane
 skutečný C1 v nástroji NOT_VERIFIED. Bot se nerestartuje, evaluator ani kritéria se nemění.
-Hash manifestu se při zmrazení objeví v řádce REPLAY ve `verdict.log`
-(`provenance_sha256=`). Agent ho pak zapíše sem jako důvěryhodnou referenci.
+Audit (`_workspace/70_…`, provedl Claude jako autor, tedy nezávislý není) našel A1 (hash se
+mohl ztratit při selhání pozdějšího kroku běhu) a A2 (zmrazení bez run ID). Obojí je
+opraveno. Při zmrazení se do `verdict.log` hned zapíše řádka
+`PROVENANCE run=… manifest_sha256=… result_sha256=…`, ještě před markerem výsledku, a
+agent ji pak přenese sem jako důvěryhodnou referenci. **Před nasazením chybí nezávislé
+review opravy** (Codex: stejné zadání + dodatek v reportu 70).
 
 ## Vyžaduje operátora
 

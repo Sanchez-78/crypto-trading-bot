@@ -1,0 +1,11 @@
+{
+  "A1": {
+    "freezing_run_prints_hash": true,
+    "later_run_prints_hash": false,
+    "manifest_sha256_on_disk": "cfac8d78b6e276b97406cbab90ee17940f950125e56cddeca20b8a64f6fc47d0",
+    "consequence": "if the freezing run's stdout is not appended to verdict.log, no run re-emits it"
+  },
+  "A2": {
+    "run_id_without_flag": "unspecified"
+  }
+}

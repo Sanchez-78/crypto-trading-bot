@@ -6,7 +6,9 @@ Komunikace s uživatelem a reporty: **česky**. Identifikátory a kód: anglicky
 ## Aktuální zadání
 
 **Otevřené zadání (audit):** `docs/codex_prompts/CODEX_AUDIT_C1_PROVENANCE_PRODUCER_2026-11-10.md`
-→ report `_workspace/70_codex_c1_provenance_producer_audit.md`. Termín: před 2026-11-16 17:00 UTC.
+→ report 70 už existuje (audit provedl autor, A1/A2 opraveny, viz dodatek v něm). Potřeba je
+**nezávislé re-review opravy**: report `_workspace/71_codex_c1_provenance_fix_review.md`,
+důkazy `_workspace/c1_provenance_fix_review_20261111/`. Termín: před 2026-11-16 17:00 UTC.
 Od 2026-11-10 implementaci dělá Claude, Codex dostává jen zadání na audit nebo radu.
 Aktuální stav a autorita: `docs/OPERATING_STATE.md`.
 Podkladová data: `docs/codex_prompts/evidence/` (soubory jsou jen ke čtení).
