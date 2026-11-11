@@ -1,0 +1,27 @@
+{
+  "fixed": {
+    "exit": 0,
+    "summary": "93 passed, 6 warnings in 4.85s",
+    "import_error": false
+  },
+  "cache_reverted_to_server": {
+    "exit": 1,
+    "summary": "17 failed, 76 passed, 6 warnings in 4.29s",
+    "import_error": false
+  },
+  "pipeline_reverted_to_server": {
+    "exit": 1,
+    "summary": "3 failed, 90 passed, 6 warnings in 4.04s",
+    "import_error": false
+  },
+  "failure_backoff_removed": {
+    "exit": 1,
+    "summary": "13 failed, 80 passed, 6 warnings in 4.44s",
+    "import_error": false
+  },
+  "restored": {
+    "exit": 0,
+    "summary": "93 passed, 6 warnings in 3.89s",
+    "import_error": false
+  }
+}

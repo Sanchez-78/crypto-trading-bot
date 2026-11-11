@@ -5,9 +5,11 @@ Komunikace s uživatelem a reporty: **česky**. Identifikátory a kód: anglicky
 
 ## Aktuální zadání
 
-**Otevřené zadání (nezávislé review):** `docs/codex_prompts/INDEPENDENT_REVIEW_CANDLE_REFRESH_PHASE_FIX_2026-11-11.md`
-→ `_workspace/77_independent_candle_refresh_review.md` (oprava svíček + rozšíření allowlistu
-`deploy_bot_files.sh`). Nasazení až po zmrazeném C1.
+**Otevřené zadání (re-review):** `docs/codex_prompts/CODEX_REREVIEW_DEPLOY_ALLOWLIST_2026-11-11.md`
+→ `_workspace/78_codex_deploy_allowlist_rereview.md`. Hotové: review opravy svíček (Claude,
+APPROVE kód, BLOCKED nasazení) → `_workspace/77_independent_candle_refresh_review.md`; review
+allowlistu (Codex) → `_workspace/77_codex_deploy_allowlist_review.md`, opraveno v `e39a1b7`.
+Nasazení až po zmrazeném C1.
 Producer původu C1 je po review 70, 71, 73 a 75 (APPROVE) nasazen
 (`_workspace/76_c1_provenance_deploy_20261111.md`).
 Od 2026-11-10 implementaci dělá Claude, Codex dostává jen zadání na audit nebo radu.

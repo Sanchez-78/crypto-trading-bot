@@ -1,0 +1,4 @@
+    now = datetime.utcnow().isoformat()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+112 passed, 6 warnings in 10.53s
