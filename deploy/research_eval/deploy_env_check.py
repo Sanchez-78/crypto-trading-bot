@@ -50,7 +50,9 @@ def parse_kv(source: str) -> dict:
 def env_files(listing: str) -> list[tuple[Path, bool]]:
     """Parse `systemctl show -p EnvironmentFiles --value` ("path (ignore_errors=no)" items)."""
     items = [(Path(p), flag == "yes") for p, flag in ENV_FILE_ITEM.findall(listing)]
-    if listing.strip() and not items:
+    # Every character must belong to a recognised item (review 78, R2): a partially parsed
+    # listing would silently drop an EnvironmentFile from the model.
+    if ENV_FILE_ITEM.sub("", listing).strip():
         raise Refused("cannot parse EnvironmentFiles")
     return items
 

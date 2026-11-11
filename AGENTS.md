@@ -5,8 +5,8 @@ Komunikace s uživatelem a reporty: **česky**. Identifikátory a kód: anglicky
 
 ## Aktuální zadání
 
-**Otevřené zadání (re-review):** `docs/codex_prompts/CODEX_REREVIEW_DEPLOY_ALLOWLIST_2026-11-11.md`
-→ `_workspace/78_codex_deploy_allowlist_rereview.md`. Hotové: review opravy svíček (Claude,
+**Otevřené zadání (re-review č. 2):** `docs/codex_prompts/CODEX_REREVIEW2_DEPLOY_ALLOWLIST_2026-11-11.md`
+→ `_workspace/79_codex_deploy_allowlist_rereview2.md` (review 78 vedlo k opravě R1/R2). Hotové: review opravy svíček (Claude,
 APPROVE kód, BLOCKED nasazení) → `_workspace/77_independent_candle_refresh_review.md`; review
 allowlistu (Codex) → `_workspace/77_codex_deploy_allowlist_review.md`, opraveno v `e39a1b7`.
 Nasazení až po zmrazeném C1.

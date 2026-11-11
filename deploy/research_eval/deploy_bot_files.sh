@@ -2,7 +2,9 @@
 # Generic PAPER deploy of bot source files + one managed env drop-in.
 # Usage (env): LABEL=name FILES="src/services/a.py ..." VARS="K=V ..." DROPIN_NAME=zzz...-name.conf
 #              EXPECTED_SHA256="src/services/a.py=<sha256> ..."  (the reviewed bytes, one per file)
-# New files are expected flat in /tmp/$LABEL/. deploy_env_check.py must sit next to this script.
+# New files are expected flat in /tmp/$LABEL/. deploy_env_check.py and deploy_pinned.sh must
+# sit next to this script. The source is read exactly once into a private stage; validation,
+# installation and the final hash check all use the staged bytes (review 78, R1).
 #
 # Guarantees: single deploy lock; allowlisted files/keys (no TP/SL, costs, REAL or
 # execution paths); validation with the bot's own validators before any change;
@@ -13,8 +15,13 @@
 set -euo pipefail
 
 : "${LABEL:?}" "${FILES:?}" "${VARS?}" "${DROPIN_NAME:?}" "${EXPECTED_SHA256:?}"
-CHECK="$(dirname "$(readlink -f "$0")")/deploy_env_check.py"
-[ -f "$CHECK" ] || { echo "missing $CHECK" >&2; exit 2; }
+HERE="$(dirname "$(readlink -f "$0")")"
+CHECK="$HERE/deploy_env_check.py"
+for helper in "$CHECK" "$HERE/deploy_pinned.sh"; do
+  [ -f "$helper" ] || { echo "missing $helper" >&2; exit 2; }
+done
+# shellcheck source=deploy_pinned.sh
+. "$HERE/deploy_pinned.sh"
 APP=/opt/cryptomaster
 NEW=/tmp/$LABEL
 DROPIN=/etc/systemd/system/cryptomaster.service.d/$DROPIN_NAME
@@ -41,14 +48,13 @@ for kv in $VARS; do
   key="${kv%%=*}"
   case " $ALLOWED_KEYS " in *" $key "*) ;; *) echo "key not allowed: $key" >&2; exit 2 ;; esac
 done
-# Exact reviewed bytes only: every file needs a pinned hash and must match it.
-for f in $FILES; do
-  want=""
-  for entry in $EXPECTED_SHA256; do [ "${entry%%=*}" = "$f" ] && want="${entry#*=}"; done
-  [ -n "$want" ] || { echo "no EXPECTED_SHA256 for $f" >&2; exit 2; }
-  got="$(sha256sum < "$NEW/$(basename "$f")" | cut -d' ' -f1)"
-  [ "$got" = "$want" ] || { echo "hash mismatch for $f: $got != $want" >&2; exit 2; }
-done
+# Exact reviewed bytes only: copy the mutable source once into a private stage and pin there.
+# Everything after this point reads the stage, never $NEW again (review 78, R1).
+STAGE_DIR="$(mktemp -d)"; SCRATCH="$(mktemp -d)"; chmod 700 "$STAGE_DIR" "$SCRATCH"
+trap 'rm -rf "$STAGE_DIR" "$SCRATCH"' EXIT
+PINNED="$STAGE_DIR/pinned"
+stage_files "$NEW" "$PINNED" "$FILES"
+verify_pinned "$PINNED" "$FILES" "$EXPECTED_SHA256" || exit 2
 # The managed drop-in must sort after every other drop-in (byte order, as systemd does),
 # otherwise a later file could silently override the validated values.
 DROPIN_DIR=$(dirname "$DROPIN")
@@ -62,20 +68,21 @@ for f in $FILES; do cp -p "$APP/$f" "$BACKUP/$f"; done
 had_dropin=0; [ -f "$DROPIN" ] && { cp -p "$DROPIN" "$BACKUP/"; had_dropin=1; }
 ( cd "$BACKUP" && find . -type f -exec sha256sum {} + ) > "$BACKUP/PREIMAGE.sha256"
 
-# Validate the new code against the effective env before touching anything live.
-for f in $FILES; do python3 -m py_compile "$NEW/$(basename "$f")"; done
-STAGE_DIR="$(mktemp -d)"; cp -r "$APP/src" "$STAGE_DIR/src"
-for f in $FILES; do cp "$NEW/$(basename "$f")" "$STAGE_DIR/$f"; done
-cp "$CHECK" "$STAGE_DIR/deploy_env_check.py"
+# Validate the new code against the effective env before touching anything live. The tree is
+# built from the pinned stage; the sandbox may read it but writes only to SCRATCH.
+TREE="$STAGE_DIR/tree"; mkdir -p "$TREE"; cp -r "$APP/src" "$TREE/src"
+install_staged "$PINNED" "$TREE" "$FILES"
+cp "$CHECK" "$TREE/deploy_env_check.py"
 ENVLINE="$(systemctl show cryptomaster -p Environment --value)"
 ENVFILES="$(systemctl show cryptomaster -p EnvironmentFiles --value)"
 # Effective env in systemd order (Environment= then EnvironmentFile=, review 77 P1), the bot's
 # own validators, and an import of every deployed module (review 77 P2). Runs in a transient
-# sandbox where the whole filesystem except STAGE_DIR is read-only, so an import cannot write
-# runtime data; any such attempt fails the deploy before the service is touched.
-systemd-run --quiet --wait --pipe --collect -p ProtectSystem=strict -p ReadWritePaths="$STAGE_DIR" \
-  -p WorkingDirectory="$STAGE_DIR" --setenv=ENVLINE="$ENVLINE" --setenv=ENVFILES="$ENVFILES" \
-  --setenv=VARS="$VARS" --setenv=FILES="$FILES" --setenv=STAGE_DIR="$STAGE_DIR" \
+# sandbox where the whole filesystem except SCRATCH is read-only (the pinned stage included),
+# so an import cannot write runtime data or alter the staged bytes; any such attempt fails the
+# deploy before the service is touched.
+systemd-run --quiet --wait --pipe --collect -p ProtectSystem=strict -p ReadWritePaths="$SCRATCH" \
+  -p WorkingDirectory="$SCRATCH" --setenv=ENVLINE="$ENVLINE" --setenv=ENVFILES="$ENVFILES" \
+  --setenv=VARS="$VARS" --setenv=FILES="$FILES" --setenv=STAGE_DIR="$TREE" \
   /usr/bin/python3 -B - <<'PY'
 import importlib, os, sys
 sys.path.insert(0, os.environ["STAGE_DIR"])
@@ -94,7 +101,6 @@ for path in os.environ["FILES"].split():
 print("config ok", paper_learning_budget.limits(env), paper_source_learning.min_probe_net_bps(env),
       paper_source_learning.control_fraction(env))
 PY
-rm -rf "$STAGE_DIR"
 
 open=err
 for _ in $(seq 1 60); do
@@ -135,7 +141,9 @@ rollback() {
 trap 'rollback "error at line $LINENO"' ERR
 trap 'rollback "signal"' INT TERM
 
-for f in $FILES; do install -m 644 "$NEW/$(basename "$f")" "$APP/$f"; done
+verify_pinned "$PINNED" "$FILES" "$EXPECTED_SHA256" || rollback "staged bytes changed"
+install_staged "$PINNED" "$APP" "$FILES"
+verify_pinned "$APP" "$FILES" "$EXPECTED_SHA256" || rollback "installed bytes differ from EXPECTED_SHA256"
 if [ -n "$VARS" ]; then
   { echo "# Managed by deploy_bot_files.sh ($LABEL)"
     echo "[Service]"
@@ -164,9 +172,7 @@ pid="$(systemctl show cryptomaster -p MainPID --value)"
 [ -n "$pid" ] && [ "$pid" != 0 ] || rollback "no MainPID"
 python3 -B "$CHECK" post --environ "/proc/$pid/environ" --dotenv "$APP/.env" --vars "$VARS" \
   || rollback "running env check failed"
-for f in $FILES; do
-  [ "$(sha256sum < "$APP/$f")" = "$(sha256sum < "$NEW/$(basename "$f")")" ] || rollback "postimage mismatch $f"
-done
+verify_pinned "$APP" "$FILES" "$EXPECTED_SHA256" || rollback "postimage differs from EXPECTED_SHA256"
 trap - ERR INT TERM
 ( cd "$APP" && sha256sum $FILES ) > "$BACKUP/POSTIMAGE.sha256"
 log "APPLIED OK backup=$BACKUP pid=$(systemctl show cryptomaster -p MainPID --value)"

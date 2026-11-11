@@ -32,15 +32,19 @@ def test_files_exclude_execution_cost_and_mode_modules():
 
 
 def test_review_77_guards_present():
-    # P3: reviewed bytes pinned for every file.
-    assert '"${EXPECTED_SHA256:?}"' in TEXT and 'no EXPECTED_SHA256 for $f' in TEXT
-    assert 'hash mismatch for $f' in TEXT
+    # P3 + review 78 R1: pinned bytes are staged once; validation, install and postimage use them.
+    assert '"${EXPECTED_SHA256:?}"' in TEXT and '. "$HERE/deploy_pinned.sh"' in TEXT
+    assert 'stage_files "$NEW" "$PINNED" "$FILES"' in TEXT
+    assert TEXT.count('"$NEW') == 1  # the source is read exactly once (stage_files)
+    assert 'install_staged "$PINNED" "$APP" "$FILES"' in TEXT
+    assert TEXT.count('verify_pinned "$APP" "$FILES" "$EXPECTED_SHA256"') == 2  # after install + postimage
+    assert 'ReadWritePaths="$SCRATCH"' in TEXT and "trap 'rm -rf \"$STAGE_DIR\" \"$SCRATCH\"' EXIT" in TEXT
     # P1: effective env via deploy_env_check before, and the real MainPID environment after.
     assert "deploy_env_check.preflight(" in TEXT
     assert 'post --environ "/proc/$pid/environ"' in TEXT
     assert 'systemctl show cryptomaster -p Environment --value)"\nfor kv in' not in TEXT
     # P2: staged import of every deployed module inside a read-only sandbox.
-    assert "-p ProtectSystem=strict" in TEXT and 'ReadWritePaths="$STAGE_DIR"' in TEXT
+    assert "-p ProtectSystem=strict" in TEXT and 'ReadWritePaths="$STAGE_DIR"' not in TEXT
     assert 'importlib.import_module(path.removesuffix(".py").replace("/", "."))' in TEXT
     # The comment no longer claims the allowlist prevents executor changes.
     assert "no admission, cost, TP/SL or execution change" not in TEXT

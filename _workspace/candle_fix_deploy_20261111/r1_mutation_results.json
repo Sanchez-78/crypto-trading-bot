@@ -1,0 +1,34 @@
+{
+  "baseline": {
+    "exit": 0,
+    "summary": "27 passed in 2.23s"
+  },
+  "R1_install_from_source_again": {
+    "exit": 1,
+    "summary": "1 failed, 26 passed in 2.31s"
+  },
+  "R1_postimage_vs_source": {
+    "exit": 1,
+    "summary": "1 failed, 26 passed in 2.22s"
+  },
+  "R1_verify_always_ok": {
+    "exit": 1,
+    "summary": "2 failed, 25 passed in 2.31s"
+  },
+  "R1_install_reads_source": {
+    "exit": 1,
+    "summary": "1 failed, 26 passed in 2.25s"
+  },
+  "R1_sandbox_writes_stage": {
+    "exit": 1,
+    "summary": "1 failed, 26 passed in 2.28s"
+  },
+  "R2_partial_parse_accepted": {
+    "exit": 1,
+    "summary": "1 failed, 26 passed in 2.18s"
+  },
+  "restored": {
+    "exit": 0,
+    "summary": "27 passed in 2.16s"
+  }
+}

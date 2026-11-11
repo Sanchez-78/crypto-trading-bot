@@ -74,6 +74,11 @@ def test_env_files_parsing(tmp_path):
         dec.preflight(BASE, f"{missing} (ignore_errors=no)", "", "")
     with pytest.raises(dec.Refused, match="parse"):
         dec.preflight(BASE, "garbage-without-flags", "", "")
+    # review 78 R2: a recognised item followed by an unparsed remainder is refused too
+    with pytest.raises(dec.Refused, match="parse"):
+        dec.env_files(f"{missing} (ignore_errors=yes) GARBAGE")
+    two = dec.env_files(f"{missing} (ignore_errors=yes) {missing}.b (ignore_errors=no)")
+    assert [flag for _, flag in two] == [True, False]
 
 
 def test_postcheck_reads_the_real_process_environment():
