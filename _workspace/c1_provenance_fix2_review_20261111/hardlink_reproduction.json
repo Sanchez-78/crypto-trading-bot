@@ -1,0 +1,11 @@
+{
+  "different_resolved_paths": true,
+  "same_existing_file": true,
+  "result_exists": true,
+  "manifest_exists": true,
+  "provenance_line_in_log": false,
+  "log_sha256": "1ccd6dd6780694910533b02ee5d96a1cbc2a58c62cf1752e6de7098cde929c3f",
+  "result_sha256": "1ccd6dd6780694910533b02ee5d96a1cbc2a58c62cf1752e6de7098cde929c3f",
+  "log_equals_result": true,
+  "log_prefix": "{\n  \"scored_after_ms\": 123,\n  \"verdict\": \"CONTRARIAN_NOT_SHOWN\"\n}"
+}

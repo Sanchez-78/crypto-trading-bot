@@ -1,0 +1,32 @@
+{
+  "baseline": {
+    "exit_code": 0,
+    "summary": "14 passed, 1 skipped, 27 deselected in 23.64s",
+    "import_error": false
+  },
+  "H_samefile_check_removed": {
+    "exit_code": 1,
+    "summary": "5 failed, 9 passed, 1 skipped, 27 deselected in 23.37s",
+    "import_error": false
+  },
+  "H_identity_error_ignored": {
+    "exit_code": 1,
+    "summary": "1 failed, 13 passed, 1 skipped, 27 deselected in 22.87s",
+    "import_error": false
+  },
+  "H_write_through_existing_tmp": {
+    "exit_code": 1,
+    "summary": "1 failed, 13 passed, 1 skipped, 27 deselected in 23.33s",
+    "import_error": false
+  },
+  "B1_alias_check_removed": {
+    "exit_code": 1,
+    "summary": "6 failed, 8 passed, 1 skipped, 27 deselected in 23.80s",
+    "import_error": false
+  },
+  "restored": {
+    "exit_code": 0,
+    "summary": "14 passed, 1 skipped, 27 deselected in 23.46s",
+    "import_error": false
+  }
+}

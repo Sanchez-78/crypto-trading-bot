@@ -273,6 +273,68 @@ def test_b1_cli_rejects_alias_before_evaluation(tmp_path, monkeypatch):
     assert not result.exists() and not (tmp_path / "o").exists()
 
 
+def _hardlink(src, dst):
+    import os
+    try:
+        os.link(src, dst)
+    except (OSError, NotImplementedError):
+        pytest.skip("hardlinks not supported on this filesystem")
+
+
+LOG_TEXT = "2026-11-10T05:47:18Z COHORT_BLIND fresh_closed=204\n"
+
+
+@pytest.mark.parametrize("target", ["prereg_result.json.tmp", "prereg_provenance.json.tmp",
+                                    "prereg_provenance.json"])
+def test_b1_hardlinked_log_rejected_by_library(tmp_path, monkeypatch, target):
+    data = rows(2600)
+    trades = _final_trades(data, monkeypatch)
+    result = tmp_path / "prereg_result.json"
+    log = tmp_path / "verdict.log"
+    log.write_text(LOG_TEXT, encoding="utf-8")
+    _hardlink(log, tmp_path / target)
+    with pytest.raises(ValueError, match="alias"):
+        cli.frozen_preregistered(trades, round(data[999]["entry_ts"] * 1000), result, "R1", log)
+    assert log.read_text(encoding="utf-8") == LOG_TEXT and not result.exists()
+
+
+def test_b1_hardlinked_log_rejected_by_cli_before_evaluation(tmp_path, monkeypatch):
+    data = rows(1200)
+    result = tmp_path / "prereg_result.json"
+    log = tmp_path / "verdict.log"
+    log.write_text(LOG_TEXT, encoding="utf-8")
+    _hardlink(log, tmp_path / "prereg_result.json.tmp")
+    monkeypatch.setattr(cli, "evaluate_preregistered",
+                        lambda *a, **k: pytest.fail("evaluation must not run with invalid freeze inputs"))
+    with pytest.raises(SystemExit):
+        cli.main(["--json", str(write(tmp_path, data)), "--prereg-after", str(data[999]["entry_ts"]),
+                  "--prereg-result", str(result), "--run-id", "R1", "--provenance-log", str(log),
+                  "--out", str(tmp_path / "o")])
+    assert log.read_text(encoding="utf-8") == LOG_TEXT and not result.exists()
+
+
+def test_b1_write_never_goes_through_a_stale_hardlinked_tmp(tmp_path):
+    log = tmp_path / "verdict.log"
+    log.write_text(LOG_TEXT, encoding="utf-8")
+    _hardlink(log, tmp_path / "x.json.tmp")  # bypasses validation on purpose (defence in depth)
+    cli._write_frozen(tmp_path / "x.json", b'{"v": 1}')
+    assert log.read_text(encoding="utf-8") == LOG_TEXT
+    assert (tmp_path / "x.json").read_bytes() == b'{"v": 1}'
+
+
+def test_b1_identity_check_error_fails_closed(tmp_path, monkeypatch):
+    log = tmp_path / "verdict.log"
+    log.write_text(LOG_TEXT, encoding="utf-8")
+    (tmp_path / "prereg_provenance.json").write_text("{}", encoding="utf-8")
+
+    def boom(a, b):
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(cli.os.path, "samefile", boom)
+    with pytest.raises(ValueError, match="distinct file"):
+        cli.validate_freeze_inputs(tmp_path / "prereg_result.json", "R1", log)
+
+
 @pytest.mark.parametrize("bad", ["R1\n2026-11-16T00:00:00Z PROVENANCE run=X", "R 1", "R\t1", "", "-lead",
                                  "x" * 65, "R1\r", "ü"])
 def test_b2_run_id_must_be_one_token(tmp_path, monkeypatch, bad):

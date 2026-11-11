@@ -1,5 +1,23 @@
 # Oprava B1–B3 produceru původu C1 (2026-11-11)
 
+> **Dodatek: hardlink (review 73, P1), 2026-11-11.** `resolve()` hardlink nepozná a zápis
+> přes `.tmp` v režimu `wb` zkrátil sdílený inode logu. Opravy jsou dvě nezávislé:
+> 1. `validate_freeze_inputs` navíc porovná `os.path.samefile` logu se všemi existujícími
+>    soubory z chráněné množiny (výsledek, manifest, oba `.tmp`). Chybějící soubor se
+>    nepočítá jako shoda, jakákoli jiná chyba zjištění identity skončí chybou (fail-closed).
+> 2. `_write_frozen` přes existující jméno nikdy nezapisuje: `.tmp` odstraní a vytvoří nový
+>    inode exkluzivně (`xb`). Případný hardlink se tím odpojí, log zůstane netknutý a
+>    ochranu nejde obejít ani souběhem mezi kontrolou a zápisem.
+> Testy: hardlink na `prereg_result.json.tmp`, `prereg_provenance.json.tmp` a
+> `prereg_provenance.json` v knihovně (log beze změny, výsledek nevznikne), v CLI před
+> evaluací, zápis přes zastaralý hardlinkovaný `.tmp` (log netknutý) a chyba `samefile`
+> (fail-closed). Na Windows NTFS hardlinkové testy **skutečně běží**, přeskočen je jen
+> symlink. Celkem **177 PASS, 1 SKIP**, runtime data beze změny. Mutace
+> `c1_provenance_fix3_20261111/`: **4/4 zachyceno** (bez samefile, ignorovaná chyba
+> identity, zápis přes existující `.tmp`, bez kontroly cest). Reproduktor
+> `hardlink_probe.py` z review 73 (spuštěný jen v kopii) teď končí `ValueError` v
+> `validate_freeze_inputs`, ještě před zápisem.
+
 Podklad: nezávislé review `_workspace/71_codex_c1_provenance_fix_review.md` (CHANGES_REQUIRED).
 Implementoval Claude. Nic nenasazeno, server beze změny.
 

@@ -126,7 +126,11 @@ def _fsync_dir(directory: Path) -> None:
 def _write_frozen(path: Path, payload: bytes) -> None:
     """Content fsync before the atomic rename, directory fsync after it (review 71, B3)."""
     tmp = path.with_name(path.name + ".tmp")
-    with open(tmp, "wb") as handle:
+    # Never write through an existing name: a stale .tmp may be a hardlink to another file
+    # (e.g. the provenance log) and "wb" would truncate that inode (review 73). Unlink the
+    # name, then create a fresh inode exclusively.
+    tmp.unlink(missing_ok=True)
+    with open(tmp, "xb") as handle:
         handle.write(payload)
         handle.flush()
         os.fsync(handle.fileno())
@@ -159,6 +163,18 @@ def validate_freeze_inputs(path: Path, run_id: str | None, provenance_log: Path 
                  for p in (base, base.with_name(base.name + ".tmp"))}
     if log in protected:
         raise ValueError("provenance_log must not alias the result, the manifest or their temp files")
+    # Different resolved paths can still be one inode (hardlink, review 73): compare the
+    # identity of every existing pair. Only a missing file is a non-match; any other
+    # error while checking identity fails closed.
+    for target in protected:
+        try:
+            same = os.path.samefile(log, target)
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            raise ValueError("cannot verify that provenance_log is a distinct file") from exc
+        if same:
+            raise ValueError("provenance_log must not alias the result, the manifest or their temp files")
 
 
 def frozen_preregistered(trades: list[Trade], cutoff_ms: int, path: Path | None,

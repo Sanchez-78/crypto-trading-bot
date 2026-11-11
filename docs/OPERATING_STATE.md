@@ -133,7 +133,9 @@ opraveno. Při zmrazení se do `verdict.log` hned zapíše řádka
 `PROVENANCE run=… manifest_sha256=… result_sha256=…`, ještě před markerem výsledku, a
 agent ji pak přenese sem jako důvěryhodnou referenci. Nezávislé review 71 (Codex) našlo
 B1–B3 (alias cesty logu a výsledku, falešná řádka přes run ID, chybějící `fsync`), opraveno
-v reportu 72. **Před nasazením chybí nezávislé re-review** (`CODEX_REVIEW_C1_PROVENANCE_FIX2_2026-11-11.md`).
+v reportu 72. Review 73 našlo alias přes hardlink, opraveno (`samefile` a zápis přes
+nový inode, dodatek reportu 72). **Před nasazením chybí nezávislé re-review**
+(`CODEX_REVIEW_C1_PROVENANCE_FIX3_2026-11-11.md`).
 Do `OPERATING_STATE` přenášet jen řádku `PROVENANCE`, jejíž oba hashe odpovídají existujícímu
 výsledku i manifestu.
 
