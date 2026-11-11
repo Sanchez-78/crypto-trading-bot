@@ -1,0 +1,3 @@
+# Files executed on the Linux server must keep LF regardless of core.autocrlf on Windows.
+*.sh text eol=lf
+deploy/research_eval/*.py text eol=lf
