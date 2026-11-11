@@ -131,8 +131,11 @@ Audit (`_workspace/70_…`, provedl Claude jako autor, tedy nezávislý není) n
 mohl ztratit při selhání pozdějšího kroku běhu) a A2 (zmrazení bez run ID). Obojí je
 opraveno. Při zmrazení se do `verdict.log` hned zapíše řádka
 `PROVENANCE run=… manifest_sha256=… result_sha256=…`, ještě před markerem výsledku, a
-agent ji pak přenese sem jako důvěryhodnou referenci. **Před nasazením chybí nezávislé
-review opravy** (Codex: stejné zadání + dodatek v reportu 70).
+agent ji pak přenese sem jako důvěryhodnou referenci. Nezávislé review 71 (Codex) našlo
+B1–B3 (alias cesty logu a výsledku, falešná řádka přes run ID, chybějící `fsync`), opraveno
+v reportu 72. **Před nasazením chybí nezávislé re-review** (`CODEX_REVIEW_C1_PROVENANCE_FIX2_2026-11-11.md`).
+Do `OPERATING_STATE` přenášet jen řádku `PROVENANCE`, jejíž oba hashe odpovídají existujícímu
+výsledku i manifestu.
 
 ## Vyžaduje operátora
 

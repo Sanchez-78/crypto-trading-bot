@@ -1,0 +1,31 @@
+{
+  "normal_freeze_and_repeat": "PASS: exact hashes; one line; unchanged frozen result",
+  "pending_library_without_provenance_args": "PASS",
+  "crash_manifest_and_retry": {
+    "orphan_lines": 0,
+    "final_lines": 1,
+    "latest_run_matches_frozen": true
+  },
+  "crash_append_and_retry": {
+    "orphan_lines": 0,
+    "final_lines": 1,
+    "latest_run_matches_frozen": true
+  },
+  "crash_result_and_retry": {
+    "orphan_lines": 1,
+    "final_lines": 2,
+    "latest_run_matches_frozen": true
+  },
+  "missing_run_id": "PASS: no result/log",
+  "missing_provenance_log": "PASS: no result/log",
+  "unvalidated_run_id_newline": {
+    "line_count": 2,
+    "parsed_provenance_records": 2,
+    "note": "manual caller can insert a second apparently complete reference"
+  },
+  "log_aliased_to_result": {
+    "result_exists": true,
+    "logged_reference_lines": 0,
+    "result_is_json": "CONTRARIAN_NOT_SHOWN"
+  }
+}

@@ -1,0 +1,72 @@
+{
+  "baseline": {
+    "exit_code": 0,
+    "summary": "31 passed, 1 skipped, 4 deselected in 70.51s (0:01:10)",
+    "import_error": false
+  },
+  "B1_alias_check_removed": {
+    "exit_code": 1,
+    "summary": "6 failed, 25 passed, 1 skipped, 4 deselected in 71.98s (0:01:11)",
+    "import_error": false
+  },
+  "B1_tmp_not_protected": {
+    "exit_code": 1,
+    "summary": "2 failed, 29 passed, 1 skipped, 4 deselected in 70.09s (0:01:10)",
+    "import_error": false
+  },
+  "B1_manifest_not_protected": {
+    "exit_code": 1,
+    "summary": "2 failed, 29 passed, 1 skipped, 4 deselected in 69.34s (0:01:09)",
+    "import_error": false
+  },
+  "B1_log_not_resolved": {
+    "exit_code": 1,
+    "summary": "1 failed, 30 passed, 1 skipped, 4 deselected in 64.71s (0:01:04)",
+    "import_error": false
+  },
+  "B1_cli_check_removed": {
+    "exit_code": 1,
+    "summary": "4 failed, 27 passed, 1 skipped, 4 deselected in 60.74s (0:01:00)",
+    "import_error": false
+  },
+  "B2_run_id_unchecked": {
+    "exit_code": 1,
+    "summary": "8 failed, 23 passed, 1 skipped, 4 deselected in 59.41s",
+    "import_error": false
+  },
+  "B2_run_id_pattern_too_wide": {
+    "exit_code": 1,
+    "summary": "2 failed, 29 passed, 1 skipped, 4 deselected in 59.99s",
+    "import_error": false
+  },
+  "B3_no_content_fsync": {
+    "exit_code": 1,
+    "summary": "1 failed, 30 passed, 1 skipped, 4 deselected in 60.98s (0:01:00)",
+    "import_error": false
+  },
+  "B3_no_dir_fsync_after_rename": {
+    "exit_code": 1,
+    "summary": "1 failed, 30 passed, 1 skipped, 4 deselected in 60.92s (0:01:00)",
+    "import_error": false
+  },
+  "B3_no_dir_fsync_for_new_log": {
+    "exit_code": 1,
+    "summary": "1 failed, 30 passed, 1 skipped, 4 deselected in 57.63s",
+    "import_error": false
+  },
+  "A1_log_after_marker": {
+    "exit_code": 1,
+    "summary": "1 failed, 30 passed, 1 skipped, 4 deselected in 57.38s",
+    "import_error": false
+  },
+  "A2_missing_args_accepted": {
+    "exit_code": 1,
+    "summary": "3 failed, 28 passed, 1 skipped, 4 deselected in 57.03s",
+    "import_error": false
+  },
+  "restored": {
+    "exit_code": 0,
+    "summary": "31 passed, 1 skipped, 4 deselected in 57.19s",
+    "import_error": false
+  }
+}

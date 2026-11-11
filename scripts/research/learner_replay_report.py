@@ -15,6 +15,7 @@ import json
 import math
 import os
 from pathlib import Path
+import re
 import sqlite3
 import time
 from typing import Sequence
@@ -106,20 +107,58 @@ def provenance_path(result_path: Path) -> Path:
     return result_path.with_name("prereg_provenance.json")
 
 
+# One log token: no whitespace or control characters, so a run ID cannot forge a second
+# PROVENANCE line (review 71, B2). run_eval.sh uses %Y%m%dT%H%M%SZ.
+RUN_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,63}")
+
+
+def _fsync_dir(directory: Path) -> None:
+    """Persist a rename/creation in the directory (POSIX); Windows cannot open directories."""
+    if os.name == "nt":
+        return
+    fd = os.open(directory, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
 def _write_frozen(path: Path, payload: bytes) -> None:
+    """Content fsync before the atomic rename, directory fsync after it (review 71, B3)."""
     tmp = path.with_name(path.name + ".tmp")
-    tmp.write_bytes(payload)
+    with open(tmp, "wb") as handle:
+        handle.write(payload)
+        handle.flush()
+        os.fsync(handle.fileno())
     tmp.replace(path)
     path.chmod(0o444)
+    _fsync_dir(path.parent)
 
 
 def _append_reference(log: Path, run_id: str, manifest_sha: str, result_sha: str) -> None:
     """Append the trusted reference and force it to disk (audit 70, A1)."""
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    created = not log.exists()
     with open(log, "a", encoding="utf-8") as handle:
         handle.write(f"{stamp} PROVENANCE run={run_id} manifest_sha256={manifest_sha} result_sha256={result_sha}\n")
         handle.flush()
         os.fsync(handle.fileno())
+    if created:
+        _fsync_dir(log.parent)
+
+
+def validate_freeze_inputs(path: Path, run_id: str | None, provenance_log: Path | None) -> None:
+    """Fail closed before any write (audit 70 A2, review 71 B1/B2)."""
+    if not run_id or provenance_log is None:
+        raise ValueError("freezing requires run_id and provenance_log")
+    if not RUN_ID_PATTERN.fullmatch(run_id):
+        raise ValueError("run_id must be one log token [A-Za-z0-9._:-], max 64 chars")
+    # resolve() follows symlinks and makes relative paths absolute; the targets need not exist.
+    log = provenance_log.resolve()
+    protected = {p.resolve() for base in (path, provenance_path(path))
+                 for p in (base, base.with_name(base.name + ".tmp"))}
+    if log in protected:
+        raise ValueError("provenance_log must not alias the result, the manifest or their temp files")
 
 
 def frozen_preregistered(trades: list[Trade], cutoff_ms: int, path: Path | None,
@@ -138,8 +177,7 @@ def frozen_preregistered(trades: list[Trade], cutoff_ms: int, path: Path | None,
     result = evaluate_preregistered(trades, scored_after_ms=cutoff_ms, now_ms=now_ms)
     # Only conclusive verdicts are frozen; INSUFFICIENT_DATA stays recomputable.
     if path is not None and result["verdict"] in {"CONTRARIAN_CONFIRMED", "CONTRARIAN_REFUTED", "CONTRARIAN_NOT_SHOWN"}:
-        if not run_id or provenance_log is None:
-            raise ValueError("freezing requires run_id and provenance_log")
+        validate_freeze_inputs(path, run_id, provenance_log)
         payload = json.dumps(result, indent=2, sort_keys=True).encode("utf-8")
         result_sha = hashlib.sha256(payload).hexdigest()
         manifest = json.dumps({
@@ -173,8 +211,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                         help="append-only log (verdict.log) receiving the PROVENANCE reference at freeze")
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args(argv)
-    if args.prereg_result is not None and (not args.run_id or args.provenance_log is None):
-        parser.error("--prereg-result requires --run-id and --provenance-log")
+    if args.prereg_result is not None:
+        try:  # same checks as the library, before any evaluation or write
+            validate_freeze_inputs(args.prereg_result, args.run_id, args.provenance_log)
+        except ValueError as exc:
+            parser.error(f"--prereg-result: {exc}")
     trades = [t for t in (to_trade(r) for r in load(args.db, args.json_path, args.since)) if t]
     provenance_sha = None
     if args.prereg_after is None:

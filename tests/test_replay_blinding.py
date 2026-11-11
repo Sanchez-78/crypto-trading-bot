@@ -224,6 +224,100 @@ def test_a2_library_freeze_fails_closed_without_run_id(tmp_path, monkeypatch):
     assert not cli.provenance_path(tmp_path / "prereg_result.json").exists()
 
 
+def _final_trades(data, monkeypatch):
+    monkeypatch.setattr(cli.time, "time", lambda: data[-1]["entry_ts"] + 30 * 86400)
+    return [t for t in (cli.to_trade(r) for r in data) if t]
+
+
+@pytest.mark.parametrize("alias", ["result", "manifest", "result_tmp", "manifest_tmp", "relative_result"])
+def test_b1_log_aliasing_result_or_manifest_rejected_before_any_write(tmp_path, monkeypatch, alias):
+    data = rows(2600)
+    trades = _final_trades(data, monkeypatch)
+    result = tmp_path / "prereg_result.json"
+    manifest = cli.provenance_path(result)
+    log = {"result": result, "manifest": manifest, "result_tmp": tmp_path / "prereg_result.json.tmp",
+           "manifest_tmp": tmp_path / "prereg_provenance.json.tmp"}.get(alias)
+    if alias == "relative_result":
+        monkeypatch.chdir(tmp_path)
+        log = cli.Path("sub") / ".." / "prereg_result.json"
+        (tmp_path / "sub").mkdir()
+    with pytest.raises(ValueError, match="alias"):
+        cli.frozen_preregistered(trades, round(data[999]["entry_ts"] * 1000), result, "R1", log)
+    assert not result.exists() and not manifest.exists()
+    assert not any(tmp_path.glob("*.tmp"))
+
+
+def test_b1_symlinked_log_alias_rejected(tmp_path, monkeypatch):
+    data = rows(2600)
+    trades = _final_trades(data, monkeypatch)
+    result = tmp_path / "prereg_result.json"
+    link = tmp_path / "verdict.log"
+    try:
+        link.symlink_to(result)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks not permitted on this host")
+    with pytest.raises(ValueError, match="alias"):
+        cli.frozen_preregistered(trades, round(data[999]["entry_ts"] * 1000), result, "R1", link)
+    assert not result.exists()
+
+
+def test_b1_cli_rejects_alias_before_evaluation(tmp_path, monkeypatch):
+    data = rows(1200)
+    result = tmp_path / "prereg_result.json"
+    monkeypatch.setattr(cli, "evaluate_preregistered",
+                        lambda *a, **k: pytest.fail("evaluation must not run with invalid freeze inputs"))
+    with pytest.raises(SystemExit):
+        cli.main(["--json", str(write(tmp_path, data)), "--prereg-after", str(data[999]["entry_ts"]),
+                  "--prereg-result", str(result), "--run-id", "R1", "--provenance-log", str(result),
+                  "--out", str(tmp_path / "o")])
+    assert not result.exists() and not (tmp_path / "o").exists()
+
+
+@pytest.mark.parametrize("bad", ["R1\n2026-11-16T00:00:00Z PROVENANCE run=X", "R 1", "R\t1", "", "-lead",
+                                 "x" * 65, "R1\r", "ü"])
+def test_b2_run_id_must_be_one_token(tmp_path, monkeypatch, bad):
+    data = rows(2600)
+    trades = _final_trades(data, monkeypatch)
+    result = tmp_path / "prereg_result.json"
+    with pytest.raises(ValueError):
+        cli.frozen_preregistered(trades, round(data[999]["entry_ts"] * 1000), result, bad, tmp_path / "verdict.log")
+    assert not result.exists() and not (tmp_path / "verdict.log").exists()
+
+
+def test_b2_cli_rejects_bad_run_id(tmp_path):
+    data = rows(1200)
+    with pytest.raises(SystemExit):
+        cli.main(["--json", str(write(tmp_path, data)), "--prereg-after", str(data[999]["entry_ts"]),
+                  "--prereg-result", str(tmp_path / "prereg_result.json"), "--run-id", "a\nb",
+                  "--provenance-log", str(tmp_path / "verdict.log"), "--out", str(tmp_path / "o")])
+
+
+@pytest.mark.parametrize("good", ["20261116T174700Z", "manual-1", "a.b:c_d"])
+def test_b2_valid_run_ids_accepted(good):
+    assert cli.RUN_ID_PATTERN.fullmatch(good)
+
+
+def test_b3_content_synced_before_rename_and_directory_after(tmp_path, monkeypatch):
+    events = []
+    real_fsync, real_replace = cli.os.fsync, cli.Path.replace
+    monkeypatch.setattr(cli.os, "fsync", lambda fd: (events.append("fsync"), real_fsync(fd))[1])
+    monkeypatch.setattr(cli.Path, "replace", lambda self, target: (events.append("replace"), real_replace(self, target))[1])
+    dirs = []
+    monkeypatch.setattr(cli, "_fsync_dir", lambda d: (dirs.append(d), events.append("dir"))[0])
+    cli._write_frozen(tmp_path / "x.json", b"{}")
+    assert events == ["fsync", "replace", "dir"] and dirs == [tmp_path]
+    assert (tmp_path / "x.json").read_bytes() == b"{}"
+
+
+def test_b3_new_log_directory_synced(tmp_path, monkeypatch):
+    dirs = []
+    monkeypatch.setattr(cli, "_fsync_dir", lambda d: dirs.append(d))
+    cli._append_reference(tmp_path / "verdict.log", "R1", "a" * 64, "b" * 64)
+    cli._append_reference(tmp_path / "verdict.log", "R2", "c" * 64, "d" * 64)
+    assert dirs == [tmp_path]  # only when the log is created
+    assert len((tmp_path / "verdict.log").read_text(encoding="utf-8").splitlines()) == 2
+
+
 def _review_report(tmp_path):
     from tests import test_cost_and_learning_review as fixtures
     path = tmp_path / "futures.json"
