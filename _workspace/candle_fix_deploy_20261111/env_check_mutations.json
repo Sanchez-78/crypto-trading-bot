@@ -1,0 +1,56 @@
+{
+  "baseline": [
+    0,
+    [
+      "18 passed in 0.08s"
+    ]
+  ],
+  "no_clash_check": [
+    1,
+    [
+      "5 failed, 13 passed in 0.19s"
+    ]
+  ],
+  "envfile_before_environment": [
+    1,
+    [
+      "1 failed, 17 passed in 0.16s"
+    ]
+  ],
+  "envfile_not_applied": [
+    1,
+    [
+      "1 failed, 17 passed in 0.16s"
+    ]
+  ],
+  "dotenv_overrides": [
+    1,
+    [
+      "1 failed, 17 passed in 0.17s"
+    ]
+  ],
+  "post_ignores_process": [
+    1,
+    [
+      "1 failed, 17 passed in 0.15s"
+    ]
+  ],
+  "loose_bool": [
+    1,
+    [
+      "4 failed, 14 passed in 0.17s"
+    ]
+  ],
+  "missing_envfile_ignored": [
+    1,
+    [
+      "1 failed, 17 passed in 0.15s"
+    ]
+  ],
+  "restored": [
+    0,
+    [
+      "18 passed in 0.07s"
+    ]
+  ]
+}

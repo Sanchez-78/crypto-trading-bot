@@ -31,5 +31,16 @@ def test_files_exclude_execution_cost_and_mode_modules():
         assert not re.search(r"(executor|execution|cost_model|runtime_mode|risk|signal_router)", path), path
 
 
-def test_phase_refresh_flag_value_is_validated_strictly():
-    assert 'env.get("PAPER_COMPLETED_CANDLE_PHASE_REFRESH_ENABLED", "false") in {"true", "false"}' in TEXT
+def test_review_77_guards_present():
+    # P3: reviewed bytes pinned for every file.
+    assert '"${EXPECTED_SHA256:?}"' in TEXT and 'no EXPECTED_SHA256 for $f' in TEXT
+    assert 'hash mismatch for $f' in TEXT
+    # P1: effective env via deploy_env_check before, and the real MainPID environment after.
+    assert "deploy_env_check.preflight(" in TEXT
+    assert 'post --environ "/proc/$pid/environ"' in TEXT
+    assert 'systemctl show cryptomaster -p Environment --value)"\nfor kv in' not in TEXT
+    # P2: staged import of every deployed module inside a read-only sandbox.
+    assert "-p ProtectSystem=strict" in TEXT and 'ReadWritePaths="$STAGE_DIR"' in TEXT
+    assert 'importlib.import_module(path.removesuffix(".py").replace("/", "."))' in TEXT
+    # The comment no longer claims the allowlist prevents executor changes.
+    assert "no admission, cost, TP/SL or execution change" not in TEXT

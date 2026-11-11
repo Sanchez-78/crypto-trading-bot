@@ -1,7 +1,8 @@
 #!/bin/bash
 # Generic PAPER deploy of bot source files + one managed env drop-in.
 # Usage (env): LABEL=name FILES="src/services/a.py ..." VARS="K=V ..." DROPIN_NAME=zzz...-name.conf
-# New files are expected flat in /tmp/$LABEL/.
+#              EXPECTED_SHA256="src/services/a.py=<sha256> ..."  (the reviewed bytes, one per file)
+# New files are expected flat in /tmp/$LABEL/. deploy_env_check.py must sit next to this script.
 #
 # Guarantees: single deploy lock; allowlisted files/keys (no TP/SL, costs, REAL or
 # execution paths); validation with the bot's own validators before any change;
@@ -11,7 +12,9 @@
 # between the check and the restart is a few seconds and positions are persisted.
 set -euo pipefail
 
-: "${LABEL:?}" "${FILES:?}" "${VARS?}" "${DROPIN_NAME:?}"
+: "${LABEL:?}" "${FILES:?}" "${VARS?}" "${DROPIN_NAME:?}" "${EXPECTED_SHA256:?}"
+CHECK="$(dirname "$(readlink -f "$0")")/deploy_env_check.py"
+[ -f "$CHECK" ] || { echo "missing $CHECK" >&2; exit 2; }
 APP=/opt/cryptomaster
 NEW=/tmp/$LABEL
 DROPIN=/etc/systemd/system/cryptomaster.service.d/$DROPIN_NAME
@@ -26,8 +29,9 @@ flock -n 9 || { echo "another deploy is running" >&2; exit 4; }
 
 # Positive allowlists (enforced). Extending them is a reviewed change to this script.
 # 2026-11-11: candle_cache_v1.py + p0_8_plus_live_pipeline.py and the phase-refresh flag
-# (completed-candle refresh fix, _workspace/63_codex_candle_refresh_fix.md); data path only,
-# no admission, cost, TP/SL or execution change.
+# (completed-candle refresh fix, _workspace/63_codex_candle_refresh_fix.md). The allowlist
+# guards paths only, not behaviour: p0_8_plus_live_pipeline.py itself calls the paper
+# executor, so every deploy pins the exact reviewed bytes via EXPECTED_SHA256 (review 77).
 ALLOWED_FILES="src/services/paper_source_learning.py src/services/paper_learning_budget.py src/services/candle_cache_v1.py src/services/p0_8_plus_live_pipeline.py"
 ALLOWED_KEYS="PAPER_PROBE_HOURLY_ENTRIES PAPER_PROBE_DAILY_ENTRIES PAPER_PROBE_SYMBOL_COOLDOWN_S PAPER_PROBE_MIN_NET_BPS PAPER_SYMBOL_BLACKLIST PAPER_LEARNING_CONTROL_FRACTION PAPER_COST_EXPLORATION_ENABLED PAPER_ADAPTIVE_EXPLORATION_ENABLED PAPER_COMPLETED_CANDLE_LEARNING_ENABLED PAPER_COMPLETED_CANDLE_PHASE_REFRESH_ENABLED"
 for f in $FILES; do
@@ -36,6 +40,14 @@ done
 for kv in $VARS; do
   key="${kv%%=*}"
   case " $ALLOWED_KEYS " in *" $key "*) ;; *) echo "key not allowed: $key" >&2; exit 2 ;; esac
+done
+# Exact reviewed bytes only: every file needs a pinned hash and must match it.
+for f in $FILES; do
+  want=""
+  for entry in $EXPECTED_SHA256; do [ "${entry%%=*}" = "$f" ] && want="${entry#*=}"; done
+  [ -n "$want" ] || { echo "no EXPECTED_SHA256 for $f" >&2; exit 2; }
+  got="$(sha256sum < "$NEW/$(basename "$f")" | cut -d' ' -f1)"
+  [ "$got" = "$want" ] || { echo "hash mismatch for $f: $got != $want" >&2; exit 2; }
 done
 # The managed drop-in must sort after every other drop-in (byte order, as systemd does),
 # otherwise a later file could silently override the validated values.
@@ -54,27 +66,31 @@ had_dropin=0; [ -f "$DROPIN" ] && { cp -p "$DROPIN" "$BACKUP/"; had_dropin=1; }
 for f in $FILES; do python3 -m py_compile "$NEW/$(basename "$f")"; done
 STAGE_DIR="$(mktemp -d)"; cp -r "$APP/src" "$STAGE_DIR/src"
 for f in $FILES; do cp "$NEW/$(basename "$f")" "$STAGE_DIR/$f"; done
-ENVLINE="$(systemctl show cryptomaster -p Environment --value)" VARS="$VARS" STAGE_DIR="$STAGE_DIR" \
-python3 -B - <<'PY'
-import os, shlex, sys
-env = {}
-for line in open("/opt/cryptomaster/.env", encoding="utf-8"):
-    line = line.strip()
-    if line and not line.startswith("#") and "=" in line:
-        key, value = line.removeprefix("export ").split("=", 1)
-        env[key.strip()] = value.strip().strip("'\"")
-for source in (os.environ["ENVLINE"], os.environ["VARS"]):
-    env.update(kv.split("=", 1) for kv in shlex.split(source) if "=" in kv)
-assert env.get("TRADING_MODE") == "paper_train"
-for key in ("ENABLE_REAL_ORDERS", "LIVE_TRADING_CONFIRMED"):
-    assert env.get(key, "false").lower() in {"false", "0", "no", "off"}, key
-# candle_cache_v1 silently treats any unknown value as "off"; a typo must fail the deploy.
-assert env.get("PAPER_COMPLETED_CANDLE_PHASE_REFRESH_ENABLED", "false") in {"true", "false"}, \
-    "PAPER_COMPLETED_CANDLE_PHASE_REFRESH_ENABLED must be true or false"
+cp "$CHECK" "$STAGE_DIR/deploy_env_check.py"
+ENVLINE="$(systemctl show cryptomaster -p Environment --value)"
+ENVFILES="$(systemctl show cryptomaster -p EnvironmentFiles --value)"
+# Effective env in systemd order (Environment= then EnvironmentFile=, review 77 P1), the bot's
+# own validators, and an import of every deployed module (review 77 P2). Runs in a transient
+# sandbox where the whole filesystem except STAGE_DIR is read-only, so an import cannot write
+# runtime data; any such attempt fails the deploy before the service is touched.
+systemd-run --quiet --wait --pipe --collect -p ProtectSystem=strict -p ReadWritePaths="$STAGE_DIR" \
+  -p WorkingDirectory="$STAGE_DIR" --setenv=ENVLINE="$ENVLINE" --setenv=ENVFILES="$ENVFILES" \
+  --setenv=VARS="$VARS" --setenv=FILES="$FILES" --setenv=STAGE_DIR="$STAGE_DIR" \
+  /usr/bin/python3 -B - <<'PY'
+import importlib, os, sys
 sys.path.insert(0, os.environ["STAGE_DIR"])
+import deploy_env_check
+dotenv_path = "/opt/cryptomaster/.env"
+dotenv = open(dotenv_path, encoding="utf-8").read() if os.path.exists(dotenv_path) else ""
+try:
+    env = deploy_env_check.preflight(os.environ["ENVLINE"], os.environ["ENVFILES"], os.environ["VARS"], dotenv)
+except deploy_env_check.Refused as exc:
+    sys.exit(f"ENV_CHECK REFUSED: {exc}")
 from src.services import paper_source_learning, paper_neural_context, paper_learning_budget
 paper_source_learning.validate_config(env)
 paper_neural_context.validate_config(env)
+for path in os.environ["FILES"].split():
+    importlib.import_module(path.removesuffix(".py").replace("/", "."))
 print("config ok", paper_learning_budget.limits(env), paper_source_learning.min_probe_net_bps(env),
       paper_source_learning.control_fraction(env))
 PY
@@ -142,11 +158,12 @@ if grep -qE "Traceback|_requires_|invalid_paper" "$JOURNAL"; then
   rm -f "$JOURNAL"; rollback "errors in journal"
 fi
 rm -f "$JOURNAL"
-# The values validated above must be the ones the running service actually has.
-effective="$(systemctl show cryptomaster -p Environment --value)"
-for kv in $VARS; do
-  case " $effective " in *" $kv "*) ;; *) rollback "effective env missing $kv" ;; esac
-done
+# The values validated above must be the ones the running process actually has: read the real
+# environment of MainPID (systemctl's Environment= view ignores EnvironmentFile=, review 77 P1).
+pid="$(systemctl show cryptomaster -p MainPID --value)"
+[ -n "$pid" ] && [ "$pid" != 0 ] || rollback "no MainPID"
+python3 -B "$CHECK" post --environ "/proc/$pid/environ" --dotenv "$APP/.env" --vars "$VARS" \
+  || rollback "running env check failed"
 for f in $FILES; do
   [ "$(sha256sum < "$APP/$f")" = "$(sha256sum < "$NEW/$(basename "$f")")" ] || rollback "postimage mismatch $f"
 done
