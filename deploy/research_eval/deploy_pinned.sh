@@ -31,6 +31,22 @@ verify_pinned() {
   done
 }
 
+# build_tree <app root> <stage root> <tree> <FILES>: validation tree = the app's src without any
+# bytecode, overlaid with the pinned files. python -B only stops *writing* .pyc; a copied stale
+# .pyc (same mtime/size, or unchecked-hash) would otherwise be imported instead of the pinned
+# source (review 79, N1). The live __pycache__ under the app is never touched here.
+build_tree() {
+  local app="$1" stage="$2" tree="$3" f
+  mkdir -p "$tree"
+  cp -r "$app/src" "$tree/src"
+  find "$tree" -name __pycache__ -type d -prune -exec rm -rf {} +
+  find "$tree" -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete
+  for f in $4; do install -m 600 "$stage/$f" "$tree/$f"; done
+  if [ -n "$(find "$tree" \( -name __pycache__ -o -name '*.pyc' -o -name '*.pyo' \) -print -quit)" ]; then
+    echo "bytecode left in validation tree" >&2; return 2
+  fi
+}
+
 # install_staged <stage root> <app root> <FILES>: install only from the stage
 install_staged() {
   local stage="$1" app="$2" f

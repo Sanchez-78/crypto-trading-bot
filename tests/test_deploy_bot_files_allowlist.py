@@ -39,6 +39,11 @@ def test_review_77_guards_present():
     assert 'install_staged "$PINNED" "$APP" "$FILES"' in TEXT
     assert TEXT.count('verify_pinned "$APP" "$FILES" "$EXPECTED_SHA256"') == 2  # after install + postimage
     assert 'ReadWritePaths="$SCRATCH"' in TEXT and "trap 'rm -rf \"$STAGE_DIR\" \"$SCRATCH\"' EXIT" in TEXT
+    # review 79 N1: bytecode-free validation tree, empty pycache prefix, source identity asserted.
+    assert 'build_tree "$APP" "$PINNED" "$TREE" "$FILES"' in TEXT
+    assert '--setenv=PYTHONPYCACHEPREFIX="$SCRATCH/pycache"' in TEXT
+    assert 'f"bytecode cache used for {path}"' in TEXT and 'f"tree bytes differ from pin: {path}"' in TEXT
+    assert 'cp -r "$APP/src" "$TREE/src"' not in TEXT
     # P1: effective env via deploy_env_check before, and the real MainPID environment after.
     assert "deploy_env_check.preflight(" in TEXT
     assert 'post --environ "/proc/$pid/environ"' in TEXT

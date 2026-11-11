@@ -29,3 +29,16 @@
   27 PASS, runtime SHA beze zmeny. Mutace r1_mutation_results.json: 6/6 zachyceno.
 - Server dry run (bez instalace a restartu, PID 75073 beze zmeny): pin drzi i po zmene zdroje, sandbox
   config ok ze stage, zapis sandboxu do stage -> Read-only file system, stage nezmenen.
+
+## Oprava review 79 (N1, stary bytecode), 2026-11-11
+
+- `build_tree` v `deploy_pinned.sh`: validacni strom = src bota bez `__pycache__`/`*.pyc`/`*.pyo` + pripnute
+  soubory; zbyly bytecode -> chyba. Zivy `__pycache__` bota se nemeni.
+- Sandbox: prazdny `PYTHONPYCACHEPREFIX` ve scratch (Python pak .pyc vedle zdroju vubec nehleda) a pro kazdy
+  nasazovany modul: hash bajtu ve strome == pin, `compile()` presnych bajtu, `module.__file__` == pripnuty zdroj,
+  `module.__spec__.cached` jen v prazdnem prefixu a neexistuje (zadna cache nepouzita).
+- Testy: +3 (stary .pyc v rezimu timestamp se stejnou velikosti/mtime i unchecked-hash -> importuje se pripnuty
+  zdroj; kontrolni test, ze bez ochrany se opravdu importuje stary kod). Celkem 30 PASS, runtime SHA beze zmeny.
+  Mutace n1_mutation_results.json: 5/5 zachyceno.
+- Server dry run (bez instalace/restartu, PID 75073): zivy src ma 9 adresaru __pycache__ (riziko realne),
+  validacni strom 0, sandbox config ok vcetne kontrol identity zdroje, do prefixu 0 .pyc, zivy __pycache__ beze zmeny.

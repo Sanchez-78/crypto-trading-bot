@@ -70,8 +70,9 @@ had_dropin=0; [ -f "$DROPIN" ] && { cp -p "$DROPIN" "$BACKUP/"; had_dropin=1; }
 
 # Validate the new code against the effective env before touching anything live. The tree is
 # built from the pinned stage; the sandbox may read it but writes only to SCRATCH.
-TREE="$STAGE_DIR/tree"; mkdir -p "$TREE"; cp -r "$APP/src" "$TREE/src"
-install_staged "$PINNED" "$TREE" "$FILES"
+TREE="$STAGE_DIR/tree"
+build_tree "$APP" "$PINNED" "$TREE" "$FILES"  # no bytecode in the tree (review 79, N1)
+mkdir -p "$SCRATCH/pycache"  # empty PYTHONPYCACHEPREFIX: Python never looks for .pyc next to sources
 cp "$CHECK" "$TREE/deploy_env_check.py"
 ENVLINE="$(systemctl show cryptomaster -p Environment --value)"
 ENVFILES="$(systemctl show cryptomaster -p EnvironmentFiles --value)"
@@ -83,8 +84,9 @@ ENVFILES="$(systemctl show cryptomaster -p EnvironmentFiles --value)"
 systemd-run --quiet --wait --pipe --collect -p ProtectSystem=strict -p ReadWritePaths="$SCRATCH" \
   -p WorkingDirectory="$SCRATCH" --setenv=ENVLINE="$ENVLINE" --setenv=ENVFILES="$ENVFILES" \
   --setenv=VARS="$VARS" --setenv=FILES="$FILES" --setenv=STAGE_DIR="$TREE" \
+  --setenv=EXPECTED_SHA256="$EXPECTED_SHA256" --setenv=PYTHONPYCACHEPREFIX="$SCRATCH/pycache" \
   /usr/bin/python3 -B - <<'PY'
-import importlib, os, sys
+import hashlib, importlib, os, sys
 sys.path.insert(0, os.environ["STAGE_DIR"])
 import deploy_env_check
 dotenv_path = "/opt/cryptomaster/.env"
@@ -96,8 +98,18 @@ except deploy_env_check.Refused as exc:
 from src.services import paper_source_learning, paper_neural_context, paper_learning_budget
 paper_source_learning.validate_config(env)
 paper_neural_context.validate_config(env)
+pinned = dict(e.split("=", 1) for e in os.environ["EXPECTED_SHA256"].split())
 for path in os.environ["FILES"].split():
-    importlib.import_module(path.removesuffix(".py").replace("/", "."))
+    source = os.path.join(os.environ["STAGE_DIR"], path)
+    raw = open(source, "rb").read()
+    assert hashlib.sha256(raw).hexdigest() == pinned[path], f"tree bytes differ from pin: {path}"
+    compile(raw, source, "exec")  # the exact pinned bytes must compile
+    module = importlib.import_module(path.removesuffix(".py").replace("/", "."))
+    # The module must come from that source file and no bytecode cache may have been used.
+    assert os.path.realpath(module.__file__) == os.path.realpath(source), f"imported elsewhere: {path}"
+    cached = module.__spec__.cached
+    assert cached is None or (cached.startswith(os.environ["PYTHONPYCACHEPREFIX"])
+                              and not os.path.exists(cached)), f"bytecode cache used for {path}"
 print("config ok", paper_learning_budget.limits(env), paper_source_learning.min_probe_net_bps(env),
       paper_source_learning.control_fraction(env))
 PY

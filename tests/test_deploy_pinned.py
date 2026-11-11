@@ -65,6 +65,73 @@ def test_missing_pin_is_refused(layout):
     assert result.returncode != 0 and "no EXPECTED_SHA256" in result.stderr
 
 
+MOD = "src/services/candidate.py"
+OLD_SRC = "VALUE = 'old'\n"
+NEW_SRC = "VALUE = 'new'\n"  # same size as OLD_SRC on purpose
+
+
+def _app_with_stale_bytecode(root: Path, mode: str) -> None:
+    import os
+    import py_compile
+    services = root / "app" / "src" / "services"
+    services.mkdir(parents=True, exist_ok=True)
+    (root / "app" / "src" / "__init__.py").write_text("", encoding="utf-8")
+    (services / "__init__.py").write_text("", encoding="utf-8")
+    source = root / "app" / MOD
+    source.write_bytes(OLD_SRC.encode())  # bytes, not text: no CRLF translation on Windows
+    os.utime(source, (1_700_000_000, 1_700_000_000))
+    invalidation = (py_compile.PycInvalidationMode.UNCHECKED_HASH if mode == "unchecked_hash"
+                    else py_compile.PycInvalidationMode.TIMESTAMP)
+    py_compile.compile(str(source), doraise=True, invalidation_mode=invalidation)
+    (root / "new").mkdir(exist_ok=True)
+    (root / "new" / "candidate.py").write_bytes(NEW_SRC.encode())
+
+
+def _import_value(tree: Path, prefix: Path) -> str:
+    import os
+    import subprocess as sp
+    import sys
+    code = ("import sys; sys.path.insert(0, sys.argv[1]); from src.services import candidate; "
+            "print(candidate.VALUE, candidate.__spec__.cached)")
+    env = {**os.environ, "PYTHONPYCACHEPREFIX": str(prefix)}
+    out = sp.run([sys.executable, "-B", "-c", code, str(tree)], capture_output=True, text=True, env=env, check=True)
+    return out.stdout.split()[0]
+
+
+@pytest.mark.parametrize("mode", ["timestamp_same_size_mtime", "unchecked_hash"])
+def test_validation_tree_imports_pinned_source_not_stale_bytecode(tmp_path, mode):
+    import os
+    _app_with_stale_bytecode(tmp_path, mode)
+    expected = f"{MOD}={hashlib.sha256(NEW_SRC.encode()).hexdigest()}"
+    result = sh(f'stage_files new stage "{MOD}" && verify_pinned stage "{MOD}" "{expected}" '
+                f'&& build_tree app stage tree "{MOD}"', tmp_path)
+    assert result.returncode == 0, result.stderr
+    tree_src = tmp_path / "tree" / MOD
+    os.utime(tree_src, (1_700_000_000, 1_700_000_000))  # worst case: same mtime/size as the stale .pyc
+    assert not list((tmp_path / "tree").rglob("*.pyc")) and not list((tmp_path / "tree").rglob("__pycache__"))
+    prefix = tmp_path / "scratch" / "pycache"
+    prefix.mkdir(parents=True)
+    assert _import_value(tmp_path / "tree", prefix) == "new"
+    # The live app's own bytecode is left untouched by build_tree.
+    assert list((tmp_path / "app").rglob("*.pyc"))
+
+
+def test_stale_bytecode_would_be_imported_without_the_guard(tmp_path):
+    """Control: the hazard is real -- a plain copy with __pycache__ imports the old code."""
+    import shutil as sh_util
+    _app_with_stale_bytecode(tmp_path, "unchecked_hash")
+    sh_util.copytree(tmp_path / "app", tmp_path / "plain")
+    (tmp_path / "plain" / MOD).write_text("VALUE = 'new_source_of_other_size'\n", encoding="utf-8")
+    import os
+    import subprocess as sp
+    import sys
+    code = "import sys; sys.path.insert(0, sys.argv[1]); from src.services import candidate; print(candidate.VALUE)"
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONPYCACHEPREFIX"}
+    out = sp.run([sys.executable, "-B", "-c", code, str(tmp_path / "plain")], capture_output=True, text=True,
+                 env=env, check=True)
+    assert out.stdout.strip() == "old"
+
+
 def test_stage_copy_is_private(layout):
     root, expected = layout
     assert sh(f'stage_files new stage "{FILE}"', root).returncode == 0

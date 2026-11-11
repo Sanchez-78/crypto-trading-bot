@@ -1,0 +1,30 @@
+{
+  "baseline": {
+    "exit": 0,
+    "summary": "30 passed in 4.13s"
+  },
+  "N1_no_cleanup_and_no_leftover_check": {
+    "exit": 1,
+    "summary": "2 failed, 28 passed in 3.50s"
+  },
+  "N1_cleanup_removed_check_kept": {
+    "exit": 1,
+    "summary": "2 failed, 28 passed in 4.22s"
+  },
+  "N1_plain_copy_in_script": {
+    "exit": 1,
+    "summary": "1 failed, 29 passed in 4.85s"
+  },
+  "N1_no_pycache_prefix": {
+    "exit": 1,
+    "summary": "1 failed, 29 passed in 4.64s"
+  },
+  "N1_no_cache_assertion": {
+    "exit": 1,
+    "summary": "1 failed, 29 passed in 4.92s"
+  },
+  "restored": {
+    "exit": 0,
+    "summary": "30 passed in 4.32s"
+  }
+}
