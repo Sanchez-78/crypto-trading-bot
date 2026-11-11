@@ -64,9 +64,15 @@ generátory dál určují, co vstoupí.
   (výchozí vypnuto) + `data_age_ms` v řádku `[P0_8_PLUS_LIVE]`. Kontrola agentem 9. 11.:
   112 cílených testů prošlo i při nezávislém opakování, mutace zachyceny, diff přečten
   (výpočet `data_age_ms` nemůže selhat — router stejný rozdíl počítá dřív). **Nenasazeno.**
-  Po zmrazeném výsledku C1: nezávislé review přesného diffu → `deploy_bot_files.sh`
-  (`candle_cache_v1.py`, `p0_8_plus_live_pipeline.py`, drop-in s příznakem) → restart →
-  ověřit v syslogu `data_age_ms` < 90 000 a nulové `REJECT_STALE_MARKET_DATA`. Serverová
+  Po zmrazeném výsledku C1: nezávislé review přesného diffu opravy **i** rozšíření allowlistu
+  `deploy_bot_files.sh` (připraveno lokálně 2026-11-11: oba moduly, příznak a striktní
+  validace `true`/`false`; server má zatím starou verzi `52d50fe7…`), zadání
+  `docs/codex_prompts/INDEPENDENT_REVIEW_CANDLE_REFRESH_PHASE_FIX_2026-11-11.md` → nasazení
+  novým skriptem jako **nová kohorta** (marker v `stage.log`) → ověřit `data_age_ms` < 90 000,
+  nejvýš 1 fetch za symbol a minutu a pokles `REJECT_STALE_MARKET_DATA` bez závislosti na fázi
+  (legitimní stale při výpadku upstreamu zůstává). Postup dne zmrazení:
+  `docs/remediation/C1_FREEZE_DAY_RUNBOOK_2026-11-11.md`; C2 jen podle
+  `docs/remediation/C2_REPLICATION_DRAFT_2026-11-11.md`. Serverová
   verze `candle_cache_v1.py` před opravou: SHA-256 začíná `23a9068111012aac`.
   Detail příčiny: `_workspace/62_stale_market_data_rejections_since_restart.md`.
 - Záloha `/opt/cryptomaster_deploy_backups/audit-20260923` (8,4 GB) smazána na pokyn

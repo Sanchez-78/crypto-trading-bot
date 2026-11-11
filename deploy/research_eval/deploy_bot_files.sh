@@ -25,8 +25,11 @@ exec 9>/run/lock/cryptomaster-deploy.lock
 flock -n 9 || { echo "another deploy is running" >&2; exit 4; }
 
 # Positive allowlists (enforced). Extending them is a reviewed change to this script.
-ALLOWED_FILES="src/services/paper_source_learning.py src/services/paper_learning_budget.py"
-ALLOWED_KEYS="PAPER_PROBE_HOURLY_ENTRIES PAPER_PROBE_DAILY_ENTRIES PAPER_PROBE_SYMBOL_COOLDOWN_S PAPER_PROBE_MIN_NET_BPS PAPER_SYMBOL_BLACKLIST PAPER_LEARNING_CONTROL_FRACTION PAPER_COST_EXPLORATION_ENABLED PAPER_ADAPTIVE_EXPLORATION_ENABLED PAPER_COMPLETED_CANDLE_LEARNING_ENABLED"
+# 2026-11-11: candle_cache_v1.py + p0_8_plus_live_pipeline.py and the phase-refresh flag
+# (completed-candle refresh fix, _workspace/63_codex_candle_refresh_fix.md); data path only,
+# no admission, cost, TP/SL or execution change.
+ALLOWED_FILES="src/services/paper_source_learning.py src/services/paper_learning_budget.py src/services/candle_cache_v1.py src/services/p0_8_plus_live_pipeline.py"
+ALLOWED_KEYS="PAPER_PROBE_HOURLY_ENTRIES PAPER_PROBE_DAILY_ENTRIES PAPER_PROBE_SYMBOL_COOLDOWN_S PAPER_PROBE_MIN_NET_BPS PAPER_SYMBOL_BLACKLIST PAPER_LEARNING_CONTROL_FRACTION PAPER_COST_EXPLORATION_ENABLED PAPER_ADAPTIVE_EXPLORATION_ENABLED PAPER_COMPLETED_CANDLE_LEARNING_ENABLED PAPER_COMPLETED_CANDLE_PHASE_REFRESH_ENABLED"
 for f in $FILES; do
   case " $ALLOWED_FILES " in *" $f "*) ;; *) echo "file not allowed: $f" >&2; exit 2 ;; esac
 done
@@ -65,6 +68,9 @@ for source in (os.environ["ENVLINE"], os.environ["VARS"]):
 assert env.get("TRADING_MODE") == "paper_train"
 for key in ("ENABLE_REAL_ORDERS", "LIVE_TRADING_CONFIRMED"):
     assert env.get(key, "false").lower() in {"false", "0", "no", "off"}, key
+# candle_cache_v1 silently treats any unknown value as "off"; a typo must fail the deploy.
+assert env.get("PAPER_COMPLETED_CANDLE_PHASE_REFRESH_ENABLED", "false") in {"true", "false"}, \
+    "PAPER_COMPLETED_CANDLE_PHASE_REFRESH_ENABLED must be true or false"
 sys.path.insert(0, os.environ["STAGE_DIR"])
 from src.services import paper_source_learning, paper_neural_context, paper_learning_budget
 paper_source_learning.validate_config(env)
