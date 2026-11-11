@@ -1,0 +1,9 @@
+{
+  "returncode": 1,
+  "value_error_alias": true,
+  "result_exists": false,
+  "manifest_exists": false,
+  "log_unchanged": true,
+  "stale_tmp_hardlink_remains": true,
+  "stderr_tail": "ValueError: provenance_log must not alias the result, the manifest or their temp files"
+}

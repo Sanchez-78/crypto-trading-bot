@@ -1,0 +1,46 @@
+V3_source_side HOLDOUT_LIFT_NOT_CONFIRMED prereg=CONTRARIAN_NOT_SHOWN fresh_n=1600/1000 days=41.11/7 provenance_sha256=fbd7689ec12c72b5bce66aea119dc7a12e3d4f1d9a4bc5e39c4f4a983ceea6d1
+{
+  "checks": {
+    "crash_before_reference": {
+      "no_reference": true,
+      "no_result": true,
+      "orphan_manifest": true,
+      "retry_one_reference": true,
+      "retry_triple_consistent": true
+    },
+    "crash_before_result": {
+      "no_result": true,
+      "orphan_reference": true,
+      "retry_latest_matches_files": true,
+      "retry_two_references": true
+    },
+    "hardlink_log_to_manifest": {
+      "log_unchanged": true,
+      "no_result": true,
+      "rejected": true
+    },
+    "hardlink_log_to_manifest_tmp": {
+      "log_unchanged": true,
+      "no_result": true,
+      "rejected": true
+    },
+    "hardlink_log_to_result_tmp": {
+      "log_unchanged": true,
+      "no_result": true,
+      "rejected": true
+    },
+    "normal_freeze": {
+      "dir_fsync_ok": true,
+      "modes_0444": true,
+      "one_reference": true,
+      "triple_consistent": true
+    },
+    "symlink_log_to_result": {
+      "log_unchanged": true,
+      "no_result": true,
+      "rejected": true
+    }
+  },
+  "ok": true,
+  "python": "3.12.3"
+}

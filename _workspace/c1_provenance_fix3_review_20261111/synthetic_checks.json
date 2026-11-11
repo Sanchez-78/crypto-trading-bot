@@ -1,0 +1,42 @@
+{
+  "samefile_guards": {
+    "prereg_result.json": {
+      "samefile": true,
+      "different_resolved_paths": true,
+      "rejected": true,
+      "log_unchanged": true
+    },
+    "prereg_result.json.tmp": {
+      "samefile": true,
+      "different_resolved_paths": true,
+      "rejected": true,
+      "log_unchanged": true
+    },
+    "prereg_provenance.json": {
+      "samefile": true,
+      "different_resolved_paths": true,
+      "rejected": true,
+      "log_unchanged": true
+    },
+    "prereg_provenance.json.tmp": {
+      "samefile": true,
+      "different_resolved_paths": true,
+      "rejected": true,
+      "log_unchanged": true
+    }
+  },
+  "second_guard_alone": {
+    "log_preserved": true,
+    "reference_present": true,
+    "result_exists": true,
+    "result_matches_manifest": true,
+    "manifest_hash_matches": true,
+    "result_distinct_from_log": true
+  },
+  "identity_error_rejected": true,
+  "post_open_path_swap": {
+    "result_is_unrelated_log": true,
+    "result_samefile_as_log": true,
+    "intended_payload_published": false
+  }
+}

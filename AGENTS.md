@@ -5,10 +5,8 @@ Komunikace s uživatelem a reporty: **česky**. Identifikátory a kód: anglicky
 
 ## Aktuální zadání
 
-**Otevřené zadání (nezávislé review):** `docs/codex_prompts/CODEX_REVIEW_C1_PROVENANCE_FIX3_2026-11-11.md`
-→ report `_workspace/75_codex_c1_provenance_fix3_review.md`. Termín: před 2026-11-16 17:00 UTC.
-(Hotová: zadání 70 provedl autor; review 71 vedlo k opravě B1–B3 (report 72); review 73
-vedlo k hardlinkové opravě, popsané v dodatku reportu 72.)
+**Žádné otevřené zadání.** Producer původu C1 je po review 70, 71, 73 a 75 (APPROVE)
+nasazen (`_workspace/76_c1_provenance_deploy_20261111.md`).
 Od 2026-11-10 implementaci dělá Claude, Codex dostává jen zadání na audit nebo radu.
 Aktuální stav a autorita: `docs/OPERATING_STATE.md`.
 Podkladová data: `docs/codex_prompts/evidence/` (soubory jsou jen ke čtení).
