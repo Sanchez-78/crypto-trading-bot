@@ -29,7 +29,28 @@ Nejprve ověř `exposure` a `identity` v JSON: bez ověřeného původu je stav 
 
 Po verifikaci C1 a odděleném cost review lze spustit přípravu nasazení lokální opravy z `_workspace/63_codex_candle_refresh_fix.md`, **jen pokud** nezávislé review přesného diffu skončí `APPROVE`. Šest souborů opravy se 2026-11-11 shodovalo s `after.json`; před nasazením hashe spočítat znovu. Příznak `PAPER_COMPLETED_CANDLE_PHASE_REFRESH_ENABLED` zůstává do aktivace vypnutý. Neměnit limit 90 s, generátory, risk, TP/SL, náklady ani CONTROL současně s opravou.
 
-**Aktuální blocker nasazovacího postupu:** `deploy/research_eval/deploy_bot_files.sh:28–35` nyní nepovoluje `candle_cache_v1.py`, `p0_8_plus_live_pipeline.py` ani nový příznak. Popis v `OPERATING_STATE.md:67–69` proto ještě není spustitelný. Neobcházet allowlist ručním kopírováním; nejprve připravit nejmenší rozšíření tohoto jediného skriptu a nezávisle reviewovat přesný diff skriptu i opravy. Do vyřešení blockeru žádné nasazení.
+**Blocker nasazovacího postupu vyřešen (2026-11-12).** Rozšířený deploy skript prošel review
+77–81 (Codex, finálně APPROVE v `_workspace/81_codex_deploy_allowlist_rereview4.md`) a oprava svíček
+nezávislým review (`_workspace/77_independent_candle_refresh_review.md`, APPROVE kód). Na serveru jsou
+od 2026-11-12 07:13 UTC nainstalované `deploy_bot_files.sh` (`5b9193e2…`), `deploy_env_check.py`
+(`c3230348…`) a `deploy_pinned.sh` (`74a1fec7…`), záloha starého skriptu je
+`stage_backups/deploy-tools-20261112T071304Z`. Skript se zatím nespouštěl.
+
+Příkaz pro nasazení **až po ověřeném zmrazení C1** (soubory nahrát do `/tmp/candle-refresh/`, LF, a
+před spuštěním znovu ověřit hashe lokálně i na serveru):
+
+```text
+LABEL=candle-refresh \
+FILES="src/services/candle_cache_v1.py src/services/p0_8_plus_live_pipeline.py" \
+VARS="PAPER_COMPLETED_CANDLE_PHASE_REFRESH_ENABLED=true" \
+DROPIN_NAME=zzzzzzzzzzzz-candle-refresh.conf \
+EXPECTED_SHA256="src/services/candle_cache_v1.py=f3f9370c996624ac5dab5f9075af7f9b6791378873a3cff29a510d31545f424b src/services/p0_8_plus_live_pipeline.py=f2e4d28d1a5dad689ead89947de4ce6b1f7e123734c98bb393c3826aa1bf4fc6" \
+bash /opt/cryptomaster_research/deploy_bot_files.sh
+```
+
+Řádka `APPLIED OK` ve `stage.log` je marker nové kohorty (čas, backup, PID). Klíč
+`PAPER_COMPLETED_CANDLE_PHASE_REFRESH_ENABLED` nesmí být v `/opt/cryptomaster/.env` (skript to sám
+odmítne). Neobcházet allowlist ručním kopírováním.
 
 Při povoleném nasazení použít zálohu a rollback stávajícího skriptu, ověřit PAPER-only env, syntax, nulové otevřené paper pozice podle jeho preflightu a zaznamenat hash preimage/postimage. Před restartem zapsat plán nového `cohort_start_ms`; po úspěšné aktivaci zachytit skutečný čas, hash kódu/cache verzi a env příznak. **C1 hodnocená množina je výhradně seznam ID ve zmrazeném výsledku**, nikoli všechny obchody před nasazením. Obchody po novém markeru tvoří samostatnou kohortu opravené cache. Při rollbacku zaznamenat další marker; různé režimy nikdy tiše neslučovat. Restart jen existujícího bota, žádná další služba.
 
