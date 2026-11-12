@@ -100,6 +100,86 @@ def test_postcheck_invariants_with_dotenv_fill():
                       f"{FLAG}=true")
 
 
+CHECK_DIR = Path(__file__).resolve().parents[1] / "deploy" / "research_eval"
+MOD = "src/services/candidate.py"
+SRC = b"VALUE = 'pinned'\n"
+
+
+def _tree(tmp_path, content=SRC):
+    services = tmp_path / "tree" / "src" / "services"
+    services.mkdir(parents=True)
+    (tmp_path / "tree" / "src" / "__init__.py").write_bytes(b"")
+    (services / "__init__.py").write_bytes(b"")
+    (tmp_path / "tree" / MOD).write_bytes(content)
+    (tmp_path / "pycache").mkdir()
+    return tmp_path / "tree", tmp_path / "pycache"
+
+
+def _run_optimized(tree, prefix, pinned_hash, *, extra_path=None, use_prefix=True):
+    """Run verify_staged_import under -O and PYTHONOPTIMIZE=2 (asserts stripped)."""
+    import os
+    import subprocess
+    code = (
+        "import sys; sys.path.insert(0, sys.argv[1]); sys.path.insert(0, sys.argv[2])\n"
+        + ("sys.path.insert(0, sys.argv[5])\n" if extra_path else "")
+        + "import deploy_env_check as d\n"
+        "try:\n"
+        "    d.verify_staged_import(sys.argv[2], [sys.argv[3]], {sys.argv[3]: sys.argv[4]}, sys.argv[6])\n"
+        "except d.Refused as e:\n"
+        "    print('REFUSED', e); sys.exit(2)\n"
+        "print('OK')\n")
+    args = [sys.executable, "-O", "-B"]
+    if use_prefix:
+        args += ["-X", f"pycache_prefix={prefix}"]
+    args += ["-c", code, str(CHECK_DIR), str(tree), MOD, pinned_hash, str(extra_path or ""), str(prefix)]
+    env = {**os.environ, "PYTHONOPTIMIZE": "2"}
+    env.pop("PYTHONPYCACHEPREFIX", None)
+    return subprocess.run(args, capture_output=True, text=True, env=env)
+
+
+def test_staged_import_accepts_pinned_source_even_when_optimized(tmp_path):
+    import hashlib
+    tree, prefix = _tree(tmp_path)
+    out = _run_optimized(tree, prefix, hashlib.sha256(SRC).hexdigest())
+    assert out.returncode == 0 and "OK" in out.stdout, out.stdout + out.stderr
+
+
+def test_staged_import_refuses_wrong_hash_when_optimized(tmp_path):
+    tree, prefix = _tree(tmp_path)
+    out = _run_optimized(tree, prefix, "0" * 64)
+    assert out.returncode == 2 and "tree bytes differ" in out.stdout
+
+
+def test_staged_import_refuses_module_loaded_elsewhere_when_optimized(tmp_path):
+    import hashlib
+    tree, prefix = _tree(tmp_path)
+    shadow = tmp_path / "shadow" / "src" / "services"
+    shadow.mkdir(parents=True)
+    (tmp_path / "shadow" / "src" / "__init__.py").write_bytes(b"")
+    (shadow / "__init__.py").write_bytes(b"")
+    (shadow / "candidate.py").write_bytes(b"VALUE = 'shadow'\n")
+    out = _run_optimized(tree, prefix, hashlib.sha256(SRC).hexdigest(), extra_path=tmp_path / "shadow")
+    assert out.returncode == 2 and "imported elsewhere" in out.stdout
+
+
+def test_staged_import_refuses_without_dedicated_pycache_prefix(tmp_path):
+    import hashlib
+    tree, prefix = _tree(tmp_path)
+    out = _run_optimized(tree, prefix, hashlib.sha256(SRC).hexdigest(), use_prefix=False)
+    assert out.returncode == 2 and "pycache prefix" in out.stdout
+
+
+def test_validator_has_no_asserts_and_runs_isolated():
+    import ast
+    import re
+    script = (CHECK_DIR / "deploy_bot_files.sh").read_text(encoding="utf-8")
+    heredoc = re.search(r"<<'PY'\n(.*?)\nPY\n", script, re.S).group(1)
+    assert not [n for n in ast.walk(ast.parse(heredoc)) if isinstance(n, ast.Assert)]
+    module = ast.parse((CHECK_DIR / "deploy_env_check.py").read_text(encoding="utf-8"))
+    assert not [n for n in ast.walk(module) if isinstance(n, ast.Assert)]
+    assert '/usr/bin/python3 -I -B -X pycache_prefix="$SCRATCH/pycache" -' in script
+
+
 def test_cli_exit_codes(tmp_path, capsys):
     dotenv = tmp_path / ".env"
     dotenv.write_text(f"{FLAG}=false\n", encoding="utf-8")

@@ -84,9 +84,9 @@ ENVFILES="$(systemctl show cryptomaster -p EnvironmentFiles --value)"
 systemd-run --quiet --wait --pipe --collect -p ProtectSystem=strict -p ReadWritePaths="$SCRATCH" \
   -p WorkingDirectory="$SCRATCH" --setenv=ENVLINE="$ENVLINE" --setenv=ENVFILES="$ENVFILES" \
   --setenv=VARS="$VARS" --setenv=FILES="$FILES" --setenv=STAGE_DIR="$TREE" \
-  --setenv=EXPECTED_SHA256="$EXPECTED_SHA256" --setenv=PYTHONPYCACHEPREFIX="$SCRATCH/pycache" \
-  /usr/bin/python3 -B - <<'PY'
-import hashlib, importlib, os, sys
+  --setenv=EXPECTED_SHA256="$EXPECTED_SHA256" --setenv=PYCACHE_PREFIX="$SCRATCH/pycache" \
+  /usr/bin/python3 -I -B -X pycache_prefix="$SCRATCH/pycache" - <<'PY'
+import os, sys
 sys.path.insert(0, os.environ["STAGE_DIR"])
 import deploy_env_check
 dotenv_path = "/opt/cryptomaster/.env"
@@ -99,17 +99,13 @@ from src.services import paper_source_learning, paper_neural_context, paper_lear
 paper_source_learning.validate_config(env)
 paper_neural_context.validate_config(env)
 pinned = dict(e.split("=", 1) for e in os.environ["EXPECTED_SHA256"].split())
-for path in os.environ["FILES"].split():
-    source = os.path.join(os.environ["STAGE_DIR"], path)
-    raw = open(source, "rb").read()
-    assert hashlib.sha256(raw).hexdigest() == pinned[path], f"tree bytes differ from pin: {path}"
-    compile(raw, source, "exec")  # the exact pinned bytes must compile
-    module = importlib.import_module(path.removesuffix(".py").replace("/", "."))
-    # The module must come from that source file and no bytecode cache may have been used.
-    assert os.path.realpath(module.__file__) == os.path.realpath(source), f"imported elsewhere: {path}"
-    cached = module.__spec__.cached
-    assert cached is None or (cached.startswith(os.environ["PYTHONPYCACHEPREFIX"])
-                              and not os.path.exists(cached)), f"bytecode cache used for {path}"
+# Explicit refusals (never assert, review 80 N2): exact pinned bytes compile and are what got imported,
+# with no bytecode cache. -I above also ignores PYTHON* variables such as PYTHONOPTIMIZE.
+try:
+    deploy_env_check.verify_staged_import(os.environ["STAGE_DIR"], os.environ["FILES"].split(), pinned,
+                                          os.environ["PYCACHE_PREFIX"])
+except deploy_env_check.Refused as exc:
+    sys.exit(f"STAGED_IMPORT REFUSED: {exc}")
 print("config ok", paper_learning_budget.limits(env), paper_source_learning.min_probe_net_bps(env),
       paper_source_learning.control_fraction(env))
 PY

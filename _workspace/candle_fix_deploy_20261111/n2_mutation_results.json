@@ -1,0 +1,30 @@
+{
+  "baseline": {
+    "exit": 0,
+    "summary": "35 passed in 4.84s"
+  },
+  "N2_hash_check_as_assert": {
+    "exit": 1,
+    "summary": "2 failed, 33 passed in 4.93s"
+  },
+  "N2_origin_check_as_assert": {
+    "exit": 1,
+    "summary": "2 failed, 33 passed in 4.83s"
+  },
+  "N2_no_prefix_check": {
+    "exit": 1,
+    "summary": "1 failed, 34 passed in 4.72s"
+  },
+  "N2_interpreter_not_isolated": {
+    "exit": 1,
+    "summary": "2 failed, 33 passed in 5.36s"
+  },
+  "N2_assert_back_in_heredoc": {
+    "exit": 1,
+    "summary": "1 failed, 34 passed in 4.86s"
+  },
+  "restored": {
+    "exit": 0,
+    "summary": "35 passed in 4.75s"
+  }
+}

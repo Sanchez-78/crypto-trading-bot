@@ -41,8 +41,9 @@ def test_review_77_guards_present():
     assert 'ReadWritePaths="$SCRATCH"' in TEXT and "trap 'rm -rf \"$STAGE_DIR\" \"$SCRATCH\"' EXIT" in TEXT
     # review 79 N1: bytecode-free validation tree, empty pycache prefix, source identity asserted.
     assert 'build_tree "$APP" "$PINNED" "$TREE" "$FILES"' in TEXT
-    assert '--setenv=PYTHONPYCACHEPREFIX="$SCRATCH/pycache"' in TEXT
-    assert 'f"bytecode cache used for {path}"' in TEXT and 'f"tree bytes differ from pin: {path}"' in TEXT
+    # review 80 N2: isolated interpreter (-I ignores PYTHONOPTIMIZE etc.), prefix via -X, explicit refusals.
+    assert '/usr/bin/python3 -I -B -X pycache_prefix="$SCRATCH/pycache" -' in TEXT
+    assert "deploy_env_check.verify_staged_import(" in TEXT and 'STAGED_IMPORT REFUSED' in TEXT
     assert 'cp -r "$APP/src" "$TREE/src"' not in TEXT
     # P1: effective env via deploy_env_check before, and the real MainPID environment after.
     assert "deploy_env_check.preflight(" in TEXT
@@ -50,6 +51,7 @@ def test_review_77_guards_present():
     assert 'systemctl show cryptomaster -p Environment --value)"\nfor kv in' not in TEXT
     # P2: staged import of every deployed module inside a read-only sandbox.
     assert "-p ProtectSystem=strict" in TEXT and 'ReadWritePaths="$STAGE_DIR"' not in TEXT
-    assert 'importlib.import_module(path.removesuffix(".py").replace("/", "."))' in TEXT
+    helper = (SCRIPT.parent / "deploy_env_check.py").read_text(encoding="utf-8")
+    assert 'importlib.import_module(path.removesuffix(".py").replace("/", "."))' in helper
     # The comment no longer claims the allowlist prevents executor changes.
     assert "no admission, cost, TP/SL or execution change" not in TEXT

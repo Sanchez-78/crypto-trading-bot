@@ -42,3 +42,15 @@
   Mutace n1_mutation_results.json: 5/5 zachyceno.
 - Server dry run (bez instalace/restartu, PID 75073): zivy src ma 9 adresaru __pycache__ (riziko realne),
   validacni strom 0, sandbox config ok vcetne kontrol identity zdroje, do prefixu 0 .pyc, zivy __pycache__ beze zmeny.
+
+## Oprava review 80 (N2, assert jako bezpecnostni kontrola), 2026-11-12
+
+- Kontroly identity zdroje presunuty z heredocu do `deploy_env_check.verify_staged_import()` s explicitnim
+  `Refused` (zadny `assert` ve validatoru ani v `deploy_env_check.py`; overeno AST testem).
+- Validacni interpreter bezi `python3 -I -B -X pycache_prefix=...`: `-I` ignoruje vsechny PYTHON* promenne
+  (vcetne PYTHONOPTIMIZE); prefix se predava pres -X a funkce odmitne beh bez nej.
+- Testy: +5 (pod `-O` i PYTHONOPTIMIZE=2: pripnuty zdroj OK, spatny hash a modul nacteny odjinud odmitnuty,
+  chybejici prefix odmitnut; v heredocu ani helperu zadny assert). Celkem 35 PASS. Mutace
+  n2_mutation_results.json: 5/5 zachyceno.
+- Server dry run (bez instalace/restartu, PID 75073) s podvrzenym PYTHONOPTIMIZE=2 v sandboxu: spravne
+  piny -> config ok; spatny hash -> STAGED_IMPORT REFUSED; 0 .pyc v prefixu.

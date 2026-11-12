@@ -113,6 +113,34 @@ def postcheck(environ: bytes, vars_: str, dotenv_text: str = "") -> dict:
     return env
 
 
+def verify_staged_import(tree: str, files: list[str], pinned: dict, pycache_prefix: str) -> None:
+    """Import every deployed module from the validation tree and prove it is the pinned source.
+
+    Explicit Refused, never assert: `python -O`/PYTHONOPTIMIZE strips asserts (review 80, N2).
+    """
+    import hashlib
+    import importlib
+    import os
+    if not pycache_prefix or os.path.realpath(sys.pycache_prefix or "") != os.path.realpath(pycache_prefix):
+        raise Refused("validator must run with an empty, dedicated pycache prefix")
+    for path in files:
+        if path not in pinned:
+            raise Refused(f"no pinned hash for {path}")
+        source = os.path.join(tree, path)
+        with open(source, "rb") as handle:
+            raw = handle.read()
+        if hashlib.sha256(raw).hexdigest() != pinned[path]:
+            raise Refused(f"tree bytes differ from pin: {path}")
+        compile(raw, source, "exec")  # the exact pinned bytes must compile
+        module = importlib.import_module(path.removesuffix(".py").replace("/", "."))
+        if os.path.realpath(getattr(module, "__file__", "") or "") != os.path.realpath(source):
+            raise Refused(f"imported elsewhere: {path}")
+        cached = module.__spec__.cached if module.__spec__ else None
+        if cached is not None and (not os.path.realpath(cached).startswith(os.path.realpath(pycache_prefix))
+                                   or os.path.exists(cached)):
+            raise Refused(f"bytecode cache used for {path}")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="mode", required=True)
