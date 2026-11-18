@@ -12,6 +12,10 @@ Odpovídat česky. SSH (jen čtení): `ssh -i ~/.ssh/hetzner_root -o ConnectTime
      než 14 h, nebo < 20 obchodů/24 h → PushNotification + zjistit příčinu čtením. Opravu
      výzkumné části smíš udělat s testy; změnu bota jen podle `OPERATING_STATE.md`.
    Také `systemctl is-active cryptomaster-research-funnel` (neaktivní → stejné upozornění).
+   Od 2026-11-18 (C1 uzavřen, kohorta `candle-refresh`): navíc podíl
+   `REJECT_STALE_MARKET_DATA` v řádku `FUNNEL` (cíl ≪ 42 %); při chybách v logu, `data_age_ms`
+   blízko 90 s nebo opakovaných selháních fetch → rollback ze zálohy
+   `candle-refresh-20261118T070354Z` (soubory + drop-in, ověřit hashe před, restart).
 2. Zapiš řádek do `_workspace/autonomy/daily.md`: run ID, obchody/24 h, `COHORT_BLIND`
    počty, `FUNNEL` (kandidáti P0.8+ a hlavní kódy odmítnutí), `REPLAY` stav C1 (`fresh_n/final_n`, `days`). Během slepé fáze nečti ani
    nepočítej žádné výsledky (P/L, korelace) čerstvých obchodů po cutoffu — jen počty.

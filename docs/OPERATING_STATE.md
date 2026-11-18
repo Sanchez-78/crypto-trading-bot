@@ -1,6 +1,6 @@
 # Aktuální provozní stav — jediný index autority
 
-Aktualizováno: 2026-11-09. Při rozporu má tento soubor přednost před staršími
+Aktualizováno: 2026-11-18 (C1 uzavřen, kohorta candle-refresh). Při rozporu má tento soubor přednost před staršími
 dokumenty; starší dokumenty jsou historický záznam. Kdo mění stav, aktualizuje tento soubor.
 
 ## Cíl (operátor, 2026-11-09)
@@ -28,11 +28,32 @@ je bod zvratu WR ≈ 56,7 % (výhra +26, ztráta −34 bps), takže WR > 50 % sa
 „Všichni kandidáti“ znamená jen bez adaptivního odmítnutí; pacing, risk, kvóty, data a
 generátory dál určují, co vstoupí.
 
-## Aktivní experiment
+## Experiment C1 — UZAVŘEN 2026-11-16 17:48 UTC
 
-- **C1_contrarian**, předregistrace `docs/remediation/LEARNER_PREREGISTRATION_2026-11-09.md`
-  včetně dodatku 1: cutoff `prereg_after=1794209516`; jediné vyhodnocení prvních 1 000
-  čerstvých obchodů, nejdřív po 7 UTC dnech (~2026-11-16). Do té doby `PENDING`, výsledky skryté.
+- **Verdikt `CONTRARIAN_NOT_SHOWN`** (předregistrace `docs/remediation/LEARNER_PREREGISTRATION_2026-11-09.md`,
+  dodatek 1/1b/1c). N = 1 000 (500/500), 19 šestihodinových bloků, 7,43 dne.
+  C1 lift −1,58 bps, Welch 95% [−4,47; +1,31], blokový bootstrap [−4,34; +1,92].
+  Protisměrné pořadí se na nových datech **nereplikovalo**; historické „záporné řazení“
+  (ρ = −0,11) tedy nejspíš byl šum. Pro orientaci (ne test): V0 +2,15 [−0,73; +5,04],
+  V2 +1,58 — ani přímé učení kladné řazení neprokázalo. C2 se podle runbooku nespouští.
+- **Nezávislá reference (převzato 2026-11-18 07:03 UTC agentem, ověřeno):**
+  `2026-11-16T17:48:35Z PROVENANCE run=20261116T174717Z manifest_sha256=f7b2345e2065e276dbcb8177ecafdd9dbd5229d78d14a692e50d57ac2ae2538c result_sha256=0d97eb6e837042a786810b11cba9eee150a72d24e681be7064b5833d441f69a9`
+  (jediná řádka; SHA bajtů obou souborů a `result_sha256` v manifestu se shodují; `contract=c1_provenance_v1`,
+  cutoff a run ID sedí; 1 000 unikátních ID). Kopie: `_workspace/c1_freeze_20261116/`.
+  Cost review: `_workspace/c1_freeze_20261116/cost_review/review.md` (ziskovost NOT_VERIFIED).
+- Od 17. 11. běží plný report MAX_DATA kohorty (`COHORT`, `LEARN_COHORT` ve `verdict.log`).
+
+## Kohorta „candle-refresh“ (od 2026-11-18 07:05:14 UTC)
+
+- Nasazena reviewovaná oprava obnovy svíček (`_workspace/63_…`, review 77 + 81 APPROVE) skriptem
+  `deploy_bot_files.sh`: `candle_cache_v1.py` `f3f9370c…`, `p0_8_plus_live_pipeline.py` `f2e4d28d…`,
+  drop-in `zzzzzzzzzzzz-candle-refresh.conf` (`PAPER_COMPLETED_CANDLE_PHASE_REFRESH_ENABLED=true`).
+  Marker: `stage.log` `DEPLOY_candle-refresh APPLIED OK` 07:05:14Z, pid 886991, záloha
+  `/opt/cryptomaster_deploy_backups/candle-refresh-20261118T070354Z`. `cohort_start_ms = 1794985514000`.
+- Obchody před markerem a po něm **neslučovat**. Vyšší počet obchodů není účinek učení.
+- První 4 min: aktivní, PAPER, REAL vypnuto, 0 výjimek, `data_age_ms` 3,5–5,9 s (limit 90 s),
+  0× `REJECT_STALE_MARKET_DATA` (předtím ~42–45 % kandidátů), 2 vstupy.
+- Konfigurace sběru (limity, cooldown, CONTROL 1,0) beze změny.
 - Historický experiment ADAPTIVE vs CONTROL (do 9. 11.): `SELECTION_EFFECT_NOT_SHOWN`,
   uzavřen — při CONTROL = 1 nová ramena nevznikají.
 
@@ -100,9 +121,8 @@ zůstávají:
   zámek, záloha, rollback) a **po nezávislém review přesného diffu**, pokud mění
   rozhodovací politiku, protokol experimentu nebo nasazovací skripty.
 
-**Zmrazení sběru během C1:** dokud není hodnocená množina C1 kompletní (≥ 1 000 čerstvých
-obchodů a 7 dní), agent nemění konfiguraci sběru (limity, cooldown, min. net, symboly,
-CONTROL podíl, generátory) — změnila by cílovou populaci předregistrace.
+**Zmrazení sběru během C1:** skončilo 2026-11-16 (C1 uzavřen). Každá další změna sběru se
+nasazuje jako nová kohorta s markerem v `stage.log`, ne současně s jinou změnou.
 
 **Reset P/L / DB / Firebase:** operátor 2026-11-09 povolil („pokud je třeba reset PL nebo
 firebase atd., proveď“). Během C1 se reset **neprovádí**: C1 se vyhodnocuje z `closed_trades`

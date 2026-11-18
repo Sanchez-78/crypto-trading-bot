@@ -7,7 +7,11 @@
   "control_fraction": 1.0,
   "preregistration": "docs/remediation/LEARNER_PREREGISTRATION_2026-11-09.md",
   "prereg_hypothesis": "C1_contrarian",
-  "notified_codes": [],
+  "notified_codes": ["CONTRARIAN_NOT_SHOWN"],
+  "c1_verdict": "CONTRARIAN_NOT_SHOWN",
+  "c1_frozen_run": "20261116T174717Z",
+  "cohort": "candle-refresh",
+  "cohort_start_ms": 1794985514000,
   "cron_id": "c61962d6",
   "cron_created": "2026-11-16"
 }

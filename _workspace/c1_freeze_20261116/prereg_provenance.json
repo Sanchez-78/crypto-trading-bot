@@ -1,0 +1,9 @@
+{
+  "contract": "c1_provenance_v1",
+  "evaluated_at_ms": 1794851254213,
+  "hypothesis": "C1_contrarian",
+  "id_hash_convention": "sha256(utf8(json.dumps(ids, separators=(',', ':'))))",
+  "result_sha256": "0d97eb6e837042a786810b11cba9eee150a72d24e681be7064b5833d441f69a9",
+  "run_id": "20261116T174717Z",
+  "scored_after_ms": 1794209516000
+}
