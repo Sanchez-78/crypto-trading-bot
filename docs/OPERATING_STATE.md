@@ -56,10 +56,20 @@ generátory dál určují, co vstoupí.
 - Konfigurace sběru (limity, cooldown, CONTROL 1,0) beze změny.
 - 2026-11-19: stale odmítnutí ~45 % → 0–5 %, přijatých kandidátů ~2×, vstupů beze změny
   (~118 / 12 h). Vázající je natvrdo `max_open_per_bucket = 2` v `paper_trade_executor`.
-  Připraveno: `PAPER_EXPLORE_MAX_OPEN_PER_BUCKET` (1–7, výchozí 2), přesný diff
-  `_workspace/bucket_cap_20261119/task.diff`, review Codexu
-  `docs/codex_prompts/CODEX_REVIEW_EXPLORE_BUCKET_CAP_2026-11-19.md`. Nasadit až po APPROVE,
-  jako samostatnou kohortu (vyžaduje i výjimku exekutoru v allowlistu deploy skriptu).
+  Připraveno: `PAPER_EXPLORE_MAX_OPEN_PER_BUCKET` (1–7, výchozí 2, platí **jen** pro
+  `P0_8_PLUS_EVIDENCE_COLLECTION`). Kód a artefakt mají **APPROVE** (re-review 2026-11-19):
+  artefakt `_workspace/bucket_cap_20261119/artifact/paper_trade_executor.py` (`a39d4f4c…`) = serverová
+  kopie `5b0b15cc…` + 2 hunky. Nasazení ještě není schválené: chybí review nasazovacího kroku (allowlist
+  patch `allowlist_executor_after_approval.patch` + příkaz). Nasadit jako samostatnou kohortu, ideálně
+  jedním restartem s outboxem (`docs/remediation/POST_C1_DEPLOY_RUNBOOK_2026-11-19.md`, oddíl C).
+
+## Dashboard (2026-11-19)
+
+- `/api/dashboard/readiness` vrací `status=paper_only` (nasazeno 14:00 UTC skriptem
+  `deploy_dashboard_readiness.sh`, záloha `/opt/cryptomaster_deploy_backups/dashboard-readiness-20261119T140027Z`).
+  Ustala minutová chyba `[METRICS_COLLECTION_ERROR] Permission denied: .env`. Profil API je veřejný
+  (bez tokenu), nasazení ho nezměnilo. Bot nebyl restartován.
+- Viditelnost terminálního backlogu outboxu (bot) čeká na re-review nasazovacího kroku (nález B4 opraven).
 - Historický experiment ADAPTIVE vs CONTROL (do 9. 11.): `SELECTION_EFFECT_NOT_SHOWN`,
   uzavřen — při CONTROL = 1 nová ramena nevznikají.
 

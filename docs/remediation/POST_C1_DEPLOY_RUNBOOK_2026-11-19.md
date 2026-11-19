@@ -31,6 +31,16 @@ přesně commitnuté bajty a skripty preimage na serveru ověří samy.
 
 ## A. Dashboard: readiness = `paper_only`
 
+**NASAZENO 2026-11-19 14:00:27–14:02:30 UTC** (`stage.log`: `DEPLOY_dashboard-readiness profile=public`,
+`APPLIED OK backup=/opt/cryptomaster_deploy_backups/dashboard-readiness-20261119T140027Z pid=1628071`).
+Ověřeno po nasazení:
+- `/api/dashboard/readiness` vrací `{"status":"paper_only","is_ready_for_trading":false,"readiness_score":0,
+  "blocker_reasons":["paper_only_policy"],…}` a metrics HTTP 200;
+- živé hashe odpovídají pinům;
+- `[METRICS_COLLECTION_ERROR] Permission denied: .env` dříve chodil každou minutu (17×/h), poslední
+  ve 14:00:27 ze starého procesu, po restartu žádný;
+- bot nebyl restartován (MainPID 886991 od 18. 11. 07:03:59).
+
 Skript `_workspace/deploy_post_c1_20261119/deploy_dashboard_readiness.sh`
 (SHA-256 `65a133a9bb6befe3ec3e28cdf6321b9198edb3e72b3d9e296a3ebf9f15f7aabc`, LF).
 
