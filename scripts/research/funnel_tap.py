@@ -26,6 +26,7 @@ import time
 _P08 = re.compile(r"\[P0_8_PLUS_LIVE\] (\w+) (\w+) (BUY|SELL) .*?admitted=(True|False) code=(\w+)")
 _ENTRY = re.compile(r"\[PAPER_ENTRY\] symbol=(\w+) .*?reason=(\w+)")
 _BUDGET = re.compile(r"\[PAPER_LEARNING_BUDGET\] symbol=(\w+) reason=(\w+)")
+_OPEN = re.compile(r"\[P0_8_PLUS_LIVE_OPEN\] (\w+) (?:BUY|SELL) strategy=(\w+) status=(\w+) reason=(\w+)")
 _SKIP = re.compile(r"\[PAPER_EXPLORE_SKIP\] reason=(\w+) symbol=(\w+)")
 
 
@@ -34,6 +35,9 @@ def parse(line: str) -> str | None:
     if (m := _P08.search(line)):
         symbol, strategy, _side, admitted, code = m.groups()
         return f"p08|{strategy}|{symbol}|{'admit' if admitted == 'True' else code}"
+    if (m := _OPEN.search(line)):
+        symbol, strategy, status, reason = m.groups()
+        return f"open|{status if status == 'opened' else reason}|{symbol}|{strategy}"
     if (m := _ENTRY.search(line)):
         return f"entry|{m.group(2)}|{m.group(1)}"
     if (m := _BUDGET.search(line)):
@@ -92,7 +96,7 @@ def summarize(out: pathlib.Path, hours: int, now: float | None = None) -> str:
         kind, a, _symbol, *rest = key.split("|")
         if kind == "p08":
             group[f"p08:{rest[0]}"] += n
-        elif kind in ("entry", "budget"):
+        elif kind in ("entry", "budget", "open"):
             group[f"{kind}:{a}"] += n
     p08_total = sum(n for k, n in group.items() if k.startswith("p08:"))
     top = ",".join(f"{k}={n}" for k, n in group.most_common(8))

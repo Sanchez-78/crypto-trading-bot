@@ -1,0 +1,161 @@
+--- a/src/services/paper_trade_executor.py
++++ b/src/services/paper_trade_executor.py
+@@ -1539,12 +1539,28 @@
+     return p.get("training_bucket") or p.get("explore_bucket")
+ 
+ 
++EXPLORE_BUCKET_CAP_DEFAULT = 2
++EXPLORE_BUCKET_CAP_MAX = 7  # one per symbol; max_open_per_symbol = 1 still applies
++
++
++def exploration_bucket_cap(env=None) -> int:
++    """PAPER_EXPLORE_MAX_OPEN_PER_BUCKET in [1, 7]; unset or invalid -> 2 (the old constant).
++
++    Invalid values fall back to the more restrictive default instead of raising in the
++    entry path; deploy_env_check.py refuses them before a deploy.
++    """
++    raw = (os.environ if env is None else env).get("PAPER_EXPLORE_MAX_OPEN_PER_BUCKET", "").strip()
++    if raw.isascii() and raw.isdigit() and 1 <= int(raw) <= EXPLORE_BUCKET_CAP_MAX:
++        return int(raw)
++    return EXPLORE_BUCKET_CAP_DEFAULT
++
++
+ def _check_exploration_exposure_caps(symbol: str, bucket: Optional[str]) -> Optional[dict]:
+     """Check exploration-specific exposure caps.
+ 
+     Rules:
+     - max_open_per_symbol = 1
+-    - max_open_per_bucket = 2
++    - max_open_per_bucket = exploration_bucket_cap() (default 2)
+     - max_open_per_symbol_bucket = 1
+ 
+     P1.1Z: Ignore stale positions in cap counts.
+@@ -1594,7 +1610,7 @@
+         }
+ 
+     # Check bucket cap
+-    if bucket_count >= 2:
++    if bucket_count >= exploration_bucket_cap():
+         return {
+             "status": "blocked",
+             "reason": "max_open_per_bucket",
+--- a/deploy/research_eval/deploy_bot_files.sh
++++ b/deploy/research_eval/deploy_bot_files.sh
+@@ -39,8 +39,10 @@
+ # (completed-candle refresh fix, _workspace/63_codex_candle_refresh_fix.md). The allowlist
+ # guards paths only, not behaviour: p0_8_plus_live_pipeline.py itself calls the paper
+ # executor, so every deploy pins the exact reviewed bytes via EXPECTED_SHA256 (review 77).
+-ALLOWED_FILES="src/services/paper_source_learning.py src/services/paper_learning_budget.py src/services/candle_cache_v1.py src/services/p0_8_plus_live_pipeline.py"
+-ALLOWED_KEYS="PAPER_PROBE_HOURLY_ENTRIES PAPER_PROBE_DAILY_ENTRIES PAPER_PROBE_SYMBOL_COOLDOWN_S PAPER_PROBE_MIN_NET_BPS PAPER_SYMBOL_BLACKLIST PAPER_LEARNING_CONTROL_FRACTION PAPER_COST_EXPLORATION_ENABLED PAPER_ADAPTIVE_EXPLORATION_ENABLED PAPER_COMPLETED_CANDLE_LEARNING_ENABLED PAPER_COMPLETED_CANDLE_PHASE_REFRESH_ENABLED"
++# 2026-11-19: paper_trade_executor.py (PAPER executor only) + PAPER_EXPLORE_MAX_OPEN_PER_BUCKET
++# (exploration bucket cap, strict integer 1..7 in deploy_env_check.py), pending review.
++ALLOWED_FILES="src/services/paper_source_learning.py src/services/paper_learning_budget.py src/services/candle_cache_v1.py src/services/p0_8_plus_live_pipeline.py src/services/paper_trade_executor.py"
++ALLOWED_KEYS="PAPER_PROBE_HOURLY_ENTRIES PAPER_PROBE_DAILY_ENTRIES PAPER_PROBE_SYMBOL_COOLDOWN_S PAPER_PROBE_MIN_NET_BPS PAPER_SYMBOL_BLACKLIST PAPER_LEARNING_CONTROL_FRACTION PAPER_COST_EXPLORATION_ENABLED PAPER_ADAPTIVE_EXPLORATION_ENABLED PAPER_COMPLETED_CANDLE_LEARNING_ENABLED PAPER_COMPLETED_CANDLE_PHASE_REFRESH_ENABLED PAPER_EXPLORE_MAX_OPEN_PER_BUCKET"
+ for f in $FILES; do
+   case " $ALLOWED_FILES " in *" $f "*) ;; *) echo "file not allowed: $f" >&2; exit 2 ;; esac
+ done
+--- a/deploy/research_eval/deploy_env_check.py
++++ b/deploy/research_eval/deploy_env_check.py
+@@ -26,6 +26,8 @@
+ 
+ FALSY = {"false", "0", "no", "off"}
+ STRICT_BOOL_KEYS = ("PAPER_COMPLETED_CANDLE_PHASE_REFRESH_ENABLED",)
++# paper_trade_executor.exploration_bucket_cap() silently falls back to 2 on bad values.
++STRICT_INT_KEYS = {"PAPER_EXPLORE_MAX_OPEN_PER_BUCKET": (1, 7)}
+ ENV_FILE_ITEM = re.compile(r"(\S+) \(ignore_errors=(yes|no)\)")
+ 
+ 
+@@ -78,6 +80,10 @@
+         # candle_cache_v1 silently treats unknown values as "off"; a typo must fail.
+         if env.get(key, "false") not in {"true", "false"}:
+             raise Refused(f"{key} must be true or false")
++    for key, (low, high) in STRICT_INT_KEYS.items():
++        value = env.get(key)
++        if value is not None and not (re.fullmatch(r"[0-9]+", value) and low <= int(value) <= high):
++            raise Refused(f"{key} must be an integer in [{low}, {high}]")
+ 
+ 
+ def _fill_dotenv(env: dict, dotenv: dict) -> dict:
+--- a/tests/test_deploy_bot_files_allowlist.py
++++ b/tests/test_deploy_bot_files_allowlist.py
+@@ -16,7 +16,13 @@
+     assert _list("ALLOWED_FILES") == [
+         "src/services/paper_source_learning.py", "src/services/paper_learning_budget.py",
+         "src/services/candle_cache_v1.py", "src/services/p0_8_plus_live_pipeline.py",
++        "src/services/paper_trade_executor.py",
+     ]
++
++
++# 2026-11-19: the PAPER executor is the single, explicitly reviewed exception (bucket cap
++# PAPER_EXPLORE_MAX_OPEN_PER_BUCKET); every deploy still pins its exact bytes.
++EXECUTOR_EXCEPTION = "src/services/paper_trade_executor.py"
+ 
+ 
+ def test_allowed_keys_exclude_costs_exits_and_real_trading():
+@@ -28,6 +34,8 @@
+ 
+ def test_files_exclude_execution_cost_and_mode_modules():
+     for path in _list("ALLOWED_FILES"):
++        if path == EXECUTOR_EXCEPTION:
++            continue
+         assert not re.search(r"(executor|execution|cost_model|runtime_mode|risk|signal_router)", path), path
+ 
+ 
+--- a/tests/test_explore_bucket_cap.py
++++ b/tests/test_explore_bucket_cap.py
+@@ -0,0 +1,55 @@
++"""PAPER_EXPLORE_MAX_OPEN_PER_BUCKET: executor fallback and strict deploy validation."""
++import sys
++from pathlib import Path
++
++import pytest
++
++from src.services import paper_trade_executor as ex
++
++sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "deploy" / "research_eval"))
++import deploy_env_check as dec  # noqa: E402
++
++BASE = {"TRADING_MODE": "paper_train", "ENABLE_REAL_ORDERS": "false", "LIVE_TRADING_CONFIRMED": "false"}
++
++
++@pytest.mark.parametrize("raw,expected", [
++    (None, 2), ("", 2), ("1", 1), ("2", 2), ("7", 7),
++    ("0", 2), ("8", 2), ("-3", 2), ("3.5", 2), ("abc", 2), (" 5 ", 5), ("٣", 2),
++])
++def test_executor_cap_falls_back_to_default(raw, expected):
++    env = {} if raw is None else {"PAPER_EXPLORE_MAX_OPEN_PER_BUCKET": raw}
++    assert ex.exploration_bucket_cap(env) == expected
++
++
++@pytest.mark.parametrize("raw", ["1", "5", "7"])
++def test_deploy_check_accepts_range(raw):
++    dec.check_invariants({**BASE, "PAPER_EXPLORE_MAX_OPEN_PER_BUCKET": raw})
++
++
++@pytest.mark.parametrize("raw", ["0", "8", "", "five", "3.0", "-1", " 5"])
++def test_deploy_check_refuses_bad_values(raw):
++    with pytest.raises(dec.Refused):
++        dec.check_invariants({**BASE, "PAPER_EXPLORE_MAX_OPEN_PER_BUCKET": raw})
++
++
++def test_unset_is_allowed_by_deploy_check():
++    dec.check_invariants(dict(BASE))
++
++
++def _pos(symbol, bucket="P0_8_PLUS_EVIDENCE_COLLECTION"):
++    return {"symbol": symbol, "explore_bucket": bucket, "training_bucket": bucket,
++            "entry_ts": __import__("time").time(), "opened_at": __import__("time").time()}
++
++
++def test_bucket_cap_uses_env(monkeypatch):
++    positions = {f"p{i}": _pos(s) for i, s in enumerate(["BTCUSDT", "ETHUSDT"])}
++    monkeypatch.setattr(ex, "_POSITIONS", positions)
++    monkeypatch.setattr(ex, "_is_position_stale", lambda p, now: False)
++    monkeypatch.delenv("PAPER_EXPLORE_MAX_OPEN_PER_BUCKET", raising=False)
++    blocked = ex._check_exploration_exposure_caps("SOLUSDT", "P0_8_PLUS_EVIDENCE_COLLECTION")
++    assert blocked and blocked["reason"] == "max_open_per_bucket"
++    monkeypatch.setenv("PAPER_EXPLORE_MAX_OPEN_PER_BUCKET", "3")
++    assert ex._check_exploration_exposure_caps("SOLUSDT", "P0_8_PLUS_EVIDENCE_COLLECTION") is None
++    # max_open_per_symbol = 1 is unchanged by the bucket cap
++    assert ex._check_exploration_exposure_caps("BTCUSDT", "P0_8_PLUS_EVIDENCE_COLLECTION")["reason"] == \
++        "max_open_per_symbol"

@@ -26,6 +26,8 @@ from pathlib import Path
 
 FALSY = {"false", "0", "no", "off"}
 STRICT_BOOL_KEYS = ("PAPER_COMPLETED_CANDLE_PHASE_REFRESH_ENABLED",)
+# paper_trade_executor.exploration_bucket_cap() silently falls back to 2 on bad values.
+STRICT_INT_KEYS = {"PAPER_EXPLORE_MAX_OPEN_PER_BUCKET": (1, 7)}
 ENV_FILE_ITEM = re.compile(r"(\S+) \(ignore_errors=(yes|no)\)")
 
 
@@ -78,6 +80,10 @@ def check_invariants(env: dict) -> None:
         # candle_cache_v1 silently treats unknown values as "off"; a typo must fail.
         if env.get(key, "false") not in {"true", "false"}:
             raise Refused(f"{key} must be true or false")
+    for key, (low, high) in STRICT_INT_KEYS.items():
+        value = env.get(key)
+        if value is not None and not (re.fullmatch(r"[0-9]+", value) and low <= int(value) <= high):
+            raise Refused(f"{key} must be an integer in [{low}, {high}]")
 
 
 def _fill_dotenv(env: dict, dotenv: dict) -> dict:

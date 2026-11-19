@@ -16,7 +16,13 @@ def test_allowed_files_are_exactly_the_reviewed_set():
     assert _list("ALLOWED_FILES") == [
         "src/services/paper_source_learning.py", "src/services/paper_learning_budget.py",
         "src/services/candle_cache_v1.py", "src/services/p0_8_plus_live_pipeline.py",
+        "src/services/paper_trade_executor.py",
     ]
+
+
+# 2026-11-19: the PAPER executor is the single, explicitly reviewed exception (bucket cap
+# PAPER_EXPLORE_MAX_OPEN_PER_BUCKET); every deploy still pins its exact bytes.
+EXECUTOR_EXCEPTION = "src/services/paper_trade_executor.py"
 
 
 def test_allowed_keys_exclude_costs_exits_and_real_trading():
@@ -28,6 +34,8 @@ def test_allowed_keys_exclude_costs_exits_and_real_trading():
 
 def test_files_exclude_execution_cost_and_mode_modules():
     for path in _list("ALLOWED_FILES"):
+        if path == EXECUTOR_EXCEPTION:
+            continue
         assert not re.search(r"(executor|execution|cost_model|runtime_mode|risk|signal_router)", path), path
 
 

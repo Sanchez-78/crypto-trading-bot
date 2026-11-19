@@ -24,6 +24,10 @@ def test_parse_keys_and_ignores_outcomes():
         "budget|symbol_cooldown|ADAUSDT"
     assert ft.parse("[PAPER_EXPLORE_SKIP] reason=no_side symbol=ETHUSDT original_decision=X") == \
         "skip|no_side|ETHUSDT"
+    assert ft.parse("[P0_8_PLUS_LIVE_OPEN] SOLUSDT BUY strategy=trend_cost_aware status=blocked "
+                    "reason=max_open_per_bucket") == "open|max_open_per_bucket|SOLUSDT|trend_cost_aware"
+    assert ft.parse("[P0_8_PLUS_LIVE_OPEN] XRPUSDT BUY strategy=trend_cost_aware status=opened "
+                    "reason=None") == "open|opened|XRPUSDT|trend_cost_aware"
     assert ft.parse(EXIT) is None  # blind phase: no outcomes recorded
     assert ft.parse("[P0_8_PLUS_LIVE] tick complete: 1 opened across 1 symbol(s)") is None
 

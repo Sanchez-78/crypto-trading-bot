@@ -54,6 +54,12 @@ generátory dál určují, co vstoupí.
 - První 4 min: aktivní, PAPER, REAL vypnuto, 0 výjimek, `data_age_ms` 3,5–5,9 s (limit 90 s),
   0× `REJECT_STALE_MARKET_DATA` (předtím ~42–45 % kandidátů), 2 vstupy.
 - Konfigurace sběru (limity, cooldown, CONTROL 1,0) beze změny.
+- 2026-11-19: stale odmítnutí ~45 % → 0–5 %, přijatých kandidátů ~2×, vstupů beze změny
+  (~118 / 12 h). Vázající je natvrdo `max_open_per_bucket = 2` v `paper_trade_executor`.
+  Připraveno: `PAPER_EXPLORE_MAX_OPEN_PER_BUCKET` (1–7, výchozí 2), přesný diff
+  `_workspace/bucket_cap_20261119/task.diff`, review Codexu
+  `docs/codex_prompts/CODEX_REVIEW_EXPLORE_BUCKET_CAP_2026-11-19.md`. Nasadit až po APPROVE,
+  jako samostatnou kohortu (vyžaduje i výjimku exekutoru v allowlistu deploy skriptu).
 - Historický experiment ADAPTIVE vs CONTROL (do 9. 11.): `SELECTION_EFFECT_NOT_SHOWN`,
   uzavřen — při CONTROL = 1 nová ramena nevznikají.
 

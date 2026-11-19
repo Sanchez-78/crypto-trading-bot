@@ -5,7 +5,15 @@ Komunikace s uživatelem a reporty: **česky**. Identifikátory a kód: anglicky
 
 ## Aktuální zadání
 
-**Žádné otevřené zadání.** Deploy skript: review 77–81, finálně APPROVE (`_workspace/81_…`), nástroje
+**Otevřené zadání (review, 2026-11-19):** `docs/codex_prompts/CODEX_REVIEW_EXPLORE_BUCKET_CAP_2026-11-19.md`
+→ `_workspace/2026-11-19_codex_review_explore_bucket_cap.md` (strop otevřených pozic průzkumného bucketu).
+
+**Otevřené zadání (re-review):** `docs/codex_prompts/CODEX_REREVIEW_OUTBOX_RECONCILE_PLANNER_2026-11-18.md`
+→ `_workspace/2026-11-18_codex_rereview_outbox_reconcile.md` (plánovač rekonciliace, kolo 2).
+Hotové: review po-C1 nápravy (`_workspace/2026-11-18_codex_review_post_c1_remediation.md`):
+readiness a viditelnost outboxu APPROVE (kód, ne nasazení), izolace testů APPROVE.
+`tests/conftest.py` chrání runtime DB při collection a při změně jejího SHA běh shodí.
+Dříve: deploy skript: review 77–81, finálně APPROVE (`_workspace/81_…`), nástroje
 nainstalovány na serveru 2026-11-12; nasazení opravy svíček až po zmrazeném C1 podle
 `docs/remediation/C1_FREEZE_DAY_RUNBOOK_2026-11-11.md`. Hotové: review opravy svíček (Claude,
 APPROVE kód, BLOCKED nasazení) → `_workspace/77_independent_candle_refresh_review.md`; review
