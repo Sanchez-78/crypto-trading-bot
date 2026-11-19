@@ -1,0 +1,35 @@
+{
+ "src/services/readiness_monitor.py": {
+  "unit": "dashboard",
+  "sha256": "735fdbaff5cef80169b06ea053b4f44bc71b46051ba86975b3af467109b6a2ed",
+  "crlf": true,
+  "plus": 13,
+  "minus": 54
+ },
+ "src/services/dashboard_web.py": {
+  "unit": "dashboard",
+  "sha256": "b28ce903d06a1c7bdcca03a7a6293549080501f08cef4a82b9a3b79e8f038f7a",
+  "crlf": true,
+  "plus": 15,
+  "minus": 11
+ },
+ "src/services/v5_legacy_bridge/outbox.py": {
+  "unit": "bot",
+  "sha256": "82359f26c82c16d0d3044df5ea9b02fc9e4023b2d576cf1b2d3825ff4938dc0d",
+  "crlf": true,
+  "plus": 47,
+  "minus": 0
+ },
+ "src/services/v5_legacy_bridge/outbox_flush_worker.py": {
+  "unit": "bot",
+  "sha256": "d65614e33c7b48bb144b56806a1a8d52a13a5ee20579afb6207b984d7dbf02a4",
+  "crlf": false,
+  "plus": 35,
+  "minus": 0
+ },
+ "import_check": {
+  "exit": 0,
+  "stderr_tail": "",
+  "created_files": []
+ }
+}

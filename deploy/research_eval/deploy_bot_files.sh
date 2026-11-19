@@ -41,11 +41,17 @@ flock -n 9 || { echo "another deploy is running" >&2; exit 4; }
 # executor, so every deploy pins the exact reviewed bytes via EXPECTED_SHA256 (review 77).
 # 2026-11-19: paper_trade_executor.py (PAPER executor only) + PAPER_EXPLORE_MAX_OPEN_PER_BUCKET
 # (exploration bucket cap, strict integer 1..7 in deploy_env_check.py), pending review.
-ALLOWED_FILES="src/services/paper_source_learning.py src/services/paper_learning_budget.py src/services/candle_cache_v1.py src/services/p0_8_plus_live_pipeline.py src/services/paper_trade_executor.py"
+# 2026-11-19: v5_legacy_bridge/outbox.py + outbox_flush_worker.py (terminal-backlog visibility,
+# read-only SELECT + local log; code APPROVE _workspace/2026-11-18_codex_review_post_c1_remediation.md).
+ALLOWED_FILES="src/services/paper_source_learning.py src/services/paper_learning_budget.py src/services/candle_cache_v1.py src/services/p0_8_plus_live_pipeline.py src/services/paper_trade_executor.py src/services/v5_legacy_bridge/outbox.py src/services/v5_legacy_bridge/outbox_flush_worker.py"
 ALLOWED_KEYS="PAPER_PROBE_HOURLY_ENTRIES PAPER_PROBE_DAILY_ENTRIES PAPER_PROBE_SYMBOL_COOLDOWN_S PAPER_PROBE_MIN_NET_BPS PAPER_SYMBOL_BLACKLIST PAPER_LEARNING_CONTROL_FRACTION PAPER_COST_EXPLORATION_ENABLED PAPER_ADAPTIVE_EXPLORATION_ENABLED PAPER_COMPLETED_CANDLE_LEARNING_ENABLED PAPER_COMPLETED_CANDLE_PHASE_REFRESH_ENABLED PAPER_EXPLORE_MAX_OPEN_PER_BUCKET"
 for f in $FILES; do
   case " $ALLOWED_FILES " in *" $f "*) ;; *) echo "file not allowed: $f" >&2; exit 2 ;; esac
 done
+# The source dir is flat (stage_files reads $NEW/<basename>): two files with one basename would
+# install the same bytes twice under different paths.
+dup="$(for f in $FILES; do basename "$f"; done | sort | uniq -d)"
+[ -z "$dup" ] || { echo "duplicate basename in FILES: $dup" >&2; exit 2; }
 for kv in $VARS; do
   key="${kv%%=*}"
   case " $ALLOWED_KEYS " in *" $key "*) ;; *) echo "key not allowed: $key" >&2; exit 2 ;; esac
@@ -65,8 +71,7 @@ if [ -n "$last" ] && [ "$(printf '%s\n%s\n' "$last" "$DROPIN_NAME" | LC_ALL=C so
   echo "drop-in $DROPIN_NAME would not sort after $last" >&2; exit 2
 fi
 
-mkdir -p "$BACKUP/src/services"
-for f in $FILES; do cp -p "$APP/$f" "$BACKUP/$f"; done
+for f in $FILES; do mkdir -p "$BACKUP/$(dirname "$f")"; cp -p "$APP/$f" "$BACKUP/$f"; done
 had_dropin=0; [ -f "$DROPIN" ] && { cp -p "$DROPIN" "$BACKUP/"; had_dropin=1; }
 ( cd "$BACKUP" && find . -type f -exec sha256sum {} + ) > "$BACKUP/PREIMAGE.sha256"
 

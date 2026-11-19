@@ -17,7 +17,18 @@ def test_allowed_files_are_exactly_the_reviewed_set():
         "src/services/paper_source_learning.py", "src/services/paper_learning_budget.py",
         "src/services/candle_cache_v1.py", "src/services/p0_8_plus_live_pipeline.py",
         "src/services/paper_trade_executor.py",
+        "src/services/v5_legacy_bridge/outbox.py", "src/services/v5_legacy_bridge/outbox_flush_worker.py",
     ]
+
+
+def test_nested_paths_are_backed_up_and_basenames_unique():
+    # 2026-11-19: v5_legacy_bridge/* live below src/services; the backup must create each
+    # file's own directory, and the flat source dir needs unique basenames.
+    assert 'mkdir -p "$BACKUP/$(dirname "$f")"; cp -p "$APP/$f" "$BACKUP/$f"' in TEXT
+    assert 'mkdir -p "$BACKUP/src/services"\n' not in TEXT
+    assert "duplicate basename in FILES" in TEXT
+    names = [p.rsplit("/", 1)[-1] for p in _list("ALLOWED_FILES")]
+    assert len(names) == len(set(names))
 
 
 # 2026-11-19: the PAPER executor is the single, explicitly reviewed exception (bucket cap

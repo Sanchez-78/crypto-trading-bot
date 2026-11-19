@@ -1,0 +1,54 @@
+{
+ "src/services/readiness_monitor.py": {
+  "unit": "dashboard",
+  "artifact": "_workspace/deploy_post_c1_20261119/dashboard/readiness_monitor.py",
+  "sha256": "1f5d9429817f3911b6cdb6c77e6ba9193f0e50c842326380633ed82eaa088144",
+  "preimage_sha256": "854ccfe92ca19bf22bec3a8bf26d330a217feee1b790539aa341e37e7c67c5d6",
+  "diff": [
+   13,
+   54
+  ],
+  "server_copy_matches_recorded_sha": true,
+  "diff_equals_approved": true,
+  "no_cr": true
+ },
+ "src/services/dashboard_web.py": {
+  "unit": "dashboard",
+  "artifact": "_workspace/deploy_post_c1_20261119/dashboard/dashboard_web.py",
+  "sha256": "901807c30df51a407914a7e6b137da9ada1c8dc13a5d1a11d1a290701809f93c",
+  "preimage_sha256": "0fdbf5c8e9c7864f334fcc48b8c16a886037ff854cf2bf05ba14b7d58b360b62",
+  "diff": [
+   15,
+   11
+  ],
+  "server_copy_matches_recorded_sha": true,
+  "diff_equals_approved": true,
+  "no_cr": true
+ },
+ "src/services/v5_legacy_bridge/outbox.py": {
+  "unit": "bot",
+  "artifact": "_workspace/deploy_post_c1_20261119/bot/outbox.py",
+  "sha256": "37cb41b8a825149404133ca98797fde9cff44d95774fb0c3f8761d6988feaaff",
+  "preimage_sha256": "a3d7d7a4854e4cf4dd5bd828d5446925297e7f8d1e1fac9ed31c7418588f4413",
+  "diff": [
+   47,
+   0
+  ],
+  "server_copy_matches_recorded_sha": true,
+  "diff_equals_approved": true,
+  "no_cr": true
+ },
+ "src/services/v5_legacy_bridge/outbox_flush_worker.py": {
+  "unit": "bot",
+  "artifact": "_workspace/deploy_post_c1_20261119/bot/outbox_flush_worker.py",
+  "sha256": "d65614e33c7b48bb144b56806a1a8d52a13a5ee20579afb6207b984d7dbf02a4",
+  "preimage_sha256": "b173ea7c22def1efb76ec4ba9d11bcfc492c8c5e0b5c06a0129cffcaa75a6e9e",
+  "diff": [
+   35,
+   0
+  ],
+  "server_copy_matches_recorded_sha": true,
+  "diff_equals_approved": true,
+  "no_cr": true
+ }
+}
