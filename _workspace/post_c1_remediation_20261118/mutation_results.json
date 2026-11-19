@@ -1,0 +1,74 @@
+{
+  "baseline": {
+    "exit": 0,
+    "summary": "21 passed, 31 warnings in 2.64s",
+    "failed": [],
+    "import_error": false
+  },
+  "readiness_module_reverted_to_server": {
+    "exit": 1,
+    "summary": "1 failed, 20 passed, 31 warnings in 2.36s",
+    "failed": [
+      "FAILED tests/test_readiness_paper_only.py::test_readiness_module_has_no_import_side_effects"
+    ],
+    "import_error": false
+  },
+  "readiness_endpoint_claims_ready": {
+    "exit": 1,
+    "summary": "1 failed, 20 passed, 31 warnings in 2.40s",
+    "failed": [
+      "FAILED tests/test_readiness_paper_only.py::test_readiness_endpoint_reports_paper_only_without_env_or_executor"
+    ],
+    "import_error": false
+  },
+  "backlog_hides_terminal": {
+    "exit": 1,
+    "summary": "4 failed, 17 passed, 28 warnings in 2.15s",
+    "failed": [
+      "FAILED tests/test_outbox_terminal_backlog.py::test_terminal_rows_are_visible_and_pending_count_unchanged",
+      "FAILED tests/test_outbox_terminal_backlog.py::test_same_key_across_open_and_close_is_not_a_duplicate",
+      "FAILED tests/test_outbox_terminal_backlog.py::test_reporting_never_writes_to_firebase_or_replays_terminal_rows",
+      "FAILED tests/test_outbox_terminal_backlog.py::test_worker_start_reports_terminal_backlog_once"
+    ],
+    "import_error": false
+  },
+  "backlog_leaks_ids": {
+    "exit": 1,
+    "summary": "1 failed, 20 passed, 31 warnings in 2.20s",
+    "failed": [
+      "FAILED tests/test_outbox_terminal_backlog.py::test_stats_fail_soft_on_db_error"
+    ],
+    "import_error": false
+  },
+  "pending_count_meaning_changed": {
+    "exit": 1,
+    "summary": "2 failed, 19 passed, 29 warnings in 2.16s",
+    "failed": [
+      "FAILED tests/test_outbox_terminal_backlog.py::test_terminal_rows_are_visible_and_pending_count_unchanged",
+      "FAILED tests/test_outbox_terminal_backlog.py::test_reporting_never_writes_to_firebase_or_replays_terminal_rows"
+    ],
+    "import_error": false
+  },
+  "terminal_log_on_every_tick": {
+    "exit": 1,
+    "summary": "1 failed, 20 passed, 30 warnings in 2.16s",
+    "failed": [
+      "FAILED tests/test_outbox_terminal_backlog.py::test_reporting_never_writes_to_firebase_or_replays_terminal_rows"
+    ],
+    "import_error": false
+  },
+  "terminal_log_removed": {
+    "exit": 1,
+    "summary": "1 failed, 20 passed, 30 warnings in 2.20s",
+    "failed": [
+      "FAILED tests/test_outbox_terminal_backlog.py::test_worker_start_reports_terminal_backlog_once"
+    ],
+    "import_error": false
+  },
+  "restored": {
+    "exit": 0,
+    "summary": "21 passed, 31 warnings in 2.01s",
+    "failed": [],
+    "import_error": false
+  }
+}

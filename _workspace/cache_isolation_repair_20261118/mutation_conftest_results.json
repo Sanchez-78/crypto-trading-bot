@@ -1,0 +1,42 @@
+{
+  "baseline": {
+    "exit": 0,
+    "summary": "14 passed in 27.52s"
+  },
+  "only_cache_sqlite": {
+    "exit": 1,
+    "summary": "4 failed, 10 passed in 27.23s"
+  },
+  "no_runtime_dir_scan": {
+    "exit": 1,
+    "summary": "5 failed, 9 passed in 27.12s"
+  },
+  "exitstatus_not_set": {
+    "exit": 1,
+    "summary": "10 failed, 4 passed in 27.10s"
+  },
+  "no_prevention": {
+    "exit": 1,
+    "summary": "1 failed, 13 passed in 24.38s"
+  },
+  "runtime_dirs_by_metadata": {
+    "exit": 1,
+    "summary": "2 failed, 12 passed in 27.42s"
+  },
+  "deletion_ignored": {
+    "exit": 1,
+    "summary": "3 failed, 11 passed in 27.49s"
+  },
+  "omit_adaptive_learning_state": {
+    "exit": 1,
+    "summary": "2 failed, 12 passed in 25.87s"
+  },
+  "omit_src_runtime_quota": {
+    "exit": 1,
+    "summary": "1 failed, 13 passed in 26.18s"
+  },
+  "restored": {
+    "exit": 0,
+    "summary": "14 passed in 25.30s"
+  }
+}

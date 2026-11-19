@@ -1,0 +1,3 @@
+freeze_ts 1794851315 marker_ts 1794985514 now 1794988164
+freeze..marker n=326 win_flag=85 pnl_pos=121 sum_usd=-2.075767 avg_bps=-8.49 outcome WIN/LOSS/FLAT=0/166/75
+marker..now n=6 win_flag=2 pnl_pos=2 sum_usd=-0.0582 avg_bps=-12.933 outcome WIN/LOSS/FLAT=0/4/0

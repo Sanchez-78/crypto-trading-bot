@@ -1,0 +1,254 @@
+--- server/src/services/readiness_monitor.py
++++ local/src/services/readiness_monitor.py
+@@ -2,7 +2,6 @@
+ Periodic monitoring that checks if bot is ready for real trading.
+ Integrates with dashboard for real-time readiness display.
+ """
+-import os
+ import time
+ import logging
+ import threading
+@@ -18,54 +17,17 @@
+ 
+ 
+ def get_current_metrics():
+-    """Collect current trading metrics from available sources."""
+-    try:
+-        from src.services.paper_trade_executor import (
+-            _POSITIONS, _closed_trades_today, evaluate_paper_tp_sl_exits
+-        )
++    """REAL-trading readiness metrics are not collected (2026-11-18).
+ 
+-        # Count positions
+-        closed_count = len(_closed_trades_today) if hasattr(_closed_trades_today, '__len__') else 0
+-        open_count = len(_POSITIONS) if hasattr(_POSITIONS, '__len__') else 0
+-
+-        if closed_count == 0:
+-            return None
+-
+-        # Calculate WR and P&L from closed trades
+-        wins = 0
+-        total_pnl = 0.0
+-
+-        for trade in _closed_trades_today:
+-            pnl = trade.get("pnl_usd", 0.0)
+-            total_pnl += pnl
+-            if pnl > 0:
+-                wins += 1
+-
+-        wr_pct = (wins / closed_count * 100) if closed_count > 0 else 0.0
+-
+-        # Calculate profit factor
+-        winning_trades_sum = 0.0
+-        losing_trades_sum = 0.0
+-
+-        for trade in _closed_trades_today:
+-            pnl = trade.get("pnl_usd", 0.0)
+-            if pnl > 0:
+-                winning_trades_sum += pnl
+-            else:
+-                losing_trades_sum += abs(pnl)
+-
+-        pf = winning_trades_sum / losing_trades_sum if losing_trades_sum > 0 else 0.0
+-
+-        return {
+-            "closed_trades": closed_count,
+-            "open_positions": open_count,
+-            "win_rate_pct": wr_pct,
+-            "profit_factor": pf,
+-            "net_pnl": total_pnl,
+-        }
+-    except Exception as e:
+-        log.error(f"[METRICS_COLLECTION_ERROR] {e}")
+-        return None
++    This module is only imported by the dashboard process. Importing
++    paper_trade_executor there read the bot's in-memory state of a *different*
++    process (always empty) and executed its module-level load_dotenv(), which
++    the dashboard sandbox denies (InaccessiblePaths=/opt/cryptomaster/.env) --
++    the source of the recurring [METRICS_COLLECTION_ERROR] Permission denied.
++    The operating policy is PAPER only, so there is nothing to evaluate here;
++    trade metrics come from the dashboard read model (/api/dashboard/metrics).
++    """
++    return None
+ 
+ 
+ def run_readiness_check():
+@@ -137,9 +99,6 @@
+     _should_stop = True
+ 
+ 
+-# Auto-start on module import if in paper trading mode
+-if os.getenv("TRADING_MODE") in ["paper_train", "paper_live"]:
+-    try:
+-        start_monitoring_thread()
+-    except Exception as e:
+-        log.warning(f"Could not start readiness monitoring: {e}")
++# No auto-start on import (2026-11-18): get_current_metrics() never yields
++# metrics in the dashboard process, so the thread could only spin. Importing this
++# module has no side effects; start_monitoring_thread() stays for explicit callers.
+--- server/src/services/dashboard_web.py
++++ local/src/services/dashboard_web.py
+@@ -1370,25 +1370,29 @@
+ 
+ @app.route('/api/dashboard/readiness')
+ def readiness_check():
+-    """Get trading readiness status."""
++    """REAL-trading readiness: explicitly not evaluated under the PAPER-only policy.
++
++    Compatible shape (is_ready_for_trading / readiness_score / blocker_reasons kept).
++    The dashboard process cannot see the bot's memory and must not read .env, so a
++    computed readiness here was always meaningless; it is never reported as ready.
++    Trade metrics: /api/dashboard/metrics.
++    """
+     try:
+-        from src.services.trading_readiness_checker import check_readiness
+         from src.services.readiness_monitor import get_current_metrics
+ 
+-        # Get current metrics
+-        metrics = get_current_metrics()
++        metrics = get_current_metrics()  # always None, see readiness_monitor
+         if not metrics:
+             return jsonify({
+-                "error": "No metrics available yet",
++                "status": "paper_only",
+                 "readiness_score": 0,
+                 "is_ready_for_trading": False,
+-                "blocker_reasons": ["Insufficient trading history"]
++                "blocker_reasons": ["paper_only_policy"],
++                "detail": ("REAL trading readiness is not evaluated: PAPER-only operating policy. "
++                           "Trade metrics are served by /api/dashboard/metrics."),
+             }), 200
+-
+-        # Run readiness check
+-        result = check_readiness(metrics)
+-
+-        return jsonify(result), 200
++        # Unreachable while get_current_metrics() returns None; kept fail-closed.
++        return jsonify({"status": "paper_only", "readiness_score": 0, "is_ready_for_trading": False,
++                        "blocker_reasons": ["paper_only_policy"]}), 200
+     except Exception as e:
+         log.error(f"[READINESS_CHECK_ERROR] {e}", exc_info=True)
+         # Never-500 (dashboard_audit 2026-07-14, Fix 5): degrade with HTTP 200.
+--- server/src/services/v5_legacy_bridge/outbox.py
++++ local/src/services/v5_legacy_bridge/outbox.py
+@@ -258,6 +258,53 @@
+             logger.error(f"[V5_BRIDGE] pending_count failed: {e}")
+             return 0
+ 
++    def backlog_stats(self) -> dict:
++        """Read-only backlog split (2026-11-18 post-C1 audit, P1).
++
++        pending_count() keeps its meaning (rows still eligible for replay). Rows at
++        retry_count >= OUTBOX_MAX_RETRIES are never replayed again and were invisible;
++        they are reported here as terminal_unsynced. "Unsynced" means not acknowledged
++        locally -- the cloud write may still have succeeded before a timeout, so this is
++        not a count of missing cloud documents. Aggregates only: no IDs or payloads.
++        """
++        max_retries = config.OUTBOX_MAX_RETRIES
++        stats = {"replayable_pending": 0, "terminal_unsynced": 0, "by_type": {},
++                 "oldest_terminal_created_at": None, "oldest_terminal_age_s": None,
++                 "max_retries": max_retries}
++        try:
++            conn = sqlite3.connect(self.db_path)
++            try:
++                rows = conn.execute(
++                    "SELECT event_type, retry_count >= ?, COUNT(*), MIN(created_at) "
++                    "FROM outbox GROUP BY 1, 2",
++                    (max_retries,),
++                ).fetchall()
++            finally:
++                conn.close()
++        except Exception as e:
++            logger.error(f"[V5_BRIDGE] backlog_stats failed: {e}")
++            stats["error"] = type(e).__name__
++            return stats
++        oldest = None
++        for event_type, terminal, count, first_created in rows:
++            bucket = stats["by_type"].setdefault(event_type, {"replayable": 0, "terminal": 0})
++            if terminal:
++                bucket["terminal"] += count
++                stats["terminal_unsynced"] += count
++                if first_created and (oldest is None or first_created < oldest):
++                    oldest = first_created
++            else:
++                bucket["replayable"] += count
++                stats["replayable_pending"] += count
++        if oldest:
++            stats["oldest_terminal_created_at"] = oldest
++            try:
++                stats["oldest_terminal_age_s"] = round(
++                    (datetime.utcnow() - datetime.fromisoformat(oldest)).total_seconds(), 1)
++            except ValueError:
++                pass
++        return stats
++
+     def flush(self, limit: int = 20) -> dict:
+         """
+         Attempt to flush pending entries.
+--- server/src/services/v5_legacy_bridge/outbox_flush_worker.py
++++ local/src/services/v5_legacy_bridge/outbox_flush_worker.py
+@@ -49,6 +49,7 @@
+         self.running = False
+         self._thread: Optional[threading.Thread] = None
+         self._stop_event = threading.Event()
++        self._last_terminal_count: Optional[int] = None
+ 
+     def start(self) -> None:
+         """Start background flush worker thread."""
+@@ -61,6 +62,32 @@
+         self._thread = threading.Thread(target=self._run_loop, daemon=True, name="v5-outbox-flush")
+         self._thread.start()
+         logger.info("[V5_BRIDGE_OUTBOX_FLUSH] Worker started")
++        self._report_terminal_backlog()
++
++    def _report_terminal_backlog(self) -> None:
++        """Log the terminal (never-replayed) backlog at start and whenever it changes.
++
++        Local log only: no Firebase write, no IDs or payloads (2026-11-18 audit, P1).
++        """
++        if not self.outbox:
++            return
++        try:
++            stats = self.outbox.backlog_stats()
++        except Exception as e:
++            logger.error(f"[V5_BRIDGE_OUTBOX_TERMINAL] stats failed: {e}")
++            return
++        terminal = stats.get("terminal_unsynced", 0)
++        if terminal == self._last_terminal_count:
++            return
++        self._last_terminal_count = terminal
++        if terminal or stats.get("error"):
++            by_type = ",".join(f"{t}={v['terminal']}" for t, v in sorted(stats["by_type"].items()) if v["terminal"])
++            logger.warning(
++                f"[V5_BRIDGE_OUTBOX_TERMINAL] terminal_unsynced={terminal} "
++                f"replayable_pending={stats.get('replayable_pending', 0)} by_type={by_type or '-'} "
++                f"oldest_terminal_created_at={stats.get('oldest_terminal_created_at')} "
++                f"error={stats.get('error', '-')} -- not auto-replayed; reconcile before any replay"
++            )
+ 
+     def stop(self) -> None:
+         """Stop scheduling flushes; unfinished rows remain in the durable outbox."""
+@@ -86,6 +113,7 @@
+                     self._flush_batch()
+                 except Exception as e:
+                     logger.error(f"[V5_BRIDGE_OUTBOX_FLUSH_ERROR] {e}")
++                self._report_terminal_backlog()  # logs only when the count changes
+                 if self._stop_event.wait(config.OUTBOX_FLUSH_INTERVAL_S):
+                     break
+         finally:
+@@ -125,10 +153,15 @@
+         else:
+             count_by_type = {}
+ 
++        backlog = self.outbox.backlog_stats() if self.outbox else {}
+         return {
+             "running": self.running,
+             "pending_count": pending_count,
+             "count_by_type": count_by_type,
++            # Rows past OUTBOX_MAX_RETRIES: never replayed, invisible to pending_count.
++            "terminal_unsynced": backlog.get("terminal_unsynced", 0),
++            "terminal_by_type": {t: v["terminal"] for t, v in backlog.get("by_type", {}).items() if v["terminal"]},
++            "oldest_terminal_age_s": backlog.get("oldest_terminal_age_s"),
+             "firebase_connected": bool(
+                 self.firebase_writer and self.firebase_writer.firebase_client
+             ),

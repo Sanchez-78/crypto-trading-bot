@@ -1,0 +1,14 @@
+quick_check ('ok',)
+user_version (0,) schema_version (29,)
+auditor_state_cache 1
+calibration_state 0
+closed_trades 473
+learning_metrics 0
+model_weights_cache 0
+closed_trades cols 40
+closed_trades entry_ts range (1000.0, 1790938724.847536, '2026-10-02 10:58:44')
+max auditor_state_cache timestamp 1788246240.0740173
+max calibration_state timestamp None
+max closed_trades created_at 2026-10-02 10:58:44
+max learning_metrics timestamp None
+max model_weights_cache timestamp None

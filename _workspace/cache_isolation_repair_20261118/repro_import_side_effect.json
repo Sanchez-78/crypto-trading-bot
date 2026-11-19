@@ -1,0 +1,47 @@
+{
+  "real_db_before": "0f2fbd24c8b4420b6b6f56fccb24b6d83eb9a6862ee2bca0fd42d12459cf0d7e",
+  "fresh": {
+    "sha256": "c3624a981c4c06bf2d2371a35a526f2d9e5d6d51959153be0141062300796fcd",
+    "schema_version": 29,
+    "columns": 40,
+    "rows": 1,
+    "last_cols": [
+      "predicted_gross_move_bps",
+      "predicted_net_edge_bps"
+    ]
+  },
+  "after_reimport_current_schema": {
+    "sha256": "c3624a981c4c06bf2d2371a35a526f2d9e5d6d51959153be0141062300796fcd",
+    "schema_version": 29,
+    "columns": 40,
+    "rows": 1,
+    "last_cols": [
+      "predicted_gross_move_bps",
+      "predicted_net_edge_bps"
+    ]
+  },
+  "older_schema": {
+    "sha256": "b6f22b41f0a73ca0145eb4633da991133a97f8966d28ae80d6551c2015c1ee23",
+    "schema_version": 31,
+    "columns": 38,
+    "rows": 1,
+    "last_cols": [
+      "learning_shadow_only",
+      "tags_json"
+    ]
+  },
+  "after_import_older_schema": {
+    "sha256": "e34aac82d9c2d26e2dacf264e90376a8c5a37a4855ab45f37ef27acaf6dd6024",
+    "schema_version": 33,
+    "columns": 40,
+    "rows": 1,
+    "last_cols": [
+      "predicted_gross_move_bps",
+      "predicted_net_edge_bps"
+    ]
+  },
+  "real_db_after": "0f2fbd24c8b4420b6b6f56fccb24b6d83eb9a6862ee2bca0fd42d12459cf0d7e",
+  "real_db_unchanged": true,
+  "current_schema_import_changes_hash": false,
+  "older_schema_import_changes_hash": true
+}

@@ -1217,25 +1217,29 @@ def react_assets(filename):
 
 @app.route('/api/dashboard/readiness')
 def readiness_check():
-    """Get trading readiness status."""
+    """REAL-trading readiness: explicitly not evaluated under the PAPER-only policy.
+
+    Compatible shape (is_ready_for_trading / readiness_score / blocker_reasons kept).
+    The dashboard process cannot see the bot's memory and must not read .env, so a
+    computed readiness here was always meaningless; it is never reported as ready.
+    Trade metrics: /api/dashboard/metrics.
+    """
     try:
-        from src.services.trading_readiness_checker import check_readiness
         from src.services.readiness_monitor import get_current_metrics
 
-        # Get current metrics
-        metrics = get_current_metrics()
+        metrics = get_current_metrics()  # always None, see readiness_monitor
         if not metrics:
             return jsonify({
-                "error": "No metrics available yet",
+                "status": "paper_only",
                 "readiness_score": 0,
                 "is_ready_for_trading": False,
-                "blocker_reasons": ["Insufficient trading history"]
+                "blocker_reasons": ["paper_only_policy"],
+                "detail": ("REAL trading readiness is not evaluated: PAPER-only operating policy. "
+                           "Trade metrics are served by /api/dashboard/metrics."),
             }), 200
-
-        # Run readiness check
-        result = check_readiness(metrics)
-
-        return jsonify(result), 200
+        # Unreachable while get_current_metrics() returns None; kept fail-closed.
+        return jsonify({"status": "paper_only", "readiness_score": 0, "is_ready_for_trading": False,
+                        "blocker_reasons": ["paper_only_policy"]}), 200
     except Exception as e:
         log.error(f"[READINESS_CHECK_ERROR] {e}", exc_info=True)
         # Never-500 (dashboard_audit 2026-07-14, Fix 5): degrade with HTTP 200.

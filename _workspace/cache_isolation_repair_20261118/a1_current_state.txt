@@ -1,0 +1,9 @@
+2026-11-18T08:08:22Z
+0f2fbd24c8b4420b6b6f56fccb24b6d83eb9a6862ee2bca0fd42d12459cf0d7e *local_learning_storage/cache.sqlite
+172032 bytes mtime=2026-11-18 08:54:58.407894100 +0100
+state/
+cache.sqlite  168.0K
+learning_database.sqlite  60.0K
+learning_database.sqlite-shm  32.0K
+learning_database.sqlite-wal  0B
+quota_attribution_snapshot.json  294B

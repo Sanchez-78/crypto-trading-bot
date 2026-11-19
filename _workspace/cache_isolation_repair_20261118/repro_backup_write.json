@@ -1,0 +1,15 @@
+{
+  "tests/test_readiness_paper_only.py + tests/test_outbox_terminal_backlog.py + tests/test_outbox_reconcile_plan.py + tests/test_dashboard_contract_fixes.py + tests/test_sec_01_dashboard_boundary.py + tests/test_v5_legacy_bridge_outbox.py + tests/test_phase4d_outbox_flush_worker.py + tests/test_conftest_runtime_db_isolation.py": {
+    "summary": [
+      "172 passed, 9 skipped, 146 warnings in 11.84s"
+    ],
+    "changed": {}
+  },
+  "tests/test_conftest_runtime_db_isolation.py + tests/test_phase4d_outbox_flush_worker.py + tests/test_v5_legacy_bridge_outbox.py + tests/test_sec_01_dashboard_boundary.py + tests/test_dashboard_contract_fixes.py + tests/test_outbox_reconcile_plan.py + tests/test_outbox_terminal_backlog.py + tests/test_readiness_paper_only.py": {
+    "summary": [
+      "172 passed, 9 skipped, 146 warnings in 11.40s"
+    ],
+    "changed": {}
+  },
+  "real_unchanged": true
+}

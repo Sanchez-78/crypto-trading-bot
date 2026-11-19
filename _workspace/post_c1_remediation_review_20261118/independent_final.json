@@ -1,0 +1,33 @@
+{
+  "review_date": "2026-11-18",
+  "scope": "local independent review; no SSH or deployment",
+  "targeted_pytest": {
+    "command": "rtk python -B -m pytest -q -p no:cacheprovider tests/test_readiness_paper_only.py tests/test_outbox_terminal_backlog.py tests/test_outbox_reconcile_plan.py tests/test_dashboard_contract_fixes.py tests/test_sec_01_dashboard_boundary.py tests/test_v5_legacy_bridge_outbox.py tests/test_phase4d_outbox_flush_worker.py tests/test_conftest_runtime_db_isolation.py",
+    "passed": 140,
+    "skipped": 9,
+    "exit_code": 0
+  },
+  "protected_sha256_before_and_after_equal": {
+    "local_learning_storage/cache.sqlite": "0f2fbd24c8b4420b6b6f56fccb24b6d83eb9a6862ee2bca0fd42d12459cf0d7e",
+    "data/paper_open_positions.json": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+    "server_local_backups/paper_adaptive_learning_state.json": "9263583f87369276b82646e80d85e92433e6602858b0551204983d064a27c93c",
+    "server_local_backups/learning_state_phase1.json": "fbf592e2fb30a6d0a1da4d2050c1136dc9718665653a28b498fa2163eaabf5e6",
+    "runtime/v5_quota_usage.sqlite": "0a3bf519ac254cb670486ff3c9539ccf55385c9f1a17fe8b516f34cf79161b03",
+    "src/runtime/v5_quota_usage.sqlite": "8b65fbaaccdc984882e1dacc112cbbd16c544fc3c36d58630684205e213f81e1"
+  },
+  "pure_planner_probe": {
+    "invalid_closed_documents": [
+      {"doc": {"event_type": "paper_close"}, "state": "closed", "learning_action": "MERGE_LEARNING"},
+      {"doc": {"exit_ts": null, "exit_price": null}, "state": "closed", "learning_action": "MERGE_LEARNING"},
+      {"doc": {"event_type": "paper_open", "exit_ts": null, "exit_price": null}, "state": "closed", "learning_action": "MERGE_LEARNING"},
+      {"doc": {"event_type": "paper_close", "trade_id": "other"}, "state": "closed", "learning_action": "MERGE_LEARNING"}
+    ],
+    "absent_close_then_learning": ["WRITE_CLOSE", "DEFERRED_NO_TRADE_DOC"]
+  },
+  "verdicts": {
+    "test_isolation_targeted_suite": "APPROVE",
+    "dashboard_readiness_code": "APPROVE",
+    "outbox_visibility_code": "APPROVE",
+    "outbox_reconciliation_planner": "CHANGES_REQUIRED"
+  }
+}

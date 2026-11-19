@@ -1,0 +1,35 @@
+2026-11-18T07:37:14Z
+1794987434
+pid=886991 nrestarts=0 active=active since=Wed 2026-11-18 07:03:59 UTC
+TRADING_MODE=paper_train
+ENABLE_REAL_ORDERS=false
+REAL_ORDERS_ALLOWED=false
+LIVE_TRADING_CONFIRMED=false
+PAPER_ONLY_MODE=true
+STONKFLY_MODE=shadow
+PAPER_UNIFIED_ENGINE_ENABLED=true
+PAPER_LEARNING_CONTROL_FRACTION=1.0
+PAPER_COMPLETED_CANDLE_PHASE_REFRESH_ENABLED=true
+0d97eb6e837042a786810b11cba9eee150a72d24e681be7064b5833d441f69a9  /opt/cryptomaster_research/prereg_result.json
+f7b2345e2065e276dbcb8177ecafdd9dbd5229d78d14a692e50d57ac2ae2538c  /opt/cryptomaster_research/prereg_provenance.json
+2026-11-16T17:48:35Z PROVENANCE run=20261116T174717Z manifest_sha256=f7b2345e2065e276dbcb8177ecafdd9dbd5229d78d14a692e50d57ac2ae2538c result_sha256=0d97eb6e837042a786810b11cba9eee150a72d24e681be7064b5
+2026-11-18T07:05:14Z DEPLOY_candle-refresh APPLIED OK backup=/opt/cryptomaster_deploy_backups/candle-refresh-20261118T070354Z pid=886991
+2026-11-18T05:47:41Z OK 20261118T054700Z
+ls: cannot access '/opt/cryptomaster_research/ALERT': No such file or directory
+healthz 200
+api/dashboard/metrics 200
+api/dashboard/readiness 200
+/dev/sda1      39973924864 23080071168 15209660416  61% /
+11386966016 1794691218 /opt/cryptomaster/local_learning_storage/shadow_excursion.sqlite
+2224832 1794987429 /opt/cryptomaster/local_learning_storage/shadow_excursion.sqlite-wal
+1198703107 1794987434 /var/log/syslog
+-rw-r----- 1 syslog adm 1198703107 Nov 18 07:37 /var/log/syslog
+-rw-r----- 1 syslog adm  202565884 Nov 18 00:00 /var/log/syslog.1.gz
+-rw-r----- 1 syslog adm  275132859 Nov 17 00:00 /var/log/syslog.2.gz
+-rw-r----- 1 syslog adm  370502389 Nov 16 00:00 /var/log/syslog.3.gz
+-rw-r----- 1 syslog adm  234055405 Nov 15 00:00 /var/log/syslog.4.gz
+closed before/after marker (31707, 5, 31712)
+open positions 2
+failed
+active
+active

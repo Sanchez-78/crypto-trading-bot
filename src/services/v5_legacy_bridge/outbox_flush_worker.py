@@ -51,6 +51,7 @@ class OutboxFlushWorker:
         self.running = False
         self._thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
+        self._last_terminal_count: Optional[int] = None
 
     def start(self) -> None:
         """Start background flush worker thread."""
@@ -63,6 +64,32 @@ class OutboxFlushWorker:
         self._thread = threading.Thread(target=self._run_loop, daemon=True, name="v5-outbox-flush")
         self._thread.start()
         logger.info("[V5_BRIDGE_OUTBOX_FLUSH] Worker started")
+        self._report_terminal_backlog()
+
+    def _report_terminal_backlog(self) -> None:
+        """Log the terminal (never-replayed) backlog at start and whenever it changes.
+
+        Local log only: no Firebase write, no IDs or payloads (2026-11-18 audit, P1).
+        """
+        if not self.outbox:
+            return
+        try:
+            stats = self.outbox.backlog_stats()
+        except Exception as e:
+            logger.error(f"[V5_BRIDGE_OUTBOX_TERMINAL] stats failed: {e}")
+            return
+        terminal = stats.get("terminal_unsynced", 0)
+        if terminal == self._last_terminal_count:
+            return
+        self._last_terminal_count = terminal
+        if terminal or stats.get("error"):
+            by_type = ",".join(f"{t}={v['terminal']}" for t, v in sorted(stats["by_type"].items()) if v["terminal"])
+            logger.warning(
+                f"[V5_BRIDGE_OUTBOX_TERMINAL] terminal_unsynced={terminal} "
+                f"replayable_pending={stats.get('replayable_pending', 0)} by_type={by_type or '-'} "
+                f"oldest_terminal_created_at={stats.get('oldest_terminal_created_at')} "
+                f"error={stats.get('error', '-')} -- not auto-replayed; reconcile before any replay"
+            )
 
     def stop(self) -> None:
         """Stop background worker and flush remaining entries."""
@@ -91,6 +118,7 @@ class OutboxFlushWorker:
                 self._flush_batch()
             except Exception as e:
                 logger.error(f"[V5_BRIDGE_OUTBOX_FLUSH_ERROR] {e}")
+            self._report_terminal_backlog()  # logs only when the count changes
 
             # Sleep before next poll
             if not self._stop_event.wait(config.OUTBOX_FLUSH_INTERVAL_S):
@@ -276,10 +304,17 @@ class OutboxFlushWorker:
         else:
             count_by_type = {}
 
+        backlog = self.outbox.backlog_stats() if self.outbox else {}
         return {
             "running": self.running,
             "pending_count": pending_count,
             "count_by_type": count_by_type,
+            # Rows past OUTBOX_MAX_RETRIES: never replayed, invisible to pending_count.
+            "terminal_unsynced": backlog.get("terminal_unsynced", 0),
+            "terminal_by_type": {t: v["terminal"] for t, v in backlog.get("by_type", {}).items() if v["terminal"]},
+            "oldest_terminal_age_s": backlog.get("oldest_terminal_age_s"),
+            # A failed count must not read as "no backlog" (review 2026-11-18).
+            "backlog_error": backlog.get("error"),
             "firebase_connected": bool(
                 self.firebase_writer and self.firebase_writer.firebase_client
             ),

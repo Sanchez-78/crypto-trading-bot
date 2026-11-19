@@ -2,7 +2,6 @@
 Periodic monitoring that checks if bot is ready for real trading.
 Integrates with dashboard for real-time readiness display.
 """
-import os
 import time
 import logging
 import threading
@@ -18,54 +17,17 @@ _should_stop = False
 
 
 def get_current_metrics():
-    """Collect current trading metrics from available sources."""
-    try:
-        from src.services.paper_trade_executor import (
-            _POSITIONS, _closed_trades_today, evaluate_paper_tp_sl_exits
-        )
+    """REAL-trading readiness metrics are not collected (2026-11-18).
 
-        # Count positions
-        closed_count = len(_closed_trades_today) if hasattr(_closed_trades_today, '__len__') else 0
-        open_count = len(_POSITIONS) if hasattr(_POSITIONS, '__len__') else 0
-
-        if closed_count == 0:
-            return None
-
-        # Calculate WR and P&L from closed trades
-        wins = 0
-        total_pnl = 0.0
-
-        for trade in _closed_trades_today:
-            pnl = trade.get("pnl_usd", 0.0)
-            total_pnl += pnl
-            if pnl > 0:
-                wins += 1
-
-        wr_pct = (wins / closed_count * 100) if closed_count > 0 else 0.0
-
-        # Calculate profit factor
-        winning_trades_sum = 0.0
-        losing_trades_sum = 0.0
-
-        for trade in _closed_trades_today:
-            pnl = trade.get("pnl_usd", 0.0)
-            if pnl > 0:
-                winning_trades_sum += pnl
-            else:
-                losing_trades_sum += abs(pnl)
-
-        pf = winning_trades_sum / losing_trades_sum if losing_trades_sum > 0 else 0.0
-
-        return {
-            "closed_trades": closed_count,
-            "open_positions": open_count,
-            "win_rate_pct": wr_pct,
-            "profit_factor": pf,
-            "net_pnl": total_pnl,
-        }
-    except Exception as e:
-        log.error(f"[METRICS_COLLECTION_ERROR] {e}")
-        return None
+    This module is only imported by the dashboard process. Importing
+    paper_trade_executor there read the bot's in-memory state of a *different*
+    process (always empty) and executed its module-level load_dotenv(), which
+    the dashboard sandbox denies (InaccessiblePaths=/opt/cryptomaster/.env) --
+    the source of the recurring [METRICS_COLLECTION_ERROR] Permission denied.
+    The operating policy is PAPER only, so there is nothing to evaluate here;
+    trade metrics come from the dashboard read model (/api/dashboard/metrics).
+    """
+    return None
 
 
 def run_readiness_check():
@@ -137,9 +99,6 @@ def stop_monitoring_thread():
     _should_stop = True
 
 
-# Auto-start on module import if in paper trading mode
-if os.getenv("TRADING_MODE") in ["paper_train", "paper_live"]:
-    try:
-        start_monitoring_thread()
-    except Exception as e:
-        log.warning(f"Could not start readiness monitoring: {e}")
+# No auto-start on import (2026-11-18): get_current_metrics() never yields
+# metrics in the dashboard process, so the thread could only spin. Importing this
+# module has no side effects; start_monitoring_thread() stays for explicit callers.

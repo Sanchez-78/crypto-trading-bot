@@ -1,0 +1,40 @@
+2026-11-18T07:43:52Z
+1794987832
+/dev/sda1      39973924864 23102398464 15187333120  61% /
+11386966016 1794691218 /opt/cryptomaster/local_learning_storage/shadow_excursion.sqlite
+2739832 1794987790 /opt/cryptomaster/local_learning_storage/shadow_excursion.sqlite-wal
+1220489026 1794987832 /var/log/syslog
+since=2026-11-18 07:05:14
+journal lines 30min: 200792
+stale 30min: 0
+data_age_ms n=11 min=3484 median=5029 max=6154
+0
+STONKFLY_SIGNAL] strategy=stonkfly_frozen_paired_v1
+STONKFLY_SIGNAL] strategy=stonkfly_plastic_paired_v1
+3
+3
+0
+--- syslog since marker
+0
+C1+post-freeze .. marker n=80 win_flag=25 pnl_pos=38 sum_usd=-0.262755 avg_bps=-4.379
+after marker n=5 win_flag=1 pnl_pos=1 sum_usd=-0.064177 avg_bps=-17.114
+--- funnel
+20261117.jsonl
+20261118.jsonl
+{"counts": {"budget|symbol_cooldown|BTCUSDT": 1, "budget|symbol_cooldown|ETHUSDT": 1, "budget|symbol_cooldown|SOLUSDT": 2, "budget|symbol_cooldown|XRPUSDT": 2, "entry|P0_8_PLUS_EVIDENCE_COLLECTION|ADAUSDT": 2, "entry|P0_8_PLUS_EVIDENCE_COLLECTION|BNBUSDT": 1, "entry|P0_8_PLUS_EVIDENCE_COLLECTION|BTCUSDT": 2, "entry|P0_8_PLUS_EVIDENCE_COLLECTION|ETHUSDT": 2, "entry|P0_8_PLUS_EVIDENCE_COLLECTION|SOL
+{"counts": {"entry|P0_8_PLUS_EVIDENCE_COLLECTION|ADAUSDT": 1, "entry|P0_8_PLUS_EVIDENCE_COLLECTION|BTCUSDT": 1, "entry|P0_8_PLUS_EVIDENCE_COLLECTION|ETHUSDT": 1, "entry|P0_8_PLUS_EVIDENCE_COLLECTION|SOLUSDT": 1, "p08|sideways_mean_reversion|ADAUSDT|REJECT_STALE_MARKET_DATA": 1, "p08|sideways_mean_reversion|ADAUSDT|admit": 1, "p08|sideways_mean_reversion|BNBUSDT|P0_REJECT_PAPER_LEARNING": 2, "p08|s
+--- daily-log-fix-prompt-bot
+× daily-log-fix-prompt-bot.service - Daily CryptoMaster Log Analysis and Fix Prompt Bot
+     Loaded: loaded (/etc/systemd/system/daily-log-fix-prompt-bot.service; disabled; preset: enabled)
+     Active: failed (Result: exit-code) since Tue 2026-11-17 08:00:00 UTC; 23h ago
+TriggeredBy: ● daily-log-fix-prompt-bot.timer
+   Main PID: 355916 (code=exited, status=200/CHDIR)
+        CPU: 2ms
+
+Notice: journal has been rotated since unit was started, output may be incomplete.
+Description=Daily CryptoMaster Log Analysis and Fix Prompt Bot
+WorkingDirectory=/root/CryptoMaster_srv/daily_log_fix_prompt_bot
+ExecStart=/usr/bin/python3 -m src.daily_log_fix_prompt_bot.main
+# User context
+User=root
+Wed 2026-11-18 08:00:00 UTC    15min Tue 2026-11-17 08:00:00 UTC             23h ago daily-log-fix-prompt-bot.timer   daily-log-fix-prompt-bot.service

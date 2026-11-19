@@ -8,11 +8,16 @@ Komunikace s uživatelem a reporty: **česky**. Identifikátory a kód: anglicky
 **Otevřené zadání (review, 2026-11-19):** `docs/codex_prompts/CODEX_REVIEW_EXPLORE_BUCKET_CAP_2026-11-19.md`
 → `_workspace/2026-11-19_codex_review_explore_bucket_cap.md` (strop otevřených pozic průzkumného bucketu).
 
-**Otevřené zadání (re-review):** `docs/codex_prompts/CODEX_REREVIEW_OUTBOX_RECONCILE_PLANNER_2026-11-18.md`
-→ `_workspace/2026-11-18_codex_rereview_outbox_reconcile.md` (plánovač rekonciliace, kolo 2).
+Hotové: re-review plánovače kolo 4 + conftest kolo 2 → APPROVE (kód; plánovač zůstává vypnutý,
+schválení se netýká aktivace ani nasazení), `_workspace/2026-11-19_codex_rereview_planner_r4_conftest_guard_r2.md`.
+Dřívější kola (CHANGES_REQUIRED, opraveno): `_workspace/2026-11-19_codex_review_planner_r3_conftest_guard.md`,
+`_workspace/2026-11-18_codex_rereview_outbox_reconcile.md`.
+**Hashe chráněných souborů porovnávej v Pythonu** (`_workspace/cache_isolation_repair_20261118/protected_sha.py`),
+ne přes `rtk diff a b`: ten vrací 0 i při rozdílu.
 Hotové: review po-C1 nápravy (`_workspace/2026-11-18_codex_review_post_c1_remediation.md`):
 readiness a viditelnost outboxu APPROVE (kód, ne nasazení), izolace testů APPROVE.
-`tests/conftest.py` chrání runtime DB při collection a při změně jejího SHA běh shodí.
+`tests/conftest.py` chrání runtime DB při collection a běh shodí při změně kteréhokoli ze šesti
+chráněných souborů nebo souboru pod `runtime/` či `src/runtime/`.
 Dříve: deploy skript: review 77–81, finálně APPROVE (`_workspace/81_…`), nástroje
 nainstalovány na serveru 2026-11-12; nasazení opravy svíček až po zmrazeném C1 podle
 `docs/remediation/C1_FREEZE_DAY_RUNBOOK_2026-11-11.md`. Hotové: review opravy svíček (Claude,

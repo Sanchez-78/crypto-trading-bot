@@ -258,6 +258,53 @@ class DurableOutbox:
             logger.error(f"[V5_BRIDGE] pending_count failed: {e}")
             return 0
 
+    def backlog_stats(self) -> dict:
+        """Read-only backlog split (2026-11-18 post-C1 audit, P1).
+
+        pending_count() keeps its meaning (rows still eligible for replay). Rows at
+        retry_count >= OUTBOX_MAX_RETRIES are never replayed again and were invisible;
+        they are reported here as terminal_unsynced. "Unsynced" means not acknowledged
+        locally -- the cloud write may still have succeeded before a timeout, so this is
+        not a count of missing cloud documents. Aggregates only: no IDs or payloads.
+        """
+        max_retries = config.OUTBOX_MAX_RETRIES
+        stats = {"replayable_pending": 0, "terminal_unsynced": 0, "by_type": {},
+                 "oldest_terminal_created_at": None, "oldest_terminal_age_s": None,
+                 "max_retries": max_retries}
+        try:
+            conn = sqlite3.connect(self.db_path)
+            try:
+                rows = conn.execute(
+                    "SELECT event_type, retry_count >= ?, COUNT(*), MIN(created_at) "
+                    "FROM outbox GROUP BY 1, 2",
+                    (max_retries,),
+                ).fetchall()
+            finally:
+                conn.close()
+        except Exception as e:
+            logger.error(f"[V5_BRIDGE] backlog_stats failed: {e}")
+            stats["error"] = type(e).__name__
+            return stats
+        oldest = None
+        for event_type, terminal, count, first_created in rows:
+            bucket = stats["by_type"].setdefault(event_type, {"replayable": 0, "terminal": 0})
+            if terminal:
+                bucket["terminal"] += count
+                stats["terminal_unsynced"] += count
+                if first_created and (oldest is None or first_created < oldest):
+                    oldest = first_created
+            else:
+                bucket["replayable"] += count
+                stats["replayable_pending"] += count
+        if oldest:
+            stats["oldest_terminal_created_at"] = oldest
+            try:
+                stats["oldest_terminal_age_s"] = round(
+                    (datetime.utcnow() - datetime.fromisoformat(oldest)).total_seconds(), 1)
+            except ValueError:
+                pass
+        return stats
+
     def flush(self, limit: int = 20) -> dict:
         """
         Attempt to flush pending entries.
