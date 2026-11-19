@@ -23,6 +23,19 @@ def test_allowed_files_are_exactly_the_reviewed_set():
     assert "PAPER_EXPLORE_MAX_OPEN_PER_BUCKET" not in _list("ALLOWED_KEYS")
 
 
+def test_live_preimage_is_checked_before_backup_and_right_before_install():
+    # review 2026-11-19 B4: a live file changed after the review must never be silently overwritten.
+    assert '"${EXPECTED_PREIMAGE_SHA256:?}"' in TEXT
+    check = 'verify_pinned "$APP" "$FILES" "$EXPECTED_PREIMAGE_SHA256"'
+    assert TEXT.count(check) == 2
+    first, second = TEXT.index(check), TEXT.rindex(check)
+    assert first < TEXT.index('cp -p "$APP/$f" "$BACKUP/$f"')               # before the backup
+    assert TEXT.index("trap 'rollback") < second < TEXT.index('install_staged "$PINNED" "$APP" "$FILES"')
+    assert TEXT.index("for _ in $(seq 1 60); do") < second                   # after the positions wait
+    block = TEXT[second:TEXT.index('install_staged "$PINNED" "$APP" "$FILES"')]
+    assert "trap - ERR INT TERM" in block and "exit 2" in block and "rollback" not in block.split("fi", 1)[0]
+
+
 def test_journal_check_fails_closed():
     # review 2026-11-19 B1: journalctl failure or an empty journal must roll back, never pass.
     assert "--no-pager > \"$JOURNAL\" || true" not in TEXT

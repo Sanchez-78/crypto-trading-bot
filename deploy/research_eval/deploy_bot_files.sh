@@ -2,6 +2,8 @@
 # Generic PAPER deploy of bot source files + one managed env drop-in.
 # Usage (env): LABEL=name FILES="src/services/a.py ..." VARS="K=V ..." DROPIN_NAME=zzz...-name.conf
 #              EXPECTED_SHA256="src/services/a.py=<sha256> ..."  (the reviewed bytes, one per file)
+#              EXPECTED_PREIMAGE_SHA256="src/services/a.py=<sha256> ..."  (the live bytes the change was
+#              reviewed against; checked under the lock before the backup and again right before install)
 # New files are expected flat in /tmp/$LABEL/. deploy_env_check.py and deploy_pinned.sh must
 # sit next to this script. The source is read exactly once into a private stage; validation,
 # installation and the final hash check all use the staged bytes (review 78, R1).
@@ -14,7 +16,7 @@
 # between the check and the restart is a few seconds and positions are persisted.
 set -euo pipefail
 
-: "${LABEL:?}" "${FILES:?}" "${VARS?}" "${DROPIN_NAME:?}" "${EXPECTED_SHA256:?}"
+: "${LABEL:?}" "${FILES:?}" "${VARS?}" "${DROPIN_NAME:?}" "${EXPECTED_SHA256:?}" "${EXPECTED_PREIMAGE_SHA256:?}"
 HERE="$(dirname "$(readlink -f "$0")")"
 CHECK="$HERE/deploy_env_check.py"
 for helper in "$CHECK" "$HERE/deploy_pinned.sh"; do
@@ -53,6 +55,10 @@ done
 # install the same bytes twice under different paths.
 dup="$(for f in $FILES; do basename "$f"; done | sort | uniq -d)"
 [ -z "$dup" ] || { echo "duplicate basename in FILES: $dup" >&2; exit 2; }
+# The live files must still be the bytes the change was reviewed against, or a newer live change
+# would be silently overwritten (review 2026-11-19 B4). Checked here under the lock, and again
+# immediately before the first write below.
+verify_pinned "$APP" "$FILES" "$EXPECTED_PREIMAGE_SHA256" || { echo "live files are not the reviewed preimage; refusing" >&2; exit 2; }
 for kv in $VARS; do
   key="${kv%%=*}"
   case " $ALLOWED_KEYS " in *" $key "*) ;; *) echo "key not allowed: $key" >&2; exit 2 ;; esac
@@ -157,6 +163,14 @@ rollback() {
 trap 'rollback "error at line $LINENO"' ERR
 trap 'rollback "signal"' INT TERM
 
+# Second preimage check right before the first write (validation and the positions wait can take
+# up to 30 min). Nothing has been written yet: exit without rollback, which would otherwise copy the
+# backup over the newer live change.
+if ! verify_pinned "$APP" "$FILES" "$EXPECTED_PREIMAGE_SHA256"; then
+  trap - ERR INT TERM
+  log "REFUSED live files changed since preflight; nothing written"
+  exit 2
+fi
 verify_pinned "$PINNED" "$FILES" "$EXPECTED_SHA256" || rollback "staged bytes changed"
 install_staged "$PINNED" "$APP" "$FILES"
 verify_pinned "$APP" "$FILES" "$EXPECTED_SHA256" || rollback "installed bytes differ from EXPECTED_SHA256"

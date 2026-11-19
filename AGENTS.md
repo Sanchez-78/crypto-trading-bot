@@ -5,10 +5,12 @@ Komunikace s uživatelem a reporty: **česky**. Identifikátory a kód: anglicky
 
 ## Aktuální zadání
 
-**Otevřené zadání (re-review, 2026-11-19):** `docs/codex_prompts/CODEX_REREVIEW_POST_C1_DEPLOY_AND_BUCKET_CAP_2026-11-19.md`
-→ `_workspace/2026-11-19_codex_rereview_post_c1_deploy_and_bucket_cap.md` (nasazovací krok
-dashboard/outbox kolo 2 + strop bucketu kolo 2; runbook `docs/remediation/POST_C1_DEPLOY_RUNBOOK_2026-11-19.md`).
-Hotové (opraveno): `_workspace/2026-11-19_codex_review_post_c1_deploy_step.md` (CHANGES_REQUIRED),
+**Otevřené zadání (re-review, 2026-11-19, kolo 3):** `docs/codex_prompts/CODEX_REREVIEW_OUTBOX_DEPLOY_B4_2026-11-19.md`
+→ `_workspace/2026-11-19_codex_rereview_outbox_deploy_b4.md` (jen nasazovací krok outboxu, nález B4).
+Hotové: `_workspace/2026-11-19_codex_rereview_post_c1_deploy_and_bucket_cap.md`: dashboard APPROVE
+(nasazovací krok), strop bucketu APPROVE (kód a artefakt, ne nasazení), outbox CHANGES_REQUIRED (B4,
+opraveno). Runbook `docs/remediation/POST_C1_DEPLOY_RUNBOOK_2026-11-19.md`.
+Dřívější kola (opraveno): `_workspace/2026-11-19_codex_review_post_c1_deploy_step.md` (CHANGES_REQUIRED),
 `_workspace/2026-11-19_codex_review_explore_bucket_cap.md` (REJECT).
 
 Hotové: re-review plánovače kolo 4 + conftest kolo 2 → APPROVE (kód; plánovač zůstává vypnutý,

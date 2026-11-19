@@ -132,6 +132,18 @@ def test_stale_bytecode_would_be_imported_without_the_guard(tmp_path):
     assert out.stdout.strip() == "old"
 
 
+def test_live_file_changed_after_preflight_is_never_overwritten(layout):
+    """review 2026-11-19 B4: the deploy re-checks the live preimage right before the first write."""
+    root, expected = layout
+    preimage = f"{FILE}={hashlib.sha256(b'OLD = True' + chr(10).encode()).hexdigest()}"
+    assert sh(f'verify_pinned app "{FILE}" "{preimage}"', root).returncode == 0      # preflight passes
+    (root / "app" / FILE).write_bytes(b"NEWER_LIVE_CHANGE = True\n")                 # someone changes it
+    result = sh(f'stage_files new stage "{FILE}" && verify_pinned stage "{FILE}" "{expected}" '
+                f'&& verify_pinned app "{FILE}" "{preimage}" && install_staged stage app "{FILE}"', root)
+    assert result.returncode != 0 and "hash mismatch" in result.stderr
+    assert (root / "app" / FILE).read_bytes() == b"NEWER_LIVE_CHANGE = True\n"
+
+
 def test_stage_copy_is_private(layout):
     root, expected = layout
     assert sh(f'stage_files new stage "{FILE}"', root).returncode == 0

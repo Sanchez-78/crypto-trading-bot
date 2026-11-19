@@ -1,11 +1,11 @@
 # Nasazení schválených po-C1 oprav: readiness (dashboard), viditelnost outboxu (bot), strop bucketu
 
-Stav 2026-11-19 (kolo 2): **připraveno, NENASAZENO, čeká na re-review nasazovacího kroku.**
-- Kód readiness a outboxu má APPROVE (`_workspace/2026-11-18_codex_review_post_c1_remediation.md`,
-  commit `4581329`). Nasazovací krok vrátilo review `_workspace/2026-11-19_codex_review_post_c1_deploy_step.md`
-  (CHANGES_REQUIRED); nálezy jsou opravené níže.
-- Strop bucketu má REJECT (`_workspace/2026-11-19_codex_review_explore_bucket_cap.md`); opravy
-  čekají na vlastní re-review (oddíl C).
+Stav 2026-11-19 (kolo 3): **NENASAZENO.** Re-review `_workspace/2026-11-19_codex_rereview_post_c1_deploy_and_bucket_cap.md`:
+- A dashboard: **APPROVE nasazovacího kroku**.
+- B outbox: CHANGES_REQUIRED (B4: chyběla kontrola živého preimage) → opraveno v kole 3, čeká na re-review.
+- C strop bucketu: **APPROVE kódu a artefaktu**, nasazení tím schválené není.
+
+Kód readiness a outboxu má APPROVE (`_workspace/2026-11-18_codex_review_post_c1_remediation.md`, commit `4581329`).
 - Plánovač rekonciliace se nenasazuje (`ENABLED=False`, není zapojený).
 
 ## Artefakty a piny
@@ -15,9 +15,9 @@ reviewovaná změna: nezměněné řádky si drží původní konec řádku. Ži
 CRLF/LF a executor je převážně CRLF, takže plošné LF by měnilo řádky mimo diff (opraveno v kole 2).
 `build_artifacts.py` ověřuje, že:
 - serverová kopie z 18. 11. má zaznamenaný SHA;
-- artefakt se od ní liší **přesně o řádky z reviewovaného `remediation.diff`**, u workeru navíc o dva
-  řádky `backlog_error` schválené ve druhém kole review. Porovnává se obsah změněných řádků, ne jejich
-  počet; jiná změna stejné velikosti neprojde.
+- artefakt se od ní liší o **stejnou multimnožinu změněných řádků** jako reviewovaný `remediation.diff`,
+  u workeru navíc o dva řádky `backlog_error` schválené ve druhém kole review. Porovnává se obsah, ne
+  počet řádků, ale ne poloha hunků (P2). Úplný diff aktuálních artefaktů byl v review ověřen samostatně.
 
 | Soubor | Služba | preimage (server 18. 11.) | nový SHA-256 |
 |---|---|---|---|
@@ -62,7 +62,10 @@ bash /opt/cryptomaster_research/deploy_dashboard_readiness.sh
 
 ## B. Bot: viditelnost terminálního backlogu outboxu
 
-`deploy_bot_files.sh` (SHA-256 `8f0e3219f955cb41674ec0bb0ee795089afca116b9324ed63ca17543b2d7449e`):
+`deploy_bot_files.sh` (SHA-256 `aa73c5195a3c50fe527b5e73c20282c7a3276e30783072c03525029aee4a26fd`):
+- **povinné `EXPECTED_PREIMAGE_SHA256`** (kolo 3, B4): živé soubory se pod zámkem ověří před zálohou
+  a znovu těsně před prvním zápisem (po validaci a čekání na nulové pozice). Při neshodě skript skončí
+  **bez zápisu a bez rollbacku**, protože rollback by přepsal novější živou změnu;
 - allowlist obsahuje oba soubory outboxu;
 - **executor a klíč stropu bucketu jsou z allowlistu odebrané**, dokud strop nemá schválené review,
   takže instalace nástroje neschvaluje nasazení executoru;
@@ -80,6 +83,7 @@ FILES="src/services/v5_legacy_bridge/outbox.py src/services/v5_legacy_bridge/out
 VARS="" \
 DROPIN_NAME=zzzzzzzzzzzz-outbox-visibility.conf \
 EXPECTED_SHA256="src/services/v5_legacy_bridge/outbox.py=37cb41b8a825149404133ca98797fde9cff44d95774fb0c3f8761d6988feaaff src/services/v5_legacy_bridge/outbox_flush_worker.py=d65614e33c7b48bb144b56806a1a8d52a13a5ee20579afb6207b984d7dbf02a4" \
+EXPECTED_PREIMAGE_SHA256="src/services/v5_legacy_bridge/outbox.py=a3d7d7a4854e4cf4dd5bd828d5446925297e7f8d1e1fac9ed31c7418588f4413 src/services/v5_legacy_bridge/outbox_flush_worker.py=b173ea7c22def1efb76ec4ba9d11bcfc492c8c5e0b5c06a0129cffcaa75a6e9e" \
 bash /opt/cryptomaster_research/deploy_bot_files.sh
 ```
 
