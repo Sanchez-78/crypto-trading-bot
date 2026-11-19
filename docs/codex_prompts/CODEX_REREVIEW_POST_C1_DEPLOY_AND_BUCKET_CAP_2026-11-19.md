@@ -10,7 +10,7 @@ Tvá review `_workspace/2026-11-19_codex_review_post_c1_deploy_step.md` (A a B C
 `docs/remediation/POST_C1_DEPLOY_RUNBOOK_2026-11-19.md` (oddíly A–C).
 
 Soubory:
-- `_workspace/deploy_post_c1_20261119/deploy_dashboard_readiness.sh` (`bbaaca72…9a9a`),
+- `_workspace/deploy_post_c1_20261119/deploy_dashboard_readiness.sh` (`65a133a9…aabc`),
   `build_artifacts.py`, `MANIFEST.json`
 - `deploy/research_eval/deploy_bot_files.sh` (`8f0e3219…449e`), `deploy/research_eval/deploy_env_check.py`
   (`8ae175da…df75`)
@@ -35,7 +35,11 @@ B. Bot
 5. B2: allowlist je jen pro outbox, executor a klíč stropu jsou odebrané. Odpovídá odložený patch
    tomu, co by se po schválení stropu vrátilo?
 6. B3: `build_artifacts.py` porovnává obsah změněných řádků se schváleným `remediation.diff`.
-   Zachytí jinou změnu stejné velikosti? Pozor: piny artefaktů jsou stejné jako v kole 1.
+   Zachytí jinou změnu stejné velikosti? **Nové zjištění:** živý `dashboard_web.py` má smíšené
+   CRLF/LF a executor je převážně CRLF. Artefakty proto vznikají ze serverových bajtů
+   (`eol_preserve.py`): nezměněné řádky jsou bajtově identické. Nový pin `dashboard_web.py` je
+   `df8b5041…`, ostatní tři se nezměnily. Ověř, že plošné LF ani jiná změna konců řádků v artefaktu
+   není a že `-text` v `.gitattributes` drží bajty v gitu.
 
 C. Strop bucketu
 7. Odpovídá serverová kopie zaznamenanému preimage? Je `server_to_artifact.diff` úplný a obsahuje jen

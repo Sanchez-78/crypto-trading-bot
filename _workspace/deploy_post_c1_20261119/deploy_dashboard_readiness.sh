@@ -19,7 +19,7 @@ BACKUP=/opt/cryptomaster_deploy_backups/dashboard-readiness-$(date -u +%Y%m%dT%H
 URL=http://127.0.0.1:5001
 # path=preimage_sha256=new_sha256 (from _workspace/deploy_post_c1_20261119/MANIFEST.json)
 PINS="src/services/readiness_monitor.py=854ccfe92ca19bf22bec3a8bf26d330a217feee1b790539aa341e37e7c67c5d6=1f5d9429817f3911b6cdb6c77e6ba9193f0e50c842326380633ed82eaa088144
-src/services/dashboard_web.py=0fdbf5c8e9c7864f334fcc48b8c16a886037ff854cf2bf05ba14b7d58b360b62=901807c30df51a407914a7e6b137da9ada1c8dc13a5d1a11d1a290701809f93c"
+src/services/dashboard_web.py=0fdbf5c8e9c7864f334fcc48b8c16a886037ff854cf2bf05ba14b7d58b360b62=df8b50411afdd84e9bee685dc4e3457303a3e94d769dc5b5e1a69c1fb1d1e02e"
 log() { echo "$(date -u +%FT%TZ) DEPLOY_dashboard-readiness $*" | tee -a "$LOG"; }
 h() { sha256sum < "$1" | cut -d' ' -f1; }
 meta() { stat -c '%a %u %g' "$1"; }

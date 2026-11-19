@@ -1,6 +1,10 @@
 # Files executed on the Linux server must keep LF regardless of core.autocrlf on Windows.
 *.sh text eol=lf
 deploy/research_eval/*.py text eol=lf
-_workspace/deploy_post_c1_*/**/*.py text eol=lf
-_workspace/bucket_cap_*/artifact/*.py text eol=lf
-_workspace/bucket_cap_*/server_copy/*.py text eol=lf
+# Deploy artifacts and server copies are byte-exact (some live files are CRLF or mixed);
+# git must never convert their line endings, or the pinned SHA-256 would break.
+_workspace/deploy_post_c1_*/dashboard/* -text
+_workspace/deploy_post_c1_*/bot/* -text
+_workspace/bucket_cap_*/artifact/* -text
+_workspace/bucket_cap_*/server_copy/* -text
+_workspace/post_c1_remediation_*/server_copies/* -text

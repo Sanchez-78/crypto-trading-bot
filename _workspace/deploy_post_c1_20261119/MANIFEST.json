@@ -11,12 +11,13 @@
   "server_copy_matches_recorded_sha": true,
   "diff_counts_equal_approved": true,
   "diff_lines_identical_to_reviewed": true,
-  "no_cr": true
+  "unchanged_lines_byte_identical": true,
+  "content_equals_working_tree": true
  },
  "src/services/dashboard_web.py": {
   "unit": "dashboard",
   "artifact": "_workspace/deploy_post_c1_20261119/dashboard/dashboard_web.py",
-  "sha256": "901807c30df51a407914a7e6b137da9ada1c8dc13a5d1a11d1a290701809f93c",
+  "sha256": "df8b50411afdd84e9bee685dc4e3457303a3e94d769dc5b5e1a69c1fb1d1e02e",
   "preimage_sha256": "0fdbf5c8e9c7864f334fcc48b8c16a886037ff854cf2bf05ba14b7d58b360b62",
   "diff": [
    15,
@@ -25,7 +26,8 @@
   "server_copy_matches_recorded_sha": true,
   "diff_counts_equal_approved": true,
   "diff_lines_identical_to_reviewed": true,
-  "no_cr": true
+  "unchanged_lines_byte_identical": true,
+  "content_equals_working_tree": true
  },
  "src/services/v5_legacy_bridge/outbox.py": {
   "unit": "bot",
@@ -39,7 +41,8 @@
   "server_copy_matches_recorded_sha": true,
   "diff_counts_equal_approved": true,
   "diff_lines_identical_to_reviewed": true,
-  "no_cr": true
+  "unchanged_lines_byte_identical": true,
+  "content_equals_working_tree": true
  },
  "src/services/v5_legacy_bridge/outbox_flush_worker.py": {
   "unit": "bot",
@@ -53,6 +56,7 @@
   "server_copy_matches_recorded_sha": true,
   "diff_counts_equal_approved": true,
   "diff_lines_identical_to_reviewed": true,
-  "no_cr": true
+  "unchanged_lines_byte_identical": true,
+  "content_equals_working_tree": true
  }
 }

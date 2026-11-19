@@ -1,13 +1,14 @@
 {
  "src/services/paper_trade_executor.py": {
   "artifact": "_workspace/bucket_cap_20261119/artifact/paper_trade_executor.py",
-  "sha256": "2072f23e5d83f7d8127adb212eb3afd2d53af83a405d65beb41c0654303c6ba1",
+  "sha256": "a39d4f4c3c0d72e3a59a80078be6887ef9f413513b99f5e37d87359e9f406a12",
   "preimage_sha256": "5b0b15cc0ba98632f866267dac462286c07ecce6d8bbaa9a033120b29fa361cc",
   "hunks": 2,
   "plus": 25,
   "minus": 2,
   "server_copy_is_preimage": true,
-  "no_cr": true,
+  "unchanged_lines_byte_identical": true,
+  "eol_style_kept": true,
   "no_foreign_hunks": true,
   "has_changes": true
  }

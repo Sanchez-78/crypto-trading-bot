@@ -12,6 +12,8 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
+sys.path.insert(0, str(ROOT / "_workspace" / "deploy_post_c1_20261119"))
+from eol_preserve import apply_preserving_eol, changed_lines  # noqa: E402
 PATH = "src/services/paper_trade_executor.py"
 PREIMAGE = "5b0b15cc0ba98632f866267dac462286c07ecce6d8bbaa9a033120b29fa361cc"
 # Every changed line must mention one of these (the cap helper, its scope, or the docstring line).
@@ -21,7 +23,9 @@ MARKERS = ("EXPLORE_BUCKET_CAP", "exploration_bucket_cap", "_bucket_cap_for", "P
 
 def main() -> int:
     server = (HERE / "server_copy" / "paper_trade_executor.server.py").read_bytes()
-    art = (ROOT / PATH).read_bytes().replace(b"\r\n", b"\n")
+    # The live file is CRLF: server bytes + the cap change, unchanged lines byte-identical.
+    art = apply_preserving_eol(server, (ROOT / PATH).read_text(encoding="utf-8"))
+    _, eol_kept = changed_lines(server, art)
     diff = list(difflib.unified_diff(server.decode().splitlines(), art.decode().splitlines(),
                                      "server/" + PATH, "artifact/" + PATH, lineterm="", n=3))
     changes = [l for l in diff if l[:1] in "+-" and l[:3] not in ("+++", "---")]
@@ -35,7 +39,9 @@ def main() -> int:
             current.append(l)
     foreign = [h for h in hunks if h and not any(any(m in l for m in MARKERS) for l in h)]
     checks = {"server_copy_is_preimage": hashlib.sha256(server).hexdigest() == PREIMAGE,
-              "no_cr": b"\r" not in art, "no_foreign_hunks": not foreign, "has_changes": bool(changes)}
+              "unchanged_lines_byte_identical": eol_kept,
+              "eol_style_kept": art.count(b"\n") == art.count(b"\r\n") if server.count(b"\n") == server.count(b"\r\n") else True,
+              "no_foreign_hunks": not foreign, "has_changes": bool(changes)}
     out = HERE / "artifact" / "paper_trade_executor.py"
     out.parent.mkdir(exist_ok=True)
     out.write_bytes(art)

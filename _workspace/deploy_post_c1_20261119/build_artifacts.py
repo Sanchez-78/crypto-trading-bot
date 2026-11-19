@@ -22,6 +22,10 @@ FILES = {
 }
 
 
+sys.path.insert(0, str(HERE))
+from eol_preserve import apply_preserving_eol, changed_lines  # noqa: E402
+
+
 def sha(b: bytes) -> str:
     return hashlib.sha256(b).hexdigest()
 
@@ -57,16 +61,18 @@ def main() -> int:
     reviewed = reviewed_changes()
     for path, (copy, unit, plus, minus) in FILES.items():
         server = (COPIES / copy).read_bytes()
-        art = (ROOT / path).read_bytes().replace(b"\r\n", b"\n")
-        d = change_lines(difflib.unified_diff(server.decode().splitlines(), art.decode().splitlines(),
-                                              lineterm="", n=0))
+        # Server bytes + the reviewed change; unchanged lines keep their exact EOL (CRLF/mixed files).
+        art = apply_preserving_eol(server, (ROOT / path).read_text(encoding="utf-8"))
+        d, eol_kept = changed_lines(server, art)
         got = (sum(l.startswith("+") for l in d), sum(l.startswith("-") for l in d))
         # Exact identity: the same multiset of change lines as the reviewed diff (+ approved extra).
         expected = sorted(reviewed.get(path, []) + APPROVED_EXTRA.get(path, []))
         checks = {"server_copy_matches_recorded_sha": sha(server) == recorded.get(path),
                   "diff_counts_equal_approved": got == (plus, minus),
                   "diff_lines_identical_to_reviewed": sorted(d) == expected and bool(d),
-                  "no_cr": b"\r" not in art}
+                  "unchanged_lines_byte_identical": eol_kept,
+                  "content_equals_working_tree": art.decode().replace("\r\n", "\n")
+                  == (ROOT / path).read_text(encoding="utf-8").replace("\r\n", "\n")}
         ok &= all(checks.values())
         out = HERE / unit / Path(path).name
         out.parent.mkdir(exist_ok=True)

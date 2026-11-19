@@ -47,6 +47,30 @@ def test_rollback_and_postimage_verify_mode_and_owner():
     assert 'rollback "postimage $f mode/owner changed"' in t
 
 
+ROOT = DIR.parents[1]
+ARTIFACTS = [  # artifact, server copy, manifest
+    ("dashboard/readiness_monitor.py", "_workspace/post_c1_remediation_20261118/server_copies/readiness_monitor.server.py"),
+    ("dashboard/dashboard_web.py", "_workspace/post_c1_remediation_20261118/server_copies/dashboard_web.server.py"),
+    ("bot/outbox.py", "_workspace/post_c1_remediation_20261118/server_copies/outbox.server.py"),
+    ("bot/outbox_flush_worker.py", "_workspace/post_c1_remediation_20261118/server_copies/outbox_flush_worker.server.py"),
+    ("../bucket_cap_20261119/artifact/paper_trade_executor.py",
+     "_workspace/bucket_cap_20261119/server_copy/paper_trade_executor.server.py"),
+]
+
+
+@pytest.mark.parametrize("artifact, server", ARTIFACTS)
+def test_artifacts_keep_every_unchanged_server_line_byte_identical(artifact, server):
+    """2026-11-19: live files are CRLF or mixed; a whole-file LF artifact changed lines outside the diff."""
+    import sys
+    sys.path.insert(0, str(DIR))
+    from eol_preserve import changed_lines
+    art, srv = (DIR / artifact).read_bytes(), (ROOT / server).read_bytes()
+    changes, eol_kept = changed_lines(srv, art)
+    assert eol_kept and changes
+    # line-ending mix is the server's, apart from the inserted lines
+    assert abs(art.count(b"\r\n") - srv.count(b"\r\n")) <= sum(c.startswith("+") for c in changes)
+
+
 def test_only_the_dashboard_unit_is_restarted():
     t = text()
     assert "UNIT=cryptomaster-dashboard" in t

@@ -10,8 +10,10 @@ Stav 2026-11-19 (kolo 2): **připraveno, NENASAZENO, čeká na re-review nasazov
 
 ## Artefakty a piny
 
-`_workspace/deploy_post_c1_20261119/` (LF, ploché, `.gitattributes` drží LF). `build_artifacts.py`
-ověřuje, že:
+`_workspace/deploy_post_c1_20261119/` (ploché, v gitu byte-exaktní díky `-text`). Artefakt = **bajty serveru** +
+reviewovaná změna: nezměněné řádky si drží původní konec řádku. Živý `dashboard_web.py` má smíšené
+CRLF/LF a executor je převážně CRLF, takže plošné LF by měnilo řádky mimo diff (opraveno v kole 2).
+`build_artifacts.py` ověřuje, že:
 - serverová kopie z 18. 11. má zaznamenaný SHA;
 - artefakt se od ní liší **přesně o řádky z reviewovaného `remediation.diff`**, u workeru navíc o dva
   řádky `backlog_error` schválené ve druhém kole review. Porovnává se obsah změněných řádků, ne jejich
@@ -20,7 +22,7 @@ ověřuje, že:
 | Soubor | Služba | preimage (server 18. 11.) | nový SHA-256 |
 |---|---|---|---|
 | `src/services/readiness_monitor.py` | dashboard | `854ccfe9…c5d6` | `1f5d9429…8144` |
-| `src/services/dashboard_web.py` | dashboard | `0fdbf5c8…0b62` | `901807c3…f93c` |
+| `src/services/dashboard_web.py` | dashboard | `0fdbf5c8…0b62` | `df8b5041…e02e` |
 | `src/services/v5_legacy_bridge/outbox.py` | bot | `a3d7d7a4…4413` | `37cb41b8…faaff` |
 | `src/services/v5_legacy_bridge/outbox_flush_worker.py` | bot | `b173ea7c…6e9e` | `d65614e3…02a4` |
 
@@ -30,7 +32,7 @@ přesně commitnuté bajty a skripty preimage na serveru ověří samy.
 ## A. Dashboard: readiness = `paper_only`
 
 Skript `_workspace/deploy_post_c1_20261119/deploy_dashboard_readiness.sh`
-(SHA-256 `bbaaca72610b60d1f338b99c00b7c2408d4bf6ab51da299cb054bc8f5081da9a`, LF).
+(SHA-256 `65a133a9bb6befe3ec3e28cdf6321b9198edb3e72b3d9e296a3ebf9f15f7aabc`, LF).
 
 Co dělá:
 1. Bere stejný zámek jako nástroj pro bota.
@@ -93,9 +95,10 @@ Opravy po REJECT:
 - **Serverová kopie executoru** stažená 2026-11-19 13:34 UTC jen pro čtení. Její SHA `5b0b15cc…61cc`
   odpovídá dříve uvedenému preimage. Najdeš ji v `_workspace/bucket_cap_20261119/server_copy/`
   i se `SERVER_SHA256SUM`.
-- **Artefakt** `artifact/paper_trade_executor.py` (LF, `2072f23e…6ba1`) a **úplný diff proti serveru**
-  `server_to_artifact.diff`: 2 hunky, +25/−2, žádná jiná změna (`build_artifact.py` odmítne cizí hunk).
-  Dřívější pin `7079c2b5…` byl spočítaný z CRLF bajtů a je neplatný.
+- **Artefakt** `artifact/paper_trade_executor.py` (`a39d4f4c3c0d72e3a59a80078be6887ef9f413513b99f5e37d87359e9f406a12`):
+  bajty serveru (převážně CRLF) + jen změna stropu, nezměněné řádky bajtově identické. **Úplný diff
+  proti serveru** `server_to_artifact.diff`: 2 hunky, +25/−2 (`build_artifact.py` odmítne cizí hunk).
+  Dřívější pin `7079c2b5…` byly bajty Windows pracovního stromu (celé CRLF), ne server + diff.
 - **Parser** hledá přesnou hodnotu `"1"`–`"7"` bez `int()`, takže 5000 číslic nevyhodí `ValueError`.
   `deploy_env_check.py` omezuje délku na 1–3 číslice a vrací `Refused`.
 - **Rozsah:** konfigurovatelný strop platí jen pro `P0_8_PLUS_EVIDENCE_COLLECTION`; ostatní buckety
