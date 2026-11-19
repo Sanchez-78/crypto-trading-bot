@@ -82,7 +82,8 @@ def check_invariants(env: dict) -> None:
             raise Refused(f"{key} must be true or false")
     for key, (low, high) in STRICT_INT_KEYS.items():
         value = env.get(key)
-        if value is not None and not (re.fullmatch(r"[0-9]+", value) and low <= int(value) <= high):
+        # bounded digit count before int(): a huge digit string must be Refused, not ValueError
+        if value is not None and not (re.fullmatch(r"[0-9]{1,3}", value) and low <= int(value) <= high):
             raise Refused(f"{key} must be an integer in [{low}, {high}]")
 
 

@@ -16,9 +16,17 @@ def test_allowed_files_are_exactly_the_reviewed_set():
     assert _list("ALLOWED_FILES") == [
         "src/services/paper_source_learning.py", "src/services/paper_learning_budget.py",
         "src/services/candle_cache_v1.py", "src/services/p0_8_plus_live_pipeline.py",
-        "src/services/paper_trade_executor.py",
         "src/services/v5_legacy_bridge/outbox.py", "src/services/v5_legacy_bridge/outbox_flush_worker.py",
     ]
+    # The executor exception returns only with an approved bucket-cap review (2026-11-19: REJECT).
+    assert "src/services/paper_trade_executor.py" not in _list("ALLOWED_FILES")
+    assert "PAPER_EXPLORE_MAX_OPEN_PER_BUCKET" not in _list("ALLOWED_KEYS")
+
+
+def test_journal_check_fails_closed():
+    # review 2026-11-19 B1: journalctl failure or an empty journal must roll back, never pass.
+    assert "--no-pager > \"$JOURNAL\" || true" not in TEXT
+    assert 'rollback "journal unreadable"' in TEXT and 'rollback "journal empty since restart"' in TEXT
 
 
 def test_nested_paths_are_backed_up_and_basenames_unique():
@@ -31,9 +39,8 @@ def test_nested_paths_are_backed_up_and_basenames_unique():
     assert len(names) == len(set(names))
 
 
-# 2026-11-19: the PAPER executor is the single, explicitly reviewed exception (bucket cap
-# PAPER_EXPLORE_MAX_OPEN_PER_BUCKET); every deploy still pins its exact bytes.
-EXECUTOR_EXCEPTION = "src/services/paper_trade_executor.py"
+# No executor exception while the bucket-cap review is not approved (see above).
+EXECUTOR_EXCEPTION = None
 
 
 def test_allowed_keys_exclude_costs_exits_and_real_trading():

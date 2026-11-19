@@ -15,6 +15,7 @@ BASE = {"TRADING_MODE": "paper_train", "ENABLE_REAL_ORDERS": "false", "LIVE_TRAD
 @pytest.mark.parametrize("raw,expected", [
     (None, 2), ("", 2), ("1", 1), ("2", 2), ("7", 7),
     ("0", 2), ("8", 2), ("-3", 2), ("3.5", 2), ("abc", 2), (" 5 ", 5), ("٣", 2),
+    ("9" * 5000, 2), ("0" * 5000 + "3", 2), ("03", 2), ("+3", 2),  # review 2026-11-19: no ValueError
 ])
 def test_executor_cap_falls_back_to_default(raw, expected):
     env = {} if raw is None else {"PAPER_EXPLORE_MAX_OPEN_PER_BUCKET": raw}
@@ -26,7 +27,7 @@ def test_deploy_check_accepts_range(raw):
     dec.check_invariants({**BASE, "PAPER_EXPLORE_MAX_OPEN_PER_BUCKET": raw})
 
 
-@pytest.mark.parametrize("raw", ["0", "8", "", "five", "3.0", "-1", " 5"])
+@pytest.mark.parametrize("raw", ["0", "8", "", "five", "3.0", "-1", " 5", "9" * 5000, "0" * 5000 + "3"])
 def test_deploy_check_refuses_bad_values(raw):
     with pytest.raises(dec.Refused):
         dec.check_invariants({**BASE, "PAPER_EXPLORE_MAX_OPEN_PER_BUCKET": raw})
@@ -53,3 +54,16 @@ def test_bucket_cap_uses_env(monkeypatch):
     # max_open_per_symbol = 1 is unchanged by the bucket cap
     assert ex._check_exploration_exposure_caps("BTCUSDT", "P0_8_PLUS_EVIDENCE_COLLECTION")["reason"] == \
         "max_open_per_symbol"
+
+
+@pytest.mark.parametrize("bucket", ["A_STRICT_TAKE", "C_WEAK_EV_TRAIN", "B_RECOVERY_READY"])
+def test_other_buckets_keep_the_fixed_cap_of_two(monkeypatch, bucket):
+    """review 2026-11-19 P2: the override applies only to the P0.8+ evidence cohort."""
+    positions = {f"p{i}": _pos(s, bucket) for i, s in enumerate(["BTCUSDT", "ETHUSDT"])}
+    monkeypatch.setattr(ex, "_POSITIONS", positions)
+    monkeypatch.setattr(ex, "_is_position_stale", lambda p, now: False)
+    monkeypatch.setenv("PAPER_EXPLORE_MAX_OPEN_PER_BUCKET", "7")
+    blocked = ex._check_exploration_exposure_caps("SOLUSDT", bucket)
+    assert blocked and blocked["reason"] == "max_open_per_bucket"
+    monkeypatch.setattr(ex, "_POSITIONS", {"p0": _pos("BTCUSDT", bucket)})
+    assert ex._check_exploration_exposure_caps("SOLUSDT", bucket) is None

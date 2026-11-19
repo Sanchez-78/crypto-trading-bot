@@ -9,7 +9,8 @@
    54
   ],
   "server_copy_matches_recorded_sha": true,
-  "diff_equals_approved": true,
+  "diff_counts_equal_approved": true,
+  "diff_lines_identical_to_reviewed": true,
   "no_cr": true
  },
  "src/services/dashboard_web.py": {
@@ -22,7 +23,8 @@
    11
   ],
   "server_copy_matches_recorded_sha": true,
-  "diff_equals_approved": true,
+  "diff_counts_equal_approved": true,
+  "diff_lines_identical_to_reviewed": true,
   "no_cr": true
  },
  "src/services/v5_legacy_bridge/outbox.py": {
@@ -35,7 +37,8 @@
    0
   ],
   "server_copy_matches_recorded_sha": true,
-  "diff_equals_approved": true,
+  "diff_counts_equal_approved": true,
+  "diff_lines_identical_to_reviewed": true,
   "no_cr": true
  },
  "src/services/v5_legacy_bridge/outbox_flush_worker.py": {
@@ -48,7 +51,8 @@
    0
   ],
   "server_copy_matches_recorded_sha": true,
-  "diff_equals_approved": true,
+  "diff_counts_equal_approved": true,
+  "diff_lines_identical_to_reviewed": true,
   "no_cr": true
  }
 }

@@ -1,0 +1,48 @@
+--- server/src/services/paper_trade_executor.py
++++ artifact/src/services/paper_trade_executor.py
+@@ -1539,12 +1539,35 @@
+     return p.get("training_bucket") or p.get("explore_bucket")
+ 
+ 
++EXPLORE_BUCKET_CAP_DEFAULT = 2
++EXPLORE_BUCKET_CAP_MAX = 7  # one per symbol; max_open_per_symbol = 1 still applies
++# Only the P0.8+ evidence cohort gets the configurable cap; every other bucket keeps 2
++# (review 2026-11-19: the override must not silently change other evidence segments).
++EXPLORE_BUCKET_CAP_BUCKET = "P0_8_PLUS_EVIDENCE_COLLECTION"
++_EXPLORE_BUCKET_CAP_VALUES = {str(n): n for n in range(1, EXPLORE_BUCKET_CAP_MAX + 1)}
++
++
++def exploration_bucket_cap(env=None) -> int:
++    """PAPER_EXPLORE_MAX_OPEN_PER_BUCKET in [1, 7]; unset or invalid -> 2 (the old constant).
++
++    Invalid values fall back to the more restrictive default instead of raising in the
++    entry path; deploy_env_check.py refuses them before a deploy. Exact lookup, no int():
++    a very long digit string must not raise (review 2026-11-19).
++    """
++    raw = (os.environ if env is None else env).get("PAPER_EXPLORE_MAX_OPEN_PER_BUCKET", "")
++    return _EXPLORE_BUCKET_CAP_VALUES.get(str(raw).strip(), EXPLORE_BUCKET_CAP_DEFAULT)
++
++
++def _bucket_cap_for(bucket: Optional[str]) -> int:
++    return exploration_bucket_cap() if bucket == EXPLORE_BUCKET_CAP_BUCKET else EXPLORE_BUCKET_CAP_DEFAULT
++
++
+ def _check_exploration_exposure_caps(symbol: str, bucket: Optional[str]) -> Optional[dict]:
+     """Check exploration-specific exposure caps.
+ 
+     Rules:
+     - max_open_per_symbol = 1
+-    - max_open_per_bucket = 2
++    - max_open_per_bucket = 2; for P0_8_PLUS_EVIDENCE_COLLECTION exploration_bucket_cap() (default 2)
+     - max_open_per_symbol_bucket = 1
+ 
+     P1.1Z: Ignore stale positions in cap counts.
+@@ -1594,7 +1617,7 @@
+         }
+ 
+     # Check bucket cap
+-    if bucket_count >= 2:
++    if bucket_count >= _bucket_cap_for(bucket):
+         return {
+             "status": "blocked",
+             "reason": "max_open_per_bucket",

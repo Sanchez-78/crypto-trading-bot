@@ -22,11 +22,35 @@ PINS="src/services/readiness_monitor.py=854ccfe92ca19bf22bec3a8bf26d330a217feee1
 src/services/dashboard_web.py=0fdbf5c8e9c7864f334fcc48b8c16a886037ff854cf2bf05ba14b7d58b360b62=901807c30df51a407914a7e6b137da9ada1c8dc13a5d1a11d1a290701809f93c"
 log() { echo "$(date -u +%FT%TZ) DEPLOY_dashboard-readiness $*" | tee -a "$LOG"; }
 h() { sha256sum < "$1" | cut -d' ' -f1; }
+meta() { stat -c '%a %u %g' "$1"; }
+# The credential systemd actually handed to the running unit (root-readable); covers plain and
+# encrypted credstore sources alike (review 2026-11-19 A1).
+TOKEN_FILE=/run/credentials/$UNIT.service/dashboard_api_token
+code_of() {  # code_of <path> [auth] -> HTTP status; the token reaches curl only via stdin (-H @-)
+  if [ "${2:-}" = auth ]; then
+    printf 'Authorization: Bearer %s\n' "$(cat "$TOKEN_FILE")" | \
+      curl -s -o "$BODY" -w '%{http_code}' -H @- "$URL$1" || true
+  else
+    curl -s -o "$BODY" -w '%{http_code}' "$URL$1" || true
+  fi
+}
 
 exec 9>/run/lock/cryptomaster-deploy.lock
 flock -n 9 || { echo "another deploy is running" >&2; exit 4; }
 
-STAGE="$(mktemp -d)"; chmod 700 "$STAGE"; trap 'rm -rf "$STAGE"' EXIT
+# Effective auth profile, observed before any change (docs/remediation/DASHBOARD_DEPLOYMENT.md allows a
+# public profile without a token). The deploy must leave it exactly as found.
+BODY="$(mktemp)"; trap 'rm -f "$BODY"' EXIT
+case "$(code_of /api/dashboard/readiness)" in
+  200) PROFILE=public ;;
+  401|503) PROFILE=protected
+           [ -r "$TOKEN_FILE" ] || { echo "protected dashboard but $TOKEN_FILE unreadable; refusing" >&2; exit 2; }
+           [ "$(code_of /api/dashboard/readiness auth)" = 200 ] || { echo "token rejected before deploy; refusing" >&2; exit 2; } ;;
+  *) echo "dashboard not answering before deploy; refusing" >&2; exit 2 ;;
+esac
+log "profile=$PROFILE"
+
+STAGE="$(mktemp -d)"; chmod 700 "$STAGE"; trap 'rm -rf "$STAGE" "$BODY"' EXIT
 while IFS='=' read -r f pre new; do
   [ "$(h "$APP/$f")" = "$pre" ] || { echo "live $f is not the reviewed preimage; refusing" >&2; exit 2; }
   install -m 600 "$SRC/$(basename "$f")" "$STAGE/$(basename "$f")"   # read the source exactly once
@@ -57,9 +81,10 @@ rollback() {
     install -m "$(stat -c %a "$BACKUP/$f")" -o "$(stat -c %u "$BACKUP/$f")" -g "$(stat -c %g "$BACKUP/$f")" \
       "$BACKUP/$f" "$APP/$f"
     [ "$(h "$APP/$f")" = "$pre" ] || bad=1
+    [ "$(meta "$APP/$f")" = "$(meta "$BACKUP/$f")" ] || bad=1   # mode, uid, gid too (review A3)
   done <<< "$PINS"
   restart_and_wait; up=$?
-  log "after rollback: hashes_restored=$([ $bad = 0 ] && echo yes || echo NO) healthz=$([ $up = 0 ] && echo 200 || echo FAIL)"
+  log "after rollback: files_restored=$([ $bad = 0 ] && echo yes || echo NO) healthz=$([ $up = 0 ] && echo 200 || echo FAIL)"
   if [ "$bad" != 0 ] || [ "$up" != 0 ]; then
     echo "$(date -u +%FT%TZ) DEPLOY_dashboard-readiness ROLLBACK INCOMPLETE backup=$BACKUP" >> /opt/cryptomaster_research/ALERT
   fi
@@ -78,32 +103,28 @@ done <<< "$PINS"
 t0="$(date +%s)"
 restart_and_wait || rollback "healthz not 200 after restart"
 
-# Authenticated checks: the token goes to curl via stdin (-H @-), never on a command line or in a log.
-TOKEN_FILE=""
-for c in /etc/credstore/dashboard_api_token /run/credstore/dashboard_api_token; do
-  [ -r "$c" ] && { TOKEN_FILE="$c"; break; }
-done
-[ -n "$TOKEN_FILE" ] || rollback "dashboard_api_token credential not found"
-api() {  # api <path> -> body on stdout, fails unless HTTP 200
-  local body code
-  body="$(mktemp)"
-  code="$(printf 'Authorization: Bearer %s\n' "$(cat "$TOKEN_FILE")" | \
-          curl -s -o "$body" -w '%{http_code}' -H @- "$URL$1" || true)"
-  cat "$body"; rm -f "$body"
-  [ "$code" = 200 ]
-}
-READINESS="$(api /api/dashboard/readiness)" || rollback "readiness not HTTP 200"
-printf '%s' "$READINESS" | /usr/bin/python3 -I -c '
+# The profile must be unchanged, and the readiness contract must hold under it.
+if [ "$PROFILE" = protected ]; then
+  case "$(code_of /api/dashboard/readiness)" in 401|503) ;; *) rollback "protected profile no longer enforced" ;; esac
+  [ -r "$TOKEN_FILE" ] || rollback "credential unreadable after restart"
+  MODE=auth
+else
+  MODE=""
+fi
+[ "$(code_of /api/dashboard/readiness "$MODE")" = 200 ] || rollback "readiness not HTTP 200"
+/usr/bin/python3 -I -c '
 import json, sys
-d = json.load(sys.stdin)
+d = json.load(open(sys.argv[1]))
 ok = (d.get("status") == "paper_only" and d.get("is_ready_for_trading") is False
       and d.get("readiness_score") == 0 and d.get("blocker_reasons") == ["paper_only_policy"])
-sys.exit(0 if ok else 1)' || rollback "readiness payload is not the paper_only contract"
-api /api/dashboard/metrics > /dev/null || rollback "metrics not HTTP 200"
+sys.exit(0 if ok else 1)' "$BODY" || rollback "readiness payload is not the paper_only contract"
+[ "$(code_of /api/dashboard/metrics "$MODE")" = 200 ] || rollback "metrics not HTTP 200"
 
 sleep 120   # one more readiness/metrics cycle in the journal
 JOURNAL="$(mktemp)"
-journalctl -u "$UNIT" --since "@$t0" --no-pager > "$JOURNAL" || true
+# An unreadable journal must not pass as "no errors" (review 2026-11-19 A2).
+journalctl -u "$UNIT" --since "@$t0" --no-pager > "$JOURNAL" || { rm -f "$JOURNAL"; rollback "journal unreadable"; }
+[ -s "$JOURNAL" ] || { rm -f "$JOURNAL"; rollback "journal empty since restart"; }
 if grep -qE "Traceback|METRICS_COLLECTION_ERROR|PermissionError|READINESS_CHECK_ERROR" "$JOURNAL"; then
   rm -f "$JOURNAL"; rollback "errors in dashboard journal"
 fi
@@ -111,6 +132,7 @@ rm -f "$JOURNAL"
 systemctl is-active --quiet "$UNIT" || rollback "dashboard not active"
 while IFS='=' read -r f pre new; do
   [ "$(h "$APP/$f")" = "$new" ] || rollback "postimage $f differs from pin"
+  [ "$(meta "$APP/$f")" = "$(meta "$BACKUP/$f")" ] || rollback "postimage $f mode/owner changed"
 done <<< "$PINS"
 trap - ERR INT TERM
 ( cd "$APP" && sha256sum src/services/readiness_monitor.py src/services/dashboard_web.py ) > "$BACKUP/POSTIMAGE.sha256"

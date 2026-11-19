@@ -1,0 +1,36 @@
+# Nezávislé review nasazovacího kroku po C1 — 2026-11-19
+
+Rozsah: `CODEX_REVIEW_POST_C1_DEPLOY_STEP_2026-11-19.md`. Pouze lokální čtení a cílené testy; žádné SSH, nasazení, commit, Firebase ani změna runtime dat. Review se týká nasazovacího kroku, nikoli již schválené obchodní logiky.
+
+## Verdikty
+
+- **A — dashboard readiness: CHANGES_REQUIRED.** Skript neumí doložený veřejný režim dashboardu bez tokenu a kontrola journalu může tiše selhat.
+- **B — outbox visibility: CHANGES_REQUIRED pro nasazovací krok.** Vnořené cesty, unikátní názvy a pinning jsou správně; závěrečná kontrola journalu je fail-open. Navíc současný nasazovací skript obsahuje dosud neschválenou výjimku pro celý paper executor ze souběžného zadání. Samotné outbox artefakty odpovídají schválené změně.
+
+## A — nálezy
+
+1. **P1 — skript v režimu bez autentizace vždy vrátí změnu zpět.** `_workspace/deploy_post_c1_20261119/deploy_dashboard_readiness.sh:82-86` bezpodmínečně vyžaduje čitelný `/etc/credstore/dashboard_api_token` nebo `/run/credstore/dashboard_api_token`. Projektový `docs/remediation/DASHBOARD_DEPLOYMENT.md:8-21` však popisuje aktuálně zvolený veřejný profil: žádný token, `LoadCredential` se vymaže a API je bez autentizace. Lokální reprodukce `dashboard_auth.evaluate('')` s `DASHBOARD_SECURITY_ENABLED=0`, `DASHBOARD_ALLOW_UNAUTHENTICATED_PUBLIC=1` a bez tokenu vrátila `(True, 200, None)`, zatímco nasazovací skript dojde k `rollback "dashboard_api_token credential not found"`. Skutečný účinný profil serveru je **NOT_VERIFIED** (SSH je zakázáno); runbook ho nezjišťuje. Oprava: před změnou zjistit účinný profil služby a po restartu ověřit odpovídající kontrakt; při chráněném režimu používat bezpečně dostupný token, při veřejném režimu nevyžadovat neexistující credential. Profil ani ochranu při tom automaticky neměnit.
+
+2. **P1 — kontrola journalu je fail-open.** `deploy_dashboard_readiness.sh:105-109` používá `journalctl ... > "$JOURNAL" || true`. Při chybě journalctl zůstane soubor prázdný, `grep` nenajde chybu a skript může zapsat `APPLIED OK`, aniž ověřil požadované dvě minuty logů. Oprava: neúspěšné čtení journalu musí spustit rollback; testovat i tento scénář. Obdobná chyba je v nástroji pro bota níže.
+
+3. **P2 — rollback ověřuje jen obsah, ne metadata.** `deploy_dashboard_readiness.sh:53-65` předává původní mód, UID a GID do `install`, ale následně kontroluje jen SHA-256. Incomplete rollback nebo nečekané atributy by mohly být chybně označeny `hashes_restored=yes`; `ALERT` se zapisuje pouze při odhalené neúplnosti. Doplnit porovnání módu, UID a GID se zálohou po obnově. Neověřená odolnost proti skutečnému výpadku napájení není předmětem této změny.
+
+Pozitivní zjištění: preimage se kontroluje před změnou živých modulů (`:31-38`), zdroj se jednou kopíruje do privátní stage a porovnává s pinem (`:37-42`), do služby se instalují staged bajty (`:72-76`), rollback obnovuje oba soubory a restartuje jen dashboard (`:53-65`). Token není v argumentech curl ani v logu: hlavička jde přes stdin (`:88-99`). Není však ověřeno, odkud na skutečném hostu pochází účinný token, pokud existuje; hledání dvou plaintext cest nemusí pokrýt všechny účinné konfigurace. Kontrakt `paper_only` v `:95-101` odpovídá artefaktu `dashboard_web.py:1371-1401`. Z `start.py` a `bot2/main.py` nebyl nalezen import `dashboard_web` ani `readiness_monitor`; `bot2/main.py:1557` dashboard výslovně označuje za samostatnou službu. Tvrzení o skutečných runtime importech na hostu zůstává **NOT_VERIFIED** bez host kontroly.
+
+## B — nálezy
+
+1. **P1 — journal může selhat bez odmítnutí nasazení.** `deploy/research_eval/deploy_bot_files.sh:178-183` také používá `journalctl ... || true`. Nedostupný journal tedy projde kontrolou chyb a může vést k `APPLIED OK`. Oprava: při nenulovém návratovém kódu journalctl provést rollback; přidat cílený test. Jde o starší část skriptu, ale přímo rozhoduje o bezpečnosti tohoto nového nasazení.
+
+2. **P1 — společný skript zahrnuje dosud neschválenou výjimku executoru.** `deploy_bot_files.sh:42-47` zároveň povoluje `paper_trade_executor.py` a klíč stropu bucketu. Review stropu v `_workspace/2026-11-19_codex_review_explore_bucket_cap.md` končí `REJECT` pro chybějící nezávislou kontrolu přesného diffu vůči serveru a výjimku na krajním vstupu. Samotné nasazení outboxu může používat `FILES` omezené na dva outbox soubory a `VARS=""`, ale instalaci této verze univerzálního nástroje nelze popisovat jako schválení budoucího nasazení executoru. Bezpečná cesta: oddělit outbox-only verzi allowlistu nebo uzavřít review executoru před instalací kombinované verze.
+
+3. **P2 — builder artefaktů ověřuje jen počty změněných řádků.** `_workspace/deploy_post_c1_20261119/build_artifacts.py:34-41` nastaví `diff_equals_approved` podle počtu `+`/`-`, nikoli podle identity schválených hunks. Jiná změna se stejnými počty by prošla. **Aktuální připnuté artefakty** jsem nezávisle porovnal s lokální serverovou kopií a schváleným diffem: readiness, dashboard, outbox i outbox worker obsahují pouze odpovídající změny (worker navíc následně schválený `backlog_error`), všechny čtyři SHA-256 i SHA preimages v `MANIFEST.json` sedí a soubory jsou LF. Slabý builder je riziko při budoucím přegenerování; před nasazením znovu nesestavovat bez nového review hashů.
+
+Pozitivní zjištění: allowlist zahrnuje jen dvě požadované vnořené outbox cesty (`deploy_bot_files.sh:44-49`); kontrola duplicitních basename probíhá před stagingem (`:51-54`); záloha vytváří `dirname` každého souboru (`:74`); `stage_files`, `build_tree`, `install_staged` a `verify_pinned` používají připnuté bajty (`:64-65,81-82,159-161,190`). `verify_staged_import()` převádí vnořenou cestu na Python modul (`deploy_env_check.py:122-147`), přesné bajty kompiluje a kontroluje import path. Doložený read-only import z `_workspace/post_c1_remediation_20261118/deploy_prep_check.json` skončil `exit=0`, `created_files=[]`; současný systémový sandbox nebyl v tomto Windows review skutečně spuštěn. S `VARS=""` se nový drop-in nevytváří (`deploy_bot_files.sh:162-166`); při neexistujícím drop-inu ho rollback jen zkusí odstranit (`:133`). Podmínku řazení `DROPIN_NAME` skript ověřuje i při prázdném `VARS`, takže jméno uvedené v runbooku musí na hostu skutečně řadit za všechny existující drop-iny (**NOT_VERIFIED** bez SSH).
+
+## Ověření a hranice
+
+- Cílené testy podle zadání: `tests/test_deploy_bot_files_allowlist.py`, `tests/test_deploy_env_check.py`, `tests/test_deploy_pinned.py` → **28 PASS, 8 SKIP**. Skipped jsou host-dependent; skutečný systemd/rollback nebyl spuštěn.
+- Nezávislý `bash -n` nad oběma skripty → **PASS** přes Git Bash. V sandboxu Git Bash nejprve skončil na Windows `CreateFileMapping`/signal-pipe access denied; čtecí syntax check mimo sandbox poté vrátil exit 0.
+- Čtyři artefakty a jejich lokální serverové kopie: SHA-256 proti `MANIFEST.json` **4/4 PASS**, LF **4/4 PASS**. Toto neověřuje dnešní stav serveru; deploy musí i nadále odmítnout odlišný preimage.
+- `protected_sha.py save/check` → **PROTECTED_SAME**. Žádný chráněný soubor ani runtime data nebyla změněna.
+- Nasazení, účinný dashboard profil, credential source, skutečný journal, systemd import a Firebase write rate: **NOT_RUN / NOT_VERIFIED**.

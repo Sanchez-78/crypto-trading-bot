@@ -2,3 +2,5 @@
 *.sh text eol=lf
 deploy/research_eval/*.py text eol=lf
 _workspace/deploy_post_c1_*/**/*.py text eol=lf
+_workspace/bucket_cap_*/artifact/*.py text eol=lf
+_workspace/bucket_cap_*/server_copy/*.py text eol=lf
