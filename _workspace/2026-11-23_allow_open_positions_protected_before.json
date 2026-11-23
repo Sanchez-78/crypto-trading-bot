@@ -1,0 +1,10 @@
+{
+ "local_learning_storage/cache.sqlite": "0f2fbd24c8b4420b6b6f56fccb24b6d83eb9a6862ee2bca0fd42d12459cf0d7e",
+ "data/paper_open_positions.json": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+ "server_local_backups/paper_adaptive_learning_state.json": "27fd24dc3d9e09597e20c6443a2ab634b54923605d13867a5b38a668f1432c55",
+ "server_local_backups/learning_state_phase1.json": "49b740bd21d1c7d264cd0666e56d3b9eeb24790e4668feecb7a57a3077f1fe42",
+ "runtime/v5_quota_usage.sqlite": "0a3bf519ac254cb670486ff3c9539ccf55385c9f1a17fe8b516f34cf79161b03",
+ "src/runtime/v5_quota_usage.sqlite": "8b65fbaaccdc984882e1dacc112cbbd16c544fc3c36d58630684205e213f81e1",
+ "runtime/firebase_cache.sqlite": "ceeae9cbf04aec7f671b846841ec85fa06ecf9d481c16d27200427d03a642b53",
+ "src/runtime/v5_trade_outbox.sqlite": "88173eb457fb537dd75bc2f7b5d85806e57fd96a7cfc3e69fae9a07b2015da36"
+}

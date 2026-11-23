@@ -205,3 +205,47 @@ def test_econ_bad_log_limit_flag_accepts_true_false(value):
 def test_econ_bad_log_limit_flag_refuses_anything_else(value):
     with pytest.raises(dec.Refused):
         dec.preflight(BASE, "", f"{ECON_FLAG}={value}", "")
+
+
+# 2026-11-23 review A1: ALLOW_OPEN_POSITIONS must check the executor's canonical state, not len(json).
+import json as _json
+
+
+def _pos(tid, **over):
+    base = {"trade_id": tid, "symbol": "BTCUSDT", "entry_price": 100.0, "entry_ts": 1795434294.6, "side": "BUY"}
+    base.update(over)
+    return base
+
+
+def test_open_positions_count_accepts_canonical_state():
+    state = {"paper_decision_a": _pos("paper_decision_a"), "paper_decision_b": _pos("paper_decision_b")}
+    assert dec.open_positions_count(_json.dumps(state)) == 2
+    assert dec.open_positions_count("{}") == 0
+
+
+@pytest.mark.parametrize("text", [
+    "not json", '"abc"', "42", "[]", '[{"trade_id": "t"}]',               # not a mapping / legacy list
+    '{"trade-1": 42}',                                                     # review repro: non-dict record
+    '{"positions": {"t": {}}}', '{"metadata": {}}',                        # wrapper / metadata keys
+    _json.dumps({"t": _pos("other")}),                                     # trade_id mismatch
+    _json.dumps({"t": {k: v for k, v in _pos("t").items() if k != "trade_id"}}),
+    _json.dumps({"t": _pos("t", symbol="")}), _json.dumps({"t": _pos("t", symbol=None)}),
+    _json.dumps({"t": _pos("t", entry_price=0)}), _json.dumps({"t": _pos("t", entry_price=None)}),
+    _json.dumps({"t": _pos("t", entry_price=True)}), _json.dumps({"t": _pos("t", entry_ts=-1)}),
+    '{"t": {"trade_id": "t", "symbol": "X", "entry_price": NaN, "entry_ts": 1}}',
+])
+def test_open_positions_count_refuses_unrestorable_state(text):
+    with pytest.raises(dec.Refused):
+        dec.open_positions_count(text)
+
+
+def test_positions_cli_prints_count_or_refuses(tmp_path, capsys):
+    good = tmp_path / "good.json"
+    good.write_text(_json.dumps({"t": _pos("t")}), encoding="utf-8")
+    assert dec.main(["positions", "--file", str(good)]) == 0
+    assert capsys.readouterr().out.strip() == "1"
+    bad = tmp_path / "bad.json"
+    bad.write_text('{"trade-1": 42}', encoding="utf-8")
+    assert dec.main(["positions", "--file", str(bad)]) == 2
+    assert "POSITIONS REFUSED" in capsys.readouterr().err
+    assert dec.main(["positions", "--file", str(tmp_path / "missing.json")]) == 2

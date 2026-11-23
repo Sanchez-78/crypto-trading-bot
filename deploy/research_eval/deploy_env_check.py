@@ -148,6 +148,44 @@ def verify_staged_import(tree: str, files: list[str], pinned: dict, pycache_pref
             raise Refused(f"bytecode cache used for {path}")
 
 
+def open_positions_count(text: str) -> int:
+    """Count open PAPER positions in the executor state file, or refuse (ALLOW_OPEN_POSITIONS path).
+
+    Accepts only the canonical live shape that paper_trade_executor._load_paper_state() restores
+    1:1: a mapping trade_id -> position dict whose own trade_id equals the key, with a non-empty
+    symbol and positive finite entry_price/entry_ts. Anything the loader would skip, reshape or
+    reject (non-dict records, metadata keys, wrapper {"positions": ...}, legacy lists, scalars)
+    is Refused, so the opt-in never restarts over a state that would not reload exactly
+    (review 2026-11-23 A1). An empty mapping counts 0.
+    """
+    import json
+    import math
+    try:
+        data = json.loads(text)
+    except ValueError as exc:
+        raise Refused(f"positions state is not JSON: {type(exc).__name__}")
+    if not isinstance(data, dict):
+        raise Refused(f"positions state must be a mapping, got {type(data).__name__}")
+
+    def positive(value) -> bool:
+        return (isinstance(value, (int, float)) and not isinstance(value, bool)
+                and math.isfinite(value) and value > 0)
+
+    for key, pos in data.items():
+        if key in ("positions", "metadata"):
+            raise Refused(f"unsupported positions state key: {key}")
+        if not isinstance(pos, dict):
+            raise Refused(f"position {key!r} is not an object")
+        if pos.get("trade_id") != key:
+            raise Refused(f"position {key!r} trade_id mismatch")
+        symbol = pos.get("symbol")
+        if not (isinstance(symbol, str) and symbol.strip()):
+            raise Refused(f"position {key!r} has no symbol")
+        if not (positive(pos.get("entry_price")) and positive(pos.get("entry_ts"))):
+            raise Refused(f"position {key!r} has no valid entry_price/entry_ts")
+    return len(data)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="mode", required=True)
@@ -160,7 +198,16 @@ def main(argv: list[str] | None = None) -> int:
     post.add_argument("--environ", type=Path, required=True)
     post.add_argument("--vars", required=True)
     post.add_argument("--dotenv", type=Path, required=True)
+    positions = sub.add_parser("positions")
+    positions.add_argument("--file", type=Path, required=True)
     args = parser.parse_args(argv)
+    if args.mode == "positions":
+        try:
+            print(open_positions_count(args.file.read_text(encoding="utf-8")))
+        except (Refused, OSError, UnicodeDecodeError) as exc:
+            print(f"POSITIONS REFUSED: {exc}", file=sys.stderr)
+            return 2
+        return 0
     dotenv = args.dotenv.read_text(encoding="utf-8") if args.dotenv.exists() else ""
     try:
         if args.mode == "pre":

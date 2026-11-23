@@ -11,7 +11,8 @@
 # Guarantees: single deploy lock; allowlisted files/keys (keys exclude TP/SL, costs and REAL;
 # files are explicitly reviewed exceptions, incl. the PAPER executor and the decision engine,
 # always pinned by EXPECTED_SHA256); validation with the bot's own validators before any change;
-# restart only with zero open paper positions; any failure after the first change
+# restart only with zero open paper positions (unless ALLOW_OPEN_POSITIONS=1 and the state file passes
+# deploy_env_check.py positions); any failure after the first change
 # restores every file and the drop-in and verifies the restored hashes.
 # Known limit: zero open positions is a snapshot, not an entry barrier; the window
 # between the check and the restart is a few seconds and positions are persisted.
@@ -135,8 +136,9 @@ open=err
 # so a restart neither loses nor double-closes them. The state file must still be readable; the
 # default (unset) keeps waiting for zero open positions.
 if [ "${ALLOW_OPEN_POSITIONS:-0}" = 1 ]; then
-  open="$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))))' "$POSITIONS" 2>/dev/null || echo err)"
-  [ "$open" != err ] || { log "SKIPPED positions state unreadable"; exit 3; }
+  # Structural check against the executor's canonical state, not just len(json) (review A1).
+  open="$(python3 -I -B "$CHECK" positions --file "$POSITIONS" 2>/dev/null || echo err)"
+  [ "$open" != err ] || { log "SKIPPED positions state not restorable (ALLOW_OPEN_POSITIONS refused)"; exit 3; }
   log "OPEN_POSITIONS_ALLOWED open=$open (operator opt-in)"
   open=0
 fi

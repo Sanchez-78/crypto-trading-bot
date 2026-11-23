@@ -109,6 +109,8 @@ def test_open_positions_opt_in_is_explicit_logged_and_default_waits():
     assert 'if [ "${ALLOW_OPEN_POSITIONS:-0}" = 1 ]; then' in TEXT
     block = TEXT.split('if [ "${ALLOW_OPEN_POSITIONS:-0}" = 1 ]; then', 1)[1].split("\nfi\n", 1)[0]
     assert 'log "OPEN_POSITIONS_ALLOWED open=$open (operator opt-in)"' in block
-    assert '[ "$open" != err ] || { log "SKIPPED positions state unreadable"; exit 3; }' in block
+    assert 'python3 -I -B "$CHECK" positions --file "$POSITIONS"' in block            # structural check (A1)
+    assert "len(json.load" not in block
+    assert '[ "$open" != err ] || { log "SKIPPED positions state not restorable (ALLOW_OPEN_POSITIONS refused)"; exit 3; }' in block
     assert 'if [ "$open" != 0 ]; then log "SKIPPED open=$open"; exit 3; fi' in TEXT
     assert TEXT.index("ALLOW_OPEN_POSITIONS") < TEXT.index("trap 'rollback")   # before any live change
