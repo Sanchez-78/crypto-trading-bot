@@ -46,8 +46,9 @@ flock -n 9 || { echo "another deploy is running" >&2; exit 4; }
 # paper_trade_executor.py + PAPER_EXPLORE_MAX_OPEN_PER_BUCKET were removed again: the bucket-cap
 # review is REJECT (_workspace/2026-11-19_codex_review_explore_bucket_cap.md). They return only
 # with their own approved review, so installing this tool approves no executor deploy.
-ALLOWED_FILES="src/services/paper_source_learning.py src/services/paper_learning_budget.py src/services/candle_cache_v1.py src/services/p0_8_plus_live_pipeline.py src/services/v5_legacy_bridge/outbox.py src/services/v5_legacy_bridge/outbox_flush_worker.py"
-ALLOWED_KEYS="PAPER_PROBE_HOURLY_ENTRIES PAPER_PROBE_DAILY_ENTRIES PAPER_PROBE_SYMBOL_COOLDOWN_S PAPER_PROBE_MIN_NET_BPS PAPER_SYMBOL_BLACKLIST PAPER_LEARNING_CONTROL_FRACTION PAPER_COST_EXPLORATION_ENABLED PAPER_ADAPTIVE_EXPLORATION_ENABLED PAPER_COMPLETED_CANDLE_LEARNING_ENABLED PAPER_COMPLETED_CANDLE_PHASE_REFRESH_ENABLED"
+# 2026-11-23: re-added; bucket-cap code APPROVE (_workspace/2026-11-19_codex_rereview_post_c1_deploy_and_bucket_cap.md), deploy step review _workspace/2026-11-23_codex_review_bucket_cap_deploy_step.md.
+ALLOWED_FILES="src/services/paper_source_learning.py src/services/paper_learning_budget.py src/services/candle_cache_v1.py src/services/p0_8_plus_live_pipeline.py src/services/paper_trade_executor.py src/services/v5_legacy_bridge/outbox.py src/services/v5_legacy_bridge/outbox_flush_worker.py"
+ALLOWED_KEYS="PAPER_PROBE_HOURLY_ENTRIES PAPER_PROBE_DAILY_ENTRIES PAPER_PROBE_SYMBOL_COOLDOWN_S PAPER_PROBE_MIN_NET_BPS PAPER_SYMBOL_BLACKLIST PAPER_LEARNING_CONTROL_FRACTION PAPER_COST_EXPLORATION_ENABLED PAPER_ADAPTIVE_EXPLORATION_ENABLED PAPER_COMPLETED_CANDLE_LEARNING_ENABLED PAPER_COMPLETED_CANDLE_PHASE_REFRESH_ENABLED PAPER_EXPLORE_MAX_OPEN_PER_BUCKET"
 for f in $FILES; do
   case " $ALLOWED_FILES " in *" $f "*) ;; *) echo "file not allowed: $f" >&2; exit 2 ;; esac
 done

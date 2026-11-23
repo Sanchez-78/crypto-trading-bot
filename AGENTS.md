@@ -5,6 +5,9 @@ Komunikace s uživatelem a reporty: **česky**. Identifikátory a kód: anglicky
 
 ## Aktuální zadání
 
+**Otevřené zadání (review, 2026-11-23):** `docs/codex_prompts/CODEX_REVIEW_BUCKET_CAP_DEPLOY_STEP_2026-11-23.md`
+→ `_workspace/2026-11-23_codex_review_bucket_cap_deploy_step.md` (nasazovací krok stropu bucketu; kód už APPROVE).
+
 **Otevřené zadání (re-review, 2026-11-19, kolo 3):** `docs/codex_prompts/CODEX_REREVIEW_OUTBOX_DEPLOY_B4_2026-11-19.md`
 → `_workspace/2026-11-19_codex_rereview_outbox_deploy_b4.md` (jen nasazovací krok outboxu, nález B4).
 Hotové: `_workspace/2026-11-19_codex_rereview_post_c1_deploy_and_bucket_cap.md`: dashboard APPROVE
