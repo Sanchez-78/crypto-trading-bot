@@ -28,6 +28,26 @@ je bod zvratu WR ≈ 56,7 % (výhra +26, ztráta −34 bps), takže WR > 50 % sa
 „Všichni kandidáti“ znamená jen bez adaptivního odmítnutí; pacing, risk, kvóty, data a
 generátory dál určují, co vstoupí.
 
+## Výkonnostní epocha (WR/P/L na dashboardu) — nová od 2026-11-23 13:38:44 UTC
+
+- Na pokyn operátora („vynuluj WR a PL, ale zachovej celou historii a proces učení“) byla spuštěna
+  nová epocha `src/services/performance_epoch.start_epoch()`:
+  - `epoch_id 17b9bb8af12740c1a566d20c7a42bd18`, `started_at 1795441124.188168`,
+    `release_id operator-reset-20261123`.
+  - Mění se jen deskriptor `local_learning_storage/performance_epoch.json`.
+  - Dashboard počítá WR, PF, počet obchodů a P/L jen z obchodů s `entry_ts ≥ started_at`.
+  - Pozice otevřené před startem patří ke staré epoše, i když se zavřou později.
+- **Nic se nemazalo:**
+  - `cache.sqlite` (33 038 uzavřených obchodů, historicky −112,42 USD) zůstává a dashboard ho dál
+    ukazuje jako `historical`;
+  - stav učení (`paper_adaptive_learning_state.json`, `learning_state_phase1.json`) i kvalifikační
+    epocha učení se nezměnily. Hash před a po: shodný.
+- Předchozí epocha: `629c052e…`, od 2026-09-23, release `audit-20260923`.
+  - Konečný stav: n = 4 365, WR 25,70 %, P/L −29,09 USD, PF 0,433.
+  - Deskriptor je archivovaný v `local_learning_storage/performance_epochs/` a zálohovaný
+    v `/opt/cryptomaster_deploy_backups/performance-epoch-reset-20261123T133844Z/`.
+- Návrat: vrátit zálohovaný deskriptor (měření se tím vrátí ke staré epoše).
+
 ## Experiment C1 — UZAVŘEN 2026-11-16 17:48 UTC
 
 - **Verdikt `CONTRARIAN_NOT_SHOWN`** (předregistrace `docs/remediation/LEARNER_PREREGISTRATION_2026-11-09.md`,
