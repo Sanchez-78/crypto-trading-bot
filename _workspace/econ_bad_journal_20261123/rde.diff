@@ -1,0 +1,270 @@
+--- before/src/services/realtime_decision_engine.py
++++ after/src/services/realtime_decision_engine.py
+@@ -620,11 +620,14 @@
+     signal: dict = None,
+     ctx: dict = None,
+     override: dict = None,
++    emit_detail: bool = True,
+ ) -> None:
+     """V10.13u+19c/19e: Trace actual production return path for ECON BAD entry rejection.
+ 
+     Observability only. Never raises. No Firebase writes. Captures full decision context.
+     V10.13u+19e: Accepts override dict to derive checked/allowed/reason from resolver.
++    2026-11-23: emit_detail=False skips only the [ECON_BAD_ENTRY_RETURN_TRACE] line; the resolver
++    call and the [ECON_BAD_READY_BUT_REJECTED] invariant still run.
+     """
+     try:
+         # Derive values from signal/ctx if not provided
+@@ -684,33 +687,34 @@
+         snapshot_ready = snap.get("probe_ready")
+         snapshot_block_reason = snap.get("probe_block_reason")
+ 
+-        log.warning(
+-            "[ECON_BAD_ENTRY_RETURN_TRACE] "
+-            "symbol=%s ev=%.4f score=%.3f p=%.3f coh=%.3f af=%.3f "
+-            "pf=%s econ_status=%s entry_reason=%s "
+-            "snapshot_probe_ready=%s snapshot_probe_block=%s "
+-            "actual_recovery_checked=%s actual_recovery_allowed=%s "
+-            "actual_recovery_reason=%s open_positions=%s idle_s=%.0f forced=%s "
+-            "final_decision=%s",
+-            symbol or "UNKNOWN",
+-            float(ev or 0.0),
+-            float(score or 0.0),
+-            float(p or 0.0),
+-            float(coh or 0.0),
+-            float(af or 0.0),
+-            pf,
+-            econ_status,
+-            entry_reason or "unknown",
+-            snapshot_ready,
+-            snapshot_block_reason,
+-            actual_recovery_checked,
+-            actual_recovery_allowed,
+-            actual_recovery_reason,
+-            open_positions,
+-            float(idle_s or 0.0),
+-            forced,
+-            final_decision or "UNKNOWN",
+-        )
++        if emit_detail:
++            log.warning(
++                "[ECON_BAD_ENTRY_RETURN_TRACE] "
++                "symbol=%s ev=%.4f score=%.3f p=%.3f coh=%.3f af=%.3f "
++                "pf=%s econ_status=%s entry_reason=%s "
++                "snapshot_probe_ready=%s snapshot_probe_block=%s "
++                "actual_recovery_checked=%s actual_recovery_allowed=%s "
++                "actual_recovery_reason=%s open_positions=%s idle_s=%.0f forced=%s "
++                "final_decision=%s",
++                symbol or "UNKNOWN",
++                float(ev or 0.0),
++                float(score or 0.0),
++                float(p or 0.0),
++                float(coh or 0.0),
++                float(af or 0.0),
++                pf,
++                econ_status,
++                entry_reason or "unknown",
++                snapshot_ready,
++                snapshot_block_reason,
++                actual_recovery_checked,
++                actual_recovery_allowed,
++                actual_recovery_reason,
++                open_positions,
++                float(idle_s or 0.0),
++                forced,
++                final_decision or "UNKNOWN",
++            )
+ 
+         # V10.13u+20 P1.1b: Try paper exploration for ECON_BAD reject
+ 
+@@ -743,6 +747,154 @@
+             log.warning("[ECON_BAD_ENTRY_RETURN_TRACE_ERROR] err=%s", str(exc)[:160])
+         except Exception:
+             pass
++
++
++# ── 2026-11-23: rate-limit the per-reject DETAIL output of REJECT_ECON_BAD_ENTRY (observability only)
++# The reject branch printed a line and a [ECON_BAD_ENTRY_RETURN_TRACE] warning for every rejected
++# signal (~48k journal lines / ~16 min reported), leaving ~15 min of journal history. This only
++# decides whether one reject's detail lines are written; decisions, track_blocked(), near-miss,
++# diagnostics and the [ECON_BAD_READY_BUT_REJECTED] invariant are untouched. Off by default: unless
++# RDE_ECON_BAD_REJECT_LOG_LIMIT_ENABLED is true/1/yes/on, every detail is written exactly as before.
++# When on, per window: the first reject of each category is written in full, the rest are counted,
++# and the first reject after the window writes one summary line. Categories are the leading [a-z_]
++# token of the reason, capped at 16 (overflow -> "other"). Kept in this module so a deploy stays
++# one file.
++#
++# Loss contract (review 2026-11-23 R1/R2): a write cannot be confirmed from Python (StreamHandler
++# swallows stream errors; journald may rate-limit), so nothing waits for an acknowledgement. Each
++# summary carries a sequence number and CUMULATIVE totals since process start next to the window
++# counts. A lost summary line is visible as a gap in seq, and its counts are contained in the
++# totals of the next line that arrives. A process restart starts again at seq=1.
++import os as _ecl_os
++import re as _ecl_re
++import threading as _ecl_threading
++
++ECON_BAD_REJECT_LOG_LIMIT_FLAG = "RDE_ECON_BAD_REJECT_LOG_LIMIT_ENABLED"
++_ECL_CATEGORY_RE = _ecl_re.compile(r"[a-z_]{1,40}")
++
++
++def _econ_bad_reject_log_limit_enabled(env=None) -> bool:
++    raw = (_ecl_os.environ if env is None else env).get(ECON_BAD_REJECT_LOG_LIMIT_FLAG, "")
++    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
++
++
++def _econ_bad_reject_category(reason) -> str:
++    match = _ECL_CATEGORY_RE.match(str(reason or "").strip().lower())
++    return match.group(0) if match else "unknown"
++
++
++def _ecl_add(target: dict, cat: str, rejects: int, suppressed: int, cap: int) -> None:
++    if cat not in target and len(target) >= cap:
++        cat = "other"
++    entry = target.setdefault(cat, [0, 0])
++    entry[0] += rejects
++    entry[1] += suppressed
++
++
++class EconBadRejectLogLimiter:
++    def __init__(self, window_s: float = 60.0, max_categories: int = 16, clock=_time.monotonic):
++        self._window_s = float(window_s)
++        self._max = int(max_categories)
++        self._clock = clock
++        self._lock = _ecl_threading.Lock()
++        self._started = None
++        self._window_start = None
++        self._counts = {}  # current window: category -> [rejects, suppressed]
++        self._totals = {}  # since process start, same category cap
++        self._seq = 0
++
++    def observe(self, reason):
++        """Record one reject; returns (emit_detail, summary_line_or_None)."""
++        cat = _econ_bad_reject_category(reason)
++        with self._lock:
++            now = self._clock()
++            summary = None
++            if self._window_start is None:
++                self._started = self._window_start = now
++            elif now - self._window_start >= self._window_s:
++                for k, (r, s) in self._counts.items():
++                    _ecl_add(self._totals, k, r, s, self._max)
++                self._seq += 1
++                w_rej = sum(v[0] for v in self._counts.values())
++                w_sup = sum(v[1] for v in self._counts.values())
++                t_rej = sum(v[0] for v in self._totals.values())
++                t_sup = sum(v[1] for v in self._totals.values())
++                by_cat = ",".join(f"{k}={v[0]}/{v[1]}" for k, v in sorted(self._totals.items()))
++                summary = (f"[ECON_BAD_REJECT_LOG_SUMMARY] seq={self._seq} "
++                           f"window_s={now - self._window_start:.0f} window_rejects={w_rej} "
++                           f"window_suppressed={w_sup} total_rejects={t_rej} total_suppressed={t_sup} "
++                           f"since_s={now - self._started:.0f} "
++                           f"by_category_total(rejects/suppressed)={by_cat}")
++                self._counts = {}
++                self._window_start = now
++            if cat not in self._counts and len(self._counts) >= self._max:
++                cat = "other"
++            entry = self._counts.setdefault(cat, [0, 0])
++            entry[0] += 1
++            emit = entry[0] == 1
++            if not emit:
++                entry[1] += 1
++            return emit, summary
++
++    def snapshot(self) -> dict:
++        with self._lock:
++            return {k: tuple(v) for k, v in self._counts.items()}
++
++    def totals_snapshot(self) -> dict:
++        with self._lock:
++            return {k: tuple(v) for k, v in self._totals.items()}
++
++
++_ECON_BAD_REJECT_LOG_LIMITER = EconBadRejectLogLimiter()
++
++
++def _econ_bad_should_emit_reject_detail(reason, env=None, limiter=None) -> bool:
++    """True = write this reject's detail lines. Never raises; on an internal error it returns True
++    (old behaviour: more output rather than lost diagnostics). A failed summary write loses no
++    counts: the next summary's cumulative totals contain them (see the loss contract above)."""
++    try:
++        if not _econ_bad_reject_log_limit_enabled(env):
++            return True
++        emit, summary = (limiter or _ECON_BAD_REJECT_LOG_LIMITER).observe(reason)
++        if summary:
++            try:
++                log.warning(summary)
++            except Exception:
++                pass
++        return emit
++    except Exception:
++        return True
++
++
++def _econ_bad_reject_outputs(*, signal, ctx, sym, regime, ev, score, win_prob, coherence,
++                             auditor_factor, reason, override) -> None:
++    """Side effects of a REJECT_ECON_BAD_ENTRY, in the original order (moved out of evaluate_signal).
++
++    Everything here runs on every reject; only the trace line and the print are subject to
++    _econ_bad_should_emit_reject_detail().
++    """
++    # V10.13u+18: Track near-miss for diagnostics
++    _update_econ_bad_near_miss(
++        symbol=sym, regime=regime, ev=ev, score=score, win_prob=win_prob,
++        coherence=coherence, auditor_factor=auditor_factor, block_reason=reason
++    )
++    emit_detail = _econ_bad_should_emit_reject_detail(reason)
++    # V10.13u+19e: Trace actual return path using normalized override dict
++    _trace_econ_bad_entry_return(
++        signal=signal,
++        ctx=ctx,
++        entry_reason=reason,
++        override=override,
++        final_decision="REJECT_ECON_BAD_ENTRY",
++        emit_detail=emit_detail,
++    )
++    track_blocked(reason="ECON_BAD_ENTRY")
++    if emit_detail:
++        print(f"    decision=REJECT_ECON_BAD_ENTRY  {reason}")
++    # V10.13u+18b: Flush diagnostics before early return
++    _maybe_flush_econ_bad_diagnostics()
++    # V10.13u+18g: Emit from rejection path as production-safe fallback
++    _maybe_emit_econ_bad_diag_from_reject(source="rde_reject")
+ 
+ 
+ def _get_cached_history():
+@@ -3816,28 +3968,14 @@
+             print(f"    [ECON_BAD_RECOVERY_PROBE] {sym} ev={ev:.4f} size×{override['size_mult']:.2f}")
+             # Continue to TAKE with probe metadata attached
+         else:
+-            # Recovery/deadlock override not allowed — reject with trace
+-            # V10.13u+18: Track near-miss for diagnostics
+-            _update_econ_bad_near_miss(
+-                symbol=sym, regime=regime, ev=ev, score=_score_adj, win_prob=win_prob,
+-                coherence=_coh, auditor_factor=auditor_factor, block_reason=_econ_bad_reason
++            # Recovery/deadlock override not allowed — reject with trace.
++            # 2026-11-23: the side effects moved verbatim (same order) into _econ_bad_reject_outputs()
++            # so they can be tested; only its detail lines may be rate-limited (flag, default off).
++            _econ_bad_reject_outputs(
++                signal=signal, ctx=_probe_ctx, sym=sym, regime=regime, ev=ev, score=_score_adj,
++                win_prob=win_prob, coherence=_coh, auditor_factor=auditor_factor,
++                reason=_econ_bad_reason, override=override,
+             )
+-            # V10.13u+19e: Trace actual return path using normalized override dict
+-            _trace_econ_bad_entry_return(
+-                signal=signal,
+-                ctx=_probe_ctx,
+-                entry_reason=_econ_bad_reason,
+-                override=override,
+-                final_decision="REJECT_ECON_BAD_ENTRY",
+-            )
+-            track_blocked(reason="ECON_BAD_ENTRY")
+-            print(f"    decision=REJECT_ECON_BAD_ENTRY  {_econ_bad_reason}")
+-            # V10.13u+18b: Flush diagnostics before early return
+-            _maybe_flush_econ_bad_diagnostics()
+-            # V10.13u+18g: Emit from rejection path as production-safe fallback
+-            _maybe_emit_econ_bad_diag_from_reject(source="rde_reject")
+-
+-
+             return None
+ 
+     # V10.13u+16: Forced exploration gate during ECON BAD

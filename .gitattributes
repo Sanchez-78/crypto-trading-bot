@@ -8,3 +8,6 @@ _workspace/deploy_post_c1_*/bot/* -text
 _workspace/bucket_cap_*/artifact/* -text
 _workspace/bucket_cap_*/server_copy/* -text
 _workspace/post_c1_remediation_*/server_copies/* -text
+_workspace/econ_bad_deploy_*/artifact/* -text
+_workspace/econ_bad_deploy_*/server_copy/* -text
+_workspace/econ_bad_journal_*/realtime_decision_engine.before.py -text

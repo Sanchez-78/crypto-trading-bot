@@ -18,9 +18,16 @@ def test_allowed_files_are_exactly_the_reviewed_set():
         "src/services/candle_cache_v1.py", "src/services/p0_8_plus_live_pipeline.py",
         "src/services/paper_trade_executor.py",
         "src/services/v5_legacy_bridge/outbox.py", "src/services/v5_legacy_bridge/outbox_flush_worker.py",
+        "src/services/realtime_decision_engine.py",
     ]
     # 2026-11-23: executor back after the approved bucket-cap code review (2026-11-19 re-review).
     assert "PAPER_EXPLORE_MAX_OPEN_PER_BUCKET" in _list("ALLOWED_KEYS")
+    # 2026-11-23: ECON BAD journal-volume flag (code APPROVE, re-review r2); strict bool in the env check.
+    assert "RDE_ECON_BAD_REJECT_LOG_LIMIT_ENABLED" in _list("ALLOWED_KEYS")
+    helper = (SCRIPT.parent / "deploy_env_check.py").read_text(encoding="utf-8")
+    assert '"RDE_ECON_BAD_REJECT_LOG_LIMIT_ENABLED")' in helper.split("STRICT_BOOL_KEYS = ", 1)[1].split("\n", 1)[0]
+    # the header no longer claims execution paths are excluded
+    assert "REAL or\n# execution paths" not in TEXT
 
 
 def test_live_preimage_is_checked_before_backup_and_right_before_install():

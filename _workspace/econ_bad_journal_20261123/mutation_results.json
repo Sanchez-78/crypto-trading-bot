@@ -1,0 +1,70 @@
+{
+  "warmup_creates_runtime_file": {
+    "exit": 1,
+    "summary": "28 passed, 1 warning in 4.26s"
+  },
+  "baseline": {
+    "exit": 0,
+    "summary": "28 passed, 1 warning in 4.00s"
+  },
+  "per_reject_print_restored": {
+    "exit": 1,
+    "summary": "6 failed, 22 passed, 1 warning in 4.35s"
+  },
+  "per_reject_trace_restored": {
+    "exit": 1,
+    "summary": "8 failed, 20 passed, 1 warning in 4.39s"
+  },
+  "track_blocked_skipped": {
+    "exit": 1,
+    "summary": "8 failed, 20 passed, 1 warning in 4.35s"
+  },
+  "flag_default_on": {
+    "exit": 1,
+    "summary": "4 failed, 24 passed, 1 warning in 4.41s"
+  },
+  "near_miss_gated": {
+    "exit": 1,
+    "summary": "7 failed, 21 passed, 1 warning in 4.34s"
+  },
+  "category_cap_removed": {
+    "exit": 1,
+    "summary": "1 failed, 27 passed, 1 warning in 4.26s"
+  },
+  "summary_count_off_by_one": {
+    "exit": 1,
+    "summary": "6 failed, 22 passed, 1 warning in 4.41s"
+  },
+  "no_lock": {
+    "exit": 1,
+    "summary": "1 failed, 27 passed, 1 warning in 3.73s"
+  },
+  "invariant_gated_by_detail": {
+    "exit": 1,
+    "summary": "1 failed, 27 passed, 1 warning in 4.35s"
+  },
+  "totals_not_accumulated": {
+    "exit": 1,
+    "summary": "4 failed, 24 passed, 1 warning in 4.30s"
+  },
+  "seq_not_incremented": {
+    "exit": 1,
+    "summary": "5 failed, 23 passed, 1 warning in 4.31s"
+  },
+  "totals_cap_removed": {
+    "exit": 1,
+    "summary": "1 failed, 27 passed, 1 warning in 4.31s"
+  },
+  "summary_reports_window_as_total": {
+    "exit": 1,
+    "summary": "4 failed, 24 passed, 1 warning in 4.34s"
+  },
+  "error_hides_details": {
+    "exit": 1,
+    "summary": "1 failed, 27 passed, 1 warning in 4.42s"
+  },
+  "restored": {
+    "exit": 0,
+    "summary": "28 passed, 1 warning in 4.05s"
+  }
+}

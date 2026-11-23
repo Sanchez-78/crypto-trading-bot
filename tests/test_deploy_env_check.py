@@ -189,3 +189,19 @@ def test_cli_exit_codes(tmp_path, capsys):
     proc.write_bytes(environ(TRADING_MODE="paper_train", **{FLAG: "true"}))
     assert dec.main(["post", "--environ", str(proc), "--vars", f"{FLAG}=true",
                      "--dotenv", str(tmp_path / "absent")]) == 0
+
+
+# 2026-11-23: RDE_ECON_BAD_REJECT_LOG_LIMIT_ENABLED is a strict bool (the bot treats unknown values as off).
+ECON_FLAG = "RDE_ECON_BAD_REJECT_LOG_LIMIT_ENABLED"
+
+
+@pytest.mark.parametrize("value", ["true", "false"])
+def test_econ_bad_log_limit_flag_accepts_true_false(value):
+    env = dec.preflight(BASE, "", f"{ECON_FLAG}={value}", "")
+    assert env[ECON_FLAG] == value
+
+
+@pytest.mark.parametrize("value", ["1", "yes", "on", "TRUE", "True", "", "maybe"])
+def test_econ_bad_log_limit_flag_refuses_anything_else(value):
+    with pytest.raises(dec.Refused):
+        dec.preflight(BASE, "", f"{ECON_FLAG}={value}", "")

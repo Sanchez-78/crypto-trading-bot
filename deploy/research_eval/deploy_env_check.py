@@ -25,7 +25,7 @@ import sys
 from pathlib import Path
 
 FALSY = {"false", "0", "no", "off"}
-STRICT_BOOL_KEYS = ("PAPER_COMPLETED_CANDLE_PHASE_REFRESH_ENABLED",)
+STRICT_BOOL_KEYS = ("PAPER_COMPLETED_CANDLE_PHASE_REFRESH_ENABLED", "RDE_ECON_BAD_REJECT_LOG_LIMIT_ENABLED")
 # paper_trade_executor.exploration_bucket_cap() silently falls back to 2 on bad values.
 STRICT_INT_KEYS = {"PAPER_EXPLORE_MAX_OPEN_PER_BUCKET": (1, 7)}
 ENV_FILE_ITEM = re.compile(r"(\S+) \(ignore_errors=(yes|no)\)")

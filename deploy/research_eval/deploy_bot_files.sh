@@ -8,8 +8,9 @@
 # sit next to this script. The source is read exactly once into a private stage; validation,
 # installation and the final hash check all use the staged bytes (review 78, R1).
 #
-# Guarantees: single deploy lock; allowlisted files/keys (no TP/SL, costs, REAL or
-# execution paths); validation with the bot's own validators before any change;
+# Guarantees: single deploy lock; allowlisted files/keys (keys exclude TP/SL, costs and REAL;
+# files are explicitly reviewed exceptions, incl. the PAPER executor and the decision engine,
+# always pinned by EXPECTED_SHA256); validation with the bot's own validators before any change;
 # restart only with zero open paper positions; any failure after the first change
 # restores every file and the drop-in and verifies the restored hashes.
 # Known limit: zero open positions is a snapshot, not an entry barrier; the window
@@ -47,8 +48,11 @@ flock -n 9 || { echo "another deploy is running" >&2; exit 4; }
 # review is REJECT (_workspace/2026-11-19_codex_review_explore_bucket_cap.md). They return only
 # with their own approved review, so installing this tool approves no executor deploy.
 # 2026-11-23: re-added; bucket-cap code APPROVE (_workspace/2026-11-19_codex_rereview_post_c1_deploy_and_bucket_cap.md), deploy step review _workspace/2026-11-23_codex_review_bucket_cap_deploy_step.md.
-ALLOWED_FILES="src/services/paper_source_learning.py src/services/paper_learning_budget.py src/services/candle_cache_v1.py src/services/p0_8_plus_live_pipeline.py src/services/paper_trade_executor.py src/services/v5_legacy_bridge/outbox.py src/services/v5_legacy_bridge/outbox_flush_worker.py"
-ALLOWED_KEYS="PAPER_PROBE_HOURLY_ENTRIES PAPER_PROBE_DAILY_ENTRIES PAPER_PROBE_SYMBOL_COOLDOWN_S PAPER_PROBE_MIN_NET_BPS PAPER_SYMBOL_BLACKLIST PAPER_LEARNING_CONTROL_FRACTION PAPER_COST_EXPLORATION_ENABLED PAPER_ADAPTIVE_EXPLORATION_ENABLED PAPER_COMPLETED_CANDLE_LEARNING_ENABLED PAPER_COMPLETED_CANDLE_PHASE_REFRESH_ENABLED PAPER_EXPLORE_MAX_OPEN_PER_BUCKET"
+# 2026-11-23: realtime_decision_engine.py + RDE_ECON_BAD_REJECT_LOG_LIMIT_ENABLED (journal volume: rate-limits
+# only the REJECT_ECON_BAD_ENTRY detail lines, decisions unchanged; code APPROVE
+# _workspace/2026-11-23_codex_rereview_econ_bad_log_limit_r2.md). Strict true/false in deploy_env_check.py.
+ALLOWED_FILES="src/services/paper_source_learning.py src/services/paper_learning_budget.py src/services/candle_cache_v1.py src/services/p0_8_plus_live_pipeline.py src/services/paper_trade_executor.py src/services/v5_legacy_bridge/outbox.py src/services/v5_legacy_bridge/outbox_flush_worker.py src/services/realtime_decision_engine.py"
+ALLOWED_KEYS="PAPER_PROBE_HOURLY_ENTRIES PAPER_PROBE_DAILY_ENTRIES PAPER_PROBE_SYMBOL_COOLDOWN_S PAPER_PROBE_MIN_NET_BPS PAPER_SYMBOL_BLACKLIST PAPER_LEARNING_CONTROL_FRACTION PAPER_COST_EXPLORATION_ENABLED PAPER_ADAPTIVE_EXPLORATION_ENABLED PAPER_COMPLETED_CANDLE_LEARNING_ENABLED PAPER_COMPLETED_CANDLE_PHASE_REFRESH_ENABLED PAPER_EXPLORE_MAX_OPEN_PER_BUCKET RDE_ECON_BAD_REJECT_LOG_LIMIT_ENABLED"
 for f in $FILES; do
   case " $ALLOWED_FILES " in *" $f "*) ;; *) echo "file not allowed: $f" >&2; exit 2 ;; esac
 done
