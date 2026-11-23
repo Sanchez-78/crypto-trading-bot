@@ -1,0 +1,16 @@
+measured_at=2026-11-23T12:11:25Z window=10min
+main_pid=3840326 active=active
+journal_first_entry=2026-11-23T11:48:43+00:00
+all_lines=115358 all_bytes=11773020
+trace_lines=20 trace_bytes=7996
+decision_print_lines=20 decision_print_bytes=1280
+summary_lines=10
+first_summary=[ECON_BAD_REJECT_LOG_SUMMARY] seq=8 window_s=60 window_rejects=1755 window_suppressed=1753 total_rejects=12342 total_suppressed=12327 since_s=498 by_category_total(rejects/suppressed)=weak_ev=12309/12301,weak_score=33/26
+last_summary=[ECON_BAD_REJECT_LOG_SUMMARY] seq=17 window_s=60 window_rejects=1635 window_suppressed=1633 total_rejects=27934 total_suppressed=27901 since_s=1045 by_category_total(rejects/suppressed)=weak_ev=27850/27833,weak_score=84/68
+paper_entry=2 p08_open=2
+Archived and active journals take up 100.0M in the file system.
+rc=0
+0
+2026-11-23T11:52:40+00:00
+3840326
+seq=8 seq=9 seq=10 seq=11 seq=12 seq=13 seq=14 seq=15 seq=16 seq=17 

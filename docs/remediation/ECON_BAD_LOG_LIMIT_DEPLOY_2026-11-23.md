@@ -161,3 +161,17 @@ Nasazení se neprohlašuje za úspěšné jen na základě nízkého počtu deta
   restart. Příznak bude vypnutý a výstup jako dřív.
 - **Úplný:** obnovit `realtime_decision_engine.py` (`4a46037b…`) ze zálohy skriptu.
 - Restart s otevřenými pozicemi: pozice jsou persistované, exit lifecycle běží dál.
+
+## Výsledek nasazení (2026-11-23)
+
+**NASAZENO 11:54:37 UTC** (`DEPLOY_econ-bad-log-limit APPLIED OK`, pid 3840326, záloha
+`/opt/cryptomaster_deploy_backups/econ-bad-log-limit-20261123T115315Z`). Restart proběhl se 2 otevřenými
+PAPER pozicemi na výslovný pokyn operátora, přes `ALLOW_OPEN_POSITIONS=1` (nástroj `3bb51c5e…`,
+commit `ff10f96`, dodatečné review požádáno). Po startu `loaded=2 … alive=2`.
+
+Post-check (12:11 UTC, výše uvedený skript, výstup
+`_workspace/econ_bad_deploy_20261123/postcheck_journal_20261123.txt`): kritéria 1–5 **PASS**.
+- **Sazba odmítnutí:** 1 710/min (výchozí 1 744/min).
+- **Detailní výpisy:** 20 + 20 za 10 min (výchozí 17 444 + 17 444).
+- **`seq`:** 8–17 souvisle.
+- **Změřený účinek:** řádky −25,0 %, bajty textu −39,4 %, retence ~15 → ~22,7 min.

@@ -87,6 +87,41 @@ generátory dál určují, co vstoupí.
 - Rollback: vrátit executor `5b0b15cc…` a odstranit drop-in ze zálohy. Snížení stropu otevřené pozice
   nezavře; další vstupy do bucketu se odmítají, dokud počet neklesne.
 
+## Kohorta „econ-bad-log-limit“ (od 2026-11-23 11:54:37 UTC; změna observability, ne strategie)
+
+- Nasazeno omezení detailních výpisů `REJECT_ECON_BAD_ENTRY`:
+  - kód APPROVE: `_workspace/2026-11-23_codex_rereview_econ_bad_log_limit_r2.md`;
+  - nasazovací krok APPROVE: `_workspace/2026-11-23_codex_rereview_econ_bad_log_limit_deploy_step_d6d8.md`;
+  - runbook: `docs/remediation/ECON_BAD_LOG_LIMIT_DEPLOY_2026-11-23.md`.
+- RDE `95e499e7…` (preimage `4a46037b…`), drop-in `zzzzzzzzzzzzzz-econ-bad-log-limit.conf`
+  (`RDE_ECON_BAD_REJECT_LOG_LIMIT_ENABLED=true`). Marker: `stage.log` `DEPLOY_econ-bad-log-limit APPLIED OK`
+  11:54:37Z, pid 3840326 (restart 11:53:21), záloha
+  `/opt/cryptomaster_deploy_backups/econ-bad-log-limit-20261123T115315Z`.
+- **Restart proběhl se 2 otevřenými PAPER pozicemi** na výslovný pokyn operátora („proveď vše i tak“),
+  protože se pozice při stropu 7 otevírají nepřetržitě:
+  - dvě předchozí čekání skončila `SKIPPED open=4` a `open=2`;
+  - nástroj `deploy_bot_files.sh` `3bb51c5e…` (commit `ff10f96`) dostal výslovné povolení
+    `ALLOW_OPEN_POSITIONS=1`, které se zaloguje (`OPEN_POSITIONS_ALLOWED open=2`); výchozí chování se
+    nemění;
+  - po restartu `[PAPER_STATE_LOAD] open_positions=2` a `[PAPER_STATE_RECONCILE_SUMMARY] loaded=2 … alive=2`,
+    takže se nic neztratilo ani nezavřelo dvakrát;
+  - povolení čeká na dodatečné review.
+- Ihned po nasazení:
+  - hash a prostředí sedí (`paper_train`, oba REAL `false`, příznak `true`), 0 tracebacků;
+  - první souhrn `seq=1`: 1 360 odmítnutí za 61 s, z toho 1 359 detailů potlačeno.
+- **Post-check podle runbooku (12:11 UTC, 10min okno; `_workspace/econ_bad_deploy_20261123/postcheck_journal_20261123.txt`): všech 5 kritérií PASS.**
+  1. `MainPID` 3840326 = marker a nezměnil se. Journal pokrývá celý čas od restartu, 0 tracebacků.
+  2. Souhrny `seq` 8 → 17 (Δsince_s = 547 s): N = 15 592 odmítnutí, S = 15 574 potlačeno,
+     N − S = 18 ≤ 17 × 9; sazba **1 710/min** (výchozí 1 744/min, stejný řád).
+  3. Detailní výpisy: 20 trace + 20 print za 10 min (výchozí 17 444 každý; mez 187).
+  4. `seq` souvisle 8–17, bez mezer.
+  5. Kontext: 2× `PAPER_ENTRY`, 2× `P0_8_PLUS_LIVE_OPEN`.
+- **Naměřený účinek:**
+  - řádky 153 824 → 115 358 (**−25,0 %**) a bajty textu 19,43 → 11,77 MB (**−39,4 %**) za 10 min;
+  - retence ~15 → **~22,7 min** (první záznam 11:48:43 při měření 12:11:25; journald na limitu 100 MB).
+  - Dál převládají čtyři výpisy každého vyhodnocení signálu (`EV=…`, `coherence[…]`,
+    `SCORE_THRESHOLD`, `RDE[…]`). Delší retence by vyžadovala jejich omezení, což je samostatná změna.
+
 ## Dashboard (2026-11-19)
 
 - `/api/dashboard/readiness` vrací `status=paper_only` (nasazeno 14:00 UTC skriptem
