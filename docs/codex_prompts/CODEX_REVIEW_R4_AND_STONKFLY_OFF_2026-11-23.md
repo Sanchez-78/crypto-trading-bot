@@ -39,9 +39,10 @@ Testy v `tests/test_deploy_env_check.py`:
   přijme.
 - `test_open_positions_count_accepts_nullable_guarded_fields`.
 
-Živý stav jsem novým validátorem nezkontroloval: od 14:02 do 14:09 UTC nebyla žádná pozice otevřená
-(`ACCEPTED 0`). Předchozí verze přijala živou pozici ve 13:28. Fixture `_pos()` má teď
-`max_seen`/`min_seen`/`regime` jako zapisující kód.
+Živý stav (jen čtení, validátor přes stdin) ve 14:15 UTC: `ACCEPTED 1`. Ze sledovaných polí pozice
+obsahovala `created_at`, `entry_price`, `entry_ts`, `max_hold_s`, `max_seen`, `min_seen`, obě nákladové
+frakce, `size_usd`, `sl`, `timeout_s` a `tp`. Fixture `_pos()` má teď `max_seen`/`min_seen`/`regime`
+jako zapisující kód.
 
 **Ověřit:** Je tabulka polí úplná vůči tickové a close cestě (včetně `_check_dynamic_trend_exit`,
 `compute_excursion`, learning hooků po close)? Jsou meze rozumné? Je ještě jiná třída stavů, které
