@@ -101,3 +101,14 @@ def test_review_77_guards_present():
     assert 'importlib.import_module(path.removesuffix(".py").replace("/", "."))' in helper
     # The comment no longer claims the allowlist prevents executor changes.
     assert "no admission, cost, TP/SL or execution change" not in TEXT
+
+
+def test_open_positions_opt_in_is_explicit_logged_and_default_waits():
+    # 2026-11-23 operator instruction: deploy may restart with open PAPER positions only on an
+    # explicit ALLOW_OPEN_POSITIONS=1; unset keeps the zero-open wait; unreadable state never passes.
+    assert 'if [ "${ALLOW_OPEN_POSITIONS:-0}" = 1 ]; then' in TEXT
+    block = TEXT.split('if [ "${ALLOW_OPEN_POSITIONS:-0}" = 1 ]; then', 1)[1].split("\nfi\n", 1)[0]
+    assert 'log "OPEN_POSITIONS_ALLOWED open=$open (operator opt-in)"' in block
+    assert '[ "$open" != err ] || { log "SKIPPED positions state unreadable"; exit 3; }' in block
+    assert 'if [ "$open" != 0 ]; then log "SKIPPED open=$open"; exit 3; fi' in TEXT
+    assert TEXT.index("ALLOW_OPEN_POSITIONS") < TEXT.index("trap 'rollback")   # before any live change

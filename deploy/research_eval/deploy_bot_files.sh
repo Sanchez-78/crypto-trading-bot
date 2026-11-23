@@ -130,7 +130,18 @@ print("config ok", paper_learning_budget.limits(env), paper_source_learning.min_
 PY
 
 open=err
+# ALLOW_OPEN_POSITIONS=1 (explicit operator opt-in, 2026-11-23): restart even with open PAPER
+# positions. They are reloaded from $POSITIONS (atomic writes) and committed closes are journaled,
+# so a restart neither loses nor double-closes them. The state file must still be readable; the
+# default (unset) keeps waiting for zero open positions.
+if [ "${ALLOW_OPEN_POSITIONS:-0}" = 1 ]; then
+  open="$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))))' "$POSITIONS" 2>/dev/null || echo err)"
+  [ "$open" != err ] || { log "SKIPPED positions state unreadable"; exit 3; }
+  log "OPEN_POSITIONS_ALLOWED open=$open (operator opt-in)"
+  open=0
+fi
 for _ in $(seq 1 60); do
+  [ "$open" = 0 ] && break
   open="$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))))' "$POSITIONS" 2>/dev/null || echo err)"
   [ "$open" = 0 ] && break
   sleep 30
