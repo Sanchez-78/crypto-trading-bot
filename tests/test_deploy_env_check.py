@@ -219,6 +219,7 @@ def _pos(tid, **over):
         "paper_cost_contract_version": 1, "paper_fee_round_trip_fraction": 0.0008,
         "paper_slippage_round_trip_fraction": 0.0002, "tp": 100.35, "sl": 99.7,
         "timeout_s": 1200.0, "max_hold_s": None, "explore_bucket": "P0_8_PLUS_EVIDENCE_COLLECTION",
+        "max_seen": 100.0, "min_seen": 100.0, "regime": "BULL_TREND",
         "training_bucket": None, "paper_source": "p0_8_plus",
     }
     base.update(over)
@@ -343,6 +344,53 @@ def test_open_positions_count_refuses_non_finite_anywhere(literal, where, tmp_pa
     # The finite record passes the validator and the journal.
     assert dec.open_positions_count(_json.dumps({"t": good})) == 1
     assert PaperCloseJournal(tmp_path / "ok.sqlite").prepare(good, good, {"net_pnl_pct": 0.0})["trade_id"] == "t"
+
+
+@pytest.mark.parametrize("over", [
+    # Review R4a: finite but extreme inputs overflow only at settlement (fee * 100, USD P/L).
+    {"paper_fee_round_trip_fraction": 1e308}, {"paper_fee_round_trip_fraction": 0.5},
+    {"paper_slippage_round_trip_fraction": 1e308}, {"size_usd": 1e308}, {"size_usd": 2e6},
+    {"entry_price": 1e300, "tp": 2e300, "max_seen": 1e300, "min_seen": 1e300},
+    # Review R4b: fields the tick path compares/subtracts without a guard.
+    {"max_seen": "broken"}, {"min_seen": "broken"}, {"max_seen": None}, {"min_seen": -1.0},
+    {"_dyn_exit_features_ts": None}, {"_dyn_exit_features_ts": "x"}, {"created_at": "x"},
+    {"max_seen_ts": "x"}, {"last_price": "x"}, {"last_price": 0}, {"_dyn_exit_atr_bps": -1},
+    {"dynamic_exit_initial_stop": "x"}, {"timeout_s": 1e9}, {"max_hold_s": 1e9},
+    {"regime": 5}, {"explore_bucket": 3}, {"paper_source": ["x"]},
+])
+def test_open_positions_count_refuses_unsafe_tick_or_settlement_field(over):
+    with pytest.raises(dec.Refused):
+        dec.open_positions_count(_json.dumps({"t": _pos("t", **over)}))
+
+
+def test_open_positions_count_accepts_nullable_guarded_fields():
+    pos = _pos("t", last_price=None, last_price_ts=None, dynamic_exit_initial_stop=None, _dyn_exit_atr_bps=None,
+               max_seen_ts=None, min_seen_ts=None, strategy_id=None, training_bucket=None)
+    assert dec.open_positions_count(_json.dumps({"t": pos})) == 1
+    assert dec.open_positions_count(_json.dumps({"t": _without(_without(pos, "max_seen"), "min_seen")})) == 1
+
+
+def test_accepted_extremes_keep_settlement_finite(tmp_path):
+    """At the validator's upper bounds, the real P/L computation stays finite and journal-serializable."""
+    import math
+    from src.services import paper_trade_executor as pte
+    from src.services.paper_close_journal import PaperCloseJournal
+    edge = dict(entry_price=5e8, tp=1e9, sl=1e-6, max_seen=1e9, min_seen=1e-6, size_usd=1e6,
+                paper_fee_round_trip_fraction=0.1, paper_slippage_round_trip_fraction=0.1)
+    records = {"a": _pos("a"), "b": _short("b"), "e": _pos("e", **edge),
+               "s": _pos("s", side="SELL", entry_price=5e8, tp=1e-6, sl=1e9, max_seen=1e9, min_seen=1e-6,
+                         size_usd=1e6, paper_fee_round_trip_fraction=0.1, paper_slippage_round_trip_fraction=0.1)}
+    assert dec.open_positions_count(_json.dumps(records)) == 4
+    journal = PaperCloseJournal(tmp_path / "j.sqlite")
+    for tid, pos in records.items():
+        fee, slip = pte._paper_cost_fractions(pos)
+        for exit_price in (pos["tp"], pos["sl"], pos["max_seen"], pos["min_seen"]):
+            pnl = pte._calculate_pnl(side=pos["side"], entry_price=pos["entry_price"], exit_price=exit_price,
+                                     size_usd=pos["size_usd"], fee_pct=fee, slippage_pct=slip)
+            assert all(math.isfinite(v) for v in pnl.values() if isinstance(v, float)), (tid, exit_price, pnl)
+            _json.dumps(pnl, allow_nan=False)
+        closed = {**pos, "net_pnl_usd": pnl["net_pnl_pct"] / 100.0 * pos["size_usd"]}
+        assert journal.prepare(closed, pos, pnl)["trade_id"] == tid
 
 
 @pytest.mark.parametrize("key", ["", " ", " t", "t ", "\t"])

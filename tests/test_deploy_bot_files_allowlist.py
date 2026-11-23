@@ -25,14 +25,16 @@ def test_allowed_files_are_exactly_the_reviewed_set():
     # 2026-11-23: ECON BAD journal-volume flag (code APPROVE, re-review r2); strict bool in the env check.
     assert "RDE_ECON_BAD_REJECT_LOG_LIMIT_ENABLED" in _list("ALLOWED_KEYS")
     helper = (SCRIPT.parent / "deploy_env_check.py").read_text(encoding="utf-8")
-    assert '"RDE_ECON_BAD_REJECT_LOG_LIMIT_ENABLED")' in helper.split("STRICT_BOOL_KEYS = ", 1)[1].split("\n", 1)[0]
+    assert '"RDE_ECON_BAD_REJECT_LOG_LIMIT_ENABLED"' in helper.split("STRICT_BOOL_KEYS = ", 1)[1].split(")", 1)[0]
     # the header no longer claims execution paths are excluded
     assert "REAL or\n# execution paths" not in TEXT
 
 
 def test_live_preimage_is_checked_before_backup_and_right_before_install():
     # review 2026-11-19 B4: a live file changed after the review must never be silently overwritten.
-    assert '"${EXPECTED_PREIMAGE_SHA256:?}"' in TEXT
+    # Since 2026-11-23 the pins may be empty only for an env-only deploy (FILES=""), see below.
+    assert '"${EXPECTED_PREIMAGE_SHA256?}"' in TEXT
+    assert 'echo "FILES need EXPECTED_SHA256 and EXPECTED_PREIMAGE_SHA256" >&2; exit 2' in TEXT
     check = 'verify_pinned "$APP" "$FILES" "$EXPECTED_PREIMAGE_SHA256"'
     assert TEXT.count(check) == 2
     first, second = TEXT.index(check), TEXT.rindex(check)
@@ -79,7 +81,7 @@ def test_files_exclude_execution_cost_and_mode_modules():
 
 def test_review_77_guards_present():
     # P3 + review 78 R1: pinned bytes are staged once; validation, install and postimage use them.
-    assert '"${EXPECTED_SHA256:?}"' in TEXT and '. "$HERE/deploy_pinned.sh"' in TEXT
+    assert '"${EXPECTED_SHA256?}"' in TEXT and '. "$HERE/deploy_pinned.sh"' in TEXT
     assert 'stage_files "$NEW" "$PINNED" "$FILES"' in TEXT
     assert TEXT.count('"$NEW') == 1  # the source is read exactly once (stage_files)
     assert 'install_staged "$PINNED" "$APP" "$FILES"' in TEXT
@@ -101,6 +103,30 @@ def test_review_77_guards_present():
     assert 'importlib.import_module(path.removesuffix(".py").replace("/", "."))' in helper
     # The comment no longer claims the allowlist prevents executor changes.
     assert "no admission, cost, TP/SL or execution change" not in TEXT
+
+
+STONKFLY_KEYS = ("STONKFLY_ENABLED", "STONKFLY_PAIRED_ENABLED", "PAPER_STONKFLY_CONTEXT_ENABLED")
+
+
+def test_stonkfly_switches_are_allowlisted_strict_and_validated():
+    # 2026-11-23: Stonkfly NO EDGE (_workspace/stonkfly_eval_20261123/REPORT.md) -> switch off via a drop-in.
+    keys = _list("ALLOWED_KEYS")
+    assert all(k in keys for k in STONKFLY_KEYS)
+    helper = (SCRIPT.parent / "deploy_env_check.py").read_text(encoding="utf-8")
+    strict = helper.split("STRICT_BOOL_KEYS = ", 1)[1].split(")", 1)[0]
+    assert all(f'"{k}"' in strict for k in STONKFLY_KEYS)
+    # the sandbox validates the resulting Stonkfly config and the context/provider combination
+    assert "paper_neural_context.validate_config(env)" in TEXT and "StonkflyConfig.from_env(env)" in TEXT
+
+
+def test_env_only_deploy_guards():
+    # FILES="" is an env-only deploy: VARS required, no pins; with FILES both pins are required.
+    assert '[ -z "$VARS" ] || [ -n "$EXPECTED_SHA256" ] || [ -n "$EXPECTED_PREIMAGE_SHA256" ]' in TEXT
+    assert 'mkdir -p "$BACKUP"  # also for an env-only deploy' in TEXT
+    assert TEXT.index('mkdir -p "$BACKUP"  #') < TEXT.index('cp -p "$DROPIN" "$BACKUP/"')
+    # sha256sum with no arguments would read stdin
+    assert '( cd "$APP" && sha256sum $FILES ) > "$BACKUP/POSTIMAGE.sha256"\n' not in TEXT
+    assert 'if [ -n "$FILES" ]; then ( cd "$APP" && sha256sum $FILES ) > "$BACKUP/POSTIMAGE.sha256"; else : > "$BACKUP/POSTIMAGE.sha256"; fi' in TEXT
 
 
 def test_open_positions_opt_in_is_explicit_logged_and_default_waits():

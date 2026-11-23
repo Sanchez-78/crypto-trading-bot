@@ -5,9 +5,10 @@ Komunikace s uživatelem a reporty: **česky**. Identifikátory a kód: anglicky
 
 ## Aktuální zadání
 
-**Otevřené zadání (re-review, 2026-11-23):** `docs/codex_prompts/CODEX_REREVIEW_ALLOW_OPEN_POSITIONS_R3_2026-11-23.md`
-→ `_workspace/2026-11-23_codex_rereview_allow_open_positions_r3.md` (NaN/Infinity kdekoli ve stavu pozic pro `ALLOW_OPEN_POSITIONS=1`;
-hotové: A1, R1, R2 a re-review `_workspace/2026-11-23_codex_rereview_allow_open_positions_r2.md`, CHANGES_REQUIRED R3, opraveno;
+**Otevřené zadání (review, 2026-11-23):** `docs/codex_prompts/CODEX_REVIEW_R4_AND_STONKFLY_OFF_2026-11-23.md`
+→ `_workspace/2026-11-23_codex_review_r4_and_stonkfly_off.md` (A: pole tick/close cesty ve validátoru pro `ALLOW_OPEN_POSITIONS=1`;
+B: vypnutí Stonkfly přes nasazení jen konfigurace; hotové: A1, R1–R3 a re-review
+`_workspace/2026-11-23_codex_rereview_allow_open_positions_r3.md`, CHANGES_REQUIRED R4, opraveno;
 povolení do schválení nepoužívat).
 Hotové: omezení výpisů ECON BAD **nasazeno 2026-11-23 11:54:37 UTC** (kohorta `econ-bad-log-limit`, viz `docs/OPERATING_STATE.md`);
 nasazovací krok APPROVE `_workspace/2026-11-23_codex_rereview_econ_bad_log_limit_deploy_step_d6d8.md`, dřívější kola D1–D8 opravena.

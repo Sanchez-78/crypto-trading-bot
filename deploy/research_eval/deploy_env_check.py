@@ -25,7 +25,8 @@ import sys
 from pathlib import Path
 
 FALSY = {"false", "0", "no", "off"}
-STRICT_BOOL_KEYS = ("PAPER_COMPLETED_CANDLE_PHASE_REFRESH_ENABLED", "RDE_ECON_BAD_REJECT_LOG_LIMIT_ENABLED")
+STRICT_BOOL_KEYS = ("PAPER_COMPLETED_CANDLE_PHASE_REFRESH_ENABLED", "RDE_ECON_BAD_REJECT_LOG_LIMIT_ENABLED",
+                    "STONKFLY_ENABLED", "STONKFLY_PAIRED_ENABLED", "PAPER_STONKFLY_CONTEXT_ENABLED")
 # paper_trade_executor.exploration_bucket_cap() silently falls back to 2 on bad values.
 STRICT_INT_KEYS = {"PAPER_EXPLORE_MAX_OPEN_PER_BUCKET": (1, 7)}
 ENV_FILE_ITEM = re.compile(r"(\S+) \(ignore_errors=(yes|no)\)")
@@ -148,6 +149,37 @@ def verify_staged_import(tree: str, files: list[str], pinned: dict, pycache_pref
             raise Refused(f"bytecode cache used for {path}")
 
 
+_PRICE_MAX, _TS_MAX, _DURATION_MAX = 1e9, 1e11, 1e7   # USD price, epoch seconds, seconds
+# field -> (lower bound "gt0" (> 0) or "ge0" (>= 0), upper bound, required, null allowed).
+# Upper bounds are far above any live value but keep settlement arithmetic finite.
+_POSITION_NUMERIC_FIELDS = {
+    "entry_price": ("gt0", _PRICE_MAX, True, False),
+    "tp": ("gt0", _PRICE_MAX, True, False),
+    "sl": ("gt0", _PRICE_MAX, True, False),
+    "size_usd": ("gt0", 1e6, True, False),
+    "entry_ts": ("gt0", _TS_MAX, True, False),
+    "timeout_s": ("gt0", _DURATION_MAX, True, False),
+    # Key required (the loader migrates a missing one); null is the P0.8+ canonical value.
+    "max_hold_s": ("gt0", _DURATION_MAX, True, True),
+    "paper_fee_round_trip_fraction": ("ge0", 0.1, True, False),
+    "paper_slippage_round_trip_fraction": ("ge0", 0.1, True, False),
+    # Optional, but compared or subtracted without a guard on every tick when present.
+    "max_seen": ("gt0", _PRICE_MAX, False, False),
+    "min_seen": ("gt0", _PRICE_MAX, False, False),
+    "_dyn_exit_features_ts": ("ge0", _TS_MAX, False, False),
+    "created_at": ("gt0", _TS_MAX, False, False),
+    # Optional and read through guards or _safe_float; null tolerated, a value must still be sane.
+    "last_price": ("gt0", _PRICE_MAX, False, True),
+    "last_price_ts": ("ge0", _TS_MAX, False, True),
+    "max_seen_ts": ("ge0", _TS_MAX, False, True),
+    "min_seen_ts": ("ge0", _TS_MAX, False, True),
+    "dynamic_exit_initial_stop": ("gt0", _PRICE_MAX, False, True),
+    "_dyn_exit_atr_bps": ("ge0", 1e6, False, True),
+}
+_POSITION_LABEL_FIELDS = ("regime", "explore_bucket", "training_bucket", "bucket", "paper_source",
+                          "strategy_id", "mode", "source")
+
+
 def open_positions_count(text: str) -> int:
     """Count open PAPER positions in the executor state file, or refuse (ALLOW_OPEN_POSITIONS path).
 
@@ -171,7 +203,12 @@ def open_positions_count(text: str) -> int:
         min(max_hold_s, timeout_s, PAPER_MAX_POSITION_AGE_S), which is exactly the effective hold
         the executor already uses for training positions, so the exit does not change.
     The whole state must also serialize with json.dumps(allow_nan=False), as the close journal
-    and the state writer require (no NaN/Infinity in any field). Non-dict records, metadata keys, wrapper {"positions": ...}, legacy lists and scalars are
+    and the state writer require (no NaN/Infinity in any field). Every field the tick/close path
+    uses directly in arithmetic or comparisons (_POSITION_NUMERIC_FIELDS, incl. max_seen/min_seen,
+    timestamps and the dynamic-exit cache) must, when present, be a finite number inside a bounded
+    range, and the label fields must be strings (review R4). The bounds keep everything derived at
+    settlement (fee * 100, price moves, USD P/L) finite. Non-dict records, metadata keys,
+    wrapper {"positions": ...}, legacy lists and scalars are
     Refused (the loader would skip or reshape them). Over-strict refusal of an old but valid state
     only makes the opt-in SKIP. The executor is not imported here (import has runtime side
     effects); tests cross-check this contract against the real loader. An empty mapping counts 0.
@@ -195,9 +232,6 @@ def open_positions_count(text: str) -> int:
     def number(value) -> bool:
         return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
 
-    def positive(value) -> bool:
-        return number(value) and value > 0
-
     for key, pos in data.items():
         if key in ("positions", "metadata"):
             raise Refused(f"unsupported positions state key: {key}")
@@ -213,17 +247,23 @@ def open_positions_count(text: str) -> int:
         side = pos.get("side")
         if side not in ("BUY", "SELL"):
             raise Refused(f"position {key!r} has no valid side")
-        for field in ("entry_price", "entry_ts", "size_usd", "tp", "sl", "timeout_s"):
-            if not positive(pos.get(field)):
+        for field, (low, high, required, nullable) in _POSITION_NUMERIC_FIELDS.items():
+            if field not in pos:
+                if required:
+                    raise Refused(f"position {key!r} has no {field}")
+                continue
+            value = pos[field]
+            if value is None and nullable:
+                continue
+            if not (number(value) and (value > 0 if low == "gt0" else value >= 0) and value <= high):
                 raise Refused(f"position {key!r} has no valid {field}")
+        for field in _POSITION_LABEL_FIELDS:
+            if pos.get(field) is not None and not isinstance(pos[field], str):
+                raise Refused(f"position {key!r} field {field} is not a string")
         entry, tp, sl = pos["entry_price"], pos["tp"], pos["sl"]
         if not (tp > entry > sl if side == "BUY" else tp < entry < sl):
             raise Refused(f"position {key!r} tp/sl not on the {side} side of entry")
-        if "max_hold_s" not in pos or not (pos["max_hold_s"] is None or positive(pos["max_hold_s"])):
-            raise Refused(f"position {key!r} has no valid max_hold_s")
-        if pos.get("paper_cost_contract_version") != 1 or not all(
-                number(pos.get(f)) and pos[f] >= 0
-                for f in ("paper_fee_round_trip_fraction", "paper_slippage_round_trip_fraction")):
+        if pos.get("paper_cost_contract_version") != 1:
             raise Refused(f"position {key!r} has no valid pinned cost snapshot")
         if pos.get("training_bucket") == "C_WEAK_EV_TRAIN" or pos.get("paper_source") == "training_sampler":
             if not pos.get("training_bucket") or "created_at" not in pos:
