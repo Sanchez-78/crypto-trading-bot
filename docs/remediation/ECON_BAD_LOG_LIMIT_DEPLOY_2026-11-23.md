@@ -121,15 +121,19 @@ bash /opt/cryptomaster_research/deploy_bot_files.sh
 - **Kritéria úspěchu nasazení** (opraveno po re-review D2/D3; nezávislá na velikosti úspory):
   1. `APPLIED OK`, proces má příznak `true`, PAPER/REAL vypnuté, 0 tracebacků.
   2. **Detailní výpisy výrazně klesnou** oproti 17 444 (každý marker) při srovnatelné četnosti
-     odmítnutí. Očekávaná horní mez plyne z kontraktu: nejvýš 1 detail na kategorii (≤ 16 + `other`) a
-     okno 60 s, tedy ≤ 17 × počet oken zasažených měřeným intervalem (10 min zasáhne ~11 oken, tj.
-     ≤ ~187 na marker). Kontrola: počet detailů ≤ (počet různých kategorií v souhrnech) × (počet
-     oken). Pevné číslo typu „desítky“ není kritérium.
-  3. **Četnost odmítnutí se počítá z rozdílu kumulativních součtů**, ne ze samotného `total_rejects`
-     (to je kumulativní od startu procesu a s `since_s` jen roste). Počet za měřený úsek =
-     `total_rejects` poslední souhrnné řádky v úseku − `total_rejects` první souhrnné řádky v úseku
-     (pokrývá okna mezi nimi), nebo součet `window_rejects` za tatáž okna. Srovnává se s 17 444
-     výchozími trace řádky (jedna trace řádka = jedno odmítnutí). Má vyjít ve stejném řádu.
+     odmítnutí (bod 3). Tvrdá mez je jen ta, kterou kontrakt skutečně garantuje (D5): **nejvýš
+     17 × počet 60s oken zasažených měřeným intervalem** na marker (16 kategorií + `other`, včetně
+     okrajových částečných oken a posledního otevřeného okna; 10 min zasáhne nejvýš 11 oken, tedy
+     ≤ 187). Počet kategorií z doručených souhrnů se jako tvrdé kritérium **nepoužívá**: poslední
+     otevřené okno a ztracené souhrny v něm chybí. Pevné číslo typu „desítky“ není kritérium.
+  3. **Četnost odmítnutí jako sazba za skutečnou délku úseku** (D4). Ze souhrnů v měřeném výpisu vzít
+     první (A) a poslední (B) doručený:
+     `rejects_per_min = (B.total_rejects − A.total_rejects) / ((B.since_s − A.since_s) / 60)`.
+     Rozdíl kumulativních součtů je správný i při mezeře v `seq` (ztracené okno je v součtech
+     obsažené). Pokrývá jen okna mezi A a B, proto se srovnává **sazba**, ne absolutní počet: výchozí
+     sazba je 17 444 / 10 = 1 744,4 odmítnutí za minutu (jedna trace řádka = jedno odmítnutí). Má vyjít
+     ve stejném řádu. Součet `window_rejects` lze použít jen při souvislém `seq` mezi A a B. Při méně
+     než dvou doručených souhrnech je sazba `NOT_VERIFIED`; měření se zopakuje.
   4. **`seq` roste.** Mezera v `seq` znamená ztracenou souhrnnou řádku (logger/journald), ne chybu
      omezovače ani obchodní regresi. Počty ztracené řádky jsou obsažené v kumulativních součtech
      další doručené řádky. Mezery se zapíšou jako ztráta observability. Samostatný limit pro
