@@ -105,7 +105,23 @@ generátory dál určují, co vstoupí.
     nemění;
   - po restartu `[PAPER_STATE_LOAD] open_positions=2` a `[PAPER_STATE_RECONCILE_SUMMARY] loaded=2 … alive=2`,
     takže se nic neztratilo ani nezavřelo dvakrát;
-  - povolení čeká na dodatečné review.
+  - to dokládá jen tento konkrétní restart, ne obecnou bezpečnost povolení;
+  - dodatečné review: A1 (kontrola jen `len(json)`) a R1 (validátor přijal pozici bez směru, velikosti
+    a TP/SL, kterou loader doplní, chybějící směr na `BUY`) jsou opravené v `deploy_env_check.py
+    positions`. Validátor teď přijme jen záznamy, u kterých loader nedoplní ani nezmění žádné
+    ekonomicky významné pole; test to ověřuje proti skutečnému loaderu. Nová verze nástroje se na
+    server instaluje až po schválení re-review.
+  - **Meze povolení (platí při každém dalším použití):**
+    - uzavření přerušené restartem před potvrzením v žurnálu proběhne až po restartu, později a za
+      jinou cenu;
+    - pokud restart přeruší uzavření po zahájení neidempotentních hooků, automatické opakování se
+      odmítne. Start pak může skončit stavem, který vyžaduje ruční rekonciliaci
+      (`paper_trade_executor.py:3362–3404`);
+    - rollback nasazení restartuje službu znovu s otevřenými pozicemi;
+    - při změně `paper_trade_executor.py` nebo formátu stavu pozic musí review ověřit kompatibilitu
+      nového **i** vraceného kódu se stavem otevřených pozic; `APPLIED OK` ji nedokazuje;
+    - po restartu ověřit `[PAPER_STATE_LOAD]` proti poslednímu stavu před vypnutím se zohledněním
+      close zapsaných v žurnálu; samotné srovnání dvou počtů za běhu důkazem není.
 - Ihned po nasazení:
   - hash a prostředí sedí (`paper_train`, oba REAL `false`, příznak `true`), 0 tracebacků;
   - první souhrn `seq=1`: 1 360 odmítnutí za 61 s, z toho 1 359 detailů potlačeno.

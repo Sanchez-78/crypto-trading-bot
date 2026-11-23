@@ -5,9 +5,10 @@ Komunikace s uživatelem a reporty: **česky**. Identifikátory a kód: anglicky
 
 ## Aktuální zadání
 
-**Otevřené zadání (re-review, 2026-11-23):** `docs/codex_prompts/CODEX_REREVIEW_ALLOW_OPEN_POSITIONS_A1_2026-11-23.md`
-→ `_workspace/2026-11-23_codex_rereview_allow_open_positions_a1.md` (strukturální kontrola stavu pozic pro `ALLOW_OPEN_POSITIONS=1`;
-hotové: dodatečné review `_workspace/2026-11-23_codex_review_allow_open_positions.md`, CHANGES_REQUIRED A1, opraveno; povolení do schválení nepoužívat).
+**Otevřené zadání (re-review, 2026-11-23):** `docs/codex_prompts/CODEX_REREVIEW_ALLOW_OPEN_POSITIONS_R1_2026-11-23.md`
+→ `_workspace/2026-11-23_codex_rereview_allow_open_positions_r1.md` (ekonomická pole pozic ve validátoru pro `ALLOW_OPEN_POSITIONS=1`;
+hotové: review A1 a re-review `_workspace/2026-11-23_codex_rereview_allow_open_positions_a1.md`, CHANGES_REQUIRED R1, opraveno;
+povolení do schválení nepoužívat).
 Hotové: omezení výpisů ECON BAD **nasazeno 2026-11-23 11:54:37 UTC** (kohorta `econ-bad-log-limit`, viz `docs/OPERATING_STATE.md`);
 nasazovací krok APPROVE `_workspace/2026-11-23_codex_rereview_econ_bad_log_limit_deploy_step_d6d8.md`, dřívější kola D1–D8 opravena.
 

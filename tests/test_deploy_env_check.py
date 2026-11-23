@@ -212,15 +212,106 @@ import json as _json
 
 
 def _pos(tid, **over):
-    base = {"trade_id": tid, "symbol": "BTCUSDT", "entry_price": 100.0, "entry_ts": 1795434294.6, "side": "BUY"}
+    """Shape of open_paper_position()'s canonical record (economic fields; P0.8+ path stores max_hold_s null)."""
+    base = {
+        "trade_id": tid, "mode": "paper_live", "symbol": "BTCUSDT", "side": "BUY",
+        "entry_price": 100.0, "entry_ts": 1795434294.6, "created_at": 1795434294.6, "size_usd": 7.5,
+        "paper_cost_contract_version": 1, "paper_fee_round_trip_fraction": 0.0008,
+        "paper_slippage_round_trip_fraction": 0.0002, "tp": 100.35, "sl": 99.7,
+        "timeout_s": 1200.0, "max_hold_s": None, "explore_bucket": "P0_8_PLUS_EVIDENCE_COLLECTION",
+        "training_bucket": None, "paper_source": "p0_8_plus",
+    }
     base.update(over)
     return base
 
 
+def _short(tid, **over):
+    return _pos(tid, side="SELL", tp=99.65, sl=100.3, **over)
+
+
+def _without(pos, field):
+    return {k: v for k, v in pos.items() if k != field}
+
+
 def test_open_positions_count_accepts_canonical_state():
-    state = {"paper_decision_a": _pos("paper_decision_a"), "paper_decision_b": _pos("paper_decision_b")}
-    assert dec.open_positions_count(_json.dumps(state)) == 2
+    state = {"paper_decision_a": _pos("paper_decision_a"), "paper_decision_b": _short("paper_decision_b"),
+             "paper_decision_c": _pos("paper_decision_c", max_hold_s=300, training_bucket="A_STRICT_TAKE",
+                                      paper_source="strict_take"),
+             "paper_decision_d": _pos("paper_decision_d", max_hold_s=300, training_bucket="C_WEAK_EV_TRAIN",
+                                      paper_source="training_sampler")}
+    assert dec.open_positions_count(_json.dumps(state)) == 4
     assert dec.open_positions_count("{}") == 0
+
+
+_ECON_REQUIRED = ("side", "size_usd", "tp", "sl", "max_hold_s", "timeout_s", "paper_cost_contract_version",
+                  "paper_fee_round_trip_fraction", "paper_slippage_round_trip_fraction")
+
+
+@pytest.mark.parametrize("field", _ECON_REQUIRED)
+def test_open_positions_count_refuses_missing_economic_field(field):
+    # Review R1: the loader would fill these in (side -> BUY flips a short to a long).
+    for pos in (_pos("t"), _short("t")):
+        with pytest.raises(dec.Refused):
+            dec.open_positions_count(_json.dumps({"t": _without(pos, field)}))
+
+
+@pytest.mark.parametrize("over", [
+    {"side": "LONG"}, {"side": "buy"}, {"side": None},
+    {"size_usd": 0}, {"size_usd": -1}, {"size_usd": "7.5"}, {"size_usd": True},
+    {"tp": 0}, {"tp": None}, {"sl": 0}, {"sl": None}, {"timeout_s": 0}, {"timeout_s": None},
+    {"tp": 99.0}, {"sl": 101.0}, {"tp": 100.0},                       # wrong side of entry for BUY
+    {"max_hold_s": 0}, {"max_hold_s": -5}, {"max_hold_s": "300"},
+    {"paper_cost_contract_version": 2}, {"paper_fee_round_trip_fraction": -0.1},
+    {"paper_slippage_round_trip_fraction": None},
+])
+def test_open_positions_count_refuses_bad_economic_value(over):
+    with pytest.raises(dec.Refused):
+        dec.open_positions_count(_json.dumps({"t": _pos("t", **over)}))
+
+
+def test_open_positions_count_refuses_short_with_long_geometry():
+    with pytest.raises(dec.Refused):
+        dec.open_positions_count(_json.dumps({"t": _pos("t", side="SELL")}))
+
+
+@pytest.mark.parametrize("pos", [
+    _pos("t", paper_source="training_sampler", training_bucket=None),      # loader would set the bucket
+    _without(_pos("t", training_bucket="C_WEAK_EV_TRAIN"), "created_at"),   # loader would set created_at
+])
+def test_open_positions_count_refuses_incomplete_training_position(pos):
+    with pytest.raises(dec.Refused):
+        dec.open_positions_count(_json.dumps({"t": pos}))
+
+
+def test_accepted_records_load_without_economic_change(monkeypatch, tmp_path):
+    """Cross-check against the real loader: every accepted record reloads with its economic fields intact."""
+    import copy
+    from src.services import paper_trade_executor as pte
+    state = {"a": _pos("a"), "b": _short("b"),
+             "c": _pos("c", max_hold_s=300, training_bucket="C_WEAK_EV_TRAIN", paper_source="training_sampler",
+                       timeout_s=300.0)}
+    assert dec.open_positions_count(_json.dumps(state)) == 3
+    path = tmp_path / "paper_open_positions.json"
+    path.write_text(_json.dumps(state), encoding="utf-8")
+    monkeypatch.setattr(pte, "_STATE_FILE", str(path))
+    monkeypatch.setattr(pte, "_POSITIONS", {})
+
+    class _NoCloses:
+        def closed_ids(self, _ids):
+            return set()
+
+    monkeypatch.setattr(pte, "_paper_close_journal", lambda: _NoCloses())
+    monkeypatch.setattr(pte, "_save_paper_state", lambda *_a, **_k: True)
+    monkeypatch.setattr(pte, "_reconcile_stale_paper_positions", lambda *_a, **_k: {})
+    before = copy.deepcopy(state)
+    pte._load_paper_state()
+    assert set(pte._POSITIONS) == set(before)
+    for tid, orig in before.items():
+        loaded = pte._POSITIONS[tid]
+        for field in ("symbol", "entry_price", "entry_ts", "created_at") + _ECON_REQUIRED:
+            assert loaded.get(field) == orig.get(field), (tid, field)
+        assert pte._paper_cost_fractions(loaded) == (orig["paper_fee_round_trip_fraction"],
+                                                     orig["paper_slippage_round_trip_fraction"])
 
 
 @pytest.mark.parametrize("text", [

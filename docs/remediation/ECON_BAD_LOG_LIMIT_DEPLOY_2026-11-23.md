@@ -160,7 +160,10 @@ Nasazení se neprohlašuje za úspěšné jen na základě nízkého počtu deta
 - **Bez změny kódu:** odstranit drop-in `zzzzzzzzzzzzzz-econ-bad-log-limit.conf`, `daemon-reload` a
   restart. Příznak bude vypnutý a výstup jako dřív.
 - **Úplný:** obnovit `realtime_decision_engine.py` (`4a46037b…`) ze zálohy skriptu.
-- Restart s otevřenými pozicemi: pozice jsou persistované, exit lifecycle běží dál.
+- Restart s otevřenými pozicemi: pozice jsou persistované a loader je obnoví, ale uzavření přerušené
+  restartem může proběhnout později za jinou cenu nebo vyžadovat ruční rekonciliaci; rollback
+  restartuje znovu. Úplné meze jsou v `docs/OPERATING_STATE.md` (kohorta „econ-bad-log-limit“,
+  „Meze povolení“).
 
 ## Výsledek nasazení (2026-11-23)
 

@@ -151,12 +151,26 @@ def verify_staged_import(tree: str, files: list[str], pinned: dict, pycache_pref
 def open_positions_count(text: str) -> int:
     """Count open PAPER positions in the executor state file, or refuse (ALLOW_OPEN_POSITIONS path).
 
-    Accepts only the canonical live shape that paper_trade_executor._load_paper_state() restores
-    1:1: a mapping trade_id -> position dict whose own trade_id equals the key, with a non-empty
-    symbol and positive finite entry_price/entry_ts. Anything the loader would skip, reshape or
-    reject (non-dict records, metadata keys, wrapper {"positions": ...}, legacy lists, scalars)
-    is Refused, so the opt-in never restarts over a state that would not reload exactly
-    (review 2026-11-23 A1). An empty mapping counts 0.
+    Accepts only the canonical live shape written by paper_trade_executor.open_paper_position():
+    a mapping trade_id -> position dict, for which _load_paper_state() fills in or changes no
+    economically relevant value (reviews 2026-11-23 A1, R1). Per record:
+      - own trade_id equals the key; non-empty symbol;
+      - side is BUY or SELL (the loader would default a missing side to BUY);
+      - entry_price, entry_ts, size_usd, tp, sl, timeout_s positive finite numbers
+        (the loader defaults missing size_usd/tp/sl; tp/sl 0 or null too);
+      - tp and sl on the correct side of entry for the direction;
+      - max_hold_s key present (else the loader migrates it), value null or positive finite
+        (the P0.8+ path stores null; the hold then comes from timeout_s);
+      - pinned cost snapshot: paper_cost_contract_version 1 and finite nonnegative
+        fee/slippage fractions (otherwise the close is blocked or uses current settings);
+      - training positions (training_bucket C_WEAK_EV_TRAIN or paper_source training_sampler)
+        carry training_bucket and created_at. The loader may still lower their timeout_s to
+        min(max_hold_s, timeout_s, PAPER_MAX_POSITION_AGE_S), which is exactly the effective hold
+        the executor already uses for training positions, so the exit does not change.
+    Non-dict records, metadata keys, wrapper {"positions": ...}, legacy lists and scalars are
+    Refused (the loader would skip or reshape them). Over-strict refusal of an old but valid state
+    only makes the opt-in SKIP. The executor is not imported here (import has runtime side
+    effects); tests cross-check this contract against the real loader. An empty mapping counts 0.
     """
     import json
     import math
@@ -167,9 +181,11 @@ def open_positions_count(text: str) -> int:
     if not isinstance(data, dict):
         raise Refused(f"positions state must be a mapping, got {type(data).__name__}")
 
+    def number(value) -> bool:
+        return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
     def positive(value) -> bool:
-        return (isinstance(value, (int, float)) and not isinstance(value, bool)
-                and math.isfinite(value) and value > 0)
+        return number(value) and value > 0
 
     for key, pos in data.items():
         if key in ("positions", "metadata"):
@@ -181,8 +197,24 @@ def open_positions_count(text: str) -> int:
         symbol = pos.get("symbol")
         if not (isinstance(symbol, str) and symbol.strip()):
             raise Refused(f"position {key!r} has no symbol")
-        if not (positive(pos.get("entry_price")) and positive(pos.get("entry_ts"))):
-            raise Refused(f"position {key!r} has no valid entry_price/entry_ts")
+        side = pos.get("side")
+        if side not in ("BUY", "SELL"):
+            raise Refused(f"position {key!r} has no valid side")
+        for field in ("entry_price", "entry_ts", "size_usd", "tp", "sl", "timeout_s"):
+            if not positive(pos.get(field)):
+                raise Refused(f"position {key!r} has no valid {field}")
+        entry, tp, sl = pos["entry_price"], pos["tp"], pos["sl"]
+        if not (tp > entry > sl if side == "BUY" else tp < entry < sl):
+            raise Refused(f"position {key!r} tp/sl not on the {side} side of entry")
+        if "max_hold_s" not in pos or not (pos["max_hold_s"] is None or positive(pos["max_hold_s"])):
+            raise Refused(f"position {key!r} has no valid max_hold_s")
+        if pos.get("paper_cost_contract_version") != 1 or not all(
+                number(pos.get(f)) and pos[f] >= 0
+                for f in ("paper_fee_round_trip_fraction", "paper_slippage_round_trip_fraction")):
+            raise Refused(f"position {key!r} has no valid pinned cost snapshot")
+        if pos.get("training_bucket") == "C_WEAK_EV_TRAIN" or pos.get("paper_source") == "training_sampler":
+            if not pos.get("training_bucket") or "created_at" not in pos:
+                raise Refused(f"training position {key!r} lacks training_bucket/created_at")
     return len(data)
 
 
