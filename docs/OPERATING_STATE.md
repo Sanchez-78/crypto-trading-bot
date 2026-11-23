@@ -69,7 +69,17 @@ generátory dál určují, co vstoupí.
   `deploy_dashboard_readiness.sh`, záloha `/opt/cryptomaster_deploy_backups/dashboard-readiness-20261119T140027Z`).
   Ustala minutová chyba `[METRICS_COLLECTION_ERROR] Permission denied: .env`. Profil API je veřejný
   (bez tokenu), nasazení ho nezměnilo. Bot nebyl restartován.
-- Viditelnost terminálního backlogu outboxu (bot) čeká na re-review nasazovacího kroku (nález B4 opraven).
+- **Viditelnost terminálního backlogu outboxu nasazena 2026-11-19 14:15:30 UTC** (`deploy_bot_files.sh`
+  `aa73c519…`, `DEPLOY_outbox-visibility APPLIED OK`, záloha
+  `/opt/cryptomaster_deploy_backups/outbox-visibility-20261119T141039Z`, bot restartován, PID 1634146,
+  bez drop-inu; marker kohorty). Živé hashe = piny. Read-only stav outboxu 2026-11-23: **6 191 terminálních
+  řádků** (červen–29. 8.), 0 přehratelných, nic nového. Worker loguje jen při startu a změně, takže od
+  startu nic dalšího nelogoval. Startovní řádka `[V5_BRIDGE_OUTBOX_TERMINAL]` je NOT_VERIFIED, protože
+  journal se mezitím přepsal.
+- **Provozní nález 2026-11-23:** journal `cryptomaster` drží jen asi 15 minut, bot zapisuje kolem 230 tis.
+  řádků za hodinu (hlavně `on_price`). Starší důkazy z journalu nejsou k dispozici. Měření proto stavět
+  na `stage.log`, `verdict.log` a DB, ne na journalu. Snížení logování je samostatná změna, zatím
+  nenavržená.
 - Historický experiment ADAPTIVE vs CONTROL (do 9. 11.): `SELECTION_EFFECT_NOT_SHOWN`,
   uzavřen — při CONTROL = 1 nová ramena nevznikají.
 
