@@ -102,16 +102,41 @@ bash /opt/cryptomaster_research/deploy_bot_files.sh
 - `stage.log` `DEPLOY_econ-bad-log-limit APPLIED OK` je marker kohorty (změna observability, ne
   strategie; obchody před ním a po něm neslučovat).
 - Proces má `RDE_ECON_BAD_REJECT_LOG_LIMIT_ENABLED=true`, PAPER a REAL vypnuté a 0 tracebacků.
-- Po ≥15 minutách zopakovat **stejný** měřicí příkaz (10min okno, `-o cat`) jako ve výchozím měření
-  a porovnat řádky i bajty: všech, obou omezovaných markerů a souhrnů. Navíc zapsat první záznam
-  journalu (pokrytí) a `journalctl --disk-usage`.
-- **Kritéria úspěchu nasazení** (nezávislá na velikosti úspory):
-  1. `APPLIED OK`, proces má příznak `true`, PAPER/REAL vypnuté, 0 tracebacků;
-  2. `[ECON_BAD_ENTRY_RETURN_TRACE]` a print klesnou z ~17,4 tis. na jednotky až desítky za 10 min (první
-     v okně a kategorii);
-  3. `[ECON_BAD_REJECT_LOG_SUMMARY]` přibližně 1× za minutu s rostoucím `seq` bez mezer
-     a `total_rejects` řádově ~17 tis. za 10 min (stejně jako dřívější počet trace řádků);
-  4. rozhodování beze změny: `PAPER_ENTRY` a `P0_8_PLUS_LIVE_OPEN` ve stejném řádu.
+- Po ≥15 minutách zopakovat **stejný** měřicí příkaz jako ve výchozím měření (10min okno, `-o cat`).
+  Přesný příkaz, kterým vzniklo `baseline_journal_20261123.txt` (spouští se na serveru jako root):
+
+  ```sh
+  J="journalctl -u cryptomaster --since -10min --until -0min --no-pager -o cat"; T=$(mktemp); $J > $T
+  echo "measured_at=$(date -u +%FT%TZ) window=10min"
+  echo "journal_first_entry=$(journalctl -u cryptomaster --no-pager -o short-iso | head -1 | cut -c1-25)"
+  echo "all_lines=$(wc -l < $T) all_bytes=$(wc -c < $T)"
+  echo "trace_lines=$(grep -c "\[ECON_BAD_ENTRY_RETURN_TRACE\]" $T) trace_bytes=$(grep "\[ECON_BAD_ENTRY_RETURN_TRACE\]" $T | wc -c)"
+  echo "decision_print_lines=$(grep -cE "^ +decision=REJECT_ECON_BAD_ENTRY" $T) decision_print_bytes=$(grep -E "^ +decision=REJECT_ECON_BAD_ENTRY" $T | wc -c)"
+  echo "summary_lines=$(grep -c "\[ECON_BAD_REJECT_LOG_SUMMARY\]" $T)"
+  echo "paper_entry=$(grep -c "PAPER_ENTRY\]" $T) p08_open=$(grep -c P0_8_PLUS_LIVE_OPEN $T)"
+  journalctl --disk-usage; grep "\[ECON_BAD_REJECT_LOG_SUMMARY\]" $T > /tmp/econ_summaries.txt; rm -f $T
+  ```
+
+  Souhrnné řádky z okna (`/tmp/econ_summaries.txt`) uložit kvůli výpočtu v bodu 3.
+- **Kritéria úspěchu nasazení** (opraveno po re-review D2/D3; nezávislá na velikosti úspory):
+  1. `APPLIED OK`, proces má příznak `true`, PAPER/REAL vypnuté, 0 tracebacků.
+  2. **Detailní výpisy výrazně klesnou** oproti 17 444 (každý marker) při srovnatelné četnosti
+     odmítnutí. Očekávaná horní mez plyne z kontraktu: nejvýš 1 detail na kategorii (≤ 16 + `other`) a
+     okno 60 s, tedy ≤ 17 × počet oken zasažených měřeným intervalem (10 min zasáhne ~11 oken, tj.
+     ≤ ~187 na marker). Kontrola: počet detailů ≤ (počet různých kategorií v souhrnech) × (počet
+     oken). Pevné číslo typu „desítky“ není kritérium.
+  3. **Četnost odmítnutí se počítá z rozdílu kumulativních součtů**, ne ze samotného `total_rejects`
+     (to je kumulativní od startu procesu a s `since_s` jen roste). Počet za měřený úsek =
+     `total_rejects` poslední souhrnné řádky v úseku − `total_rejects` první souhrnné řádky v úseku
+     (pokrývá okna mezi nimi), nebo součet `window_rejects` za tatáž okna. Srovnává se s 17 444
+     výchozími trace řádky (jedna trace řádka = jedno odmítnutí). Má vyjít ve stejném řádu.
+  4. **`seq` roste.** Mezera v `seq` znamená ztracenou souhrnnou řádku (logger/journald), ne chybu
+     omezovače ani obchodní regresi. Počty ztracené řádky jsou obsažené v kumulativních součtech
+     další doručené řádky. Mezery se zapíšou jako ztráta observability. Samostatný limit pro
+     reakci: pokud chybí víc než 10 % `seq` v úseku, prověřit journald (rate limit, místo), ne
+     omezovač. Nasazení se kvůli mezerám samým nevrací.
+  5. Rozhodování beze změny: `PAPER_ENTRY` a `P0_8_PLUS_LIVE_OPEN` ve stejném řádu jako ve výchozím
+     měření.
 - Skutečnou úsporu řádků a bajtů a novou retenci zapsat jako změřený výsledek, ne jako splnění
   odhadu.
 

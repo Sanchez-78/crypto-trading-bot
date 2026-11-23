@@ -5,9 +5,9 @@ Komunikace s uživatelem a reporty: **česky**. Identifikátory a kód: anglicky
 
 ## Aktuální zadání
 
-**Otevřené zadání (re-review nasazovacího kroku, 2026-11-23):** `docs/codex_prompts/CODEX_REREVIEW_ECON_BAD_LOG_LIMIT_DEPLOY_STEP_D1_2026-11-23.md`
-→ `_workspace/2026-11-23_codex_rereview_econ_bad_log_limit_deploy_step_d1.md` (opravené očekávání D1; runbook
-`docs/remediation/ECON_BAD_LOG_LIMIT_DEPLOY_2026-11-23.md`). Hotové: `_workspace/2026-11-23_codex_review_econ_bad_log_limit_deploy_step.md` (CHANGES_REQUIRED, D1).
+**Otevřené zadání (re-review nasazovacího kroku, 2026-11-23):** `docs/codex_prompts/CODEX_REREVIEW_ECON_BAD_LOG_LIMIT_DEPLOY_STEP_D2D3_2026-11-23.md`
+→ `_workspace/2026-11-23_codex_rereview_econ_bad_log_limit_deploy_step_d2d3.md` (kritéria po nasazení D2/D3; runbook
+`docs/remediation/ECON_BAD_LOG_LIMIT_DEPLOY_2026-11-23.md`). Hotové: review nasazovacího kroku (D1) a re-review D1, obě CHANGES_REQUIRED, opraveno.
 Hotové: kód omezení výpisů `REJECT_ECON_BAD_ENTRY` → APPROVE (`_workspace/2026-11-23_codex_rereview_econ_bad_log_limit_r2.md`;
 dřívější kola R1, R2 opravena; report `_workspace/2026-11-23_claude_econ_bad_journal_volume.md`).
 
