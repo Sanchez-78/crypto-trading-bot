@@ -30,18 +30,43 @@ V gitu je uložený byte-exaktně (`-text`).
     zapisovatelný `SCRATCH`);
   - příznak je ve výchozím stavu vypnutý.
 
-  Adresář jsem po zkoušce smazal.
+  Adresář jsem po zkoušce smazal. Surový záznam (AUTHOR_REPORTED, nezávisle nepotvrzený) je
+  v `_workspace/econ_bad_deploy_20261123/server_import_probe_20261123.txt`.
 - Klíč `RDE_ECON_BAD_REJECT_LOG_LIMIT_ENABLED` zatím není v `.env` ani v drop-inech. Poslední drop-in je
   `zzzzzzzzzzzzz-explore-bucket-cap.conf`.
-- **Výchozí měření journalu (09:17 UTC)** podle postupu z reportu:
-  - za 10 minut 152 180 řádků a journal pokrývá ~15 minut;
-  - 17 357× `[ECON_BAD_ENTRY_RETURN_TRACE]`;
-  - na každé zamítnuté vyhodnocení (~26/s) připadá **6 řádků**: trace a `decision=REJECT_ECON_BAD_ENTRY`
-    (tyto dva omezí tato změna) a čtyři výpisy každého vyhodnocení signálu (`EV=… p=… rr=…`,
-    `coherence[…]`, `SCORE_THRESHOLD: bootstrap active`, `RDE[…]: ev=…`), tato změna je neomezí.
-- **Realistický účinek:** zhruba −1/3 řádků, tedy historie journalu ~22 min místo ~15. Na výrazné
-  prodloužení by bylo potřeba omezit i čtyři výpisy každého vyhodnocení, což je samostatná změna
-  s vlastním review.
+- **Výchozí měření** (09:40 UTC, 10min okno, `-o cat`, tedy jen text zpráv; surově v
+  `_workspace/econ_bad_deploy_20261123/baseline_journal_20261123.txt`):
+
+  | | řádky | bajty textu |
+  |---|---|---|
+  | všechny | 153 824 | 19 429 778 |
+  | `[ECON_BAD_ENTRY_RETURN_TRACE]` | 17 444 | 6 733 304 |
+  | `decision=REJECT_ECON_BAD_ENTRY` (print) | 17 444 | 1 081 999 |
+
+  Journal pokrýval ~15 min (první záznam 09:25:23). journald drží 95,5 MB a má limity
+  `RuntimeMaxUse=100M`, `SystemMaxUse=300M` (`/etc/systemd/journald.conf.d/90-size-limit.conf`), takže se
+  retence řídí místem, ne počtem řádků.
+
+## Očekávaný účinek (opraveno po review D1)
+
+Odhad „−1/3 řádků, 22 min“ z předchozí verze byl **chybný**: třetina platí jen pro řádky jednoho
+zamítnutého vyhodnocení, ne pro celý journal.
+- **Řádky jednoho zamítnutého vyhodnocení:** 2 ze 6 (trace a print). Čtyři výpisy každého vyhodnocení
+  signálu (`EV=… p=… rr=…`, `coherence[…]`, `SCORE_THRESHOLD: bootstrap active`, `RDE[…]: ev=…`)
+  zůstávají.
+- **Všechny řádky journalu:** nejvýše **22,7 %** (34 888 / 153 824).
+- **Bajty textu zpráv:** nejvýše **40,2 %** (7,82 MB / 19,43 MB), protože trace řádky jsou dlouhé.
+
+Obě čísla jsou horní meze: první detail v každém okně a kategorii zůstane a přibude ~1 souhrnná řádka
+za minutu. Skutečné místo v journalu zahrnuje i pevnou režii metadat na záznam, takže úspora místa leží
+mezi podílem řádků a podílem bajtů.
+
+**Retence: NOT_VERIFIED.** Kdyby se řídila jen objemem a rychlost byla stabilní, horní meze by byly asi
+19,4 min (podle řádků) až 25 min (podle bajtů textu) místo ~15 min. Skutečnou hodnotu ukáže až měření
+po nasazení. Úspěch nasazení na žádné z těchto čísel **nevážu**.
+
+Na výrazné prodloužení by bylo potřeba omezit i čtyři výpisy každého vyhodnocení. To je samostatná
+změna s vlastním review.
 
 ## Nástroj
 
@@ -77,12 +102,18 @@ bash /opt/cryptomaster_research/deploy_bot_files.sh
 - `stage.log` `DEPLOY_econ-bad-log-limit APPLIED OK` je marker kohorty (změna observability, ne
   strategie; obchody před ním a po něm neslučovat).
 - Proces má `RDE_ECON_BAD_REJECT_LOG_LIMIT_ENABLED=true`, PAPER a REAL vypnuté a 0 tracebacků.
-- Po ~15 minutách zopakovat stejné měření. Očekává se:
-  - `[ECON_BAD_ENTRY_RETURN_TRACE]` řádově jen jednotky za minutu (první v okně a kategorii);
-  - přibližně 1× za minutu `[ECON_BAD_REJECT_LOG_SUMMARY] seq=…` se zvyšujícím se `seq`;
-  - `lines_10min` nižší zhruba o třetinu a pokrytí journalu delší.
-- Rozhodování se nemění: počty `PAPER_ENTRY` a `P0_8_PLUS_LIVE_OPEN` a funnel by měly zůstat ve stejném
-  řádu.
+- Po ≥15 minutách zopakovat **stejný** měřicí příkaz (10min okno, `-o cat`) jako ve výchozím měření
+  a porovnat řádky i bajty: všech, obou omezovaných markerů a souhrnů. Navíc zapsat první záznam
+  journalu (pokrytí) a `journalctl --disk-usage`.
+- **Kritéria úspěchu nasazení** (nezávislá na velikosti úspory):
+  1. `APPLIED OK`, proces má příznak `true`, PAPER/REAL vypnuté, 0 tracebacků;
+  2. `[ECON_BAD_ENTRY_RETURN_TRACE]` a print klesnou z ~17,4 tis. na jednotky až desítky za 10 min (první
+     v okně a kategorii);
+  3. `[ECON_BAD_REJECT_LOG_SUMMARY]` přibližně 1× za minutu s rostoucím `seq` bez mezer
+     a `total_rejects` řádově ~17 tis. za 10 min (stejně jako dřívější počet trace řádků);
+  4. rozhodování beze změny: `PAPER_ENTRY` a `P0_8_PLUS_LIVE_OPEN` ve stejném řádu.
+- Skutečnou úsporu řádků a bajtů a novou retenci zapsat jako změřený výsledek, ne jako splnění
+  odhadu.
 
 ## Rollback
 

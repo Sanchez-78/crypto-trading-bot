@@ -1,0 +1,28 @@
+Server import probe, 2026-11-23 ~09:16 UTC (raw console output copied from the Claude session; the
+probe ran in /tmp/rde-probe, which was deleted afterwards). Probe script: the same as
+$TEMP/rde_import_probe.py, reproduced below. Interpreter: /usr/bin/python3 -I -B (as in the deploy
+sandbox), cwd = /tmp/rde-probe/scratch, tree = copy of /opt/cryptomaster/src without __pycache__,
+overlaid with the artifact.
+
+--- command output ---
+95e499e7446dc663d1c9900c98a7f6d33837091646754145d32d8353d8b22c03  realtime_decision_engine.py
+IMPORT_OK network_calls=[] threads=['MainThread', 'metrics-worker'] flag_default=False
+created in scratch:
+./runtime/firebase_cache.sqlite
+
+--- probe script ---
+import socket, sys, threading
+calls = []
+def trap(name):
+    def f(*a, **k):
+        calls.append(name); raise OSError("network blocked in probe: " + name)
+    return f
+socket.socket.connect = trap("connect"); socket.create_connection = trap("create_connection")
+socket.getaddrinfo = trap("getaddrinfo")
+sys.path.insert(0, sys.argv[1])
+import src.services.realtime_decision_engine as rde
+print("IMPORT_OK network_calls=%s threads=%s flag_default=%s" % (calls, sorted(t.name for t in threading.enumerate()), rde._econ_bad_reject_log_limit_enabled()))
+
+Limits of this evidence: socket-level trap only (a C extension bypassing the Python socket module
+would not be seen); the deploy sandbox itself has no network isolation (PrivateNetwork=yes is a
+recommended follow-up for the next tool change).

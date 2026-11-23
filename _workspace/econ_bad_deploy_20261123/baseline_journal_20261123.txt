@@ -1,0 +1,10 @@
+measured_at=2026-11-23T09:40:49Z window=10min
+journal_first_entry=2026-11-23T09:25:23+00:00
+all_lines=153824 all_bytes=19429778
+trace_lines=17444 trace_bytes=6733304
+decision_print_lines=17444 decision_print_bytes=1081999
+summary_lines=0
+paper_entry=3 p08_open=4
+Archived and active journals take up 95.5M in the file system.
+/etc/systemd/journald.conf.d/90-size-limit.conf:SystemMaxUse=300M
+/etc/systemd/journald.conf.d/90-size-limit.conf:RuntimeMaxUse=100M
