@@ -170,7 +170,8 @@ def open_positions_count(text: str) -> int:
         carry training_bucket and created_at. The loader may still lower their timeout_s to
         min(max_hold_s, timeout_s, PAPER_MAX_POSITION_AGE_S), which is exactly the effective hold
         the executor already uses for training positions, so the exit does not change.
-    Non-dict records, metadata keys, wrapper {"positions": ...}, legacy lists and scalars are
+    The whole state must also serialize with json.dumps(allow_nan=False), as the close journal
+    and the state writer require (no NaN/Infinity in any field). Non-dict records, metadata keys, wrapper {"positions": ...}, legacy lists and scalars are
     Refused (the loader would skip or reshape them). Over-strict refusal of an old but valid state
     only makes the opt-in SKIP. The executor is not imported here (import has runtime side
     effects); tests cross-check this contract against the real loader. An empty mapping counts 0.
@@ -179,10 +180,17 @@ def open_positions_count(text: str) -> int:
     import math
     try:
         data = json.loads(text)
-    except ValueError as exc:
+    except (ValueError, RecursionError) as exc:
         raise Refused(f"positions state is not JSON: {type(exc).__name__}")
     if not isinstance(data, dict):
         raise Refused(f"positions state must be a mapping, got {type(data).__name__}")
+    # The close journal and the state writer serialize whole records with allow_nan=False, so a
+    # NaN/Infinity (or an overflowing literal like 1e999) anywhere, even in an optional nested
+    # field, would make the position unclosable (review R3).
+    try:
+        json.dumps(data, allow_nan=False)
+    except (ValueError, RecursionError) as exc:
+        raise Refused(f"positions state is not strictly serializable: {type(exc).__name__}")
 
     def number(value) -> bool:
         return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)

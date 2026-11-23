@@ -325,6 +325,26 @@ def test_accepted_records_load_without_economic_change(monkeypatch, tmp_path):
     assert pte._POSITIONS["d"]["timeout_s"] == 300.0 < before["d"]["timeout_s"]   # the shortening did happen
 
 
+@pytest.mark.parametrize("literal", ["NaN", "Infinity", "-Infinity", "1e999", "-1e999"])
+@pytest.mark.parametrize("where", ["nested", "top_optional"])
+def test_open_positions_count_refuses_non_finite_anywhere(literal, where, tmp_path):
+    # Review R3: json.loads accepts these; the journal's json.dumps(allow_nan=False) would refuse the close.
+    from src.services.paper_close_journal import PaperCloseJournal
+    good = _pos("t", features={"x": 1.0})
+    text = _json.dumps({"t": good}).replace('{"x": 1.0}', '{"x": %s}' % literal if where == "nested"
+                                             else '{"x": 1.0}, "score_at_entry": %s' % literal)
+    assert text != _json.dumps({"t": good})
+    with pytest.raises(dec.Refused):
+        dec.open_positions_count(text)
+    # The same record really is unclosable: the journal refuses it.
+    pos = _json.loads(text)["t"]
+    with pytest.raises(ValueError):
+        PaperCloseJournal(tmp_path / "j.sqlite").prepare(pos, pos, {"net_pnl_pct": 0.0})
+    # The finite record passes the validator and the journal.
+    assert dec.open_positions_count(_json.dumps({"t": good})) == 1
+    assert PaperCloseJournal(tmp_path / "ok.sqlite").prepare(good, good, {"net_pnl_pct": 0.0})["trade_id"] == "t"
+
+
 @pytest.mark.parametrize("key", ["", " ", " t", "t ", "\t"])
 def test_open_positions_count_refuses_empty_or_padded_trade_id(key):
     # Review R2: the loader restores an empty id, but the close journal refuses it -> never closable.
