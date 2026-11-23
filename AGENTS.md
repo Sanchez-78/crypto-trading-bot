@@ -5,8 +5,11 @@ Komunikace s uživatelem a reporty: **česky**. Identifikátory a kód: anglicky
 
 ## Aktuální zadání
 
-**Otevřené zadání (review, 2026-11-23):** `docs/codex_prompts/CODEX_REVIEW_BUCKET_CAP_DEPLOY_STEP_2026-11-23.md`
-→ `_workspace/2026-11-23_codex_review_bucket_cap_deploy_step.md` (nasazovací krok stropu bucketu; kód už APPROVE).
+Žádné otevřené zadání. Hotové: review nasazovacího kroku stropu bucketu → APPROVE
+(`_workspace/2026-11-23_codex_review_bucket_cap_deploy_step.md`); strop **nasazen 2026-11-23 07:45:02 UTC**
+(kohorta `explore-bucket-cap`, `cohort_start_ms = 1795419902000`, viz `docs/OPERATING_STATE.md`).
+Neblokující P2/P3 z review (síťová izolace sandboxu, zastaralý komentář o „execution paths“
+v `deploy_bot_files.sh`) zůstávají na příští změnu nástroje.
 
 Hotové: re-review B4 → APPROVE (`_workspace/2026-11-19_codex_rereview_outbox_deploy_b4.md`); outbox
 **nasazen 2026-11-19 14:15:30 UTC** (`DEPLOY_outbox-visibility APPLIED OK`, bot PID 1634146).

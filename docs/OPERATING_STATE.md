@@ -56,12 +56,23 @@ generátory dál určují, co vstoupí.
 - Konfigurace sběru (limity, cooldown, CONTROL 1,0) beze změny.
 - 2026-11-19: stale odmítnutí ~45 % → 0–5 %, přijatých kandidátů ~2×, vstupů beze změny
   (~118 / 12 h). Vázající je natvrdo `max_open_per_bucket = 2` v `paper_trade_executor`.
-  Připraveno: `PAPER_EXPLORE_MAX_OPEN_PER_BUCKET` (1–7, výchozí 2, platí **jen** pro
-  `P0_8_PLUS_EVIDENCE_COLLECTION`). Kód a artefakt mají **APPROVE** (re-review 2026-11-19):
-  artefakt `_workspace/bucket_cap_20261119/artifact/paper_trade_executor.py` (`a39d4f4c…`) = serverová
-  kopie `5b0b15cc…` + 2 hunky. Nasazení ještě není schválené: chybí review nasazovacího kroku (allowlist
-  patch `allowlist_executor_after_approval.patch` + příkaz). Nasadit jako samostatnou kohortu, ideálně
-  jedním restartem s outboxem (`docs/remediation/POST_C1_DEPLOY_RUNBOOK_2026-11-19.md`, oddíl C).
+  `PAPER_EXPLORE_MAX_OPEN_PER_BUCKET` (1–7, výchozí 2, platí **jen** pro `P0_8_PLUS_EVIDENCE_COLLECTION`).
+
+## Kohorta „explore-bucket-cap“ (od 2026-11-23 07:45:02 UTC)
+
+- Nasazen strop průzkumného bucketu 7 (kód + artefakt APPROVE 2026-11-19, nasazovací krok APPROVE
+  `_workspace/2026-11-23_codex_review_bucket_cap_deploy_step.md`). Executor `a39d4f4c…` (preimage
+  `5b0b15cc…`), drop-in `zzzzzzzzzzzzz-explore-bucket-cap.conf` (`PAPER_EXPLORE_MAX_OPEN_PER_BUCKET=7`).
+  Nástroj `deploy_bot_files.sh` `64206444…`, starý v `stage_backups/deploy-tools-20261123T072556Z`.
+- Marker: `stage.log` `DEPLOY_explore-bucket-cap APPLIED OK` 07:45:02Z, pid 3733858 (restart 07:43:47),
+  záloha `/opt/cryptomaster_deploy_backups/explore-bucket-cap-20261123T072609Z`.
+  `cohort_start_ms = 1795419902000`.
+- Ověřeno hned po nasazení: hash executoru = pin, proces má `PAPER_EXPLORE_MAX_OPEN_PER_BUCKET=7`,
+  `TRADING_MODE=paper_train`, REAL příznaky false, 0 tracebacků, žádný `ALERT`.
+- Obchody před markerem a po něm **neslučovat** (ani s `candle-refresh`). Vyšší počet obchodů není
+  účinek učení ani důkaz edge.
+- Rollback: vrátit executor `5b0b15cc…` a odstranit drop-in ze zálohy. Snížení stropu otevřené pozice
+  nezavře; další vstupy do bucketu se odmítají, dokud počet neklesne.
 
 ## Dashboard (2026-11-19)
 
