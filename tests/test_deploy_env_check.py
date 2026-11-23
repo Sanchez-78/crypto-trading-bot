@@ -287,10 +287,14 @@ def test_accepted_records_load_without_economic_change(monkeypatch, tmp_path):
     """Cross-check against the real loader: every accepted record reloads with its economic fields intact."""
     import copy
     from src.services import paper_trade_executor as pte
+    from src.services.paper_close_journal import PaperCloseJournal
     state = {"a": _pos("a"), "b": _short("b"),
              "c": _pos("c", max_hold_s=300, training_bucket="C_WEAK_EV_TRAIN", paper_source="training_sampler",
-                       timeout_s=300.0)}
-    assert dec.open_positions_count(_json.dumps(state)) == 3
+                       timeout_s=300.0),
+             # Training record whose stored timeout the loader really shortens (review R1 test gap).
+             "d": _pos("d", max_hold_s=300, training_bucket="C_WEAK_EV_TRAIN", paper_source="training_sampler",
+                       timeout_s=1200.0)}
+    assert dec.open_positions_count(_json.dumps(state)) == 4
     path = tmp_path / "paper_open_positions.json"
     path.write_text(_json.dumps(state), encoding="utf-8")
     monkeypatch.setattr(pte, "_STATE_FILE", str(path))
@@ -306,12 +310,26 @@ def test_accepted_records_load_without_economic_change(monkeypatch, tmp_path):
     before = copy.deepcopy(state)
     pte._load_paper_state()
     assert set(pte._POSITIONS) == set(before)
+    journal = PaperCloseJournal(tmp_path / "paper_close_journal.sqlite")
     for tid, orig in before.items():
         loaded = pte._POSITIONS[tid]
         for field in ("symbol", "entry_price", "entry_ts", "created_at") + _ECON_REQUIRED:
+            if tid == "d" and field == "timeout_s":
+                continue
             assert loaded.get(field) == orig.get(field), (tid, field)
+        assert pte._effective_paper_hold_s(loaded) == pte._effective_paper_hold_s(orig), tid
         assert pte._paper_cost_fractions(loaded) == (orig["paper_fee_round_trip_fraction"],
                                                      orig["paper_slippage_round_trip_fraction"])
+        # Review R2: an accepted record must be closable into the authoritative journal.
+        assert journal.prepare({**loaded, "trade_id": tid}, loaded, {"net_pnl_pct": 0.0})["trade_id"] == tid
+    assert pte._POSITIONS["d"]["timeout_s"] == 300.0 < before["d"]["timeout_s"]   # the shortening did happen
+
+
+@pytest.mark.parametrize("key", ["", " ", " t", "t ", "\t"])
+def test_open_positions_count_refuses_empty_or_padded_trade_id(key):
+    # Review R2: the loader restores an empty id, but the close journal refuses it -> never closable.
+    with pytest.raises(dec.Refused):
+        dec.open_positions_count(_json.dumps({key: _pos(key)}))
 
 
 @pytest.mark.parametrize("text", [

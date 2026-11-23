@@ -154,13 +154,16 @@ def open_positions_count(text: str) -> int:
     Accepts only the canonical live shape written by paper_trade_executor.open_paper_position():
     a mapping trade_id -> position dict, for which _load_paper_state() fills in or changes no
     economically relevant value (reviews 2026-11-23 A1, R1). Per record:
-      - own trade_id equals the key; non-empty symbol;
+      - own trade_id equals the key and is a non-empty string without surrounding whitespace
+        (the close journal refuses an empty id, so such a position could never close; review R2);
+        non-empty symbol;
       - side is BUY or SELL (the loader would default a missing side to BUY);
       - entry_price, entry_ts, size_usd, tp, sl, timeout_s positive finite numbers
         (the loader defaults missing size_usd/tp/sl; tp/sl 0 or null too);
       - tp and sl on the correct side of entry for the direction;
       - max_hold_s key present (else the loader migrates it), value null or positive finite
-        (the P0.8+ path stores null; the hold then comes from timeout_s);
+        (the P0.8+ path stores null, which the loader keeps; at exit the executor reads null as
+        PAPER_MAX_POSITION_AGE_S, which is also the timeout_s that path stores);
       - pinned cost snapshot: paper_cost_contract_version 1 and finite nonnegative
         fee/slippage fractions (otherwise the close is blocked or uses current settings);
       - training positions (training_bucket C_WEAK_EV_TRAIN or paper_source training_sampler)
@@ -194,6 +197,8 @@ def open_positions_count(text: str) -> int:
             raise Refused(f"position {key!r} is not an object")
         if pos.get("trade_id") != key:
             raise Refused(f"position {key!r} trade_id mismatch")
+        if not key or key != key.strip():
+            raise Refused(f"position {key!r} has an empty or padded trade_id")
         symbol = pos.get("symbol")
         if not (isinstance(symbol, str) and symbol.strip()):
             raise Refused(f"position {key!r} has no symbol")
