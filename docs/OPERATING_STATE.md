@@ -69,6 +69,19 @@ generátory dál určují, co vstoupí.
   `cohort_start_ms = 1795419902000`.
 - Ověřeno hned po nasazení: hash executoru = pin, proces má `PAPER_EXPLORE_MAX_OPEN_PER_BUCKET=7`,
   `TRADING_MODE=paper_train`, REAL příznaky false, 0 tracebacků, žádný `ALERT`.
+- **Účinný celkový limit = 100, ne 5** (k `_workspace/2026-11-23_codex_postdeploy_bucket_cap_review.md`):
+  server `/opt/cryptomaster/.env:2` `PAPER_MAX_OPEN_POSITIONS=100`. Executor ho načte přes `load_dotenv`
+  na ř. 18, před čtením `_MAX_OPEN` na ř. 150 (výchozí hodnota v kódu je 5). Lokální `.env` (5) pro server
+  neplatí. Jde o statický důkaz z kódu a souborů na serveru. Proces ho nemá v systemd prostředí, protože
+  `.env` se načítá až v procesu. Celkový limit se neměnil.
+- **Kontrola 08:16 UTC (read-only, jen kohorta `explore-bucket-cap`):**
+  - 3 souběžně otevřené pozice v `P0_8_PLUS_EVIDENCE_COLLECTION` (dříve strop 2), 0× `max_open_per_bucket`,
+    0 tracebacků;
+  - v okně journalu (~16 min) 5× `P0_8_PLUS_LIVE_OPEN`, 5× `PAPER_ENTRY`;
+  - uzavřené obchody s `entry_ts ≥ marker`: n = 5, 1 výhra, Σ −0,0715 USD. Vzorek je pro jakýkoli závěr
+    příliš malý.
+  - Důvody v journalu: `REJECT_ECON_BAD_ENTRY` ~48 tis. řádků za 16 min (zdroj logovací záplavy, ne
+    odmítnutí kvůli stropu), dále `REJECT_PAPER_LEARNING` 6× a `REJECT_RISK_DENIED` 2×.
 - Obchody před markerem a po něm **neslučovat** (ani s `candle-refresh`). Vyšší počet obchodů není
   účinek učení ani důkaz edge.
 - Rollback: vrátit executor `5b0b15cc…` a odstranit drop-in ze zálohy. Snížení stropu otevřené pozice
