@@ -25,8 +25,7 @@ import sys
 from pathlib import Path
 
 FALSY = {"false", "0", "no", "off"}
-STRICT_BOOL_KEYS = ("PAPER_COMPLETED_CANDLE_PHASE_REFRESH_ENABLED", "RDE_ECON_BAD_REJECT_LOG_LIMIT_ENABLED",
-                    "STONKFLY_ENABLED", "STONKFLY_PAIRED_ENABLED", "PAPER_STONKFLY_CONTEXT_ENABLED")
+STRICT_BOOL_KEYS = ("PAPER_COMPLETED_CANDLE_PHASE_REFRESH_ENABLED", "RDE_ECON_BAD_REJECT_LOG_LIMIT_ENABLED")
 # paper_trade_executor.exploration_bucket_cap() silently falls back to 2 on bad values.
 STRICT_INT_KEYS = {"PAPER_EXPLORE_MAX_OPEN_PER_BUCKET": (1, 7)}
 ENV_FILE_ITEM = re.compile(r"(\S+) \(ignore_errors=(yes|no)\)")
@@ -150,6 +149,21 @@ def verify_staged_import(tree: str, files: list[str], pinned: dict, pycache_pref
 
 
 _PRICE_MAX, _TS_MAX, _DURATION_MAX = 1e9, 1e11, 1e7   # USD price, epoch seconds, seconds
+# Every price-like field must stay within this factor of entry_price (live TP/SL are a few tenths of
+# a percent): an absolute range alone lets entry=1e-300, tp=1e9 through, and the gross return then
+# overflows at settlement (review R4, P1).
+_PRICE_RATIO_MAX = 2.0
+# The exit is the live market price, not a stored field, so entry_price also needs an absolute floor
+# (cheapest traded symbols are ~0.1 USD): (exit - entry) / entry * 100 * size stays finite.
+_PRICE_MIN = 1e-6
+_PRICE_FIELDS = ("tp", "sl", "max_seen", "min_seen", "last_price", "dynamic_exit_initial_stop")
+_TIME_FIELDS = ("entry_ts", "created_at", "max_seen_ts", "min_seen_ts", "last_price_ts")
+# Timestamps may not lie in the future beyond this clock tolerance: a close is refused while
+# ts < entry_ts, so a future entry could not be closed now (review R4, P1). Validator and bot run
+# on the same host.
+_CLOCK_SKEW_S = 60.0
+# _save_paper_state() strips this ephemeral dynamic-exit cache; a canonical file never has it.
+_RUNTIME_CACHE_KEYS = ("_dyn_exit_trend_features", "_dyn_exit_features_ts", "_dyn_exit_atr_bps")
 # field -> (lower bound "gt0" (> 0) or "ge0" (>= 0), upper bound, required, null allowed).
 # Upper bounds are far above any live value but keep settlement arithmetic finite.
 _POSITION_NUMERIC_FIELDS = {
@@ -166,7 +180,6 @@ _POSITION_NUMERIC_FIELDS = {
     # Optional, but compared or subtracted without a guard on every tick when present.
     "max_seen": ("gt0", _PRICE_MAX, False, False),
     "min_seen": ("gt0", _PRICE_MAX, False, False),
-    "_dyn_exit_features_ts": ("ge0", _TS_MAX, False, False),
     "created_at": ("gt0", _TS_MAX, False, False),
     # Optional and read through guards or _safe_float; null tolerated, a value must still be sane.
     "last_price": ("gt0", _PRICE_MAX, False, True),
@@ -174,13 +187,12 @@ _POSITION_NUMERIC_FIELDS = {
     "max_seen_ts": ("ge0", _TS_MAX, False, True),
     "min_seen_ts": ("ge0", _TS_MAX, False, True),
     "dynamic_exit_initial_stop": ("gt0", _PRICE_MAX, False, True),
-    "_dyn_exit_atr_bps": ("ge0", 1e6, False, True),
 }
 _POSITION_LABEL_FIELDS = ("regime", "explore_bucket", "training_bucket", "bucket", "paper_source",
                           "strategy_id", "mode", "source")
 
 
-def open_positions_count(text: str) -> int:
+def open_positions_count(text: str, now: float | None = None) -> int:
     """Count open PAPER positions in the executor state file, or refuse (ALLOW_OPEN_POSITIONS path).
 
     Accepts only the canonical live shape written by paper_trade_executor.open_paper_position():
@@ -207,7 +219,10 @@ def open_positions_count(text: str) -> int:
     uses directly in arithmetic or comparisons (_POSITION_NUMERIC_FIELDS, incl. max_seen/min_seen,
     timestamps and the dynamic-exit cache) must, when present, be a finite number inside a bounded
     range, and the label fields must be strings (review R4). The bounds keep everything derived at
-    settlement (fee * 100, price moves, USD P/L) finite. Non-dict records, metadata keys,
+    settlement (fee * 100, price moves, USD P/L) finite: every price-like field lies within
+    _PRICE_RATIO_MAX of entry_price, no timestamp lies more than _CLOCK_SKEW_S in the future of
+    `now` (default: the current time), and the stripped dynamic-exit runtime cache keys must be
+    absent. Non-dict records, metadata keys,
     wrapper {"positions": ...}, legacy lists and scalars are
     Refused (the loader would skip or reshape them). Over-strict refusal of an old but valid state
     only makes the opt-in SKIP. The executor is not imported here (import has runtime side
@@ -232,6 +247,8 @@ def open_positions_count(text: str) -> int:
     def number(value) -> bool:
         return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
 
+    import time
+    clock = time.time() if now is None else float(now)
     for key, pos in data.items():
         if key in ("positions", "metadata"):
             raise Refused(f"unsupported positions state key: {key}")
@@ -261,8 +278,26 @@ def open_positions_count(text: str) -> int:
             if pos.get(field) is not None and not isinstance(pos[field], str):
                 raise Refused(f"position {key!r} field {field} is not a string")
         entry, tp, sl = pos["entry_price"], pos["tp"], pos["sl"]
-        if not (tp > entry > sl if side == "BUY" else tp < entry < sl):
-            raise Refused(f"position {key!r} tp/sl not on the {side} side of entry")
+        if entry < _PRICE_MIN:
+            raise Refused(f"position {key!r} entry_price below {_PRICE_MIN:g}")
+        # tp on the profit side of entry; sl on the far side of tp. The dynamic exit trails `sl` and may
+        # move it past entry to lock in profit (live 2026-11-24: SELL XRPUSDT sl below entry), so only
+        # the untrailed initial stop, when recorded, must lie on the loss side of entry.
+        initial = pos.get("dynamic_exit_initial_stop")
+        if not (tp > entry and sl < tp if side == "BUY" else tp < entry and sl > tp):
+            raise Refused(f"position {key!r} tp/sl not on the {side} side")
+        if initial is not None and not (initial < entry if side == "BUY" else initial > entry):
+            raise Refused(f"position {key!r} initial stop not on the {side} loss side of entry")
+        for field in _PRICE_FIELDS:
+            value = pos.get(field)
+            if value is not None and not entry / _PRICE_RATIO_MAX <= value <= entry * _PRICE_RATIO_MAX:
+                raise Refused(f"position {key!r} {field} is not within x{_PRICE_RATIO_MAX:g} of entry_price")
+        for field in _TIME_FIELDS:
+            value = pos.get(field)
+            if value is not None and value > clock + _CLOCK_SKEW_S:
+                raise Refused(f"position {key!r} {field} lies in the future")
+        if any(cache_key in pos for cache_key in _RUNTIME_CACHE_KEYS):
+            raise Refused(f"position {key!r} carries the stripped dynamic-exit runtime cache")
         if pos.get("paper_cost_contract_version") != 1:
             raise Refused(f"position {key!r} has no valid pinned cost snapshot")
         if pos.get("training_bucket") == "C_WEAK_EV_TRAIN" or pos.get("paper_source") == "training_sampler":

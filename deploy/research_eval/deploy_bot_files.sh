@@ -18,16 +18,7 @@
 # between the check and the restart is a few seconds and positions are persisted.
 set -euo pipefail
 
-: "${LABEL:?}" "${FILES?}" "${VARS?}" "${DROPIN_NAME:?}" "${EXPECTED_SHA256?}" "${EXPECTED_PREIMAGE_SHA256?}"
-# Env-only deploy (2026-11-23, Stonkfly off): FILES="" installs no code, the drop-in is the whole
-# change, so VARS must be set and no pinned hashes may be given. With FILES both pins are required.
-if [ -z "$FILES" ]; then
-  if [ -z "$VARS" ] || [ -n "$EXPECTED_SHA256" ] || [ -n "$EXPECTED_PREIMAGE_SHA256" ]; then
-    echo "env-only deploy needs VARS and empty EXPECTED_SHA256/EXPECTED_PREIMAGE_SHA256" >&2; exit 2
-  fi
-elif [ -z "$EXPECTED_SHA256" ] || [ -z "$EXPECTED_PREIMAGE_SHA256" ]; then
-  echo "FILES need EXPECTED_SHA256 and EXPECTED_PREIMAGE_SHA256" >&2; exit 2
-fi
+: "${LABEL:?}" "${FILES:?}" "${VARS?}" "${DROPIN_NAME:?}" "${EXPECTED_SHA256:?}" "${EXPECTED_PREIMAGE_SHA256:?}"
 HERE="$(dirname "$(readlink -f "$0")")"
 CHECK="$HERE/deploy_env_check.py"
 for helper in "$CHECK" "$HERE/deploy_pinned.sh"; do
@@ -62,10 +53,7 @@ flock -n 9 || { echo "another deploy is running" >&2; exit 4; }
 # only the REJECT_ECON_BAD_ENTRY detail lines, decisions unchanged; code APPROVE
 # _workspace/2026-11-23_codex_rereview_econ_bad_log_limit_r2.md). Strict true/false in deploy_env_check.py.
 ALLOWED_FILES="src/services/paper_source_learning.py src/services/paper_learning_budget.py src/services/candle_cache_v1.py src/services/p0_8_plus_live_pipeline.py src/services/paper_trade_executor.py src/services/v5_legacy_bridge/outbox.py src/services/v5_legacy_bridge/outbox_flush_worker.py src/services/realtime_decision_engine.py"
-# 2026-11-23: STONKFLY_ENABLED, STONKFLY_PAIRED_ENABLED, PAPER_STONKFLY_CONTEXT_ENABLED (switch the shadow
-# neural research source and its decision context off; evaluation NO EDGE
-# _workspace/stonkfly_eval_20261123/REPORT.md). Strict true/false in deploy_env_check.py.
-ALLOWED_KEYS="PAPER_PROBE_HOURLY_ENTRIES PAPER_PROBE_DAILY_ENTRIES PAPER_PROBE_SYMBOL_COOLDOWN_S PAPER_PROBE_MIN_NET_BPS PAPER_SYMBOL_BLACKLIST PAPER_LEARNING_CONTROL_FRACTION PAPER_COST_EXPLORATION_ENABLED PAPER_ADAPTIVE_EXPLORATION_ENABLED PAPER_COMPLETED_CANDLE_LEARNING_ENABLED PAPER_COMPLETED_CANDLE_PHASE_REFRESH_ENABLED PAPER_EXPLORE_MAX_OPEN_PER_BUCKET RDE_ECON_BAD_REJECT_LOG_LIMIT_ENABLED STONKFLY_ENABLED STONKFLY_PAIRED_ENABLED PAPER_STONKFLY_CONTEXT_ENABLED"
+ALLOWED_KEYS="PAPER_PROBE_HOURLY_ENTRIES PAPER_PROBE_DAILY_ENTRIES PAPER_PROBE_SYMBOL_COOLDOWN_S PAPER_PROBE_MIN_NET_BPS PAPER_SYMBOL_BLACKLIST PAPER_LEARNING_CONTROL_FRACTION PAPER_COST_EXPLORATION_ENABLED PAPER_ADAPTIVE_EXPLORATION_ENABLED PAPER_COMPLETED_CANDLE_LEARNING_ENABLED PAPER_COMPLETED_CANDLE_PHASE_REFRESH_ENABLED PAPER_EXPLORE_MAX_OPEN_PER_BUCKET RDE_ECON_BAD_REJECT_LOG_LIMIT_ENABLED"
 for f in $FILES; do
   case " $ALLOWED_FILES " in *" $f "*) ;; *) echo "file not allowed: $f" >&2; exit 2 ;; esac
 done
@@ -96,7 +84,6 @@ if [ -n "$last" ] && [ "$(printf '%s\n%s\n' "$last" "$DROPIN_NAME" | LC_ALL=C so
   echo "drop-in $DROPIN_NAME would not sort after $last" >&2; exit 2
 fi
 
-mkdir -p "$BACKUP"  # also for an env-only deploy, which copies no file into it
 for f in $FILES; do mkdir -p "$BACKUP/$(dirname "$f")"; cp -p "$APP/$f" "$BACKUP/$f"; done
 had_dropin=0; [ -f "$DROPIN" ] && { cp -p "$DROPIN" "$BACKUP/"; had_dropin=1; }
 ( cd "$BACKUP" && find . -type f -exec sha256sum {} + ) > "$BACKUP/PREIMAGE.sha256"
@@ -131,8 +118,6 @@ except deploy_env_check.Refused as exc:
 from src.services import paper_source_learning, paper_neural_context, paper_learning_budget
 paper_source_learning.validate_config(env)
 paper_neural_context.validate_config(env)
-from src.services.stonkfly.config import StonkflyConfig
-StonkflyConfig.from_env(env)  # the Stonkfly switches are deployable keys; their combination must validate
 pinned = dict(e.split("=", 1) for e in os.environ["EXPECTED_SHA256"].split())
 # Explicit refusals (never assert, review 80 N2): exact pinned bytes compile and are what got imported,
 # with no bytecode cache. -I above also ignores PYTHON* variables such as PYTHONOPTIMIZE.
@@ -240,6 +225,5 @@ python3 -B "$CHECK" post --environ "/proc/$pid/environ" --dotenv "$APP/.env" --v
   || rollback "running env check failed"
 verify_pinned "$APP" "$FILES" "$EXPECTED_SHA256" || rollback "postimage differs from EXPECTED_SHA256"
 trap - ERR INT TERM
-# No FILES: sha256sum without arguments would read stdin.
-if [ -n "$FILES" ]; then ( cd "$APP" && sha256sum $FILES ) > "$BACKUP/POSTIMAGE.sha256"; else : > "$BACKUP/POSTIMAGE.sha256"; fi
+( cd "$APP" && sha256sum $FILES ) > "$BACKUP/POSTIMAGE.sha256"
 log "APPLIED OK backup=$BACKUP pid=$(systemctl show cryptomaster -p MainPID --value)"
