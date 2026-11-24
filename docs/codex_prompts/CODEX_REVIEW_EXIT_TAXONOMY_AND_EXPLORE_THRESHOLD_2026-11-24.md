@@ -83,7 +83,10 @@ Lokální, necommitnutá. Lokální soubory jsou po normalizaci EOL shodné se s
 - `TradesScreen.js`: karta ukazuje „SHORT (zisk při poklesu ceny)“, „Pohyb ceny“ a „Důvod výstupu“
   (+ kód). Obě cesty sdílí normalizaci.
 - `paperLearningAdapter.js`: skupiny navíc.
-- `scripts/run-metrics-consistency-tests.cjs`: 22 passed. Release APK se staví (výsledek doplním).
+- `scripts/run-metrics-consistency-tests.cjs`: 22 passed.
+- Release APK: BUILD SUCCESSFUL 2026-11-24 14:38, `CryptoMaster.apk` (sha256 `1ca0e0ce…`). Bundle
+  obsahuje nové řetězce. Commit aplikace je lokální: `a05eb248`.
+- Aplikace funguje i se starým serverem: chybějící skupiny jsou 0 a total je součet.
 
 **Ověřit (A):**
 - Je mapování sémanticky správné? Hlavně `HARD_STOP_VOLATILITY` → `sl` a `DYNAMIC_TARGET_EXIT` →
