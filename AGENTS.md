@@ -5,7 +5,9 @@ Komunikace s uživatelem a reporty: **česky**. Identifikátory a kód: anglicky
 
 ## Aktuální zadání
 
-**Otevřené zadání:** žádné. Hotové 2026-11-24: `_workspace/2026-11-24_codex_rereview_stonkfly_a2_r1_r3.md` **APPROVE**
+**Otevřené zadání (review + rozhodnutí, 2026-11-24):** `docs/codex_prompts/CODEX_REVIEW_EXIT_TAXONOMY_AND_EXPLORE_THRESHOLD_2026-11-24.md`
+→ `_workspace/2026-11-24_codex_review_exit_taxonomy_and_threshold.md` (A: všechny exity + směr obchodu v dashboardu/API/aplikaci,
+lokální; B: práh průzkumu −25 bps — operátor přenechal rozhodnutí Codexu). Hotové 2026-11-24: `_workspace/2026-11-24_codex_rereview_stonkfly_a2_r1_r3.md` **APPROVE**
 protokolu A2 pro jeden baseline běh na dočasném izolovaném stroji (nejdřív `--smoke` = `SMOKE_OK`; závěr jen z `MEASURED`
 s prázdným `incomplete`/`errors`; prahy se po běhu nemění). Čeká se na server od operátora. Dřív: `docs/codex_prompts/CODEX_REREVIEW_STONKFLY_A_PIN_DTYPE_2026-11-24.md`
 → `_workspace/2026-11-24_codex_rereview_stonkfly_a_pin_dtype.md` **APPROVE** statické části Stonkfly fáze A (R1–R6; lokální,
