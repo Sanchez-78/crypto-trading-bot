@@ -5,9 +5,9 @@ Komunikace s uživatelem a reporty: **česky**. Identifikátory a kód: anglicky
 
 ## Aktuální zadání
 
-**Otevřené zadání (re-review, 2026-11-24):** `docs/codex_prompts/CODEX_REREVIEW_STONKFLY_A_PIN_DTYPE_2026-11-24.md`
-→ `_workspace/2026-11-24_codex_rereview_stonkfly_a_pin_dtype.md` (Stonkfly fáze A: kontrola pinu i podle dtype/tvaru, lokální,
-necommitnuté). Hotové: re-review `_workspace/2026-11-24_codex_rereview_r5_and_stonkfly_a.md` (A: R5 APPROVE kódu, bez nasazení
+**Otevřené zadání:** žádné. Hotové 2026-11-24: `docs/codex_prompts/CODEX_REREVIEW_STONKFLY_A_PIN_DTYPE_2026-11-24.md`
+→ `_workspace/2026-11-24_codex_rereview_stonkfly_a_pin_dtype.md` **APPROVE** statické části Stonkfly fáze A (R1–R6; lokální,
+necommitnuté); A2 (běh sítě na kontrolních snímcích, R8) zůstává otevřené a čeká na schválené prostředí. Dřív: re-review `_workspace/2026-11-24_codex_rereview_r5_and_stonkfly_a.md` (A: R5 APPROVE kódu, bez nasazení
 a bez `ALLOW_OPEN_POSITIONS=1`; B: CHANGES_REQUIRED pin bez dtype, opraveno); re-review R4 `_workspace/2026-11-24_codex_rereview_allow_open_positions_r4.md` CHANGES_REQUIRED R5
 a review fáze A `_workspace/2026-11-24_codex_review_stonkfly_phase_a.md` CHANGES_REQUIRED S1, obojí opraveno;
 dřív A1, R1–R4, review `_workspace/2026-11-23_codex_review_r4_and_stonkfly_off.md` (A CHANGES_REQUIRED, opraveno;
