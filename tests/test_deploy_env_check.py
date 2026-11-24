@@ -373,20 +373,72 @@ def test_open_positions_count_refuses_unsafe_tick_or_settlement_field(over):
         dec.open_positions_count(_json.dumps({"t": _pos("t", **over)}))
 
 
-def test_trailed_stop_past_entry_is_accepted_but_initial_stop_must_be_on_the_loss_side():
-    # Live 2026-11-24: the dynamic exit trails `sl` (paper_trade_executor `_POSITIONS[...]["sl"] =
-    # decision.new_stop_price`); a profitable SELL had sl below entry and was wrongly refused.
+DYNAMIC = {"explore_bucket": "P0_8_PLUS_EVIDENCE_COLLECTION", "strategy_id": "trend_cost_aware"}
+
+
+def test_trailed_stop_is_accepted_only_for_dynamic_exit_positions_with_a_recorded_initial_stop():
+    # Live 2026-11-24: the dynamic exit trails `sl` (the executor's sole writer of `sl`); a profitable
+    # SELL had sl below entry and was wrongly refused (R4); a trail may also pass tp (R5).
     def short(**over):
         return _pos("s", **{"side": "SELL", "tp": 99.65, "sl": 100.3, **over})
-    trailed_short = short(sl=99.95, dynamic_exit_initial_stop=100.3)
-    trailed_long = _pos("l", sl=100.05, dynamic_exit_initial_stop=99.7)
-    assert dec.open_positions_count(_json.dumps({"s": trailed_short, "l": trailed_long})) == 2
-    for bad in (short(sl=99.95, dynamic_exit_initial_stop=99.9),          # initial stop on the profit side
-                _pos("s", sl=100.05, dynamic_exit_initial_stop=100.1),
-                short(sl=99.6),                                           # stop beyond tp
+    accepted = {"s": short(sl=99.95, dynamic_exit_initial_stop=100.3, **DYNAMIC),
+                "l": _pos("l", sl=100.05, dynamic_exit_initial_stop=99.7, **DYNAMIC),
+                "lt": _pos("lt", sl=100.4, dynamic_exit_initial_stop=99.7, **DYNAMIC),      # past tp
+                "st": short(sl=99.6, dynamic_exit_initial_stop=100.3, **DYNAMIC),           # past tp
+                "u": _pos("u", dynamic_exit_initial_stop=99.7, **DYNAMIC),                   # not trailed
+                "n": _pos("n", **DYNAMIC)}                                                   # not evaluated yet
+    for k, v in accepted.items():
+        v["trade_id"] = k
+    assert dec.open_positions_count(_json.dumps(accepted)) == len(accepted)
+    for bad in (short(sl=99.95, dynamic_exit_initial_stop=99.9, **DYNAMIC),   # initial stop on the profit side
+                _pos("s", sl=100.05, dynamic_exit_initial_stop=100.1, **DYNAMIC),
+                _pos("s", sl=100.05, **DYNAMIC),                              # trailed, no recorded initial stop
+                _pos("s", sl=100.05, dynamic_exit_initial_stop=99.7),         # not a dynamic-exit position
+                _pos("s", sl=100.05, dynamic_exit_initial_stop=99.7, explore_bucket="X", strategy_id="trend_cost_aware"),
+                short(sl=99.6),
                 _pos("s", sl=100.4)):
         with pytest.raises(dec.Refused):
             dec.open_positions_count(_json.dumps({"s": bad}))
+
+
+def test_stop_trailed_by_the_real_exit_engine_past_tp_is_accepted_and_reloads_and_settles(monkeypatch, tmp_path):
+    """Review R5 repro: dynamic_trend_exit_v1.evaluate_exit moves a BUY stop to 100.4 > tp 100.35."""
+    import math
+    from src.services import paper_trade_executor as pte
+    from src.services.paper_close_journal import PaperCloseJournal
+    from src.services.dynamic_trend_exit_v1 import ExitEvaluationInput, evaluate_exit
+    now = _time.time()
+    base = _pos("r", entry_ts=now - 60, created_at=now - 60, dynamic_exit_initial_stop=99.7, **DYNAMIC)
+    decision = evaluate_exit(ExitEvaluationInput(
+        side="BUY", entry_price=100.0, current_price=100.5, initial_stop_price=99.7, current_stop_price=99.7,
+        target_reference_price=100.35, entry_time_ms=int((now - 60) * 1000), now_ms=int(now * 1000),
+        max_hold_seconds=1200, atr_bps=10.0, mfe_bps=50.0, regime="BULL_TREND"))
+    assert decision.new_stop_price is not None and decision.new_stop_price > base["tp"]
+    state = {"r": {**base, "sl": decision.new_stop_price, "max_seen": 100.5}}
+    assert dec.open_positions_count(_json.dumps(state), now=now) == 1
+    # the real loader restores it unchanged (journal/save/stale reconciliation isolated, file in tmp_path)
+    path = tmp_path / "paper_open_positions.json"
+    path.write_text(_json.dumps(state), encoding="utf-8")
+    monkeypatch.setattr(pte, "_STATE_FILE", str(path))
+    monkeypatch.setattr(pte, "_POSITIONS", {})
+
+    class _NoCloses:
+        def closed_ids(self, _ids):
+            return set()
+
+    monkeypatch.setattr(pte, "_paper_close_journal", lambda: _NoCloses())
+    monkeypatch.setattr(pte, "_save_paper_state", lambda *_a, **_k: True)
+    monkeypatch.setattr(pte, "_reconcile_stale_paper_positions", lambda *_a, **_k: {})
+    pte._load_paper_state()
+    loaded = pte._POSITIONS["r"]
+    assert loaded["sl"] == decision.new_stop_price and loaded["tp"] == base["tp"]
+    # and settles finitely into the real close journal at the trailed stop
+    fee, slip = pte._paper_cost_fractions(loaded)
+    pnl = pte._calculate_pnl(side="BUY", entry_price=loaded["entry_price"], exit_price=loaded["sl"],
+                             size_usd=loaded["size_usd"], fee_pct=fee, slippage_pct=slip)
+    assert all(math.isfinite(v) for v in pnl.values() if isinstance(v, float))
+    journal = PaperCloseJournal(tmp_path / "j.sqlite")
+    assert journal.prepare({**loaded, "trade_id": "r"}, loaded, pnl)["trade_id"] == "r"
 
 
 def test_future_timestamp_tolerance_is_bounded():

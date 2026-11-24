@@ -280,14 +280,23 @@ def open_positions_count(text: str, now: float | None = None) -> int:
         entry, tp, sl = pos["entry_price"], pos["tp"], pos["sl"]
         if entry < _PRICE_MIN:
             raise Refused(f"position {key!r} entry_price below {_PRICE_MIN:g}")
-        # tp on the profit side of entry; sl on the far side of tp. The dynamic exit trails `sl` and may
-        # move it past entry to lock in profit (live 2026-11-24: SELL XRPUSDT sl below entry), so only
-        # the untrailed initial stop, when recorded, must lie on the loss side of entry.
+        # tp always on the profit side of entry. Only the dynamic exit moves `sl` (the executor's sole
+        # writer, `_POSITIONS[...]["sl"] = decision.new_stop_price`), and only for the positions it
+        # routes there (same predicate as update_paper_positions). Its trailing stop follows the
+        # current price and may pass entry and even tp (reviews R4, R5; live 2026-11-24 SELL XRPUSDT).
+        # For those, the untrailed stop recorded before the first trail must lie on the loss side,
+        # unless sl itself still does. Every other position keeps the strict tp > entry > sl.
+        def loss_side(price) -> bool:
+            return price < entry if side == "BUY" else price > entry
+        if not (tp > entry if side == "BUY" else tp < entry):
+            raise Refused(f"position {key!r} tp not on the {side} profit side of entry")
+        dynamic = (pos.get("explore_bucket") == "P0_8_PLUS_EVIDENCE_COLLECTION"
+                   and pos.get("strategy_id") == "trend_cost_aware")
         initial = pos.get("dynamic_exit_initial_stop")
-        if not (tp > entry and sl < tp if side == "BUY" else tp < entry and sl > tp):
-            raise Refused(f"position {key!r} tp/sl not on the {side} side")
-        if initial is not None and not (initial < entry if side == "BUY" else initial > entry):
+        if initial is not None and not loss_side(initial):
             raise Refused(f"position {key!r} initial stop not on the {side} loss side of entry")
+        if not loss_side(sl) and not (dynamic and initial is not None):
+            raise Refused(f"position {key!r} sl not on the {side} loss side of entry (no recorded trail)")
         for field in _PRICE_FIELDS:
             value = pos.get(field)
             if value is not None and not entry / _PRICE_RATIO_MAX <= value <= entry * _PRICE_RATIO_MAX:

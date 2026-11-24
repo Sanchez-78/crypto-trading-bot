@@ -5,9 +5,11 @@ Komunikace s uživatelem a reporty: **česky**. Identifikátory a kód: anglicky
 
 ## Aktuální zadání
 
-**Otevřené zadání (re-review, 2026-11-24):** `docs/codex_prompts/CODEX_REREVIEW_ALLOW_OPEN_POSITIONS_R4_2026-11-24.md`
-→ `_workspace/2026-11-24_codex_rereview_allow_open_positions_r4.md` (poměr cen, budoucí časy, runtime cache, trailed stop;
-hotové: A1, R1–R3, review `_workspace/2026-11-23_codex_review_r4_and_stonkfly_off.md` (A CHANGES_REQUIRED, opraveno;
+**Otevřené zadání (re-review, 2026-11-24):** `docs/codex_prompts/CODEX_REREVIEW_R5_AND_STONKFLY_A_2026-11-24.md`
+→ `_workspace/2026-11-24_codex_rereview_r5_and_stonkfly_a.md` (A: trailed stop za TP u dynamických pozic; B: Stonkfly fáze A po S1,
+lokální, necommitnuté; hotové: re-review R4 `_workspace/2026-11-24_codex_rereview_allow_open_positions_r4.md` CHANGES_REQUIRED R5
+a review fáze A `_workspace/2026-11-24_codex_review_stonkfly_phase_a.md` CHANGES_REQUIRED S1, obojí opraveno;
+dřív A1, R1–R4, review `_workspace/2026-11-23_codex_review_r4_and_stonkfly_off.md` (A CHANGES_REQUIRED, opraveno;
 B vypnutí Stonkfly SUPERSEDED, změny nástroje vráceny — Stonkfly se nevypíná);
 povolení do schválení nepoužívat).
 Hotové: omezení výpisů ECON BAD **nasazeno 2026-11-23 11:54:37 UTC** (kohorta `econ-bad-log-limit`, viz `docs/OPERATING_STATE.md`);
