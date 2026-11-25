@@ -48,6 +48,44 @@ generátory dál určují, co vstoupí.
     v `/opt/cryptomaster_deploy_backups/performance-epoch-reset-20261123T133844Z/`.
 - Návrat: vrátit zálohovaný deskriptor (měření se tím vrátí ke staré epoše).
 
+## Release „exit-taxonomy“ — dashboard/API, nasazen 2026-11-25 08:10:48 UTC (jen prezentace)
+
+- Problém: dashboard a API počítaly jen 5 starých typů exitů (102 z 334 obchodů epochy). Chyběly
+  `HARD_STOP_*`, `DYNAMIC_TARGET_EXIT` a `TREND_INVALIDATED`. Směr obchodu nebyl srozumitelný:
+  short s exitem pod vstupem vypadal jako chyba.
+- Nasazeny 4 soubory přes schválený `deploy_exit_taxonomy.sh` (`567d7169…`), řada review
+  `_workspace/2026-11-24/25_codex_*exit_taxonomy*` končící APPROVE D6/D7. Postimage:
+
+  | Soubor | Hash |
+  |---|---|
+  | `exit_taxonomy.py` (nový) | `590cd219…` |
+  | `performance_epoch.py` | `58c560cc…` |
+  | `dashboard_read_model.py` | `31ba1f98…` |
+  | `dashboard_web.py` | `2446e0c1…` |
+
+- Restartován **jen** `cryptomaster-dashboard`. PID bota 3840326 před i po. Profil přístupu
+  4× 200/200 beze změny, journal bez Tracebacku.
+- Ověřeno po nasazení:
+  - `exit_distribution` má navíc skupiny `trailing_stop`, `signal_exit`, `risk_exit`, `other` a
+    `total`; součet = n (588/588);
+  - obchody mají `direction` (LONG/SHORT/UNKNOWN), `price_move_pct` a `exit_label` (česky);
+  - nová pole `exit_distribution_by_reason` a `exit_group_labels`;
+  - tabulka na webu ukazuje sloupce Směr, Pohyb ceny a Důvod výstupu s escapováním.
+- Pozor na význam starých klíčů:
+  - `tp` nově zahrnuje i `DYNAMIC_TARGET_EXIT`;
+  - `sl` zahrnuje i `HARD_STOP_VOLATILITY` (zasažený původní stop).
+- `side` zůstává u starých řádků bez směru „BUY“ jako kompatibilní placeholder; skutečný směr
+  udává `direction`.
+- Záloha `/opt/cryptomaster_deploy_backups/exit-taxonomy-20261125T081048Z/` (3 originály, ABSENT,
+  profil, PID, `install.log`). Log je i v `_workspace/exit_taxonomy_release_20261125/`.
+- Rollback:
+  `cd /root/exit-taxonomy-20261125 && bash deploy_exit_taxonomy.sh rollback /opt/cryptomaster_deploy_backups/exit-taxonomy-20261125T081048Z`
+  (jen z přesné POST sady).
+- Bot načte nový `performance_epoch.py` až při příštím restartu. Změna je jen agregace pro
+  dashboard, obchodní logika se nemění.
+- Android: APK s novými poli `CryptoMaster.apk` sha256 `affcd7dd…`, lokální commity aplikace
+  `a05eb248`, `820be7a8`.
+
 ## Práh průzkumu −25 bps zůstává + prospektivní analytické okno (rozhodnutí Codex 2026-11-25)
 
 - Operátor 2026-11-24: „proč stále padá WR a P/L… zlepši!“. Analýza je v
