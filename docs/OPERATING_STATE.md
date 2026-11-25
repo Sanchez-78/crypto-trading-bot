@@ -48,6 +48,30 @@ generátory dál určují, co vstoupí.
     v `/opt/cryptomaster_deploy_backups/performance-epoch-reset-20261123T133844Z/`.
 - Návrat: vrátit zálohovaný deskriptor (měření se tím vrátí ke staré epoše).
 
+## Práh průzkumu −25 bps zůstává + prospektivní analytické okno (rozhodnutí Codex 2026-11-25)
+
+- Operátor 2026-11-24: „proč stále padá WR a P/L… zlepši!“. Analýza je v
+  `_workspace/2026-11-24_wr_pl_decline_analysis.md`:
+  - WR nové epochy 33 % > 26 %;
+  - P/L klesá, protože průměr je ~−8 bps/obchod;
+  - žádný práh `predicted_net_edge_bps` nedává kladný průměr.
+- Rozhodnutí bylo přenecháno Codexu (`_workspace/2026-11-24_codex_review_exit_taxonomy_and_threshold.md`,
+  B): **práh −25 bps neměnit**.
+  - Zpřísnění by zvedlo jen popisný WR na vybraných obchodech, ubralo 60–85 % PAPER vzorků a P/L by
+    zůstal záporný.
+  - Nejde o novou obchodní kohortu: žádný restart ani změna TP/SL, nákladů nebo REAL.
+- **Předem zapsané analytické okno** (zapsáno 2026-11-25 07:10 UTC, před T0):
+  - T0 = **2026-11-25 09:00:00 UTC** (`1795597200`), konec = T0 + 7×24 h =
+    **2026-12-02 09:00:00 UTC** (`1796202000`).
+  - Obchody otevřené v [T0, konec), vyhodnocené jednou po konci. Řezy `predicted_net_edge_bps`
+    ≥ −25 / ≥ −10 / ≥ 0.
+  - Metriky: n uzavřených, kanonický WR, průměrný i kumulativní post-cost P/L, PF a kalibrace
+    `predicted_net_edge_bps`.
+  - Minimum 1 000 uzavřených obchodů celkem, jinak `INSUFFICIENT_DATA`. Termín se neprodlužuje.
+  - Během okna se nemění práh, model ani náklady.
+  - CONTROL = 1,0: hodnotí se predikční třídění, **ne** kauzální účinek adaptivní politiky.
+  - Kladný řez je jen hypotéza pro nezávislé opakování, ne důkaz zisku.
+
 ## Experiment C1 — UZAVŘEN 2026-11-16 17:48 UTC
 
 - **Verdikt `CONTRARIAN_NOT_SHOWN`** (předregistrace `docs/remediation/LEARNER_PREREGISTRATION_2026-11-09.md`,
