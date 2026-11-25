@@ -20,7 +20,76 @@ Jen prezentace (dashboard/API). Obchodní logika, bot, TP/SL, náklady ani REAL 
 Všechny soubory: mód 644, vlastník `root:root` (stejně jako dnes). Dashboard běží
 v `/opt/dashboard_venv` (Python 3.12.3) a `/opt/cryptomaster` má jen pro čtení.
 
-## Postup (až po APPROVE re-review)
+## Přesný postup = `deploy_exit_taxonomy.sh` (re-review D1–D3, 2026-11-25)
+
+Nástroje (LF):
+- `deploy_exit_taxonomy.sh`: `9ef226d008241eef3bcf0248fe9bcc295b9a38dd08cd7af5ae5a3db98da8f0c4`;
+- `verify_staging.py`: `bb6185e7b1fdc89879b960b8a181464b0f92def5911ee6b686184c7c7f0f8a10`.
+
+Na serveru jsou nahrané v `/root/exit-taxonomy-20261125/` (+ `postimage/`) a spouští se jako root
+odtud.
+
+- **`preflight`** (nic nezapisuje do `/opt/cryptomaster`):
+  - postimage = piny;
+  - živé tři soubory = preimage piny, mód 644 `root:root`;
+  - `exit_taxonomy.py` neexistuje;
+  - pak D2 staging:
+    1. `rsync` živého `src/` **bez** `__pycache__`, `*.pyc`, `*.pyo`, `*.sqlite*` a `*.db`
+       do `stage-XXXXXX`;
+    2. přes něj zkopírovat čtyři postimage;
+    3. spustit `/opt/dashboard_venv/bin/python3 -I -B -X pycache_prefix=<prázdný adresář>
+       verify_staging.py <stage>`.
+  - `verify_staging.py`:
+    - odmítne bytecode ve stage a neprázdný `pycache_prefix`;
+    - před importem ověří SHA-256 a `compile()` přesně připnutých bajtů;
+    - po importu ověří, že `__file__` všech čtyř modulů leží ve stage a má připnutý hash;
+    - žádný modul `src.*` se nesmí načíst mimo stage;
+    - `get_metrics()` jen pro čtení: součet devíti skupin = `total` = n, klíče degradované obálky,
+      `get_recent_trades()` s novými poli;
+    - **syntetický SELL fixture** → SHORT, záporný pohyb, skupina `tp`;
+    - `direction(None)` = UNKNOWN;
+    - HTML obsahuje `escapeHtml(exitText)`.
+  - Výsledek musí být `STAGING_VERIFIED`, jinak skript skončí bez zápisu.
+- **`install`:**
+  1. Celý preflight.
+  2. Záznam PID bota a profilu přístupu: lokální i veřejné HTTP kódy čtyř endpointů.
+  3. Záloha do `/opt/cryptomaster_deploy_backups/exit-taxonomy-<UTC>/`: tři originály (ověřené
+     hashe), značka ABSENT, profil a PID.
+  4. **Znovu** `check_live_pre` těsně před prvním zápisem (D1). Při neshodě skončí bez zápisu
+     a bez rollbacku cizí změny.
+  5. Instalace **v pořadí** `exit_taxonomy.py` → `performance_epoch.py` → `dashboard_read_model.py`
+     → `dashboard_web.py`. Každý soubor zvlášť: dočasný soubor ve stejném adresáři, `chmod 644`,
+     `chown root:root`, `mv -f`.
+  6. Kontrola všech čtyř hashů, módů a vlastníků **před restartem**.
+  7. Restart jen `cryptomaster-dashboard` a čekání na `is-active` + HTTP 200.
+  8. API smoke:
+     - součet skupin = total = n;
+     - `/api/trades/recent` má `direction`/`exit_label`;
+     - `/` obsahuje `escapeHtml(exitText)`.
+  9. Journal dashboardu bez `Traceback` od restartu, profil přístupu shodný, **PID bota beze
+     změny** (zapsán před i po, D3).
+  10. Při jakékoli chybě po prvním zápisu se spustí automatický rollback.
+- **`rollback <záloha>`** (automaticky i ručně):
+  1. Nejdřív se vrátí tři originály (atomicky), **až potom** se smaže nový modul (D1).
+  2. Hashe = preimage a modul neexistuje.
+  3. Restart jen dashboardu a pak D3 kontroly:
+     - `is-active` a HTTP 200;
+     - API smoke (platný JSON);
+     - journal bez tracebacku;
+     - profil přístupu = profil před instalací;
+     - PID bota beze změny.
+  4. Výsledek `ROLLBACK_OK`.
+
+**Doložený preflight 2026-11-25 07:21:39 UTC** (jen čtení, `/opt/cryptomaster` beze změny,
+`exit_taxonomy.py` stále neexistuje):
+- `STAGING_VERIFIED`, Python 3.12.3;
+- všechny čtyři moduly ze `stage-*`;
+- epocha n = 575: `tp` 109, `sl` 195, `timeout` 105, `trailing_stop` 132, `signal_exit` 34, ostatní
+  0, total 575;
+- 10 posledních řádků má nová pole, SELL fixture = SHORT;
+- `PREFLIGHT_OK bot_pid=3840326`, profil všech čtyř endpointů 200/200 (lokálně i veřejně).
+
+## Původní stručný postup (nahrazen skriptem výše)
 
 1. **Preflight na serveru:**
    - SHA-256 tří živých souborů = preimage;
