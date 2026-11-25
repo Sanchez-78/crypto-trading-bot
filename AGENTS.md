@@ -5,7 +5,9 @@ Komunikace s uživatelem a reporty: **česky**. Identifikátory a kód: anglicky
 
 ## Aktuální zadání
 
-**Otevřené zadání:** žádné. Hotové 2026-11-25: release „exit-taxonomy“ **nasazen 08:10:48 UTC** po APPROVE
+**Otevřené zadání:** `docs/codex_prompts/CODEX_DECIDE_STONKFLY_A2_ON_PRODUCTION_CGROUP_2026-11-25.md`
+(rozhodni, zda A2 smí běžet na produkci souběžně v omezeném cgroup; report `_workspace/2026-11-25_codex_decide_stonkfly_a2_production_cgroup.md`).
+Hotové 2026-11-25: release „exit-taxonomy“ **nasazen 08:10:48 UTC** po APPROVE
 `_workspace/2026-11-25_codex_rereview_exit_taxonomy_d6_d7.md` (INSTALL_OK, PID bota beze změny; viz `docs/OPERATING_STATE.md`).
 Dřív: `_workspace/2026-11-25_codex_rereview_exit_taxonomy_d4_d5.md` (CHANGES_REQUIRED → opraveno); `_workspace/2026-11-25_codex_rereview_exit_taxonomy_deploy_step.md`
 (CHANGES_REQUIRED → opraveno); `_workspace/2026-11-25_codex_rereview_exit_taxonomy.md` (kód + postimage schváleny,
