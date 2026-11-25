@@ -1,0 +1,32 @@
+{
+  "files": {
+    "src/services/dashboard_read_model.py": {
+      "bytes": 34114,
+      "mode": "644",
+      "owner": "root:root",
+      "postimage_sha256": "31ba1f98394ed9c07c7da6f229046e9dc5f5336b357f2a08ce0a17adea6a7fe5",
+      "preimage_sha256": "12c3e91c0d0fb1b130e75b7c68982e23be0c37ee51e9b99e9644b29f9f39680c"
+    },
+    "src/services/dashboard_web.py": {
+      "bytes": 68382,
+      "mode": "644",
+      "owner": "root:root",
+      "postimage_sha256": "2446e0c19d37a61d8c8647834eb41085a9340b66e852988708fa600b3deef21e",
+      "preimage_sha256": "df8b50411afdd84e9bee685dc4e3457303a3e94d769dc5b5e1a69c1fb1d1e02e"
+    },
+    "src/services/exit_taxonomy.py": {
+      "bytes": 5260,
+      "mode": "644",
+      "owner": "root:root",
+      "postimage_sha256": "590cd21983052f53d5a9bedbc869fa27c66b4f097a6fcc51b874206bf4f4e94c",
+      "preimage_sha256": null
+    },
+    "src/services/performance_epoch.py": {
+      "bytes": 6013,
+      "mode": "644",
+      "owner": "root:root",
+      "postimage_sha256": "58c560cc3702934180c50f293050ba32c1569c40d1ee2b76207782e7c900d2e6",
+      "preimage_sha256": "b2b19bd9f9271bf2e29ab68867e25a6283da3ff950f60d4c7b5335027cd062bd"
+    }
+  }
+}

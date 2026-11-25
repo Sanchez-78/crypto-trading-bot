@@ -1,0 +1,112 @@
+118a119,120
+>             from src.services.exit_taxonomy import describe_trade
+>             stored_side = parts[2] if len(parts) > 2 and parts[2] else None
+121c123
+<                 'side': parts[2] if len(parts) > 2 else 'BUY',
+---
+>                 'side': stored_side or 'BUY',   # documented default; `direction` says UNKNOWN
+124a127
+>                 **describe_trade(stored_side, None, None, None),
+270c273,274
+<         exits = {'tp': 0, 'sl': 0, 'scratch': 0, 'stagnation': 0, 'timeout': 0}
+---
+>         from src.services.exit_taxonomy import add_exit, describe_trade, empty_distribution, group_labels
+>         exits, exits_by_reason = empty_distribution(), {}
+285,286c289,290
+<                     "SELECT LOWER(COALESCE(exit_reason,'')), COUNT(*) "
+<                     "FROM closed_trades GROUP BY LOWER(COALESCE(exit_reason,''))"
+---
+>                     "SELECT UPPER(COALESCE(exit_reason,'')), COUNT(*) "
+>                     "FROM closed_trades GROUP BY UPPER(COALESCE(exit_reason,''))"
+288,297c292
+<                     if reason == 'tp':
+<                         exits['tp'] = cnt
+<                     elif reason == 'sl':
+<                         exits['sl'] = cnt
+<                     elif 'scratch' in reason:
+<                         exits['scratch'] += cnt
+<                     elif 'stag' in reason:
+<                         exits['stagnation'] += cnt
+<                     elif 'timeout' in reason:
+<                         exits['timeout'] += cnt
+---
+>                     add_exit(exits, exits_by_reason, reason, int(cnt))  # every reason counted
+324a320
+>                         **describe_trade(side, ep, xp, reason),
+419a416,417
+>             'exit_distribution_by_reason': dict(sorted(exits_by_reason.items())),
+>             'exit_group_labels': group_labels(),
+807c805
+<                         <th>Side</th>
+---
+>                         <th title="LONG vydělává při růstu ceny, SHORT při poklesu">Směr</th>
+809a808
+>                         <th title="Pohyb ceny trhu exit vs. entry; u SHORT je pokles ceny zisk">Pohyb ceny</th>
+812c811
+<                         <th>Exit Reason</th>
+---
+>                         <th>Důvod výstupu</th>
+817c816
+<                     <tr><td colspan="9" style="text-align: center; color: #888;">Loading trades...</td></tr>
+---
+>                     <tr><td colspan="10" style="text-align: center; color: #888;">Loading trades...</td></tr>
+997a997,1002
+>         function escapeHtml(value) {
+>             return String(value === undefined || value === null ? '' : value)
+>                 .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+>                 .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+>         }
+> 
+1001c1006
+<                 tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: #888;">No trades yet</td></tr>';
+---
+>                 tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; color: #888;">No trades yet</td></tr>';
+1028a1034,1046
+>                 // A SHORT profits when the price falls: show the direction and the raw
+>                 // market move next to the trade's own P&L so exit < entry is not confusing.
+>                 // Direction comes only from the API's `direction` (UNKNOWN for legacy rows
+>                 // without a stored side) -- never guessed as LONG.
+>                 const dir = (t.direction || 'UNKNOWN').toUpperCase();
+>                 const dirText = dir === 'SHORT' ? 'SHORT ↓' : dir === 'LONG' ? 'LONG ↑' : '?';
+>                 const dirTitle = t.direction_label || 'Směr nezjištěn';
+>                 const move = (typeof t.price_move_pct === 'number' && isFinite(t.price_move_pct))
+>                     ? t.price_move_pct : null;
+>                 const moveText = move === null ? '—' : `${move >= 0 ? '+' : ''}${move.toFixed(3)}%`;
+>                 const exitText = t.exit_label || t.exit_reason || '—';
+> 
+>                 // DB strings are escaped before they reach innerHTML (text and attributes).
+1030,1032c1048,1050
+<                     <td>${timeStr}</td>
+<                     <td><strong>${t.symbol}</strong></td>
+<                     <td>${t.side || '—'}</td>
+---
+>                     <td>${escapeHtml(timeStr)}</td>
+>                     <td><strong>${escapeHtml(t.symbol)}</strong></td>
+>                     <td title="${escapeHtml(dirTitle)}">${dirText}</td>
+1034a1053
+>                     <td title="Pohyb ceny trhu (exit vs. entry), ne zisk obchodu">${moveText}</td>
+1037c1056
+<                     <td>${t.exit_reason || '—'}</td>
+---
+>                     <td title="${escapeHtml(t.exit_reason || '')}">${escapeHtml(exitText)}</td>
+1081,1082c1100,1107
+<             const reasonTotal = (exits.timeout || 0) + (exits.tp || 0) + (exits.sl || 0)
+<                 + (exits.scratch || 0) + (exits.stagnation || 0);
+---
+>             // Every exit group (exit_taxonomy); the groups add up to exits.total.
+>             const groupLabels = data.exit_group_labels || {};
+>             const groups = [
+>                 ['tp', '#00ff00'], ['sl', '#ff4444'], ['trailing_stop', '#00bfa5'],
+>                 ['signal_exit', '#ffd54f'], ['timeout', '#1e90ff'], ['scratch', '#ffaa00'],
+>                 ['stagnation', '#ff00ff'], ['risk_exit', '#b0bec5'], ['other', '#888888'],
+>             ];
+>             const reasonTotal = groups.reduce((sum, [key]) => sum + (exits[key] || 0), 0);
+1085,1087c1110,1113
+<                 exitLabels = ['Timeout', 'TP', 'SL', 'Scratch', 'Stagnation'];
+<                 exitData = [exits.timeout || 0, exits.tp || 0, exits.sl || 0, exits.scratch || 0, exits.stagnation || 0];
+<                 exitColors = ['#1e90ff', '#00ff00', '#ff4444', '#ffaa00', '#ff00ff'];
+---
+>                 const shown = groups.filter(([key]) => (exits[key] || 0) > 0);
+>                 exitLabels = shown.map(([key]) => `${groupLabels[key] || key} (${exits[key]})`);
+>                 exitData = shown.map(([key]) => exits[key]);
+>                 exitColors = shown.map(([, color]) => color);

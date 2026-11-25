@@ -1,0 +1,81 @@
+33a34
+> from src.services.exit_taxonomy import add_exit, describe_trade, empty_distribution, group_labels
+263c264,268
+<     """COUNT + SUM(pnl_usd) + exit-reason distribution over the full cache."""
+---
+>     """COUNT + SUM(pnl_usd) + exit-reason distribution over the full cache.
+> 
+>     Returns (n, net, exits, exits_by_reason). Every reason is counted (exit_taxonomy);
+>     the groups always add up to exits["total"].
+>     """
+265c270
+<     exits = {"tp": 0, "sl": 0, "scratch": 0, "stagnation": 0, "timeout": 0}
+---
+>     exits, by_reason = empty_distribution(), {}
+267c272
+<         return 0, 0.0, exits
+---
+>         return 0, 0.0, exits, by_reason
+272c277
+<         return 0, 0.0, exits
+---
+>         return 0, 0.0, exits, by_reason
+279,280c284,285
+<             "SELECT LOWER(COALESCE(exit_reason,'')), COUNT(*) "
+<             "FROM closed_trades GROUP BY LOWER(COALESCE(exit_reason,''))"
+---
+>             "SELECT UPPER(COALESCE(exit_reason,'')), COUNT(*) "
+>             "FROM closed_trades GROUP BY UPPER(COALESCE(exit_reason,''))"
+282,292c287,288
+<             if reason == "tp":
+<                 exits["tp"] = cnt
+<             elif reason == "sl":
+<                 exits["sl"] = cnt
+<             elif "scratch" in reason:
+<                 exits["scratch"] += cnt
+<             elif "stag" in reason:
+<                 exits["stagnation"] += cnt
+<             elif "timeout" in reason:
+<                 exits["timeout"] += cnt
+<         return session_n, session_net, exits
+---
+>             add_exit(exits, by_reason, reason, int(cnt))
+>         return session_n, session_net, exits, dict(sorted(by_reason.items()))
+295c291
+<         return 0, 0.0, exits
+---
+>         return 0, 0.0, empty_distribution(), {}
+370a367,369
+>             # Plain-language fields: direction (a SHORT profits when exit < entry),
+>             # the raw market move and a Czech exit label (exit_taxonomy).
+>             **describe_trade(side, ep, xp, r["exit_reason"]),
+394a394
+>         stored_side = parts[2] if len(parts) > 2 and parts[2] else None
+397c397
+<             "side": parts[2] if len(parts) > 2 else "BUY",
+---
+>             "side": stored_side or "BUY",   # documented contract default; `direction` says UNKNOWN
+400a401,403
+>             # Same plain-language fields as the cache path; the rolling window has no prices
+>             # and no exit reason, so the move is null and the reason unknown (review #3).
+>             **describe_trade(stored_side, None, None, None),
+484c487
+<         session_n, session_net, exits = _session_aggregate(errors)
+---
+>         session_n, session_net, exits, exits_by_reason = _session_aggregate(errors)
+548a552,553
+>             "exit_distribution_by_reason": exits_by_reason,
+>             "exit_group_labels": group_labels(),
+647c652,654
+<         "exit_distribution": {"tp": 0, "sl": 0, "scratch": 0, "stagnation": 0, "timeout": 0},
+---
+>         "exit_distribution": empty_distribution(),
+>         "exit_distribution_by_reason": {},
+>         "exit_group_labels": group_labels(),
+682c689,690
+<                "closed_today": 0, "exit_distribution": {}, "available": False,
+---
+>                "closed_today": 0, "exit_distribution": empty_distribution(),
+>                "exit_distribution_by_reason": {}, "available": False,
+699a708
+>         "exit_distribution_by_reason": summary.get("exit_distribution_by_reason", {}),

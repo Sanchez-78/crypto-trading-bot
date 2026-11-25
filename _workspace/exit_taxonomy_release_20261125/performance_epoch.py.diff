@@ -1,0 +1,16 @@
+13a14
+> from src.services.exit_taxonomy import add_exit, empty_distribution
+79c80,81
+<     exits = {"tp": 0, "sl": 0, "scratch": 0, "stagnation": 0, "timeout": 0}
+---
+>     exits = empty_distribution()   # every exit reason counted; groups always add up to n
+>     exits_by_reason: dict = {}
+106,109c108
+<             reason = str(reason or "").lower()
+<             key = "timeout" if "timeout" in reason else "scratch" if "scratch" in reason else "stagnation" if "stag" in reason else reason
+<             if key in exits:
+<                 exits[key] += 1
+---
+>             add_exit(exits, exits_by_reason, reason)
+126a126
+>             "exit_distribution_by_reason": dict(sorted(exits_by_reason.items())),
