@@ -39,6 +39,14 @@ def test_journal_check_fails_closed(stub, expected):
     assert status(f"{stub}; journal_clean_since '2026-11-25 00:00:00 UTC'") == expected
 
 
+def test_grep_error_is_not_a_clean_journal():
+    # review D6: grep status 2 (read error) used to be accepted as "no Traceback"
+    body = "journalctl() { echo ok; }; grep() { return 2; }; journal_clean_since x"
+    assert status(body) == 1
+    assert status("journalctl() { echo ok; }; grep() { return 0; }; journal_clean_since x") == 1
+    assert status("journalctl() { echo ok; }; grep() { return 1; }; journal_clean_since x") == 0
+
+
 def test_the_old_negated_pipeline_really_was_fail_open():
     # Documents the bug the fix removes (Codex repro): both cases counted as "clean".
     assert status("! false | grep -q Traceback") == 0
@@ -160,6 +168,72 @@ def test_rollback_on_a_foreign_live_state_writes_nothing(tmp_path):
     result = run(f"do_rollback '{_backup(tmp_path).as_posix()}' manual 1", live)
     assert result.returncode == 1 and "not the installed postimage" in result.stdout
     assert _hashes(live) == before
+
+
+# ── D7: install only pinned bytes; a bad file never reaches a live path ───────
+
+NO_CHOWN = "chown() { :; }; "   # tests are not root; mode/owner are checked on the server
+
+
+def _artifact(tmp_path: Path, tamper: str | None = None) -> Path:
+    rel = tmp_path / "release"
+    (rel / "postimage").mkdir(parents=True)
+    for p in (REL / "postimage").iterdir():
+        shutil.copyfile(p, rel / "postimage" / p.name)
+    if tamper:
+        (rel / "postimage" / tamper).write_bytes(b"# changed after preflight\n")
+    return rel
+
+
+def test_pin_stage_refuses_an_artifact_changed_after_preflight(tmp_path):
+    good = _artifact(tmp_path / "a")
+    result = run(f"REL='{good.as_posix()}'; s=\"$(pin_stage)\" || exit 9; ls \"$s\"; rm -rf \"$s\"")
+    assert result.returncode == 0 and "exit_taxonomy.py" in result.stdout
+    bad = _artifact(tmp_path / "b", tamper="dashboard_read_model.py")
+    assert status(f"REL='{bad.as_posix()}'; pin_stage") == 1
+
+
+def test_write_file_never_renames_unpinned_bytes(tmp_path):
+    live = _live(tmp_path, "pre")
+    before = _hashes(live)
+    wrong = tmp_path / "wrong.py"
+    wrong.write_bytes(b"# not the postimage\n")
+    target = (live / "src/services/dashboard_web.py").as_posix()
+    body = NO_CHOWN + f"write_file '{wrong.as_posix()}' '{target}' \"${{POST[src/services/dashboard_web.py]}}\""
+    assert status(body, live) == 1
+    assert _hashes(live) == before
+    assert not list((live / "src/services").glob(".*exit-taxonomy*"))   # temp copy removed
+
+
+def test_partial_install_with_a_bad_file_rolls_back_to_pre(tmp_path):
+    # Codex D7 scenario: a file differs after preflight. Install stops before touching that path,
+    # the live tree is a PRE/POST mix, and the automatic rollback restores PRE (not ROLLBACK_FAILED).
+    live = _live(tmp_path, "pre")
+    pre_hashes = _hashes(live)
+    stage = tmp_path / "stage"
+    stage.mkdir()
+    for p in (REL / "postimage").iterdir():
+        shutil.copyfile(p, stage / p.name)
+    (stage / "dashboard_read_model.py").write_bytes(b"# tampered\n")   # third in ORDER
+    backup = _backup(tmp_path)
+    result = run(NO_CHOWN + f"install_files '{stage.as_posix()}'; echo install_rc=$?; "
+                 f"rollback_files '{backup.as_posix()}' auto; echo rollback_rc=$?", live)
+    assert "install_rc=1" in result.stdout
+    assert "rollback_rc=0" in result.stdout, result.stdout
+    assert _hashes(live) == pre_hashes                     # exactly PRE again, new module removed
+
+
+def test_full_install_then_manual_rollback_round_trip(tmp_path):
+    live = _live(tmp_path, "pre")
+    pre_hashes = _hashes(live)
+    stage = tmp_path / "stage"
+    stage.mkdir()
+    for p in (REL / "postimage").iterdir():
+        shutil.copyfile(p, stage / p.name)
+    result = run(NO_CHOWN + f"install_files '{stage.as_posix()}' && rollback_state_ok manual && "
+                 f"rollback_files '{_backup(tmp_path).as_posix()}' manual", live)
+    assert result.returncode == 0, result.stdout
+    assert _hashes(live) == pre_hashes
 
 
 def test_script_parses_and_main_does_not_run_when_sourced():

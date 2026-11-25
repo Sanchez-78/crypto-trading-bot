@@ -68,9 +68,10 @@ journal_clean_since() {   # $1 = "YYYY-mm-dd HH:MM:SS UTC"; fail-closed (review 
   journalctl -u cryptomaster-dashboard --since "$1" --no-pager > "$tmp" 2>/dev/null
   rc=$?
   if [[ $rc -ne 0 || ! -s "$tmp" ]]; then rm -f "$tmp"; return 1; fi   # unreadable or empty = not proven
-  if grep -q 'Traceback' "$tmp"; then rm -f "$tmp"; return 1; fi       # grep on a finished file: no SIGPIPE
-  rm -f "$tmp"
-  return 0
+  grep -q 'Traceback' "$tmp"   # on a finished file: no SIGPIPE
+  rc=$?
+  rm -f "$tmp" || return 1
+  [[ $rc -eq 1 ]]   # ONLY "not found" is clean; 0 = Traceback found, >1 = grep error (review D6)
 }
 
 check_artifact() {
@@ -161,23 +162,49 @@ print("API_SMOKE_OK", mode, m.get("closed_trades"), m.get("exit_distribution"))
 PY
 }
 
-write_file() {   # atomic: temp file in the same directory, mode/owner, rename
-  local src="$1" dst="$2" tmp
-  tmp="$(dirname "$dst")/.$(basename "$dst").exit-taxonomy.$$"
-  cp "$src" "$tmp" && chmod 644 "$tmp" && chown root:root "$tmp" && mv -f "$tmp" "$dst"
+write_file() {   # $1 src, $2 dst, $3 expected SHA-256. Atomic, and the TEMP copy is verified
+  local src="$1" dst="$2" want="$3" tmp   # against the pin before rename: a live path only ever
+  tmp="$(dirname "$dst")/.$(basename "$dst").exit-taxonomy.$$"   # receives PRE or POST bytes (D7)
+  cp "$src" "$tmp" || { rm -f "$tmp"; return 1; }
+  if [[ "$(sha "$tmp")" != "$want" ]]; then rm -f "$tmp"; log "temp copy of $dst != pin, live untouched"; return 1; fi
+  chmod 644 "$tmp" && chown root:root "$tmp" && mv -f "$tmp" "$dst" || { rm -f "$tmp"; return 1; }
 }
 
-do_rollback() {   # $1 = backup dir, $2 = auto|manual, $3 = bot PID before; gates first, then writes
-  local backup="$1" mode="$2" bot_before="$3" rel since pid prof
-  log "ROLLBACK($mode) from $backup"
+pin_stage() {   # private copy of the postimages, verified once; install reads ONLY from it (D7)
+  local stage rel
+  stage="$(mktemp -d)" || return 1
+  chmod 700 "$stage" || { rm -rf "$stage"; return 1; }
+  for rel in "${ORDER[@]}"; do
+    cp "$REL/postimage/$(basename "$rel")" "$stage/$(basename "$rel")" || { rm -rf "$stage"; return 1; }
+    [[ "$(sha "$stage/$(basename "$rel")")" == "${POST[$rel]}" ]] || { rm -rf "$stage"; log "artifact $rel != pin" >&2; return 1; }
+  done
+  echo "$stage"
+}
+
+install_files() {   # $1 = pinned stage; ordered (D1); stops at the first failure
+  local stage="$1" rel
+  for rel in "${ORDER[@]}"; do
+    write_file "$stage/$(basename "$rel")" "$LIVE/$rel" "${POST[$rel]}" || { log "install $rel failed"; return 1; }
+    log "INSTALLED $rel $(sha "$LIVE/$rel")"
+  done
+}
+
+rollback_files() {   # $1 backup, $2 auto|manual: gates first (no write on failure), then restore
+  local backup="$1" mode="$2" rel
   backups_ok "$backup" || return 1                 # nothing written yet
   rollback_state_ok "$mode" || return 1           # nothing written yet
   for rel in "${EXISTING[@]}"; do
-    write_file "$backup/$(basename "$rel")" "$LIVE/$rel" || { log "restore $rel failed"; return 1; }
+    write_file "$backup/$(basename "$rel")" "$LIVE/$rel" "${PRE[$rel]}" || { log "restore $rel failed"; return 1; }
   done
   rm -f "$LIVE/$NEW_MODULE"
   for rel in "${EXISTING[@]}"; do [[ "$(sha "$LIVE/$rel")" == "${PRE[$rel]}" ]] || { log "restored $rel != preimage"; return 1; }; done
   absent "$LIVE/$NEW_MODULE" || { log "new module still present"; return 1; }
+}
+
+do_rollback() {   # $1 = backup dir, $2 = auto|manual, $3 = bot PID before; files, then service checks
+  local backup="$1" mode="$2" bot_before="$3" since pid prof
+  log "ROLLBACK($mode) from $backup"
+  rollback_files "$backup" "$mode" || return 1
   since="$(date -u '+%F %T')"
   restart_and_wait || { log "dashboard not active after rollback"; return 1; }
   sleep 3
@@ -191,7 +218,7 @@ do_rollback() {   # $1 = backup dir, $2 = auto|manual, $3 = bot PID before; gate
 }
 
 main() {
-  local cmd="${1:-}" rel="" failed="" backup="" bot_before="" bot_after="" prof="" since=""
+  local cmd="${1:-}" rel="" failed="" backup="" bot_before="" bot_after="" prof="" since="" stage=""
   [[ $EUID -eq 0 ]] || die "run as root"
   case "$cmd" in
     preflight)
@@ -214,12 +241,11 @@ main() {
       echo "$bot_before" > "$backup/bot_pid_before.txt"
       backups_ok "$backup" || die "backup verification (no write done)"
       log "BACKUP $backup bot_pid=$bot_before profile=$prof"
+      stage="$(pin_stage)" || die "pinned stage (no write done)"
       check_live_pre   # D1: re-check immediately before the first write
       failed=""
-      for rel in "${ORDER[@]}"; do
-        write_file "$REL/postimage/$(basename "$rel")" "$LIVE/$rel" || { failed="write $rel"; break; }
-        log "INSTALLED $rel $(sha "$LIVE/$rel")"
-      done
+      install_files "$stage" || failed="install"
+      rm -rf "$stage"
       if [[ -z "$failed" ]]; then
         for rel in "${ORDER[@]}"; do
           [[ "$(sha "$LIVE/$rel")" == "${POST[$rel]}" && "$(stat -c '%a %U:%G' "$LIVE/$rel")" == "644 root:root" ]] \

@@ -23,8 +23,12 @@ v `/opt/dashboard_venv` (Python 3.12.3) a `/opt/cryptomaster` má jen pro čten�
 ## Přesný postup = `deploy_exit_taxonomy.sh` (re-review D1–D3, 2026-11-25)
 
 Nástroje (LF):
-- `deploy_exit_taxonomy.sh`: `9c399a0f050db9b391b5724cd23430fc84e47263f85d0db23b5f52ecc8a3f6fe`
-  (verze po re-review D4/D5: fail-closed journal, validovaný PID a HTTP kódy, pevný očekávaný
+- `deploy_exit_taxonomy.sh`: `567d7169e48321a202c6044248a37139be1bf51700eb4ee519a0b534360fba62`
+  (verze po re-review D6/D7: journal je čistý jen při statusu `grep` = 1. Instalace jde jen
+  z privátního připnutého stage (`pin_stage`). `write_file` ověří hash dočasné kopie proti pinu před
+  `mv`, takže živá cesta dostane vždy jen PRE nebo POST bajty. Zápisy jsou v `install_files` a
+  `rollback_files`.
+  Předchozí verze po D4/D5: fail-closed journal, validovaný PID a HTTP kódy, pevný očekávaný
   profil 200/200, `absent()` odmítá i visící symlink, rollback nejdřív ověří všechny zálohy a stav
   živých cest. Ruční rollback přijme jen přesnou POST sadu, automatický jen kombinace PRE/POST.
   Testy: `tests/test_deploy_exit_taxonomy_script.py`);
