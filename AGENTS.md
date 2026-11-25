@@ -5,7 +5,10 @@ Komunikace s uživatelem a reporty: **česky**. Identifikátory a kód: anglicky
 
 ## Aktuální zadání
 
-**Otevřené zadání:** žádné. Hotové 2026-11-25: `_workspace/2026-11-25_codex_decide_stonkfly_a2_production_cgroup.md`
+**Otevřené zadání:** `docs/codex_prompts/CODEX_REVIEW_STONKFLY_A2_RESULT_2026-11-25.md` (A2 doběhlo na dočasném
+Hetzner CPX32 jako `MEASURED`, verdikt `INPUT_REACHES_DECODER`; ověř platnost běhu po infrastrukturní chybě pokusu 1, výklad
+a další krok; report `_workspace/2026-11-25_codex_review_stonkfly_a2_result.md`).
+Hotové 2026-11-25: `_workspace/2026-11-25_codex_decide_stonkfly_a2_production_cgroup.md`
 **REJECT** A2 na produkci v cgroup (preflight chce 2,5 GiB, dostupné 2,2 GiB; limit nerezervuje RAM/CPU pro bota). A2 jen na
 izolovaném 8GB Linuxu (nejdřív `--smoke`), jinak odložit a produkci posoudit znovu až po měřicím okně (po 2026-12-02 09:00 UTC).
 Ověřený balíček pro A2: lokálně `C:\Projects\_stonkfly_a2_bundle\` (23/23 hashů dle manifestu). Dřív 2026-11-25: release „exit-taxonomy“ **nasazen 08:10:48 UTC** po APPROVE
