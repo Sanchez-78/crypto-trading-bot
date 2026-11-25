@@ -5,9 +5,10 @@ Komunikace s uživatelem a reporty: **česky**. Identifikátory a kód: anglicky
 
 ## Aktuální zadání
 
-**Otevřené zadání (re-review nasazovacího kroku, 2026-11-25):** `docs/codex_prompts/CODEX_REREVIEW_EXIT_TAXONOMY_DEPLOY_STEP_2026-11-25.md`
-→ `_workspace/2026-11-25_codex_rereview_exit_taxonomy_deploy_step.md` (D1–D3: `deploy_exit_taxonomy.sh` + `verify_staging.py`,
-preflight na serveru OK). Hotové: `_workspace/2026-11-25_codex_rereview_exit_taxonomy.md` (kód + postimage schváleny,
+**Otevřené zadání (cílené re-review skriptu, 2026-11-25):** `docs/codex_prompts/CODEX_REREVIEW_EXIT_TAXONOMY_DEPLOY_D4_D5_2026-11-25.md`
+→ `_workspace/2026-11-25_codex_rereview_exit_taxonomy_d4_d5.md` (D4 journal fail-closed, D5 PID/profil, symlink, částečný rollback;
+testy `tests/test_deploy_exit_taxonomy_script.py`). Hotové: `_workspace/2026-11-25_codex_rereview_exit_taxonomy_deploy_step.md`
+(CHANGES_REQUIRED → opraveno); `_workspace/2026-11-25_codex_rereview_exit_taxonomy.md` (kód + postimage schváleny,
 postup CHANGES_REQUIRED → opraveno); `_workspace/2026-11-24_codex_review_exit_taxonomy_and_threshold.md`
 (A CHANGES_REQUIRED → opraveno; B práh −25 bps ponechat, okno zapsané v OPERATING_STATE). Dřív 2026-11-24: `_workspace/2026-11-24_codex_rereview_stonkfly_a2_r1_r3.md` **APPROVE**
 protokolu A2 pro jeden baseline běh na dočasném izolovaném stroji (nejdřív `--smoke` = `SMOKE_OK`; závěr jen z `MEASURED`

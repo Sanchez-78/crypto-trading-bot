@@ -23,7 +23,11 @@ v `/opt/dashboard_venv` (Python 3.12.3) a `/opt/cryptomaster` má jen pro čten�
 ## Přesný postup = `deploy_exit_taxonomy.sh` (re-review D1–D3, 2026-11-25)
 
 Nástroje (LF):
-- `deploy_exit_taxonomy.sh`: `9ef226d008241eef3bcf0248fe9bcc295b9a38dd08cd7af5ae5a3db98da8f0c4`;
+- `deploy_exit_taxonomy.sh`: `9c399a0f050db9b391b5724cd23430fc84e47263f85d0db23b5f52ecc8a3f6fe`
+  (verze po re-review D4/D5: fail-closed journal, validovaný PID a HTTP kódy, pevný očekávaný
+  profil 200/200, `absent()` odmítá i visící symlink, rollback nejdřív ověří všechny zálohy a stav
+  živých cest. Ruční rollback přijme jen přesnou POST sadu, automatický jen kombinace PRE/POST.
+  Testy: `tests/test_deploy_exit_taxonomy_script.py`);
 - `verify_staging.py`: `bb6185e7b1fdc89879b960b8a181464b0f92def5911ee6b686184c7c7f0f8a10`.
 
 Na serveru jsou nahrané v `/root/exit-taxonomy-20261125/` (+ `postimage/`) a spouští se jako root
