@@ -79,3 +79,26 @@ nasazuje jen po rozhodnutí operátora a review Codexu.
 **Závěr beze změny:** žádný filtr současných signálů nevede ke kladnému P/L. Výběr může snížit
 ztrátu na obchod, ne ji otočit. Ke kladnému P/L je potřeba nový zdroj signálu s hrubým pohybem
 > 9 bps, nikoli ladění prahů.
+
+## Pomohlo by, kdyby Stonkfly ovlivňoval obchody? (2026-11-26, offline, post hoc)
+
+Operátor povolil, aby Stonkfly ovlivňoval obchody, pokud to pomůže. Test offline:
+- **Data:** BTC obchody 13. 10. – 25. 11. 00:00 UTC (před oknem). Ke každému obchodu poslední
+  pozorování Stonkfly do 6 min před vstupem (`c1_rows_20261126.jsonl`). Spárováno 668 z 983 obchodů.
+- **Měřítko:** průměr net bps, 95% CI bootstrapem přes dny.
+
+| výběr | n | bps [CI] | WR |
+|---|---:|---|---:|
+| všechny spárované | 668 | −7,01 [−8,69; −5,38] | 33,2 % |
+| strana souhlasí s RD | 139 | −5,82 [−8,82; −2,66] | 27,3 % |
+| strana proti RD | 100 | −8,25 [−12,09; −4,33] | 36,0 % |
+| strana souhlasí s D − 15 Hz | 430 | −6,30 [−8,11; −4,29] | 34,2 % |
+| strana proti D − 15 Hz | 238 | −8,29 [−10,68; −6,12] | 31,5 % |
+| jen BUY (= label Stonkfly) | 274 | −8,72 [−10,91; −6,24] | 29,9 % |
+| jen SELL | 394 | −5,82 [−8,77; −3,05] | 35,5 % |
+
+- Rozdíly jsou 1–2 bps a intervaly se překrývají. Výběr je post hoc z více variant.
+- Řídit se labelem Stonkfly (BUY) je horší než opak.
+- Žádná varianta není kladná.
+
+**Rozhodnutí:** vliv Stonkfly na obchody se nezapíná. Nepomohl by a zkreslil by měřicí okno.
