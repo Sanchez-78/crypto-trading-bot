@@ -56,3 +56,26 @@ Měřený WR neklesá. P/L klesá, protože signály nemají edge nad náklady 9
 pouští záporně modelované kandidáty. Rychlá oprava, která by z toho udělala zisk, v datech není.
 Jediná podložená páka je práh průzkumu: méně ztráty a vyšší WR za cenu objemu učení. Změna se
 nasazuje jen po rozhodnutí operátora a review Codexu.
+
+## Aktualizace 2026-11-26 ~08:45 UTC (jen čtení)
+
+- **Epocha `17b9bb8a…`:** n = 913, WR 29,7 % (271 výher, 511 ztrát, 131 nul), PF 0,50, průměr ≈ −8,3 bps
+  na obchod. Posledních 100 obchodů: WR 20 %, PF 0,31.
+- **12h okna** (n ≈ 160): WR 33,9 / 31,0 / 25,6 / 23,1 / 39,5 / 20,6 %, průměr vždy −3 až −12 bps.
+  - Kolísá to kolem ~30 %. Při n ≈ 160 je směrodatná chyba ~3,6 p. b.
+  - Na trvalý pád to nevypadá, ale poslední okno je dole.
+- **Hrubý pohyb ≈ 0:** průměr net −8,3 bps + náklad 9 bps ≈ +0,7 bps hrubě.
+  - Při TP 35 / SL 25 a nákladu 9 bps je potřeba WR ~57 %.
+  - Ani obrácení směru by nepomohlo: hrubě −0,7, net −9,7.
+- **Segmenty před T0** (30 dní, n = 4 699, profil × režim × strana, n ≥ 60):
+  - **žádný segment nemá kladný průměr**;
+  - nejlepší je `dynamic_breakout_exit_v1` / SIDEWAYS / BUY: −2,70 bps (n 128, WR 41 %);
+  - nejhorší jsou `dynamic_trend_exit_v1` / BULL / BUY −10,5 bps (n 1 432) a
+    `mean_reversion_exit_v1` / SIDEWAYS / BUY −11,5 bps;
+  - po symbolech −7,8 až −11,5 bps.
+- **Hodnocené okno:** během předem zapsaného okna (do 2026-12-02 09:00 UTC) se úrovně prahů
+  průzkumu na datech okna záměrně nepočítaly.
+
+**Závěr beze změny:** žádný filtr současných signálů nevede ke kladnému P/L. Výběr může snížit
+ztrátu na obchod, ne ji otočit. Ke kladnému P/L je potřeba nový zdroj signálu s hrubým pohybem
+> 9 bps, nikoli ladění prahů.
