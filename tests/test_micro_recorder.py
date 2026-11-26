@@ -105,21 +105,44 @@ def test_buffer_cap_drops_and_records_a_gap(tmp_path, monkeypatch):
         rec.on_liquidation({"E": T * 1000 + k, "o": {"s": "BTCUSDT", "S": "BUY", "o": "LIMIT", "X": "FILLED",
                                                     "p": "1", "ap": "1", "q": "1", "z": "1", "T": 1}})
     rec.flush()
-    assert len(read_rows(next((tmp_path / "liq").glob("*.csv.gz")))) == 2
+    assert len(read_rows(next((tmp_path / "liq_sampled").glob("*.csv.gz")))) == 2
     gaps = read_rows(next((tmp_path / "gaps").glob("*.csv.gz")))
     assert gaps[-1]["kind"] == "dropped_rows" and gaps[-1]["detail"] == "3"
 
 
-def test_low_disk_skips_writes_and_logs_rate_limited(tmp_path, monkeypatch):
+def test_low_disk_drops_data_but_records_the_loss_window_on_recovery(tmp_path, monkeypatch):
     logs = []
     clock = Clock(T + 100)
     rec = m.Recorder(tmp_path, clock=clock, log=logs.append)
-    monkeypatch.setattr(m.shutil, "disk_usage", lambda _p: type("U", (), {"free": m.MIN_FREE_BYTES - 1})())
-    for k in range(3):
-        rec.gap("connect")
+    free = {"v": m.MIN_FREE_BYTES - 1}
+    monkeypatch.setattr(m.shutil, "disk_usage", lambda _p: type("U", (), {"free": free["v"]})())
+    rec.gap("connect")
+    for k in range(3):                                   # three flushes while the disk is low
+        rec.on_depth("btcusdt", depth((T + 10 * k) * 1000 + 5))
+        rec.on_liquidation({"E": (T + 10 * k) * 1000, "o": {"s": "BTCUSDT", "S": "BUY", "o": "LIMIT", "X": "FILLED",
+                                                           "p": "1", "ap": "1", "q": "1", "z": "1", "T": 1}})
+        clock.t = T + 10 * k + 1
         rec.flush()
     assert not any(tmp_path.glob("*/*.csv.gz"))
-    assert rec.skipped_disk == 3 and len(logs) == 1             # one log line per LOG_EVERY_S
+    assert rec.skipped_disk == 6 and len(logs) == 1     # one log line per LOG_EVERY_S
+    free["v"] = m.MIN_FREE_BYTES + 1                     # disk recovered
+    clock.t = T + 100
+    rec.flush()
+    gaps = read_rows(next((tmp_path / "gaps").glob("*.csv.gz")))
+    skip = [g for g in gaps if g["kind"] == "disk_skip"]
+    assert len(skip) == 1
+    detail = json.loads(skip[0]["detail"])
+    assert detail == {"from_ms": T * 1000, "to_ms": (T + 20) * 1000, "rows": {"book": 3, "liq_sampled": 3}}
+    assert any(g["kind"] == "connect" for g in gaps)     # gap markers survived the low-disk period
+    assert not (tmp_path / "book").exists()              # dropped data is not resurrected
+    assert rec.loss is None
+
+
+def test_low_disk_without_data_opens_no_loss_window(tmp_path, monkeypatch):
+    rec = m.Recorder(tmp_path, clock=Clock(T + 100))
+    monkeypatch.setattr(m.shutil, "disk_usage", lambda _p: type("U", (), {"free": 0})())
+    rec.flush()
+    assert rec.loss is None
 
 
 def test_prune_by_age_then_by_total_size_but_never_today(tmp_path, monkeypatch):
@@ -129,14 +152,14 @@ def test_prune_by_age_then_by_total_size_but_never_today(tmp_path, monkeypatch):
     old = time.strftime("%Y-%m-%d", time.gmtime(T - (m.RETENTION_DAYS + 1) * 86400))
     mid1 = time.strftime("%Y-%m-%d", time.gmtime(T - 10 * 86400))
     mid2 = time.strftime("%Y-%m-%d", time.gmtime(T - 5 * 86400))
-    for kind, day, size in (("book", old, 10), ("book", mid1, 100), ("liq", mid2, 100), ("book", today, 100)):
+    for kind, day, size in (("book", old, 10), ("book", mid1, 100), ("liq_sampled", mid2, 100), ("book", today, 100)):
         p = tmp_path / kind / f"{day}.csv.gz"
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_bytes(b"x" * size)
     monkeypatch.setattr(m, "MAX_TOTAL_BYTES", 250)
     removed = {p.name for p in rec.prune()}
     assert removed == {f"{old}.csv.gz", f"{mid1}.csv.gz"}
-    assert (tmp_path / "book" / f"{today}.csv.gz").exists() and (tmp_path / "liq" / f"{mid2}.csv.gz").exists()
+    assert (tmp_path / "book" / f"{today}.csv.gz").exists() and (tmp_path / "liq_sampled" / f"{mid2}.csv.gz").exists()
 
 
 def test_dispatch_routes_streams_and_ignores_unknown(tmp_path):
@@ -146,7 +169,7 @@ def test_dispatch_routes_streams_and_ignores_unknown(tmp_path):
     rec.dispatch("not json")
     rec.dispatch(json.dumps({"stream": "xrpusdt@forceOrder", "data": {"E": T * 1000, "o": {
         "s": "XRPUSDT", "S": "SELL", "o": "LIMIT", "X": "FILLED", "p": "1", "ap": "1", "q": "5", "z": "5", "T": 1}}}))
-    assert list(rec.pending) == ["xrpusdt"] and len(rec.buffers["liq"]) == 1
+    assert list(rec.pending) == ["xrpusdt"] and len(rec.buffers["liq_sampled"]) == 1
     url = m.stream_url()
     assert url.startswith("wss://fstream.binance.com/stream?streams=") and url.count("@depth20@500ms") == 7
     assert url.count("@forceOrder") == 7

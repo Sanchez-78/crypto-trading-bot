@@ -1,4 +1,11 @@
-# Sběrač order booku a likvidací pro výzkum: návrh a limity (Claude, 2026-11-26)
+# Sběrač order booku a likvidací pro výzkum: návrh a limity (Claude, 2026-11-26, rev. 2)
+
+Rev. 2 zapracovává review `_workspace/2026-11-26_codex_review_micro_recorder_design.md`:
+- likvidace jsou jen vzorek, výstup se jmenuje `liq_sampled`;
+- ztráta dat při nedostatku disku se zapíše do `gaps`;
+- vypnutí tick-recorderu je samostatná fáze a log se nemaže;
+- `aggTrade` se nepřidává;
+- přidán připnutý fázovaný nasazovací skript.
 
 Krok 2 z doporučení C (Codex `_workspace/2026-11-26_codex_review_event_screen_result.md` a následná
 zpráva):
@@ -39,8 +46,8 @@ ADA, BNB, DOT, XRP (USDT perp).
 | stream | výstup | řádek |
 |---|---|---|
 | `<sym>@depth20@500ms` | `book/YYYY-MM-DD.csv.gz` | 1 na symbol a sekundu (poslední snímek dané sekundy) |
-| `<sym>@forceOrder` | `liq/YYYY-MM-DD.csv.gz` | 1 na likvidaci |
-| — | `gaps/YYYY-MM-DD.csv.gz` | connect, disconnect, `dropped_rows` (výzkum vyloučí sekundy v mezerách) |
+| `<sym>@forceOrder` | `liq_sampled/YYYY-MM-DD.csv.gz` | 1 na **přijatou** událost. Binance posílá nejvýš 1 událost na symbol za 1000 ms (od 2026-04 tu největší v intervalu), takže **nejde o všechny likvidace**, jen o vzorkovaný proxy signál. |
+| — | `gaps/YYYY-MM-DD.csv.gz` | `start` (pid), `connect`, `disconnect`, `dropped_rows`, `disk_skip`. Výzkum vyloučí sekundy v mezerách. |
 
 **Pole order booku:**
 - `ts_s`, `event_ms`, `updates` (počet snímků v sekundě);
@@ -49,7 +56,12 @@ ADA, BNB, DOT, XRP (USDT perp).
 - `bid_range_bps` a `ask_range_bps` (kam 20 úrovní sahá, tedy pokrytí pásem);
 - `imbalance_10bps`.
 
-Prázdná nebo překřížená kniha se nezapíše. Neplatná čísla se zahodí.
+Jde o částečné snímky top 20 úrovní (`depth20`), ne o rekonstruovanou úplnou knihu. Prázdná nebo překřížená kniha se nezapíše. Neplatná čísla se zahodí.
+
+**Evidence výpadků:**
+- Chyba zápisu vede na exit 3 a restart. Díra v datech pak končí řádkem `start`, další stopa je v journald.
+- Při restartu během nedostatku disku se okno ztráty v paměti ztratí. Díra je ale vidět jako chybějící sekundy mezi posledním řádkem a `start` a v journald (rate-limited hláška).
+- Neúplný poslední gzip člen po pádu musí čtečka tolerovat (číst po členech a zachytit `EOFError`).
 
 **Pole likvidací:** čas, symbol, strana, typ, stav, cena, průměrná cena, množství, plněno,
 notional.
@@ -62,7 +74,7 @@ notional.
 | CPU | `CPUQuota=20%`, `Nice=10`, `IOSchedulingClass=idle`, `TasksMax=16` | unit |
 | buffer | max 50 000 řádků na druh mezi flushi. Nadbytek se zahodí a zapíše jako `dropped_rows`. | `MAX_BUFFER` |
 | zápis | flush 1× za 60 s (jeden gzip člen + `fsync`). Chyba zápisu → exit 3 → systemd restart (max 10 za 10 min). | `FLUSH_SECONDS`, `run()` |
-| disk | při volném místě < 5 GiB se nezapisuje (počítá se `skipped_disk`, log max 1× za 5 min) | `MIN_FREE_BYTES` |
+| disk | při volném místě < 5 GiB se **datové** řádky nezapisují. Ztráta se drží jako okno (`from_ms`, `to_ms`, počty řádků podle druhu). Po obnovení zápisu jde do `gaps` jeden řádek `disk_skip`. Značky mezer se mezitím drží v bufferu (strop 50 000) a zapíšou se. Log max 1× za 5 min. | `MIN_FREE_BYTES`, `flush()` |
 | retence | soubory > 120 dní a nad 4 GiB celkem se mažou od nejstarších (nikdy dnešní). Kontrola 1× za hodinu. | `prune()` |
 | logy | jen journald, rate-limit (aplikace 1 řádek za 5 min na druh chyby, journald 20 za 60 s). Žádný `/tmp` log. | unit, `_rate_log` |
 | izolace | `DynamicUser`, `StateDirectory=cryptomaster-micro`, `ProtectSystem=strict`, `ProtectHome`, `PrivateTmp`, `NoNewPrivileges`, `RestrictAddressFamilies` | unit |
@@ -87,38 +99,70 @@ Server má dnes `available` ~2,2 GB a 15 GB volného disku. Po vypnutí tick-rec
   mimo strom bota.
 - Závislosti: stdlib a `websocket-client` 1.9.0, který je už v systémovém `/usr/bin/python3`
   (ověřeno čtením).
-- Testy: `tests/test_micro_recorder.py` (9 testů), bez sítě:
+- Testy: `tests/test_micro_recorder.py` (10 testů), bez sítě:
   - výpočet pásem, nerovnováhy a pokrytí;
   - parsování likvidací;
   - 1 řádek za sekundu s posledním snímkem a počtem aktualizací;
   - neuzavření běžící sekundy;
   - jedna hlavička přes víc gzip členů;
   - strop bufferu a záznam do `gaps`;
-  - disková pojistka a rate-limit logu;
+  - disková pojistka: okno ztráty `disk_skip` zapsané po obnovení, značky mezer přežijí,
+    zahozená data se neobnoví, rate-limit logu;
+  - bez dat se okno ztráty neotevře;
   - retence podle stáří a velikosti, nikdy dnešní soubor;
   - směrování streamů.
 - Unit: `_workspace/micro_recorder_release/cryptomaster-micro-recorder.service`.
 
-## Postup nasazení (až po APPROVE)
+## Postup nasazení (až po APPROVE): `_workspace/micro_recorder_release/deploy_micro_recorder.sh`
 
-1. Ověřit hashe skriptu a unitu na serveru. `python3 -I -c "import websocket"`.
-2. Nainstalovat `/opt/cryptomaster-micro/micro_recorder.py` (root:root 0644) a unit do
-   `/etc/systemd/system/`, pak `daemon-reload`.
-3. `systemctl disable --now tick-recorder.service` a `rm /tmp/tick_recorder.log`.
-   Ověřit uvolnění 1,27 GB (`df`).
-4. `systemctl enable --now cryptomaster-micro-recorder.service`.
-5. **Kontrola po 10 min:**
-   - `is-active`;
-   - RSS < 128 MB (`systemctl show -p MemoryCurrent`);
-   - soubory v `/var/lib/cryptomaster-micro/{book,gaps}`;
-   - čitelné řádky;
-   - žádné chyby v journalu;
-   - PID `cryptomaster.service` beze změny;
-   - dashboard 200.
-6. **Kontrola po 24 h:** velikost za den, počet `dropped_rows` a mezer.
-7. **Rollback:** `systemctl disable --now cryptomaster-micro-recorder` a smazat unit a
-   `/opt/cryptomaster-micro`. Data ve `/var/lib/cryptomaster-micro` lze smazat. Tick-recorder se
-   **neobnovuje**, protože byl nefunkční.
+Skript má připnuté hashe `micro_recorder.py` a unitu. Fáze se spouštějí odděleně a každá končí
+značkou OK nebo `FAIL`.
+
+1. **`stop-tick`** (samostatná fáze, nezávislá na instalaci):
+   - forenzní záznam do `/root/tick-recorder-forensics-<UTC>/` (`umask 077`):
+     - stav služby a držený smazaný inode;
+     - velikost, SHA-256 a počet chyb logu;
+     - prvních 50 a posledních 200 řádků;
+     - gzip kopie logu;
+   - `systemctl disable --now tick-recorder.service`;
+   - kontroly: neaktivní, PID bota beze změny, volné místo před a po, **log zůstává na místě**;
+   - smazání logu není součástí žádné fáze.
+2. **`preflight`** (jen čtení):
+   - piny release souborů;
+   - `python3 -I -c "import websocket"` a `py_compile`;
+   - cílový unit i skript ještě neexistují;
+   - volný disk ≥ 6 GiB a `MemAvailable` ≥ 1 GiB;
+   - platný PID bota.
+3. **`install`:** preflight a poté:
+   - cílová cesta dostane jen připnuté bajty (dočasná kopie, ověření pinu, `chmod`, `chown`, `mv`);
+   - `daemon-reload`, `systemd-analyze verify`, `enable --now`;
+   - po 120 s kontroly:
+     - `is-active`;
+     - `MemoryCurrent` < 128 MiB;
+     - journal bez `Traceback` a `write failed`;
+     - existuje soubor `gaps`;
+     - PID bota beze změny;
+     - dashboard 200.
+   - **Každý nenulový exit po prvním zápisu** spustí automatický rollback (trap EXIT).
+4. **`verify`** (po 10 min a po 24 h): kontroly z bodu 3, čitelné řádky `book` a `gaps`, `du`.
+5. **`rollback`:**
+   - `disable --now`;
+   - smaže **jen soubory s připnutým hashem** (cizí soubor nechá a vypíše varování);
+   - `daemon-reload`;
+   - data ve `/var/lib/cryptomaster-micro` zůstávají;
+   - tick-recorder se neobnovuje, protože byl nefunkční.
+
+Testy skriptu: `tests/test_deploy_micro_recorder_script.py` (9 testů, bash s nahrazenými
+`systemctl`, `curl`, `df`, `journalctl`):
+- piny odpovídají release souborům;
+- preflight odmítne změněný skript;
+- úspěšná instalace;
+- rollback při 4 typech selhání kontrol (neaktivní, paměť, journal, HTTP);
+- rollback nechá cizí unit;
+- `stop-tick` archivuje forenziku a log nechá beze změny.
+
+Mutace „rollback vypnutý“ zachytí 4 testy. Testy sběrače: `tests/test_micro_recorder.py` (10 testů,
+včetně okna ztráty při nedostatku disku).
 
 Bot (`cryptomaster.service`) se nerestartuje a jeho nastavení se nemění. Měřicí okno to
 neovlivní: jiný proces, nízká priorita, žádné sdílené soubory.
@@ -126,6 +170,5 @@ neovlivní: jiný proces, nízká priorita, žádné sdílené soubory.
 ## Otázky na review
 
 1. Jsou limity a izolace dostatečné pro 4GB produkci?
-2. Smí se v rámci tohoto nasazení vypnout nefunkční `tick-recorder` a smazat jeho log?
-3. Stačí sběr 1× za sekundu z `depth20@500ms`, nebo přidat i `aggTrade` (podepsaný objem po
-   sekundách) jako další informační třídu? Ta by přidala objem dat.
+2. Je fáze `stop-tick` (forenzika, vypnutí, log zůstává) přijatelná jako samostatný krok?
+3. `aggTrade` se podle review nepřidává. Případně až samostatně po změření provozu.

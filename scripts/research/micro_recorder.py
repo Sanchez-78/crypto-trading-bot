@@ -3,13 +3,17 @@
 
 Design + limits: _workspace/2026-11-26_micro_recorder_design.md. Stdlib + websocket-client only.
 
-Streams (one combined connection): <sym>@depth20@500ms (partial book snapshots) and <sym>@forceOrder.
+Streams (one combined connection): <sym>@depth20@500ms (PARTIAL top-20 snapshots, not a reconstructed full book)
+and <sym>@forceOrder. Binance publishes at most ONE liquidation per symbol per 1000 ms (since 2026-04 the
+largest in the interval), so the liquidation output is a SAMPLED proxy, never the complete set of liquidations.
 Outputs under --out (a systemd StateDirectory), one gzip member appended per flush:
-  book/YYYY-MM-DD.csv.gz  one row per symbol per second (last snapshot of that second, derived features)
-  liq/YYYY-MM-DD.csv.gz   one row per liquidation event
-  gaps/YYYY-MM-DD.csv.gz  connect / disconnect / dropped-row markers (research must exclude gap seconds)
-Guards: bounded buffers (rows dropped and counted beyond MAX_BUFFER), no write when free disk < MIN_FREE_BYTES,
-retention (files older than RETENTION_DAYS or beyond MAX_TOTAL_BYTES are pruned oldest first), rate-limited logs.
+  book/YYYY-MM-DD.csv.gz         one row per symbol per second (last snapshot of that second, derived features)
+  liq_sampled/YYYY-MM-DD.csv.gz  one row per received forceOrder event (sampled upstream, see above)
+  gaps/YYYY-MM-DD.csv.gz         start / connect / disconnect / dropped_rows / disk_skip markers
+Guards: bounded buffers (rows dropped and recorded as dropped_rows beyond MAX_BUFFER); data rows not written when
+free disk < MIN_FREE_BYTES, the loss window (from/to ms, rows per kind) recorded as a disk_skip gap row on
+recovery; retention (files older than RETENTION_DAYS or beyond MAX_TOTAL_BYTES pruned oldest first, never
+today); rate-limited logs. A write error exits (systemd restart); the hole then ends at the next 'start' marker.
 """
 from __future__ import annotations
 
@@ -97,9 +101,10 @@ class Recorder:
         self.out, self.clock, self.log = Path(out), clock, log
         self.lock = threading.Lock()
         self.pending: dict[str, tuple] = {}      # symbol -> (ts_s, event_ms, updates, bids, asks)
-        self.buffers: dict[str, list[dict]] = {"book": [], "liq": [], "gaps": []}
+        self.buffers: dict[str, list[dict]] = {"book": [], "liq_sampled": [], "gaps": []}
         self.dropped = 0
         self.skipped_disk = 0
+        self.loss: dict | None = None            # open low-disk loss window, written as a gap row on recovery
         self._last_log: dict[str, float] = {}
 
     def _rate_log(self, key: str, message: str) -> None:
@@ -135,7 +140,7 @@ class Recorder:
         row = liquidation_row(payload)
         if row is not None:
             with self.lock:
-                self._append("liq", row)
+                self._append("liq_sampled", row)
 
     def gap(self, kind: str, detail: str = "") -> None:
         with self.lock:
@@ -152,24 +157,48 @@ class Recorder:
                 self.buffers["gaps"].append({"ts_ms": now_s * 1000, "kind": "dropped_rows", "detail": str(self.dropped)})
                 self.dropped = 0
             batches = {k: v for k, v in self.buffers.items() if v}
-            self.buffers = {"book": [], "liq": [], "gaps": []}
-        if not batches:
-            return
+            self.buffers = {"book": [], "liq_sampled": [], "gaps": []}
         self.out.mkdir(parents=True, exist_ok=True)
         free = shutil.disk_usage(self.out).free
         if free < MIN_FREE_BYTES:
-            self.skipped_disk += sum(len(v) for v in batches.values())
-            self._rate_log("disk", f"[MICRO] free disk {free} < {MIN_FREE_BYTES}: not writing "
+            # Data rows are dropped, but the loss is kept as a window (first/last ms, rows per kind) and written
+            # to gaps/ as one 'disk_skip' row as soon as writing resumes. Gap markers themselves are kept
+            # (re-queued, bounded by MAX_BUFFER) so connect/disconnect evidence is not lost either.
+            data = {k: v for k, v in batches.items() if k != "gaps"}
+            if data:
+                stamps = [self._row_ms(k, r) for k, rows in data.items() for r in rows]
+                loss = self.loss or {"from_ms": min(stamps), "to_ms": max(stamps), "rows": {}}
+                loss["from_ms"], loss["to_ms"] = min(loss["from_ms"], *stamps), max(loss["to_ms"], *stamps)
+                for k, rows in data.items():
+                    loss["rows"][k] = loss["rows"].get(k, 0) + len(rows)
+                self.loss = loss
+            with self.lock:
+                for row in batches.get("gaps", []):
+                    self._append("gaps", row)
+            self.skipped_disk += sum(len(v) for v in data.values())
+            self._rate_log("disk", f"[MICRO] free disk {free} < {MIN_FREE_BYTES}: not writing data "
                                    f"(skipped rows so far {self.skipped_disk})")
             return
+        if self.loss is not None:
+            batches.setdefault("gaps", []).insert(0, {"ts_ms": now_s * 1000, "kind": "disk_skip",
+                                                      "detail": json.dumps(self.loss, sort_keys=True)})
+            self.loss = None
+        if not batches:
+            return
         for kind, rows in batches.items():
-            fields = {"book": BOOK_FIELDS, "liq": LIQ_FIELDS, "gaps": GAP_FIELDS}[kind]
+            fields = {"book": BOOK_FIELDS, "liq_sampled": LIQ_FIELDS, "gaps": GAP_FIELDS}[kind]
             by_day: dict[str, list[dict]] = {}
             for row in rows:
-                ms = row.get("ts_s", 0) * 1000 if kind == "book" else row.get("event_ms" if kind == "liq" else "ts_ms", 0)
+                ms = self._row_ms(kind, row)
                 by_day.setdefault(time.strftime("%Y-%m-%d", time.gmtime(ms / 1000)), []).append(row)
             for day, day_rows in by_day.items():
                 self._write(self.out / kind / f"{day}.csv.gz", fields, day_rows)
+
+    @staticmethod
+    def _row_ms(kind: str, row: dict) -> int:
+        if kind == "book":
+            return int(row.get("ts_s", 0)) * 1000
+        return int(row.get("event_ms" if kind == "liq_sampled" else "ts_ms", 0))
 
     @staticmethod
     def _write(path: Path, fields: list[str], rows: list[dict]) -> None:
@@ -242,6 +271,7 @@ def run(out: Path) -> int:  # pragma: no cover - network loop, exercised on the 
                 rec.log(f"[MICRO] write failed, exiting for a systemd restart: {exc!r}")
                 os._exit(3)
     threading.Thread(target=flusher, daemon=True).start()
+    rec.gap("start", f"pid={os.getpid()}")      # after a crash/restart the hole ends at this marker
     backoff = 1
     while True:
         rec.gap("connect")
