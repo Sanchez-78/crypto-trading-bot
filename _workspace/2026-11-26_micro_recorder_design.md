@@ -1,4 +1,4 @@
-# Sběrač order booku a likvidací pro výzkum: návrh a limity (Claude, 2026-11-26, rev. 2)
+# Sběrač order booku a likvidací pro výzkum: návrh a limity (Claude, 2026-11-26, rev. 3)
 
 Rev. 2 zapracovává review `_workspace/2026-11-26_codex_review_micro_recorder_design.md`:
 - likvidace jsou jen vzorek, výstup se jmenuje `liq_sampled`;
@@ -6,6 +6,18 @@ Rev. 2 zapracovává review `_workspace/2026-11-26_codex_review_micro_recorder_d
 - vypnutí tick-recorderu je samostatná fáze a log se nemaže;
 - `aggTrade` se nepřidává;
 - přidán připnutý fázovaný nasazovací skript.
+
+Rev. 3 zapracovává re-review `_workspace/2026-11-26_codex_rereview_micro_recorder_r2.md`:
+- `stop-tick` vypne službu jen v přesně ověřeném rozbitém stavu: unit `active`, platný MainPID, cmdline obsahuje `tick_recorder.py` a některý FD odkazuje přesně na `…/tick_l1.sqlite (deleted)`. Jinak skončí `FAIL` bez `disable` a bez forenziky.
+- Cesty a interpret jsou v produkci pevné. Proměnné `UNIT_DIR`, `APP_DIR`, `DATA_DIR`, `PY`, `MEMINFO`, `TICK_LOG`, `FORENSICS_ROOT`, `CHECK_WAIT` a `PROC_ROOT` se přijmou jen s `MICRO_DEPLOY_TEST_MODE=1`, jinak `FAIL`. Preflight navíc ověří, že unit má přesně `ExecStart=/usr/bin/python3 -I /opt/cryptomaster-micro/micro_recorder.py --out /var/lib/cryptomaster-micro` a `StateDirectory=cryptomaster-micro`.
+- Preflight nic nezapisuje: kontrola syntaxe přes `compile()` v paměti s `-B`, bez `py_compile` a `__pycache__`.
+- `place()` při chybě `cp`, `chmod`, `chown`, pinu nebo `mv` smaže dočasný soubor. Rollback navíc uklidí `.micro.*` v cílových adresářích.
+- Nové testy:
+  - `stop-tick` odmítne neaktivní službu, cizí proces a opravenou (nesmazanou) DB;
+  - produkční režim odmítne přepsání cest;
+  - preflight nic nezapíše;
+  - rollback a úklid při selhání `systemd-analyze verify`, `enable --now` (služba běží, enable selže) a `chown`.
+- Celkem 17 testů skriptu. Mutace (vypnutá kontrola cmdline, návrat `py_compile`, vypnutá kontrola přepsání) zachytí vždy aspoň 1 test.
 
 Krok 2 z doporučení C (Codex `_workspace/2026-11-26_codex_review_event_screen_result.md` a následná
 zpráva):
@@ -152,7 +164,7 @@ značkou OK nebo `FAIL`.
    - data ve `/var/lib/cryptomaster-micro` zůstávají;
    - tick-recorder se neobnovuje, protože byl nefunkční.
 
-Testy skriptu: `tests/test_deploy_micro_recorder_script.py` (9 testů, bash s nahrazenými
+Testy skriptu: `tests/test_deploy_micro_recorder_script.py` (17 testů, bash s nahrazenými
 `systemctl`, `curl`, `df`, `journalctl`):
 - piny odpovídají release souborům;
 - preflight odmítne změněný skript;

@@ -13,19 +13,34 @@ SCRIPT_SHA="252dd1f73d16c5f4c1de551fae3939e69b06ae39b6ac6aecb858c3f042fd1172"
 UNIT_SHA="35b35cc039cdb7e1fb007548bfa2f75f4e35f5e366ea419fe2eb20ff9f40d0a8"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 UNIT=cryptomaster-micro-recorder.service
-UNIT_PATH="${UNIT_DIR:-/etc/systemd/system}/$UNIT"
-APP_DIR="${APP_DIR:-/opt/cryptomaster-micro}"
-APP="$APP_DIR/micro_recorder.py"
-DATA="${DATA_DIR:-/var/lib/cryptomaster-micro}"
 TICK=tick-recorder.service
+# Production targets are fixed and must equal the unit's ExecStart / StateDirectory.
+PROD_PY=/usr/bin/python3
+PROD_APP_DIR=/opt/cryptomaster-micro
+PROD_DATA=/var/lib/cryptomaster-micro
+PROD_EXEC="ExecStart=$PROD_PY -I $PROD_APP_DIR/micro_recorder.py --out $PROD_DATA"
+TICK_DB=/opt/cryptomaster/local_learning_storage/tick_l1.sqlite
+OVERRIDABLE=(UNIT_DIR APP_DIR DATA_DIR PY MEMINFO TICK_LOG FORENSICS_ROOT CHECK_WAIT PROC_ROOT)
+if [[ "${MICRO_DEPLOY_TEST_MODE:-0}" == 1 ]]; then
+  echo "TEST MODE: path overrides allowed" >&2
+else
+  for name in "${OVERRIDABLE[@]}"; do
+    [[ -z "${!name+x}" ]] || { echo "FAIL: $name override not allowed outside MICRO_DEPLOY_TEST_MODE=1" >&2; exit 1; }
+  done
+fi
+UNIT_PATH="${UNIT_DIR:-/etc/systemd/system}/$UNIT"
+APP_DIR="${APP_DIR:-$PROD_APP_DIR}"
+APP="$APP_DIR/micro_recorder.py"
+DATA="${DATA_DIR:-$PROD_DATA}"
+PY="${PY:-$PROD_PY}"
+MEMINFO="${MEMINFO:-/proc/meminfo}"
 TICK_LOG="${TICK_LOG:-/tmp/tick_recorder.log}"
 FORENSICS_ROOT="${FORENSICS_ROOT:-/root}"
+CHECK_WAIT="${CHECK_WAIT:-120}"
+PROC="${PROC_ROOT:-/proc}"
 MIN_FREE_KB=$((6 * 1024 * 1024))
 MIN_AVAIL_KB=$((1024 * 1024))
 MEM_MAX=$((128 * 1024 * 1024))
-CHECK_WAIT="${CHECK_WAIT:-120}"
-PY="${PY:-/usr/bin/python3}"
-MEMINFO="${MEMINFO:-/proc/meminfo}"
 
 die() { echo "FAIL: $*" >&2; exit 1; }
 sha() { sha256sum "$1" | cut -d' ' -f1; }
@@ -37,17 +52,32 @@ bot_pid() {
 }
 dash_code() { curl -s -o /dev/null -m 10 -w '%{http_code}' http://127.0.0.1:5001/api/dashboard/metrics || true; }
 
+held_tick_db_fd() {  # prints the fd path whose link target is exactly the deleted tick DB, else fails
+  local pid="$1" fd
+  for fd in "$PROC/$pid"/fd/*; do
+    [[ "$(readlink "$fd" 2>/dev/null || true)" == "$TICK_DB (deleted)" ]] && { echo "$fd"; return 0; }
+  done
+  return 1
+}
+
 stop_tick() {
-  local stamp dir pid before after
+  # Fail closed: stop ONLY the exact broken state seen in the read-only audit (2026-11-26).
+  local pid cmd fd stamp dir before after
+  [[ "$(systemctl is-active "$TICK" || true)" == active ]] || die "$TICK not active: state changed, not stopping"
+  pid="$(systemctl show -p MainPID --value "$TICK")"
+  [[ "$pid" =~ ^[1-9][0-9]*$ ]] || die "$TICK has no valid MainPID ($pid)"
+  cmd="$(tr '\0' ' ' < "$PROC/$pid/cmdline" 2>/dev/null || true)"
+  [[ "$cmd" == *tick_recorder.py* ]] || die "MainPID $pid is not tick_recorder.py ($cmd)"
+  fd="$(held_tick_db_fd "$pid")" || die "process $pid does not hold the deleted $TICK_DB: state changed, not stopping"
   stamp="$(date -u +%Y%m%dT%H%M%SZ)"
   dir="$FORENSICS_ROOT/tick-recorder-forensics-$stamp"
   ( umask 077; mkdir "$dir" )
-  pid="$(systemctl show -p MainPID --value "$TICK")"
   {
     echo "utc=$stamp"
     systemctl show "$TICK" -p ActiveState -p ActiveEnterTimestamp -p MainPID -p NRestarts
-    [[ "$pid" =~ ^[1-9][0-9]*$ ]] && ls -l "/proc/$pid/fd" 2>/dev/null | grep -E 'sqlite|deleted' || true
-    [[ "$pid" =~ ^[1-9][0-9]*$ ]] && stat -L -c 'held_deleted_db_bytes=%s mtime=%y' "/proc/$pid/fd/3" 2>/dev/null || true
+    echo "cmdline=$cmd"
+    echo "held_fd=$fd -> $(readlink "$fd")"
+    echo "held_deleted_db_bytes=$(stat -L -c %s "$fd")"
     if [[ -f "$TICK_LOG" ]]; then
       echo "log_path=$TICK_LOG"
       echo "log_bytes=$(stat -c %s "$TICK_LOG")"
@@ -76,7 +106,13 @@ preflight() {
   [[ "$(sha "$HERE/micro_recorder.py")" == "$SCRIPT_SHA" ]] || die "micro_recorder.py != pin"
   [[ "$(sha "$HERE/$UNIT")" == "$UNIT_SHA" ]] || die "$UNIT != pin"
   "$PY" -I -c 'import websocket' || die "websocket-client missing for /usr/bin/python3"
-  "$PY" -I -m py_compile "$HERE/micro_recorder.py" || die "compile failed"
+  # syntax check in memory only: no __pycache__ or any other write
+  "$PY" -I -B -c 'import sys; compile(open(sys.argv[1], "rb").read(), sys.argv[1], "exec")' "$HERE/micro_recorder.py"     || die "compile failed"
+  grep -Fxq "$PROD_EXEC" "$HERE/$UNIT" || die "unit ExecStart is not the fixed production target"
+  grep -Fxq "StateDirectory=cryptomaster-micro" "$HERE/$UNIT" || die "unit StateDirectory mismatch"
+  if [[ "${MICRO_DEPLOY_TEST_MODE:-0}" != 1 ]]; then
+    [[ "$PY" == "$PROD_PY" && "$APP_DIR" == "$PROD_APP_DIR" && "$DATA" == "$PROD_DATA" ]]       || die "targets differ from the unit"
+  fi
   [[ ! -e "$UNIT_PATH" && ! -L "$UNIT_PATH" ]] || die "$UNIT_PATH already exists"
   [[ ! -e "$APP" && ! -L "$APP" ]] || die "$APP already exists"
   local free avail
@@ -88,13 +124,14 @@ preflight() {
   echo "PREFLIGHT_OK"
 }
 
-place() {  # place SRC DST PIN: temp copy in the target dir, verify the pin, then rename
+place() {  # place SRC DST PIN: temp copy in the target dir, verify the pin, then rename; temp always cleaned
   local src="$1" dst="$2" pin="$3" tmp
-  tmp="$(mktemp "$(dirname "$dst")/.micro.XXXXXX")"
-  cp "$src" "$tmp"
+  tmp="$(mktemp "$(dirname "$dst")/.micro.XXXXXX")" || die "mktemp failed for $dst"
+  if ! cp "$src" "$tmp" || ! chmod 0644 "$tmp" || ! chown root:root "$tmp"; then
+    rm -f "$tmp"; die "copy/chmod/chown failed for $dst"
+  fi
   if [[ "$(sha "$tmp")" != "$pin" ]]; then rm -f "$tmp"; die "temp copy of $dst != pin"; fi
-  chmod 0644 "$tmp"; chown root:root "$tmp"
-  mv -f "$tmp" "$dst"
+  mv -f "$tmp" "$dst" || { rm -f "$tmp"; die "rename failed for $dst"; }
 }
 
 checks() {  # checks BOT_PID
@@ -117,6 +154,7 @@ rollback() {
   if [[ -f "$APP" ]]; then
     [[ "$(sha "$APP")" == "$SCRIPT_SHA" ]] && rm -f "$APP" || echo "WARN: $APP not the pinned file, left in place"
   fi
+  rm -f "$APP_DIR"/.micro.* "$(dirname "$UNIT_PATH")"/.micro.* 2>/dev/null || true
   rmdir "$APP_DIR" 2>/dev/null || true
   systemctl daemon-reload
   [[ "$(systemctl is-active "$UNIT" || true)" != active ]] || die "rollback: unit still active"
