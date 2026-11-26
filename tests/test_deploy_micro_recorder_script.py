@@ -36,7 +36,8 @@ def env(tmp_path):
 S="{state.as_posix()}"
 echo "$*" >> "$S/calls"
 case "$1" in
-  show) if [[ "$*" == *MainPID*cryptomaster.service* ]]; then echo 4242; elif [[ "$*" == *MainPID*--value*tick-recorder* ]]; then echo 77; elif [[ "$*" == *MemoryCurrent* ]]; then cat "$S/mem" 2>/dev/null || echo 1000; else echo "MainPID=77"; fi ;;
+  show) if [[ "$*" == *MainPID*cryptomaster.service* ]]; then echo 4242; elif [[ "$*" == *MainPID*--value*tick-recorder* ]]; then
+          if [[ -s "$S/tick_pids" ]]; then head -n1 "$S/tick_pids"; sed -i 1d "$S/tick_pids"; else echo 77; fi; elif [[ "$*" == *MemoryCurrent* ]]; then cat "$S/mem" 2>/dev/null || echo 1000; else echo "MainPID=77"; fi ;;
   is-active) cat "$S/active"; [[ "$(cat "$S/active")" == active ]] ;;
   enable) [[ -f "$S/enable_fails" ]] && exit 1; exit 0 ;;
   disable|daemon-reload) [[ "$*" == *disable* ]] && echo inactive > "$S/active"; exit 0 ;;
@@ -53,7 +54,9 @@ esac''')
     stub(bin_, "journalctl", f'cat "{state.as_posix()}/journal" 2>/dev/null; exit 0')
     stub(bin_, "curl", f'cat "{state.as_posix()}/http" 2>/dev/null || echo -n 200')
     stub(bin_, "df", "echo Avail; echo 99999999")
-    stub(bin_, "chown", f'[[ -f "{state.as_posix()}/chown_fails" ]] && exit 1; exit 0')
+    stub(bin_, "chown", f'''[[ -f "{state.as_posix()}/chown_fails" ]] && exit 1
+if [[ -n "${{CREATE_ON_CHOWN:-}}" && ! -e "$CREATE_ON_CHOWN" ]]; then echo foreign > "$CREATE_ON_CHOWN"; fi
+exit 0''')
     stub(bin_, "sleep", "exit 0")
     meminfo = tmp_path / "meminfo"
     meminfo.write_text("MemAvailable:    2000000 kB\n")
@@ -175,3 +178,46 @@ def test_install_failure_in_systemd_or_copy_rolls_back_and_cleans_temp(env, faul
     assert not (env["tmp"] / "units" / "cryptomaster-micro-recorder.service").exists()
     assert not list((env["tmp"] / "units").glob(".micro.*"))
     assert not (env["tmp"] / "app").exists() or not list((env["tmp"] / "app").glob(".micro.*"))
+
+
+def test_stop_tick_reverifies_right_before_disable(env):
+    (env["tmp"] / "tick.log").write_text("x\n", encoding="utf-8")
+    proc = env["tmp"] / "proc"
+    shutil.copytree(proc / "77", proc / "78")              # same broken state, but a NEW process
+    (env["state"] / "tick_pids").write_text("77\n78\n")    # first check sees 77, re-check sees 78
+    r = run(env, "stop-tick")
+    assert r.returncode != 0 and "changed during forensics" in r.stderr
+    assert "disable" not in (env["state"] / "calls").read_text()
+
+
+def test_rollback_removes_only_its_own_temp_files(env):
+    foreign = env["tmp"] / "units" / ".micro.foreign"
+    foreign.write_text("other operation\n")
+    (env["state"] / "verify_fails").write_text("1")
+    r = run(env, "install")
+    assert r.returncode != 0 and "ROLLBACK_OK" in r.stdout
+    assert foreign.read_text() == "other operation\n"
+
+
+def test_target_created_after_preflight_is_never_overwritten(env):
+    unit = env["tmp"] / "units" / "cryptomaster-micro-recorder.service"
+    e = dict(env["env"], CREATE_ON_CHOWN=unit.as_posix())   # appears between preflight and placement
+    r = subprocess.run([BASH, (env["rel"] / "deploy_micro_recorder.sh").as_posix(), "install"],
+                       env=e, capture_output=True, text=True, timeout=120)
+    assert r.returncode != 0 and "not overwriting" in r.stderr and "ROLLBACK_OK" in r.stdout
+    assert unit.read_text() == "foreign\n"                    # foreign target kept, not replaced
+    assert not (env["tmp"] / "app" / "micro_recorder.py").exists()
+    assert not list((env["tmp"] / "units").glob(".micro.*"))
+
+
+def test_symlinked_target_directory_is_refused(env, tmp_path):
+    real = tmp_path / "elsewhere"
+    real.mkdir()
+    link = tmp_path / "linked_app"
+    try:
+        os.symlink(real, link, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks not available on this platform")
+    r = subprocess.run([BASH, (env["rel"] / "deploy_micro_recorder.sh").as_posix(), "preflight"],
+                       env=dict(env["env"], APP_DIR=link.as_posix()), capture_output=True, text=True, timeout=60)
+    assert r.returncode != 0 and "contains a symlink" in r.stderr

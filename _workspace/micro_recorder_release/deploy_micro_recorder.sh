@@ -60,15 +60,23 @@ held_tick_db_fd() {  # prints the fd path whose link target is exactly the delet
   return 1
 }
 
-stop_tick() {
-  # Fail closed: stop ONLY the exact broken state seen in the read-only audit (2026-11-26).
-  local pid cmd fd stamp dir before after
+verify_tick_state() {  # prints "PID FD" of the exact broken state, else fails without side effects
+  local pid cmd fd
   [[ "$(systemctl is-active "$TICK" || true)" == active ]] || die "$TICK not active: state changed, not stopping"
   pid="$(systemctl show -p MainPID --value "$TICK")"
   [[ "$pid" =~ ^[1-9][0-9]*$ ]] || die "$TICK has no valid MainPID ($pid)"
   cmd="$(tr '\0' ' ' < "$PROC/$pid/cmdline" 2>/dev/null || true)"
   [[ "$cmd" == *tick_recorder.py* ]] || die "MainPID $pid is not tick_recorder.py ($cmd)"
   fd="$(held_tick_db_fd "$pid")" || die "process $pid does not hold the deleted $TICK_DB: state changed, not stopping"
+  echo "$pid $fd"
+}
+
+stop_tick() {
+  # Fail closed: stop ONLY the exact broken state seen in the read-only audit (2026-11-26).
+  local state pid fd cmd stamp dir before after
+  state="$(verify_tick_state)" || exit 1
+  pid="${state%% *}"; fd="${state#* }"
+  cmd="$(tr '\0' ' ' < "$PROC/$pid/cmdline")"
   stamp="$(date -u +%Y%m%dT%H%M%SZ)"
   dir="$FORENSICS_ROOT/tick-recorder-forensics-$stamp"
   ( umask 077; mkdir "$dir" )
@@ -92,6 +100,9 @@ stop_tick() {
   fi
   before="$(df --output=avail -k / | tail -1)"
   local bot_before; bot_before="$(bot_pid)"
+  # re-verify immediately before stopping: same PID, same command, same held deleted inode
+  state="$(verify_tick_state)" || exit 1
+  [[ "$state" == "$pid $fd" ]] || die "tick-recorder changed during forensics ($pid $fd -> $state), not stopping"
   systemctl disable --now "$TICK"
   [[ "$(systemctl is-active "$TICK" || true)" != active ]] || die "$TICK still active"
   after="$(df --output=avail -k / | tail -1)"
@@ -113,6 +124,7 @@ preflight() {
   if [[ "${MICRO_DEPLOY_TEST_MODE:-0}" != 1 ]]; then
     [[ "$PY" == "$PROD_PY" && "$APP_DIR" == "$PROD_APP_DIR" && "$DATA" == "$PROD_DATA" ]]       || die "targets differ from the unit"
   fi
+  check_target_dirs
   [[ ! -e "$UNIT_PATH" && ! -L "$UNIT_PATH" ]] || die "$UNIT_PATH already exists"
   [[ ! -e "$APP" && ! -L "$APP" ]] || die "$APP already exists"
   local free avail
@@ -124,14 +136,35 @@ preflight() {
   echo "PREFLIGHT_OK"
 }
 
-place() {  # place SRC DST PIN: temp copy in the target dir, verify the pin, then rename; temp always cleaned
+no_symlink_path() {  # the path (existing or not) must contain no symlink component
+  [[ "$(realpath -m "$1")" == "$(realpath -m -s "$1")" ]]
+}
+
+check_target_dirs() {
+  local d
+  for d in "$APP_DIR" "$(dirname "$UNIT_PATH")" "$DATA"; do
+    no_symlink_path "$d" || die "target path $d contains a symlink"
+  done
+  [[ -d "$(dirname "$UNIT_PATH")" ]] || die "unit directory missing"
+  if [[ "${MICRO_DEPLOY_TEST_MODE:-0}" != 1 ]]; then
+    [[ "$(realpath -m "$APP_DIR")" == "$PROD_APP_DIR" ]] || die "APP_DIR resolves elsewhere"
+    [[ "$(realpath -m "$(dirname "$UNIT_PATH")")" == /etc/systemd/system ]] || die "unit dir resolves elsewhere"
+  fi
+}
+
+TEMPS=()
+place() {  # place SRC DST PIN: own temp copy in the target dir, verify the pin, no-clobber link; temp always cleaned
   local src="$1" dst="$2" pin="$3" tmp
   tmp="$(mktemp "$(dirname "$dst")/.micro.XXXXXX")" || die "mktemp failed for $dst"
+  TEMPS+=("$tmp")
   if ! cp "$src" "$tmp" || ! chmod 0644 "$tmp" || ! chown root:root "$tmp"; then
     rm -f "$tmp"; die "copy/chmod/chown failed for $dst"
   fi
   if [[ "$(sha "$tmp")" != "$pin" ]]; then rm -f "$tmp"; die "temp copy of $dst != pin"; fi
-  mv -f "$tmp" "$dst" || { rm -f "$tmp"; die "rename failed for $dst"; }
+  # no-clobber: a hard link fails if $dst appeared after preflight, so nothing is ever overwritten
+  ln "$tmp" "$dst" 2>/dev/null || { rm -f "$tmp"; die "$dst exists or cannot be created; not overwriting"; }
+  rm -f "$tmp"
+  [[ "$(sha "$dst")" == "$pin" ]] || die "$dst != pin after link"
 }
 
 checks() {  # checks BOT_PID
@@ -154,7 +187,8 @@ rollback() {
   if [[ -f "$APP" ]]; then
     [[ "$(sha "$APP")" == "$SCRIPT_SHA" ]] && rm -f "$APP" || echo "WARN: $APP not the pinned file, left in place"
   fi
-  rm -f "$APP_DIR"/.micro.* "$(dirname "$UNIT_PATH")"/.micro.* 2>/dev/null || true
+  local t
+  for t in "${TEMPS[@]+"${TEMPS[@]}"}"; do rm -f "$t"; done      # only temp files created by this run
   rmdir "$APP_DIR" 2>/dev/null || true
   systemctl daemon-reload
   [[ "$(systemctl is-active "$UNIT" || true)" != active ]] || die "rollback: unit still active"
@@ -178,6 +212,7 @@ install() {
   trap on_exit EXIT
   INSTALLING=1
   mkdir -p -m 0755 "$APP_DIR"
+  check_target_dirs
   place "$HERE/micro_recorder.py" "$APP" "$SCRIPT_SHA"
   place "$HERE/$UNIT" "$UNIT_PATH" "$UNIT_SHA"
   systemctl daemon-reload
