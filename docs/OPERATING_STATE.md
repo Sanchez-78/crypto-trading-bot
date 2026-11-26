@@ -86,6 +86,41 @@ generátory dál určují, co vstoupí.
 - Android: APK s novými poli `CryptoMaster.apk` sha256 `affcd7dd…`, lokální commity aplikace
   `a05eb248`, `820be7a8`.
 
+## Výzkumný sběrač order booku a likvidací — nasazen 2026-11-26 11:09 UTC (neobchoduje)
+
+- **Služba `cryptomaster-micro-recorder.service`:**
+  - spuštění: `/usr/bin/python3 -I /opt/cryptomaster-micro/micro_recorder.py --out /var/lib/cryptomaster-micro`;
+  - izolace: `DynamicUser`, `MemoryMax` 128M, `CPUQuota` 20 %;
+  - soubory: skript sha `252dd1f7…`, unit sha `35b35cc0…`;
+  - schváleno `_workspace/2026-11-26_codex_rereview_micro_recorder_r5.md`, návrh
+    `_workspace/2026-11-26_micro_recorder_design.md`.
+- **Sbírá:**
+  - Binance USD-M `depth20@500ms`: 1 řádek na symbol a sekundu v `book/`;
+  - `forceOrder`: **vzorek**, nejvýš 1 likvidace na symbol za 1 s, v `liq_sampled/`;
+  - značky mezer v `gaps/`;
+  - vše jako denní `csv.gz`.
+- **Limity:** retence 120 dní / 4 GiB, pod 5 GiB volného místa nezapisuje (okno ztráty jako
+  `disk_skip`).
+- **Instalace:** `INSTALL_OK` (paměť po startu 14 MB, PID bota 3840326 beze změny).
+- **Kontrola po 10 min** (`VERIFY_OK`, 11:20 UTC):
+  - 4 613 řádků `book` (658–660 na symbol, tedy 1 za sekundu);
+  - `gaps`: `start`, `connect`;
+  - 0 restartů, `MemoryPeak` 15 MB, CPU 5,4 s za ~11 min;
+  - likvidace zatím 0.
+- **Omezení dat:** `depth20` u likvidních symbolů pokrývá jen ~1 bps od mid (ETH `bid_range_bps`
+  1,15). Pásma 5/10/25 bps proto u nich odpovídají součtu všech 20 úrovní. Pokrytí udává
+  `*_range_bps` a výzkum s tím musí počítat.
+- **Další kontrola:** `verify` po 24 h (2026-11-27 ~11:10 UTC).
+- **Rollback:**
+  `cd /root/micro-recorder-20261126 && bash deploy_micro_recorder.sh rollback` (data zůstávají).
+- **Stejný den vypnut nefunkční `tick-recorder.service`** (10:47:09 UTC, schválená fáze A):
+  - jeho DB byla od 2026-07-10 smazaná, ale otevřená;
+  - uvolněno 1,24 GB;
+  - forenzika v `/root/tick-recorder-forensics-20261126T104709Z/`;
+  - log ponechán v `/tmp`.
+- **Účel:** data pro budoucí předregistrovaný výzkum nové informační třídy (cíl ≥ 6 týdnů sběru).
+  Bot, jeho nastavení ani měřicí okno se nemění.
+
 ## Práh průzkumu −25 bps zůstává + prospektivní analytické okno (rozhodnutí Codex 2026-11-25)
 
 - Operátor 2026-11-24: „proč stále padá WR a P/L… zlepši!“. Analýza je v
