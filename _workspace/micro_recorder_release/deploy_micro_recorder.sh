@@ -153,6 +153,8 @@ check_target_dirs() {
 }
 
 TEMPS=()
+CREATED=()
+APP_DIR_CREATED=0
 place() {  # place SRC DST PIN: own temp copy in the target dir, verify the pin, no-clobber link; temp always cleaned
   local src="$1" dst="$2" pin="$3" tmp
   tmp="$(mktemp "$(dirname "$dst")/.micro.XXXXXX")" || die "mktemp failed for $dst"
@@ -163,6 +165,7 @@ place() {  # place SRC DST PIN: own temp copy in the target dir, verify the pin,
   if [[ "$(sha "$tmp")" != "$pin" ]]; then rm -f "$tmp"; die "temp copy of $dst != pin"; fi
   # no-clobber: a hard link fails if $dst appeared after preflight, so nothing is ever overwritten
   ln "$tmp" "$dst" 2>/dev/null || { rm -f "$tmp"; die "$dst exists or cannot be created; not overwriting"; }
+  CREATED+=("$dst")
   rm -f "$tmp"
   [[ "$(sha "$dst")" == "$pin" ]] || die "$dst != pin after link"
 }
@@ -179,19 +182,36 @@ checks() {  # checks BOT_PID
   echo "CHECKS_OK mem=$mem"
 }
 
-rollback() {
-  systemctl disable --now "$UNIT" 2>/dev/null || true
-  if [[ -f "$UNIT_PATH" ]]; then
-    [[ "$(sha "$UNIT_PATH")" == "$UNIT_SHA" ]] && rm -f "$UNIT_PATH" || echo "WARN: $UNIT_PATH not the pinned file, left in place"
+created_here() {  # was PATH created by this run's place()?
+  local c
+  for c in "${CREATED[@]+"${CREATED[@]}"}"; do [[ "$c" == "$1" ]] && return 0; done
+  return 1
+}
+
+remove_pinned() {  # remove_pinned PATH PIN MODE: auto removes only targets this run created
+  local path="$1" pin="$2" mode="$3"
+  [[ -f "$path" ]] || return 0
+  if [[ "$mode" == auto ]] && ! created_here "$path"; then
+    echo "WARN: $path was not created by this run, left in place"
+    return 0
   fi
-  if [[ -f "$APP" ]]; then
-    [[ "$(sha "$APP")" == "$SCRIPT_SHA" ]] && rm -f "$APP" || echo "WARN: $APP not the pinned file, left in place"
+  if [[ "$(sha "$path")" == "$pin" ]]; then rm -f "$path"; else echo "WARN: $path not the pinned file, left in place"; fi
+}
+
+rollback() {  # rollback [auto|manual]: auto (after a failed install) touches only what this run created
+  local mode="${1:-manual}" t ours=0
+  if [[ "$mode" == manual ]] || created_here "$UNIT_PATH"; then
+    ours=1
+    systemctl disable --now "$UNIT" 2>/dev/null || true
   fi
-  local t
+  remove_pinned "$UNIT_PATH" "$UNIT_SHA" "$mode"
+  remove_pinned "$APP" "$SCRIPT_SHA" "$mode"
   for t in "${TEMPS[@]+"${TEMPS[@]}"}"; do rm -f "$t"; done      # only temp files created by this run
-  rmdir "$APP_DIR" 2>/dev/null || true
+  if [[ "$mode" == manual || "$APP_DIR_CREATED" == 1 ]]; then rmdir "$APP_DIR" 2>/dev/null || true; fi
   systemctl daemon-reload
-  [[ "$(systemctl is-active "$UNIT" || true)" != active ]] || die "rollback: unit still active"
+  if (( ours == 1 )); then   # a unit this run never created is not ours to stop or judge
+    [[ "$(systemctl is-active "$UNIT" || true)" != active ]] || die "rollback: unit still active"
+  fi
   echo "ROLLBACK_OK (data in $DATA kept)"
 }
 
@@ -201,7 +221,7 @@ on_exit() {  # any non-zero exit (die, set -e, failed command) after the first w
   if (( rc != 0 && INSTALLING == 1 )); then
     INSTALLING=0
     echo "install failed (rc=$rc) -> rollback" >&2
-    rollback || echo "ROLLBACK_FAILED: manual action required" >&2
+    rollback auto || echo "ROLLBACK_FAILED: manual action required" >&2
   fi
   exit "$rc"
 }
@@ -211,6 +231,7 @@ install() {
   local bot; bot="$(bot_pid)"
   trap on_exit EXIT
   INSTALLING=1
+  if [[ ! -d "$APP_DIR" ]]; then APP_DIR_CREATED=1; fi
   mkdir -p -m 0755 "$APP_DIR"
   check_target_dirs
   place "$HERE/micro_recorder.py" "$APP" "$SCRIPT_SHA"
@@ -247,6 +268,6 @@ case "${1:-}" in
   preflight) preflight ;;
   install) install ;;
   verify) verify ;;
-  rollback) rollback ;;
+  rollback) rollback manual ;;
   *) die "usage: $0 stop-tick|preflight|install|verify|rollback" ;;
 esac

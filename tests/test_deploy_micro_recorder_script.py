@@ -55,7 +55,9 @@ esac''')
     stub(bin_, "curl", f'cat "{state.as_posix()}/http" 2>/dev/null || echo -n 200')
     stub(bin_, "df", "echo Avail; echo 99999999")
     stub(bin_, "chown", f'''[[ -f "{state.as_posix()}/chown_fails" ]] && exit 1
-if [[ -n "${{CREATE_ON_CHOWN:-}}" && ! -e "$CREATE_ON_CHOWN" ]]; then echo foreign > "$CREATE_ON_CHOWN"; fi
+if [[ -n "${{CREATE_ON_CHOWN:-}}" && ! -e "$CREATE_ON_CHOWN" ]]; then
+  if [[ -n "${{CREATE_FROM:-}}" ]]; then cp "$CREATE_FROM" "$CREATE_ON_CHOWN"; else echo foreign > "$CREATE_ON_CHOWN"; fi
+fi
 exit 0''')
     stub(bin_, "sleep", "exit 0")
     meminfo = tmp_path / "meminfo"
@@ -221,3 +223,25 @@ def test_symlinked_target_directory_is_refused(env, tmp_path):
     r = subprocess.run([BASH, (env["rel"] / "deploy_micro_recorder.sh").as_posix(), "preflight"],
                        env=dict(env["env"], APP_DIR=link.as_posix()), capture_output=True, text=True, timeout=60)
     assert r.returncode != 0 and "contains a symlink" in r.stderr
+
+
+def test_auto_rollback_keeps_a_concurrent_target_even_with_the_exact_pinned_bytes(env):
+    unit = env["tmp"] / "units" / "cryptomaster-micro-recorder.service"
+    pinned = env["rel"] / "cryptomaster-micro-recorder.service"
+    e = dict(env["env"], CREATE_ON_CHOWN=unit.as_posix(), CREATE_FROM=pinned.as_posix())
+    r = subprocess.run([BASH, (env["rel"] / "deploy_micro_recorder.sh").as_posix(), "install"],
+                       env=e, capture_output=True, text=True, timeout=120)
+    assert r.returncode != 0 and "not overwriting" in r.stderr and "ROLLBACK_OK" in r.stdout
+    assert unit.read_bytes() == pinned.read_bytes()          # created by someone else -> kept
+    assert "not created by this run" in r.stdout
+    assert not (env["tmp"] / "app" / "micro_recorder.py").exists()   # ours -> removed
+    calls = (env["state"] / "calls").read_text()
+    assert "disable --now cryptomaster-micro-recorder.service" not in calls   # foreign unit not stopped
+
+
+def test_manual_rollback_after_a_successful_install_removes_the_pinned_files(env):
+    assert run(env, "install").returncode == 0
+    r = run(env, "rollback")
+    assert r.returncode == 0 and "ROLLBACK_OK" in r.stdout
+    assert not (env["tmp"] / "app" / "micro_recorder.py").exists()
+    assert not (env["tmp"] / "units" / "cryptomaster-micro-recorder.service").exists()

@@ -1,4 +1,4 @@
-# Sběrač order booku a likvidací pro výzkum: návrh a limity (Claude, 2026-11-26, rev. 4)
+# Sběrač order booku a likvidací pro výzkum: návrh a limity (Claude, 2026-11-26, rev. 5)
 
 Rev. 2 zapracovává review `_workspace/2026-11-26_codex_review_micro_recorder_design.md`:
 - likvidace jsou jen vzorek, výstup se jmenuje `liq_sampled`;
@@ -28,6 +28,24 @@ Rev. 4 zapracovává `_workspace/2026-11-26_codex_rereview_micro_recorder_r3.md`
 - Test se symlinkem se na Windows přeskočí. Logika `realpath` i odmítnutí `ln` nad existujícím cílem jsou ověřené na Linuxu serveru v dočasném `/tmp` adresáři (hned smazán): symlink `HAS_SYMLINK`, čistá cesta `clean`, `ln refused existing dst`.
 - Mutace (bez opakovaného ověření, úklid globem, `mv -f`) zachytí každá 1 test.
 - Celkem 21 testů skriptu (20 prošlo, 1 přeskočen na Windows) a 10 testů sběrače.
+
+Rev. 5 zapracovává `_workspace/2026-11-26_codex_rereview_micro_recorder_r4.md`:
+- Codex schválil A (`stop-tick`). **Fáze A proběhla 2026-11-26 10:47:09 UTC**, rc 0, `TICK_STOPPED`:
+  - služba je `inactive` a `disabled`;
+  - uvolněno 1,24 GB disku (`free_kb` 14 940 156 → 16 181 436) a ~50 MB RAM;
+  - PID bota 3840326 se nezměnil;
+  - forenzní záznam je v `/root/tick-recorder-forensics-20261126T104709Z/` (gzip archiv 826 937 B, `gzip -t` OK);
+  - log zůstal v `/tmp/tick_recorder.log`. Mezi hashem a zastavením proces zapsal ještě 1 řádek (gzip ohlásil `file size changed`). Konečná velikost 282 469 161 B a SHA-256 `f920ad60…` jsou doplněné jako dodatek do `state.txt`; archiv obsahuje už konečnou verzi.
+- B: automatický rollback (po neúspěšné instalaci) maže a vypíná **jen cíle, které tento běh sám vytvořil**:
+  - `CREATED` se plní po úspěšném `ln`;
+  - `APP_DIR` se maže, jen když ho běh vytvořil;
+  - unit se vypíná a kontroluje, jen když ho běh vytvořil.
+- Ruční `rollback` (samostatné spuštění po úspěšné instalaci) dál maže podle pinu.
+- Nové testy:
+  - cizí cíl se **stejnými připnutými bajty** vzniklý po preflightu automatický rollback nechá a nevypne ho;
+  - ruční rollback po úspěšné instalaci odstraní připnuté soubory.
+- Mutace „automatický rollback jako ruční“ zachytí 1 test.
+- Celkem 23 testů skriptu (22 prošlo, 1 přeskočen na Windows) a 10 testů sběrače.
 
 Krok 2 z doporučení C (Codex `_workspace/2026-11-26_codex_review_event_screen_result.md` a následná
 zpráva):
@@ -174,7 +192,7 @@ značkou OK nebo `FAIL`.
    - data ve `/var/lib/cryptomaster-micro` zůstávají;
    - tick-recorder se neobnovuje, protože byl nefunkční.
 
-Testy skriptu: `tests/test_deploy_micro_recorder_script.py` (21 testů, bash s nahrazenými
+Testy skriptu: `tests/test_deploy_micro_recorder_script.py` (23 testů, bash s nahrazenými
 `systemctl`, `curl`, `df`, `journalctl`):
 - piny odpovídají release souborům;
 - preflight odmítne změněný skript;
