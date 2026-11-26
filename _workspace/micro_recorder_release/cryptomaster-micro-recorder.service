@@ -1,0 +1,41 @@
+[Unit]
+Description=CryptoMaster research recorder: Binance USD-M order book (depth20) + liquidations, no trading
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=600
+StartLimitBurst=10
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 -I /opt/cryptomaster-micro/micro_recorder.py --out /var/lib/cryptomaster-micro
+DynamicUser=yes
+StateDirectory=cryptomaster-micro
+StateDirectoryMode=0750
+WorkingDirectory=/var/lib/cryptomaster-micro
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryHigh=96M
+MemoryMax=128M
+MemorySwapMax=0
+CPUQuota=20%
+Nice=10
+IOSchedulingClass=idle
+TasksMax=16
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+LogRateLimitIntervalSec=60
+LogRateLimitBurst=20
+
+[Install]
+WantedBy=multi-user.target

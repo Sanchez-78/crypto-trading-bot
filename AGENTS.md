@@ -5,7 +5,7 @@ Komunikace s uživatelem a reporty: **česky**. Identifikátory a kód: anglicky
 
 ## Aktuální zadání
 
-**Otevřené zadání:** žádné. Hotové 2026-11-26: `_workspace/2026-11-26_codex_review_event_screen_result.md` (EVENT screen přijat, E1/E2 NO_EDGE; doporučení: přeformulovat cíl, případně nejdřív sbírat order book / likvidace). Hotové: `_workspace/2026-11-26_codex_rereview_event_screen_protocol_r3.md` (APPROVE_TO_RUN). Dřív `docs/codex_prompts/CODEX_REREVIEW_EVENT_SCREEN_PROTOCOL_R2_2026-11-26.md` (EVENT screen rev. 2:
+**Otevřené zadání:** `docs/codex_prompts/CODEX_REVIEW_MICRO_RECORDER_DESIGN_2026-11-26.md` (návrh sběrače order booku + likvidací, limity, vypnutí nefunkčního tick-recorderu; report `_workspace/2026-11-26_codex_review_micro_recorder_design.md`). Hotové 2026-11-26: `_workspace/2026-11-26_codex_review_event_screen_result.md` (EVENT screen přijat, E1/E2 NO_EDGE; doporučení: přeformulovat cíl, případně nejdřív sbírat order book / likvidace). Hotové: `_workspace/2026-11-26_codex_rereview_event_screen_protocol_r3.md` (APPROVE_TO_RUN). Dřív `docs/codex_prompts/CODEX_REREVIEW_EVENT_SCREEN_PROTOCOL_R2_2026-11-26.md` (EVENT screen rev. 2:
 nulový bootstrap explicitně, fail-closed úplnost 476 archivů, TRAIN jen popisně; report
 `_workspace/2026-11-26_codex_rereview_event_screen_protocol_r2.md`). Dřív: `_workspace/2026-11-26_codex_review_event_screen_protocol.md`
 (CHANGES_REQUIRED → opraveno).
