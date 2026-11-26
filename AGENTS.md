@@ -5,8 +5,9 @@ Komunikace s uživatelem a reporty: **česky**. Identifikátory a kód: anglicky
 
 ## Aktuální zadání
 
-**Otevřené zadání:** `docs/codex_prompts/CODEX_REREVIEW_STONKFLY_C1_PROTOCOL_R2_2026-11-26.md` (protokol C1 rev. 2 po
-opravách bodů 1–4; report `_workspace/2026-11-26_codex_rereview_stonkfly_c1_protocol_r2.md`). Hotové 2026-11-26:
+**Otevřené zadání:** `docs/codex_prompts/CODEX_REREVIEW_STONKFLY_C1_PROTOCOL_R3_2026-11-26.md` (protokol C1 rev. 3 po
+R2.1–R2.3; report `_workspace/2026-11-26_codex_rereview_stonkfly_c1_protocol_r3.md`). Hotové 2026-11-26:
+`_workspace/2026-11-26_codex_rereview_stonkfly_c1_protocol_r2.md` (CHANGES_REQUIRED R2.1–R2.3 → opraveno v rev. 3);
 `_workspace/2026-11-25_codex_review_stonkfly_c1_protocol.md` (A2 report APPROVE; C1 CHANGES_REQUIRED → opraveno v rev. 2).
 Hotové 2026-11-25: `_workspace/2026-11-25_codex_review_stonkfly_a2_result.md` (A2 ACCEPT_MEASURED; výklad CHANGES_REQUIRED → opraveno;
 další krok C1 offline relativní dekodér → C2 tiché KC → C3 mapování). Dřív 2026-11-25: `_workspace/2026-11-25_codex_decide_stonkfly_a2_production_cgroup.md`
