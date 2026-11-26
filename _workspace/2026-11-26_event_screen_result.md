@@ -49,7 +49,10 @@ u současných signálů bota a dřívějších screenů. Mezi vyloučené rodin
 
 Co z toho plyne pro cíl kladného P/L (návrh k review, nic se neimplementuje):
 - Na 7 likvidních symbolech a horizontech minut až hodin opakovaně vychází hrubá predikce ≈ 0. Je to
-  už 12+ rodin a 3 nezávislé screeny.
+  už 12+ rodin ve třech screeningových projektech.
+  - Data a hypotézy těch projektů mohou mít společný základ, nejde tedy o nezávislé testy (oprava
+    podle review Codex).
+  - Výsledky TRAIN jsou jen výběrové, potvrzující jsou TEST a HOLDOUT.
 - Další ladění cenových a událostních pravidel nemá vysokou předchozí pravděpodobnost úspěchu.
 - Kladné P/L v paper simulaci se tak nedá poctivě vyrobit z dostupných veřejných cenových dat
   běžnými signály.
@@ -60,3 +63,11 @@ Co z toho plyne pro cíl kladného P/L (návrh k review, nic se neimplementuje):
   - nebo přeformulování cíle.
 
   Každá z nich je samostatný projekt s vlastní předregistrací.
+
+## Review Codex (2026-11-26)
+
+`_workspace/2026-11-26_codex_review_event_screen_result.md`:
+- běh přijat a NO_EDGE pro E1 i E2 platí pro testované rodiny, období a nákladový scénář;
+- doporučení: přeformulovat výzkumný cíl;
+- pokud zůstává prioritou P/L, nejdřív sbírat novou informační třídu (order book, likvidace);
+- maker přístup až s realistickým modelem fronty a plnění.
