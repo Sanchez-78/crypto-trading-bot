@@ -1,0 +1,178 @@
+{
+  "chosen": {
+    "E1": "E1_k3_follow_H240",
+    "E2": "E2_k2_fade_H120_post"
+  },
+  "signature": "bf9b9c4483e50876c6cf00f4a33cd16fac0a13c34cbcec9956ad60844f569b9f",
+  "stats": {
+    "E1": {
+      "bootstrap_valid": 2000,
+      "ci95_net9": [
+        -21.451827492924295,
+        4.89458857240152
+      ],
+      "gross_bps": 0.43788284160916535,
+      "halves": [
+        {
+          "n": 1561,
+          "net9_bps": -7.131543066799397
+        },
+        {
+          "n": 1679,
+          "net9_bps": -9.89215060506995
+        }
+      ],
+      "lead_failures": [
+        "net9_not_above_3",
+        "ci_not_positive",
+        "holm_not_significant",
+        "symbol_concentration",
+        "market_UP_not_positive_or_insufficient",
+        "half_0_not_positive_or_insufficient",
+        "half_1_not_positive_or_insufficient"
+      ],
+      "market": {
+        "DOWN": {
+          "n": 1684,
+          "net9_bps": 2.306028959091357
+        },
+        "UP": {
+          "n": 1556,
+          "net9_bps": -20.324301002761022
+        }
+      },
+      "max_symbol_share": 1.0,
+      "n": 3240,
+      "net18_bps": -17.562117158390834,
+      "net9_bps": -8.562117158390835,
+      "p_holm": 1.0,
+      "p_one_sided": 0.8960519740129935,
+      "side": {
+        "-1": {
+          "n": 1681,
+          "net9_bps": -7.3372808404492105
+        },
+        "1": {
+          "n": 1559,
+          "net9_bps": -9.882803399866056
+        }
+      },
+      "symbols": {
+        "ADAUSDT": {
+          "n": 442,
+          "net9_bps": -4.053101219840766
+        },
+        "BNBUSDT": {
+          "n": 450,
+          "net9_bps": -17.141157844408333
+        },
+        "BTCUSDT": {
+          "n": 471,
+          "net9_bps": -6.505677372629762
+        },
+        "DOTUSDT": {
+          "n": 399,
+          "net9_bps": 6.772103212573205
+        },
+        "ETHUSDT": {
+          "n": 558,
+          "net9_bps": -16.003192427394513
+        },
+        "SOLUSDT": {
+          "n": 482,
+          "net9_bps": -14.739667402308507
+        },
+        "XRPUSDT": {
+          "n": 438,
+          "net9_bps": -4.200597947356585
+        }
+      },
+      "wr_net9": 0.4388888888888889
+    },
+    "E2": {
+      "bootstrap_valid": 2000,
+      "ci95_net9": [
+        -42.867717188950394,
+        -11.08286123321802
+      ],
+      "gross_bps": -18.040267809628823,
+      "halves": [
+        {
+          "n": 211,
+          "net9_bps": -19.698936049868017
+        },
+        {
+          "n": 157,
+          "net9_bps": -36.90664361414812
+        }
+      ],
+      "lead_failures": [
+        "net9_not_above_3",
+        "ci_not_positive",
+        "holm_not_significant",
+        "symbol_concentration",
+        "market_UP_not_positive_or_insufficient",
+        "market_DOWN_not_positive_or_insufficient",
+        "half_0_not_positive_or_insufficient",
+        "half_1_not_positive_or_insufficient"
+      ],
+      "market": {
+        "DOWN": {
+          "n": 207,
+          "net9_bps": -32.79258304961399
+        },
+        "UP": {
+          "n": 161,
+          "net9_bps": -19.644433929647892
+        }
+      },
+      "max_symbol_share": null,
+      "n": 368,
+      "net18_bps": -36.04026780962882,
+      "net9_bps": -27.040267809628823,
+      "p_holm": 1.0,
+      "p_one_sided": 1.0,
+      "side": {
+        "-1": {
+          "n": 112,
+          "net9_bps": -16.953258963916486
+        },
+        "1": {
+          "n": 256,
+          "net9_bps": -31.453334179627966
+        }
+      },
+      "symbols": {
+        "ADAUSDT": {
+          "n": 54,
+          "net9_bps": -15.44070705766997
+        },
+        "BNBUSDT": {
+          "n": 52,
+          "net9_bps": -15.999429220544691
+        },
+        "BTCUSDT": {
+          "n": 48,
+          "net9_bps": -17.422401120904127
+        },
+        "DOTUSDT": {
+          "n": 57,
+          "net9_bps": -37.91649504709748
+        },
+        "ETHUSDT": {
+          "n": 61,
+          "net9_bps": -28.630002846414783
+        },
+        "SOLUSDT": {
+          "n": 51,
+          "net9_bps": -45.975972950934256
+        },
+        "XRPUSDT": {
+          "n": 45,
+          "net9_bps": -26.585106394311126
+        }
+      },
+      "wr_net9": 0.3804347826086957
+    }
+  }
+}

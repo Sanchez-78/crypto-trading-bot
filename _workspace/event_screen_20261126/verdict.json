@@ -1,0 +1,14 @@
+{
+  "chosen": {
+    "E1": "E1_k3_follow_H240",
+    "E2": "E2_k2_fade_H120_post"
+  },
+  "end": "2026-10",
+  "missing_archives": [],
+  "signature": "bf9b9c4483e50876c6cf00f4a33cd16fac0a13c34cbcec9956ad60844f569b9f",
+  "train_role": "in-sample selection, descriptive only",
+  "verdict": {
+    "E1": "NO_EDGE",
+    "E2": "NO_EDGE"
+  }
+}
