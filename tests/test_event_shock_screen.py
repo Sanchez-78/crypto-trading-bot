@@ -196,3 +196,57 @@ def test_block_samples_plumbing_on_a_fake_archive_cache(tmp_path):
     assert sum(len(f) for k, f in out.items() if k.startswith("E1_")) > 0
     st = {cid: m.stats(f, m.ff.stamp("2024-01-20"), m.ff.stamp("2024-03-01")) for cid, f in out.items()}
     assert set(m.select(st)) == {"E1", "E2"}
+
+
+def test_null_bootstrap_p_value_behaves_as_a_test_of_mean_net9_above_zero():
+    end = T0 + 120 * m.DAY
+    rng = np.random.default_rng(11)
+    strong = m.stats(_samples(list(9 + 15 + rng.normal(0, 20, 600))), T0, end)
+    zero = m.stats(_samples(list(9 + rng.normal(0, 20, 600))), T0, end)
+    negative = m.stats(_samples(list(9 - 15 + rng.normal(0, 20, 600))), T0, end)
+    assert strong["p_one_sided"] < 0.01
+    assert 0.05 < zero["p_one_sided"] < 0.95
+    assert negative["p_one_sided"] > 0.99
+    # explicit null: centred day sums give means exactly (bootstrap mean - observed mean)
+    assert strong["bootstrap_valid"] == m.BOOT
+
+
+def test_null_bootstrap_matches_an_independent_recentred_computation():
+    end = T0 + 60 * m.DAY
+    rng = np.random.default_rng(12)
+    frame = _samples(list(12 + rng.normal(0, 15, 300)))
+    st = m.stats(frame, T0, end)
+    # independent re-implementation: subtract the observed mean from every sample, resample whole days
+    net = frame["r"].to_numpy() - m.COST
+    centred = net - net.mean()
+    days = (frame.decision_ms.to_numpy() // m.DAY - T0 // m.DAY).astype(int)
+    n_days = int(math.ceil(end / m.DAY) - T0 // m.DAY)
+    counts = np.bincount(days, minlength=n_days).astype(float)
+    sums = np.bincount(days, weights=centred, minlength=n_days)
+    g = np.random.default_rng(m.SEED)
+    nulls = []
+    for begin in range(0, m.BOOT, 100):
+        draw = g.integers(0, n_days, size=(min(100, m.BOOT - begin), n_days))
+        den = counts[draw].sum(axis=1)
+        nulls.append(sums[draw].sum(axis=1)[den > 0] / den[den > 0])
+    nulls = np.concatenate(nulls)
+    expected = (1 + np.count_nonzero(nulls >= net.mean())) / (len(nulls) + 1)
+    assert st["p_one_sided"] == pytest.approx(expected)
+
+
+def test_run_refuses_an_incomplete_archive_set_before_any_stage(tmp_path):
+    manifest = [{"kind": k, "symbol": s, "period": p, "key": m.ff.archive_key(k, s, p), "status": "OK", "sha256": "x"}
+                for k, s, p in m.expected_jobs("2024-02")]
+    m.check_complete(manifest, "2024-02")                        # complete -> no exception
+    assert len(manifest) == 7 * 2 * 2
+    broken = [dict(r) for r in manifest]
+    broken[3]["status"] = "NOT_FOUND"
+    with pytest.raises(SystemExit, match="NOT_EVALUABLE"):
+        m.check_complete(broken, "2024-02")
+    with pytest.raises(SystemExit, match="NOT_EVALUABLE"):
+        m.check_complete(manifest[:-1], "2024-02")
+    # offline run on an empty cache stops before writing any stage file
+    out = tmp_path / "out"
+    with pytest.raises(SystemExit, match="NOT_EVALUABLE"):
+        m.run(tmp_path / "empty_cache", out, "2024-02", offline=True)
+    assert not (out / "train.json").exists() and not (out / "train.started.json").exists()

@@ -1,4 +1,9 @@
-# Nový zdroj signálu: offline EVENT screen E1/E2 (předregistrace, 2026-11-26)
+# Nový zdroj signálu: offline EVENT screen E1/E2 (předregistrace rev. 2, 2026-11-26)
+
+Rev. 2 zapracovává review `_workspace/2026-11-26_codex_review_event_screen_protocol.md`:
+- explicitní nulový bootstrap;
+- kontrola úplnosti archivů s fail-closed zastavením;
+- TRAIN jen jako výběrový a popisný.
 
 ## Proč
 
@@ -16,7 +21,7 @@ obchodování** a delší držení s pohybem ≫ nákladu. Tento screen testuje 
 offline cost-wall screen na veřejných datech. Bot, konfigurace ani běžící měřicí okno C1 se nemění.
 
 - Skript: `scripts/research/event_shock_screen.py`.
-- Testy: `tests/test_event_shock_screen.py` (8 testů).
+- Testy: `tests/test_event_shock_screen.py` (11 testů).
 - Načítání archivů je převzato ze `scripts/research/futures_flow_screen.py`: kontrola SHA-256,
   ZIP bez rozbalení.
 
@@ -66,10 +71,17 @@ offline cost-wall screen na veřejných datech. Bot, konfigurace ani běžící 
   - `train.json` se zapíše dřív, než se spočítá TEST, a `test.json` dřív než HOLDOUT.
   - Každý blok se vyhodnotí jednou.
   - Podpis zahrnuje hash skriptu a manifest dat, takže změna skriptu po TRAIN běh zastaví.
+- **Úplnost dat (rev. 2):** před jakoukoli etapou musí být všech 7 × 2 × počet měsíců očekávaných
+  archivů (futures a funding) se stavem OK a ověřeným SHA-256. Pro konec 2026-10 je to 476 archivů.
+  Jinak běh skončí `NOT_EVALUABLE` a nezapíše `train.json` (`check_complete`).
+- **Role TRAIN (rev. 2):** CI a p v `train.json` jsou jen výběrové a popisné (in-sample). Potvrzující
+  jsou pouze TEST a HOLDOUT.
 - **Statistika:**
   - bootstrap celých kalendářních dnů bloku (včetně dnů bez signálu), 2000×, seed 20261126;
   - 95% percentilové CI průměru net9;
-  - jednostranné p z centrovaného bootstrapu;
+  - jednostranné p pro H1 (průměr net9 > 0) z **explicitního nulového bootstrapu** (rev. 2).
+    Každý vzorek net9 se vycentruje odečtením pozorovaného průměru a dny se losují stejně.
+    p = (1 + #{nulový průměr ≥ pozorovaný průměr}) / (B + 1);
   - Holm přes 2 rodiny v každém bloku;
   - vykazuje se i net18 (konzervativní náklad).
 

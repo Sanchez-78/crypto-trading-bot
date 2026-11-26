@@ -190,18 +190,26 @@ def stats(samples: pd.DataFrame, start_ms: int, end_ms: int) -> dict:
             raise ValueError("sample outside block")
         np.add.at(counts, d, 1)
         np.add.at(sums, d, r - COST)
-    boots = []
+    boots, null_boots = [], []
     if np.count_nonzero(counts) >= 2:
+        net = float(r.mean() - COST)
+        # Null (H0: mean net9 = 0) built explicitly: every sample's net9 is centred by the observed mean,
+        # so each day's sum becomes sums - net * counts; the same day draws give the null means.
+        null_sums = sums - net * counts
         rng = np.random.default_rng(SEED)
         for begin in range(0, BOOT, 100):
             draw = rng.integers(0, days, size=(min(100, BOOT - begin), days))
-            den, num = counts[draw].sum(axis=1), sums[draw].sum(axis=1)
-            boots.append(num[den > 0] / den[den > 0])
+            den = counts[draw].sum(axis=1)
+            ok = den > 0
+            boots.append(sums[draw].sum(axis=1)[ok] / den[ok])
+            null_boots.append(null_sums[draw].sum(axis=1)[ok] / den[ok])
     boots = np.concatenate(boots) if boots else np.empty(0)
+    null_boots = np.concatenate(null_boots) if null_boots else np.empty(0)
     out["bootstrap_valid"] = int(len(boots))
     out["ci95_net9"] = np.quantile(boots, [.025, .975]).tolist() if len(boots) else None
-    net = out["net9_bps"]
-    out["p_one_sided"] = float((1 + np.count_nonzero(boots - net >= net)) / (len(boots) + 1)) if len(boots) else 1.0
+    # one-sided p for H1: mean net9 > 0 = share of null means at least as large as the observed mean
+    out["p_one_sided"] = (float((1 + np.count_nonzero(null_boots >= out["net9_bps"])) / (len(null_boots) + 1))
+                          if len(null_boots) else 1.0)
     if n:
         g = samples.groupby("symbol")["r"].agg(["sum", "count"])
         positive = (g["sum"] - COST * g["count"]).clip(lower=0)
@@ -285,11 +293,25 @@ def signature(manifest: list[dict]) -> str:
     return hashlib.sha256(body.encode()).hexdigest()
 
 
+def expected_jobs(end: str) -> list[tuple[str, str, str]]:
+    return [(kind, s, p) for s in SYMBOLS for kind in ("futures", "funding") for p in ff.month_keys("2024-01", end)]
+
+
+def check_complete(manifest: list[dict], end: str) -> None:
+    """Fail closed before any stage: every preregistered (kind, symbol, month) archive present and verified."""
+    expected = {ff.archive_key(*job) for job in expected_jobs(end)}
+    ok = {m["key"] for m in manifest if m.get("status") == "OK" and m.get("sha256")}
+    missing = sorted(expected - ok)
+    if missing:
+        raise SystemExit(f"NOT_EVALUABLE: {len(missing)} of {len(expected)} expected archives missing or "
+                         f"unverified, e.g. {missing[:3]}")
+
+
 def run(cache: Path, out: Path, end: str, offline: bool) -> dict:
-    jobs = [(kind, s, p) for s in SYMBOLS for kind in ("futures", "funding") for p in ff.month_keys("2024-01", end)]
-    manifest = sorted((ff.fetch_archive(cache, *j, offline=offline) for j in jobs), key=lambda m: m["key"])
+    manifest = sorted((ff.fetch_archive(cache, *j, offline=offline) for j in expected_jobs(end)), key=lambda m: m["key"])
     missing = [m["key"] for m in manifest if m["status"] != "OK"]
     ff.write_json(out / "manifest.json", {"end": end, "missing": missing, "rows": manifest})
+    check_complete(manifest, end)
     sig = signature(manifest)
     holdout_end = (pd.Period(end, freq="M") + 1).to_timestamp().strftime("%Y-%m-%d")
     configs = grid()
@@ -297,7 +319,9 @@ def run(cache: Path, out: Path, end: str, offline: bool) -> dict:
     def train():
         samples = block_samples(cache, manifest, configs, START, TRAIN_END)
         st = {cid: stats(s, ff.stamp(START), ff.stamp(TRAIN_END)) for cid, s in samples.items()}
-        return {"stats": st, "chosen": select(st)}
+        return {"role": "IN_SAMPLE_SELECTION_DESCRIPTIVE_ONLY (CI/p here are not confirmatory; "
+                        "TEST and HOLDOUT are the only confirmatory stages)",
+                "stats": st, "chosen": select(st)}
     tr = ff.sealed_stage(out / "train.json", sig, train)
     chosen = {f: c for f, c in tr["chosen"].items() if c}
     chosen_cfg = [c for c in configs if c.id in chosen.values()]
@@ -323,7 +347,8 @@ def run(cache: Path, out: Path, end: str, offline: bool) -> dict:
             verdict[family] = "LEAD"
         else:
             verdict[family] = "NO_EDGE"
-    result = {"signature": sig, "end": end, "missing_archives": missing, "chosen": tr["chosen"], "verdict": verdict}
+    result = {"signature": sig, "end": end, "missing_archives": missing, "chosen": tr["chosen"], "verdict": verdict,
+              "train_role": "in-sample selection, descriptive only"}
     ff.write_json(out / "verdict.json", result)
     return result
 
