@@ -1,87 +1,109 @@
-# Rozhodovací pravidlo po měřicím okně (předem zapsáno 2026-11-26 ~13:40 UTC, před koncem okna)
+# Rozhodovací pravidlo po měřicím okně — rev. 2 (předem zapsáno 2026-11-26, před koncem okna)
 
 Operátor 2026-11-26: „pokračuj s měřením a automaticky po skončení vyhodnoť a se zlepšením WR a PL“.
 
+Rev. 2 opravuje review Codexu (`_workspace/2026-11-26_codex_review_threshold_window_rule.md`, CHANGES_REQUIRED):
+- srovnává se jen s nově vyřazenými obchody;
+- populace je vymezená bránou;
+- Holmova korekce pro dva prahy;
+- bez časového override v CLI;
+- WR jen jako hypotéza;
+- žádná automatická změna konfigurace.
+
 Okno (`docs/OPERATING_STATE.md`, zapsáno 2026-11-25 před T0) běží beze změny do
-**2026-12-02 09:00 UTC**. Tento dokument doplňuje, **co se po vyhodnocení mechanicky stane**. Výsledky
-okna jsem nepočítal. Jediný běh skriptu na datech byl smoke test na 7 dnech **před** T0.
+**2026-12-02 09:00 UTC**. Výsledky okna jsem nepočítal. Skript běžel jen jako smoke test na 7 dnech
+**před** T0.
 
 ## Vyhodnocení (jednou)
 
-- Skript `scripts/research/threshold_window_eval.py` (SHA-256 `571ef346…77852`), testy
-  `tests/test_threshold_window_eval.py` (12 testů, `caf4ed02…8c1`). Jen stdlib, DB `mode=ro` +
-  `PRAGMA query_only=ON`, zápis jen na stdout.
-- Spuštění: **2. 12. ≥ 09:30 UTC**. Skript před `END + 1800 s` odmítne běžet (`NOT_YET`, rc 2).
-  Nejdelší držení obchodu za 30 dní před T0 bylo 901 s.
+- **Skript:** `scripts/research/threshold_window_eval.py` (rev. 2, SHA-256 `80c742de…5bd5`).
+  - Testy: `tests/test_threshold_window_eval.py` (21 testů, `88904a7f…f65b`).
+  - Jen stdlib. DB otevírá s `mode=ro` + `PRAGMA query_only=ON`, zapisuje jen na stdout.
+- **Kdy:** 2. 12. ≥ 09:30 UTC.
+  - Před `END + 1800 s` skript odmítne běžet (`NOT_YET`, rc 2). CLI nemá žádný časový override; testy
+    nahrazují `time.time`.
   - Příkaz: `ssh … 'python3 -I - --db /opt/cryptomaster/local_learning_storage/cache.sqlite' < scripts/research/threshold_window_eval.py`
-- Výstup: `_workspace/threshold_window_20261202/result.json` + SHA-256. Skript se po běhu nemění.
-- Metriky podle předregistrace pro všechny obchody i pro každý řez (≥ −25 / ≥ −10 / ≥ 0):
+- **Výstup:** `_workspace/threshold_window_20261202/result.json` + SHA-256.
+
+## Populace
+
+- **Populace brány G:** obchody okna (vstup v [T0, END)) s platnou `predicted_net_edge_bps` ≥ −25.
+  - Predikce se ukládá jen pro `explore_bucket == P0_8_PLUS_EVIDENCE_COLLECTION`
+    (`local_persistent_cache.py:328`).
+  - Je to stejná veličina, kterou kontroluje brána `PAPER_PROBE_MIN_NET_BPS`:
+    `p0_8_plus_live_pipeline.py:180`, brána `>=` v `paper_source_learning.py:129`.
+- **Minimum 1 000 obchodů se počítá jen z G**, jinak `INSUFFICIENT_DATA`.
+- **Jen popisně:**
+  - všechny obchody okna;
+  - počet bez predikce;
+  - počet pod −25. Ty v okně nemají být, protože je brána nepustila.
+- **Metriky pro G a každý řez:**
   - n;
-  - kanonický WR, tj. výhry / n. Hranice ±0,05 % je stejná jako v `trade_metrics_contract`;
-  - průměrný a kumulativní net bps, kumulativní USD;
-  - PF;
+  - kanonický WR (výhry / n, hranice ±0,05 % podle `trade_metrics_contract`);
+  - průměrný a kumulativní net bps, USD a PF;
   - 95% CI průměru (bootstrap přes UTC dny, 4 000 replikací);
-  - kalibrace `predicted_net_edge_bps` (Spearman, Pearson, kvintily).
-- Řez filtruje stejnou veličinu jako serverový práh:
-  - `predicted_net_edge_bps = ev_at_entry × 10⁴`;
-  - u průzkumu je to `net_expected_edge_bps` (`p0_8_plus_live_pipeline.py:180`);
-  - brána je `net_expected_edge_bps >= PAPER_PROBE_MIN_NET_BPS` (`paper_source_learning.py:129`).
+  - kalibrace na G.
 
-## Pravidlo (mechanické)
+## Pravidlo
 
-1. **n < 1 000 → `INSUFFICIENT_DATA`.** Nic se nemění, okno se neprodlužuje.
-2. **Způsobilý řez** c ∈ {−10, 0} musí splnit obojí:
-   - vybere ≥ 100 obchodů;
-   - obchody, které by vyřadil, jsou na obchod horší. Párový bootstrap přes UTC dny: dolní mez 95% CI
-     rozdílu (vybrané − vyřazené) musí být > 0.
-3. **Žádný způsobilý řez → `KEEP_CURRENT`.** Práh zůstává −25.
-4. **Jinak `TIGHTEN`:** vyhrává způsobilý řez s nejvyšším průměrem net bps; při shodě volnější řez.
-   - Štítek `POSITIVE_HYPOTHESIS`, když dolní mez CI průměru zvoleného řezu > 0. Jinak `LOSS_REDUCTION`.
-   - `POSITIVE_HYPOTHESIS` je jen hypotéza k replikaci, ne důkaz zisku.
+1. **G < 1 000 → `INSUFFICIENT_DATA`.**
+2. **Pro c ∈ {−10, 0}:**
+   - ponechané K_c = predikce ≥ c;
+   - nově vyřazené D_c = −25 ≤ predikce < c;
+   - H_c: průměr(K_c) − průměr(D_c) ≤ 0;
+   - jednostranné p z párového bootstrapu přes UTC dny: (počet rozdílů ≤ 0 + 1) / (platné + 1).
+3. **Holmova korekce** přes obě hypotézy na rodinné hladině 0,025 (jednostranně):
+   - menší p ≤ 0,0125, druhé p ≤ 0,025;
+   - hypotéza se testuje jen při |K_c| ≥ 100 a |D_c| ≥ 1.
+4. **Způsobilý řez** = H_c zamítnutá.
+   - Žádný způsobilý řez → `KEEP_CURRENT`.
+   - Jinak `TIGHTEN` s řezem s nejvyšším průměrem net bps; při shodě volnější řez.
+   - Štítek `POSITIVE_HYPOTHESIS`, když dolní mez CI průměru K_c > 0, jinak `LOSS_REDUCTION`.
+5. **WR v pravidle není.** Vyšší WR po zpřísnění je hypotéza, ne předpověď.
+6. **Výsledek je prediktivní třídění, ne kauzální účinek prahu.** I `TIGHTEN` jen opravňuje navrhnout změnu.
 
-## Akce při `TIGHTEN` (jen PAPER)
+## Co následuje po výsledku (žádná automatická změna konfigurace)
 
-- **Mění se jen jeden řádek:** `PAPER_PROBE_MIN_NET_BPS=-25` → doporučený řez v
+- **`INSUFFICIENT_DATA` / `KEEP_CURRENT`:** nic se nemění. Report + Codex audit výsledku.
+- **`TIGHTEN`:** připravím konkrétní postimage drop-inu
   `/etc/systemd/system/cryptomaster.service.d/zzzzzzzzzz-probe-volume.conf`.
-- **Postup:**
-  1. Záloha drop-inu do `/opt/cryptomaster_deploy_backups/probe-min-net-<UTC>/`.
-  2. Kontrola, že drop-in obsahuje přesně řádek `Environment="PAPER_PROBE_MIN_NET_BPS=-25"`, jinak STOP.
-  3. Náhrada řádku, `systemctl daemon-reload`, `systemctl restart cryptomaster.service`.
-  4. **Ověření:**
-     - služba `active`;
-     - `/proc/<nový PID>/environ` obsahuje novou hodnotu;
-     - do 30 min `PAPER_ENTRY`, nebo v logu odmítnutí kvůli prahu;
-     - žádný traceback ve `validate_config`.
-     Selhání → obnova zálohy a restart.
-- **Nemění se:** TP/SL, náklady, limity 480/30/300 s, symboly, CONTROL podíl, model, REAL, Stonkfly ani
-  sběrač.
-- **Proč to zlepší WR a P/L:** podle dat z okna je ztráta na vybraných obchodech nižší a WR vyšší.
-  Méně obchodů navíc znamená pomalejší kumulativní ztrátu. **Kladné P/L to neslibuje.**
-- **Cena:** o 60–85 % méně PAPER vzorků pro učení. Dřívější rozhodnutí Codexu B (2026-11-24, −25 neměnit)
-  stálo na cíli „max vzorků“. Operátor teď výslovně upřednostňuje zlepšení WR a P/L.
-
-## Replikace po `TIGHTEN`
-
-- Nové 7denní okno začne T1 = čas restartu.
-- **Kritérium `REPLICATED`:** dolní mez 95% CI (bootstrap přes dny) průměru net bps v okně 2 je vyšší
-  než průměr všech obchodů okna 1 (bodový odhad, práh −25).
-- Jinak `NOT_REPLICATED`, tedy návrat na −25 stejným postupem.
-- Skript replikace připravím před koncem okna 2 s vlastním Codex review.
+  - Mění se jen řádek `Environment="PAPER_PROBE_MIN_NET_BPS=-25"` → doporučený řez.
+  - Postup nasazení:
+    1. záloha do `/opt/cryptomaster_deploy_backups/probe-min-net-<UTC>/`;
+    2. kontrola přesného předobrazu, jinak STOP;
+    3. `daemon-reload` + restart;
+    4. ověření: `active`, nová hodnota v `/proc/<PID>/environ`, `PAPER_ENTRY` nebo odmítnutí prahem do
+       30 min, bez tracebacku z `validate_config`;
+    5. při selhání obnova zálohy.
+  - **Návrh i výsledek jdou Codexu k samostatnému review.** Nasazuje se až po jeho schválení.
+- **Nikdy se nemění:** TP/SL, náklady, limity 480/30/300 s, symboly, CONTROL podíl, model, REAL,
+  Stonkfly ani sběrač.
+- **Cena zpřísnění:** o 60–85 % méně PAPER vzorků pro učení. Dřívější rozhodnutí Codexu B
+  (2026-11-24) stálo na cíli „max vzorků“; operátor teď upřednostňuje WR a P/L.
+- **Replikace po případném nasazení:**
+  - 7denní okno od restartu;
+  - `REPLICATED`, když dolní mez 95% CI (dny) průměru net bps okna 2 > průměr G okna 1;
+  - jinak návrat na −25;
+  - skript replikace bude mít vlastní review.
 
 ## Fail-closed
 
-Když skript selže (neplatný řádek, duplicitní `trade_id`, chyba DB) nebo výstup nejde jednoznačně namapovat
-na pravidlo, nic se nemění a jde to Codexu.
+Při chybě skriptu (neplatný řádek, duplicitní `trade_id`, DB) nebo nejednoznačném výsledku se nic nemění
+a výsledek jde Codexu.
 
 ## Známé předem (ne test)
 
-Smoke test na 7 dnech před T0 (n 1 911; tato data už byla analyzována) by dal `TIGHTEN 0 /
-LOSS_REDUCTION`:
+Smoke test rev. 2 na 7 dnech před T0 (už analyzovaná data):
 
-| Řez | n | net bps |
-|---|---:|---:|
-| ≥ −25 | 1 907 | −8,33 |
-| ≥ −10 | 744 | −6,77 |
-| ≥ 0 | 231 | −4,02 |
+| | Počet |
+|---|---:|
+| G | 1 907 |
+| bez predikce | 4 |
+| pod −25 | 0 |
 
-Okno je nezávislá kontrola tohoto vzoru.
+| Řez | K: n, bps | D: n, bps | p | Holm |
+|---|---|---|---:|---|
+| −10 | 744, −6,77 | 1 163, −9,33 | 0,038 | ne |
+| 0 | 231, −4,02 | 1 676, −8,93 | 0,0147 | ne (> 0,0125) |
+
+Výsledek smoke testu: `KEEP_CURRENT`. Pravidlo je tedy konzervativní: 7 dní vzorku dalo těsně pod hranicí.

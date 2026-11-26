@@ -1,15 +1,22 @@
 """One-shot evaluation of the preregistered analysis window (docs/OPERATING_STATE.md).
 
 Window: trades ENTERED in [T0, END) = [2026-11-25 09:00, 2026-12-02 09:00) UTC.
-Cuts on predicted_net_edge_bps: >= -25 / >= -10 / >= 0. Minimum 1000 closed
-trades, otherwise INSUFFICIENT_DATA (the deadline is never extended).
+Cuts on predicted_net_edge_bps: >= -25 / >= -10 / >= 0. The deadline is never
+extended.
 
-Decision rule (preregistered 2026-11-26, before END; see
-_workspace/2026-11-26_threshold_window_decision_rule.md): a stricter cut is
-ELIGIBLE when it keeps >= 100 trades and the trades it would drop are worse
-per trade (paired UTC-day bootstrap 95% lower bound of selected - dropped > 0).
-The recommended PAPER threshold is the eligible cut with the highest mean net
-bps (tie -> looser cut); none eligible -> keep -25.
+Gate population (rev. 2, Codex review 2026-11-26): only trades with a valid
+prediction (persisted solely for P0_8_PLUS_EVIDENCE_COLLECTION) that passed the
+current gate, predicted >= -25. The 1000-trade minimum counts this population;
+other trades and missing predictions are reported descriptively only.
+
+Decision rule (preregistered before END; see
+_workspace/2026-11-26_threshold_window_decision_rule.md): for c in {-10, 0},
+kept = predicted >= c, newly dropped = -25 <= predicted < c. H_c: mean(kept) -
+mean(newly dropped) <= 0, one-sided paired UTC-day bootstrap p-value; Holm over
+the two hypotheses at family alpha 0.025 (one-sided). A cut is ELIGIBLE when H_c
+is rejected and kept >= 100 and newly dropped >= 1. The recommended PAPER
+threshold is the eligible cut with the highest mean net bps (tie -> looser
+cut); none eligible -> keep -25. WR is reported, not used by the rule.
 
 Stdlib only, so it can be streamed to the server: ``python3 -I - --db ...``.
 SQLite opened with mode=ro + PRAGMA query_only=ON; writes only stdout.
@@ -37,6 +44,7 @@ MIN_CUT_TRADES = 100
 WIN_THRESHOLD_PCT = 0.05  # == src.core.trade_metrics_contract.WIN_THRESHOLD_PCT
 SEED = 20261202
 REPLICATES = 4000
+FAMILY_ALPHA = 0.025      # one-sided, Holm over the two stricter cuts
 
 
 def _num(value):
@@ -117,7 +125,7 @@ def day_difference(selected: list[dict], dropped: list[dict]) -> dict:
     for i, group in enumerate((selected, dropped)):
         for r in group:
             days[r["day"]][i].append(r["net_bps"])
-    result = dict(lower_bps=None, upper_bps=None, valid_replicates=0)
+    result: dict = dict(lower_bps=None, upper_bps=None, valid_replicates=0, p_one_sided=None)
     if not selected or not dropped:
         return result
     blocks = [days[d] for d in sorted(days)]
@@ -132,8 +140,22 @@ def day_difference(selected: list[dict], dropped: list[dict]) -> dict:
     diffs.sort()
     result["valid_replicates"] = len(diffs)
     if diffs:
-        result.update(lower_bps=_pct(diffs, .025), upper_bps=_pct(diffs, .975))
+        # percentile-bootstrap one-sided p for H: difference <= 0 (inverts the CI)
+        p = (sum(d <= 0 for d in diffs) + 1) / (len(diffs) + 1)
+        result.update(lower_bps=_pct(diffs, .025), upper_bps=_pct(diffs, .975), p_one_sided=p)
     return result
+
+
+def holm(pvalues: dict, alpha: float = FAMILY_ALPHA) -> dict:
+    """Holm step-down; a missing p-value is never rejected and stops the procedure."""
+    rejected = {key: False for key in pvalues}
+    ordered = sorted(pvalues, key=lambda k: (pvalues[k] is None, pvalues[k] if pvalues[k] is not None else 1, k))
+    for i, key in enumerate(ordered):
+        p = pvalues[key]
+        if p is None or p > alpha / (len(ordered) - i):
+            break
+        rejected[key] = True
+    return rejected
 
 
 def summary(rows: list[dict]) -> dict:
@@ -189,25 +211,36 @@ def calibration(rows: list[dict]) -> dict:
 
 
 def evaluate(rows: list[dict]) -> dict:
+    # Gate population: valid prediction that passed the current gate (>= -25).
+    gate = [r for r in rows if r["predicted"] is not None and r["predicted"] >= CURRENT_CUT]
     report: dict = dict(
-        contract="threshold_window_eval_v1", t0=T0, end=END, min_trades=MIN_TRADES,
-        all=summary(rows), missing_prediction=sum(r["predicted"] is None for r in rows),
-        calibration=calibration(rows), cuts={})
-    if len(rows) < MIN_TRADES:
+        contract="threshold_window_eval_v2", t0=T0, end=END, min_trades=MIN_TRADES,
+        family_alpha_one_sided=FAMILY_ALPHA,
+        all_descriptive=summary(rows), gate_population=summary(gate),
+        missing_prediction=sum(r["predicted"] is None for r in rows),
+        below_current_cut=sum(r["predicted"] is not None and r["predicted"] < CURRENT_CUT for r in rows),
+        calibration=calibration(gate), cuts={})
+    if len(gate) < MIN_TRADES:
         report.update(verdict="INSUFFICIENT_DATA", recommended_cut=CURRENT_CUT, label="NO_CHANGE")
         return report
     cuts: dict[str, dict] = report["cuts"]
+    pvalues = {}
+    for cut in CUTS:
+        kept = [r for r in gate if r["predicted"] >= cut]
+        entry: dict = summary(kept)
+        if cut > CURRENT_CUT:
+            newly_dropped = [r for r in gate if r["predicted"] < cut]
+            entry["newly_dropped"] = summary(newly_dropped)
+            entry["kept_minus_newly_dropped"] = day_difference(kept, newly_dropped)
+            if len(kept) >= MIN_CUT_TRADES and newly_dropped:
+                pvalues[f"{cut:g}"] = entry["kept_minus_newly_dropped"]["p_one_sided"]
+        cuts[f"{cut:g}"] = entry
+    rejected = holm(pvalues)
     eligible = []
     for cut in CUTS:
-        selected = [r for r in rows if r["predicted"] is not None and r["predicted"] >= cut]
-        dropped = [r for r in rows if not (r["predicted"] is not None and r["predicted"] >= cut)]
-        entry: dict = summary(selected)
-        entry["dropped_n"] = len(dropped)
-        entry["selected_minus_dropped"] = day_difference(selected, dropped)
-        lower = entry["selected_minus_dropped"]["lower_bps"]
-        entry["eligible"] = bool(cut > CURRENT_CUT and len(selected) >= MIN_CUT_TRADES
-                                 and lower is not None and lower > 0)
-        cuts[f"{cut:g}"] = entry
+        entry = cuts[f"{cut:g}"]
+        entry["holm_rejected"] = rejected.get(f"{cut:g}", False)
+        entry["eligible"] = bool(cut > CURRENT_CUT and entry["holm_rejected"])
         if entry["eligible"]:
             eligible.append((entry["mean_net_bps"], -cut, cut))
     if not eligible:
@@ -224,11 +257,11 @@ def evaluate(rows: list[dict]) -> dict:
 
 
 def main(argv=None) -> int:
+    # No time override on the CLI: tests monkeypatch time.time.
     ap = argparse.ArgumentParser()
     ap.add_argument("--db", required=True)
-    ap.add_argument("--now", type=float, default=None, help="tests only")
     args = ap.parse_args(argv)
-    now = time.time() if args.now is None else args.now
+    now = time.time()
     if now < END + SETTLE_S:
         print(json.dumps(dict(verdict="NOT_YET", now=now, earliest=END + SETTLE_S)))
         return 2

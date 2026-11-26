@@ -41,10 +41,24 @@ def test_win_threshold_matches_contract():
     assert ev.WIN_THRESHOLD_PCT == WIN_THRESHOLD_PCT
 
 
-def test_refuses_before_window_settles(tmp_path, capsys):
+def test_refuses_before_window_settles(tmp_path, capsys, monkeypatch):
     db = make_db(tmp_path / "c.sqlite", synth(10, {0: 0}))
-    assert ev.main(["--db", db, "--now", str(ev.END + ev.SETTLE_S - 1)]) == 2
+    monkeypatch.setattr(ev.time, "time", lambda: ev.END + ev.SETTLE_S - 1)
+    assert ev.main(["--db", db]) == 2
     assert '"NOT_YET"' in capsys.readouterr().out
+
+
+def test_runs_after_window_settles(tmp_path, capsys, monkeypatch):
+    db = make_db(tmp_path / "c.sqlite", synth(10, {0: 0}))
+    monkeypatch.setattr(ev.time, "time", lambda: ev.END + ev.SETTLE_S)
+    assert ev.main(["--db", db]) == 0
+    assert '"INSUFFICIENT_DATA"' in capsys.readouterr().out
+
+
+def test_cli_has_no_time_override(tmp_path):
+    db = make_db(tmp_path / "c.sqlite", synth(10, {0: 0}))
+    with pytest.raises(SystemExit):
+        ev.main(["--db", db, "--now", str(ev.END + 10 ** 6)])
 
 
 def test_insufficient_data_below_1000(tmp_path):
@@ -101,7 +115,9 @@ def test_missing_prediction_is_never_selected(tmp_path):
     trades += [(f"m{i}", "X", "BUY", ev.T0 + i * 100, ev.T0 + i * 100 + 60, 1, 0.5, None) for i in range(50)]
     report = run(make_db(tmp_path / "c.sqlite", trades))
     assert report["missing_prediction"] == 50
-    assert report["cuts"]["-25"]["n"] == 1100 and report["all"]["n"] == 1150
+    assert report["cuts"]["-25"]["n"] == 1100 and report["gate_population"]["n"] == 1100
+    assert report["all_descriptive"]["n"] == 1150
+    assert report["cuts"]["0"]["newly_dropped"]["n"] == 550
 
 
 def test_wr_counts_flats_in_denominator():
@@ -137,3 +153,34 @@ def test_open_is_read_only_and_leaves_bytes_unchanged(tmp_path, monkeypatch):
     ev.load(db)
     assert seen and "mode=ro" in seen[0]
     assert hashlib.sha256(open(db, "rb").read()).hexdigest() == before
+
+
+def test_minimum_counts_only_the_gate_population(tmp_path):
+    trades = synth(900, {-20: -15, 5: 5})
+    trades += [(f"m{i}", "X", "BUY", ev.T0 + i * 100, ev.T0 + i * 100 + 60, 0, 0.1, None) for i in range(200)]
+    trades += [(f"b{i}", "X", "BUY", ev.T0 + i * 100 + 7, ev.T0 + i * 100 + 67, 0, 0.1, -40) for i in range(200)]
+    report = run(make_db(tmp_path / "c.sqlite", trades))
+    assert report["gate_population"]["n"] == 900 and report["below_current_cut"] == 200
+    assert report["verdict"] == "INSUFFICIENT_DATA"
+
+
+def test_trades_below_current_cut_never_make_a_cut_eligible(tmp_path):
+    trades = synth(1400, {-20: -8, -5: -8, 5: -8})
+    trades += synth(700, {-40: -80}, seed=7)
+    trades = [(f"x{i}",) + t[1:] for i, t in enumerate(trades)]
+    report = run(make_db(tmp_path / "c.sqlite", trades))
+    assert report["below_current_cut"] == 700
+    assert report["cuts"]["0"]["newly_dropped"]["n"] == 934
+    assert report["verdict"] == "KEEP_CURRENT"
+    assert not report["cuts"]["-10"]["eligible"] and not report["cuts"]["0"]["eligible"]
+
+
+@pytest.mark.parametrize("pvalues,expected", [
+    ({"-10": 0.01, "0": 0.02}, {"-10": True, "0": True}),
+    ({"-10": 0.013, "0": 0.001}, {"-10": True, "0": True}),
+    ({"-10": 0.02, "0": 0.02}, {"-10": False, "0": False}),
+    ({"-10": 0.0125, "0": 0.03}, {"-10": True, "0": False}),
+    ({"-10": None, "0": 0.001}, {"-10": False, "0": True}),
+])
+def test_holm_two_hypotheses(pvalues, expected):
+    assert ev.holm(pvalues) == expected
