@@ -144,6 +144,14 @@ generátory dál určují, co vstoupí.
   - Během okna se nemění práh, model ani náklady.
   - CONTROL = 1,0: hodnotí se predikční třídění, **ne** kauzální účinek adaptivní politiky.
   - Kladný řez je jen hypotéza pro nezávislé opakování, ne důkaz zisku.
+- **Rozhodovací pravidlo po okně** (zapsáno 2026-11-26 před koncem, Codex **APPROVE_RULE** R3,
+  `_workspace/2026-11-26_codex_rereview_threshold_window_rule_r3.md`):
+  - pravidlo `_workspace/2026-11-26_threshold_window_decision_rule.md` (rev. 3);
+  - skript `scripts/research/threshold_window_eval.py` (`1f999cc1…d4d0`), spouští se jednou 2. 12. ≥ 09:30 UTC;
+  - populace brány: predikce ≥ −25, minimum 1 000;
+  - ponechané se porovnávají s nově vyřazenými, Holm přes řezy −10 a 0 (jednostranně 0,025);
+  - `TIGHTEN` jen opravňuje navrhnout změnu `PAPER_PROBE_MIN_NET_BPS`; postimage drop-inu jde
+    k samostatnému review Codexu, automatická změna konfigurace není.
 
 ## Experiment C1 — UZAVŘEN 2026-11-16 17:48 UTC
 
