@@ -94,7 +94,7 @@ def prepare(rows: list[dict]) -> list[dict]:
             seen.add(key)
         out.append(dict(
             trade_id=key, entry_ts=entry, exit_ts=exit_ts, net_bps=pnl * 100,
-            pnl_usd=_num(row.get("pnl_usd")) or 0.0, outcome=outcome(pnl),
+            pnl_usd=_num(row.get("pnl_usd")), outcome=outcome(pnl),  # None = missing/invalid
             predicted=_num(row.get("predicted_net_edge_bps")),
             day=datetime.fromtimestamp(exit_ts, timezone.utc).date().isoformat()))
     return sorted(out, key=lambda r: (r["exit_ts"], r["entry_ts"], str(r["trade_id"])))
@@ -162,15 +162,22 @@ def summary(rows: list[dict]) -> dict:
     n = len(rows)
     wins = sum(r["outcome"] == "WIN" for r in rows)
     losses = sum(r["outcome"] == "LOSS" for r in rows)
-    gain = sum(r["pnl_usd"] for r in rows if r["pnl_usd"] > 0)
-    loss = -sum(r["pnl_usd"] for r in rows if r["pnl_usd"] < 0)
+    # USD metrics are descriptive only; any missing/invalid pnl_usd makes them NOT_EVALUABLE
+    missing_usd = sum(r["pnl_usd"] is None for r in rows)
+    cum_usd = pf = None
+    if not missing_usd:
+        gain = sum(r["pnl_usd"] for r in rows if r["pnl_usd"] > 0)
+        loss = -sum(r["pnl_usd"] for r in rows if r["pnl_usd"] < 0)
+        cum_usd = sum(r["pnl_usd"] for r in rows)
+        pf = (gain / loss) if loss > 0 else None
     return dict(
         n=n, wins=wins, losses=losses, flats=n - wins - losses,
         wr_pct=100 * wins / n if n else None,
         mean_net_bps=statistics.fmean(r["net_bps"] for r in rows) if n else None,
         cum_net_bps=sum(r["net_bps"] for r in rows),
-        cum_pnl_usd=sum(r["pnl_usd"] for r in rows),
-        pf=(gain / loss) if loss > 0 else None,
+        missing_pnl_usd=missing_usd,
+        usd_status="NOT_EVALUABLE_MISSING_PNL_USD" if missing_usd else "OK",
+        cum_pnl_usd=cum_usd, pf=pf,
         mean_ci=day_bootstrap(rows))
 
 
@@ -232,8 +239,11 @@ def evaluate(rows: list[dict]) -> dict:
             newly_dropped = [r for r in gate if r["predicted"] < cut]
             entry["newly_dropped"] = summary(newly_dropped)
             entry["kept_minus_newly_dropped"] = day_difference(kept, newly_dropped)
-            if len(kept) >= MIN_CUT_TRADES and newly_dropped:
-                pvalues[f"{cut:g}"] = entry["kept_minus_newly_dropped"]["p_one_sided"]
+            # Both preregistered candidates always stay in the Holm family; an
+            # untestable one gets None (never rejected, still counted).
+            testable = len(kept) >= MIN_CUT_TRADES and bool(newly_dropped)
+            entry["testable"] = testable
+            pvalues[f"{cut:g}"] = entry["kept_minus_newly_dropped"]["p_one_sided"] if testable else None
         cuts[f"{cut:g}"] = entry
     rejected = holm(pvalues)
     eligible = []

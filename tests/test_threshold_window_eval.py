@@ -184,3 +184,37 @@ def test_trades_below_current_cut_never_make_a_cut_eligible(tmp_path):
 ])
 def test_holm_two_hypotheses(pvalues, expected):
     assert ev.holm(pvalues) == expected
+
+
+def _fixed_p(p_for_zero):
+    def fake(kept, dropped):
+        return dict(lower_bps=0.1, upper_bps=1.0, valid_replicates=ev.REPLICATES, p_one_sided=p_for_zero)
+    return fake
+
+
+def test_untestable_cut_stays_in_holm_family(tmp_path, monkeypatch):
+    # every gate trade has predicted >= -10, so D_-10 is empty (cut -10 untestable)
+    db = make_db(tmp_path / "c.sqlite", synth(1400, {-5: -10, 5: -2}))
+    monkeypatch.setattr(ev, "day_difference", _fixed_p(0.02))
+    report = run(db)
+    assert report["cuts"]["-10"]["testable"] is False and report["cuts"]["-10"]["newly_dropped"]["n"] == 0
+    assert report["cuts"]["0"]["testable"] is True
+    assert report["verdict"] == "KEEP_CURRENT"  # 0.02 > 0.025 / 2
+
+
+def test_testable_cut_passes_first_holm_step(tmp_path, monkeypatch):
+    db = make_db(tmp_path / "c.sqlite", synth(1400, {-5: -10, 5: -2}))
+    monkeypatch.setattr(ev, "day_difference", _fixed_p(0.01))
+    report = run(db)
+    assert report["verdict"] == "TIGHTEN" and report["recommended_cut"] == 0
+
+
+def test_missing_pnl_usd_marks_usd_metrics_not_evaluable():
+    rows = ev.prepare([
+        dict(trade_id="a", entry_ts=ev.T0, exit_ts=ev.T0 + 1, pnl_pct=0.2, pnl_usd=1, predicted_net_edge_bps=0),
+        dict(trade_id="b", entry_ts=ev.T0, exit_ts=ev.T0 + 1, pnl_pct=-0.3, pnl_usd=None, predicted_net_edge_bps=0),
+        dict(trade_id="c", entry_ts=ev.T0, exit_ts=ev.T0 + 1, pnl_pct=-0.1, pnl_usd="x", predicted_net_edge_bps=0)])
+    s = ev.summary(rows)
+    assert s["missing_pnl_usd"] == 2 and s["usd_status"] == "NOT_EVALUABLE_MISSING_PNL_USD"
+    assert s["cum_pnl_usd"] is None and s["pf"] is None
+    assert s["cum_net_bps"] == pytest.approx(-20) and s["wins"] == 1

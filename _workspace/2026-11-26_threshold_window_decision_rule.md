@@ -1,4 +1,8 @@
-# Rozhodovací pravidlo po měřicím okně — rev. 2 (předem zapsáno 2026-11-26, před koncem okna)
+# Rozhodovací pravidlo po měřicím okně — rev. 3 (předem zapsáno 2026-11-26, před koncem okna)
+
+Rev. 3 opravuje re-review R2 (`_workspace/2026-11-26_codex_rereview_threshold_window_rule_r2.md`):
+- oba kandidáti jsou vždy v Holmově rodině (netestovatelný s p = `None`, nezamítnutelný);
+- chybějící nebo neplatné `pnl_usd` označí USD metriky jako `NOT_EVALUABLE_MISSING_PNL_USD` (počet `missing_pnl_usd`), nikdy jako nulu.
 
 Operátor 2026-11-26: „pokračuj s měřením a automaticky po skončení vyhodnoť a se zlepšením WR a PL“.
 
@@ -16,8 +20,8 @@ Okno (`docs/OPERATING_STATE.md`, zapsáno 2026-11-25 před T0) běží beze změ
 
 ## Vyhodnocení (jednou)
 
-- **Skript:** `scripts/research/threshold_window_eval.py` (rev. 2, SHA-256 `80c742de…5bd5`).
-  - Testy: `tests/test_threshold_window_eval.py` (21 testů, `88904a7f…f65b`).
+- **Skript:** `scripts/research/threshold_window_eval.py` (rev. 3, SHA-256 `1f999cc1…d4d0`).
+  - Testy: `tests/test_threshold_window_eval.py` (24 testů, `0533d5ae…0755`).
   - Jen stdlib. DB otevírá s `mode=ro` + `PRAGMA query_only=ON`, zapisuje jen na stdout.
 - **Kdy:** 2. 12. ≥ 09:30 UTC.
   - Před `END + 1800 s` skript odmítne běžet (`NOT_YET`, rc 2). CLI nemá žádný časový override; testy
@@ -40,7 +44,7 @@ Okno (`docs/OPERATING_STATE.md`, zapsáno 2026-11-25 před T0) běží beze změ
 - **Metriky pro G a každý řez:**
   - n;
   - kanonický WR (výhry / n, hranice ±0,05 % podle `trade_metrics_contract`);
-  - průměrný a kumulativní net bps, USD a PF;
+  - průměrný a kumulativní net bps; USD a PF jen popisně (při chybějícím `pnl_usd` nevyhodnotitelné);
   - 95% CI průměru (bootstrap přes UTC dny, 4 000 replikací);
   - kalibrace na G.
 
@@ -54,7 +58,8 @@ Okno (`docs/OPERATING_STATE.md`, zapsáno 2026-11-25 před T0) běží beze změ
    - jednostranné p z párového bootstrapu přes UTC dny: (počet rozdílů ≤ 0 + 1) / (platné + 1).
 3. **Holmova korekce** přes obě hypotézy na rodinné hladině 0,025 (jednostranně):
    - menší p ≤ 0,0125, druhé p ≤ 0,025;
-   - hypotéza se testuje jen při |K_c| ≥ 100 a |D_c| ≥ 1.
+   - hypotéza je testovatelná jen při |K_c| ≥ 100 a |D_c| ≥ 1. Netestovatelný kandidát zůstává v rodině
+     (p = `None`, nezamítá se), takže druhý musí projít prvním krokem 0,0125.
 4. **Způsobilý řez** = H_c zamítnutá.
    - Žádný způsobilý řez → `KEEP_CURRENT`.
    - Jinak `TIGHTEN` s řezem s nejvyšším průměrem net bps; při shodě volnější řez.
@@ -93,7 +98,7 @@ a výsledek jde Codexu.
 
 ## Známé předem (ne test)
 
-Smoke test rev. 2 na 7 dnech před T0 (už analyzovaná data):
+Smoke test rev. 2 na 7 dnech (rev. 3 mění jen netestovatelné řezy a USD, oba řezy zde testovatelné) před T0 (už analyzovaná data):
 
 | | Počet |
 |---|---:|
