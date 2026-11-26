@@ -5,7 +5,9 @@ Komunikace s uživatelem a reporty: **česky**. Identifikátory a kód: anglicky
 
 ## Aktuální zadání
 
-**Otevřené zadání:** žádné. Hotové 2026-11-26: `_workspace/2026-11-26_codex_review_stonkfly_c1_result.md` (C1 ACCEPT +
+**Otevřené zadání:** `docs/codex_prompts/CODEX_REVIEW_EVENT_SCREEN_PROTOCOL_2026-11-26.md` (předregistrace nového
+zdroje signálu E1 šok / E2 funding, offline; report `_workspace/2026-11-26_codex_review_event_screen_protocol.md`).
+Hotové 2026-11-26: `_workspace/2026-11-26_codex_review_stonkfly_c1_result.md` (C1 ACCEPT +
 APPROVE, přepis verdiktu; Stonkfly zůstává shadow, C2 jen jako volitelný výzkum plasticity, C3 ne bez nové hypotézy).
 Dřív 2026-11-26: `_workspace/2026-11-26_codex_rereview_stonkfly_c1_protocol_r3.md` (APPROVE_TO_RUN);
 `_workspace/2026-11-26_codex_rereview_stonkfly_c1_protocol_r2.md` (CHANGES_REQUIRED R2.1–R2.3 → opraveno v rev. 3);
