@@ -310,8 +310,8 @@ def check_complete(manifest: list[dict], end: str) -> None:
 def run(cache: Path, out: Path, end: str, offline: bool) -> dict:
     manifest = sorted((ff.fetch_archive(cache, *j, offline=offline) for j in expected_jobs(end)), key=lambda m: m["key"])
     missing = [m["key"] for m in manifest if m["status"] != "OK"]
+    check_complete(manifest, end)            # NOT_EVALUABLE exits here, before anything is written
     ff.write_json(out / "manifest.json", {"end": end, "missing": missing, "rows": manifest})
-    check_complete(manifest, end)
     sig = signature(manifest)
     holdout_end = (pd.Period(end, freq="M") + 1).to_timestamp().strftime("%Y-%m-%d")
     configs = grid()

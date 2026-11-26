@@ -249,4 +249,4 @@ def test_run_refuses_an_incomplete_archive_set_before_any_stage(tmp_path):
     out = tmp_path / "out"
     with pytest.raises(SystemExit, match="NOT_EVALUABLE"):
         m.run(tmp_path / "empty_cache", out, "2024-02", offline=True)
-    assert not (out / "train.json").exists() and not (out / "train.started.json").exists()
+    assert not out.exists() or not any(out.iterdir())          # nothing written, not even manifest.json

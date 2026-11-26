@@ -1,4 +1,4 @@
-# Nový zdroj signálu: offline EVENT screen E1/E2 (předregistrace rev. 2, 2026-11-26)
+# Nový zdroj signálu: offline EVENT screen E1/E2 (předregistrace rev. 3, 2026-11-26)
 
 Rev. 2 zapracovává review `_workspace/2026-11-26_codex_review_event_screen_protocol.md`:
 - explicitní nulový bootstrap;
@@ -73,7 +73,7 @@ offline cost-wall screen na veřejných datech. Bot, konfigurace ani běžící 
   - Podpis zahrnuje hash skriptu a manifest dat, takže změna skriptu po TRAIN běh zastaví.
 - **Úplnost dat (rev. 2):** před jakoukoli etapou musí být všech 7 × 2 × počet měsíců očekávaných
   archivů (futures a funding) se stavem OK a ověřeným SHA-256. Pro konec 2026-10 je to 476 archivů.
-  Jinak běh skončí `NOT_EVALUABLE` a nezapíše `train.json` (`check_complete`).
+  Jinak běh skončí `NOT_EVALUABLE` a nezapíše nic, ani `manifest.json` ani soubory etap (`check_complete` běží před prvním zápisem; rev. 3).
 - **Role TRAIN (rev. 2):** CI a p v `train.json` jsou jen výběrové a popisné (in-sample). Potvrzující
   jsou pouze TEST a HOLDOUT.
 - **Statistika:**
