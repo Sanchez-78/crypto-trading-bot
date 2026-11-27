@@ -110,7 +110,24 @@ generátory dál určují, co vstoupí.
 - **Omezení dat:** `depth20` u likvidních symbolů pokrývá jen ~1 bps od mid (ETH `bid_range_bps`
   1,15). Pásma 5/10/25 bps proto u nich odpovídají součtu všech 20 úrovní. Pokrytí udává
   `*_range_bps` a výzkum s tím musí počítat.
-- **Další kontrola:** `verify` po 24 h (2026-11-27 ~11:10 UTC).
+- **Verify 24 h (2026-11-27 11:13 UTC): `VERIFY_OK`, rc 0.** Order book je v pořádku, **likvidace se
+  nesbírají**.
+  - **Order book:** 2026-11-26 (11:09–24:00) 323 713 řádků, tj. ~46 250 na symbol, 1/s. 2026-11-27 do
+    11:12 je 282 654 řádků.
+  - **Výpadky:** jen `start` a `connect`. Žádný `disconnect`, `disk_skip` ani `dropped_rows`.
+  - **Služba:** NRestarts 0, CPU 681 s za 24 h (~0,8 %). Paměť cgroupy 47 MB, z toho RSS procesu 30 MB, zbytek
+    je mezipaměť souborů. Limity 96/128 MB, OOM 0.
+  - **Bot:** PID 3840326 beze změny, start 2026-11-23 11:53 UTC.
+  - **Data a disk:** `book/2026-11-26.csv.gz` má 17,4 MB za 12,85 h, tj. ~32 MB/den (odhad v návrhu byl 26).
+    Limit 4 GiB vychází na ~125 dní. Disk 58 %.
+  - **Nález: `liq_sampled` = 0 souborů za 24 h.** Příčina je potvrzená sondou 2026-11-27 11:15 UTC:
+    - Binance rozdělil USD-M WebSocket adresy. Na staré `wss://fstream.binance.com/stream` stream
+      `forceOrder` mlčí: 0 zpráv za 120 s pro `!forceOrder@arr` i pro BTC/ETH.
+    - Na `wss://fstream.binance.com/market/stream` přišlo 20 zpráv za 120 s napříč trhem.
+    - `depth20@500ms` posílá stará adresa i `/public/stream` (40 zpráv za 20 s), `/market` ne.
+  - **Bota to neohrožuje, rollback se nedělá.** Oprava (order book přes `/public`, likvidace přes `/market`,
+    každé spojení s vlastními značkami výpadků) jde jako rev. 6 k review Codexu. Nasadí se až po schválení.
+    Do té doby se sbírá jen order book.
 - **Rollback:**
   `cd /root/micro-recorder-20261126 && bash deploy_micro_recorder.sh rollback` (data zůstávají).
 - **Stejný den vypnut nefunkční `tick-recorder.service`** (10:47:09 UTC, schválená fáze A):
