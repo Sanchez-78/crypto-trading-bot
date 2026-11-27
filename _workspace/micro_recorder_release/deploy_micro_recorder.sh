@@ -140,11 +140,24 @@ no_symlink_path() {  # the path (existing or not) must contain no symlink compon
   [[ "$(realpath -m "$1")" == "$(realpath -m -s "$1")" ]]
 }
 
+PRIV_OWNER=0   # systemd creates <parent>/private as root:root 0700
+[[ "${MICRO_DEPLOY_TEST_MODE:-0}" != 1 ]] || PRIV_OWNER="$(id -u)"
+data_dir_ok() {  # DATA has no symlink, or is exactly the link systemd made for a DynamicUser StateDirectory
+  no_symlink_path "$DATA" && return 0
+  local parent name priv
+  parent="$(dirname "$DATA")"; name="$(basename "$DATA")"; priv="$parent/private"
+  no_symlink_path "$parent" || return 1
+  [[ -L "$DATA" && "$(readlink "$DATA")" == "private/$name" ]] || return 1
+  [[ -d "$priv" && ! -L "$priv" && "$(stat -c '%u %a' "$priv")" == "$PRIV_OWNER 700" ]] || return 1
+  [[ -d "$priv/$name" && ! -L "$priv/$name" ]]
+}
+
 check_target_dirs() {
   local d
-  for d in "$APP_DIR" "$(dirname "$UNIT_PATH")" "$DATA"; do
+  for d in "$APP_DIR" "$(dirname "$UNIT_PATH")"; do
     no_symlink_path "$d" || die "target path $d contains a symlink"
   done
+  data_dir_ok || die "target path $DATA contains a symlink (not the systemd StateDirectory link)"
   [[ -d "$(dirname "$UNIT_PATH")" ]] || die "unit directory missing"
   if [[ "${MICRO_DEPLOY_TEST_MODE:-0}" != 1 ]]; then
     [[ "$(realpath -m "$APP_DIR")" == "$PROD_APP_DIR" ]] || die "APP_DIR resolves elsewhere"

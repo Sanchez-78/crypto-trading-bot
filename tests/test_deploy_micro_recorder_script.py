@@ -239,6 +239,70 @@ def test_auto_rollback_keeps_a_concurrent_target_even_with_the_exact_pinned_byte
     assert "disable --now cryptomaster-micro-recorder.service" not in calls   # foreign unit not stopped
 
 
+def dynamic_user_layout(env, link_target="private/data", priv_mode=0o700, priv_is_link=False, inner_is_link=False,
+                        parent_is_link=False):
+    """Data dir as systemd leaves it after a DynamicUser StateDirectory: lib/data -> private/data (upgrade case)."""
+    lib = env["tmp"] / ("lib_real" if parent_is_link else "lib")
+    lib.mkdir()
+    if parent_is_link:
+        try:
+            os.symlink(lib, env["tmp"] / "lib", target_is_directory=True)
+        except (OSError, NotImplementedError):
+            pytest.skip("symlinks not available on this platform")
+    real_priv = lib / ("real_private" if priv_is_link else "private")
+    real_priv.mkdir()
+    inner = real_priv / "data"
+    if inner_is_link:
+        (lib / "inner_real").mkdir()
+        (lib / "inner_real" / "gaps").mkdir()
+        (lib / "inner_real" / "gaps" / "2026-11-26.csv.gz").write_bytes(b"x")
+        try:
+            os.symlink(lib / "inner_real", inner, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            pytest.skip("symlinks not available on this platform")
+    else:
+        (inner / "gaps").mkdir(parents=True)
+        (inner / "gaps" / "2026-11-26.csv.gz").write_bytes(b"x")
+    try:
+        if priv_is_link:
+            os.symlink(real_priv, lib / "private", target_is_directory=True)
+        os.symlink(link_target, lib / "data", target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks not available on this platform")
+    real_priv.chmod(priv_mode)
+    return dict(env["env"], DATA_DIR=(env["tmp"] / "lib" / "data").as_posix())
+
+
+def test_preflight_accepts_the_exact_dynamic_user_state_directory_link(env):
+    e = dynamic_user_layout(env)
+    r = subprocess.run([BASH, (env["rel"] / "deploy_micro_recorder.sh").as_posix(), "preflight"],
+                       env=e, capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0 and "PREFLIGHT_OK" in r.stdout, r.stderr
+
+
+@pytest.mark.parametrize("variant", ["other_target", "private_not_0700", "private_is_link", "inner_is_link",
+                                     "parent_is_link"])
+def test_preflight_refuses_any_other_data_symlink(env, variant):
+    kw = {"other_target": {"link_target": "real_private/data"},
+          "private_not_0700": {"priv_mode": 0o755},
+          "private_is_link": {"priv_is_link": True},
+          "inner_is_link": {"inner_is_link": True},
+          "parent_is_link": {"parent_is_link": True}}[variant]
+    e = dynamic_user_layout(env, **kw)
+    r = subprocess.run([BASH, (env["rel"] / "deploy_micro_recorder.sh").as_posix(), "preflight"],
+                       env=e, capture_output=True, text=True, timeout=60)
+    assert r.returncode != 0 and "not the systemd StateDirectory link" in r.stderr
+
+
+def test_upgrade_install_over_kept_dynamic_user_data(env):
+    e = dynamic_user_layout(env)
+    marker = env["tmp"] / "lib" / "private" / "data" / "gaps" / "2026-11-26.csv.gz"
+    r = subprocess.run([BASH, (env["rel"] / "deploy_micro_recorder.sh").as_posix(), "install"],
+                       env=e, capture_output=True, text=True, timeout=120)
+    assert r.returncode == 0 and "INSTALL_OK" in r.stdout, r.stderr
+    assert marker.read_bytes() == b"x" and (env["tmp"] / "lib" / "data").is_symlink()
+
+
 def test_manual_rollback_after_a_successful_install_removes_the_pinned_files(env):
     assert run(env, "install").returncode == 0
     r = run(env, "rollback")

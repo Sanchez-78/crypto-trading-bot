@@ -128,6 +128,21 @@ generátory dál určují, co vstoupí.
   - **Bota to neohrožuje, rollback se nedělá.** Oprava (order book přes `/public`, likvidace přes `/market`,
     každé spojení s vlastními značkami výpadků) jde jako rev. 6 k review Codexu. Nasadí se až po schválení.
     Do té doby se sbírá jen order book.
+- **Upgrade na rev. 6 (Codex APPROVE_TO_DEPLOY R6) se zastavil — SBĚRAČ OD 2026-11-27 13:39 UTC STOJÍ.**
+  - Rollback rev. 5 proběhl (`ROLLBACK_OK`, data zůstala). Následný `preflight` rev. 6 selhal:
+    `target path /var/lib/cryptomaster-micro contains a symlink`.
+  - **Příčina:** `DynamicUser` + `StateDirectory` při první instalaci vytvořil
+    `/var/lib/cryptomaster-micro -> private/cryptomaster-micro`. Kontrola symlinků v deploy skriptu tento
+    odkaz odmítá. Platí to i pro skript rev. 5, takže **nefunguje ani návrat na rev. 5**. Plán upgradu
+    i review R6 to přehlédly.
+  - **Stav:** unit i aplikace jsou odstraněné, služba `inactive`/`not-found`. Data jsou v
+    `/var/lib/private/cryptomaster-micro`. Bot má PID 3840326 beze změny. Ručně se mimo schválený skript
+    nic neinstaluje.
+  - **Oprava rev. 7** (jen deploy skript, sha `a00b1266…`): přijme přesně odkaz `private/<jméno>`, a to jen
+    když `private` je skutečný adresář root 0700 a cíl je skutečný adresář. Cokoli jiného dál odmítne.
+    - Testy: 30 prošlo na serveru (Linux, pod uživatelem `nobody`, v dočasném adresáři, smazán).
+    - Mutace: 4 ze 5 zabity, `private_may_be_link` je ekvivalentní (`stat` bez `-L` vrátí 777).
+    - Jde k review Codexu (`docs/codex_prompts/CODEX_REVIEW_MICRO_RECORDER_R7_2026-11-27.md`).
 - **Rollback:**
   `cd /root/micro-recorder-20261126 && bash deploy_micro_recorder.sh rollback` (data zůstávají).
 - **Stejný den vypnut nefunkční `tick-recorder.service`** (10:47:09 UTC, schválená fáze A):

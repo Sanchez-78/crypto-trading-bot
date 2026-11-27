@@ -272,3 +272,54 @@ Binance rozdělil USD-M WebSocket adresy. Na staré adrese už `forceOrder` nech
    - starý adresář `install`, který obnoví rev. 5 (soubory tam zůstaly, pin sedí).
 
 **Riziko:** Binance může později přesunout i `depth20` ze staré adresy. Proto rev. 6 už používá `/public`.
+
+## Rev. 7 (2026-11-27): upgrade zastaven v preflightu, oprava kontroly datového adresáře
+
+**Průběh upgradu** (po Codex APPROVE_TO_DEPLOY R6, `_workspace/2026-11-27_codex_review_micro_recorder_r6.md`):
+1. Nový adresář `/root/micro-recorder-20261127/` nahrán, 3 hashe sedí (`b09b31b1…`, `e69e0464…`, `35b35cc0…`).
+2. 13:39:08 UTC, starý adresář `rollback` → `ROLLBACK_OK`, data zůstala.
+3. Nový adresář `preflight` → **FAIL: `target path /var/lib/cryptomaster-micro contains a symlink`**.
+   `install` se nespustil. Sběrač od té doby stojí. Bot má PID 3840326 beze změny.
+
+**Příčina:** `DynamicUser=yes` + `StateDirectory=cryptomaster-micro`. Systemd při prvním startu uložil data do
+`/var/lib/private/cryptomaster-micro` (root:root 0700 pro `private`) a vytvořil odkaz
+`/var/lib/cryptomaster-micro -> private/cryptomaster-micro`. `check_target_dirs()` vyžaduje u `DATA` cestu bez
+symlinku. To platí jen před první instalací. Skript rev. 5 má stejnou kontrolu, proto nefunguje ani návrat
+na rev. 5. Návrh upgradu i review R6 to přehlédly.
+
+**Oprava** (jen `deploy_micro_recorder.sh`, sha `a00b12669a9cd3919fb5445c1ff83604d887600057c85f624d46f754eb33b3b6`):
+- nová funkce `data_dir_ok()`. `DATA` je buď bez symlinku (jako dosud), nebo **přesně** odkaz systemd:
+  - rodič `DATA` je bez symlinku;
+  - `DATA` je symlink a `readlink` = `private/<basename>`;
+  - `<rodič>/private` je skutečný adresář (ne symlink), vlastník root (v test režimu aktuální uid), režim 700;
+  - `<rodič>/private/<basename>` je skutečný adresář.
+- `APP_DIR` a adresář unity mají dál přísnou kontrolu bez symlinku. Ostatní logika beze změny.
+- `install` do existujícího datového adresáře nic nezapisuje: data vlastní služba, deploy skript `DATA` jen
+  kontroluje.
+
+**Testy** (`tests/test_deploy_micro_recorder_script.py`, sha `0b70fced…5d12`, +7 testů):
+- přijetí přesného odkazu;
+- odmítnutí: jiný cíl odkazu, `private` 0755, `private` jako symlink, vnitřní adresář jako symlink, rodič
+  jako symlink;
+- upgrade `install` nad zachovanými daty (data nedotčena, odkaz zůstal).
+- Windows symlinky nedovolí (7 testů se lokálně přeskočí). Proto běžely na serveru: dočasný adresář
+  `/tmp/micro-r7-test-*`, uživatel `nobody`, venv s pytest, systémové příkazy stubované, adresář poté smazán.
+  Výsledek: **30 passed**. Lokálně 33 passed, 8 skipped, `PROTECTED_SAME`.
+- **Mutace** `data_dir_ok()` na serveru: zabité jsou bez kontroly `readlink`, bez kontroly vlastníka a režimu,
+  vnitřní adresář jako symlink a rodič jako symlink. **Přežila** `private` jako symlink. Je ekvivalentní:
+  `stat -c '%u %a'` bez `-L` čte samotný odkaz (777), takže symlinkovaný `private` odmítne už kontrola
+  režimu. Explicitní `! -L` zůstává kvůli čitelnosti.
+
+**Záložní varianta pro návrat na rev. 5:** `_workspace/micro_recorder_release/rev5_fallback/deploy_micro_recorder.sh`
+(sha `5832d085…b4f3`). Je to rev. 7 skript, který se liší jen pinem `SCRIPT_SHA=252dd1f7…`, tedy sběrač rev. 5,
+jehož soubor je na serveru v `/root/micro-recorder-20261126/`.
+
+**Postup po schválení:**
+1. Do `/root/micro-recorder-20261127/` nahrát rev. 7 `deploy_micro_recorder.sh` místo `e69e0464…` a ověřit 3
+   hashe (`b09b31b1…`, `a00b1266…`, `35b35cc0…`).
+2. `preflight` → `install` (120 s kontroly, při selhání automatický rollback vlastních souborů).
+3. `verify` po 10 min. Navíc ručně `connect public` / `connect market` v gaps. `liq_sampled` je podle R6
+   jen informace, ne podmínka.
+4. Po 24 h znovu `verify`, `liq_sampled` a hodinové počty zpráv.
+5. Návrat: `rollback` v novém adresáři. Pak záložní skript rev. 5: nahrát ho do `/root/micro-recorder-20261126/`
+   místo `8f471aca…` → `preflight` → `install`.
