@@ -284,6 +284,17 @@ def connection_loop(rec: "Recorder", name: str, url: str, run_once, stop: thread
         sleep(backoff)
 
 
+def hourly_stats(rec, counts: dict) -> dict:
+    """Per-connection message counts of the last hour: logged AND kept as a `msgs_hour` row in gaps/,
+    because the server's in-memory journal holds only minutes of history (the bot logs ~290 lines/s)."""
+    snapshot = dict(counts)
+    counts.clear()
+    detail = json.dumps({name: snapshot.get(name, 0) for name in ("public", "market")}, sort_keys=True)
+    rec.log(f"[MICRO] messages in the last hour: {detail}")
+    rec.gap("msgs_hour", detail)
+    return snapshot
+
+
 def run(out: Path) -> int:  # pragma: no cover - network loop, exercised on the server only
     import websocket  # websocket-client
     rec = Recorder(out)
@@ -307,9 +318,7 @@ def run(out: Path) -> int:  # pragma: no cover - network loop, exercised on the 
                 rec.log(f"[MICRO] write failed, exiting for a systemd restart: {exc!r}")
                 os._exit(3)
             if time.time() - last_stats >= STATS_EVERY_S:
-                snapshot = dict(counts)
-                counts.clear()
-                rec.log(f"[MICRO] messages in the last hour: {json.dumps(snapshot, sort_keys=True)}")
+                hourly_stats(rec, counts)
                 last_stats = time.time()
 
     def guarded(name, url):

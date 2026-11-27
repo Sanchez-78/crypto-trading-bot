@@ -52,6 +52,17 @@ def test_default_log_flushes_every_line(tmp_path, monkeypatch):
     assert out.getvalue() == "[MICRO] write failed\n" and Out.flushes >= 1
 
 
+def test_hourly_stats_persist_in_gaps_with_both_connections_and_reset(tmp_path):
+    lines = []
+    rec = m.Recorder(tmp_path, clock=Clock(T), log=lines.append)
+    counts = {"public": 25200}                               # market silent for the hour -> explicit 0
+    m.hourly_stats(rec, counts)
+    rec.flush()
+    rows = read_rows(next((tmp_path / "gaps").glob("*.csv.gz")))
+    assert [(r["kind"], json.loads(r["detail"])) for r in rows] == [("msgs_hour", {"market": 0, "public": 25200})]
+    assert counts == {} and lines and "messages in the last hour" in lines[0]
+
+
 def test_book_features_bands_imbalance_and_coverage():
     row = m.book_features("btcusdt", T, T * 1000, 2, [["100", "2"], ["99.95", "1"], ["99", "5"]],
                           [["100.02", "1"], ["100.2", "3"]])

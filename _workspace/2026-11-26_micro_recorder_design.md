@@ -430,3 +430,72 @@ v unitě nepomůže, protože `-I` proměnné `PYTHON*` ignoruje.
    knihy po startu. Po ~65 min v journalu `[MICRO] messages in the last hour` (klíč `market` může při nule
    chybět).
 6. Návrat: r8 `rollback` → fallback `preflight` + `install`.
+
+### Rev. 8 po re-review R8b (Codex CHANGES_REQUIRED, `_workspace/2026-11-27_codex_rereview_micro_recorder_r8b.md`)
+
+**Nový provozní nález (2026-11-27 ~14:37 UTC, jen čtení):** journal serveru je **jen v paměti**
+(`/run/log/journal`, `RuntimeMaxUse=100M` v `journald.conf.d/90-size-limit.conf`). Bot do něj zapisuje
+**~17 300 řádků za minutu** (`[BULL_EDGE_DIAG]` atd.), takže journal sahá jen **~4 minuty zpět** (head 14:32:58,
+tail 14:36:39). Pro sběrač to znamená:
+- kontrola chyb v `checks()` vidí jen čerstvé minuty. Při `install` (120 s) stačí, u pozdějšího `verify` je
+  prakticky slepá;
+- hodinový log počtů zpráv by se z journalu ztratil. **Počty se proto nově ukládají do dat** jako řádek
+  `gaps` s `kind=msgs_hour` a `detail={"market": N, "public": M}`. Oba klíče jsou vždy přítomné, 0 = ticho;
+- výpadky ani restarty sběrače se z journalu zpětně zjistit nedají. Platné důkazy jsou `gaps` (`start`,
+  `connect`/`disconnect`, `msgs_hour`), časy v `book` a `NRestarts`.
+- Bot a journald zůstávají beze změny (měřicí okno do 2. 12.). Nález se týká provozu obecně, i kontrol typu
+  `journalctl | grep PAPER_ENTRY`, a patří do práce po okně.
+
+**Opravy podle R8b:**
+1. **P1, fallback musí přežít odinstalaci:** všechny tři soubory fallbacku musí být běžné soubory (`-f`, ne
+   `-L`) na cestě bez symlinků (`no_symlink_path`). Odkaz na instalovanou unit nebo sběrač se odmítne,
+   dokud rev. 6 běží.
+2. **Porovnání skriptu zachová pořadí řádků:** `sed` vrátí ve fallbacku jen hodnotu pinu na `SCRIPT_SHA` této
+   revize, pak bajtový `cmp` s tímto skriptem. Přesunutý řádek neprojde.
+3. **`grep` fail-closed:** 0 = chyba v journalu, 1 = čisto, jiný kód = `die`. Selhání `journalctl` = `die`.
+   Netestovaná zůstává jen větev rc ≥ 2, kterou je těžké simulovat.
+4. **Hranice journalu s nanosekundami:** `date -r UNIT_PATH +%s.%N` a `journalctl --since @<s.ns>`.
+   Na serveru ověřeno, že systemd 255 zlomky přijímá: s `@…​.5` vrátil první záznam `….507734`.
+5. **Sběrač** (`ff52cab5…a499a`): nová funkce `hourly_stats()` (log + řádek `msgs_hour`), vyčleněná z
+   `run()` a testovaná.
+6. **Postup** doplněn o větve a o 24h kontrolu (níže).
+
+**Testy** (`tests/test_deploy_micro_recorder_script.py` `d1616f9c…f0`, `tests/test_micro_recorder.py`
+`fb995ae5…fb82`):
+- nové: fallback soubor jako symlink na instalovanou unit; celý průchod `upgrade-check` → fallback
+  `rollback` → `install` rev. 8 → `rollback` → fallback `install` (obnoví přesně předchozí bajty); hranice
+  journalu ve `verify` (stejná sekunda před a po, chyba po restartu téže instalace, selhání `journalctl`);
+  `msgs_hour` v gaps.
+- Stub `journalctl` porovnává zlomky sekund. Stub `systemctl enable` po `disable` vrací `active`.
+- Výsledky: server (dočasný adresář, `nobody`, smazán) **66 passed**; lokálně 57 passed / 9 skipped
+  (symlinky), `PROTECTED_SAME`.
+- **Mutace 18/18 zabity**: předchozích 14 + fallback symlink, journal jen celé sekundy, ignorované selhání
+  `journalctl`, `msgs_hour` neukládán.
+
+| Soubor | SHA-256 |
+|---|---|
+| `scripts/research/micro_recorder.py` = release kopie | `ff52cab59451153bc1f6c5fadb517c5ca7ae4196deac7dce07c291e25b8a499a` |
+| `deploy_micro_recorder.sh` | `2ed95ece25fd29c4a19c0ff7cb3e9b47f54db432fd4b7c3925a7aa902e4b370c` |
+| `rev6_fallback/deploy_micro_recorder.sh` | `5d7d44afe1a67bf0cb13fb4d9d0377fe2ad9b6b92b76516053e1e076e471b263` |
+| `rev5_fallback/deploy_micro_recorder.sh` | `884c383e7248b50c4066054c2f8c8e0328f5f68930b7abd6d49a67635857d9a7` |
+| unit (beze změny) | `35b35cc039cdb7e1fb007548bfa2f75f4e35f5e366ea419fe2eb20ff9f40d0a8` |
+
+**Postup upgradu rev. 6 → rev. 8 (platný, nahrazuje oba předchozí):**
+1. Nahrát a ověřit SHA-256:
+   - `/root/micro-recorder-20261127-r8/`: sběrač `ff52cab5…`, skript `2ed95ece…`, unit `35b35cc0…`;
+   - `/root/micro-recorder-rev6-fallback/` (nový adresář, běžné soubory, žádné odkazy): sběrač `b09b31b1…`
+     (kopie `cp` z `/root/micro-recorder-20261127/`), unit `35b35cc0…`, skript `5d7d44af…`.
+2. r8: `upgrade-check` → `UPGRADE_CHECK_OK`. Rev. 6 běží. **Při selhání konec, nic se nezastavuje.**
+3. Fallback: `rollback` → `ROLLBACK_OK`. Zapsat čas přechodu (UTC).
+4. r8: `preflight` → `install`.
+   - **Selže `preflight`:** nic se neinstalovalo. Ověřit, že unit i `/opt/cryptomaster-micro/micro_recorder.py`
+     neexistují, a rovnou fallback `preflight` + `install`.
+   - **Selže `install`:** automatický úklid vlastních souborů. Ověřit prázdné cíle, pak fallback `preflight`
+     + `install`. Ruční r8 `rollback` jen tehdy, když rev. 8 opravdu zůstala nainstalovaná.
+5. `verify` po 10 min. Nový pid v `start`, `connect public` i `connect market` z nového běhu, přírůstek
+   `book` po startu, `du` bez nuly. Po ~65 min řádek `msgs_hour` v `gaps` s oběma klíči.
+6. Návrat kdykoli později: r8 `rollback` → fallback `preflight` + `install`.
+7. **Verify 24 h:** 2026-11-28 ~14:00 UTC pro rev. 6, nebo 24 h od přechodu na rev. 8. Okno [přechod,
+   přechod + 24 h) podle tabulky z auditu výsledku: kniha po symbolech (unikátní sekundy, nejdelší mezera,
+   přes půlnoc), `liq_sampled` po hodinách vůči `msgs_hour`, gaps, `NRestarts`, paměť, CPU, PID bota,
+   dashboard, disk. Čas přechodu mezi revizemi je v datech viditelný jako `start` (nový pid).

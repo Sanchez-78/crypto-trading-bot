@@ -157,7 +157,13 @@ generátory dál určují, co vstoupí.
     v příští revizi skriptu.
   - **Rollback:** `cd /root/micro-recorder-20261127 && bash deploy_micro_recorder.sh rollback`. Návrat na rev. 5
     přes `rev5_fallback/deploy_micro_recorder.sh` (`5832d085…`) v `/root/micro-recorder-20261126/`.
-  - **Další:** verify 24 h 2026-11-28 ~14:00 UTC: `liq_sampled`, hodinové počty zpráv v journalu, gaps.
+  - **Další:** verify 24 h 2026-11-28 ~14:00 UTC: `liq_sampled`, gaps, kniha po symbolech. Rev. 8 (počty
+    zpráv do `gaps` jako `msgs_hour`, `upgrade-check`, fallback sada) je u Codexu na review, viz návrh sběrače.
+- **Nález 2026-11-27 (provoz obecně): journal serveru drží jen ~4 minuty.** Je pouze v paměti
+  (`RuntimeMaxUse=100M`) a bot do něj zapisuje ~17 300 řádků za minutu (`[BULL_EDGE_DIAG]` a další). Kontroly
+  přes `journalctl | grep …` (např. `PAPER_ENTRY`, chyby sběrače) proto vidí jen poslední minuty. Bot ani
+  journald se během měřicího okna nemění. Ztišení diagnostiky bota nebo perzistentní journal patří do práce
+  po 2. 12.
 - **Rollback (rev. 5, už neplatí, viz rev. 6 výše):**
   `cd /root/micro-recorder-20261126 && bash deploy_micro_recorder.sh rollback` (data zůstávají).
 - **Stejný den vypnut nefunkční `tick-recorder.service`** (10:47:09 UTC, schválená fáze A):

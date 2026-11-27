@@ -40,7 +40,9 @@ case "$1" in
   show) if [[ "$*" == *MainPID*cryptomaster.service* ]]; then echo 4242; elif [[ "$*" == *MainPID*--value*tick-recorder* ]]; then
           if [[ -s "$S/tick_pids" ]]; then head -n1 "$S/tick_pids"; sed -i 1d "$S/tick_pids"; else echo 77; fi; elif [[ "$*" == *MemoryCurrent* ]]; then cat "$S/mem" 2>/dev/null || echo 1000; else echo "MainPID=77"; fi ;;
   is-active) cat "$S/active"; [[ "$(cat "$S/active")" == active ]] ;;
-  enable) [[ -f "$S/enable_fails" ]] && exit 1; exit 0 ;;
+  enable) [[ -f "$S/enable_fails" ]] && exit 1
+          [[ "$(cat "$S/active")" == inactive ]] && echo active > "$S/active"   # restart after a disable; "failed" stays
+          exit 0 ;;
   disable|daemon-reload) [[ "$*" == *disable* ]] && echo inactive > "$S/active"; exit 0 ;;
 esac''')
     stub(bin_, "systemd-analyze", f'[[ -f "{state.as_posix()}/verify_fails" ]] && exit 1; exit 0')
@@ -52,14 +54,12 @@ esac''')
     (proc / "77" / "cmdline").write_bytes(b"/opt/cryptomaster/venv/bin/python3\0/opt/cryptomaster/tick_recorder.py\0")
     (proc / "77" / "fd" / "1").write_text("/tmp/tick_recorder.log")
     (proc / "77" / "fd" / "3").write_text("/opt/cryptomaster/local_learning_storage/tick_l1.sqlite (deleted)")
-    # journal lines "@EPOCH message" honour --since @N; lines without a timestamp count as current
-    stub(bin_, "journalctl", f'''since=0; prev=""
+    # journal lines "@EPOCH[.frac] message" honour --since @N[.frac]; lines without a timestamp count as current
+    stub(bin_, "journalctl", f'''[[ -f "{state.as_posix()}/journal_fails" ]] && exit 1
+since=0; prev=""
 for a in "$@"; do [[ "$prev" == --since ]] && since="${{a#@}}"; prev="$a"; done
 [[ -f "{state.as_posix()}/journal" ]] || exit 0
-while IFS= read -r line; do
-  if [[ "$line" =~ ^@([0-9]+)\\ (.*)$ ]]; then (( BASH_REMATCH[1] >= since )) && echo "${{BASH_REMATCH[2]}}"
-  else echo "$line"; fi
-done < "{state.as_posix()}/journal"
+awk -v s="$since" '{{ if (match($0, /^@[0-9.]+ /)) {{ t = substr($0, 2, RLENGTH - 2) + 0; if (t >= s + 0) print substr($0, RLENGTH + 1) }} else print }}' "{state.as_posix()}/journal"
 exit 0''')
     stub(bin_, "curl", f'cat "{state.as_posix()}/http" 2>/dev/null || echo -n 200')
     stub(bin_, "df", "echo Avail; echo 99999999")
@@ -324,7 +324,7 @@ def test_upgrade_install_over_kept_dynamic_user_data(env):
     assert marker.read_bytes() == b"x" and (env["tmp"] / "lib" / "data").is_symlink()
 
 
-PREV_BYTES = b"previous revision\n"
+PREV_BYTES = b"# previous revision\n"      # valid Python: the fallback release must pass preflight/install
 
 
 def set_pin(script: Path, var: str, value: str) -> None:
@@ -377,7 +377,7 @@ def test_upgrade_check_refuses(env, fault):
                 "inactive": "not active",
                 "new_release_changed": "micro_recorder.py != pin",
                 "dashboard": "dashboard not 200",
-                "fallback_missing": "fallback release: micro_recorder.py",
+                "fallback_missing": "is not a regular file on a symlink-free path",
                 "fallback_recorder": "fallback release: micro_recorder.py",
                 "fallback_unit": "fallback release: unit != pin",
                 "fallback_pin": "does not pin the previous revision",
@@ -410,6 +410,74 @@ def test_upgrade_check_refuses(env, fault):
     assert r.returncode != 0 and expected in r.stderr, r.stderr
 
 
+def test_fallback_file_linked_to_the_installed_target_is_refused_while_the_old_revision_runs(env):
+    fb = installed_previous_revision(env)
+    (fb / "cryptomaster-micro-recorder.service").unlink()
+    try:   # the rollback would delete the link target, leaving nothing to restore from
+        os.symlink(env["tmp"] / "units" / "cryptomaster-micro-recorder.service", fb / "cryptomaster-micro-recorder.service")
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks not available on this platform")
+    r = run(env, "upgrade-check")
+    assert r.returncode != 0 and "is not a regular file on a symlink-free path" in r.stderr
+
+
+def test_full_upgrade_and_return_path_with_the_fallback_release(env):
+    fb = installed_previous_revision(env)
+    app = env["tmp"] / "app" / "micro_recorder.py"
+    assert run(env, "upgrade-check").returncode == 0
+
+    def fallback(phase):
+        return subprocess.run([BASH, (fb / "deploy_micro_recorder.sh").as_posix(), phase],
+                              env=env["env"], capture_output=True, text=True, timeout=120)
+
+    r = fallback("rollback")                                  # uninstall the running previous revision
+    assert r.returncode == 0 and "ROLLBACK_OK" in r.stdout and not app.exists()
+    r = run(env, "install")                                   # new revision
+    assert r.returncode == 0 and "INSTALL_OK" in r.stdout, r.stderr
+    assert app.read_bytes() == (env["rel"] / "micro_recorder.py").read_bytes()
+    assert run(env, "rollback").returncode == 0               # return path
+    r = fallback("install")
+    assert r.returncode == 0 and "INSTALL_OK" in r.stdout, r.stderr
+    assert app.read_bytes() == PREV_BYTES
+
+
+def verify_env(env, unit_mtime: float):
+    """An installed release with readable data, the unit file placed at a known (fractional) time."""
+    import gzip as gz
+    (env["tmp"] / "app").mkdir(exist_ok=True)
+    shutil.copy(env["rel"] / "micro_recorder.py", env["tmp"] / "app" / "micro_recorder.py")
+    unit = env["tmp"] / "units" / "cryptomaster-micro-recorder.service"
+    shutil.copy(env["rel"] / "cryptomaster-micro-recorder.service", unit)
+    os.utime(unit, ns=(int(unit_mtime * 1e9), int(unit_mtime * 1e9)))
+    data = Path(env["env"]["DATA_DIR"])
+    (data / "book").mkdir(exist_ok=True)
+    with gz.open(data / "book" / "2026-11-27.csv.gz", "wt") as fh:
+        fh.write("ts_s,symbol\n1,BTCUSDT\n")
+    (data / "gaps" / "2026-11-26.csv.gz").unlink()
+    with gz.open(data / "gaps" / "2026-11-27.csv.gz", "wt") as fh:
+        fh.write("ts_ms,kind,detail\n1,start,pid=1\n")
+
+
+@pytest.mark.parametrize("case,ok", [("same_second_before", True), ("same_second_after", False),
+                                     ("after_a_restart", False), ("journalctl_fails", False)])
+def test_verify_journal_boundary_is_the_exact_installation_time(env, case, ok):
+    m = int(time.time()) - 600 + 0.5
+    verify_env(env, m)
+    line = {"same_second_before": f"@{m - 0.3:.6f} Traceback (old revision)\n",
+            "same_second_after": f"@{m + 0.3:.6f} Traceback (most recent call last)\n",
+            "after_a_restart": f"@{m + 300:.6f} [MICRO] write failed, exiting for a systemd restart\n",
+            "journalctl_fails": ""}[case]
+    (env["state"] / "journal").write_text(line)
+    if case == "journalctl_fails":
+        (env["state"] / "journal_fails").write_text("1")
+    r = run(env, "verify")
+    if ok:
+        assert r.returncode == 0 and "VERIFY_OK" in r.stdout, r.stderr
+    else:
+        assert r.returncode != 0
+        assert ("journalctl failed" if case == "journalctl_fails" else "errors in journal since installation") in r.stderr
+
+
 def test_install_ignores_journal_errors_from_before_this_installation(env):
     old = int(time.time()) - 3600
     (env["state"] / "journal").write_text(f"@{old} Traceback (most recent call last)\n@{old} write failed\n")
@@ -421,7 +489,7 @@ def test_install_ignores_journal_errors_from_before_this_installation(env):
 def test_install_fails_on_journal_errors_after_this_installation(env, trailing_lines):
     # 3000 lines after the error (> 64 KiB pipe buffer): a `journalctl | grep -q` pipe under pipefail
     # would end in SIGPIPE and silently report "no error"
-    new = int(time.time()) + 5
+    new = int(time.time()) + 3600                          # surely after the unit is placed
     filler = "".join(f"@{new} [MICRO] messages in the last hour: {{\"public\": {i}}}\n" for i in range(trailing_lines))
     (env["state"] / "journal").write_text(f"@{new} [MICRO] write failed, exiting for a systemd restart\n" + filler)
     r = run(env, "install")

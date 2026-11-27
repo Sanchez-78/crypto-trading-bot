@@ -10,7 +10,7 @@
 # Never touches cryptomaster.service, its config, /opt/cryptomaster or the bot's data.
 set -euo pipefail
 
-SCRIPT_SHA="fdad490b7fdfb86ff53d02a29815f0d7f4379c7417868f2864bad499ca2421aa"
+SCRIPT_SHA="ff52cab59451153bc1f6c5fadb517c5ca7ae4196deac7dce07c291e25b8a499a"
 PREV_SCRIPT_SHA="b09b31b1bf6bc73904a0ec702049f477f07e39ffb1d65369b0d6bcce1847d466"   # installed revision upgrade-check expects
 UNIT_SHA="35b35cc039cdb7e1fb007548bfa2f75f4e35f5e366ea419fe2eb20ff9f40d0a8"
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -162,12 +162,17 @@ upgrade_check() {  # read-only, run while the previous revision is still install
 }
 
 fallback_checks() {  # the release that uninstalls and, if needed, restores the previous revision
-  local fb_script="$FALLBACK/deploy_micro_recorder.sh"
-  [[ "$(sha "$FALLBACK/micro_recorder.py" 2>/dev/null)" == "$PREV_SCRIPT_SHA" ]]     || die "fallback release: micro_recorder.py is not the previous pinned revision"
-  [[ "$(sha "$FALLBACK/$UNIT" 2>/dev/null)" == "$UNIT_SHA" ]] || die "fallback release: unit != pin"
-  [[ -f "$fb_script" && "$(grep -c '^SCRIPT_SHA=' "$fb_script")" == 1 ]] || die "fallback deploy script missing or malformed"
+  local fb_script="$FALLBACK/deploy_micro_recorder.sh" f
+  # independent copies: the rollback below deletes the installed files, so no fallback file may resolve to them
+  for f in "$FALLBACK/micro_recorder.py" "$FALLBACK/$UNIT" "$fb_script"; do
+    no_symlink_path "$f" && [[ -f "$f" && ! -L "$f" ]] || die "fallback release: $f is not a regular file on a symlink-free path"
+  done
+  [[ "$(sha "$FALLBACK/micro_recorder.py")" == "$PREV_SCRIPT_SHA" ]]     || die "fallback release: micro_recorder.py is not the previous pinned revision"
+  [[ "$(sha "$FALLBACK/$UNIT")" == "$UNIT_SHA" ]] || die "fallback release: unit != pin"
+  [[ "$(grep -c '^SCRIPT_SHA=' "$fb_script")" == 1 ]] || die "fallback deploy script malformed"
   grep -Fxq "SCRIPT_SHA=\"$PREV_SCRIPT_SHA\"" "$fb_script" || die "fallback deploy script does not pin the previous revision"
-  cmp -s <(grep -v '^SCRIPT_SHA=' "$fb_script") <(grep -v '^SCRIPT_SHA=' "$HERE/deploy_micro_recorder.sh")     || die "fallback deploy script differs from this one beyond SCRIPT_SHA"
+  # byte-identical to this script once only the pin value is swapped back (line order kept)
+  cmp -s <(sed "s/^SCRIPT_SHA=\"$PREV_SCRIPT_SHA\"\$/SCRIPT_SHA=\"$SCRIPT_SHA\"/" "$fb_script") "$HERE/deploy_micro_recorder.sh"     || die "fallback deploy script differs from this one beyond SCRIPT_SHA"
 }
 
 no_symlink_path() {  # the path (existing or not) must contain no symlink component
@@ -224,12 +229,17 @@ checks() {  # checks BOT_PID
   [[ "$mem" =~ ^[0-9]+$ ]] && (( mem < MEM_MAX )) || die "MemoryCurrent '$mem' not below $MEM_MAX"
   # journal only since THIS installation (the unit file is placed fresh by install, restarts included);
   # errors of an earlier installation/revision must not fail a later install or a fallback restore
-  since="$(stat -c %Y "$UNIT_PATH")"
-  [[ "$since" =~ ^[0-9]+$ ]] || die "cannot read install time of $UNIT_PATH"
+  since="$(date -r "$UNIT_PATH" +%s.%N)"          # nanosecond mtime: no same-second overlap with the old run
+  [[ "$since" =~ ^[0-9]+\.[0-9]+$ ]] || die "cannot read install time of $UNIT_PATH"
   # capture first: `journalctl | grep -q` under pipefail turns a match into SIGPIPE (141) = silently "no error"
-  local journal
+  local journal rc=0
   journal="$(journalctl -u "$UNIT" --since "@$since" --no-pager -o cat)" || die "journalctl failed"
-  if grep -qE 'Traceback|write failed' <<<"$journal"; then die "errors in journal since installation"; fi
+  grep -qE 'Traceback|write failed' <<<"$journal" || rc=$?
+  case "$rc" in
+    0) die "errors in journal since installation" ;;
+    1) ;;                                             # only "no match" is clean
+    *) die "grep on the journal failed (rc=$rc)" ;;
+  esac
   ls "$DATA"/gaps/*.csv.gz >/dev/null 2>&1 || die "no gaps file written yet"
   [[ "$(bot_pid)" == "$bot" ]] || die "bot PID changed"
   [[ "$(dash_code)" == 200 ]] || die "dashboard not 200"
