@@ -86,7 +86,7 @@ generátory dál určují, co vstoupí.
 - Android: APK s novými poli `CryptoMaster.apk` sha256 `affcd7dd…`, lokální commity aplikace
   `a05eb248`, `820be7a8`.
 
-## Výzkumný sběrač order booku a likvidací — nasazen 2026-11-26 11:09 UTC (neobchoduje)
+## Výzkumný sběrač order booku a likvidací — nasazen 2026-11-26 11:09 UTC, rev. 6 od 2026-11-27 13:51 UTC (neobchoduje)
 
 - **Služba `cryptomaster-micro-recorder.service`:**
   - spuštění: `/usr/bin/python3 -I /opt/cryptomaster-micro/micro_recorder.py --out /var/lib/cryptomaster-micro`;
@@ -128,7 +128,7 @@ generátory dál určují, co vstoupí.
   - **Bota to neohrožuje, rollback se nedělá.** Oprava (order book přes `/public`, likvidace přes `/market`,
     každé spojení s vlastními značkami výpadků) jde jako rev. 6 k review Codexu. Nasadí se až po schválení.
     Do té doby se sbírá jen order book.
-- **Upgrade na rev. 6 (Codex APPROVE_TO_DEPLOY R6) se zastavil — SBĚRAČ OD 2026-11-27 13:39 UTC STOJÍ.**
+- **Upgrade na rev. 6 (Codex APPROVE_TO_DEPLOY R6) se zastavil, sběrač 13:39–13:51 UTC stál (vyřešeno níže).**
   - Rollback rev. 5 proběhl (`ROLLBACK_OK`, data zůstala). Následný `preflight` rev. 6 selhal:
     `target path /var/lib/cryptomaster-micro contains a symlink`.
   - **Příčina:** `DynamicUser` + `StateDirectory` při první instalaci vytvořil
@@ -143,7 +143,22 @@ generátory dál určují, co vstoupí.
     - Testy: 30 prošlo na serveru (Linux, pod uživatelem `nobody`, v dočasném adresáři, smazán).
     - Mutace: 4 ze 5 zabity, `private_may_be_link` je ekvivalentní (`stat` bez `-L` vrátí 777).
     - Jde k review Codexu (`docs/codex_prompts/CODEX_REVIEW_MICRO_RECORDER_R7_2026-11-27.md`).
-- **Rollback:**
+- **Rev. 6 NASAZENA 2026-11-27 13:51:53 UTC** (Codex APPROVE_TO_DEPLOY R7,
+  `_workspace/2026-11-27_codex_review_micro_recorder_r7.md`).
+  - **Postup:** v `/root/micro-recorder-20261127/` deploy skript rev. 7 `a00b1266…`, sběrač `b09b31b1…`, unit
+    `35b35cc0…` → `PREFLIGHT_OK` → `INSTALL_OK` (paměť 15,9 MB).
+  - **Gaps:** `start`, `connect public`, `connect market`.
+  - **Verify po 10 min** (14:03 UTC): `VERIFY_OK` rc 0.
+    - Book od startu 4 611 řádků (658–659 na symbol za 659 s, tj. 1/s).
+    - **`liq_sampled` 6 likvidací** (ETH 3, BTC, BNB, XRP).
+    - NRestarts 0, paměť 15,9 MB (peak 16,7 MB), CPU 5,5 s. Bot má PID 3840326 beze změny.
+  - **Díra v datech:** 781 s (BTC 13:38:53 → 13:51:54 UTC), vyznačená markerem `start`.
+  - **Drobnost:** `verify` vypisuje `du -sh` symlinku jako `0`, skutečně je to 35 MB. Kosmetické, změní se až
+    v příští revizi skriptu.
+  - **Rollback:** `cd /root/micro-recorder-20261127 && bash deploy_micro_recorder.sh rollback`. Návrat na rev. 5
+    přes `rev5_fallback/deploy_micro_recorder.sh` (`5832d085…`) v `/root/micro-recorder-20261126/`.
+  - **Další:** verify 24 h 2026-11-28 ~14:00 UTC: `liq_sampled`, hodinové počty zpráv v journalu, gaps.
+- **Rollback (rev. 5, už neplatí, viz rev. 6 výše):**
   `cd /root/micro-recorder-20261126 && bash deploy_micro_recorder.sh rollback` (data zůstávají).
 - **Stejný den vypnut nefunkční `tick-recorder.service`** (10:47:09 UTC, schválená fáze A):
   - jeho DB byla od 2026-07-10 smazaná, ale otevřená;

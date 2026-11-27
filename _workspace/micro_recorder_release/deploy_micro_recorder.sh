@@ -3,13 +3,15 @@
 # Run as root from the release directory that holds micro_recorder.py and cryptomaster-micro-recorder.service.
 #   bash deploy_micro_recorder.sh stop-tick   # separate step: forensics of the dead tick-recorder, then stop it
 #   bash deploy_micro_recorder.sh preflight   # read-only checks
+#   bash deploy_micro_recorder.sh upgrade-check  # read-only, BEFORE the previous release's rollback
 #   bash deploy_micro_recorder.sh install     # preflight + install + 120 s checks; any failure -> rollback
 #   bash deploy_micro_recorder.sh verify      # later checks (rows written and readable)
 #   bash deploy_micro_recorder.sh rollback    # stop + remove exactly the pinned files
 # Never touches cryptomaster.service, its config, /opt/cryptomaster or the bot's data.
 set -euo pipefail
 
-SCRIPT_SHA="b09b31b1bf6bc73904a0ec702049f477f07e39ffb1d65369b0d6bcce1847d466"
+SCRIPT_SHA="fdad490b7fdfb86ff53d02a29815f0d7f4379c7417868f2864bad499ca2421aa"
+PREV_SCRIPT_SHA="b09b31b1bf6bc73904a0ec702049f477f07e39ffb1d65369b0d6bcce1847d466"   # installed revision upgrade-check expects
 UNIT_SHA="35b35cc039cdb7e1fb007548bfa2f75f4e35f5e366ea419fe2eb20ff9f40d0a8"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 UNIT=cryptomaster-micro-recorder.service
@@ -112,7 +114,7 @@ stop_tick() {
   echo "TICK_STOPPED forensics=$dir (log kept at $TICK_LOG)"
 }
 
-preflight() {
+release_checks() {  # read-only: the new release files, the environment and the target paths
   [[ "$SCRIPT_SHA" =~ ^[0-9a-f]{64}$ && "$UNIT_SHA" =~ ^[0-9a-f]{64}$ ]] || die "pins not set"
   [[ "$(sha "$HERE/micro_recorder.py")" == "$SCRIPT_SHA" ]] || die "micro_recorder.py != pin"
   [[ "$(sha "$HERE/$UNIT")" == "$UNIT_SHA" ]] || die "$UNIT != pin"
@@ -125,15 +127,33 @@ preflight() {
     [[ "$PY" == "$PROD_PY" && "$APP_DIR" == "$PROD_APP_DIR" && "$DATA" == "$PROD_DATA" ]]       || die "targets differ from the unit"
   fi
   check_target_dirs
-  [[ ! -e "$UNIT_PATH" && ! -L "$UNIT_PATH" ]] || die "$UNIT_PATH already exists"
-  [[ ! -e "$APP" && ! -L "$APP" ]] || die "$APP already exists"
+}
+
+resource_checks() {
   local free avail
   free="$(df --output=avail -k / | tail -1)"
   avail="$(awk '/MemAvailable/ {print $2}' "$MEMINFO")"
   (( free >= MIN_FREE_KB )) || die "free disk ${free} kB < ${MIN_FREE_KB}"
   (( avail >= MIN_AVAIL_KB )) || die "MemAvailable ${avail} kB < ${MIN_AVAIL_KB}"
   bot_pid >/dev/null
+}
+
+preflight() {
+  release_checks
+  [[ ! -e "$UNIT_PATH" && ! -L "$UNIT_PATH" ]] || die "$UNIT_PATH already exists"
+  [[ ! -e "$APP" && ! -L "$APP" ]] || die "$APP already exists"
+  resource_checks
   echo "PREFLIGHT_OK"
+}
+
+upgrade_check() {  # read-only, run while the previous revision is still installed and running
+  release_checks
+  [[ "$PREV_SCRIPT_SHA" =~ ^[0-9a-f]{64}$ ]] || die "previous pin not set"
+  [[ -f "$UNIT_PATH" && ! -L "$UNIT_PATH" && "$(sha "$UNIT_PATH")" == "$UNIT_SHA" ]]     || die "installed unit is not the pinned unit (the previous release's rollback would not remove it)"
+  [[ -f "$APP" && ! -L "$APP" && "$(sha "$APP")" == "$PREV_SCRIPT_SHA" ]]     || die "installed recorder is not the previous pinned revision"
+  [[ "$(systemctl is-active "$UNIT" || true)" == active ]] || die "$UNIT not active"
+  resource_checks
+  echo "UPGRADE_CHECK_OK (next: previous release dir rollback, then preflight + install here)"
 }
 
 no_symlink_path() {  # the path (existing or not) must contain no symlink component
@@ -272,15 +292,16 @@ for kind in ("book", "gaps"):
     print(kind, path.name, "rows", len(rows))
     assert rows, kind
 EOF
-  du -sh "$DATA"
+  du -sh "$DATA/"      # trailing slash: follow the systemd StateDirectory link
   echo "VERIFY_OK"
 }
 
 case "${1:-}" in
   stop-tick) stop_tick ;;
   preflight) preflight ;;
+  upgrade-check) upgrade_check ;;
   install) install ;;
   verify) verify ;;
   rollback) rollback manual ;;
-  *) die "usage: $0 stop-tick|preflight|install|verify|rollback" ;;
+  *) die "usage: $0 stop-tick|preflight|upgrade-check|install|verify|rollback" ;;
 esac

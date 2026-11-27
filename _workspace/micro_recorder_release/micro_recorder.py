@@ -100,10 +100,15 @@ def liquidation_row(payload: dict) -> dict | None:
             "qty": qty, "filled_qty": filled, "notional": round((avg or price) * (filled or qty), 2)}
 
 
+def log_line(message: str) -> None:
+    # stdout is block-buffered under systemd and os._exit() skips buffer flushing: flush every line
+    print(message, flush=True)
+
+
 class Recorder:
     """Holds the per-second state and bounded buffers; all file I/O goes through flush()."""
 
-    def __init__(self, out: Path, clock=time.time, log=print):
+    def __init__(self, out: Path, clock=time.time, log=log_line):
         self.out, self.clock, self.log = Path(out), clock, log
         self.lock = threading.Lock()
         self.pending: dict[str, tuple] = {}      # symbol -> (ts_s, event_ms, updates, bids, asks)

@@ -38,6 +38,20 @@ def depth(e_ms, bid=100.0, ask=100.02, qty=1.0):
             "a": [[f"{ask + i * 0.01:.2f}", str(qty)] for i in range(20)]}
 
 
+def test_default_log_flushes_every_line(tmp_path, monkeypatch):
+    class Out(io.StringIO):
+        flushes = 0
+
+        def flush(self):
+            Out.flushes += 1
+            super().flush()
+
+    out = Out()
+    monkeypatch.setattr(sys, "stdout", out)
+    m.Recorder(tmp_path).log("[MICRO] write failed")       # the line written right before os._exit()
+    assert out.getvalue() == "[MICRO] write failed\n" and Out.flushes >= 1
+
+
 def test_book_features_bands_imbalance_and_coverage():
     row = m.book_features("btcusdt", T, T * 1000, 2, [["100", "2"], ["99.95", "1"], ["99", "5"]],
                           [["100.02", "1"], ["100.2", "3"]])

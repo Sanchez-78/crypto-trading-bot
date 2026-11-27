@@ -323,3 +323,53 @@ jehož soubor je na serveru v `/root/micro-recorder-20261126/`.
 4. Po 24 h znovu `verify`, `liq_sampled` a hodinové počty zpráv.
 5. Návrat: `rollback` v novém adresáři. Pak záložní skript rev. 5: nahrát ho do `/root/micro-recorder-20261126/`
    místo `8f471aca…` → `preflight` → `install`.
+
+## Rev. 8 (2026-11-27): log se vyprazdňuje, read-only `upgrade-check`, `du` přes symlink
+
+**Nasazení rev. 6** (13:51:53 UTC, deploy skript rev. 7): `INSTALL_OK`, verify po 10 min `VERIFY_OK`, 6 likvidací.
+Audit výsledku Codexem: **ACCEPT** (`_workspace/2026-11-27_codex_review_micro_recorder_deploy_result.md`).
+
+**Nález z auditu (bod 4):** sběrač loguje přes `print` bez vyprázdnění. Pod systemd je stdout blokově bufferovaný
+(8 KiB). Hodinový řádek počtů (~100 B) by se tak v journalu objevil až po ~80 h. Horší je, že `os._exit(3/4)`
+buffer nevyprázdní, takže **poslední hláška před ukončením („write failed“, „connection … crashed“) se
+ztratí**. Na `journalctl | grep 'write failed'` v `checks()` se proto nedá spolehnout. `PYTHONUNBUFFERED`
+v unitě nepomůže, protože `-I` proměnné `PYTHON*` ignoruje.
+
+**Změny:**
+- `scripts/research/micro_recorder.py` (sha `fdad490b…21aa`, release kopie identická): nová funkce
+  `log_line()` = `print(message, flush=True)`, výchozí `log` třídy `Recorder`. Jinak beze změny.
+- `deploy_micro_recorder.sh` (sha `8d403e96…e895`):
+  - nový pin `SCRIPT_SHA` a nový `PREV_SCRIPT_SHA=b09b31b1…` (rev. 6, právě nainstalovaná);
+  - `preflight` rozdělen na `release_checks` (piny, websocket, kompilace, ExecStart/StateDirectory, cesty
+    vč. `data_dir_ok`) a `resource_checks` (disk, paměť, PID bota). Chování `preflight` je stejné;
+  - **nová fáze `upgrade-check`** (doporučení R7 a auditu výsledku), jen pro čtení, spouští se, dokud běží
+    předchozí revize. Ověří:
+    - `release_checks`;
+    - nainstalovaná unit je skutečný soubor s pinem `UNIT_SHA`, takže ji rollback předchozího release
+      odstraní;
+    - nainstalovaný sběrač je skutečný soubor s pinem `PREV_SCRIPT_SHA`;
+    - služba je `active`;
+    - `resource_checks`, které `preflight` při existující unitě nikdy nedošel ověřit.
+  - `verify`: `du -sh "$DATA/"`, tedy přes symlink. Dřív vypisoval `0`.
+  - Unit beze změny (`35b35cc0…`).
+- Testy:
+  - `tests/test_micro_recorder.py` (sha `516f7b44…454`, +1: výchozí log volá `flush`);
+  - `tests/test_deploy_micro_recorder_script.py` (sha `831a17fd…1701`, +5: `upgrade-check` projde nad
+    předchozí revizí bez jakéhokoli zápisu a volání `enable`/`disable`/`daemon-reload`; odmítne jiný
+    nainstalovaný sběrač, jinou unit, neaktivní službu a změněný nový release).
+  - Lokálně 39 passed, 8 skipped (symlinky), `PROTECTED_SAME`. Server (dočasný adresář, `nobody`, smazán):
+    **47 passed**.
+  - Mutace: zabito 5/5 (bez kontroly PREV pinu, bez kontroly pinu unity, bez kontroly `active`, bez
+    `release_checks` v `upgrade-check`, log bez `flush`).
+
+**Postup upgradu rev. 6 → rev. 8** (poprvé s `upgrade-check` před odinstalací):
+1. Nahrát do `/root/micro-recorder-20261127-r8/` sběrač `fdad490b…`, deploy skript `8d403e96…`, unit
+   `35b35cc0…` a ověřit 3 hashe.
+2. Nový adresář `upgrade-check` → `UPGRADE_CHECK_OK`. Rev. 6 stále běží. Při selhání konec, nic se neodinstaluje.
+3. Starý adresář `/root/micro-recorder-20261127/` (skript rev. 7, pin `b09b31b1…`): `rollback` → `ROLLBACK_OK`.
+4. Nový adresář `preflight` → `install`.
+5. `verify` po 10 min (gaps `start`/`connect public`/`connect market`, `liq_sampled` jen informace). Po ~65 min
+   v journalu řádek `[MICRO] messages in the last hour` s počty `public` i `market`. Verify 24 h podle tabulky
+   z auditu výsledku.
+6. Návrat: `rollback` v novém adresáři → `install` ve starém (rev. 7 skript s rev. 6 sběračem projde přes
+   symlink StateDirectory).

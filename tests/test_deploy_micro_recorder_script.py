@@ -303,6 +303,55 @@ def test_upgrade_install_over_kept_dynamic_user_data(env):
     assert marker.read_bytes() == b"x" and (env["tmp"] / "lib" / "data").is_symlink()
 
 
+def installed_previous_revision(env, recorder=b"previous revision\n", unit=None):
+    """Lay out an installed previous release; the copied script's PREV pin is pointed at the fake recorder."""
+    (env["tmp"] / "app").mkdir()
+    (env["tmp"] / "app" / "micro_recorder.py").write_bytes(recorder)
+    pinned_unit = (env["rel"] / "cryptomaster-micro-recorder.service").read_bytes()
+    (env["tmp"] / "units" / "cryptomaster-micro-recorder.service").write_bytes(pinned_unit if unit is None else unit)
+    script = env["rel"] / "deploy_micro_recorder.sh"
+    text = script.read_text(encoding="utf-8")
+    start = text.index('PREV_SCRIPT_SHA="') + len('PREV_SCRIPT_SHA="')
+    fake = hashlib.sha256(b"previous revision\n").hexdigest()
+    script.write_text(text[:start] + fake + text[start + 64:], encoding="utf-8", newline="\n")
+
+
+def tree(env):
+    return sorted((p.relative_to(env["tmp"]).as_posix(), p.stat().st_size) for p in env["tmp"].rglob("*")
+                  if p.is_file() and "state" not in p.parts)
+
+
+def test_upgrade_check_passes_over_the_running_previous_revision_and_writes_nothing(env):
+    installed_previous_revision(env)
+    before = tree(env)
+    r = run(env, "upgrade-check")
+    assert r.returncode == 0 and "UPGRADE_CHECK_OK" in r.stdout, r.stderr
+    assert tree(env) == before
+    calls = (env["state"] / "calls").read_text()
+    assert "disable" not in calls and "enable" not in calls and "daemon-reload" not in calls
+
+
+@pytest.mark.parametrize("fault", ["other_recorder", "other_unit", "inactive", "new_release_changed"])
+def test_upgrade_check_refuses(env, fault):
+    if fault == "other_recorder":
+        installed_previous_revision(env, recorder=b"something else\n")
+        expected = "not the previous pinned revision"
+    elif fault == "other_unit":
+        installed_previous_revision(env, unit=b"[Unit]\n")
+        expected = "installed unit is not the pinned unit"
+    elif fault == "inactive":
+        installed_previous_revision(env)
+        (env["state"] / "active").write_text("inactive")
+        expected = "not active"
+    else:
+        installed_previous_revision(env)
+        with open(env["rel"] / "micro_recorder.py", "a", encoding="utf-8") as fh:
+            fh.write("# changed\n")
+        expected = "micro_recorder.py != pin"
+    r = run(env, "upgrade-check")
+    assert r.returncode != 0 and expected in r.stderr
+
+
 def test_manual_rollback_after_a_successful_install_removes_the_pinned_files(env):
     assert run(env, "install").returncode == 0
     r = run(env, "rollback")
