@@ -212,3 +212,63 @@ neovlivní: jiný proces, nízká priorita, žádné sdílené soubory.
 1. Jsou limity a izolace dostatečné pro 4GB produkci?
 2. Je fáze `stop-tick` (forenzika, vypnutí, log zůstává) přijatelná jako samostatný krok?
 3. `aggTrade` se podle review nepřidává. Případně až samostatně po změření provozu.
+
+---
+
+## Rev. 6 (2026-11-27): likvidace se nesbíraly, oprava adres streamů
+
+**Nález při verify 24 h** (2026-11-27 11:13 UTC, `docs/OPERATING_STATE.md`): `VERIFY_OK`, order book 1 řádek
+za sekundu na symbol, ale za 24 h **0 souborů `liq_sampled`**.
+
+**Příčina** (sonda ze serveru, 2026-11-27 ~11:15 UTC, jen čtení veřejných streamů):
+
+| Adresa | `forceOrder` | `depth20@500ms` |
+|---|---|---|
+| `wss://fstream.binance.com/stream` (dosavadní) | **0 zpráv / 120 s** (`!forceOrder@arr` i BTC/ETH) | 40 / 20 s |
+| `wss://fstream.binance.com/public/stream` | – | 40 / 20 s, stejný formát `{"stream","data"}` |
+| `wss://fstream.binance.com/market/stream` | 20 / 120 s napříč trhem | 0 |
+
+Binance rozdělil USD-M WebSocket adresy. Na staré adrese už `forceOrder` nechodí.
+
+**Oprava** (`scripts/research/micro_recorder.py`, SHA-256 `b09b31b1…d466`, release kopie identická):
+- **Dvě spojení:**
+  - `public` = `/public/stream` s `<sym>@depth20@500ms`;
+  - `market` = `/market/stream` s `<sym>@forceOrder`.
+- **Dispatch, výpočty, limity, výstupy a unit beze změny.**
+- **`connection_loop()`** (testovatelná, s injektovaným `run_once`, hodinami a `sleep`):
+  - `connect` / `disconnect` mají v `detail` jméno spojení;
+  - backoff 1–60 s pro každé spojení zvlášť.
+- **Spadlé vlákno spojení** (neočekávaná výjimka) ukončí proces (`os._exit(4)`), takže restartuje systemd.
+  Nikdy nezůstane tiše jen polovina sběrače.
+- **Každou hodinu** jeden řádek logu s počtem zpráv na spojení (diagnostika ticha). Dosud se o tichém
+  streamu nedalo zjistit nic.
+- **Deploy skript:** změněný jen pin `SCRIPT_SHA` (`e69e0464…e4a4`). Unit `35b35cc0…` beze změny.
+- **Testy:**
+  - `tests/test_micro_recorder.py`: 11 testů, nové jsou URL obou spojení a `connection_loop` (značky podle
+    spojení, počty, backoff 2/4/8);
+  - `tests/test_deploy_micro_recorder_script.py`: 23 testů beze změny, 1 přeskočen na Windows.
+  - Lokálně 33 testů prošlo, 1 přeskočen, `PROTECTED_SAME`.
+- **Živý smoke test na serveru** (2026-11-27, ~130 s, výstup do `mktemp -d /tmp/micro-smoke-*`, poté smazán;
+  produkční služba nedotčena, PID bota 3840326):
+  - book 833 řádků (119 na symbol);
+  - **`liq_sampled` 4** (BTC/ETH);
+  - gaps `start`, `connect public`, `connect market`.
+
+**Postup upgradu** (žádná nová logika v deploy skriptu, jen dvě už schválené fáze):
+1. Nový adresář `/root/micro-recorder-20261127/` s rev. 6: `micro_recorder.py`, unit a deploy skript s novým
+   pinem. Ověřit 3 hashe a spustit `preflight`.
+   - Očekávané selhání: unit a aplikace ještě existují (`already exists`). Preflight se proto spustí až po
+     kroku 2.
+2. Starý adresář `/root/micro-recorder-20261126/`: `bash deploy_micro_recorder.sh rollback` (ruční; pin
+   `252dd1f7…` odpovídá nainstalovanému souboru) → `ROLLBACK_OK`. Data v `/var/lib/cryptomaster-micro`
+   zůstávají.
+3. Nový adresář: `preflight` → `install`.
+   - 120 s kontroly, automatický rollback jen vlastních souborů při selhání.
+   - Nový `start` marker uzavře díru po kroku 2, která trvá jednotky sekund.
+4. **`verify`** po 10 min, navíc `liq_sampled` existuje a v gaps je `connect public` a `connect market`.
+   Po 24 h znovu.
+5. **Návrat při problému:**
+   - nový adresář `rollback`;
+   - starý adresář `install`, který obnoví rev. 5 (soubory tam zůstaly, pin sedí).
+
+**Riziko:** Binance může později přesunout i `depth20` ze staré adresy. Proto rev. 6 už používá `/public`.

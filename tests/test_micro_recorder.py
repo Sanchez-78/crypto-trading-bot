@@ -170,6 +170,34 @@ def test_dispatch_routes_streams_and_ignores_unknown(tmp_path):
     rec.dispatch(json.dumps({"stream": "xrpusdt@forceOrder", "data": {"E": T * 1000, "o": {
         "s": "XRPUSDT", "S": "SELL", "o": "LIMIT", "X": "FILLED", "p": "1", "ap": "1", "q": "5", "z": "5", "T": 1}}}))
     assert list(rec.pending) == ["xrpusdt"] and len(rec.buffers["liq_sampled"]) == 1
-    url = m.stream_url()
-    assert url.startswith("wss://fstream.binance.com/stream?streams=") and url.count("@depth20@500ms") == 7
-    assert url.count("@forceOrder") == 7
+    urls = m.stream_urls()
+    assert set(urls) == {"public", "market"}
+    # Binance endpoint split: order book on /public, liquidations on /market (legacy /stream is silent for forceOrder)
+    assert urls["public"].startswith("wss://fstream.binance.com/public/stream?streams=")
+    assert urls["public"].count("@depth20@500ms") == 7 and "@forceOrder" not in urls["public"]
+    assert urls["market"].startswith("wss://fstream.binance.com/market/stream?streams=")
+    assert urls["market"].count("@forceOrder") == 7 and "@depth20" not in urls["market"]
+
+
+def test_connection_loop_marks_gaps_per_connection_counts_and_backs_off(tmp_path):
+    import threading
+    rec = m.Recorder(tmp_path, clock=Clock(T + 10))
+    stop = threading.Event()
+    counts, sleeps, urls = {}, [], []
+    liq = json.dumps({"stream": "btcusdt@forceOrder", "data": {"E": T * 1000, "o": {
+        "s": "BTCUSDT", "S": "SELL", "o": "LIMIT", "X": "FILLED", "p": "1", "ap": "1", "q": "1", "z": "1", "T": 1}}})
+
+    def run_once(url, on_message):
+        urls.append(url)
+        on_message(liq)
+        on_message("not json")
+        if len(urls) == 3:
+            stop.set()
+
+    m.connection_loop(rec, "market", "U", run_once, stop, counts, clock=lambda: T, sleep=sleeps.append)
+    assert urls == ["U"] * 3 and counts == {"market": 6}
+    assert sleeps == [2, 4, 8]                        # short-lived connections back off
+    assert len(rec.buffers["liq_sampled"]) == 3
+    rec.flush()
+    gaps = read_rows(next((tmp_path / "gaps").glob("*.csv.gz")))
+    assert [(g["kind"], g["detail"]) for g in gaps] == [("connect", "market"), ("disconnect", "market")] * 3

@@ -3,9 +3,13 @@
 
 Design + limits: _workspace/2026-11-26_micro_recorder_design.md. Stdlib + websocket-client only.
 
-Streams (one combined connection): <sym>@depth20@500ms (PARTIAL top-20 snapshots, not a reconstructed full book)
-and <sym>@forceOrder. Binance publishes at most ONE liquidation per symbol per 1000 ms (since 2026-04 the
-largest in the interval), so the liquidation output is a SAMPLED proxy, never the complete set of liquidations.
+Streams, two connections (rev. 6; Binance split the USD-M websocket endpoints and the legacy /stream URL no
+longer delivers forceOrder, probe 2026-11-27):
+  public  wss://fstream.binance.com/public/stream  <sym>@depth20@500ms (PARTIAL top-20 snapshots, not a full book)
+  market  wss://fstream.binance.com/market/stream  <sym>@forceOrder
+Binance publishes at most ONE liquidation per symbol per 1000 ms (since 2026-04 the largest in the interval), so
+the liquidation output is a SAMPLED proxy, never the complete set of liquidations. Each connection writes its own
+connect/disconnect gap markers (detail = connection name); message counts are logged hourly.
 Outputs under --out (a systemd StateDirectory), one gzip member appended per flush:
   book/YYYY-MM-DD.csv.gz         one row per symbol per second (last snapshot of that second, derived features)
   liq_sampled/YYYY-MM-DD.csv.gz  one row per received forceOrder event (sampled upstream, see above)
@@ -31,7 +35,9 @@ import time
 from pathlib import Path
 
 SYMBOLS = ("btcusdt", "ethusdt", "solusdt", "adausdt", "bnbusdt", "dotusdt", "xrpusdt")
-WS_BASE = "wss://fstream.binance.com/stream?streams="
+WS_PUBLIC = "wss://fstream.binance.com/public/stream?streams="
+WS_MARKET = "wss://fstream.binance.com/market/stream?streams="
+STATS_EVERY_S = 3600
 BANDS_BPS = (5, 10, 25)
 FLUSH_SECONDS = 60
 MAX_BUFFER = 50_000
@@ -250,17 +256,42 @@ class Recorder:
             self.on_liquidation(data)
 
 
-def stream_url(symbols=SYMBOLS) -> str:
-    return WS_BASE + "/".join(f"{s}@depth20@500ms/{s}@forceOrder" for s in symbols)
+def stream_urls(symbols=SYMBOLS) -> dict[str, str]:
+    """Connection name -> combined-stream URL (order book on /public, liquidations on /market)."""
+    return {"public": WS_PUBLIC + "/".join(f"{s}@depth20@500ms" for s in symbols),
+            "market": WS_MARKET + "/".join(f"{s}@forceOrder" for s in symbols)}
+
+
+def connection_loop(rec: "Recorder", name: str, url: str, run_once, stop: threading.Event,
+                    counts: dict, clock=time.time, sleep=time.sleep) -> None:
+    """Reconnect forever: connect/disconnect gap markers carry the connection name; backoff 1..60 s."""
+    backoff = 1
+    while not stop.is_set():
+        rec.gap("connect", name)
+        started = clock()
+
+        def on_message(message, _name=name):
+            counts[_name] = counts.get(_name, 0) + 1
+            rec.dispatch(message)
+        run_once(url, on_message)
+        rec.gap("disconnect", name)
+        backoff = 1 if clock() - started > 300 else min(60, backoff * 2)
+        sleep(backoff)
 
 
 def run(out: Path) -> int:  # pragma: no cover - network loop, exercised on the server only
     import websocket  # websocket-client
     rec = Recorder(out)
     stop = threading.Event()
+    counts: dict[str, int] = {}
+
+    def run_once(url, on_message):
+        ws = websocket.WebSocketApp(url, on_message=lambda _ws, m: on_message(m),
+                                    on_error=lambda _ws, e: rec._rate_log("ws", f"[MICRO] ws error {e!r}"))
+        ws.run_forever(ping_interval=0)
 
     def flusher():
-        last_prune = 0.0
+        last_prune = last_stats = time.time()
         while not stop.wait(FLUSH_SECONDS):
             try:
                 rec.flush()
@@ -270,18 +301,27 @@ def run(out: Path) -> int:  # pragma: no cover - network loop, exercised on the 
             except OSError as exc:
                 rec.log(f"[MICRO] write failed, exiting for a systemd restart: {exc!r}")
                 os._exit(3)
+            if time.time() - last_stats >= STATS_EVERY_S:
+                snapshot = dict(counts)
+                counts.clear()
+                rec.log(f"[MICRO] messages in the last hour: {json.dumps(snapshot, sort_keys=True)}")
+                last_stats = time.time()
+
+    def guarded(name, url):
+        try:
+            connection_loop(rec, name, url, run_once, stop, counts)
+        except Exception as exc:  # a dead connection thread must not leave a silent half-recorder
+            rec.log(f"[MICRO] connection {name} crashed, exiting for a systemd restart: {exc!r}")
+            os._exit(4)
+
     threading.Thread(target=flusher, daemon=True).start()
     rec.gap("start", f"pid={os.getpid()}")      # after a crash/restart the hole ends at this marker
-    backoff = 1
-    while True:
-        rec.gap("connect")
-        started = time.time()
-        ws = websocket.WebSocketApp(stream_url(), on_message=lambda _ws, m: rec.dispatch(m),
-                                    on_error=lambda _ws, e: rec._rate_log("ws", f"[MICRO] ws error {e!r}"))
-        ws.run_forever(ping_interval=0)
-        rec.gap("disconnect")
-        backoff = 1 if time.time() - started > 300 else min(60, backoff * 2)
-        time.sleep(backoff)
+    threads = [threading.Thread(target=guarded, args=item, daemon=True) for item in stream_urls().items()]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    return 0
 
 
 def main(argv=None) -> int:  # pragma: no cover

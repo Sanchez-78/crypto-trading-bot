@@ -9,7 +9,7 @@
 # Never touches cryptomaster.service, its config, /opt/cryptomaster or the bot's data.
 set -euo pipefail
 
-SCRIPT_SHA="252dd1f73d16c5f4c1de551fae3939e69b06ae39b6ac6aecb858c3f042fd1172"
+SCRIPT_SHA="b09b31b1bf6bc73904a0ec702049f477f07e39ffb1d65369b0d6bcce1847d466"
 UNIT_SHA="35b35cc039cdb7e1fb007548bfa2f75f4e35f5e366ea419fe2eb20ff9f40d0a8"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 UNIT=cryptomaster-micro-recorder.service
