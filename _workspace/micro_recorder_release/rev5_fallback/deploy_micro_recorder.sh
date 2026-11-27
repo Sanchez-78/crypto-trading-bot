@@ -3,6 +3,7 @@
 # Run as root from the release directory that holds micro_recorder.py and cryptomaster-micro-recorder.service.
 #   bash deploy_micro_recorder.sh stop-tick   # separate step: forensics of the dead tick-recorder, then stop it
 #   bash deploy_micro_recorder.sh preflight   # read-only checks
+#   bash deploy_micro_recorder.sh upgrade-check  # read-only, BEFORE the previous release's rollback
 #   bash deploy_micro_recorder.sh install     # preflight + install + 120 s checks; any failure -> rollback
 #   bash deploy_micro_recorder.sh verify      # later checks (rows written and readable)
 #   bash deploy_micro_recorder.sh rollback    # stop + remove exactly the pinned files
@@ -10,6 +11,7 @@
 set -euo pipefail
 
 SCRIPT_SHA="252dd1f73d16c5f4c1de551fae3939e69b06ae39b6ac6aecb858c3f042fd1172"
+PREV_SCRIPT_SHA="b09b31b1bf6bc73904a0ec702049f477f07e39ffb1d65369b0d6bcce1847d466"   # installed revision upgrade-check expects
 UNIT_SHA="35b35cc039cdb7e1fb007548bfa2f75f4e35f5e366ea419fe2eb20ff9f40d0a8"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 UNIT=cryptomaster-micro-recorder.service
@@ -20,7 +22,7 @@ PROD_APP_DIR=/opt/cryptomaster-micro
 PROD_DATA=/var/lib/cryptomaster-micro
 PROD_EXEC="ExecStart=$PROD_PY -I $PROD_APP_DIR/micro_recorder.py --out $PROD_DATA"
 TICK_DB=/opt/cryptomaster/local_learning_storage/tick_l1.sqlite
-OVERRIDABLE=(UNIT_DIR APP_DIR DATA_DIR PY MEMINFO TICK_LOG FORENSICS_ROOT CHECK_WAIT PROC_ROOT)
+OVERRIDABLE=(UNIT_DIR APP_DIR DATA_DIR PY MEMINFO TICK_LOG FORENSICS_ROOT CHECK_WAIT PROC_ROOT FALLBACK_DIR)
 if [[ "${MICRO_DEPLOY_TEST_MODE:-0}" == 1 ]]; then
   echo "TEST MODE: path overrides allowed" >&2
 else
@@ -34,6 +36,9 @@ APP="$APP_DIR/micro_recorder.py"
 DATA="${DATA_DIR:-$PROD_DATA}"
 PY="${PY:-$PROD_PY}"
 MEMINFO="${MEMINFO:-/proc/meminfo}"
+# fallback release = previous recorder + unit + this script with only SCRIPT_SHA set to PREV_SCRIPT_SHA;
+# its `rollback` uninstalls the running previous revision, its `preflight`+`install` restore it
+FALLBACK="${FALLBACK_DIR:-/root/micro-recorder-rev6-fallback}"
 TICK_LOG="${TICK_LOG:-/tmp/tick_recorder.log}"
 FORENSICS_ROOT="${FORENSICS_ROOT:-/root}"
 CHECK_WAIT="${CHECK_WAIT:-120}"
@@ -112,11 +117,11 @@ stop_tick() {
   echo "TICK_STOPPED forensics=$dir (log kept at $TICK_LOG)"
 }
 
-preflight() {
+release_checks() {  # read-only: the new release files, the environment and the target paths
   [[ "$SCRIPT_SHA" =~ ^[0-9a-f]{64}$ && "$UNIT_SHA" =~ ^[0-9a-f]{64}$ ]] || die "pins not set"
   [[ "$(sha "$HERE/micro_recorder.py")" == "$SCRIPT_SHA" ]] || die "micro_recorder.py != pin"
   [[ "$(sha "$HERE/$UNIT")" == "$UNIT_SHA" ]] || die "$UNIT != pin"
-  "$PY" -I -c 'import websocket' || die "websocket-client missing for /usr/bin/python3"
+  "$PY" -I -B -c 'import websocket' || die "websocket-client missing for /usr/bin/python3"   # -B: no .pyc
   # syntax check in memory only: no __pycache__ or any other write
   "$PY" -I -B -c 'import sys; compile(open(sys.argv[1], "rb").read(), sys.argv[1], "exec")' "$HERE/micro_recorder.py"     || die "compile failed"
   grep -Fxq "$PROD_EXEC" "$HERE/$UNIT" || die "unit ExecStart is not the fixed production target"
@@ -125,15 +130,44 @@ preflight() {
     [[ "$PY" == "$PROD_PY" && "$APP_DIR" == "$PROD_APP_DIR" && "$DATA" == "$PROD_DATA" ]]       || die "targets differ from the unit"
   fi
   check_target_dirs
-  [[ ! -e "$UNIT_PATH" && ! -L "$UNIT_PATH" ]] || die "$UNIT_PATH already exists"
-  [[ ! -e "$APP" && ! -L "$APP" ]] || die "$APP already exists"
+}
+
+resource_checks() {
   local free avail
   free="$(df --output=avail -k / | tail -1)"
   avail="$(awk '/MemAvailable/ {print $2}' "$MEMINFO")"
   (( free >= MIN_FREE_KB )) || die "free disk ${free} kB < ${MIN_FREE_KB}"
   (( avail >= MIN_AVAIL_KB )) || die "MemAvailable ${avail} kB < ${MIN_AVAIL_KB}"
   bot_pid >/dev/null
+}
+
+preflight() {
+  release_checks
+  [[ ! -e "$UNIT_PATH" && ! -L "$UNIT_PATH" ]] || die "$UNIT_PATH already exists"
+  [[ ! -e "$APP" && ! -L "$APP" ]] || die "$APP already exists"
+  resource_checks
   echo "PREFLIGHT_OK"
+}
+
+upgrade_check() {  # read-only, run while the previous revision is still installed and running
+  release_checks
+  [[ "$PREV_SCRIPT_SHA" =~ ^[0-9a-f]{64}$ ]] || die "previous pin not set"
+  [[ -f "$UNIT_PATH" && ! -L "$UNIT_PATH" && "$(sha "$UNIT_PATH")" == "$UNIT_SHA" ]]     || die "installed unit is not the pinned unit (the previous release's rollback would not remove it)"
+  [[ -f "$APP" && ! -L "$APP" && "$(sha "$APP")" == "$PREV_SCRIPT_SHA" ]]     || die "installed recorder is not the previous pinned revision"
+  [[ "$(systemctl is-active "$UNIT" || true)" == active ]] || die "$UNIT not active"
+  fallback_checks
+  resource_checks
+  [[ "$(dash_code)" == 200 ]] || die "dashboard not 200 (install would fail its checks after stopping the recorder)"
+  echo "UPGRADE_CHECK_OK (next: $FALLBACK rollback, then preflight + install here)"
+}
+
+fallback_checks() {  # the release that uninstalls and, if needed, restores the previous revision
+  local fb_script="$FALLBACK/deploy_micro_recorder.sh"
+  [[ "$(sha "$FALLBACK/micro_recorder.py" 2>/dev/null)" == "$PREV_SCRIPT_SHA" ]]     || die "fallback release: micro_recorder.py is not the previous pinned revision"
+  [[ "$(sha "$FALLBACK/$UNIT" 2>/dev/null)" == "$UNIT_SHA" ]] || die "fallback release: unit != pin"
+  [[ -f "$fb_script" && "$(grep -c '^SCRIPT_SHA=' "$fb_script")" == 1 ]] || die "fallback deploy script missing or malformed"
+  grep -Fxq "SCRIPT_SHA=\"$PREV_SCRIPT_SHA\"" "$fb_script" || die "fallback deploy script does not pin the previous revision"
+  cmp -s <(grep -v '^SCRIPT_SHA=' "$fb_script") <(grep -v '^SCRIPT_SHA=' "$HERE/deploy_micro_recorder.sh")     || die "fallback deploy script differs from this one beyond SCRIPT_SHA"
 }
 
 no_symlink_path() {  # the path (existing or not) must contain no symlink component
@@ -184,11 +218,18 @@ place() {  # place SRC DST PIN: own temp copy in the target dir, verify the pin,
 }
 
 checks() {  # checks BOT_PID
-  local bot="$1" mem
+  local bot="$1" mem since
   [[ "$(systemctl is-active "$UNIT")" == active ]] || die "$UNIT not active"
   mem="$(systemctl show -p MemoryCurrent --value "$UNIT")"
   [[ "$mem" =~ ^[0-9]+$ ]] && (( mem < MEM_MAX )) || die "MemoryCurrent '$mem' not below $MEM_MAX"
-  if journalctl -u "$UNIT" --no-pager -o cat | grep -qE 'Traceback|write failed'; then die "errors in journal"; fi
+  # journal only since THIS installation (the unit file is placed fresh by install, restarts included);
+  # errors of an earlier installation/revision must not fail a later install or a fallback restore
+  since="$(stat -c %Y "$UNIT_PATH")"
+  [[ "$since" =~ ^[0-9]+$ ]] || die "cannot read install time of $UNIT_PATH"
+  # capture first: `journalctl | grep -q` under pipefail turns a match into SIGPIPE (141) = silently "no error"
+  local journal
+  journal="$(journalctl -u "$UNIT" --since "@$since" --no-pager -o cat)" || die "journalctl failed"
+  if grep -qE 'Traceback|write failed' <<<"$journal"; then die "errors in journal since installation"; fi
   ls "$DATA"/gaps/*.csv.gz >/dev/null 2>&1 || die "no gaps file written yet"
   [[ "$(bot_pid)" == "$bot" ]] || die "bot PID changed"
   [[ "$(dash_code)" == 200 ]] || die "dashboard not 200"
@@ -272,15 +313,16 @@ for kind in ("book", "gaps"):
     print(kind, path.name, "rows", len(rows))
     assert rows, kind
 EOF
-  du -sh "$DATA"
+  du -sh "$DATA/"      # trailing slash: follow the systemd StateDirectory link
   echo "VERIFY_OK"
 }
 
 case "${1:-}" in
   stop-tick) stop_tick ;;
   preflight) preflight ;;
+  upgrade-check) upgrade_check ;;
   install) install ;;
   verify) verify ;;
   rollback) rollback manual ;;
-  *) die "usage: $0 stop-tick|preflight|install|verify|rollback" ;;
+  *) die "usage: $0 stop-tick|preflight|upgrade-check|install|verify|rollback" ;;
 esac

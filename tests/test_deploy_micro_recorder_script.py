@@ -4,6 +4,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -51,7 +52,15 @@ esac''')
     (proc / "77" / "cmdline").write_bytes(b"/opt/cryptomaster/venv/bin/python3\0/opt/cryptomaster/tick_recorder.py\0")
     (proc / "77" / "fd" / "1").write_text("/tmp/tick_recorder.log")
     (proc / "77" / "fd" / "3").write_text("/opt/cryptomaster/local_learning_storage/tick_l1.sqlite (deleted)")
-    stub(bin_, "journalctl", f'cat "{state.as_posix()}/journal" 2>/dev/null; exit 0')
+    # journal lines "@EPOCH message" honour --since @N; lines without a timestamp count as current
+    stub(bin_, "journalctl", f'''since=0; prev=""
+for a in "$@"; do [[ "$prev" == --since ]] && since="${{a#@}}"; prev="$a"; done
+[[ -f "{state.as_posix()}/journal" ]] || exit 0
+while IFS= read -r line; do
+  if [[ "$line" =~ ^@([0-9]+)\\ (.*)$ ]]; then (( BASH_REMATCH[1] >= since )) && echo "${{BASH_REMATCH[2]}}"
+  else echo "$line"; fi
+done < "{state.as_posix()}/journal"
+exit 0''')
     stub(bin_, "curl", f'cat "{state.as_posix()}/http" 2>/dev/null || echo -n 200')
     stub(bin_, "df", "echo Avail; echo 99999999")
     stub(bin_, "chown", f'''[[ -f "{state.as_posix()}/chown_fails" ]] && exit 1
@@ -83,6 +92,18 @@ def test_pins_match_the_release_files():
         digest = hashlib.sha256((REL / name).read_bytes()).hexdigest()
         assert f'{var}="{digest}"' in text
     assert (REL / "micro_recorder.py").read_bytes() == (ROOT / "scripts" / "research" / "micro_recorder.py").read_bytes()
+
+
+@pytest.mark.parametrize("sub,pin", [
+    ("rev6_fallback", "b09b31b1bf6bc73904a0ec702049f477f07e39ffb1d65369b0d6bcce1847d466"),
+    ("rev5_fallback", "252dd1f73d16c5f4c1de551fae3939e69b06ae39b6ac6aecb858c3f042fd1172")])
+def test_fallback_scripts_differ_only_in_the_recorder_pin(sub, pin):
+    main = (REL / "deploy_micro_recorder.sh").read_text(encoding="utf-8").splitlines()
+    fb = (REL / sub / "deploy_micro_recorder.sh").read_text(encoding="utf-8").splitlines()
+    assert [x for x in fb if not x.startswith("SCRIPT_SHA=")] == [x for x in main if not x.startswith("SCRIPT_SHA=")]
+    assert [x for x in fb if x.startswith("SCRIPT_SHA=")] == [f'SCRIPT_SHA="{pin}"']
+    if sub == "rev6_fallback":
+        assert f'PREV_SCRIPT_SHA="{pin}"' in (REL / "deploy_micro_recorder.sh").read_text(encoding="utf-8")
 
 
 def test_preflight_refuses_a_changed_script(env):
@@ -303,22 +324,38 @@ def test_upgrade_install_over_kept_dynamic_user_data(env):
     assert marker.read_bytes() == b"x" and (env["tmp"] / "lib" / "data").is_symlink()
 
 
-def installed_previous_revision(env, recorder=b"previous revision\n", unit=None):
-    """Lay out an installed previous release; the copied script's PREV pin is pointed at the fake recorder."""
+PREV_BYTES = b"previous revision\n"
+
+
+def set_pin(script: Path, var: str, value: str) -> None:
+    text = script.read_text(encoding="utf-8")
+    start = text.index(f'\n{var}="') + len(f'\n{var}="')
+    script.write_text(text[:start] + value + text[start + 64:], encoding="utf-8", newline="\n")
+
+
+def installed_previous_revision(env, recorder=PREV_BYTES, unit=None, fallback=True):
+    """Installed previous release + its fallback release dir; the copied script's PREV pin -> the fake recorder."""
     (env["tmp"] / "app").mkdir()
     (env["tmp"] / "app" / "micro_recorder.py").write_bytes(recorder)
     pinned_unit = (env["rel"] / "cryptomaster-micro-recorder.service").read_bytes()
     (env["tmp"] / "units" / "cryptomaster-micro-recorder.service").write_bytes(pinned_unit if unit is None else unit)
+    prev = hashlib.sha256(PREV_BYTES).hexdigest()
     script = env["rel"] / "deploy_micro_recorder.sh"
-    text = script.read_text(encoding="utf-8")
-    start = text.index('PREV_SCRIPT_SHA="') + len('PREV_SCRIPT_SHA="')
-    fake = hashlib.sha256(b"previous revision\n").hexdigest()
-    script.write_text(text[:start] + fake + text[start + 64:], encoding="utf-8", newline="\n")
+    set_pin(script, "PREV_SCRIPT_SHA", prev)
+    fb = env["tmp"] / "fallback"
+    if fallback:
+        fb.mkdir()
+        (fb / "micro_recorder.py").write_bytes(PREV_BYTES)
+        (fb / "cryptomaster-micro-recorder.service").write_bytes(pinned_unit)
+        shutil.copy(script, fb / "deploy_micro_recorder.sh")
+        set_pin(fb / "deploy_micro_recorder.sh", "SCRIPT_SHA", prev)
+    env["env"]["FALLBACK_DIR"] = fb.as_posix()
+    return fb
 
 
 def tree(env):
-    return sorted((p.relative_to(env["tmp"]).as_posix(), p.stat().st_size) for p in env["tmp"].rglob("*")
-                  if p.is_file() and "state" not in p.parts)
+    return sorted((p.relative_to(env["tmp"]).as_posix(), hashlib.sha256(p.read_bytes()).hexdigest())
+                  for p in env["tmp"].rglob("*") if p.is_file() and "state" not in p.parts)
 
 
 def test_upgrade_check_passes_over_the_running_previous_revision_and_writes_nothing(env):
@@ -326,30 +363,82 @@ def test_upgrade_check_passes_over_the_running_previous_revision_and_writes_noth
     before = tree(env)
     r = run(env, "upgrade-check")
     assert r.returncode == 0 and "UPGRADE_CHECK_OK" in r.stdout, r.stderr
-    assert tree(env) == before
+    assert tree(env) == before                                   # names AND contents unchanged
     calls = (env["state"] / "calls").read_text()
     assert "disable" not in calls and "enable" not in calls and "daemon-reload" not in calls
 
 
-@pytest.mark.parametrize("fault", ["other_recorder", "other_unit", "inactive", "new_release_changed"])
+@pytest.mark.parametrize("fault", ["other_recorder", "other_unit", "inactive", "new_release_changed", "dashboard",
+                                   "fallback_missing", "fallback_recorder", "fallback_unit", "fallback_pin",
+                                   "fallback_script_changed"])
 def test_upgrade_check_refuses(env, fault):
+    expected = {"other_recorder": "installed recorder is not the previous pinned revision",
+                "other_unit": "installed unit is not the pinned unit",
+                "inactive": "not active",
+                "new_release_changed": "micro_recorder.py != pin",
+                "dashboard": "dashboard not 200",
+                "fallback_missing": "fallback release: micro_recorder.py",
+                "fallback_recorder": "fallback release: micro_recorder.py",
+                "fallback_unit": "fallback release: unit != pin",
+                "fallback_pin": "does not pin the previous revision",
+                "fallback_script_changed": "differs from this one beyond SCRIPT_SHA"}[fault]
     if fault == "other_recorder":
         installed_previous_revision(env, recorder=b"something else\n")
-        expected = "not the previous pinned revision"
     elif fault == "other_unit":
         installed_previous_revision(env, unit=b"[Unit]\n")
-        expected = "installed unit is not the pinned unit"
-    elif fault == "inactive":
-        installed_previous_revision(env)
-        (env["state"] / "active").write_text("inactive")
-        expected = "not active"
+    elif fault == "fallback_missing":
+        installed_previous_revision(env, fallback=False)
     else:
-        installed_previous_revision(env)
-        with open(env["rel"] / "micro_recorder.py", "a", encoding="utf-8") as fh:
-            fh.write("# changed\n")
-        expected = "micro_recorder.py != pin"
+        fb = installed_previous_revision(env)
+        if fault == "inactive":
+            (env["state"] / "active").write_text("inactive")
+        elif fault == "new_release_changed":
+            with open(env["rel"] / "micro_recorder.py", "a", encoding="utf-8") as fh:
+                fh.write("# changed\n")
+        elif fault == "dashboard":
+            (env["state"] / "http").write_text("502")
+        elif fault == "fallback_recorder":
+            (fb / "micro_recorder.py").write_bytes(b"other\n")
+        elif fault == "fallback_unit":
+            (fb / "cryptomaster-micro-recorder.service").write_bytes(b"[Unit]\n")
+        elif fault == "fallback_pin":
+            set_pin(fb / "deploy_micro_recorder.sh", "SCRIPT_SHA", "0" * 64)
+        else:
+            with open(fb / "deploy_micro_recorder.sh", "a", encoding="utf-8", newline="\n") as fh:
+                fh.write("echo extra\n")
     r = run(env, "upgrade-check")
-    assert r.returncode != 0 and expected in r.stderr
+    assert r.returncode != 0 and expected in r.stderr, r.stderr
+
+
+def test_install_ignores_journal_errors_from_before_this_installation(env):
+    old = int(time.time()) - 3600
+    (env["state"] / "journal").write_text(f"@{old} Traceback (most recent call last)\n@{old} write failed\n")
+    r = run(env, "install")
+    assert r.returncode == 0 and "INSTALL_OK" in r.stdout, r.stderr
+
+
+@pytest.mark.parametrize("trailing_lines", [0, 3000])
+def test_install_fails_on_journal_errors_after_this_installation(env, trailing_lines):
+    # 3000 lines after the error (> 64 KiB pipe buffer): a `journalctl | grep -q` pipe under pipefail
+    # would end in SIGPIPE and silently report "no error"
+    new = int(time.time()) + 5
+    filler = "".join(f"@{new} [MICRO] messages in the last hour: {{\"public\": {i}}}\n" for i in range(trailing_lines))
+    (env["state"] / "journal").write_text(f"@{new} [MICRO] write failed, exiting for a systemd restart\n" + filler)
+    r = run(env, "install")
+    assert r.returncode != 0 and "errors in journal since installation" in r.stderr and "ROLLBACK_OK" in r.stdout
+
+
+def test_python_probes_never_write_bytecode(env, tmp_path):
+    log = tmp_path / "py_calls"
+    wrapper = tmp_path / "pywrap"
+    wrapper.write_text(f'#!/usr/bin/env bash\necho "$*" >> "{log.as_posix()}"\n'
+                       f'exec "{Path(sys.executable).as_posix()}" "$@"\n', encoding="utf-8", newline="\n")
+    wrapper.chmod(0o755)
+    r = subprocess.run([BASH, (env["rel"] / "deploy_micro_recorder.sh").as_posix(), "preflight"],
+                       env=dict(env["env"], PY=wrapper.as_posix()), capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, r.stderr
+    calls = log.read_text().splitlines()
+    assert len(calls) >= 2 and all(c.split()[:2] == ["-I", "-B"] for c in calls)
 
 
 def test_manual_rollback_after_a_successful_install_removes_the_pinned_files(env):

@@ -373,3 +373,60 @@ v unitě nepomůže, protože `-I` proměnné `PYTHON*` ignoruje.
    z auditu výsledku.
 6. Návrat: `rollback` v novém adresáři → `install` ve starém (rev. 7 skript s rev. 6 sběračem projde přes
    symlink StateDirectory).
+
+### Rev. 8 po review R8 (Codex CHANGES_REQUIRED, `_workspace/2026-11-27_codex_review_micro_recorder_r8.md`)
+
+**Opravy:**
+1. **P1, sada pro návrat se neověřovala.** Nový adresář `FALLBACK` (výchozí `/root/micro-recorder-rev6-fallback`,
+   přepsatelný jen v test režimu). Obsahuje sběrač rev. 6, unit a deploy skript rev. 8, který se liší jen
+   `SCRIPT_SHA=b09b31b1…` (`rev6_fallback/deploy_micro_recorder.sh`). `upgrade-check` volá `fallback_checks`:
+   - sběrač v `FALLBACK` = `PREV_SCRIPT_SHA`;
+   - unit = `UNIT_SHA`;
+   - deploy skript má právě jeden řádek `SCRIPT_SHA`, a to `PREV_SCRIPT_SHA`;
+   - bez řádků `SCRIPT_SHA` je bajtově shodný s tímto skriptem (`cmp`), takže pin se nedá zacyklit.
+   - Rev. 6 se pak odinstaluje `rollback` z `FALLBACK` (pin `b09b31b1…`), ne skriptem rev. 7.
+2. **P1, journal z dřívějších instalací.** `checks()` čte journal jen od mtime souboru unity
+   (`stat -c %Y`), který `install` pokaždé umísťuje nově. Restarty po instalaci se počítají, chyby dřívější
+   revize ne. Platí i pro návrat, protože ten jde přes rev. 8 skript s pinem rev. 6.
+   - **Mutační test navíc odhalil skutečnou dřívější chybu:** `journalctl | grep -q` pod `set -o pipefail`.
+     `grep -q` skončí při první shodě, `journalctl` dostane SIGPIPE a roura vrátí 141. `if` je pak nepravdivé
+     a **chyba v journalu se přehlédne**, kdykoli za ní následuje další výstup. To platilo ve všech
+     dosavadních revizích. Oprava: výstup se nejdřív uloží (`journal="$(…)"`, při selhání `die`) a teprve pak
+     se v něm hledá přes `grep -q <<<`.
+   - Regresní test: chyba + 3000 dalších řádků. Se starou formou selže, s novou projde.
+3. **P2, `.pyc`.** `import websocket` se spouští s `-I -B`. Test obalí `PY` a ověří, že všechna volání
+   Pythonu začínají `-I -B`.
+4. **Dashboard už předem:** `upgrade-check` vyžaduje HTTP 200, dokud rev. 6 běží. `preflight` beze změny, aby
+   selhání po instalaci dál vedlo k rollbacku.
+5. Test „bez zápisu“ porovnává jména i SHA-256 obsahu.
+
+**Soubory:**
+
+| Soubor | SHA-256 |
+|---|---|
+| `scripts/research/micro_recorder.py` = release kopie (beze změny) | `fdad490b…21aa` |
+| `deploy_micro_recorder.sh` | `97180eeb589748b8c4747b7c9c4b79a4a6c0863839156d001c0388f3ca02178f` |
+| `rev6_fallback/deploy_micro_recorder.sh` | `0f64e008a7f2eae6c7a8b0916631a18a8249e6326e9b4ce1b9d69f50fa085a5a` |
+| `rev5_fallback/deploy_micro_recorder.sh` (přegenerován z rev. 8) | `58025e2597b99b1919d52fd9e75ab37896054df853d7433d39295bdff6d50d27` |
+| `tests/test_deploy_micro_recorder_script.py` | `1fb1cccb8d1c999da491dad361ce63794d5078dc01729dd5a13bec33c1eb3470` |
+| `tests/test_micro_recorder.py` | `516f7b44…454` |
+
+**Testy:**
+- server (dočasný adresář, `nobody`, smazán): **59 passed**;
+- lokálně 51 passed / 8 skipped (symlinky), `PROTECTED_SAME`;
+- **mutace 14/14 zabity**: PREV pin, pin unity, `active`, celé `fallback_checks`, pin sběrače, unity a
+  skriptu ve fallbacku, `cmp`, dashboard předem, journal bez `--since`, roura `grep -q`, import bez `-B`, bez
+  `release_checks`, log bez `flush`.
+
+**Postup upgradu rev. 6 → rev. 8 (nahrazuje předchozí):**
+1. Nahrát a ověřit hashe:
+   - `/root/micro-recorder-20261127-r8/`: `fdad490b…`, `97180eeb…`, `35b35cc0…`;
+   - `/root/micro-recorder-rev6-fallback/`: sběrač `b09b31b1…` (kopie z `/root/micro-recorder-20261127/`),
+     unit `35b35cc0…`, skript `0f64e008…`.
+2. `/root/micro-recorder-20261127-r8`: `upgrade-check` → `UPGRADE_CHECK_OK`. Rev. 6 běží. Při selhání konec.
+3. `/root/micro-recorder-rev6-fallback`: `rollback` → `ROLLBACK_OK`.
+4. `/root/micro-recorder-20261127-r8`: `preflight` → `install`.
+5. `verify` po 10 min. `start` a `connect public`/`connect market` musí být z nového běhu (nový pid) a přírůstek
+   knihy po startu. Po ~65 min v journalu `[MICRO] messages in the last hour` (klíč `market` může při nule
+   chybět).
+6. Návrat: r8 `rollback` → fallback `preflight` + `install`.
